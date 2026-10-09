@@ -54,10 +54,10 @@ Each stage of the chart maps to a specific module in the codebase:
 
 ### Stage 2: Object Recognition (`detection.py`)
 
-**What it does:** Runs YOLOv8 object detection on each frame, filtered to target classes.
+**What it does:** Runs YOLO26 object detection on each frame, filtered to target classes.
 
 **How it works:**
-- Loads the YOLOv8 nano model (`yolov8n.pt`)
+- Loads the YOLO26 nano model (`yolo26n.pt`)
 - Runs inference on every frame
 - Filters results to only the classes we care about (e.g., `cell phone`, `laptop`)
 - Returns structured detections with bounding boxes and center points

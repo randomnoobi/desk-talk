@@ -8,7 +8,7 @@ Desk Talk uses cameras to watch your physical desk, detect everyday objects, and
 
 ## Concept
 
-Your desk is a small ecosystem. 7 objects — laptop (includes keyboard), cup, snack, paper, cable, power bank, phone — each become a persistent character that lives inside a group chat on your phone. Cameras run YOLOv8 object detection to track where each object is, whether it's being used, and how it interacts with the others.
+Your desk is a small ecosystem. 7 objects — laptop (includes keyboard), cup, snack, paper, cable, power bank, phone — each become a persistent character that lives inside a group chat on your phone. Cameras run Ultralytics YOLO26 object detection to track where each object is, whether it's being used, and how it interacts with the others.
 
 The result: a living chatroom where your stuff talks to each other — and to you.
 
@@ -204,7 +204,7 @@ Minimalistic. The interface feels like a standard messaging app — familiar, li
 
 ## Detection System
 
-Cameras monitor the desk using **YOLOv8** for real-time object detection.
+Cameras monitor the desk using **YOLO26** (Ultralytics) for real-time object detection.
 
 ### YOLO Class Mappings
 
@@ -254,7 +254,7 @@ The LLM generates 1-2 sentences that are 100% in-character. Templates serve as a
 
 | Layer | Technology |
 |-------|-----------|
-| Object Detection | YOLOv8 (ultralytics) via webcams |
+| Object Detection | YOLO26 (ultralytics) via webcams |
 | Backend | Flask (Python) — camera threads, event engine, LLM proxy |
 | Frontend | Vanilla HTML/CSS/JS — mobile chat simulation |
 | LLM | Google Gemini (free tier) or OpenAI GPT — via OpenAI SDK |
@@ -322,7 +322,7 @@ python server.py
 ```
 
 The server:
-- Captures your webcam feed(s) and runs YOLOv8 object detection
+- Captures your webcam feed(s) and runs YOLO26 object detection
 - Maps detected objects to 8 characters with temporal smoothing
 - Analyzes spatial relationships using data-driven proximity rules
 - Generates in-character messages via LLM with full relationship context

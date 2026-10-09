@@ -1,5 +1,5 @@
 /* ============================================
-   DESK TALK — 4-object cast + The Desk group room
+   DESK TALK — 4 living desk objects + group room
    ============================================ */
 
 /** Single detailed desk webcam icon (used only on chat list header). */
@@ -13,6 +13,13 @@ const DETAILED_CAMERA_SVG = `<svg viewBox="0 0 32 28" width="28" height="28" fil
   <circle cx="9" cy="10" r="1" fill="currentColor"/>
   <path d="M17 11h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.5"/>
 </svg>`;
+
+/** Fetch with timeout — `AbortSignal.timeout` is missing in some Safari builds. */
+function fetchWithTimeout(url, ms = 4000, init = {}) {
+  const ctl = new AbortController();
+  const id = setTimeout(() => ctl.abort(), ms);
+  return fetch(url, { ...init, signal: ctl.signal }).finally(() => clearTimeout(id));
+}
 
 // ————— Backend —————
 class Backend {
@@ -28,7 +35,7 @@ class Backend {
   }
   async connect() {
     try {
-      const res = await fetch(`${this.baseUrl}/api/status`, { signal: AbortSignal.timeout(3000) });
+      const res = await fetchWithTimeout(`${this.baseUrl}/api/status`, 5000);
       if (!res.ok) return false;
       const d = await res.json();
       this.connected = true;
@@ -81,6 +88,12 @@ class Backend {
       return r.ok ? await r.json() : null;
     } catch (e) { return null; }
   }
+  pingActivity() {
+    try {
+      if (navigator.sendBeacon) navigator.sendBeacon(`${this.baseUrl}/api/activity`);
+      else fetch(`${this.baseUrl}/api/activity`, { method: 'POST', keepalive: true });
+    } catch (_) {}
+  }
   async syncAllChatTodos(byChat) {
     try {
       const r = await fetch(`${this.baseUrl}/api/chat_todos_sync`, {
@@ -105,14 +118,26 @@ class Backend {
       return r.ok ? await r.json() : null;
     } catch (e) { return null; }
   }
+  async listSnapshots() {
+    try {
+      const r = await fetch(`${this.baseUrl}/api/snapshots`);
+      return r.ok ? await r.json() : null;
+    } catch (e) { return null; }
+  }
+  async getHabitLog(category = 'all', limit = 40) {
+    try {
+      const r = await fetch(`${this.baseUrl}/api/habit_log?category=${encodeURIComponent(category)}&limit=${limit}`);
+      return r.ok ? await r.json() : null;
+    } catch (e) { return null; }
+  }
   snapshotUrl(id) { return `${this.baseUrl}/api/snapshot/${id}`; }
 }
 
-/** Last 5 messages in this thread before the current user send (oldest first in payload). */
+/** Recent thread context before the current user send (oldest first in payload). */
 function buildChatHistoryPayload(chatId) {
   const arr = chatId === 'group' ? state.groupMessages : (state.individualMessages[chatId] || []);
   if (arr.length < 2) return [];
-  const prior = arr.slice(0, -1).slice(-5);
+  const prior = arr.slice(0, -1).slice(-10);
   return prior.map((m) => {
     const isUser = m.from === 'user';
     const assistantName = !isUser
@@ -121,7 +146,7 @@ function buildChatHistoryPayload(chatId) {
     return {
       role: isUser ? 'user' : 'assistant',
       name: assistantName,
-      text: (m.text || '').slice(0, 2000),
+      text: (m.text || '').slice(0, 1200),
     };
   });
 }
@@ -142,45 +167,50 @@ async function drainMessageQueue() {
     const { chatId, charId, text, progress, snapshot, replyTo } = messageQueue.shift();
     const vis = state.currentScreen === 'chat' &&
       (state.currentChat === chatId || (chatId === 'group' && state.currentChat === 'group'));
-    if (vis) { showTypingIndicator(charId); await sleep(1500 + Math.random() * 1500); removeTypingIndicator(); }
-    else { await sleep(800 + Math.random() * 1200); }
+    if (vis) { showTypingIndicator(charId); await sleep(600 + Math.random() * 600); removeTypingIndicator(); }
+    else { await sleep(300 + Math.random() * 400); }
     if (chatId === 'group') addGroupMessage(charId, text, false, snapshot, replyTo);
     else addIndividualMessage(charId, text, progress, snapshot, replyTo);
-    if (state.currentScreen === 'chatlist') renderChatList();
-    if (messageQueue.length > 0) await sleep(2000 + Math.random() * 2000);
+    refreshActivePrimaryList();
+    if (messageQueue.length > 0) await sleep(800 + Math.random() * 800);
   }
   messageQueueRunning = false;
 }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+function refreshActivePrimaryList() {
+  if (state.currentScreen === 'chatlist') renderChatList();
+  if (state.currentScreen === 'characters') renderCharactersScreen();
+}
+
 // ————— Characters (4 objects + group room in UI) —————
 const CHARACTERS = {
   monty: {
-    id: 'monty', name: 'Monty', icon: '💻', object: 'Laptop',
+    id: 'monty', name: 'Computer', icon: '💻', object: 'Computer',
     bubbleClass: 'bubble-monty', senderClass: 'sender-monty', avatarClass: 'avatar-monty',
     color: '#4a8fe7', status: 'active', statusDetail: 'screen on',
-    mission: 'Breaks, posture & screen time — all auto-detected.',
+    mission: 'I notice screen breaks, posture, and risky desk edges.',
     realLife: 'Half-full mug touching the trackpad while you Slack.',
   },
   glug: {
-    id: 'glug', name: 'Glug', icon: '☕', object: 'Cup',
+    id: 'glug', name: 'Cup', icon: '☕', object: 'Cup',
     bubbleClass: 'bubble-glug', senderClass: 'sender-glug', avatarClass: 'avatar-glug',
     color: '#00b894', status: 'idle', statusDetail: 'just sitting here',
-    mission: 'Hydration & plant care — sips auto-logged via camera.',
+    mission: 'I keep track of drinks, spills, and hydration.',
     realLife: 'Cold bottle sweating onto a corner of your notes.',
   },
   munch: {
-    id: 'munch', name: 'Munch', icon: '🍕', object: 'Snack',
+    id: 'munch', name: 'Snack', icon: '🍕', object: 'Snack',
     bubbleClass: 'bubble-munch', senderClass: 'sender-munch', avatarClass: 'avatar-munch',
     color: '#e17055', status: 'idle', statusDetail: 'on desk — tempting',
-    mission: 'Snack log — auto-detects food on desk via camera.',
+    mission: 'I remember snacks and call out messy choices.',
     realLife: 'Chip bag wide open aimed at the laptop fan vent.',
   },
   sheets: {
-    id: 'sheets', name: 'Sheets', icon: '📄', object: 'Paper',
+    id: 'sheets', name: 'Paper', icon: '📄', object: 'Paper',
     bubbleClass: 'bubble-sheets', senderClass: 'sender-sheets', avatarClass: 'avatar-sheets',
     color: '#d4a04a', status: 'idle', statusDetail: 'on desk — still',
-    mission: 'Focus, organization & to-do list — keeps you on track.',
+    mission: 'I keep notes, tasks, and lost-object clues together.',
     realLife: 'Printed rubric under an open highlighter with the cap off.',
   },
 };
@@ -190,7 +220,9 @@ const charCount = charIds.length;
 
 // ————— Per-character widget data (localStorage + server sync) —————
 const WIDGET_STORAGE_KEY = 'desktalk_widgets_v2';
+const HABIT_STORAGE_KEY = 'desktalk_custom_bad_habits_v1';
 const widgetStore = {};
+let customHabitState = null;
 
 function todayKey() { return new Date().toISOString().slice(0, 10); }
 
@@ -224,6 +256,35 @@ function loadWidgets() {
 }
 
 function saveWidgets() { try { localStorage.setItem(WIDGET_STORAGE_KEY, JSON.stringify(widgetStore)); } catch (_) {} }
+
+function defaultCustomHabits() {
+  return {
+    day: todayKey(),
+    items: [
+      { id: 'nail_biting', label: 'Nail biting', count: 0 },
+      { id: 'phone_pickup', label: 'Picked up phone', count: 0 },
+      { id: 'slouching', label: 'Slouching', count: 0 },
+    ],
+  };
+}
+
+function loadCustomHabits() {
+  try {
+    const raw = localStorage.getItem(HABIT_STORAGE_KEY);
+    const saved = raw ? JSON.parse(raw) : null;
+    if (!saved || !Array.isArray(saved.items) || saved.day !== todayKey()) {
+      customHabitState = defaultCustomHabits();
+    } else {
+      customHabitState = saved;
+    }
+  } catch (_) {
+    customHabitState = defaultCustomHabits();
+  }
+}
+
+function saveCustomHabits() {
+  try { localStorage.setItem(HABIT_STORAGE_KEY, JSON.stringify(customHabitState)); } catch (_) {}
+}
 
 function getWidgetPayload(chatId) {
   if (!chatId || chatId === 'group') return null;
@@ -320,11 +381,18 @@ const state = {
   liveBack: { screen: 'chatlist', chatId: null },
   /** Live desk: 'analysis' = YOLO overlay stream, 'clean' = raw camera + detection strip */
   liveViewMode: 'analysis',
+  /** Last /api/detections payload for canvas overlays */
+  lastDetections: null,
+  montyHabitPollTimer: null,
+  /** Set true when MJPEG <img> never loads (e.g. iOS); use polled JPEG URLs instead */
+  liveStreamPreferPoll: false,
 };
 
 // ————— DOM —————
 const $ = (s) => document.querySelector(s);
 const chatlistContent = $('#chatlist-content');
+const charactersContent = $('#characters-content');
+const habitsContent = $('#habits-content');
 const chatMessages = $('#chat-messages');
 const chatInput = $('#chat-input');
 const chatHeaderName = $('#chat-header-name');
@@ -335,9 +403,12 @@ const settingsContent = $('#settings-content');
 const screens = {
   splash: $('#screen-splash'),
   chatlist: $('#screen-chatlist'),
+  characters: $('#screen-characters'),
+  habits: $('#screen-habits'),
   chat: $('#screen-chat'),
   camera: $('#screen-camera'),
   settings: $('#screen-settings'),
+  captures: $('#screen-captures'),
 };
 
 // ————— Snapshot overlay —————
@@ -363,9 +434,39 @@ function updateGreeting() {
   if (el) el.textContent = g;
 }
 
+let montyHabitFilter = 'all';
+
+function clearMontyHabitPoll() {
+  if (state.montyHabitPollTimer) {
+    clearInterval(state.montyHabitPollTimer);
+    state.montyHabitPollTimer = null;
+  }
+}
+
 // ————— Navigation —————
+function isPrimaryScreen(screen) {
+  return ['chatlist', 'characters', 'habits', 'settings'].includes(screen);
+}
+
+function updateBottomNav(screen) {
+  const nav = document.getElementById('bottom-nav');
+  if (!nav) return;
+  nav.classList.toggle('hidden', !isPrimaryScreen(screen));
+  nav.querySelectorAll('.bottom-nav-btn').forEach((btn) => {
+    btn.classList.toggle('is-active', btn.dataset.screen === screen);
+  });
+}
+
 function navigateTo(screen, chatId = null) {
+  clearMontyHabitPoll();
   const prev = state.currentScreen;
+  if (prev === 'camera' && screen !== 'camera') {
+    stopLiveFramePoll();
+    if (liveMjpegFailSafeTimer) {
+      clearTimeout(liveMjpegFailSafeTimer);
+      liveMjpegFailSafeTimer = null;
+    }
+  }
   if (screen === 'camera') {
     if (prev === 'chat' && state.currentChat) {
       state.liveBack = { screen: 'chat', chatId: state.currentChat };
@@ -376,16 +477,20 @@ function navigateTo(screen, chatId = null) {
   state.currentScreen = screen;
   if (screen !== 'camera') state.currentChat = chatId;
   Object.values(screens).forEach(s => s.classList.remove('active', 'slide-out-left'));
-  if (prev === 'chatlist' && (screen === 'chat' || screen === 'camera' || screen === 'settings'))
+  if (prev === 'chatlist' && (screen === 'chat' || screen === 'camera' || screen === 'settings' || screen === 'captures' || screen === 'characters' || screen === 'habits'))
     screens.chatlist.classList.add('slide-out-left');
   if (prev === 'chat' && screen === 'camera')
     screens.chat.classList.add('slide-out-left');
   screens[screen].classList.add('active');
   if (screen === 'chat') setupChatScreen(chatId);
   if (screen === 'chatlist') { updateGreeting(); renderChatList(); }
+  if (screen === 'characters') renderCharactersScreen();
+  if (screen === 'habits') renderHabitsScreen();
   if (screen === 'camera') { renderCameraStatus(); setupCameraView(); startDetectionPolling(); }
   else stopDetectionPolling();
+  if (screen === 'captures') loadCapturesGallery();
   if (screen === 'settings') loadAndRenderRules();
+  updateBottomNav(screen);
   if (screen !== 'chat' && drawerOpen) { drawerOpen = false; cameraDrawer.classList.remove('open'); stopDrawerPolling(); }
 }
 
@@ -466,6 +571,36 @@ function getLiveMjpegUrl() {
     : `${backend.baseUrl}/api/video_feed/${idx}`;
 }
 
+function stopLiveFramePoll() {
+  if (liveFramePollTimer) {
+    clearInterval(liveFramePollTimer);
+    liveFramePollTimer = null;
+  }
+}
+
+function stopDrawerFramePoll() {
+  if (drawerFramePollTimer) {
+    clearInterval(drawerFramePollTimer);
+    drawerFramePollTimer = null;
+  }
+}
+
+/** iOS / iPadOS WebKit often never updates multipart MJPEG inside <img>. */
+function liveDeskNeedsJpegPolling() {
+  if (state.liveStreamPreferPoll) return true;
+  const ua = navigator.userAgent || '';
+  if (/iPhone|iPad|iPod/i.test(ua)) return true;
+  if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return true;
+  return false;
+}
+
+function getLiveLatestFrameUrl() {
+  if (!state.liveMode || !backend?.baseUrl || !backend.cameraOk) return null;
+  const idx = backend.cameraIndices[0] ?? 0;
+  const seg = state.liveViewMode === 'clean' ? 'latest_frame_raw' : 'latest_frame';
+  return `${backend.baseUrl}/api/${seg}/${idx}`;
+}
+
 function setLiveViewMode(mode) {
   if (mode !== 'analysis' && mode !== 'clean') return;
   state.liveViewMode = mode;
@@ -477,6 +612,7 @@ function setLiveViewMode(mode) {
     btn.setAttribute('aria-selected', is ? 'true' : 'false');
   });
   setupCameraView();
+  requestAnimationFrame(syncLiveOverlayCanvas);
 }
 
 function wireLiveViewTabs() {
@@ -486,6 +622,151 @@ function wireLiveViewTabs() {
   sc.addEventListener('click', (e) => {
     const t = e.target?.closest?.('.live-view-tab');
     if (t && t.dataset.view) setLiveViewMode(t.dataset.view);
+  });
+}
+
+/** Map bbox from native frame coords → displayed img coords (object-fit cover or contain). */
+function mapBboxToDisplayedEl(bbox, natW, natH, dispW, dispH, fit) {
+  if (!bbox || bbox.length < 4 || !natW || !natH || !dispW || !dispH) return null;
+  const [x1, y1, x2, y2] = bbox.map(Number);
+  let scale; let ox; let oy;
+  if (fit === 'contain') {
+    scale = Math.min(dispW / natW, dispH / natH);
+    ox = (dispW - natW * scale) / 2;
+    oy = (dispH - natH * scale) / 2;
+  } else {
+    scale = Math.max(dispW / natW, dispH / natH);
+    ox = (dispW - natW * scale) / 2;
+    oy = (dispH - natH * scale) / 2;
+  }
+  return [ox + x1 * scale, oy + y1 * scale, ox + x2 * scale, oy + y2 * scale];
+}
+
+function getLivePrimaryFitMode() {
+  const st = document.getElementById('screen-camera')?.querySelector('.live-stage');
+  return st?.classList.contains('live-stage--clean-view') ? 'contain' : 'cover';
+}
+
+function syncLiveOverlayCanvas() {
+  const wrap = document.querySelector('#live-video-primary .live-video-wrap');
+  const img = wrap?.querySelector('.live-video-full');
+  const canvas = wrap?.querySelector('.live-detection-overlay');
+  if (!wrap || !img || !canvas || !state.liveMode) return;
+  const rw = img.clientWidth;
+  const rh = img.clientHeight;
+  if (!rw || !rh) return;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(rw * dpr);
+  canvas.height = Math.round(rh * dpr);
+  canvas.style.width = `${rw}px`;
+  canvas.style.height = `${rh}px`;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, rw, rh);
+
+  const det = state.lastDetections;
+  if (!det || !state.liveMode || img.naturalWidth < 8) return;
+
+  const fw = (det.frame && det.frame.w) || img.naturalWidth;
+  const fh = (det.frame && det.frame.h) || img.naturalHeight;
+  const fit = getLivePrimaryFitMode();
+
+  const drawBox = (bbox, color, label) => {
+    const m = mapBboxToDisplayedEl(bbox, fw, fh, rw, rh, fit);
+    if (!m) return;
+    let [a, b, c, d] = m;
+    if (c < a) [a, c] = [c, a];
+    if (d < b) [b, d] = [d, b];
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(a, b, c - a, d - b);
+    if (label) {
+      ctx.font = '11px Inter, system-ui, sans-serif';
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = 'rgba(15,15,18,0.82)';
+      ctx.fillRect(a, Math.max(0, b - 18), tw + 8, 16);
+      ctx.fillStyle = '#faf8ff';
+      ctx.fillText(label, a + 4, Math.max(12, b - 5));
+    }
+  };
+
+  Object.values(det.objects || {}).forEach((o) => {
+    if (o.bbox) drawBox(o.bbox, 'rgba(120,200,255,0.95)', o.name || o.class);
+  });
+  (det.extras || []).forEach((ex) => {
+    if (!ex.bbox || !ex.highlight) return;
+    drawBox(ex.bbox, 'rgba(255,210,90,0.98)', ex.label || ex.yolo_class);
+  });
+
+  const centers = {};
+  Object.entries(det.objects || {}).forEach(([cid, o]) => {
+    if (!o.center || o.center.length < 2) return;
+    const pt = mapBboxToDisplayedEl([o.center[0], o.center[1], o.center[0], o.center[1]], fw, fh, rw, rh, fit);
+    if (pt) centers[cid] = [(pt[0] + pt[2]) / 2, (pt[1] + pt[3]) / 2];
+  });
+  (det.relationship_edges || []).forEach((edge) => {
+    const p1 = centers[edge.from];
+    const p2 = centers[edge.to];
+    if (!p1 || !p2) return;
+    ctx.strokeStyle = 'rgba(255,120,140,0.85)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(p1[0], p1[1]);
+    ctx.lineTo(p2[0], p2[1]);
+    ctx.stroke();
+  });
+
+  const lv = det.lost_vlm_labels;
+  if (lv && lv.length) {
+    ctx.fillStyle = 'rgba(20,22,28,0.78)';
+    ctx.fillRect(8, rh - 28 - lv.length * 14, Math.min(rw - 16, 280), 16 + lv.length * 14);
+    ctx.fillStyle = '#e8f7ff';
+    ctx.font = '10px Inter, system-ui, sans-serif';
+    ctx.fillText(`Ollama scan: ${lv.join(', ')}`, 14, rh - 18);
+  }
+}
+
+let _liveOverlayResizeObs = null;
+
+function bindLiveOverlayResize() {
+  const primary = document.getElementById('live-video-primary');
+  if (!primary || primary._overlayObsBound) return;
+  primary._overlayObsBound = true;
+  if (_liveOverlayResizeObs) _liveOverlayResizeObs.disconnect();
+  _liveOverlayResizeObs = new ResizeObserver(() => {
+    if (state.currentScreen === 'camera') requestAnimationFrame(syncLiveOverlayCanvas);
+  });
+  _liveOverlayResizeObs.observe(primary);
+}
+
+async function loadCapturesGallery() {
+  const el = document.getElementById('captures-content');
+  if (!el) return;
+  if (!backend?.baseUrl || !state.liveMode) {
+    el.innerHTML = '<p class="captures-empty">Turn on <strong>Live</strong> and connect to the server to load desk captures.</p>';
+    return;
+  }
+  el.innerHTML = '<p class="captures-loading">Loading snapshots…</p>';
+  const data = await backend.listSnapshots();
+  const items = (data && data.items) || [];
+  if (!items.length) {
+    el.innerHTML = '<p class="captures-empty">No captures yet — proximity alerts and periodic desk scans will appear here.</p>';
+    return;
+  }
+  el.innerHTML = `<div class="captures-grid">${items.map((it) => {
+    const url = backend.snapshotUrl(it.id);
+    const dt = new Date((it.ts || 0) * 1000);
+    const dateStr = dt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    const lab = escapeHtml(it.label || 'Capture');
+    return `<button type="button" class="captures-card" data-url="${url.replace(/"/g, '&quot;')}">
+      <img src="${url}" alt="" loading="lazy">
+      <span class="captures-card-meta">${escapeHtml(dateStr)}</span>
+      <span class="captures-card-label">${lab}</span>
+    </button>`;
+  }).join('')}</div>`;
+  el.querySelectorAll('.captures-card').forEach((btn) => {
+    btn.addEventListener('click', () => openSnapshot(btn.dataset.url));
   });
 }
 
@@ -561,9 +842,9 @@ function renderLiveDetectionsBar(data) {
   if (!list) return;
   if (!state.liveMode) {
     list.innerHTML = [
-      '<li class="live-check-row"><span class="live-check-ico" aria-hidden="true">✓</span><span class="live-check-body">Monty <em>demo</em></span></li>',
-      '<li class="live-check-row"><span class="live-check-ico" aria-hidden="true">✓</span><span class="live-check-body">Glug <em>demo</em></span></li>',
-      '<li class="live-check-row"><span class="live-check-ico" aria-hidden="true">✓</span><span class="live-check-body">Sheets <em>demo</em></span></li>',
+      '<li class="live-check-row"><span class="live-check-ico" aria-hidden="true">✓</span><span class="live-check-body">Computer <em>demo</em></span></li>',
+      '<li class="live-check-row"><span class="live-check-ico" aria-hidden="true">✓</span><span class="live-check-body">Cup <em>demo</em></span></li>',
+      '<li class="live-check-row"><span class="live-check-ico" aria-hidden="true">✓</span><span class="live-check-body">Paper <em>demo</em></span></li>',
     ].join('');
     if (label) label.textContent = 'Detected in frame (illustration)';
     return;
@@ -604,25 +885,89 @@ function renderLiveDetectionsBar(data) {
     const n = rows.length;
     label.textContent = n ? `Detected in frame · ${n} item${n === 1 ? '' : 's'}` : 'Detected in frame';
   }
+  const v = data.vlm_habit;
+  if (v && typeof v === 'object' && Object.keys(v).length && label) {
+    const bits = [
+      v.posture && v.posture !== 'unknown' ? `posture ${v.posture}` : '',
+      v.face_screen_distance && v.face_screen_distance !== 'unknown' ? `distance ${v.face_screen_distance}` : '',
+      v.phone && v.phone !== 'none' ? `phone ${v.phone}` : '',
+      v.attention && v.attention !== 'unknown' ? `attention ${v.attention}` : '',
+    ].filter(Boolean);
+    if (bits.length) {
+      label.textContent += ` · VLM: ${bits.join(', ')}`;
+    }
+  }
 }
 
 function setupCameraView() {
   const primary = $('#live-video-primary');
   if (!primary) return;
+
+  stopLiveFramePoll();
+  if (liveMjpegFailSafeTimer) {
+    clearTimeout(liveMjpegFailSafeTimer);
+    liveMjpegFailSafeTimer = null;
+  }
+
   wireLiveViewTabs();
+  bindLiveOverlayResize();
   document.querySelectorAll('.live-view-tab').forEach((btn) => {
     if (!btn.dataset.view) return;
     const is = btn.dataset.view === state.liveViewMode;
     btn.classList.toggle('is-active', is);
     btn.setAttribute('aria-selected', is ? 'true' : 'false');
   });
+
   const liveUrl = getLiveMjpegUrl();
-  if (state.liveMode && backend.cameraOk && liveUrl) {
-    primary.innerHTML = `
-      <img src="${liveUrl}" alt="Live desk" class="live-video-full"
-        onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
-        onload="this.nextElementSibling.style.display='none'">
-      <div class="camera-offline-msg">Camera connecting…</div>`;
+  const pollUrl = getLiveLatestFrameUrl();
+  const usePoll = !!(liveDeskNeedsJpegPolling() && pollUrl);
+
+  if (state.liveMode && backend.cameraOk && (liveUrl || pollUrl)) {
+    if (usePoll) {
+      primary.innerHTML = `
+      <div class="live-video-wrap">
+        <img alt="Live desk" class="live-video-full" decoding="async"
+          src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+        <canvas class="live-detection-overlay" aria-hidden="true"></canvas>
+        <div class="camera-offline-msg">Camera connecting…</div>
+      </div>`;
+      const img = primary.querySelector('.live-video-full');
+      const offline = primary.querySelector('.camera-offline-msg');
+      const period = state.liveViewMode === 'clean' ? 90 : 160;
+      const tick = () => {
+        if (state.currentScreen !== 'camera' || !state.liveMode || !backend?.cameraOk) return;
+        const base = getLiveLatestFrameUrl();
+        if (!base) return;
+        img.src = `${base}?t=${Date.now()}`;
+      };
+      img.onload = () => {
+        if (offline) offline.style.display = 'none';
+        requestAnimationFrame(syncLiveOverlayCanvas);
+      };
+      img.onerror = () => {
+        if (offline) offline.style.display = 'flex';
+      };
+      tick();
+      liveFramePollTimer = setInterval(tick, period);
+    } else {
+      primary.innerHTML = `
+      <div class="live-video-wrap">
+        <img src="${liveUrl}" alt="Live desk" class="live-video-full" decoding="async"
+          onerror="this.style.display='none';this.closest('.live-video-wrap').querySelector('.camera-offline-msg').style.display='flex'"
+          onload="const w=this.closest('.live-video-wrap');if(w){const m=w.querySelector('.camera-offline-msg');if(m)m.style.display='none';} requestAnimationFrame(syncLiveOverlayCanvas);">
+        <canvas class="live-detection-overlay" aria-hidden="true"></canvas>
+        <div class="camera-offline-msg">Camera connecting…</div>
+      </div>`;
+      const imgM = primary.querySelector('.live-video-full');
+      liveMjpegFailSafeTimer = setTimeout(() => {
+        liveMjpegFailSafeTimer = null;
+        if (state.currentScreen !== 'camera' || !state.liveMode) return;
+        if (imgM && imgM.naturalWidth < 2 && pollUrl) {
+          state.liveStreamPreferPoll = true;
+          setupCameraView();
+        }
+      }, 3500);
+    }
   } else {
     const demo = document.getElementById('camera-topdown');
     primary.innerHTML = '';
@@ -662,6 +1007,7 @@ async function pollDetections() {
   }
   const d = await backend.getDetections();
   if (!d) return;
+  state.lastDetections = d;
   const det = Object.keys(d.objects || {});
   const extraN = (d.extras && d.extras.length) || 0;
   const total = det.length + (extraN || 0);
@@ -677,6 +1023,7 @@ async function pollDetections() {
   if (state.currentScreen === 'camera') {
     renderLiveDetectionsBar(d);
     renderLiveRisksBar(sd);
+    requestAnimationFrame(syncLiveOverlayCanvas);
   }
 }
 
@@ -700,34 +1047,60 @@ function replyQuoteHtml(replyTo) {
 /** Order of character cards in the chat list. */
 const CHATLIST_ORDER = ['monty', 'glug', 'munch', 'sheets'];
 
-// ————— Chat List — Surface banner + card rows (scales to any number) —————
+// ————— Home / Characters / Habits — fewer top-level choices, all features still reachable —————
 function renderChatList() {
   const ids = CHATLIST_ORDER.filter((id) => CHARACTERS[id]);
   const uGroup = state.unread.group || 0;
-
   const lastGroupMsg = state.groupMessages.length
     ? state.groupMessages[state.groupMessages.length - 1] : null;
   const groupPreview = lastGroupMsg
-    ? `<span class="surface-preview">${CHARACTERS[lastGroupMsg.charId]?.name || ''}: ${escapeHtml(lastGroupMsg.text.slice(0, 50))}</span>`
-    : `<span class="surface-preview surface-preview--dim">No messages yet</span>`;
+    ? `<span class="surface-preview">${CHARACTERS[lastGroupMsg.char]?.name || ''}: ${escapeHtml(lastGroupMsg.text.slice(0, 50))}</span>`
+    : `<span class="surface-preview surface-preview--dim">The objects will talk here when something happens.</span>`;
 
-  const surfaceHtml = `
-    <button type="button" class="surface-banner" data-chat="group" aria-label="Open group chat">
-      <div class="surface-left">
-        <div class="surface-dots" aria-hidden="true">
-          ${ids.slice(0, 4).map(id => `<span class="surface-dot surface-dot--${id}">${CHAR_SVGS[id]}</span>`).join('')}
+  chatlistContent.innerHTML = `
+    <div class="home-stack">
+      <section class="home-hero">
+        <div class="home-hero-faces" aria-hidden="true">
+          ${ids.map(id => `<span class="home-face home-face--${id}">${CHAR_SVGS[id] || CHARACTERS[id].icon}</span>`).join('')}
         </div>
-      </div>
-      <div class="surface-body">
-        <div class="surface-title-row">
-          <span class="surface-title">The Desk</span>
-          <span class="surface-badge ${uGroup > 0 ? '' : 'hidden'}">${uGroup > 9 ? '9+' : uGroup}</span>
-        </div>
-        ${groupPreview}
-      </div>
-      <svg class="surface-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
-    </button>`;
+        <p class="home-kicker">Desk Talk</p>
+        <h2>The objects on your desk are alive.</h2>
+        <p>They notice danger, complain about habits, and talk to each other like a tiny group chat.</p>
+      </section>
 
+      <button type="button" class="surface-banner home-primary-card" data-chat="group" aria-label="Open object group chat">
+        <div class="surface-left">
+          <div class="surface-dots" aria-hidden="true">
+            ${ids.slice(0, 4).map(id => `<span class="surface-dot surface-dot--${id}">${CHAR_SVGS[id]}</span>`).join('')}
+          </div>
+        </div>
+        <div class="surface-body">
+          <div class="surface-title-row">
+            <span class="surface-title">Object group chat</span>
+            <span class="surface-badge ${uGroup > 0 ? '' : 'hidden'}">${uGroup > 9 ? '9+' : uGroup}</span>
+          </div>
+          ${groupPreview}
+        </div>
+        <svg class="surface-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+
+      <div class="home-link-row">
+        <button type="button" class="home-link-btn" data-screen="camera">Open live desk</button>
+        <button type="button" class="home-link-btn" data-screen="captures">Recent captures</button>
+      </div>
+    </div>`;
+
+  chatlistContent.querySelector('.surface-banner')?.addEventListener('click', () => {
+    state.unread.group = 0;
+    navigateTo('chat', 'group');
+  });
+  chatlistContent.querySelectorAll('.home-link-btn').forEach((btn) => {
+    btn.addEventListener('click', () => navigateTo(btn.dataset.screen));
+  });
+}
+
+function renderCharactersScreen() {
+  const ids = CHATLIST_ORDER.filter((id) => CHARACTERS[id]);
   const cardsHtml = ids.map((id, i) => {
     const ch = CHARACTERS[id];
     const u = state.unread[id] || 0;
@@ -755,20 +1128,91 @@ function renderChatList() {
     </button>`;
   }).join('');
 
-  chatlistContent.innerHTML = `
+  charactersContent.innerHTML = `
     <div class="chatlist-cards">
-      ${surfaceHtml}
-      <div class="chatlist-divider"><span>Private Chats</span></div>
+      <div class="characters-intro">Pick an object for a 1-on-1 chat, or go back to Home for the shared room.</div>
       ${cardsHtml}
     </div>`;
 
-  chatlistContent.querySelectorAll('.surface-banner, .chat-card').forEach((el) => {
+  charactersContent.querySelectorAll('.chat-card').forEach((el) => {
     el.addEventListener('click', () => {
       const id = el.dataset.chat;
       if (!id) return;
       state.unread[id] = 0;
       navigateTo('chat', id);
     });
+  });
+}
+
+async function renderHabitsScreen() {
+  if (!customHabitState) loadCustomHabits();
+  const items = customHabitState.items || [];
+  const data = (state.liveMode && backend?.baseUrl) ? await backend.getHabitLog('all', 20) : null;
+  const summary = data?.summary || {};
+  const autoRows = [
+    { label: 'Nail biting detected', value: summary.nail_biting_count_today ?? 0 },
+    { label: 'Slouching minutes', value: Math.round((summary.posture_bad_seconds_today || 0) / 60) },
+    { label: 'Screen breaks', value: summary.breaks_today ?? (widgetStore.monty?.breaks_today || 0) },
+  ];
+  const logHtml = (data?.events || []).slice(0, 8).map((ev) => {
+    const t = new Date((ev.ts || 0) * 1000).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    return `<div class="habit-log-row habit-screen-row">
+      <div class="habit-log-body">
+        <span class="habit-log-time">${escapeHtml(t)}</span>
+        <span class="habit-log-line">${escapeHtml(ev.title || '')}</span>
+        ${ev.detail ? `<span class="habit-log-detail">${escapeHtml(ev.detail)}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  habitsContent.innerHTML = `
+    <div class="habits-stack">
+      <section class="settings-section habit-screen-card">
+        <div class="settings-section-title">Today</div>
+        <div class="habit-count-grid">
+          ${autoRows.map(r => `<div class="habit-count-card"><strong>${r.value}</strong><span>${escapeHtml(r.label)}</span></div>`).join('')}
+        </div>
+      </section>
+      <section class="settings-section habit-screen-card">
+        <div class="settings-section-title">Custom bad habits</div>
+        <div class="settings-subtitle">Track anything you want manually. These reset each day.</div>
+        <div class="custom-habit-list">
+          ${items.map((it, i) => `<div class="custom-habit-row">
+            <span>${escapeHtml(it.label)}</span>
+            <div class="custom-habit-controls">
+              <button type="button" data-action="dec" data-idx="${i}">-</button>
+              <strong>${it.count || 0}</strong>
+              <button type="button" data-action="inc" data-idx="${i}">+</button>
+              <button type="button" data-action="del" data-idx="${i}" aria-label="Delete">×</button>
+            </div>
+          </div>`).join('')}
+        </div>
+        <button type="button" class="add-rule-btn" id="btn-add-custom-habit">+ Add habit</button>
+      </section>
+      <section class="settings-section habit-screen-card">
+        <div class="settings-section-title">Vision log</div>
+        ${logHtml || '<div class="habit-log-empty">Live vision entries show up here when connected.</div>'}
+      </section>
+    </div>`;
+
+  habitsContent.querySelectorAll('[data-action]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const idx = +btn.dataset.idx;
+      const item = customHabitState.items[idx];
+      if (!item) return;
+      if (btn.dataset.action === 'inc') item.count = (item.count || 0) + 1;
+      if (btn.dataset.action === 'dec') item.count = Math.max(0, (item.count || 0) - 1);
+      if (btn.dataset.action === 'del') customHabitState.items.splice(idx, 1);
+      saveCustomHabits();
+      renderHabitsScreen();
+    });
+  });
+  habitsContent.querySelector('#btn-add-custom-habit')?.addEventListener('click', () => {
+    const label = window.prompt('Bad habit to track', '');
+    if (!label?.trim()) return;
+    customHabitState.items.push({ id: `custom_${Date.now()}`, label: label.trim().slice(0, 60), count: 0 });
+    saveCustomHabits();
+    renderHabitsScreen();
   });
 }
 
@@ -789,6 +1233,12 @@ function renderWidgetPanel(chatId) {
     panel.classList.add('hidden');
     panel.setAttribute('aria-hidden', 'true');
     return;
+  }
+  if (backend && state.liveMode) {
+    fetch(`${backend.baseUrl}/api/widget_event`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat: chatId, action: 'view' }),
+    }).catch(() => {});
   }
   const w = widgetStore[chatId];
   const ch = CHARACTERS[chatId];
@@ -813,7 +1263,7 @@ function renderTodoWidget(chatId, panel, ch, w) {
           <span>${escapeHtml(t.text)}</span>
         </label>
         <button type="button" class="chat-todo-del" data-idx="${i}" aria-label="Remove">×</button>
-      </li>`).join('') || '<li class="chat-todo-empty">Tap + to add tasks — Sheets will nag you about them.</li>'}</ul>
+      </li>`).join('') || '<li class="chat-todo-empty">Tap + to add tasks — Paper will nag you about them.</li>'}</ul>
     <button type="button" class="chat-todo-add">+ Add item</button>`;
   panel.querySelectorAll('.chat-todo-check').forEach(cb => {
     cb.onchange = () => { const idx = +cb.dataset.idx; if (w.items[idx]) { w.items[idx].done = cb.checked; saveWidgets(); pushWidgetToServer(chatId); } };
@@ -829,24 +1279,115 @@ function renderTodoWidget(chatId, panel, ch, w) {
   };
 }
 
+async function refreshMontyHabitPanel(panel) {
+  const metricsEl = panel.querySelector('#monty-petkit-metrics');
+  const hintEl = panel.querySelector('#monty-vlm-hint');
+  const logEl = panel.querySelector('#monty-habit-log');
+  if (!metricsEl || !logEl) return;
+  const w = widgetStore.monty || {};
+  const breaksLocal = w.breaks_today ?? 0;
+  if (!state.liveMode || !backend?.baseUrl) {
+    metricsEl.innerHTML = `
+      <div class="petkit-metric"><span class="petkit-metric-num">${breaksLocal}</span><span class="petkit-metric-label">Breaks today</span></div>
+      <div class="petkit-metric-div" aria-hidden="true"></div>
+      <div class="petkit-metric"><span class="petkit-metric-num">—</span><span class="petkit-metric-label">Posture min</span></div>
+      <div class="petkit-metric-div" aria-hidden="true"></div>
+      <div class="petkit-metric"><span class="petkit-metric-num">—</span><span class="petkit-metric-label">Nail cues</span></div>`;
+    if (hintEl) hintEl.textContent = 'Turn on Live + Ollama vision for posture minutes and nail cues in the log below.';
+    logEl.innerHTML = '<div class="habit-log-empty">Habit log appears when the server and vision are connected.</div>';
+    return;
+  }
+  const data = await backend.getHabitLog(montyHabitFilter, 42);
+  if (!data) {
+    metricsEl.innerHTML = '<div class="petkit-metric petkit-metric--dim"><span class="petkit-metric-num">…</span></div>';
+    return;
+  }
+  const s = data.summary || {};
+  const postureMin = Math.round((s.posture_bad_seconds_today || 0) / 60);
+  const nails = s.nail_biting_count_today ?? 0;
+  const br = s.breaks_today ?? breaksLocal;
+  metricsEl.innerHTML = `
+      <div class="petkit-metric"><span class="petkit-metric-num">${br}</span><span class="petkit-metric-label">Breaks today</span></div>
+      <div class="petkit-metric-div" aria-hidden="true"></div>
+      <div class="petkit-metric"><span class="petkit-metric-num">${postureMin}</span><span class="petkit-metric-label">Posture min</span></div>
+      <div class="petkit-metric-div" aria-hidden="true"></div>
+      <div class="petkit-metric"><span class="petkit-metric-num">${nails}</span><span class="petkit-metric-label">Nail cues</span></div>`;
+  const vs = data.vlm_state || {};
+  const bits = [];
+  if (vs.posture && vs.posture !== 'unknown') bits.push(`posture ${vs.posture}`);
+  if (vs.face_screen_distance && vs.face_screen_distance !== 'unknown') bits.push(`distance ${vs.face_screen_distance}`);
+  if (vs.phone && vs.phone !== 'none') bits.push(`phone ${vs.phone}`);
+  if (hintEl) hintEl.textContent = bits.length ? `Latest desk check: ${bits.join(' · ')}` : 'Latest desk check: waiting for the next vision pass…';
+
+  const evs = data.events || [];
+  logEl.innerHTML = evs.length ? evs.map((ev) => {
+    const t = new Date((ev.ts || 0) * 1000);
+    const tim = t.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    const surl = ev.snapshot_id ? backend.snapshotUrl(ev.snapshot_id) : '';
+    const thumb = surl
+      ? `<button type="button" class="habit-log-thumb" data-snap="${escapeHtml(surl)}"><img src="${escapeHtml(surl)}" alt=""></button>`
+      : '<div class="habit-log-thumb habit-log-thumb--empty" aria-hidden="true"></div>';
+    return `<div class="habit-log-row">
+      ${thumb}
+      <div class="habit-log-body">
+        <span class="habit-log-time">${escapeHtml(tim)}</span>
+        <span class="habit-log-line">${escapeHtml(ev.title || '')}</span>
+        ${ev.detail ? `<span class="habit-log-detail">${escapeHtml(ev.detail)}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('') : '<div class="habit-log-empty">No entries yet — slouch segments (after you sit tall again) and nail cues from vision show up here.</div>';
+
+  logEl.querySelectorAll('.habit-log-thumb[data-snap]').forEach((btn) => {
+    btn.addEventListener('click', () => openSnapshot(btn.dataset.snap));
+  });
+}
+
 function renderBreakWidget(chatId, panel, ch, w) {
+  clearMontyHabitPoll();
   const ago = timeSince(w.last_break);
   const autoLabel = state.liveMode ? '<span class="widget-auto-tag">Auto-detect on</span>' : '';
   panel.innerHTML = `
-    <div class="widget-head"><span>${ch.name} · break timer</span>${autoLabel}</div>
-    <div class="widget-body widget-break">
-      <div class="widget-stat-row">
-        <div class="widget-stat"><span class="widget-stat-num">${w.breaks_today}</span><span class="widget-stat-label">breaks today</span></div>
+    <div class="widget-head"><span>${ch.name} · wellness tracker</span>${autoLabel}</div>
+    <div class="widget-body widget-break widget-break--petkit">
+      <div id="monty-petkit-metrics" class="petkit-metrics-bar"></div>
+      <p id="monty-vlm-hint" class="monty-vlm-hint"></p>
+      <div class="widget-stat-row widget-stat-row--secondary">
         <div class="widget-stat"><span class="widget-stat-num">${ago || '—'}</span><span class="widget-stat-label">last break</span></div>
       </div>
-      <span class="widget-sub">${state.liveMode ? 'Logged when you leave for 5+ min' : 'Connect to auto-detect breaks'}</span>
-      <button type="button" class="widget-action-btn widget-break-btn widget-btn-secondary">+ Log manually</button>
+      <span class="widget-sub">${state.liveMode ? 'Breaks: logged when you leave the desk 5+ min · Habits: Ollama reads the webcam periodically' : 'Connect Live for auto breaks and the habit log'}</span>
+      <button type="button" class="widget-action-btn widget-break-btn widget-btn-secondary">+ Log break manually</button>
+      <div class="habit-log-section">
+        <div class="habit-log-section-head">
+          <span class="habit-log-section-title">Today's habits</span>
+          <div class="monty-habit-chips habit-chips" role="tablist">
+            <button type="button" class="habit-chip ${montyHabitFilter === 'all' ? 'is-active' : ''}" data-filter="all">All</button>
+            <button type="button" class="habit-chip ${montyHabitFilter === 'posture_bad' ? 'is-active' : ''}" data-filter="posture_bad">Posture</button>
+            <button type="button" class="habit-chip ${montyHabitFilter === 'nail_biting' ? 'is-active' : ''}" data-filter="nail_biting">Nails</button>
+          </div>
+        </div>
+        <div id="monty-habit-log" class="monty-habit-log"></div>
+      </div>
     </div>`;
   panel.querySelector('.widget-break-btn').onclick = () => {
     w.last_break = new Date().toISOString(); w.breaks_today++; w.day = todayKey();
     saveWidgets(); renderWidgetPanel(chatId); pushWidgetToServer(chatId);
     addIndividualMessage(chatId, randomPick(['Nice! Stretch those wrists.', 'Break logged — your eyes thank you.', 'Good call. Roll those shoulders too.', 'Screen break! Look at something 20 feet away for 20 seconds.']));
   };
+  const chips = panel.querySelector('.monty-habit-chips');
+  chips?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.habit-chip');
+    if (!chip?.dataset?.filter) return;
+    montyHabitFilter = chip.dataset.filter;
+    panel.querySelectorAll('.habit-chip').forEach((c) => c.classList.toggle('is-active', c.dataset.filter === montyHabitFilter));
+    refreshMontyHabitPanel(panel);
+  });
+  refreshMontyHabitPanel(panel);
+  if (state.liveMode && chatId === 'monty') {
+    state.montyHabitPollTimer = setInterval(() => {
+      if (state.currentScreen === 'chat' && state.currentChat === 'monty')
+        refreshMontyHabitPanel(panel);
+    }, 14000);
+  }
 }
 
 function renderSipWidget(chatId, panel, ch, w) {
@@ -951,20 +1492,19 @@ function setupChatScreen(chatId) {
   if (chatId === 'group') {
     const todoPanel = document.getElementById('chat-todo-panel');
     if (todoPanel) { todoPanel.classList.add('hidden'); todoPanel.setAttribute('aria-hidden', 'true'); }
-    chatHeaderName.textContent = 'The Desk';
+    chatHeaderName.textContent = 'Object group chat';
     chatHeaderIcon.innerHTML = CHAR_SVGS.group || '';
     if (sub) {
-      sub.textContent = 'Shared channel — not something the camera tracks as an object.';
+      sub.textContent = 'The desk objects talk to you and to each other.';
       sub.classList.remove('hidden');
     }
     if (realLifeEl) {
-      realLifeEl.textContent = 'Real life: everyone pipes up when two props get too close — the room isn’t a prop.';
+      realLifeEl.textContent = 'Live camera drawer below: open it to see what the objects are reacting to.';
       realLifeEl.classList.remove('hidden');
     }
   } else {
     const ch = CHARACTERS[chatId];
-    const habit = HABIT_AREAS[chatId] || '';
-    chatHeaderName.innerHTML = `${escapeHtml(ch.name)}${habit ? `<span class="chat-header-habit">${escapeHtml(habit)}</span>` : ''}`;
+    chatHeaderName.textContent = ch.name;
     chatHeaderIcon.innerHTML = CHAR_SVGS[chatId] || '';
     if (sub) {
       sub.textContent = ch.mission || '';
@@ -1015,24 +1555,25 @@ function buildMessageHtml(m, isGroup, chatId) {
       ${isGroup ? `<div class="msg-sender sender-${cid}">${ch.name}</div>` : ''}
       ${reply}
       <div class="msg-bubble ${ch.bubbleClass} bv-${bv}">${formatMessageText(m.text)}${snapshotHtml(m.snapshot)}${prog}</div>
+      ${lostCtaHtml(m.cta)}
     </div>
   </div>`;
 }
 
-function addGroupMessage(charId, text, silent = false, snapshot = null, replyTo = null) {
-  const m = { char: charId, text, time: Date.now(), from: 'char', snapshot, replyTo };
+function addGroupMessage(charId, text, silent = false, snapshot = null, replyTo = null, cta = null) {
+  const m = { char: charId, text, time: Date.now(), from: 'char', snapshot, replyTo, cta };
   state.groupMessages.push(m);
   if (state.currentScreen === 'chat' && state.currentChat === 'group') appendMessageToDOM(m, true);
-  else if (!silent) { state.unread.group++; if (state.currentScreen === 'chatlist') renderChatList(); }
+  else if (!silent) { state.unread.group++; refreshActivePrimaryList(); }
   if (text.includes('@user') && !(state.currentScreen === 'chat' && state.currentChat === 'group'))
     showToast(CHARACTERS[charId].icon, `${CHARACTERS[charId].name}: ${text}`);
 }
 
-function addIndividualMessage(charId, text, progress = null, snapshot = null, replyTo = null) {
-  const m = { text, time: Date.now(), from: 'char', progress, snapshot, replyTo };
+function addIndividualMessage(charId, text, progress = null, snapshot = null, replyTo = null, cta = null) {
+  const m = { text, time: Date.now(), from: 'char', progress, snapshot, replyTo, cta };
   state.individualMessages[charId].push(m);
   if (state.currentScreen === 'chat' && state.currentChat === charId) appendMessageToDOM(m, false, charId);
-  else { state.unread[charId]++; if (state.currentScreen === 'chatlist') renderChatList(); }
+  else { state.unread[charId]++; refreshActivePrimaryList(); }
   if (text.includes('@user') && !(state.currentScreen === 'chat' && state.currentChat === charId))
     showToast(CHARACTERS[charId].icon, `${CHARACTERS[charId].name}: ${text}`);
 }
@@ -1053,10 +1594,10 @@ async function addUserMessage(text) {
     if (response?.messages) {
       for (const r of response.messages) {
         showTypingIndicator(r.character || chatId);
-        await sleep(1200 + Math.random() * 1000);
+        await sleep(500 + Math.random() * 500);
         removeTypingIndicator();
-        if (chatId === 'group') addGroupMessage(r.character, r.text);
-        else addIndividualMessage(r.character || chatId, r.text);
+        if (chatId === 'group') addGroupMessage(r.character, r.text, false, null, r.reply_to || null, r.cta);
+        else addIndividualMessage(r.character || chatId, r.text, null, null, r.reply_to || null, r.cta);
       }
       if (response.actions && chatId !== 'group') {
         processServerActions(chatId, response.actions);
@@ -1070,11 +1611,11 @@ async function addUserMessage(text) {
 }
 
 const OFFLINE_HINTS = {
-  group: 'Connect the server for live cross-object chatter — The Desk is the room, not a mug or snack bag.',
-  monty: 'Live mode: Monty tracks your screen breaks. Tap the button above to log one!',
-  glug: 'Live mode: Glug counts your sips. Log hydration above — it feeds into AI replies.',
-  munch: 'Live mode: Munch logs snacks. Add what you ate above and he judges your choices.',
-  sheets: 'Live mode: Sheets nags your tasks — add items above, they feed into AI replies.',
+  group: 'Connect the server for live cross-object chatter — the objects can answer each other.',
+  monty: 'Live mode: Computer tracks your screen breaks and posture.',
+  glug: 'Live mode: Cup counts sips and watches for spill risk.',
+  munch: 'Live mode: Snack logs food and judges crumbs.',
+  sheets: 'Live mode: Paper tracks tasks and lost-object clues.',
 };
 
 function offlineResponse(chatId) {
@@ -1135,6 +1676,9 @@ const drawerStatus = $('#drawer-status');
 const drawerDetStrip = $('#drawer-detection-strip');
 let drawerOpen = false;
 let drawerPollTimer = null;
+let liveFramePollTimer = null;
+let drawerFramePollTimer = null;
+let liveMjpegFailSafeTimer = null;
 
 async function loadDrawerSnapshots() {
   const el = document.getElementById('drawer-snapshots');
@@ -1173,23 +1717,45 @@ function toggleDrawer() {
     loadDrawerSnapshots();
   } else {
     stopDrawerPolling();
+    stopDrawerFramePoll();
   }
 }
 
 function setupDrawerFeeds() {
+  stopDrawerFramePoll();
   if (!state.liveMode || !backend.cameraOk) {
     drawerFeeds.innerHTML = '<div class="drawer-camera-feed"><div class="camera-offline-msg">No camera connected</div></div>';
     return;
   }
   const idx = backend.cameraIndices[0] || 0;
   drawerFeeds.className = '';
-  drawerFeeds.innerHTML = `
+  const pollBase = `${backend.baseUrl}/api/latest_frame/${idx}`;
+  if (liveDeskNeedsJpegPolling()) {
+    drawerFeeds.innerHTML = `
+    <div class="drawer-camera-feed">
+      <img alt="Live desk" class="live-video-img" decoding="async"
+        src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+      <div class="camera-offline-msg">Connecting...</div>
+    </div>`;
+    const img = drawerFeeds.querySelector('.live-video-img');
+    const offline = drawerFeeds.querySelector('.camera-offline-msg');
+    const tick = () => {
+      if (!state.liveMode || !drawerOpen) return;
+      img.src = `${pollBase}?t=${Date.now()}`;
+    };
+    img.onload = () => { if (offline) offline.style.display = 'none'; };
+    img.onerror = () => { if (offline) offline.style.display = ''; };
+    tick();
+    drawerFramePollTimer = setInterval(tick, 220);
+  } else {
+    drawerFeeds.innerHTML = `
     <div class="drawer-camera-feed">
       <img src="${backend.baseUrl}/api/video_feed/${idx}" alt="Live desk" class="live-video-img"
         onerror="this.style.display='none';this.nextElementSibling.style.display=''"
         onload="this.nextElementSibling.style.display='none'">
       <div class="camera-offline-msg">Connecting...</div>
     </div>`;
+  }
 }
 
 function startDrawerPolling() {
@@ -1244,6 +1810,12 @@ function formatMessageText(t) {
     return match;
   });
   return s.replace(/\n/g, '<br>');
+}
+function lostCtaHtml(cta) {
+  if (!cta || !cta.action || !cta.label) return '';
+  const label = escapeHtml(cta.label);
+  const act = escapeHtml(cta.action);
+  return `<div class="msg-cta-wrap"><button type="button" class="msg-cta-btn" data-action="${act}">${label}</button></div>`;
 }
 function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 function scrollToBottom() { requestAnimationFrame(() => { chatMessages.scrollTop = chatMessages.scrollHeight; }); }
@@ -1556,12 +2128,17 @@ async function saveRules() {
 }
 
 // ————— Listeners —————
-$('#btn-settings').addEventListener('click', () => navigateTo('settings'));
+document.querySelectorAll('.bottom-nav-btn[data-screen]').forEach((btn) => {
+  btn.addEventListener('click', () => navigateTo(btn.dataset.screen));
+});
+document.getElementById('btn-settings')?.addEventListener('click', () => navigateTo('settings'));
 $('#btn-settings-back').addEventListener('click', () => navigateTo('chatlist'));
 $('#btn-camera').addEventListener('click', () => navigateTo('camera'));
+document.getElementById('btn-captures')?.addEventListener('click', () => navigateTo('captures'));
+document.getElementById('btn-captures-back')?.addEventListener('click', () => navigateTo('chatlist'));
 const goLiveBtn = document.getElementById('btn-go-live');
 if (goLiveBtn) goLiveBtn.addEventListener('click', () => navigateTo('camera'));
-$('#btn-back').addEventListener('click', () => navigateTo('chatlist'));
+$('#btn-back').addEventListener('click', () => navigateTo(state.currentChat === 'group' ? 'chatlist' : 'characters'));
 $('#btn-cam-back').addEventListener('click', () => {
   const b = state.liveBack || { screen: 'chatlist', chatId: null };
   navigateTo(b.screen, b.chatId);
@@ -1571,7 +2148,14 @@ chatInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') { e.preventDefault(); const t = chatInput.value.trim(); if (!t) return; chatInput.value = ''; addUserMessage(t); }
   if (e.key === 'Escape' && mentionActive) { hideMentionDropdown(); e.preventDefault(); }
 });
-chatInput.addEventListener('input', handleMentionInput);
+let _lastActivityPing = 0;
+function notifyTyping() {
+  const now = Date.now();
+  if (now - _lastActivityPing < 3000) return;  // throttle: at most one ping / 3s
+  _lastActivityPing = now;
+  if (backend) backend.pingActivity();
+}
+chatInput.addEventListener('input', (e) => { notifyTyping(); handleMentionInput(e); });
 $('#btn-mention').addEventListener('click', () => {
   fetchMentionOptions();
   const pos = chatInput.selectionStart || chatInput.value.length;
@@ -1599,6 +2183,43 @@ function finishSplash(targetChat = null) {
   }
 }
 
+/** Server can report `camera: false` until OpenCV finishes opening devices — poll briefly. */
+async function pollBackendCamera(maxMs = 26000, stepMs = 700) {
+  const t0 = Date.now();
+  let prevOk = backend.cameraOk;
+  while (state.liveMode && backend.connected && Date.now() - t0 < maxMs) {
+    if (backend.cameraOk) break;
+    await new Promise((r) => setTimeout(r, stepMs));
+    try {
+      const res = await fetchWithTimeout(`${backend.baseUrl}/api/status`, 4000);
+      if (!res.ok) continue;
+      const d = await res.json();
+      backend.cameraOk = !!d.camera;
+      backend.cameraIndices = Array.isArray(d.camera_indices) ? d.camera_indices : [];
+      backend.llmOk = !!d.llm;
+      backend.llmLabel = d.llm_label || '';
+
+      if (backend.cameraOk !== prevOk) {
+        prevOk = backend.cameraOk;
+        setupCameraView();
+        setupDrawerFeeds();
+        cameraDrawer.style.display = backend.cameraOk ? '' : 'none';
+        updateConnectionBadge();
+        if (state.currentScreen === 'camera') {
+          renderCameraStatus();
+          startDetectionPolling();
+        }
+      }
+    } catch (_) { /* network blip */ }
+  }
+  if (!backend.cameraOk && state.liveMode && backend.connected) {
+    console.warn(
+      '[Desk Talk] API is live but no camera — allow Camera access for Terminal/Python in macOS Settings, '
+      + 'try CAMERA_INDICES=0, and open http://127.0.0.1:5000 (not a downloaded file / file://).',
+    );
+  }
+}
+
 async function enterLiveMode() {
   const ok = await backend.connect();
   if (!ok) return false;
@@ -1611,12 +2232,20 @@ async function enterLiveMode() {
   setupDrawerFeeds();
   startDetectionPolling();
   startDrawerPolling();
+  if (!backend.cameraOk) void pollBackendCamera();
   return true;
 }
 
 function enterDemoMode() {
   stopDetectionPolling();
   stopDrawerPolling();
+  stopLiveFramePoll();
+  stopDrawerFramePoll();
+  if (liveMjpegFailSafeTimer) {
+    clearTimeout(liveMjpegFailSafeTimer);
+    liveMjpegFailSafeTimer = null;
+  }
+  state.liveStreamPreferPoll = false;
   backend.disconnect();
   state.liveMode = false;
   updateConnectionBadge();
@@ -1631,18 +2260,30 @@ async function init() {
   setInterval(updateStatusBarTime, 10000);
 
   loadWidgets();
+  loadCustomHabits();
   backend = new Backend();
+
+  // Wire splash first — must work even if connect/sync hangs or fails (otherwise Get Started does nothing).
+  document.getElementById('splash-start')?.addEventListener('click', () => finishSplash());
+  document.querySelectorAll('.splash-pill[data-chat]').forEach((pill) => {
+    pill.addEventListener('click', () => finishSplash(pill.dataset.chat));
+  });
 
   const toggleInput = document.getElementById('mode-toggle-input');
   const toggleLabel = document.getElementById('mode-toggle-label');
 
+  if (window.location.protocol === 'file:') {
+    console.warn('[Desk Talk] Open http://127.0.0.1:5000 in the browser — file:// cannot reach the Flask API.');
+  }
+
   const serverAvailable = await backend.connect();
   if (serverAvailable) {
     state.liveMode = true;
-    await syncAllWidgetsToServer();
+    void syncAllWidgetsToServer();
     console.log('[Desk Talk] Connected —', backend.llmLabel, '— cameras:', backend.cameraIndices);
     if (toggleInput) toggleInput.checked = true;
     if (toggleLabel) toggleLabel.textContent = 'Live';
+    if (!backend.cameraOk) void pollBackendCamera();
   } else {
     state.liveMode = false;
     console.log('[Desk Talk] No server — demo mode');
@@ -1672,7 +2313,10 @@ async function init() {
 
   updateConnectionBadge();
   updateGreeting();
-  cameraDrawer.style.display = (state.liveMode && backend.cameraOk) ? '' : 'none';
+  updateBottomNav(state.currentScreen);
+  if (cameraDrawer) {
+    cameraDrawer.style.display = (state.liveMode && backend.cameraOk) ? '' : 'none';
+  }
 
   const camIconBtn = document.getElementById('btn-camera');
   if (camIconBtn && camIconBtn.classList.contains('icon-detailed-camera')) {
@@ -1681,11 +2325,10 @@ async function init() {
 
   attachSwipeLiveChat();
 
-  const startBtn = document.getElementById('splash-start');
-  if (startBtn) startBtn.addEventListener('click', () => finishSplash());
-
-  document.querySelectorAll('.splash-pill[data-chat]').forEach(pill => {
-    pill.addEventListener('click', () => finishSplash(pill.dataset.chat));
+  chatMessages?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.msg-cta-btn');
+    if (!btn || btn.dataset.action !== 'captures') return;
+    navigateTo('captures');
   });
 }
 document.addEventListener('DOMContentLoaded', init);

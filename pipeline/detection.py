@@ -3,7 +3,7 @@ pipeline/detection.py — Object Recognition stage.
 
 Chart stage: "Object Recognition (real time)"
 
-Runs YOLOv8 on a frame, filters to TARGET_CLASSES, and returns
+Runs YOLO26 on a frame, filters to TARGET_CLASSES, and returns
 structured detection results with bounding boxes and center points.
 """
 

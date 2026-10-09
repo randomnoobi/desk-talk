@@ -1,5 +1,5 @@
 {
-    "_comment": "Desk Talk — Relationship Detection Config",
+    "_comment": "Desk Talk \u2014 Relationship Detection Config",
     "_instructions": [
         "danger_zones: expanded bounding-box zones around protected objects (expand = px on each side).",
         "  Alerts only for 'meaningful' intruders: see zone_danger_intruders in relationships.py defaults",
@@ -10,31 +10,45 @@
         "  objects = which YOLO classes are checked.",
         "chain_reaction / temporal: tuning for advanced detectors."
     ],
-
     "danger_zones": {
-        "laptop":     { "expand": 80,  "label": "Spill / pressure zone" },
-        "keyboard":   { "expand": 60,  "label": "Crumb / debris zone" },
-        "book":       { "expand": 45,  "label": "Stacking zone" },
-        "cell phone": { "expand": 35,  "label": "Screen scratch zone" }
+        "book": {
+            "expand": 45,
+            "label": "Stacking zone"
+        },
+        "cell phone": {
+            "expand": 35,
+            "label": "Screen scratch zone"
+        },
+        "keyboard": {
+            "expand": 60,
+            "label": "Crumb / debris zone"
+        },
+        "laptop": {
+            "expand": 134,
+            "label": "Spill / pressure zone"
+        }
     },
-
     "edge_proximity": {
         "danger_px": 35,
-        "warn_px": 75,
-        "objects": ["cup", "bottle", "cell phone", "laptop", "remote", "mouse"]
+        "objects": [
+            "cup",
+            "bottle",
+            "cell phone",
+            "laptop",
+            "remote",
+            "mouse"
+        ],
+        "warn_px": 75
     },
-
     "chain_reaction": {
-        "crowd_radius_px": 140,
-        "crowd_min_objects": 3
+        "crowd_min_objects": 3,
+        "crowd_radius_px": 140
     },
-
     "temporal": {
         "approach_min_frames": 8,
         "approach_rate": 0.12,
         "repeated_intrusion_threshold": 3
     },
-
     "_supported_objects_reference": [
         "Common COCO classes that YOLO can detect on a desk:",
         "cell phone, laptop, keyboard, mouse, remote, book,",

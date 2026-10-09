@@ -47,10 +47,10 @@
         <div class="splash-bg-wave"></div>
         <div class="splash-content">
           <div class="splash-pills">
-            <span class="splash-pill" data-chat="monty" style="--delay:0">💻 Monty</span>
-            <span class="splash-pill" data-chat="glug" style="--delay:1">☕ Glug</span>
-            <span class="splash-pill" data-chat="munch" style="--delay:3">🍕 Munch</span>
-            <span class="splash-pill" data-chat="sheets" style="--delay:4">📄 Sheets</span>
+            <span class="splash-pill" data-chat="monty" style="--delay:0">💻 Computer</span>
+            <span class="splash-pill" data-chat="glug" style="--delay:1">☕ Cup</span>
+            <span class="splash-pill" data-chat="munch" style="--delay:3">🍕 Snack</span>
+            <span class="splash-pill" data-chat="sheets" style="--delay:4">📄 Paper</span>
           </div>
           <h1 class="splash-title">What's your desk <em>really</em> thinking?</h1>
           <p class="splash-subtitle">swipe to find out</p>
@@ -66,12 +66,12 @@
         </div>
       </div>
 
-      <!-- ========== CHAT LIST SCREEN ========== -->
+      <!-- ========== HOME SCREEN ========== -->
       <div id="screen-chatlist" class="screen">
         <div class="screen-header chatlist-header">
           <div class="header-title-group">
             <span class="header-greeting" id="header-greeting">Good Morning!</span>
-            <h1 class="header-title">Your desk is talking.</h1>
+            <h1 class="header-title">Your objects are awake.</h1>
             <span class="connection-badge" id="connection-badge">Demo</span>
           </div>
           <div class="header-btns-group">
@@ -82,17 +82,38 @@
               </span>
               <span class="mode-toggle-label" id="mode-toggle-label">Live</span>
             </label>
-            <button class="header-btn settings-btn" id="btn-settings" aria-label="Safety rules settings">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-              </svg>
-            </button>
             <button type="button" class="header-btn camera-btn icon-detailed-camera" id="btn-camera" aria-label="Open live desk view">
               <!-- Filled by app.js: single detailed desk webcam icon -->
             </button>
           </div>
         </div>
         <div class="screen-content" id="chatlist-content">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+      <!-- ========== CHARACTERS SCREEN ========== -->
+      <div id="screen-characters" class="screen">
+        <div class="screen-header simple-tab-header">
+          <div class="header-title-group">
+            <span class="header-greeting">Characters</span>
+            <h1 class="header-title">Talk to each object.</h1>
+          </div>
+        </div>
+        <div class="screen-content" id="characters-content">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+      <!-- ========== HABITS SCREEN ========== -->
+      <div id="screen-habits" class="screen">
+        <div class="screen-header simple-tab-header">
+          <div class="header-title-group">
+            <span class="header-greeting">Habits</span>
+            <h1 class="header-title">Bad habit log.</h1>
+          </div>
+        </div>
+        <div class="screen-content habits-screen" id="habits-content">
           <!-- Rendered by JS -->
         </div>
       </div>
@@ -104,7 +125,7 @@
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="15 18 9 12 15 6"/>
             </svg>
-            <span class="back-label">Chats</span>
+            <span class="back-label">Home</span>
           </button>
           <div class="chat-header-info">
             <span class="chat-header-icon" id="chat-header-icon"></span>
@@ -126,6 +147,7 @@
         <div class="camera-drawer" id="camera-drawer">
           <div class="camera-drawer-handle" id="camera-drawer-handle">
             <span class="drawer-grip" aria-hidden="true"></span>
+              <span class="drawer-handle-label">Live camera drawer</span>
             <span class="drawer-handle-status" id="drawer-status"></span>
             <svg class="drawer-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="18 15 12 9 6 15"/>
@@ -158,6 +180,29 @@
         </div>
       </div>
 
+      <!-- ========== DESK CAPTURES (snapshot gallery) ========== -->
+      <div id="screen-captures" class="screen">
+        <div class="screen-header chat-header">
+          <button class="header-btn back-btn" id="btn-captures-back" aria-label="Back to chats">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+            <span class="back-label">Home</span>
+          </button>
+          <div class="chat-header-info">
+            <span class="chat-header-icon" aria-hidden="true">🖼️</span>
+            <div class="chat-header-titles">
+              <span class="chat-header-name">Desk captures</span>
+              <span class="chat-header-subline">Saved frames from the camera</span>
+            </div>
+          </div>
+          <div class="header-btn" style="width:22px"></div>
+        </div>
+        <div class="screen-content captures-screen" id="captures-content">
+          <p class="captures-loading">Loading…</p>
+        </div>
+      </div>
+
       <!-- ========== SETTINGS SCREEN (Safety Rules Editor) ========== -->
       <div id="screen-settings" class="screen">
         <div class="screen-header chat-header">
@@ -165,11 +210,11 @@
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="15 18 9 12 15 6"/>
             </svg>
-            <span class="back-label">Chats</span>
+            <span class="back-label">Home</span>
           </button>
           <div class="chat-header-info">
             <span class="chat-header-icon">⚙️</span>
-            <span class="chat-header-name">Safety Rules</span>
+            <span class="chat-header-name">Settings</span>
           </div>
           <div class="header-btn" style="width:22px"></div>
         </div>
@@ -216,14 +261,29 @@
           <div id="sim-camera-feeds" class="live-sim-hidden" aria-hidden="true">
             <div class="camera-view topdown" id="camera-topdown">
               <div class="desk-surface">
-                <div class="detected-object obj-monty" data-name="Monty 🖥️"><div class="detect-box"></div></div>
-                <div class="detected-object obj-glug" data-name="Glug 🥤"><div class="detect-box"></div></div>
-                <div class="detected-object obj-sheets" data-name="Sheets 📄"><div class="detect-box"></div></div>
+                <div class="detected-object obj-monty" data-name="Computer 🖥️"><div class="detect-box"></div></div>
+                <div class="detected-object obj-glug" data-name="Cup 🥤"><div class="detect-box"></div></div>
+                <div class="detected-object obj-sheets" data-name="Paper 📄"><div class="detect-box"></div></div>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      <nav class="bottom-nav" id="bottom-nav" aria-label="Primary">
+        <button type="button" class="bottom-nav-btn is-active" data-screen="chatlist" aria-label="Home">
+          <span class="bottom-nav-ico">⌂</span><span>Home</span>
+        </button>
+        <button type="button" class="bottom-nav-btn" data-screen="characters" aria-label="Characters">
+          <span class="bottom-nav-ico">◌</span><span>Characters</span>
+        </button>
+        <button type="button" class="bottom-nav-btn" data-screen="habits" aria-label="Habits">
+          <span class="bottom-nav-ico">#</span><span>Habits</span>
+        </button>
+        <button type="button" class="bottom-nav-btn" data-screen="settings" aria-label="Settings">
+          <span class="bottom-nav-ico">⚙</span><span>Settings</span>
+        </button>
+      </nav>
 
       <!-- Home indicator -->
       <div class="home-indicator"></div>

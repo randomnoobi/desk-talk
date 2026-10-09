@@ -49,7 +49,7 @@ if (navToggle && navEl) {
 
 // ═══ Scroll spy: nav + Contents sidebar + read progress bar ═══
 const SECTION_ORDER = [
-  'hero', 'product', 'desk-hero', 'scenarios', 'how-it-works', 'alerts', 'why', 'contact',
+  'hero', 'product', 'scenarios', 'how-it-works', 'alerts', 'why', 'demo', 'gallery', 'contact',
 ];
 
 function updateScrollUi() {
@@ -132,6 +132,7 @@ updateShowcaseParallax();
   if (!track) return;
 
   const slides = Array.from(track.querySelectorAll('.carousel-slide'));
+  if (slides.length === 0) return;
   const dots   = Array.from(document.querySelectorAll('.carousel-dot'));
   const prevBtn = document.querySelector('.carousel-prev');
   const nextBtn = document.querySelector('.carousel-next');
@@ -162,8 +163,11 @@ updateShowcaseParallax();
       leaving.classList.remove('exit-left', 'exit-right');
     }, 900);
 
-    dots.forEach(d => d.classList.remove('active'));
-    if (dots[idx]) dots[idx].classList.add('active');
+    dots.forEach((d, i) => {
+      const on = i === idx;
+      d.classList.toggle('active', on);
+      d.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
 
     current = idx;
     resetProgress();

@@ -6,7 +6,7 @@ This guide walks through training and testing the safety monitoring system in th
 
 ## Pre-built Model (Quick Start)
 
-The project ships with `yolov8n.pt` — YOLOv8 Nano, pre-trained on the COCO dataset (80 classes). This already detects `cell phone`, `laptop`, `cup`, `bottle`, `keyboard`, `book`, and many more.
+The project ships with `yolo26n.pt` — YOLO26 Nano, pre-trained on the COCO dataset (80 classes). This already detects `cell phone`, `laptop`, `cup`, `bottle`, `keyboard`, `book`, and many more.
 
 **For Stages 1-3 below, you do NOT need to train a custom model.** The pre-trained model handles phone and laptop detection out of the box.
 
@@ -43,7 +43,7 @@ Place a phone in front of the camera. You should see:
 ### If Detection is Poor
 - Try lowering confidence: `PIPELINE_CONFIDENCE=0.3`
 - Try better lighting
-- Try `yolov8s.pt` (more accurate, slower): set `PIPELINE_MODEL=yolov8s.pt`
+- Try `yolo26s.pt` (more accurate, slower): set `PIPELINE_MODEL=yolo26s.pt`
 
 ---
 
@@ -117,7 +117,7 @@ Run the pipeline and observe the distance values displayed on the preview window
 
 ## Custom Model Training (Advanced)
 
-If you need to detect objects not in the COCO dataset (e.g., power bank, specific cables), you'll need to train a custom YOLOv8 model.
+If you need to detect objects not in the COCO dataset (e.g., power bank, specific cables), you'll need to train a custom YOLO26 model.
 
 ### Dataset Folder Layout
 
@@ -178,7 +178,7 @@ names:
 ### Training Command
 
 ```bash
-yolo detect train data=dataset/data.yaml model=yolov8n.pt epochs=50 imgsz=640
+yolo detect train data=dataset/data.yaml model=yolo26n.pt epochs=50 imgsz=640
 ```
 
 ### Using Your Trained Model
