@@ -195,10 +195,13 @@ Minimalistic. The interface feels like a standard messaging app — familiar, li
 
 ### Key Screens
 
-1. **Chat List** — 9 rows: group chat + 8 individual character chats
-2. **Group Chat** — "The Desk" — all characters talk, colored bubbles, proof screenshots
-3. **Individual Chat** — 1-on-1 with any character, habit tracking, progress cards
-4. **Camera Feed** — Live YOLO-annotated video from all connected cameras with detection status
+One window on the computer, three columns:
+
+1. **Chats (left)** — "The desk" group chat plus a 1-on-1 chat with Computer, Cup, Snack, and Paper. Habits, Captures, and Settings sit underneath.
+2. **Conversation (middle)** — colored bubbles per character, proof photos, @mentions. Each 1-on-1 chat has its tracker on top (Paper's to-do list, Computer's breaks, Cup's sips, Snack's food log).
+3. **Desk cam (right)** — the phone's live video with YOLO boxes, what's on the desk, current risks, and recent proof photos. Shows a QR code until the phone connects.
+
+Characters are original SVG drawings in `app/art/` (flat cut-paper style with a grain texture).
 
 ---
 
@@ -254,9 +257,10 @@ The LLM generates 1-2 sentences that are 100% in-character. Templates serve as a
 
 | Layer | Technology |
 |-------|-----------|
-| Object Detection | YOLO26 (ultralytics) via webcams |
+| Object Detection | YOLO26 (ultralytics) on frames streamed from the phone camera |
+| Phone camera | Web page using `getUserMedia` + canvas JPEG, sent over HTTPS (self-signed cert) |
 | Backend | Flask (Python) — camera threads, event engine, LLM proxy |
-| Frontend | Vanilla HTML/CSS/JS — mobile chat simulation |
+| Frontend | Vanilla HTML/CSS/JS, desktop layout, Bricolage Grotesque font (bundled) |
 | LLM | Google Gemini (free tier) or OpenAI GPT — via OpenAI SDK |
 | Real-time | SSE (Server-Sent Events) for messages, MJPEG for video |
 | Detection | Temporal smoothing, spatial proximity analysis |
@@ -276,8 +280,13 @@ Habit Project/
 │   ├── index.html
 │   ├── style.css
 │   └── app.js
+├── phone/                    # Phone camera page (served over HTTPS to the phone)
+│   ├── index.html
+│   ├── phone.css
+│   └── phone.js
 ├── backend/
 │   ├── server.py             # Flask API, cameras, LLM, detection
+│   ├── phone_camera.py       # Phone frame source, HTTPS cert, QR code
 │   └── relationships.py      # Spatial relationship engine
 ├── config/
 │   └── safety_rules.json     # Per-pair thresholds + zone config
@@ -298,8 +307,8 @@ Habit Project/
 
 ### Prerequisites
 
-- Python 3.8+
-- A webcam (or two for full functionality)
+- Python 3.8–3.12
+- A phone on the same Wi-Fi as your computer (or a webcam with `CAMERA_SOURCE=webcam`)
 - (Optional) A Gemini API key (free tier available) or OpenAI API key
 
 ### Installation
@@ -319,10 +328,34 @@ cp .env.example .env
 python server.py
 
 # 3. Open http://localhost:5000 in your browser
+
+# 4. Scan the QR code (on the Home screen or in the terminal) with your phone
+#    → tap "Show Details → visit this website" on the privacy warning
+#    → tap Start camera and point the phone at your desk
 ```
 
+### How the phone camera works
+
+```
+Phone (Safari/Chrome)                          Computer (python server.py)
+┌──────────────────────┐   JPEG frames over    ┌───────────────────────────────┐
+│ phone/  page         │   Wi-Fi, ~10 per sec  │ phone_app  (HTTPS :5443)      │
+│ camera → canvas →    │ ────────────────────▶ │   POST /api/phone/frame       │
+│ JPEG → fetch() POST  │   HTTPS + pairing key │        ↓                      │
+└──────────────────────┘                       │ PhoneFrameSource → YOLO loop  │
+                                               │        ↓                      │
+                                               │ app (http://localhost:5000)   │
+                                               │   group chat UI + live view   │
+                                               └───────────────────────────────┘
+```
+
+- Phones only allow the camera on `https://` pages, so the server makes a self-signed certificate in `certs/` the first time it runs. That is why the phone shows a "not private" warning once.
+- The QR link includes a random pairing key, so other devices on the Wi-Fi can't send frames. Restarting the server makes a new key (scan again).
+- If the phone stops streaming for 3 seconds, analysis pauses so the characters don't react to an old frame.
+- `CAMERA_SOURCE=webcam` in `.env` switches back to a webcam plugged into the computer.
+
 The server:
-- Captures your webcam feed(s) and runs YOLO26 object detection
+- Receives your phone's camera feed (or a webcam) and runs YOLO26 object detection
 - Maps detected objects to 8 characters with temporal smoothing
 - Analyzes spatial relationships using data-driven proximity rules
 - Generates in-character messages via LLM with full relationship context
@@ -332,7 +365,7 @@ The server:
 
 ### Quick Start — Demo Mode (No Server)
 
-Just open `app/index.html` directly in your browser. The app runs a built-in simulation with all 8 characters. No camera or server needed.
+Open the GitHub Pages site, or serve the `app/` folder with any static server (`python -m http.server` inside `app/`). Without the Python server the app plays a short demo conversation. No camera needed.
 
 ### Standalone Camera Tools
 
@@ -356,7 +389,10 @@ GEMINI_MODEL=gemini-2.0-flash-lite
 OPENAI_API_KEY=your-key-here
 LLM_MODEL=gpt-4o-mini
 
-# Camera indices (comma-separated for multiple)
+# Camera: phone (default, streams over Wi-Fi) or webcam
+CAMERA_SOURCE=phone
+
+# Webcam indices when CAMERA_SOURCE=webcam (comma-separated for multiple)
 CAMERA_INDICES=0,1
 
 # Detection tuning

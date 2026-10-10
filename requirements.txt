@@ -1,8 +1,10 @@
 flask>=3.0
 flask-cors>=4.0
-opencv-python>=4.8,<4.12
-ultralytics>=8.0
+opencv-python>=4.8
+ultralytics>=8.3
 openai>=1.0
 python-dotenv>=1.0
 requests>=2.28
-numpy>=1.24,<2
+numpy>=1.24
+cryptography>=42.0
+qrcode>=7.4

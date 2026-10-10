@@ -1183,7 +1183,7 @@ section[id], footer[id], h2[id] {
   line-height: 1;
 }
 .scenario-title {
-  font-family: 'Newsreader', Georgia, serif;
+  font-family: var(--font-serif);
   font-size: 22px;
   font-weight: 600;
   color: var(--ink);
@@ -1314,7 +1314,7 @@ section[id], footer[id], h2[id] {
 
 /* ═══ Product landing (Desk Talk refresh) ═══ */
 body {
-  font-family: 'DM Sans', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
 }
 
 .hero--product {
@@ -1336,16 +1336,16 @@ body {
   margin: 0 0 1rem;
 }
 .hero-title--product {
-  font-family: 'DM Sans', 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-weight: 600;
   font-size: clamp(2.85rem, 7.5vw, 5.25rem);
   line-height: 1.02;
   letter-spacing: -0.04em;
-  color: #0a0a0a;
+  color: var(--ink);
   margin: 0 0 1.25rem;
 }
 .hero-accent {
-  color: #c2410c;
+  color: #2F5FD0;
 }
 .hero-lead {
   font-size: clamp(1.125rem, 2.4vw, 1.375rem);
@@ -1398,18 +1398,18 @@ body {
   position: absolute;
   inset: 0;
   z-index: 0;
-  background-color: #1a1a1a;
+  background-color: #E9EDF8;
   background-image:
     linear-gradient(
       165deg,
       rgba(255, 255, 255, 0.88) 0%,
       rgba(255, 255, 255, 0.38) 40%,
       rgba(255, 255, 255, 0.06) 72%,
-      rgba(0, 0, 0, 0.12) 100%
+      rgba(0, 0, 0, 0) 100%
     ),
-    url('assets/HabitProject_SplashImage.avif');
-  background-size: cover, cover;
-  background-position: center, center;
+    url('assets/desk-scene.svg');   /* original Desk Talk art (replaced a watermarked stock photo) */
+  background-size: cover, contain;
+  background-position: center, center bottom;
   background-repeat: no-repeat;
 }
 .product-main-band__scrim {
@@ -1442,7 +1442,7 @@ body {
   border-bottom: 1px solid var(--line);
 }
 .ref-h2--product {
-  font-family: 'DM Sans', 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-weight: 600;
   letter-spacing: -0.03em;
   font-size: clamp(2rem, 4vw, 2.95rem);
@@ -1457,7 +1457,7 @@ body {
   background: linear-gradient(105deg, rgba(8,8,10,0.55) 0%, rgba(8,8,10,0.2) 55%, rgba(8,8,10,0.35) 100%);
 }
 .showcase--scene .showcase-caption h2 {
-  font-family: 'DM Sans', 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-weight: 600;
   letter-spacing: -0.03em;
   text-shadow: 0 2px 24px rgba(0,0,0,0.35);
@@ -1515,7 +1515,7 @@ body {
   margin-bottom: 10px;
 }
 .scene-title {
-  font-family: 'DM Sans', 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-weight: 600;
   font-size: clamp(1.45rem, 2.8vw, 1.85rem);
   letter-spacing: -0.02em;
@@ -1567,7 +1567,7 @@ body {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink-soft);
-  font-family: 'DM Sans', 'Inter', sans-serif;
+  font-family: var(--font-sans);
 }
 .sheets-showcase-grid tbody td {
   border: 1px solid #e5e7eb;
@@ -1682,7 +1682,7 @@ body {
   margin: 0 auto;
 }
 .demo-live-slot__title {
-  font-family: 'DM Sans', 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-weight: 600;
   font-size: 1.125rem;
   color: var(--ink);
@@ -1749,10 +1749,10 @@ body {
   padding: 56px 48px 88px;
 }
 .carousel--product-bottom .slide-num {
-  font-family: 'DM Sans', 'Inter', sans-serif;
+  font-family: var(--font-sans);
 }
 .carousel--product-bottom .slide-info h3 {
-  font-family: 'DM Sans', 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-weight: 600;
   letter-spacing: -0.02em;
 }
@@ -1796,7 +1796,7 @@ body {
   box-shadow: 0 2px 24px rgba(0,0,0,0.04);
 }
 .flow-card__label {
-  font-family: 'DM Sans', 'Inter', sans-serif;
+  font-family: var(--font-sans);
   font-weight: 600;
   font-size: clamp(1.2rem, 2.4vw, 1.45rem);
   letter-spacing: -0.02em;
@@ -1870,3 +1870,23 @@ body {
   font-size: 1.05rem;
   color: var(--muted);
 }
+
+/* ========================================
+   Desk Talk v2 theme — matches the app
+   (Bricolage Grotesque, ink + cobalt, character art)
+   ======================================== */
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  src: url('assets/fonts/bricolage-grotesque.woff2') format('woff2');
+  font-weight: 200 800;
+  font-display: swap;
+}
+:root {
+  --ink: #2B2440;
+  --ink-soft: #2B2440;
+  --muted: rgba(43, 36, 64, 0.62);
+  --font-serif: 'Bricolage Grotesque', system-ui, sans-serif;
+  --font-sans: 'Bricolage Grotesque', system-ui, sans-serif;
+}
+body { font-variation-settings: 'opsz' 16; }
+h1, h2, h3 { font-variation-settings: 'opsz' 96; }
