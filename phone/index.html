@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2B2440">
+  <title>Desk Talk camera</title>
+  <link rel="icon" href="/art/desk.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/phone/phone.css">
+</head>
+<body>
+  <video id="preview" playsinline muted autoplay></video>
+  <canvas id="grab" hidden></canvas>
+
+  <header class="top">
+    <span class="brand">Desk Talk</span>
+    <span class="pill" id="status" data-state="idle">Not streaming</span>
+  </header>
+
+  <!-- Shown before the camera starts (and for errors) -->
+  <section class="card" id="intro">
+    <div class="cast" aria-hidden="true">
+      <img src="/art/computer.svg" alt=""><img src="/art/cup.svg" alt=""><img src="/art/snack.svg" alt=""><img src="/art/paper.svg" alt="">
+    </div>
+    <h1>Point this phone at your desk</h1>
+    <p>Your computer watches the video, and your desk objects start talking in the chat there.</p>
+    <ol>
+      <li>Lean the phone so it looks down at your desk.</li>
+      <li>Keep this page open while you work.</li>
+    </ol>
+    <button type="button" class="start" id="start">Start camera</button>
+    <p class="error" id="error" role="alert" hidden></p>
+  </section>
+
+  <!-- Shown while streaming -->
+  <footer class="controls" id="controls" hidden>
+    <span class="stats" id="stats">Starting…</span>
+    <button type="button" class="round" id="flip">Flip</button>
+    <button type="button" class="round stop" id="stop">Stop</button>
+  </footer>
+
+  <script src="/phone/phone.js"></script>
+</body>
+</html>

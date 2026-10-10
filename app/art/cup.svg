@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none"><defs><filter id="g" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
+<feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3" seed="7" result="n"/>
+<feColorMatrix in="n" type="saturate" values="0" result="g"/>
+<feComponentTransfer in="g" result="c"><feFuncR type="linear" slope="1.77" intercept="-0.39"/><feFuncG type="linear" slope="1.77" intercept="-0.39"/><feFuncB type="linear" slope="1.77" intercept="-0.39"/><feFuncA type="linear" slope="0" intercept="1"/></feComponentTransfer>
+<feBlend in="c" in2="SourceGraphic" mode="soft-light" result="t"/>
+<feComposite in="t" in2="SourceGraphic" operator="in"/></filter></defs><g filter="url(#g)">
+<path d="M19 23 C19.784 28.04 20.96 29.216 26 30 C20.96 30.784 19.784 31.96 19 37 C18.216 31.96 17.04 30.784 12 30 C17.04 29.216 18.216 28.04 19 23Z" fill="#EDB52C"/>
+<path d="M88.6 47.4C107.6 44.6 108.6 76.8 86.4 77.6" fill="none" stroke="#1F9A83" stroke-width="9.5" stroke-linecap="round"/>
+<path d="M29.6 33.8C50.4 30.6 71.4 31 90.6 33.6L86.6 94.4C86 100.8 81 104 74.6 104L46.6 104.2C40 104.2 35.2 100.8 34.6 94.4Z" fill="#1F9A83"/>
+<path d="M29.6 33.8C50.4 30.6 71.4 31 90.6 33.6C88.4 39.4 32.4 40 29.6 33.8Z" fill="#7FD6BE"/>
+<path d="M43 46C44 62 44.4 80 46.4 95M77.4 46C76.4 62 76 80 74 95" stroke="#14705F" stroke-width="2.6" stroke-linecap="round" fill="none"/>
+<ellipse cx="47.6" cy="67" rx="4.4" ry="2.4" fill="#EE8C9C"/>
+<ellipse cx="73" cy="67" rx="4.4" ry="2.4" fill="#EE8C9C"/>
+<path d="M54.6 25.4C48.6 21.4 58.6 17.4 53.6 11.4M68.6 26.4C62.6 22.4 72.6 18.4 67.6 12.4" stroke="#2BC08F" stroke-width="3.6" stroke-linecap="round" fill="none"/></g><path d="M46.6 56.6c3.2 4.4 7.4 4.4 10.6 0" fill="none" stroke="#2B2440" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M63.4 56.6c3.2 4.4 7.4 4.4 10.6 0" fill="none" stroke="#2B2440" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M48 60.4l-1.6 2.8M51.9 62l-.4 3.2M56 60.6l1.4 2.8" fill="none" stroke="#2B2440" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M64.8 60.4l-1.6 2.8M68.7 62l-.4 3.2M72.8 60.6l1.4 2.8" fill="none" stroke="#2B2440" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M55.4 74c3.2 3.4 6.6 3.4 9.8 0" fill="none" stroke="#2B2440" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>

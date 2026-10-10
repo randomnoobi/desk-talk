@@ -3,8 +3,13 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+.venv
+venv
 .env
 *.egg-info/
+
+# Local HTTPS certificate for the phone camera (made automatically, private key inside)
+certs/
 .eggs/
 
 # Large / local-only (GitHub file limit; use Releases or external hosting for video / weights)

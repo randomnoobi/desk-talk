@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none"><defs><filter id="g" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
+<feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3" seed="7" result="n"/>
+<feColorMatrix in="n" type="saturate" values="0" result="g"/>
+<feComponentTransfer in="g" result="c"><feFuncR type="linear" slope="1.77" intercept="-0.39"/><feFuncG type="linear" slope="1.77" intercept="-0.39"/><feFuncB type="linear" slope="1.77" intercept="-0.39"/><feFuncA type="linear" slope="0" intercept="1"/></feComponentTransfer>
+<feBlend in="c" in2="SourceGraphic" mode="soft-light" result="t"/>
+<feComposite in="t" in2="SourceGraphic" operator="in"/></filter></defs><g filter="url(#g)">
+<path d="M21.4 30.6C40.4 24.8 80.4 24.6 99.4 30.4L65 103.4C62.8 108 58 108 55.8 103.4Z" fill="#F4C84A"/>
+<path d="M17.6 22.6C39.6 13.8 80.6 13.6 102.6 22.4C105.4 25.8 104.6 31.4 100 32.6C80 25.8 40.6 26 20.6 32.8C16 31.6 15 26 17.6 22.6Z" fill="#D9963E"/>
+<circle cx="37.6" cy="40.4" r="6.4" fill="#9B2242"/>
+<circle cx="83.2" cy="41.6" r="5.6" fill="#9B2242"/>
+<circle cx="61" cy="88" r="5.2" fill="#9B2242"/>
+<path d="M50 85l3.6-2.4M70.6 76.6l2.4 3.4M43.8 51l3.6 1.2" stroke="#F0862A" stroke-width="3" stroke-linecap="round"/>
+<ellipse cx="44.6" cy="63" rx="4" ry="2.3" fill="#EE8C9C"/>
+<ellipse cx="76" cy="63" rx="4" ry="2.3" fill="#EE8C9C"/>
+<circle cx="24" cy="104" r="2.4" fill="#D9963E"/><circle cx="31" cy="110" r="1.8" fill="#D9963E"/><circle cx="94" cy="106" r="2.2" fill="#D9963E"/></g><path d="M46 54.6c2.2-4 6.2-4 8.4 0" fill="none" stroke="#2B2440" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M66.2 54.6c2.2-4 6.2-4 8.4 0" fill="none" stroke="#2B2440" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M49.8 62.4C55 63.6 65.6 63.6 70.8 62.4C70 70.8 64.8 75 60.3 75C55.8 75 50.6 70.8 49.8 62.4Z" fill="#2B2440"/><path d="M55 70.6C57.6 68.4 63 68.4 65.6 70.6C64 73.4 62.2 74.4 60.3 74.4C58.4 74.4 56.6 73.4 55 70.6Z" fill="#EE8C9C"/></svg>

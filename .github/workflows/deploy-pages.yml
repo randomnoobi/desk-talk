@@ -29,7 +29,7 @@ jobs:
         run: |
           set -e
           mkdir -p _pages/website
-          cp app/index.html app/style.css app/app.js _pages/
+          cp -r app/. _pages/          # index.html, style.css, app.js, art/, fonts/
           cp -r website/. _pages/website/
           touch _pages/.nojekyll
       - uses: actions/upload-pages-artifact@v3

@@ -78,7 +78,16 @@ def _camera_indices_from_env():
 
 
 CAMERA_INDICES = _camera_indices_from_env()
-YOLO_MODEL       = os.getenv('YOLO_MODEL', 'weights/yolo26n.pt')  # Ultralytics YOLO26 nano; auto-downloads if needed
+
+# Phone camera mode (default): the phone streams the desk over Wi-Fi instead of a USB webcam.
+# CAMERA_SOURCE=webcam switches back to the old OpenCV webcam behavior.
+CAMERA_SOURCE    = os.getenv('CAMERA_SOURCE', 'phone').strip().lower()
+PHONE_MODE       = CAMERA_SOURCE == 'phone'
+PHONE_PORT       = int(os.getenv('PHONE_PORT', '5443'))   # HTTPS port the phone connects to
+PHONE_CAM_IDX    = 0                                       # the phone shows up as camera 0
+if PHONE_MODE:
+    CAMERA_INDICES = [PHONE_CAM_IDX]
+YOLO_MODEL      = os.getenv('YOLO_MODEL', 'weights/yolo26n.pt')  # Ultralytics YOLO26 nano; auto-downloads if needed
 CONFIDENCE       = float(os.getenv('CONFIDENCE', '0.45'))
 # Cup/bottle/wine false positives are common; require higher conf to map → Cup.
 GLUG_MIN_CONF    = float(os.getenv('GLUG_MIN_CONF', '0.55'))
@@ -309,8 +318,17 @@ SAFETY_RULES_RAW = []  # original JSON rules for the /api/rules endpoint
 
 
 from relationships import RelationshipAnalyzer, load_config as load_rel_config
+from phone_camera import (
+    PhoneFrameSource, make_pair_key, lan_ip, ensure_cert, qr_svg, print_qr,
+)
 
 rel_analyzer = RelationshipAnalyzer()
+
+# Phone camera state (only used when PHONE_MODE is on)
+phone_source = PhoneFrameSource()
+PHONE_PAIR_KEY = make_pair_key()
+PHONE_STATIC = os.path.join(PROJECT_ROOT, 'phone')
+phone_url = ''          # filled in at startup, e.g. https://192.168.1.20:5443/phone?key=...
 
 
 def _load_safety_rules():
@@ -1111,17 +1129,23 @@ _YOLO_PREDICT_LOCK = threading.Lock()
 #  Camera threads + merger
 # ═══════════════════════════════════════════════════════════════════
 class CameraThread(threading.Thread):
-    def __init__(self, cam_idx, model):
+    def __init__(self, cam_idx, model, source=None):
         super().__init__(daemon=True)
         self.cam_idx = cam_idx
         self.model = model
+        # source: anything with a VideoCapture-style read() — e.g. PhoneFrameSource.
+        # None means "open a local webcam with OpenCV" (original behavior).
+        self.source = source
         self.local_objects = {}
         self.person_detected = False
         self.extra_detections = {}
 
     def run(self):
         preferred = self.cam_idx
-        cap, use_idx = discover_working_camera(preferred)
+        if self.source is not None:
+            cap, use_idx = self.source, self.cam_idx
+        else:
+            cap, use_idx = discover_working_camera(preferred)
         if cap is None:
             print(f'  [cam {preferred}] No camera produced frames after trying indices 0–3.')
             print('         → External USB webcams are often index 1:  PIPELINE_CAMERA=1  or  CAMERA_INDICES=1')
@@ -1148,9 +1172,13 @@ class CameraThread(threading.Thread):
             h, w = frame.shape[:2]
             desk.frame_w, desk.frame_h = w, h
 
-            _, br_live = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 78])
+            # The phone already sends JPEG, so reuse its bytes instead of encoding again.
+            raw_jpeg = getattr(cap, 'jpeg', None) if self.source is not None else None
+            if raw_jpeg is None:
+                _, br_live = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 78])
+                raw_jpeg = br_live.tobytes()
             with desk.lock:
-                desk.raw_frames[self.cam_idx] = br_live.tobytes()
+                desk.raw_frames[self.cam_idx] = raw_jpeg
 
             try:
                 with _YOLO_PREDICT_LOCK:
@@ -1271,6 +1299,13 @@ class DetectionMerger(threading.Thread):
 
     def run(self):
         while True:
+            if PHONE_MODE and not phone_source.connected:
+                # Phone isn't streaming (locked, closed, out of Wi-Fi). Pause analysis so the
+                # characters don't react to an old frame or log fake breaks/sips.
+                with desk.lock:
+                    desk.objects = {}
+                time.sleep(0.5)
+                continue
             merged = {}
             person_seen = False
             for ct in self.cam_threads:
@@ -2280,8 +2315,8 @@ def _lost_fallback_reply(user_message, wanted, records, vlm_vis, now, vision_not
                 line += f' The last wide desk scan listed: {", ".join(vlm_vis)}.'
             else:
                 line += (
-                    ' Want to hunt visually? Open Desk captures from the chat list (tap the gallery icon next to Live) '
-                    '— each shot has a date and time. You can also use the button below.'
+                    ' Want to look for yourself? Captures (in the sidebar, or the button below) '
+                    'has every desk photo with its date and time.'
                 )
             blocks.append(line)
     return '\n\n'.join(blocks)
@@ -3711,6 +3746,95 @@ generator = MessageGenerator()
 @app.route('/')
 def index(): return send_from_directory(APP_STATIC, 'index.html')
 
+
+# ═══════════════════════════════════════════════════════════════════
+#  Phone camera
+#
+#  phone_app is a second, tiny Flask app served over HTTPS on PHONE_PORT.
+#  It can only do two things: show the camera page and accept frames.
+#  (The chat, video feeds, etc. stay on the main app.)
+# ═══════════════════════════════════════════════════════════════════
+phone_app = Flask('desk_talk_phone')
+phone_app.config['MAX_CONTENT_LENGTH'] = 8 * 1024 * 1024   # one JPEG frame is ~100 KB
+PHONE_QR_SVG = None
+
+
+@phone_app.route('/')
+@phone_app.route('/phone')
+@phone_app.route('/phone/')
+def phone_page():
+    return send_from_directory(PHONE_STATIC, 'index.html')
+
+
+@phone_app.route('/phone/<path:filename>')
+def phone_static(filename):
+    return send_from_directory(PHONE_STATIC, filename)
+
+
+@phone_app.route('/art/<path:filename>')
+@phone_app.route('/fonts/<path:filename>')
+def phone_shared_assets(filename):
+    """The phone page reuses the app's character art and font."""
+    folder = 'art' if request.path.startswith('/art/') else 'fonts'
+    return send_from_directory(os.path.join(APP_STATIC, folder), filename)
+
+
+@phone_app.route('/api/phone/frame', methods=['POST'])
+def phone_frame():
+    if request.headers.get('X-Desk-Key') != PHONE_PAIR_KEY:
+        return jsonify({'error': 'Pairing key does not match. Scan the QR code on your computer again.'}), 403
+    if not phone_source.push_jpeg(request.get_data()):
+        return jsonify({'error': 'not a JPEG image'}), 400
+    return jsonify({'ok': True, 'fps': phone_source.fps})
+
+
+def _is_local_request():
+    return request.remote_addr in ('127.0.0.1', '::1')
+
+
+@app.route('/api/phone/info')
+def phone_info():
+    """Phone connection status for the computer UI. The pairing link/QR is only
+    shown to the computer itself, so other devices on the Wi-Fi can't grab the key."""
+    local = _is_local_request()
+    return jsonify({
+        'phone_mode': PHONE_MODE,
+        'connected': PHONE_MODE and phone_source.connected,
+        'camera_index': PHONE_CAM_IDX,
+        'fps': phone_source.fps,
+        'resolution': [phone_source.width, phone_source.height],
+        'url': phone_url if local else '',
+        'qr_svg': PHONE_QR_SVG if local else None,
+    })
+
+
+def _start_phone_server():
+    """Make an HTTPS certificate, then serve phone_app on PHONE_PORT in a background thread."""
+    global phone_url, PHONE_QR_SVG
+    ip = lan_ip()
+    cert = ensure_cert(os.path.join(PROJECT_ROOT, 'certs'), ip)
+    if not cert:
+        print('  Phone camera : needs the `cryptography` package → pip install -r requirements.txt')
+        return False
+    phone_url = f'https://{ip}:{PHONE_PORT}/phone?key={PHONE_PAIR_KEY}'
+    PHONE_QR_SVG = qr_svg(phone_url)
+    from werkzeug.serving import make_server, WSGIRequestHandler
+
+    class QuietHandler(WSGIRequestHandler):
+        """The phone sends ~10 frames a second; only print requests that failed."""
+        def log_request(self, code='-', size='-'):
+            try:
+                failed = int(code) >= 400
+            except (TypeError, ValueError):
+                failed = True
+            if failed:
+                super().log_request(code, size)
+
+    srv = make_server('0.0.0.0', PHONE_PORT, phone_app, threaded=True,
+                      ssl_context=cert, request_handler=QuietHandler)
+    threading.Thread(target=srv.serve_forever, daemon=True, name='PhoneHTTPS').start()
+    return True
+
 # MJPEG: include Content-Length per part + no-cache headers + stream_with_context so browsers
 # actually replace frames (many freeze after one frame without Content-Length / buffering fixes).
 MJPEG_BOUNDARY = b'frame'
@@ -3735,17 +3859,24 @@ def _mjpeg_multipart_chunk(jpeg_bytes: bytes) -> bytes:
 
 
 def _make_mjpeg_response(frame_getter):
-    """Stream multipart JPEG; frame_getter returns fresh bytes or None (under lock internally)."""
+    """Stream multipart JPEG; frame_getter returns the latest JPEG bytes or None.
+
+    Only sends a frame when it's new. Each new frame is a new bytes object, so
+    `is not` tells us it changed. (Before, the same frame was re-sent every 30 ms.)
+    A repeat every 2 s keeps the connection alive so closed tabs get noticed."""
 
     def generate():
+        last, last_sent = None, 0.0
         while True:
             try:
                 jpeg = frame_getter()
-                if jpeg:
+                now = time.time()
+                if jpeg and (jpeg is not last or now - last_sent > 2.0):
                     yield _mjpeg_multipart_chunk(jpeg)
+                    last, last_sent = jpeg, now
             except Exception as exc:
                 print(f'  [mjpeg] stream chunk error: {exc}')
-            time.sleep(0.03)
+            time.sleep(0.02)
 
     return Response(
         stream_with_context(generate()),
@@ -3758,8 +3889,7 @@ def _make_mjpeg_response(frame_getter):
 def _mjpeg(cam_idx):
     def getter():
         with desk.lock:
-            j = desk.frames.get(cam_idx)
-            return bytes(j) if j else None
+            return desk.frames.get(cam_idx)
 
     return _make_mjpeg_response(getter)
 
@@ -3769,8 +3899,7 @@ def _mjpeg_raw(cam_idx):
 
     def getter():
         with desk.lock:
-            j = desk.raw_frames.get(cam_idx) or desk.frames.get(cam_idx)
-            return bytes(j) if j else None
+            return desk.raw_frames.get(cam_idx) or desk.frames.get(cam_idx)
 
     return _make_mjpeg_response(getter)
 
@@ -3836,6 +3965,10 @@ def list_snapshots():
 
 @app.route('/api/detections')
 def detections():
+    return jsonify(_detections_payload())
+
+
+def _detections_payload():
     with desk.lock:
         fw, fh = desk.frame_w, desk.frame_h
         objs = {cid: {
@@ -3868,7 +4001,7 @@ def detections():
         vlm_habit_ts = desk.vlm_habit_ts
         lost_vlm = sorted(desk.lost_last_vlm_visible)
     extras.sort(key=lambda x: (-x['confidence'], x['yolo_class']))
-    return jsonify({
+    return {
         'objects': objs,
         'extras': extras,
         'timestamp': time.time(),
@@ -3877,7 +4010,7 @@ def detections():
         'vlm_habit': vlm_habit,
         'vlm_habit_ts': vlm_habit_ts,
         'lost_vlm_labels': lost_vlm,
-    })
+    }
 
 @app.route('/api/events')
 def events_stream():
@@ -4123,6 +4256,10 @@ def habit_policy():
 @app.route('/api/safety')
 def safety_status():
     """Current safety state, pipeline danger pairs, and relationship engine output."""
+    return jsonify(_safety_payload())
+
+
+def _safety_payload():
     with desk.lock:
         state = desk.safety_state
         dangers = list(desk.safety_dangers)
@@ -4143,6 +4280,34 @@ def safety_status():
         out['explanations'] = []
         out['risk_events'] = []
         out['relationships'] = []
+    return out
+
+
+@app.route('/api/live')
+def live_snapshot():
+    """Everything the desk cam panel needs in one request (the UI polls this every 1.5 s).
+    Replaces separate calls to /api/status, /api/detections, /api/safety and /api/phone/info."""
+    if PHONE_MODE:
+        camera_on, cam_idx = phone_source.connected, PHONE_CAM_IDX
+    else:
+        with desk.lock:
+            cams = sorted(desk.cameras.keys())
+        camera_on, cam_idx = bool(cams), (cams[0] if cams else 0)
+    out = {
+        'phone_mode': PHONE_MODE,
+        'camera': camera_on,
+        'camera_index': cam_idx,
+        'detections': _detections_payload(),
+        'safety': _safety_payload(),
+    }
+    if PHONE_MODE:
+        local = _is_local_request()
+        out['phone'] = {
+            'fps': phone_source.fps,
+            'url': phone_url if local else '',
+            # The QR code is ~10 KB, so only send it when the page asks (?qr=1).
+            'qr_svg': PHONE_QR_SVG if local and request.args.get('qr') else None,
+        }
     return jsonify(out)
 
 @app.route('/api/safety', methods=['POST'])
@@ -4207,8 +4372,12 @@ def status():
         detected = list(desk.objects.keys())
         cams = sorted(desk.cameras.keys())
         safety = desk.safety_state
+    if PHONE_MODE:
+        # "Camera on" means the phone is actively streaming right now.
+        cams = [PHONE_CAM_IDX] if phone_source.connected else []
     return jsonify({
         'status': 'running', 'camera': len(cams) > 0,
+        'phone_mode': PHONE_MODE,
         'camera_indices': cams, 'num_cameras': len(cams),
         'llm': bool(generator.client), 'llm_label': generator.llm_label,
         'detected_characters': detected,
@@ -4226,7 +4395,7 @@ if __name__ == '__main__':
     print('═' * 56)
     print('  Desk Talk — Server (4 characters)')
     print('═' * 56)
-    print(f'  Cameras      : {CAMERA_INDICES}')
+    print(f'  Cameras      : {"phone over Wi-Fi" if PHONE_MODE else CAMERA_INDICES}')
     print(f'  LLM          : {generator.llm_label}')
     print(f'  Confidence   : {CONFIDENCE}')
     print(f'  Cooldown     : {EVENT_COOLDOWN}s')
@@ -4253,11 +4422,17 @@ if __name__ == '__main__':
     except Exception as exc:
         print(f'  YOLO warmup: {exc}')
     cam_threads = []
-    for idx in CAMERA_INDICES:
-        ct = CameraThread(idx, model)
+    if PHONE_MODE:
+        ct = CameraThread(PHONE_CAM_IDX, model, source=phone_source)
         ct.start()
         cam_threads.append(ct)
-        time.sleep(0.5)
+        _start_phone_server()
+    else:
+        for idx in CAMERA_INDICES:
+            ct = CameraThread(idx, model)
+            ct.start()
+            cam_threads.append(ct)
+            time.sleep(0.5)
     DetectionMerger(cam_threads).start()
     generator.start()
     LostObjectFrameworkThread(generator).start()
@@ -4269,5 +4444,11 @@ if __name__ == '__main__':
     print(f'  Daily recap: fires at {DAILY_SUMMARY_HOUR}:00 local time')
     print(f'  Habits     : {len(HABIT_FOCUS)} characters + scene VLM every {HABIT_VLM_INTERVAL_SEC}s (DND: desk.habit_policy, min gap {HABIT_MIN_GAP_SEC}s)')
     print(f'  Lost items : loop {LOST_LOOP_SEC}s, scene diff ≥{LOST_SCENE_DIFF_THR}, VLM: {LOST_VISION_MODEL or "n/a"}' + (f' (Ollama {OLLAMA_URL})' if OLLAMA_URL else ' (set OLLAMA_URL for VLM)'))
-    print(f'\n  → Open http://localhost:5000\n')
+    print(f'\n  → Open http://localhost:5000 on this computer\n')
+    if PHONE_MODE and phone_url:
+        print('  📱 Phone camera — scan this with your phone (same Wi-Fi), or open:')
+        print(f'     {phone_url}\n')
+        print_qr(phone_url)
+        print('  The phone will warn the connection is "not private" (it\'s a local certificate).')
+        print('  Tap Show Details → visit this website, then tap Start camera.\n')
     app.run(host='0.0.0.0', port=5000, threaded=True)

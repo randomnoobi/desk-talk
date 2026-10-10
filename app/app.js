@@ -1,2334 +1,957 @@
 /* ============================================
-   DESK TALK — 4 living desk objects + group room
+   DESK TALK — computer app
+   Left: chats. Center: the open chat or page.
+   Right: what the phone camera sees.
+   Without a server (e.g. GitHub Pages) it runs as a demo.
    ============================================ */
+'use strict';
 
-/** Single detailed desk webcam icon (used only on chat list header). */
-const DETAILED_CAMERA_SVG = `<svg viewBox="0 0 32 28" width="28" height="28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <rect x="2" y="7" width="22" height="16" rx="3.5" stroke="currentColor" stroke-width="1.8"/>
-  <circle cx="13" cy="15" r="5" stroke="currentColor" stroke-width="1.5"/>
-  <circle cx="13" cy="15" r="2.2" fill="currentColor" opacity="0.25"/>
-  <path d="M24 10l6-2.5v13L24 18" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-  <rect x="9" y="23" width="8" height="2.2" rx="0.8" fill="currentColor" opacity="0.35"/>
-  <circle cx="6" cy="10" r="1" fill="currentColor"/>
-  <circle cx="9" cy="10" r="1" fill="currentColor"/>
-  <path d="M17 11h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.5"/>
-</svg>`;
-
-/** Fetch with timeout — `AbortSignal.timeout` is missing in some Safari builds. */
-function fetchWithTimeout(url, ms = 4000, init = {}) {
-  const ctl = new AbortController();
-  const id = setTimeout(() => ctl.abort(), ms);
-  return fetch(url, { ...init, signal: ctl.signal }).finally(() => clearTimeout(id));
-}
-
-// ————— Backend —————
-class Backend {
-  constructor() {
-    this.connected = false;
-    this.cameraOk = false;
-    this.llmOk = false;
-    this.llmLabel = '';
-    this.cameraIndices = [];
-    this.totalCharacters = 4;
-    this.eventSource = null;
-    this.baseUrl = window.location.origin;
-  }
-  async connect() {
-    try {
-      const res = await fetchWithTimeout(`${this.baseUrl}/api/status`, 5000);
-      if (!res.ok) return false;
-      const d = await res.json();
-      this.connected = true;
-      this.cameraOk = d.camera;
-      this.llmOk = d.llm;
-      this.llmLabel = d.llm_label || '';
-      this.cameraIndices = d.camera_indices || [];
-      this.totalCharacters = d.total_characters || 4;
-      this.startEventStream();
-      return true;
-    } catch (e) { return false; }
-  }
-  disconnect() {
-    if (this.eventSource) { this.eventSource.close(); this.eventSource = null; }
-    this.connected = false;
-    this.cameraOk = false;
-    this.llmOk = false;
-    this.llmLabel = '';
-    this.cameraIndices = [];
-  }
-  startEventStream() {
-    this.eventSource = new EventSource(`${this.baseUrl}/api/events`);
-    this.eventSource.onmessage = (e) => {
-      try {
-        const d = JSON.parse(e.data);
-        if (d.type === 'group_message' && d.character && d.text) {
-          enqueueMessage('group', d.character, d.text, null, d.snapshot || null, d.reply_to || null);
-          spawnDanmu(d.character, d.text);
-        } else if (d.type === 'habit_reminder' && d.character && d.text) {
-          enqueueMessage(d.character, d.character, d.text);
-          refreshWidgetFromServer(d.character);
-        } else if (d.type === 'scenario_alert' && d.text) {
-          const charId = d.character || 'group';
-          const chatTarget = charId === 'group' ? 'group' : charId;
-          enqueueMessage(chatTarget, charId === 'group' ? 'monty' : charId, d.text);
-          if (d.scenario) spawnDanmu(charId === 'group' ? 'monty' : charId, d.text);
-        }
-      } catch (_) {}
-    };
-  }
-  async sendMessage(chatId, text, widgetData = null) {
-    try {
-      const body = { chat: chatId, message: text, recent_messages: buildChatHistoryPayload(chatId) };
-      if (chatId !== 'group' && widgetData)
-        body.widget = widgetData;
-      const r = await fetch(`${this.baseUrl}/api/chat`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      return r.ok ? await r.json() : null;
-    } catch (e) { return null; }
-  }
-  pingActivity() {
-    try {
-      if (navigator.sendBeacon) navigator.sendBeacon(`${this.baseUrl}/api/activity`);
-      else fetch(`${this.baseUrl}/api/activity`, { method: 'POST', keepalive: true });
-    } catch (_) {}
-  }
-  async syncAllChatTodos(byChat) {
-    try {
-      const r = await fetch(`${this.baseUrl}/api/chat_todos_sync`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ by_chat: byChat }),
-      });
-      return r.ok;
-    } catch (e) { return false; }
-  }
-  async pushChatTodos(chatId, widgetData) {
-    try {
-      const r = await fetch(`${this.baseUrl}/api/chat_todos`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat: chatId, widget: widgetData }),
-      });
-      return r.ok;
-    } catch (e) { return false; }
-  }
-  async getDetections() {
-    try {
-      const r = await fetch(`${this.baseUrl}/api/detections`);
-      return r.ok ? await r.json() : null;
-    } catch (e) { return null; }
-  }
-  async listSnapshots() {
-    try {
-      const r = await fetch(`${this.baseUrl}/api/snapshots`);
-      return r.ok ? await r.json() : null;
-    } catch (e) { return null; }
-  }
-  async getHabitLog(category = 'all', limit = 40) {
-    try {
-      const r = await fetch(`${this.baseUrl}/api/habit_log?category=${encodeURIComponent(category)}&limit=${limit}`);
-      return r.ok ? await r.json() : null;
-    } catch (e) { return null; }
-  }
-  snapshotUrl(id) { return `${this.baseUrl}/api/snapshot/${id}`; }
-}
-
-/** Recent thread context before the current user send (oldest first in payload). */
-function buildChatHistoryPayload(chatId) {
-  const arr = chatId === 'group' ? state.groupMessages : (state.individualMessages[chatId] || []);
-  if (arr.length < 2) return [];
-  const prior = arr.slice(0, -1).slice(-10);
-  return prior.map((m) => {
-    const isUser = m.from === 'user';
-    const assistantName = !isUser
-      ? (chatId === 'group' ? (CHARACTERS[m.char]?.name || m.char) : CHARACTERS[chatId]?.name)
-      : undefined;
-    return {
-      role: isUser ? 'user' : 'assistant',
-      name: assistantName,
-      text: (m.text || '').slice(0, 1200),
-    };
-  });
-}
-
-let backend = null;
-
-// ————— Message Queue —————
-const messageQueue = [];
-let messageQueueRunning = false;
-
-function enqueueMessage(chatId, charId, text, progress = null, snapshot = null, replyTo = null) {
-  messageQueue.push({ chatId, charId, text, progress, snapshot, replyTo });
-  if (!messageQueueRunning) drainMessageQueue();
-}
-async function drainMessageQueue() {
-  messageQueueRunning = true;
-  while (messageQueue.length > 0) {
-    const { chatId, charId, text, progress, snapshot, replyTo } = messageQueue.shift();
-    const vis = state.currentScreen === 'chat' &&
-      (state.currentChat === chatId || (chatId === 'group' && state.currentChat === 'group'));
-    if (vis) { showTypingIndicator(charId); await sleep(600 + Math.random() * 600); removeTypingIndicator(); }
-    else { await sleep(300 + Math.random() * 400); }
-    if (chatId === 'group') addGroupMessage(charId, text, false, snapshot, replyTo);
-    else addIndividualMessage(charId, text, progress, snapshot, replyTo);
-    refreshActivePrimaryList();
-    if (messageQueue.length > 0) await sleep(800 + Math.random() * 800);
-  }
-  messageQueueRunning = false;
-}
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-function refreshActivePrimaryList() {
-  if (state.currentScreen === 'chatlist') renderChatList();
-  if (state.currentScreen === 'characters') renderCharactersScreen();
-}
-
-// ————— Characters (4 objects + group room in UI) —————
+// ————— Characters (ids match backend/server.py) —————
 const CHARACTERS = {
   monty: {
-    id: 'monty', name: 'Computer', icon: '💻', object: 'Computer',
-    bubbleClass: 'bubble-monty', senderClass: 'sender-monty', avatarClass: 'avatar-monty',
-    color: '#4a8fe7', status: 'active', statusDetail: 'screen on',
-    mission: 'I notice screen breaks, posture, and risky desk edges.',
-    realLife: 'Half-full mug touching the trackpad while you Slack.',
+    name: 'Computer', art: 'art/computer.svg', color: 'var(--cobalt)', tint: 'var(--cobalt-tint)',
+    about: 'Anxious. Watches your screen breaks, posture, and anything near the keyboard.',
+    empty: 'Computer speaks up when something gets too close or you skip a break.',
   },
   glug: {
-    id: 'glug', name: 'Cup', icon: '☕', object: 'Cup',
-    bubbleClass: 'bubble-glug', senderClass: 'sender-glug', avatarClass: 'avatar-glug',
-    color: '#00b894', status: 'idle', statusDetail: 'just sitting here',
-    mission: 'I keep track of drinks, spills, and hydration.',
-    realLife: 'Cold bottle sweating onto a corner of your notes.',
+    name: 'Cup', art: 'art/cup.svg', color: 'var(--teal)', tint: 'var(--teal-tint)',
+    about: 'Completely innocent. Counts your sips and insists it is nowhere near the laptop.',
+    empty: 'Cup checks in about water. It notices when you pick it up and put it back.',
   },
   munch: {
-    id: 'munch', name: 'Snack', icon: '🍕', object: 'Snack',
-    bubbleClass: 'bubble-munch', senderClass: 'sender-munch', avatarClass: 'avatar-munch',
-    color: '#e17055', status: 'idle', statusDetail: 'on desk — tempting',
-    mission: 'I remember snacks and call out messy choices.',
-    realLife: 'Chip bag wide open aimed at the laptop fan vent.',
+    name: 'Snack', art: 'art/snack.svg', color: 'var(--tang)', tint: 'var(--tang-tint)',
+    about: 'Lives for flavor. Logs what you eat and does not care about crumbs.',
+    empty: 'Put food on your desk and Snack will have opinions.',
   },
   sheets: {
-    id: 'sheets', name: 'Paper', icon: '📄', object: 'Paper',
-    bubbleClass: 'bubble-sheets', senderClass: 'sender-sheets', avatarClass: 'avatar-sheets',
-    color: '#d4a04a', status: 'idle', statusDetail: 'on desk — still',
-    mission: 'I keep notes, tasks, and lost-object clues together.',
-    realLife: 'Printed rubric under an open highlighter with the cap off.',
+    name: 'Paper', art: 'art/paper.svg', color: 'var(--mustard)', tint: 'var(--mustard-tint)',
+    about: 'A gentle worrier. Keeps your to-do list and remembers where things went.',
+    empty: 'Ask Paper where you left your keys, or add a task above.',
   },
 };
+const GROUP = {
+  name: 'The desk', art: 'art/desk.svg', color: 'var(--ink)', tint: 'var(--mist)',
+  about: 'Everyone on your desk, talking to you and to each other.',
+  empty: 'When the camera sees something worth talking about, the desk starts chatting here. Type @ to talk to one of them.',
+};
+const CHAT_IDS = ['group', 'monty', 'glug', 'munch', 'sheets'];
+const CHAR_IDS = CHAT_IDS.slice(1);
+const who = (id) => (id === 'group' ? GROUP : CHARACTERS[id]);
 
-const charIds = Object.keys(CHARACTERS);
-const charCount = charIds.length;
+// Words people type for each character in @mentions.
+const ALIASES = {
+  computer: 'monty', laptop: 'monty', keyboard: 'monty', monty: 'monty',
+  cup: 'glug', water: 'glug', bottle: 'glug', glug: 'glug',
+  snack: 'munch', food: 'munch', munch: 'munch',
+  paper: 'sheets', homework: 'sheets', sheets: 'sheets',
+};
 
-// ————— Per-character widget data (localStorage + server sync) —————
-const WIDGET_STORAGE_KEY = 'desktalk_widgets_v2';
-const HABIT_STORAGE_KEY = 'desktalk_custom_bad_habits_v1';
-const widgetStore = {};
-let customHabitState = null;
+// ————— Small helpers —————
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const todayKey = () => new Date().toISOString().slice(0, 10);
 
-function todayKey() { return new Date().toISOString().slice(0, 10); }
-
-function defaultWidgetData(id) {
-  if (id === 'sheets') return { type: 'todo', items: [{ text: 'Pick one top priority for the next hour', done: false }, { text: 'Clear one overdue item', done: false }] };
-  if (id === 'monty') return { type: 'break_timer', last_break: null, breaks_today: 0, day: todayKey() };
-  if (id === 'glug') return { type: 'sip_counter', sips: 0, goal: 8, last_sip: null, day: todayKey() };
-  if (id === 'munch') return { type: 'snack_log', entries: [], day: todayKey() };
-  return { type: 'none' };
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function clock(tsSeconds) {
+  return new Date(tsSeconds * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+function timeAgo(iso) {
+  if (!iso) return '';
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  return `${Math.floor(s / 3600)} h ago`;
 }
 
-function loadWidgets() {
+/** fetch → JSON, with a timeout. Throws on network errors and non-2xx. */
+async function api(path, { method = 'GET', body, timeout = 8000 } = {}) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), timeout);
   try {
-    const raw = localStorage.getItem(WIDGET_STORAGE_KEY);
-    if (raw) {
-      const o = JSON.parse(raw);
-      charIds.forEach((id) => {
-        const saved = o[id];
-        const def = defaultWidgetData(id);
-        if (saved && saved.type === def.type) {
-          if (saved.day && saved.day !== todayKey()) {
-            if (def.type === 'break_timer') { saved.breaks_today = 0; saved.last_break = null; saved.day = todayKey(); }
-            if (def.type === 'sip_counter') { saved.sips = 0; saved.last_sip = null; saved.day = todayKey(); }
-            if (def.type === 'snack_log') { saved.entries = []; saved.day = todayKey(); }
-          }
-          widgetStore[id] = saved;
-        } else widgetStore[id] = def;
-      });
-    } else charIds.forEach((id) => { widgetStore[id] = defaultWidgetData(id); });
-  } catch (_) { charIds.forEach((id) => { widgetStore[id] = defaultWidgetData(id); }); }
-}
-
-function saveWidgets() { try { localStorage.setItem(WIDGET_STORAGE_KEY, JSON.stringify(widgetStore)); } catch (_) {} }
-
-function defaultCustomHabits() {
-  return {
-    day: todayKey(),
-    items: [
-      { id: 'nail_biting', label: 'Nail biting', count: 0 },
-      { id: 'phone_pickup', label: 'Picked up phone', count: 0 },
-      { id: 'slouching', label: 'Slouching', count: 0 },
-    ],
-  };
-}
-
-function loadCustomHabits() {
-  try {
-    const raw = localStorage.getItem(HABIT_STORAGE_KEY);
-    const saved = raw ? JSON.parse(raw) : null;
-    if (!saved || !Array.isArray(saved.items) || saved.day !== todayKey()) {
-      customHabitState = defaultCustomHabits();
-    } else {
-      customHabitState = saved;
-    }
-  } catch (_) {
-    customHabitState = defaultCustomHabits();
+    const res = await fetch(path, {
+      method,
+      signal: ctl.signal,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) throw new Error(`${path} → ${res.status}`);
+    return res.status === 204 ? null : await res.json();
+  } finally {
+    clearTimeout(t);
   }
 }
 
-function saveCustomHabits() {
-  try { localStorage.setItem(HABIT_STORAGE_KEY, JSON.stringify(customHabitState)); } catch (_) {}
-}
-
-function getWidgetPayload(chatId) {
-  if (!chatId || chatId === 'group') return null;
-  const w = widgetStore[chatId];
-  if (!w) return null;
-  if (w.type === 'todo') return { type: 'todo', items: w.items };
-  if (w.type === 'break_timer') return { type: 'break_timer', last_break: w.last_break, breaks_today: w.breaks_today };
-  if (w.type === 'sip_counter') return { type: 'sip_counter', sips: w.sips, goal: w.goal, last_sip: w.last_sip };
-  if (w.type === 'snack_log') return { type: 'snack_log', entries: w.entries };
-  return null;
-}
-
-async function refreshWidgetFromServer(chatId) {
-  if (!state.liveMode || !backend?.connected || chatId === 'group') return;
-  try {
-    const r = await fetch(`${backend.baseUrl}/api/chat_widget/${chatId}`);
-    if (!r.ok) return;
-    const data = await r.json();
-    if (data.widget && data.widget.type) {
-      const w = widgetStore[chatId];
-      const sv = data.widget;
-      if (w && w.type === sv.type) {
-        if (sv.type === 'break_timer') {
-          w.breaks_today = sv.breaks_today ?? w.breaks_today;
-          w.last_break = sv.last_break ?? w.last_break;
-        } else if (sv.type === 'sip_counter') {
-          w.sips = sv.sips ?? w.sips;
-          w.last_sip = sv.last_sip ?? w.last_sip;
-        } else if (sv.type === 'snack_log' && sv.entries) {
-          w.entries = sv.entries;
-        }
-        saveWidgets();
-        if (state.currentScreen === 'chat' && state.currentChat === chatId) renderWidgetPanel(chatId);
-      }
-    }
-  } catch (_) {}
-}
-
-async function pushWidgetToServer(chatId) {
-  if (!state.liveMode || !backend?.connected || chatId === 'group') return;
-  const payload = getWidgetPayload(chatId);
-  if (payload) await backend.pushChatTodos(chatId, payload);
-}
-
-async function syncAllWidgetsToServer() {
-  if (!state.liveMode || !backend?.connected) return;
-  const copy = {};
-  charIds.forEach((id) => { copy[id] = getWidgetPayload(id); });
-  await backend.syncAllChatTodos(copy);
-}
-
-const CHAR_SVGS = {
-  monty: '<svg viewBox="0 0 40 36" fill="none"><rect x="3" y="2" width="34" height="22" rx="4" fill="#dbe6f4" stroke="#4a8fe7" stroke-width="2"/><rect x="11" y="26" width="18" height="6" rx="3" fill="#e0ebf6" stroke="#4a8fe7" stroke-width="1.5"/><circle cx="15" cy="12" r="2.5" fill="#3D3552"/><circle cx="25" cy="12" r="2.5" fill="#3D3552"/><path d="M16 18Q20 15 24 18" stroke="#3D3552" stroke-width="2" stroke-linecap="round" fill="none"/></svg>',
-  glug: '<svg viewBox="0 0 40 40" fill="none"><path d="M10 10L12 34Q12 37 15 37H25Q28 37 28 34L30 10Z" fill="#d0eee8" stroke="#00b894" stroke-width="2"/><path d="M30 16Q36 16 36 22Q36 28 30 28" stroke="#00b894" stroke-width="2" fill="none"/><circle cx="17" cy="22" r="2" fill="#2A3D3D"/><circle cx="24" cy="22" r="2" fill="#2A3D3D"/><ellipse cx="20" cy="28" rx="3" ry="2" stroke="#2A3D3D" stroke-width="1.5" fill="none"/><path d="M15 6Q17 2 19 6" stroke="#00b894" stroke-width="1.5" stroke-linecap="round" fill="none"/><path d="M22 4Q24 0 26 4" stroke="#00b894" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>',
-  munch: '<svg viewBox="0 0 40 40" fill="none"><path d="M20 4L36 36H4Z" fill="#f8d8d2" stroke="#e17055" stroke-width="2" stroke-linejoin="round"/><path d="M4 36Q12 32 20 36Q28 32 36 36" fill="#f5f0e4" stroke="#d4a04a" stroke-width="2"/><circle cx="16" cy="22" r="2" fill="#3D2020"/><circle cx="24" cy="22" r="2" fill="#3D2020"/><path d="M17 28Q20 31 23 28" stroke="#3D2020" stroke-width="2" stroke-linecap="round" fill="none"/></svg>',
-  sheets: '<svg viewBox="0 0 34 42" fill="none"><path d="M2 2H24L32 10V40H2Z" fill="#ede6d6" stroke="#d4a04a" stroke-width="2" stroke-linejoin="round"/><path d="M24 2V10H32" stroke="#d4a04a" stroke-width="2" stroke-linejoin="round" fill="#e5dece"/><circle cx="12" cy="20" r="2" fill="#3D3520"/><circle cx="22" cy="20" r="2" fill="#3D3520"/><path d="M14 26Q17 23 20 26" stroke="#3D3520" stroke-width="2" stroke-linecap="round" fill="none"/><path d="M8 32H24" stroke="#d4a04a44" stroke-width="1.5"/><path d="M8 36H18" stroke="#d4a04a44" stroke-width="1.5"/></svg>',
-  group: '<svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="17" fill="#f0eeeb" stroke="#6c5ce7" stroke-width="2"/><circle cx="14" cy="17" r="2.5" fill="#6c5ce7"/><circle cx="26" cy="17" r="2.5" fill="#6c5ce7"/><path d="M14 25Q20 30 26 25" stroke="#6c5ce7" stroke-width="2.5" stroke-linecap="round" fill="none"/><circle cx="7" cy="8" r="3" fill="#4a8fe7" opacity="0.7"/><circle cx="33" cy="8" r="3" fill="#e17055" opacity="0.7"/><circle cx="7" cy="32" r="3" fill="#d4a04a" opacity="0.7"/><circle cx="33" cy="32" r="3" fill="#00b894" opacity="0.7"/></svg>',
+// localStorage can throw (private windows, blocked storage) — never let that break the app.
+const storage = {
+  load(key, fallback) {
+    try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback; } catch { return fallback; }
+  },
+  save(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* ignore */ }
+  },
 };
-
-const HABIT_AREAS = {
-  glug:   'Hydration & plant reminders',
-  monty:  'Screen breaks, posture & screen time',
-  munch:  'Healthy eating & snack detection',
-  sheets: 'Focus, organization & lost objects',
-};
-
-// Mention map: keyword → char_id (for frontend @mention autocomplete filtering)
-const MENTION_ALIASES = {};
-Object.entries(CHARACTERS).forEach(([id, ch]) => {
-  MENTION_ALIASES[id] = id;
-  MENTION_ALIASES[ch.name.toLowerCase()] = id;
-  MENTION_ALIASES[ch.object.toLowerCase()] = id;
-});
-MENTION_ALIASES['phone'] = 'monty'; MENTION_ALIASES['cup'] = 'glug'; MENTION_ALIASES['water'] = 'glug';
-MENTION_ALIASES['keyboard'] = 'monty'; MENTION_ALIASES['laptop'] = 'monty'; MENTION_ALIASES['computer'] = 'monty';
-MENTION_ALIASES['cable'] = 'monty'; MENTION_ALIASES['charger'] = 'monty';
-MENTION_ALIASES['snack'] = 'munch'; MENTION_ALIASES['food'] = 'munch';
-MENTION_ALIASES['paper'] = 'sheets'; MENTION_ALIASES['homework'] = 'sheets';
-MENTION_ALIASES['powerbank'] = 'monty'; MENTION_ALIASES['battery'] = 'monty'; MENTION_ALIASES['mouse'] = 'monty';
-
-let mentionOptions = []; // populated from /api/context
 
 // ————— State —————
 const state = {
-  currentScreen: 'splash',
-  currentChat: null,
-  groupMessages: [],
-  individualMessages: Object.fromEntries(charIds.map(k => [k, []])),
-  unread: Object.fromEntries(['group', ...charIds].map(k => [k, 0])),
-  scheduledTimeouts: [],
-  liveMode: false,
-  detectionPollTimer: null,
-  /** Where Live Desk returns: { screen, chatId } */
-  liveBack: { screen: 'chatlist', chatId: null },
-  /** Live desk: 'analysis' = YOLO overlay stream, 'clean' = raw camera + detection strip */
-  liveViewMode: 'analysis',
-  /** Last /api/detections payload for canvas overlays */
-  lastDetections: null,
-  montyHabitPollTimer: null,
-  /** Set true when MJPEG <img> never loads (e.g. iOS); use polled JPEG URLs instead */
-  liveStreamPreferPoll: false,
+  live: false,          // the Python server is reachable
+  phoneMode: false,     // the server expects the phone as its camera
+  camOk: false,         // frames are arriving right now
+  camIndex: 0,
+  feed: 'analysis',     // 'analysis' (YOLO boxes) or 'clean'
+  phone: null,          // { url, qr_svg } for pairing
+  view: 'chat',
+  chat: 'group',
+  messages: Object.fromEntries(CHAT_IDS.map((id) => [id, []])),
+  unread: Object.fromEntries(CHAT_IDS.map((id) => [id, 0])),
+  mentionOptions: [],
+  habitFilter: 'all',
+  snapshotIds: null,     // ids of the proof photos on screen (null = not drawn yet)
 };
 
-// ————— DOM —————
-const $ = (s) => document.querySelector(s);
-const chatlistContent = $('#chatlist-content');
-const charactersContent = $('#characters-content');
-const habitsContent = $('#habits-content');
-const chatMessages = $('#chat-messages');
-const chatInput = $('#chat-input');
-const chatHeaderName = $('#chat-header-name');
-const chatHeaderIcon = $('#chat-header-icon');
-const toastEl = $('#notification-toast');
-const connectionBadge = $('#connection-badge');
-const settingsContent = $('#settings-content');
-const screens = {
-  splash: $('#screen-splash'),
-  chatlist: $('#screen-chatlist'),
-  characters: $('#screen-characters'),
-  habits: $('#screen-habits'),
-  chat: $('#screen-chat'),
-  camera: $('#screen-camera'),
-  settings: $('#screen-settings'),
-  captures: $('#screen-captures'),
-};
-
-// ————— Snapshot overlay —————
-function openSnapshot(url) {
-  const o = document.createElement('div');
-  o.className = 'snapshot-overlay';
-  o.innerHTML = `<div class="snapshot-overlay-bg"></div>
-    <img class="snapshot-overlay-img" src="${url}" alt="Proof">
-    <button class="snapshot-overlay-close">✕</button>`;
-  o.addEventListener('click', () => o.remove());
-  document.body.appendChild(o);
-  requestAnimationFrame(() => o.classList.add('visible'));
+// ————— Trackers (per-character widgets, saved in the browser, synced to the server) —————
+const TRACKER_KEY = 'desktalk_trackers_v3';
+function freshTracker(id) {
+  const day = todayKey();
+  if (id === 'sheets') return { type: 'todo', items: [{ text: 'Pick one top priority for the next hour', done: false }] };
+  if (id === 'monty') return { type: 'break_timer', last_break: null, breaks_today: 0, day };
+  if (id === 'glug') return { type: 'sip_counter', sips: 0, goal: 8, last_sip: null, day };
+  return { type: 'snack_log', entries: [], day };
 }
-
-// ————— Greeting —————
-function updateGreeting() {
-  const h = new Date().getHours();
-  let g;
-  if (h < 12) g = 'Good Morning!';
-  else if (h < 17) g = 'Good Afternoon!';
-  else g = 'Good Evening!';
-  const el = document.getElementById('header-greeting');
-  if (el) el.textContent = g;
-}
-
-let montyHabitFilter = 'all';
-
-function clearMontyHabitPoll() {
-  if (state.montyHabitPollTimer) {
-    clearInterval(state.montyHabitPollTimer);
-    state.montyHabitPollTimer = null;
+const trackers = (() => {
+  const saved = storage.load(TRACKER_KEY, {});
+  const out = {};
+  for (const id of CHAR_IDS) {
+    const fresh = freshTracker(id);
+    const t = saved[id];
+    // Daily counters reset each day; the to-do list carries over.
+    out[id] = t && t.type === fresh.type && (t.type === 'todo' || t.day === fresh.day) ? t : fresh;
   }
+  return out;
+})();
+const saveTrackers = () => storage.save(TRACKER_KEY, trackers);
+
+/** The shape server.py's _normalize_widget() expects. */
+function trackerPayload(id) {
+  const t = trackers[id];
+  if (!t) return null;
+  if (t.type === 'todo') return { type: 'todo', items: t.items };
+  if (t.type === 'break_timer') return { type: 'break_timer', last_break: t.last_break, breaks_today: t.breaks_today };
+  if (t.type === 'sip_counter') return { type: 'sip_counter', sips: t.sips, goal: t.goal, last_sip: t.last_sip };
+  return { type: 'snack_log', entries: t.entries };
+}
+function trackerChanged(id) {
+  saveTrackers();
+  if (state.chat === id && state.view === 'chat') renderTracker();
+  if (state.live) api('/api/chat_todos', { method: 'POST', body: { chat: id, widget: trackerPayload(id) } }).catch(() => {});
+}
+
+// ————— Custom habit counters (Habits page) —————
+const HABIT_KEY = 'desktalk_habits_v2';
+const habits = (() => {
+  const saved = storage.load(HABIT_KEY, null);
+  if (saved && saved.day === todayKey() && Array.isArray(saved.items)) return saved;
+  const labels = saved?.items?.map((i) => i.label) || ['Nail biting', 'Picked up phone', 'Slouching'];
+  return { day: todayKey(), items: labels.map((label) => ({ label, count: 0 })) };
+})();
+const saveHabits = () => storage.save(HABIT_KEY, habits);
+
+// ————— Sidebar —————
+function renderChatList() {
+  const list = $('#chat-list');
+  list.innerHTML = CHAT_IDS.map((id) => {
+    const c = who(id);
+    const last = state.messages[id].findLast((m) => !m.note);
+    let preview = id === 'group' ? 'Everyone' : c.about.split('.')[0];
+    if (last?.mine) preview = `You: ${last.text}`;
+    else if (last) preview = id === 'group' ? `${(CHARACTERS[last.char] || GROUP).name}: ${last.text}` : last.text;
+    const unread = state.unread[id];
+    const current = state.view === 'chat' && state.chat === id;
+    return `<button type="button" class="chat-link" data-chat="${id}" aria-current="${current}">
+      <img src="${c.art}" alt="" width="44" height="44">
+      <span class="chat-link-text"><span class="chat-link-name">${esc(c.name)}</span>
+        <span class="chat-link-preview">${esc(preview)}</span></span>
+      ${unread ? `<span class="badge" aria-label="${unread} unread">${unread > 9 ? '9+' : unread}</span>` : '<span></span>'}
+    </button>`;
+  }).join('');
+}
+
+function renderPageLinks() {
+  $$('.page-link').forEach((b) => b.setAttribute('aria-current', String(state.view === b.dataset.view)));
+}
+
+function renderConn() {
+  const el = $('#conn');
+  let st = 'demo';
+  let text = 'Demo mode';
+  if (state.live) {
+    if (!state.phoneMode) { st = state.camOk ? 'live' : 'waiting'; text = state.camOk ? 'Webcam on' : 'Webcam not found'; }
+    else if (state.camOk) { st = 'live'; text = 'Phone camera on'; }
+    else { st = 'waiting'; text = 'Connect your phone'; }
+  }
+  el.dataset.state = st;
+  $('#conn-text').textContent = text;
+  el.title = st === 'demo'
+    ? 'Run python server.py on this computer and open http://localhost:5000 to use your real desk.'
+    : '';
 }
 
 // ————— Navigation —————
-function isPrimaryScreen(screen) {
-  return ['chatlist', 'characters', 'habits', 'settings'].includes(screen);
-}
-
-function updateBottomNav(screen) {
-  const nav = document.getElementById('bottom-nav');
-  if (!nav) return;
-  nav.classList.toggle('hidden', !isPrimaryScreen(screen));
-  nav.querySelectorAll('.bottom-nav-btn').forEach((btn) => {
-    btn.classList.toggle('is-active', btn.dataset.screen === screen);
-  });
-}
-
-function navigateTo(screen, chatId = null) {
-  clearMontyHabitPoll();
-  const prev = state.currentScreen;
-  if (prev === 'camera' && screen !== 'camera') {
-    stopLiveFramePoll();
-    if (liveMjpegFailSafeTimer) {
-      clearTimeout(liveMjpegFailSafeTimer);
-      liveMjpegFailSafeTimer = null;
-    }
-  }
-  if (screen === 'camera') {
-    if (prev === 'chat' && state.currentChat) {
-      state.liveBack = { screen: 'chat', chatId: state.currentChat };
-    } else {
-      state.liveBack = { screen: 'chatlist', chatId: null };
-    }
-  }
-  state.currentScreen = screen;
-  if (screen !== 'camera') state.currentChat = chatId;
-  Object.values(screens).forEach(s => s.classList.remove('active', 'slide-out-left'));
-  if (prev === 'chatlist' && (screen === 'chat' || screen === 'camera' || screen === 'settings' || screen === 'captures' || screen === 'characters' || screen === 'habits'))
-    screens.chatlist.classList.add('slide-out-left');
-  if (prev === 'chat' && screen === 'camera')
-    screens.chat.classList.add('slide-out-left');
-  screens[screen].classList.add('active');
-  if (screen === 'chat') setupChatScreen(chatId);
-  if (screen === 'chatlist') { updateGreeting(); renderChatList(); }
-  if (screen === 'characters') renderCharactersScreen();
-  if (screen === 'habits') renderHabitsScreen();
-  if (screen === 'camera') { renderCameraStatus(); setupCameraView(); startDetectionPolling(); }
-  else stopDetectionPolling();
-  if (screen === 'captures') loadCapturesGallery();
-  if (screen === 'settings') loadAndRenderRules();
-  updateBottomNav(screen);
-  if (screen !== 'chat' && drawerOpen) { drawerOpen = false; cameraDrawer.classList.remove('open'); stopDrawerPolling(); }
-}
-
-function spawnDanmu(charId, text) {
-  if (state.currentScreen !== 'camera') return;
-  const layer = document.getElementById('danmu-layer');
-  if (!layer || !text) return;
-  const name = CHARACTERS[charId]?.name || charId;
-  const line = `${name}: ${text}`.replace(/\s+/g, ' ').trim().slice(0, 100);
-  const row = Math.floor(Math.random() * 7);
-  const el = document.createElement('div');
-  el.className = 'danmu-item';
-  el.textContent = line;
-  el.style.top = `${6 + row * 12}%`;
-  el.style.animationDuration = `${9 + Math.random() * 5}s`;
-  layer.appendChild(el);
-  setTimeout(() => { try { el.remove(); } catch (_) {} }, 16000);
-}
-
-function attachSwipeLiveChat() {
-  const chatScr = document.getElementById('screen-chat');
-  const camScr = document.getElementById('screen-camera');
-  if (!chatScr || !camScr) return;
-  let sx = 0, sy = 0;
-  chatScr.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1) return;
-    sx = e.touches[0].clientX; sy = e.touches[0].clientY;
-  }, { passive: true });
-  chatScr.addEventListener('touchend', (e) => {
-    if (!e.changedTouches.length) return;
-    const dx = e.changedTouches[0].clientX - sx;
-    const dy = e.changedTouches[0].clientY - sy;
-    if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy)) return;
-    if (dx < 0) navigateTo('camera');
-  }, { passive: true });
-  camScr.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1) return;
-    sx = e.touches[0].clientX; sy = e.touches[0].clientY;
-  }, { passive: true });
-  camScr.addEventListener('touchend', (e) => {
-    if (!e.changedTouches.length) return;
-    const dx = e.changedTouches[0].clientX - sx;
-    const dy = e.changedTouches[0].clientY - sy;
-    if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy)) return;
-    if (dx > 0) {
-      const b = state.liveBack || { screen: 'chatlist', chatId: null };
-      navigateTo(b.screen, b.chatId);
-    }
-  }, { passive: true });
-}
-
-function updateConnectionBadge() {
-  if (state.liveMode) {
-    const p = [];
-    if (backend.cameraOk) p.push('Cam');
-    if (backend.llmOk) {
-      const lbl = backend.llmLabel;
-      if (lbl.includes('Gemini')) p.push('Gemini');
-      else if (lbl.includes('Groq')) p.push('Groq');
-      else if (lbl.includes('Ollama')) p.push('Ollama');
-      else if (lbl.includes('OpenAI')) p.push('OpenAI');
-      else p.push('LLM');
-    }
-    connectionBadge.textContent = p.length ? `Live — ${p.join(' + ')}` : 'Live';
-    connectionBadge.className = 'connection-badge live';
-  } else {
-    connectionBadge.textContent = 'Demo';
-    connectionBadge.className = 'connection-badge demo';
-  }
-}
-
-// ————— Live desk (primary full-bleed) —————
-function getLiveMjpegUrl() {
-  if (!state.liveMode || !backend?.baseUrl || !backend.cameraOk) return null;
-  const idx = backend.cameraIndices[0] ?? 0;
-  return state.liveViewMode === 'clean'
-    ? `${backend.baseUrl}/api/video_feed_raw/${idx}`
-    : `${backend.baseUrl}/api/video_feed/${idx}`;
-}
-
-function stopLiveFramePoll() {
-  if (liveFramePollTimer) {
-    clearInterval(liveFramePollTimer);
-    liveFramePollTimer = null;
-  }
-}
-
-function stopDrawerFramePoll() {
-  if (drawerFramePollTimer) {
-    clearInterval(drawerFramePollTimer);
-    drawerFramePollTimer = null;
-  }
-}
-
-/** iOS / iPadOS WebKit often never updates multipart MJPEG inside <img>. */
-function liveDeskNeedsJpegPolling() {
-  if (state.liveStreamPreferPoll) return true;
-  const ua = navigator.userAgent || '';
-  if (/iPhone|iPad|iPod/i.test(ua)) return true;
-  if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return true;
-  return false;
-}
-
-function getLiveLatestFrameUrl() {
-  if (!state.liveMode || !backend?.baseUrl || !backend.cameraOk) return null;
-  const idx = backend.cameraIndices[0] ?? 0;
-  const seg = state.liveViewMode === 'clean' ? 'latest_frame_raw' : 'latest_frame';
-  return `${backend.baseUrl}/api/${seg}/${idx}`;
-}
-
-function setLiveViewMode(mode) {
-  if (mode !== 'analysis' && mode !== 'clean') return;
-  state.liveViewMode = mode;
-  const stage = document.getElementById('screen-camera')?.querySelector('.live-stage');
-  if (stage) stage.classList.toggle('live-stage--clean-view', mode === 'clean');
-  document.querySelectorAll('.live-view-tab').forEach((btn) => {
-    const is = btn.dataset.view === mode;
-    btn.classList.toggle('is-active', is);
-    btn.setAttribute('aria-selected', is ? 'true' : 'false');
-  });
-  setupCameraView();
-  requestAnimationFrame(syncLiveOverlayCanvas);
-}
-
-function wireLiveViewTabs() {
-  const sc = document.getElementById('screen-camera');
-  if (!sc || sc._liveTabsWired) return;
-  sc._liveTabsWired = true;
-  sc.addEventListener('click', (e) => {
-    const t = e.target?.closest?.('.live-view-tab');
-    if (t && t.dataset.view) setLiveViewMode(t.dataset.view);
-  });
-}
-
-/** Map bbox from native frame coords → displayed img coords (object-fit cover or contain). */
-function mapBboxToDisplayedEl(bbox, natW, natH, dispW, dispH, fit) {
-  if (!bbox || bbox.length < 4 || !natW || !natH || !dispW || !dispH) return null;
-  const [x1, y1, x2, y2] = bbox.map(Number);
-  let scale; let ox; let oy;
-  if (fit === 'contain') {
-    scale = Math.min(dispW / natW, dispH / natH);
-    ox = (dispW - natW * scale) / 2;
-    oy = (dispH - natH * scale) / 2;
-  } else {
-    scale = Math.max(dispW / natW, dispH / natH);
-    ox = (dispW - natW * scale) / 2;
-    oy = (dispH - natH * scale) / 2;
-  }
-  return [ox + x1 * scale, oy + y1 * scale, ox + x2 * scale, oy + y2 * scale];
-}
-
-function getLivePrimaryFitMode() {
-  const st = document.getElementById('screen-camera')?.querySelector('.live-stage');
-  return st?.classList.contains('live-stage--clean-view') ? 'contain' : 'cover';
-}
-
-function syncLiveOverlayCanvas() {
-  const wrap = document.querySelector('#live-video-primary .live-video-wrap');
-  const img = wrap?.querySelector('.live-video-full');
-  const canvas = wrap?.querySelector('.live-detection-overlay');
-  if (!wrap || !img || !canvas || !state.liveMode) return;
-  const rw = img.clientWidth;
-  const rh = img.clientHeight;
-  if (!rw || !rh) return;
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.round(rw * dpr);
-  canvas.height = Math.round(rh * dpr);
-  canvas.style.width = `${rw}px`;
-  canvas.style.height = `${rh}px`;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, rw, rh);
-
-  const det = state.lastDetections;
-  if (!det || !state.liveMode || img.naturalWidth < 8) return;
-
-  const fw = (det.frame && det.frame.w) || img.naturalWidth;
-  const fh = (det.frame && det.frame.h) || img.naturalHeight;
-  const fit = getLivePrimaryFitMode();
-
-  const drawBox = (bbox, color, label) => {
-    const m = mapBboxToDisplayedEl(bbox, fw, fh, rw, rh, fit);
-    if (!m) return;
-    let [a, b, c, d] = m;
-    if (c < a) [a, c] = [c, a];
-    if (d < b) [b, d] = [d, b];
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(a, b, c - a, d - b);
-    if (label) {
-      ctx.font = '11px Inter, system-ui, sans-serif';
-      const tw = ctx.measureText(label).width;
-      ctx.fillStyle = 'rgba(15,15,18,0.82)';
-      ctx.fillRect(a, Math.max(0, b - 18), tw + 8, 16);
-      ctx.fillStyle = '#faf8ff';
-      ctx.fillText(label, a + 4, Math.max(12, b - 5));
-    }
-  };
-
-  Object.values(det.objects || {}).forEach((o) => {
-    if (o.bbox) drawBox(o.bbox, 'rgba(120,200,255,0.95)', o.name || o.class);
-  });
-  (det.extras || []).forEach((ex) => {
-    if (!ex.bbox || !ex.highlight) return;
-    drawBox(ex.bbox, 'rgba(255,210,90,0.98)', ex.label || ex.yolo_class);
-  });
-
-  const centers = {};
-  Object.entries(det.objects || {}).forEach(([cid, o]) => {
-    if (!o.center || o.center.length < 2) return;
-    const pt = mapBboxToDisplayedEl([o.center[0], o.center[1], o.center[0], o.center[1]], fw, fh, rw, rh, fit);
-    if (pt) centers[cid] = [(pt[0] + pt[2]) / 2, (pt[1] + pt[3]) / 2];
-  });
-  (det.relationship_edges || []).forEach((edge) => {
-    const p1 = centers[edge.from];
-    const p2 = centers[edge.to];
-    if (!p1 || !p2) return;
-    ctx.strokeStyle = 'rgba(255,120,140,0.85)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(p1[0], p1[1]);
-    ctx.lineTo(p2[0], p2[1]);
-    ctx.stroke();
-  });
-
-  const lv = det.lost_vlm_labels;
-  if (lv && lv.length) {
-    ctx.fillStyle = 'rgba(20,22,28,0.78)';
-    ctx.fillRect(8, rh - 28 - lv.length * 14, Math.min(rw - 16, 280), 16 + lv.length * 14);
-    ctx.fillStyle = '#e8f7ff';
-    ctx.font = '10px Inter, system-ui, sans-serif';
-    ctx.fillText(`Ollama scan: ${lv.join(', ')}`, 14, rh - 18);
-  }
-}
-
-let _liveOverlayResizeObs = null;
-
-function bindLiveOverlayResize() {
-  const primary = document.getElementById('live-video-primary');
-  if (!primary || primary._overlayObsBound) return;
-  primary._overlayObsBound = true;
-  if (_liveOverlayResizeObs) _liveOverlayResizeObs.disconnect();
-  _liveOverlayResizeObs = new ResizeObserver(() => {
-    if (state.currentScreen === 'camera') requestAnimationFrame(syncLiveOverlayCanvas);
-  });
-  _liveOverlayResizeObs.observe(primary);
-}
-
-async function loadCapturesGallery() {
-  const el = document.getElementById('captures-content');
-  if (!el) return;
-  if (!backend?.baseUrl || !state.liveMode) {
-    el.innerHTML = '<p class="captures-empty">Turn on <strong>Live</strong> and connect to the server to load desk captures.</p>';
-    return;
-  }
-  el.innerHTML = '<p class="captures-loading">Loading snapshots…</p>';
-  const data = await backend.listSnapshots();
-  const items = (data && data.items) || [];
-  if (!items.length) {
-    el.innerHTML = '<p class="captures-empty">No captures yet — proximity alerts and periodic desk scans will appear here.</p>';
-    return;
-  }
-  el.innerHTML = `<div class="captures-grid">${items.map((it) => {
-    const url = backend.snapshotUrl(it.id);
-    const dt = new Date((it.ts || 0) * 1000);
-    const dateStr = dt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-    const lab = escapeHtml(it.label || 'Capture');
-    return `<button type="button" class="captures-card" data-url="${url.replace(/"/g, '&quot;')}">
-      <img src="${url}" alt="" loading="lazy">
-      <span class="captures-card-meta">${escapeHtml(dateStr)}</span>
-      <span class="captures-card-label">${lab}</span>
-    </button>`;
-  }).join('')}</div>`;
-  el.querySelectorAll('.captures-card').forEach((btn) => {
-    btn.addEventListener('click', () => openSnapshot(btn.dataset.url));
-  });
-}
-
-function _riskEventSummary(ev) {
-  if (!ev || !ev.type) return '';
-  const t = ev.type;
-  if (t === 'zone_intrusion') {
-    return `${ev.intruder_class || '?'} in ${ev.target_class || '?'} zone (${ev.zone_label || 'danger'})`;
-  }
-  if (t === 'edge_danger' || t === 'edge_warning') {
-    return `${ev.class || 'Object'} near ${ev.edge || '?'} edge (${ev.distance_px != null ? Math.round(ev.distance_px) : '?'}px)`;
-  }
-  if (t === 'approaching') return 'Objects moving closer (tracked frames)';
-  if (t === 'crowd') return `Crowded cluster (${(ev.count != null ? ev.count : (ev.cluster || []).length) || '—'} items)`;
-  if (t === 'chain_reaction') return 'Chain: mediator between two hazards';
-  if (t === 'repeated_intrusion') return 'Repeated zone entry';
-  return t;
-}
-
-function renderLiveRisksBar(safety) {
-  const list = document.getElementById('live-risks-list');
-  const label = document.getElementById('live-risks-label');
-  if (!list) return;
-  if (!state.liveMode) {
-    list.innerHTML = '<li class="live-risk-row live-risk-row--dim">Demo — risk list appears in live mode</li>';
-    if (label) label.textContent = 'Risks and relationships (demo)';
-    return;
-  }
-  if (!backend?.connected) {
-    list.innerHTML = '<li class="live-risk-row live-risk-row--empty">Connect live for geometry / relationship output</li>';
-    if (label) label.textContent = 'Risks and relationships';
-    return;
-  }
-  if (!safety) {
-    list.innerHTML = '<li class="live-risk-row live-risk-row--empty">No data</li>';
-    if (label) label.textContent = 'Risks and relationships';
-    return;
-  }
-  const expl = (safety.explanations && safety.explanations.length)
-    ? safety.explanations
-    : [];
-  const evs = (safety.risk_events && safety.risk_events.length)
-    ? safety.risk_events
-    : [];
-  const lines = [];
-  const cap = 14;
-  for (let i = 0; i < Math.min(expl.length, cap); i += 1) {
-    lines.push(`<li class="live-risk-row">${escapeHtml(expl[i])}</li>`);
-  }
-  if (!lines.length) {
-    for (let j = 0; j < Math.min(evs.length, cap); j += 1) {
-      const s = _riskEventSummary(evs[j]);
-      if (s) lines.push(`<li class="live-risk-row">${escapeHtml(s)}</li>`);
-    }
-  }
-  if (!lines.length) {
-    const rl = safety.risk_level != null ? safety.risk_level : 0;
-    lines.push(
-      `<li class="live-risk-row live-risk-row--dim">No extra geometry risks right now (risk level ${rl}/4).</li>`,
-    );
-  }
-  list.innerHTML = lines.join('');
-  const rl = safety.risk_level != null ? safety.risk_level : 0;
-  if (label) {
-    const st = safety.state || '—';
-    label.textContent = `Risks and relationships · L${rl} · ${st}`;
-  }
-}
-
-function renderLiveDetectionsBar(data) {
-  const list = document.getElementById('live-detections-list');
-  const label = document.getElementById('live-detections-label');
-  if (!list) return;
-  if (!state.liveMode) {
-    list.innerHTML = [
-      '<li class="live-check-row"><span class="live-check-ico" aria-hidden="true">✓</span><span class="live-check-body">Computer <em>demo</em></span></li>',
-      '<li class="live-check-row"><span class="live-check-ico" aria-hidden="true">✓</span><span class="live-check-body">Cup <em>demo</em></span></li>',
-      '<li class="live-check-row"><span class="live-check-ico" aria-hidden="true">✓</span><span class="live-check-body">Paper <em>demo</em></span></li>',
-    ].join('');
-    if (label) label.textContent = 'Detected in frame (illustration)';
-    return;
-  }
-  if (!backend?.connected) {
-    list.innerHTML = '<li class="live-check-row live-check-row--empty"><span class="live-check-ico">—</span><span class="live-check-body">Connect live mode for real detections</span></li>';
-    if (label) label.textContent = 'Detected in frame';
-    return;
-  }
-  if (!data || (!data.objects && !data.extras)) {
-    list.innerHTML = '<li class="live-check-row live-check-row--empty"><span class="live-check-ico">—</span><span class="live-check-body">No data</span></li>';
-    return;
-  }
-  const seen = new Set();
-  const rows = [];
-  for (const o of Object.values(data.objects || {})) {
-    if (!o.class) continue;
-    seen.add(o.class);
-    const pct = o.confidence != null ? Math.round((o.confidence) * 100) : '—';
-    const title = escapeHtml(o.class);
-    rows.push(
-      `<li class="live-check-row" title="${title}"><span class="live-check-ico" aria-hidden="true">✓</span><span class="live-check-body"><span class="live-det-ico">${o.icon || '•'}</span> ${escapeHtml(o.name)} <em>${pct}%</em></span></li>`,
-    );
-  }
-  for (const ex of data.extras || []) {
-    const c = ex.yolo_class;
-    if (!c || seen.has(c)) continue;
-    seen.add(c);
-    const pct = ex.confidence != null ? Math.round(ex.confidence * 100) : '—';
-    rows.push(
-      `<li class="live-check-row" title="YOLO: ${escapeHtml(c)}"><span class="live-check-ico live-check-ico--extra" aria-hidden="true">◆</span><span class="live-check-body">${escapeHtml(c)} <em>${pct}%</em> <em style="font-size:9px;opacity:0.5">extra</em></span></li>`,
-    );
-  }
-  list.innerHTML = rows.length
-    ? rows.join('')
-    : '<li class="live-check-row live-check-row--empty"><span class="live-check-ico">—</span><span class="live-check-body">No objects in frame</span></li>';
-  if (label) {
-    const n = rows.length;
-    label.textContent = n ? `Detected in frame · ${n} item${n === 1 ? '' : 's'}` : 'Detected in frame';
-  }
-  const v = data.vlm_habit;
-  if (v && typeof v === 'object' && Object.keys(v).length && label) {
-    const bits = [
-      v.posture && v.posture !== 'unknown' ? `posture ${v.posture}` : '',
-      v.face_screen_distance && v.face_screen_distance !== 'unknown' ? `distance ${v.face_screen_distance}` : '',
-      v.phone && v.phone !== 'none' ? `phone ${v.phone}` : '',
-      v.attention && v.attention !== 'unknown' ? `attention ${v.attention}` : '',
-    ].filter(Boolean);
-    if (bits.length) {
-      label.textContent += ` · VLM: ${bits.join(', ')}`;
-    }
-  }
-}
-
-function setupCameraView() {
-  const primary = $('#live-video-primary');
-  if (!primary) return;
-
-  stopLiveFramePoll();
-  if (liveMjpegFailSafeTimer) {
-    clearTimeout(liveMjpegFailSafeTimer);
-    liveMjpegFailSafeTimer = null;
-  }
-
-  wireLiveViewTabs();
-  bindLiveOverlayResize();
-  document.querySelectorAll('.live-view-tab').forEach((btn) => {
-    if (!btn.dataset.view) return;
-    const is = btn.dataset.view === state.liveViewMode;
-    btn.classList.toggle('is-active', is);
-    btn.setAttribute('aria-selected', is ? 'true' : 'false');
-  });
-
-  const liveUrl = getLiveMjpegUrl();
-  const pollUrl = getLiveLatestFrameUrl();
-  const usePoll = !!(liveDeskNeedsJpegPolling() && pollUrl);
-
-  if (state.liveMode && backend.cameraOk && (liveUrl || pollUrl)) {
-    if (usePoll) {
-      primary.innerHTML = `
-      <div class="live-video-wrap">
-        <img alt="Live desk" class="live-video-full" decoding="async"
-          src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
-        <canvas class="live-detection-overlay" aria-hidden="true"></canvas>
-        <div class="camera-offline-msg">Camera connecting…</div>
-      </div>`;
-      const img = primary.querySelector('.live-video-full');
-      const offline = primary.querySelector('.camera-offline-msg');
-      const period = state.liveViewMode === 'clean' ? 90 : 160;
-      const tick = () => {
-        if (state.currentScreen !== 'camera' || !state.liveMode || !backend?.cameraOk) return;
-        const base = getLiveLatestFrameUrl();
-        if (!base) return;
-        img.src = `${base}?t=${Date.now()}`;
-      };
-      img.onload = () => {
-        if (offline) offline.style.display = 'none';
-        requestAnimationFrame(syncLiveOverlayCanvas);
-      };
-      img.onerror = () => {
-        if (offline) offline.style.display = 'flex';
-      };
-      tick();
-      liveFramePollTimer = setInterval(tick, period);
-    } else {
-      primary.innerHTML = `
-      <div class="live-video-wrap">
-        <img src="${liveUrl}" alt="Live desk" class="live-video-full" decoding="async"
-          onerror="this.style.display='none';this.closest('.live-video-wrap').querySelector('.camera-offline-msg').style.display='flex'"
-          onload="const w=this.closest('.live-video-wrap');if(w){const m=w.querySelector('.camera-offline-msg');if(m)m.style.display='none';} requestAnimationFrame(syncLiveOverlayCanvas);">
-        <canvas class="live-detection-overlay" aria-hidden="true"></canvas>
-        <div class="camera-offline-msg">Camera connecting…</div>
-      </div>`;
-      const imgM = primary.querySelector('.live-video-full');
-      liveMjpegFailSafeTimer = setTimeout(() => {
-        liveMjpegFailSafeTimer = null;
-        if (state.currentScreen !== 'camera' || !state.liveMode) return;
-        if (imgM && imgM.naturalWidth < 2 && pollUrl) {
-          state.liveStreamPreferPoll = true;
-          setupCameraView();
-        }
-      }, 3500);
-    }
-  } else {
-    const demo = document.getElementById('camera-topdown');
-    primary.innerHTML = '';
-    if (demo) {
-      const wrap = document.createElement('div');
-      wrap.className = 'camera-view topdown live-demo-fill';
-      wrap.appendChild(demo.cloneNode(true));
-      primary.appendChild(wrap);
-    } else {
-      primary.innerHTML = '<div class="camera-offline-msg">Demo desk</div>';
-    }
-  }
-  const stage = document.getElementById('screen-camera')?.querySelector('.live-stage');
-  if (stage) stage.classList.toggle('live-stage--clean-view', state.liveViewMode === 'clean');
-  if (!state.liveMode || !backend?.connected) {
-    renderLiveDetectionsBar(null);
-    renderLiveRisksBar(null);
-  }
-}
-
-function startDetectionPolling() {
-  stopDetectionPolling();
-  if (!state.liveMode) return;
-  pollDetections();
-  state.detectionPollTimer = setInterval(pollDetections, 2000);
-}
-function stopDetectionPolling() {
-  if (state.detectionPollTimer) { clearInterval(state.detectionPollTimer); state.detectionPollTimer = null; }
-}
-async function pollDetections() {
-  const pill = $('#live-detection-pill');
-  if (!state.liveMode || !backend) {
-    if (pill) pill.textContent = 'Demo';
-    renderLiveDetectionsBar(null);
-    renderLiveRisksBar(null);
-    return;
-  }
-  const d = await backend.getDetections();
-  if (!d) return;
-  state.lastDetections = d;
-  const det = Object.keys(d.objects || {});
-  const extraN = (d.extras && d.extras.length) || 0;
-  const total = det.length + (extraN || 0);
-  let sub = total ? `${total} on desk` : '— on desk';
-  let sd = null;
-  try {
-    const sr = await fetch(`${backend.baseUrl}/api/safety`);
-    sd = await sr.json();
-    if (sd.state === 'DANGEROUS') sub = `Alert · ${(sd.dangers && sd.dangers.length) || 1}`;
-    else if (sd.risk_level != null && sd.risk_level > 0) sub = `L${sd.risk_level} · ${total ? `${total} on desk` : 'desk'}`;
-  } catch (_) {}
-  if (pill) pill.textContent = sub;
-  if (state.currentScreen === 'camera') {
-    renderLiveDetectionsBar(d);
-    renderLiveRisksBar(sd);
-    requestAnimationFrame(syncLiveOverlayCanvas);
-  }
-}
-
-function snapshotHtml(snap) {
-  if (!snap || !backend) return '';
-  const url = backend.snapshotUrl(snap);
-  return `<div class="msg-snapshot" onclick="openSnapshot('${url}')">
-    <img src="${url}" alt="📷" loading="lazy"><span class="snapshot-badge">📷 proof</span></div>`;
-}
-
-function replyQuoteHtml(replyTo) {
-  if (!replyTo || !replyTo.character || !replyTo.text) return '';
-  const ch = CHARACTERS[replyTo.character];
-  if (!ch) return '';
-  const preview = replyTo.text.length > 80 ? replyTo.text.substring(0, 80) + '…' : replyTo.text;
-  return `<div class="msg-reply-quote">
-    <span class="reply-author ${ch.senderClass}">${ch.icon} ${ch.name}</span>
-    <span class="reply-preview">${escapeHtml(preview)}</span></div>`;
-}
-
-/** Order of character cards in the chat list. */
-const CHATLIST_ORDER = ['monty', 'glug', 'munch', 'sheets'];
-
-// ————— Home / Characters / Habits — fewer top-level choices, all features still reachable —————
-function renderChatList() {
-  const ids = CHATLIST_ORDER.filter((id) => CHARACTERS[id]);
-  const uGroup = state.unread.group || 0;
-  const lastGroupMsg = state.groupMessages.length
-    ? state.groupMessages[state.groupMessages.length - 1] : null;
-  const groupPreview = lastGroupMsg
-    ? `<span class="surface-preview">${CHARACTERS[lastGroupMsg.char]?.name || ''}: ${escapeHtml(lastGroupMsg.text.slice(0, 50))}</span>`
-    : `<span class="surface-preview surface-preview--dim">The objects will talk here when something happens.</span>`;
-
-  chatlistContent.innerHTML = `
-    <div class="home-stack">
-      <section class="home-hero">
-        <div class="home-hero-faces" aria-hidden="true">
-          ${ids.map(id => `<span class="home-face home-face--${id}">${CHAR_SVGS[id] || CHARACTERS[id].icon}</span>`).join('')}
-        </div>
-        <p class="home-kicker">Desk Talk</p>
-        <h2>The objects on your desk are alive.</h2>
-        <p>They notice danger, complain about habits, and talk to each other like a tiny group chat.</p>
-      </section>
-
-      <button type="button" class="surface-banner home-primary-card" data-chat="group" aria-label="Open object group chat">
-        <div class="surface-left">
-          <div class="surface-dots" aria-hidden="true">
-            ${ids.slice(0, 4).map(id => `<span class="surface-dot surface-dot--${id}">${CHAR_SVGS[id]}</span>`).join('')}
-          </div>
-        </div>
-        <div class="surface-body">
-          <div class="surface-title-row">
-            <span class="surface-title">Object group chat</span>
-            <span class="surface-badge ${uGroup > 0 ? '' : 'hidden'}">${uGroup > 9 ? '9+' : uGroup}</span>
-          </div>
-          ${groupPreview}
-        </div>
-        <svg class="surface-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
-      </button>
-
-      <div class="home-link-row">
-        <button type="button" class="home-link-btn" data-screen="camera">Open live desk</button>
-        <button type="button" class="home-link-btn" data-screen="captures">Recent captures</button>
-      </div>
-    </div>`;
-
-  chatlistContent.querySelector('.surface-banner')?.addEventListener('click', () => {
-    state.unread.group = 0;
-    navigateTo('chat', 'group');
-  });
-  chatlistContent.querySelectorAll('.home-link-btn').forEach((btn) => {
-    btn.addEventListener('click', () => navigateTo(btn.dataset.screen));
-  });
-}
-
-function renderCharactersScreen() {
-  const ids = CHATLIST_ORDER.filter((id) => CHARACTERS[id]);
-  const cardsHtml = ids.map((id, i) => {
-    const ch = CHARACTERS[id];
-    const u = state.unread[id] || 0;
-    const lastMsg = (state.individualMessages[id] || []).slice(-1)[0];
-    const preview = lastMsg
-      ? escapeHtml(lastMsg.text.slice(0, 55))
-      : `<span class="card-preview--dim">${ch.mission}</span>`;
-    const delay = ((i + 1) * 0.04).toFixed(2);
-    return `
-    <button type="button" class="chat-card chat-card--${id}" data-chat="${id}"
-      style="animation-delay:${delay}s"
-      aria-label="Open chat with ${escapeHtml(ch.name)}">
-      <span class="chat-card-avatar avatar-${id}">${CHAR_SVGS[id] || ch.icon}</span>
-      <div class="chat-card-body">
-        <div class="chat-card-top">
-          <span class="chat-card-name">${escapeHtml(ch.name)}</span>
-          <span class="chat-card-obj">${escapeHtml(ch.object)}</span>
-        </div>
-        <span class="chat-card-preview">${preview}</span>
-      </div>
-      <div class="chat-card-right">
-        <span class="chat-card-badge ${u > 0 ? '' : 'hidden'}">${u > 9 ? '9+' : u}</span>
-        <svg class="chat-card-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
-      </div>
-    </button>`;
-  }).join('');
-
-  charactersContent.innerHTML = `
-    <div class="chatlist-cards">
-      <div class="characters-intro">Pick an object for a 1-on-1 chat, or go back to Home for the shared room.</div>
-      ${cardsHtml}
-    </div>`;
-
-  charactersContent.querySelectorAll('.chat-card').forEach((el) => {
-    el.addEventListener('click', () => {
-      const id = el.dataset.chat;
-      if (!id) return;
-      state.unread[id] = 0;
-      navigateTo('chat', id);
-    });
-  });
-}
-
-async function renderHabitsScreen() {
-  if (!customHabitState) loadCustomHabits();
-  const items = customHabitState.items || [];
-  const data = (state.liveMode && backend?.baseUrl) ? await backend.getHabitLog('all', 20) : null;
-  const summary = data?.summary || {};
-  const autoRows = [
-    { label: 'Nail biting detected', value: summary.nail_biting_count_today ?? 0 },
-    { label: 'Slouching minutes', value: Math.round((summary.posture_bad_seconds_today || 0) / 60) },
-    { label: 'Screen breaks', value: summary.breaks_today ?? (widgetStore.monty?.breaks_today || 0) },
-  ];
-  const logHtml = (data?.events || []).slice(0, 8).map((ev) => {
-    const t = new Date((ev.ts || 0) * 1000).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-    return `<div class="habit-log-row habit-screen-row">
-      <div class="habit-log-body">
-        <span class="habit-log-time">${escapeHtml(t)}</span>
-        <span class="habit-log-line">${escapeHtml(ev.title || '')}</span>
-        ${ev.detail ? `<span class="habit-log-detail">${escapeHtml(ev.detail)}</span>` : ''}
-      </div>
-    </div>`;
-  }).join('');
-
-  habitsContent.innerHTML = `
-    <div class="habits-stack">
-      <section class="settings-section habit-screen-card">
-        <div class="settings-section-title">Today</div>
-        <div class="habit-count-grid">
-          ${autoRows.map(r => `<div class="habit-count-card"><strong>${r.value}</strong><span>${escapeHtml(r.label)}</span></div>`).join('')}
-        </div>
-      </section>
-      <section class="settings-section habit-screen-card">
-        <div class="settings-section-title">Custom bad habits</div>
-        <div class="settings-subtitle">Track anything you want manually. These reset each day.</div>
-        <div class="custom-habit-list">
-          ${items.map((it, i) => `<div class="custom-habit-row">
-            <span>${escapeHtml(it.label)}</span>
-            <div class="custom-habit-controls">
-              <button type="button" data-action="dec" data-idx="${i}">-</button>
-              <strong>${it.count || 0}</strong>
-              <button type="button" data-action="inc" data-idx="${i}">+</button>
-              <button type="button" data-action="del" data-idx="${i}" aria-label="Delete">×</button>
-            </div>
-          </div>`).join('')}
-        </div>
-        <button type="button" class="add-rule-btn" id="btn-add-custom-habit">+ Add habit</button>
-      </section>
-      <section class="settings-section habit-screen-card">
-        <div class="settings-section-title">Vision log</div>
-        ${logHtml || '<div class="habit-log-empty">Live vision entries show up here when connected.</div>'}
-      </section>
-    </div>`;
-
-  habitsContent.querySelectorAll('[data-action]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const idx = +btn.dataset.idx;
-      const item = customHabitState.items[idx];
-      if (!item) return;
-      if (btn.dataset.action === 'inc') item.count = (item.count || 0) + 1;
-      if (btn.dataset.action === 'dec') item.count = Math.max(0, (item.count || 0) - 1);
-      if (btn.dataset.action === 'del') customHabitState.items.splice(idx, 1);
-      saveCustomHabits();
-      renderHabitsScreen();
-    });
-  });
-  habitsContent.querySelector('#btn-add-custom-habit')?.addEventListener('click', () => {
-    const label = window.prompt('Bad habit to track', '');
-    if (!label?.trim()) return;
-    customHabitState.items.push({ id: `custom_${Date.now()}`, label: label.trim().slice(0, 60), count: 0 });
-    saveCustomHabits();
-    renderHabitsScreen();
-  });
-}
-
-// ————— Chat Screen · per-character widget rendering —————
-
-function timeSince(iso) {
-  if (!iso) return null;
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return `${s}s ago`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m ago`;
-}
-
-function renderWidgetPanel(chatId) {
-  const panel = document.getElementById('chat-todo-panel');
-  if (!panel) return;
-  if (chatId === 'group' || !widgetStore[chatId]) {
-    panel.classList.add('hidden');
-    panel.setAttribute('aria-hidden', 'true');
-    return;
-  }
-  if (backend && state.liveMode) {
-    fetch(`${backend.baseUrl}/api/widget_event`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat: chatId, action: 'view' }),
-    }).catch(() => {});
-  }
-  const w = widgetStore[chatId];
-  const ch = CHARACTERS[chatId];
-  panel.classList.remove('hidden');
-  panel.setAttribute('aria-hidden', 'false');
-
-  if (w.type === 'todo') return renderTodoWidget(chatId, panel, ch, w);
-  if (w.type === 'break_timer') return renderBreakWidget(chatId, panel, ch, w);
-  if (w.type === 'sip_counter') return renderSipWidget(chatId, panel, ch, w);
-  if (w.type === 'snack_log') return renderSnackWidget(chatId, panel, ch, w);
-  panel.classList.add('hidden');
-}
-
-function renderTodoWidget(chatId, panel, ch, w) {
-  const items = w.items || [];
-  panel.innerHTML = `
-    <div class="chat-todo-panel-head"><span>${ch.name} · to-do list</span></div>
-    <ul class="chat-todo-ul">${items.map((t, i) => `
-      <li class="chat-todo-li">
-        <label class="chat-todo-item">
-          <input type="checkbox" class="chat-todo-check" data-idx="${i}" ${t.done ? 'checked' : ''}>
-          <span>${escapeHtml(t.text)}</span>
-        </label>
-        <button type="button" class="chat-todo-del" data-idx="${i}" aria-label="Remove">×</button>
-      </li>`).join('') || '<li class="chat-todo-empty">Tap + to add tasks — Paper will nag you about them.</li>'}</ul>
-    <button type="button" class="chat-todo-add">+ Add item</button>`;
-  panel.querySelectorAll('.chat-todo-check').forEach(cb => {
-    cb.onchange = () => { const idx = +cb.dataset.idx; if (w.items[idx]) { w.items[idx].done = cb.checked; saveWidgets(); pushWidgetToServer(chatId); } };
-  });
-  panel.querySelectorAll('.chat-todo-del').forEach(btn => {
-    btn.onclick = () => { w.items.splice(+btn.dataset.idx, 1); saveWidgets(); renderWidgetPanel(chatId); pushWidgetToServer(chatId); };
-  });
-  panel.querySelector('.chat-todo-add').onclick = () => {
-    const line = window.prompt('New task', '');
-    if (!line?.trim()) return;
-    w.items.push({ text: line.trim().slice(0, 200), done: false });
-    saveWidgets(); renderWidgetPanel(chatId); pushWidgetToServer(chatId);
-  };
-}
-
-async function refreshMontyHabitPanel(panel) {
-  const metricsEl = panel.querySelector('#monty-petkit-metrics');
-  const hintEl = panel.querySelector('#monty-vlm-hint');
-  const logEl = panel.querySelector('#monty-habit-log');
-  if (!metricsEl || !logEl) return;
-  const w = widgetStore.monty || {};
-  const breaksLocal = w.breaks_today ?? 0;
-  if (!state.liveMode || !backend?.baseUrl) {
-    metricsEl.innerHTML = `
-      <div class="petkit-metric"><span class="petkit-metric-num">${breaksLocal}</span><span class="petkit-metric-label">Breaks today</span></div>
-      <div class="petkit-metric-div" aria-hidden="true"></div>
-      <div class="petkit-metric"><span class="petkit-metric-num">—</span><span class="petkit-metric-label">Posture min</span></div>
-      <div class="petkit-metric-div" aria-hidden="true"></div>
-      <div class="petkit-metric"><span class="petkit-metric-num">—</span><span class="petkit-metric-label">Nail cues</span></div>`;
-    if (hintEl) hintEl.textContent = 'Turn on Live + Ollama vision for posture minutes and nail cues in the log below.';
-    logEl.innerHTML = '<div class="habit-log-empty">Habit log appears when the server and vision are connected.</div>';
-    return;
-  }
-  const data = await backend.getHabitLog(montyHabitFilter, 42);
-  if (!data) {
-    metricsEl.innerHTML = '<div class="petkit-metric petkit-metric--dim"><span class="petkit-metric-num">…</span></div>';
-    return;
-  }
-  const s = data.summary || {};
-  const postureMin = Math.round((s.posture_bad_seconds_today || 0) / 60);
-  const nails = s.nail_biting_count_today ?? 0;
-  const br = s.breaks_today ?? breaksLocal;
-  metricsEl.innerHTML = `
-      <div class="petkit-metric"><span class="petkit-metric-num">${br}</span><span class="petkit-metric-label">Breaks today</span></div>
-      <div class="petkit-metric-div" aria-hidden="true"></div>
-      <div class="petkit-metric"><span class="petkit-metric-num">${postureMin}</span><span class="petkit-metric-label">Posture min</span></div>
-      <div class="petkit-metric-div" aria-hidden="true"></div>
-      <div class="petkit-metric"><span class="petkit-metric-num">${nails}</span><span class="petkit-metric-label">Nail cues</span></div>`;
-  const vs = data.vlm_state || {};
-  const bits = [];
-  if (vs.posture && vs.posture !== 'unknown') bits.push(`posture ${vs.posture}`);
-  if (vs.face_screen_distance && vs.face_screen_distance !== 'unknown') bits.push(`distance ${vs.face_screen_distance}`);
-  if (vs.phone && vs.phone !== 'none') bits.push(`phone ${vs.phone}`);
-  if (hintEl) hintEl.textContent = bits.length ? `Latest desk check: ${bits.join(' · ')}` : 'Latest desk check: waiting for the next vision pass…';
-
-  const evs = data.events || [];
-  logEl.innerHTML = evs.length ? evs.map((ev) => {
-    const t = new Date((ev.ts || 0) * 1000);
-    const tim = t.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-    const surl = ev.snapshot_id ? backend.snapshotUrl(ev.snapshot_id) : '';
-    const thumb = surl
-      ? `<button type="button" class="habit-log-thumb" data-snap="${escapeHtml(surl)}"><img src="${escapeHtml(surl)}" alt=""></button>`
-      : '<div class="habit-log-thumb habit-log-thumb--empty" aria-hidden="true"></div>';
-    return `<div class="habit-log-row">
-      ${thumb}
-      <div class="habit-log-body">
-        <span class="habit-log-time">${escapeHtml(tim)}</span>
-        <span class="habit-log-line">${escapeHtml(ev.title || '')}</span>
-        ${ev.detail ? `<span class="habit-log-detail">${escapeHtml(ev.detail)}</span>` : ''}
-      </div>
-    </div>`;
-  }).join('') : '<div class="habit-log-empty">No entries yet — slouch segments (after you sit tall again) and nail cues from vision show up here.</div>';
-
-  logEl.querySelectorAll('.habit-log-thumb[data-snap]').forEach((btn) => {
-    btn.addEventListener('click', () => openSnapshot(btn.dataset.snap));
-  });
-}
-
-function renderBreakWidget(chatId, panel, ch, w) {
-  clearMontyHabitPoll();
-  const ago = timeSince(w.last_break);
-  const autoLabel = state.liveMode ? '<span class="widget-auto-tag">Auto-detect on</span>' : '';
-  panel.innerHTML = `
-    <div class="widget-head"><span>${ch.name} · wellness tracker</span>${autoLabel}</div>
-    <div class="widget-body widget-break widget-break--petkit">
-      <div id="monty-petkit-metrics" class="petkit-metrics-bar"></div>
-      <p id="monty-vlm-hint" class="monty-vlm-hint"></p>
-      <div class="widget-stat-row widget-stat-row--secondary">
-        <div class="widget-stat"><span class="widget-stat-num">${ago || '—'}</span><span class="widget-stat-label">last break</span></div>
-      </div>
-      <span class="widget-sub">${state.liveMode ? 'Breaks: logged when you leave the desk 5+ min · Habits: Ollama reads the webcam periodically' : 'Connect Live for auto breaks and the habit log'}</span>
-      <button type="button" class="widget-action-btn widget-break-btn widget-btn-secondary">+ Log break manually</button>
-      <div class="habit-log-section">
-        <div class="habit-log-section-head">
-          <span class="habit-log-section-title">Today's habits</span>
-          <div class="monty-habit-chips habit-chips" role="tablist">
-            <button type="button" class="habit-chip ${montyHabitFilter === 'all' ? 'is-active' : ''}" data-filter="all">All</button>
-            <button type="button" class="habit-chip ${montyHabitFilter === 'posture_bad' ? 'is-active' : ''}" data-filter="posture_bad">Posture</button>
-            <button type="button" class="habit-chip ${montyHabitFilter === 'nail_biting' ? 'is-active' : ''}" data-filter="nail_biting">Nails</button>
-          </div>
-        </div>
-        <div id="monty-habit-log" class="monty-habit-log"></div>
-      </div>
-    </div>`;
-  panel.querySelector('.widget-break-btn').onclick = () => {
-    w.last_break = new Date().toISOString(); w.breaks_today++; w.day = todayKey();
-    saveWidgets(); renderWidgetPanel(chatId); pushWidgetToServer(chatId);
-    addIndividualMessage(chatId, randomPick(['Nice! Stretch those wrists.', 'Break logged — your eyes thank you.', 'Good call. Roll those shoulders too.', 'Screen break! Look at something 20 feet away for 20 seconds.']));
-  };
-  const chips = panel.querySelector('.monty-habit-chips');
-  chips?.addEventListener('click', (e) => {
-    const chip = e.target.closest('.habit-chip');
-    if (!chip?.dataset?.filter) return;
-    montyHabitFilter = chip.dataset.filter;
-    panel.querySelectorAll('.habit-chip').forEach((c) => c.classList.toggle('is-active', c.dataset.filter === montyHabitFilter));
-    refreshMontyHabitPanel(panel);
-  });
-  refreshMontyHabitPanel(panel);
-  if (state.liveMode && chatId === 'monty') {
-    state.montyHabitPollTimer = setInterval(() => {
-      if (state.currentScreen === 'chat' && state.currentChat === 'monty')
-        refreshMontyHabitPanel(panel);
-    }, 14000);
-  }
-}
-
-function renderSipWidget(chatId, panel, ch, w) {
-  const pct = Math.min(100, Math.round((w.sips / w.goal) * 100));
-  const ago = timeSince(w.last_sip);
-  const autoLabel = state.liveMode ? '<span class="widget-auto-tag">Auto-detect on</span>' : '';
-  panel.innerHTML = `
-    <div class="widget-head"><span>${ch.name} · hydration tracker</span>${autoLabel}</div>
-    <div class="widget-body widget-sip">
-      <div class="widget-progress-ring">
-        <svg viewBox="0 0 80 80" class="sip-ring-svg">
-          <circle cx="40" cy="40" r="34" fill="none" stroke="rgba(0,0,0,.06)" stroke-width="6"/>
-          <circle cx="40" cy="40" r="34" fill="none" stroke="${ch.color}" stroke-width="6"
-            stroke-dasharray="${2 * Math.PI * 34}" stroke-dashoffset="${2 * Math.PI * 34 * (1 - pct / 100)}"
-            stroke-linecap="round" transform="rotate(-90 40 40)"/>
-          <text x="40" y="44" text-anchor="middle" fill="var(--text-primary, #1a1a1a)" font-size="16" font-weight="700">${w.sips}</text>
-        </svg>
-        <span class="sip-goal-label">${pct}% of ${w.goal} sips</span>
-      </div>
-      ${ago ? `<span class="widget-sub">last sip ${ago}</span>` : `<span class="widget-sub">${state.liveMode ? 'Logged when cup leaves & returns' : 'Connect to auto-detect sips'}</span>`}
-      <button type="button" class="widget-action-btn widget-sip-btn widget-btn-secondary">+ Log manually</button>
-    </div>`;
-  panel.querySelector('.widget-sip-btn').onclick = () => {
-    w.sips++; w.last_sip = new Date().toISOString(); w.day = todayKey();
-    saveWidgets(); renderWidgetPanel(chatId); pushWidgetToServer(chatId);
-    if (w.sips >= w.goal) addIndividualMessage(chatId, randomPick(['Goal reached! Your kidneys send their regards.', 'Hydration goal hit — keep it up!']));
-    else addIndividualMessage(chatId, randomPick(['Sip logged!', 'Nice, keep drinking.', 'One more down.', 'Hydration in progress…']));
-  };
-}
-
-function renderSnackWidget(chatId, panel, ch, w) {
-  const entries = w.entries || [];
-  const autoLabel = state.liveMode ? '<span class="widget-auto-tag">Auto-detect on</span>' : '';
-  panel.innerHTML = `
-    <div class="widget-head"><span>${ch.name} · snack log</span>${autoLabel}</div>
-    <div class="widget-body widget-snack">
-      <div class="snack-pills">${entries.map((e, i) => `<span class="snack-pill ${e.healthy ? 'snack-healthy' : 'snack-junk'}">${escapeHtml(e.label)} <button class="snack-pill-x" data-idx="${i}">×</button></span>`).join('') || `<span class="widget-empty-hint">${state.liveMode ? 'Camera will log snacks automatically.' : 'No snacks logged yet today.'}</span>`}</div>
-      <div class="snack-add-row">
-        <input type="text" class="snack-input" placeholder="Or add manually..." maxlength="60">
-        <button type="button" class="widget-action-btn snack-add-btn">🍎</button>
-        <button type="button" class="widget-action-btn snack-junk-btn">🍕</button>
-      </div>
-    </div>`;
-  const inp = panel.querySelector('.snack-input');
-  const addEntry = (healthy) => {
-    const label = inp.value.trim().slice(0, 60);
-    if (!label) return;
-    w.entries.push({ label, healthy, time: new Date().toISOString() }); inp.value = '';
-    saveWidgets(); renderWidgetPanel(chatId); pushWidgetToServer(chatId);
-    addIndividualMessage(chatId, healthy
-      ? randomPick(['Solid choice!', 'Green-tier snack. Respect.', 'Your body says thanks.'])
-      : randomPick(['No judgment… okay maybe a little.', 'Crumbs detected near the trackpad.', 'Snack logged. Napkin recommended.']));
-  };
-  panel.querySelector('.snack-add-btn').onclick = () => addEntry(true);
-  panel.querySelector('.snack-junk-btn').onclick = () => addEntry(false);
-  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') addEntry(true); });
-  panel.querySelectorAll('.snack-pill-x').forEach(btn => {
-    btn.onclick = () => { w.entries.splice(+btn.dataset.idx, 1); saveWidgets(); renderWidgetPanel(chatId); pushWidgetToServer(chatId); };
-  });
-}
-
-function randomPick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
-
-function processServerActions(chatId, actions) {
-  const w = widgetStore[chatId];
-  if (!w || !actions?.length) return;
-  let changed = false;
-  for (const a of actions) {
-    if (w.type === 'todo') {
-      if (a.action === 'add_todo' && a.text) {
-        w.items = w.items || [];
-        if (w.items.length < 20) { w.items.push({ text: a.text.slice(0, 200), done: false }); changed = true; }
-      } else if (a.action === 'done_todo' && a.text) {
-        const item = (w.items || []).find(t => !t.done && t.text.toLowerCase().includes(a.text.toLowerCase()));
-        if (item) { item.done = true; changed = true; }
-      } else if (a.action === 'del_todo' && a.text) {
-        const idx = (w.items || []).findIndex(t => t.text.toLowerCase().includes(a.text.toLowerCase()));
-        if (idx >= 0) { w.items.splice(idx, 1); changed = true; }
-      }
-    } else if (w.type === 'break_timer' && a.action === 'log_break') {
-      w.last_break = new Date().toISOString(); w.breaks_today++; w.day = todayKey(); changed = true;
-    } else if (w.type === 'sip_counter' && a.action === 'log_sip') {
-      w.sips++; w.last_sip = new Date().toISOString(); w.day = todayKey(); changed = true;
-    } else if (w.type === 'snack_log' && a.action === 'log_snack' && a.label) {
-      w.entries = w.entries || [];
-      w.entries.push({ label: a.label.slice(0, 60), healthy: !!a.healthy, time: new Date().toISOString() });
-      changed = true;
-    }
-  }
-  if (changed) {
-    saveWidgets();
-    if (state.currentScreen === 'chat' && state.currentChat === chatId) renderWidgetPanel(chatId);
-    pushWidgetToServer(chatId);
-  }
-}
-
-function setupChatScreen(chatId) {
-  const sub = document.getElementById('chat-header-subline');
-  const realLifeEl = document.getElementById('chat-real-life');
-  chatMessages.classList.toggle('chat-theme-sheets', chatId === 'sheets');
-
-  if (chatId === 'group') {
-    const todoPanel = document.getElementById('chat-todo-panel');
-    if (todoPanel) { todoPanel.classList.add('hidden'); todoPanel.setAttribute('aria-hidden', 'true'); }
-    chatHeaderName.textContent = 'Object group chat';
-    chatHeaderIcon.innerHTML = CHAR_SVGS.group || '';
-    if (sub) {
-      sub.textContent = 'The desk objects talk to you and to each other.';
-      sub.classList.remove('hidden');
-    }
-    if (realLifeEl) {
-      realLifeEl.textContent = 'Live camera drawer below: open it to see what the objects are reacting to.';
-      realLifeEl.classList.remove('hidden');
-    }
-  } else {
-    const ch = CHARACTERS[chatId];
-    chatHeaderName.textContent = ch.name;
-    chatHeaderIcon.innerHTML = CHAR_SVGS[chatId] || '';
-    if (sub) {
-      sub.textContent = ch.mission || '';
-      sub.classList.toggle('hidden', !ch.mission);
-    }
-    if (realLifeEl) {
-      if (ch.realLife) {
-        realLifeEl.textContent = `Real life: ${ch.realLife}`;
-        realLifeEl.classList.remove('hidden');
-      } else realLifeEl.classList.add('hidden');
-    }
-    renderWidgetPanel(chatId);
-  }
-  state.unread[chatId] = 0;
+function openChat(id) {
+  state.view = 'chat';
+  state.chat = id;
+  state.unread[id] = 0;
+  $$('.view').forEach((v) => { v.hidden = v.id !== 'view-chat'; });
+  const c = who(id);
+  $('#chat-art').src = c.art;
+  $('#chat-name').textContent = c.name;
+  $('#chat-about').textContent = c.about;
+  renderTracker();
   renderMessages();
-  chatInput.value = '';
-  chatInput.focus();
-  hideMentionDropdown();
-  if (state.liveMode) fetchMentionOptions();
+  renderChatList();
+  renderPageLinks();
+  $('#input').focus();
+  if (state.live && id !== 'group') {
+    api('/api/widget_event', { method: 'POST', body: { chat: id, action: 'view' } }).catch(() => {});
+  }
+  if (!state.live && id === 'group') playDemoOnce();
 }
 
-function renderMessages() {
-  const chatId = state.currentChat;
-  if (!chatId) return;
-  const msgs = chatId === 'group' ? state.groupMessages : state.individualMessages[chatId];
-  const isG = chatId === 'group';
-  chatMessages.innerHTML = msgs.map(m => buildMessageHtml(m, isG, chatId)).join('');
-  scrollToBottom();
+function openPage(view) {
+  state.view = view;
+  $$('.view').forEach((v) => { v.hidden = v.id !== `view-${view}`; });
+  renderChatList();
+  renderPageLinks();
+  if (view === 'habits') renderHabits();
+  if (view === 'captures') renderCaptures();
+  if (view === 'settings') renderSettings();
 }
 
-function buildMessageHtml(m, isGroup, chatId) {
-  const mv = Math.floor(Math.random() * 4);
-  if (m.from === 'user') {
-    return `<div class="message from-user mv-${mv}"><div class="msg-body"><div class="msg-bubble">${formatMessageText(m.text)}</div></div></div>`;
-  }
-  const ch = CHARACTERS[m.char || chatId];
-  const cid = ch.id || m.char || chatId;
-  const bv = Math.floor(Math.random() * 3);
-  let prog = '';
-  if (m.progress) {
-    const p = Math.round((m.progress.value / m.progress.max) * 100);
-    prog = `<div class="msg-progress"><div class="progress-bar"><div class="progress-fill" style="width:${p}%;background:${m.progress.color}"></div></div><span class="progress-label">${m.progress.value}/${m.progress.max}</span></div>`;
-  }
-  const reply = replyQuoteHtml(m.replyTo);
-  return `<div class="message from-character mv-${mv}">
-    <div class="msg-avatar avatar-${cid}">${CHAR_SVGS[cid] || ch.icon}</div>
+// ————— Messages —————
+function formatText(text) {
+  let s = esc(text);
+  s = s.replace(/@user\b/g, '<span class="mention-you">@you</span>');
+  s = s.replace(/@(\w+)/g, (m, word) => {
+    const id = ALIASES[word.toLowerCase()];
+    if (!id) return m;
+    return `<span class="mention" style="--mention-color:${CHARACTERS[id].color}">@${esc(CHARACTERS[id].name)}</span>`;
+  });
+  return s.replace(/\n/g, '<br>');
+}
+
+function messageHtml(m, chatId) {
+  if (m.note) return `<p class="note">${esc(m.text)}</p>`;
+  if (m.mine) return `<div class="msg mine"><div class="msg-body"><div class="bubble">${formatText(m.text)}</div></div></div>`;
+  const c = CHARACTERS[m.char] || GROUP;
+  const quote = m.replyTo && CHARACTERS[m.replyTo.character]
+    ? `<div class="quote" style="--quote-color:${CHARACTERS[m.replyTo.character].color}">${esc(CHARACTERS[m.replyTo.character].name)}: ${esc(m.replyTo.text.slice(0, 90))}</div>`
+    : '';
+  const photo = m.snapshot && state.live
+    ? `<img src="/api/snapshot/${esc(m.snapshot)}" alt="Proof photo from the desk cam" data-photo="/api/snapshot/${esc(m.snapshot)}" loading="lazy">`
+    : '';
+  const cta = m.cta && m.cta.action === 'captures'
+    ? `<button type="button" class="btn-quiet msg-cta" data-open="captures">${esc(m.cta.label || 'Desk captures')}</button>`
+    : '';
+  return `<div class="msg" style="--tint:${c.tint}">
+    <img class="msg-art" src="${c.art}" alt="" width="36" height="36">
     <div class="msg-body">
-      ${isGroup ? `<div class="msg-sender sender-${cid}">${ch.name}</div>` : ''}
-      ${reply}
-      <div class="msg-bubble ${ch.bubbleClass} bv-${bv}">${formatMessageText(m.text)}${snapshotHtml(m.snapshot)}${prog}</div>
-      ${lostCtaHtml(m.cta)}
+      ${chatId === 'group' ? `<span class="msg-name" style="color:${c.color}">${esc(c.name)}</span>` : ''}
+      ${quote}
+      <div class="bubble">${formatText(m.text)}${photo}</div>
+      ${cta}
     </div>
   </div>`;
 }
 
-function addGroupMessage(charId, text, silent = false, snapshot = null, replyTo = null, cta = null) {
-  const m = { char: charId, text, time: Date.now(), from: 'char', snapshot, replyTo, cta };
-  state.groupMessages.push(m);
-  if (state.currentScreen === 'chat' && state.currentChat === 'group') appendMessageToDOM(m, true);
-  else if (!silent) { state.unread.group++; refreshActivePrimaryList(); }
-  if (text.includes('@user') && !(state.currentScreen === 'chat' && state.currentChat === 'group'))
-    showToast(CHARACTERS[charId].icon, `${CHARACTERS[charId].name}: ${text}`);
+function renderMessages() {
+  const box = $('#messages');
+  const list = state.messages[state.chat];
+  const c = who(state.chat);
+  const empty = list.some((m) => !m.note)
+    ? ''
+    : `<div class="empty"><img src="${c.art}" alt="" width="132" height="132"><p>${esc(c.empty)}</p></div>`;
+  box.innerHTML = list.map((m) => messageHtml(m, state.chat)).join('') + empty;
+  box.scrollTop = box.scrollHeight;
 }
 
-function addIndividualMessage(charId, text, progress = null, snapshot = null, replyTo = null, cta = null) {
-  const m = { text, time: Date.now(), from: 'char', progress, snapshot, replyTo, cta };
-  state.individualMessages[charId].push(m);
-  if (state.currentScreen === 'chat' && state.currentChat === charId) appendMessageToDOM(m, false, charId);
-  else { state.unread[charId]++; refreshActivePrimaryList(); }
-  if (text.includes('@user') && !(state.currentScreen === 'chat' && state.currentChat === charId))
-    showToast(CHARACTERS[charId].icon, `${CHARACTERS[charId].name}: ${text}`);
-}
-
-async function addUserMessage(text) {
-  const chatId = state.currentChat;
-  if (!chatId) return;
-  hideMentionDropdown();
-  const m = { text, time: Date.now(), from: 'user' };
-  if (chatId === 'group') state.groupMessages.push(m);
-  else state.individualMessages[chatId].push(m);
-  appendMessageToDOM(m, chatId === 'group');
-  if (state.liveMode) {
-    const resp_id = chatId === 'group' ? charIds[Math.floor(Math.random() * charCount)] : chatId;
-    showTypingIndicator(resp_id);
-    const response = await backend.sendMessage(chatId, text, getWidgetPayload(chatId));
-    removeTypingIndicator();
-    if (response?.messages) {
-      for (const r of response.messages) {
-        showTypingIndicator(r.character || chatId);
-        await sleep(500 + Math.random() * 500);
-        removeTypingIndicator();
-        if (chatId === 'group') addGroupMessage(r.character, r.text, false, null, r.reply_to || null, r.cta);
-        else addIndividualMessage(r.character || chatId, r.text, null, null, r.reply_to || null, r.cta);
-      }
-      if (response.actions && chatId !== 'group') {
-        processServerActions(chatId, response.actions);
-      }
-    } else {
-      offlineResponse(chatId);
-    }
-    return;
+function addMessage(chatId, msg) {
+  const list = state.messages[chatId];
+  list.push({ time: Date.now(), ...msg });
+  if (list.length > 200) list.splice(0, list.length - 200);
+  const visible = state.view === 'chat' && state.chat === chatId;
+  if (visible) {
+    const box = $('#messages');
+    if (!msg.note) box.querySelector('.empty')?.remove();
+    hideTyping();
+    box.insertAdjacentHTML('beforeend', messageHtml(list.at(-1), chatId));
+    box.scrollTop = box.scrollHeight;
+  } else if (!msg.mine && !msg.note) {
+    state.unread[chatId] += 1;
   }
-  offlineResponse(chatId);
-}
-
-const OFFLINE_HINTS = {
-  group: 'Connect the server for live cross-object chatter — the objects can answer each other.',
-  monty: 'Live mode: Computer tracks your screen breaks and posture.',
-  glug: 'Live mode: Cup counts sips and watches for spill risk.',
-  munch: 'Live mode: Snack logs food and judges crumbs.',
-  sheets: 'Live mode: Paper tracks tasks and lost-object clues.',
-};
-
-function offlineResponse(chatId) {
-  const cid = chatId !== 'group' ? chatId : charIds[Math.floor(Math.random() * charCount)];
-  showTypingIndicator(cid);
-  setTimeout(() => {
-    removeTypingIndicator();
-    const text = OFFLINE_HINTS[chatId] || OFFLINE_HINTS.group;
-    if (chatId === 'group') addGroupMessage(cid, text);
-    else addIndividualMessage(cid, text);
-  }, 1500);
-}
-
-function appendMessageToDOM(msg, isGroup, singleCharId = null) {
-  const chatId = state.currentChat;
-  const wrapper = document.createElement('div');
-  wrapper.innerHTML = buildMessageHtml(msg, isGroup, msg.char || singleCharId || chatId);
-  const div = wrapper.firstElementChild;
-  chatMessages.appendChild(div);
-  scrollToBottom();
-}
-
-// ————— Typing / Toast —————
-function showTypingIndicator(charId) {
-  removeTypingIndicator();
-  const ch = CHARACTERS[charId];
-  const d = document.createElement('div');
-  d.className = 'typing-indicator'; d.id = 'typing-indicator';
-  d.innerHTML = `<span class="msg-sender ${ch.senderClass}" style="padding-left:0;opacity:0.6">${ch.name}</span>
-    <span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>`;
-  chatMessages.appendChild(d);
-  scrollToBottom();
-}
-function removeTypingIndicator() { const e = document.getElementById('typing-indicator'); if (e) e.remove(); }
-
-function showToast(icon, text) {
-  toastEl.querySelector('.toast-icon').textContent = icon;
-  toastEl.querySelector('.toast-text').textContent = text.replace(/@user/g, '@you');
-  toastEl.classList.remove('hidden'); toastEl.classList.add('show');
-  setTimeout(() => { toastEl.classList.remove('show'); setTimeout(() => toastEl.classList.add('hidden'), 400); }, 3500);
-}
-
-// ————— Camera Status —————
-async function renderCameraStatus() {
-  await pollDetections();
-}
-
-// ————— Simulation (demo) —————
-function startSimulation() {
-  // Chats start empty — messages only appear from live detection or habit reminders
-}
-
-// ————— Camera Drawer (peek feed only — settings on dedicated screen) —————
-const cameraDrawer = $('#camera-drawer');
-const cameraDrawerHandle = $('#camera-drawer-handle');
-const drawerFeeds = $('#drawer-camera-feeds');
-const drawerStatus = $('#drawer-status');
-const drawerDetStrip = $('#drawer-detection-strip');
-let drawerOpen = false;
-let drawerPollTimer = null;
-let liveFramePollTimer = null;
-let drawerFramePollTimer = null;
-let liveMjpegFailSafeTimer = null;
-
-async function loadDrawerSnapshots() {
-  const el = document.getElementById('drawer-snapshots');
-  if (!el) return;
-  if (!backend?.baseUrl) {
-    el.innerHTML = '<div class="drawer-snapshots-empty">Connect in Live mode to load recent crops.</div>';
-    return;
+  if (!msg.mine && !msg.note && msg.text.includes('@user') && !visible) {
+    toast(CHARACTERS[msg.char] || GROUP, msg.text.replace(/@user/g, '@you'));
   }
+  renderChatList();
+}
+
+function showTyping(charId, chatId) {
+  hideTyping();
+  if (state.view !== 'chat' || state.chat !== chatId) return;   // only in the chat being answered
+  const c = CHARACTERS[charId] || GROUP;
+  const box = $('#messages');
+  box.querySelector('.empty')?.remove();
+  box.insertAdjacentHTML('beforeend', `<div class="msg" id="typing" style="--tint:${c.tint}">
+    <img class="msg-art" src="${c.art}" alt="" width="36" height="36">
+    <div class="bubble typing" aria-label="${esc(c.name)} is typing"><i></i><i></i><i></i></div></div>`);
+  box.scrollTop = box.scrollHeight;
+}
+function hideTyping() { $('#typing')?.remove(); }
+
+let toastTimer = null;
+function toast(character, text) {
+  const el = $('#toast');
+  el.innerHTML = `${character ? `<img src="${character.art}" alt="">` : ''}<span>${esc(text.slice(0, 140))}</span>`;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, 4000);
+}
+
+// ————— Sending —————
+function historyFor(chatId) {
+  return state.messages[chatId].filter((m) => !m.note).slice(-11, -1).map((m) => ({
+    role: m.mine ? 'user' : 'assistant',
+    name: m.mine ? undefined : (CHARACTERS[m.char] || GROUP).name,
+    text: m.text.slice(0, 1200),
+  }));
+}
+
+async function send(text) {
+  const chatId = state.chat;
+  addMessage(chatId, { mine: true, text });
+  if (!state.live) return demoReply(chatId, text);
+
+  showTyping(chatId === 'group' ? pick(CHAR_IDS) : chatId, chatId);
+  let res = null;
   try {
-    const r = await fetch(`${backend.baseUrl}/api/snapshots`);
-    const j = await r.json();
-    const items = j.items || [];
-    if (!items.length) {
-      el.innerHTML = '<div class="drawer-snapshots-empty">No recent crops yet — they appear with proximity alerts and proof.</div>';
-      return;
-    }
-    el.innerHTML = items.slice(0, 32).map((it) => {
-      const u = `${backend.baseUrl}/api/snapshot/${it.id}`;
-      const t = it.ts != null ? new Date(it.ts * 1000).toLocaleString() : '';
-      return `<button type="button" class="drawer-snap-thumb" data-url="${u}" title="${t}"><img src="${u}" alt="" loading="lazy"></button>`;
-    }).join('');
-    el.querySelectorAll('.drawer-snap-thumb').forEach((btn) => {
-      btn.addEventListener('click', () => openSnapshot(btn.dataset.url));
+    res = await api('/api/chat', {
+      method: 'POST',
+      timeout: 60000,
+      body: { chat: chatId, message: text, recent_messages: historyFor(chatId), widget: chatId === 'group' ? undefined : trackerPayload(chatId) },
     });
-  } catch (_) {
-    el.innerHTML = '<div class="drawer-snapshots-empty">Could not load snapshots.</div>';
-  }
-}
-
-function toggleDrawer() {
-  drawerOpen = !drawerOpen;
-  cameraDrawer.classList.toggle('open', drawerOpen);
-  if (drawerOpen) {
-    setupDrawerFeeds();
-    startDrawerPolling();
-    loadDrawerSnapshots();
-  } else {
-    stopDrawerPolling();
-    stopDrawerFramePoll();
-  }
-}
-
-function setupDrawerFeeds() {
-  stopDrawerFramePoll();
-  if (!state.liveMode || !backend.cameraOk) {
-    drawerFeeds.innerHTML = '<div class="drawer-camera-feed"><div class="camera-offline-msg">No camera connected</div></div>';
+  } catch {
+    hideTyping();
+    addMessage(chatId, { note: true, text: 'Could not reach the server. Is python server.py still running?' });
     return;
   }
-  const idx = backend.cameraIndices[0] || 0;
-  drawerFeeds.className = '';
-  const pollBase = `${backend.baseUrl}/api/latest_frame/${idx}`;
-  if (liveDeskNeedsJpegPolling()) {
-    drawerFeeds.innerHTML = `
-    <div class="drawer-camera-feed">
-      <img alt="Live desk" class="live-video-img" decoding="async"
-        src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
-      <div class="camera-offline-msg">Connecting...</div>
-    </div>`;
-    const img = drawerFeeds.querySelector('.live-video-img');
-    const offline = drawerFeeds.querySelector('.camera-offline-msg');
-    const tick = () => {
-      if (!state.liveMode || !drawerOpen) return;
-      img.src = `${pollBase}?t=${Date.now()}`;
-    };
-    img.onload = () => { if (offline) offline.style.display = 'none'; };
-    img.onerror = () => { if (offline) offline.style.display = ''; };
-    tick();
-    drawerFramePollTimer = setInterval(tick, 220);
-  } else {
-    drawerFeeds.innerHTML = `
-    <div class="drawer-camera-feed">
-      <img src="${backend.baseUrl}/api/video_feed/${idx}" alt="Live desk" class="live-video-img"
-        onerror="this.style.display='none';this.nextElementSibling.style.display=''"
-        onload="this.nextElementSibling.style.display='none'">
-      <div class="camera-offline-msg">Connecting...</div>
-    </div>`;
+  hideTyping();
+  // Group replies arrive one by one over /api/events; other replies come back here.
+  for (const r of res?.messages || []) {
+    addMessage(chatId, { char: r.character || chatId, text: r.text, replyTo: r.reply_to, cta: r.cta });
   }
+  if (res?.actions && chatId !== 'group') applyActions(chatId, res.actions);
 }
 
-function startDrawerPolling() {
-  stopDrawerPolling();
-  if (!state.liveMode) return;
-  pollDrawerDetections();
-  drawerPollTimer = setInterval(pollDrawerDetections, 2500);
-}
-
-function stopDrawerPolling() {
-  if (drawerPollTimer) { clearInterval(drawerPollTimer); drawerPollTimer = null; }
-}
-
-async function pollDrawerDetections() {
-  const d = await backend.getDetections();
-  if (!d) return;
-  const det = Object.keys(d.objects);
-  let sd = null;
-  try {
-    const sr = await fetch(`${backend.baseUrl}/api/safety`);
-    sd = await sr.json();
-  } catch (_) {}
-  const safety = sd && sd.state === 'DANGEROUS' ? 'DANGER' : 'SAFE';
-  if (drawerDetStrip) {
-    drawerDetStrip.textContent = `${det.length} object${det.length === 1 ? '' : 's'} · ${safety}`;
-  }
-  if (sd && sd.state === 'DANGEROUS') {
-    drawerStatus.textContent = `${sd.dangers.length} alert`;
-    drawerStatus.className = 'drawer-handle-status danger';
-  } else if (det.length > 0) {
-    drawerStatus.textContent = 'OK';
-    drawerStatus.className = 'drawer-handle-status safe';
-  } else {
-    drawerStatus.textContent = '';
-    drawerStatus.className = 'drawer-handle-status';
-  }
-}
-
-cameraDrawerHandle.addEventListener('click', toggleDrawer);
-
-// ————— Utils —————
-function formatTime(ts) { const d = new Date(ts); let h = d.getHours(); const m = d.getMinutes().toString().padStart(2,'0'); const a = h >= 12 ? 'PM' : 'AM'; h = h%12||12; return `${h}:${m} ${a}`; }
-function formatMessageText(t) {
-  let s = escapeHtml(t);
-  s = s.replace(/@user/g, '<span class="mention mention-user">@user</span>');
-  s = s.replace(/@(\w+)/g, (match, name) => {
-    const lower = name.toLowerCase();
-    const cid = MENTION_ALIASES[lower];
-    if (cid && CHARACTERS[cid]) {
-      return `<span class="mention mention-object" data-char="${cid}">${CHARACTERS[cid].icon} @${CHARACTERS[cid].name}</span>`;
-    }
-    return match;
-  });
-  return s.replace(/\n/g, '<br>');
-}
-function lostCtaHtml(cta) {
-  if (!cta || !cta.action || !cta.label) return '';
-  const label = escapeHtml(cta.label);
-  const act = escapeHtml(cta.action);
-  return `<div class="msg-cta-wrap"><button type="button" class="msg-cta-btn" data-action="${act}">${label}</button></div>`;
-}
-function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
-function scrollToBottom() { requestAnimationFrame(() => { chatMessages.scrollTop = chatMessages.scrollHeight; }); }
-function updateStatusBarTime() { const n = new Date(); $('#status-time').textContent = `${n.getHours()}:${n.getMinutes().toString().padStart(2,'0')}`; }
-
-// ————— @Mention Autocomplete —————
-const mentionDropdown = $('#mention-dropdown');
-let mentionActive = false;
-let mentionQuery = '';
-let mentionStartIdx = -1;
-
-async function fetchMentionOptions() {
-  if (!state.liveMode) return;
-  try {
-    const r = await fetch(`${backend.baseUrl}/api/context`);
-    const data = await r.json();
-    mentionOptions = data.mention_options || [];
-  } catch (_) {}
-}
-
-function showMentionDropdown(filter = '') {
-  const lower = filter.toLowerCase();
-  const items = Object.values(CHARACTERS).map(ch => {
-    const live = mentionOptions.find(o => o.id === ch.id);
-    const detected = live ? live.detected : false;
-    return { id: ch.id, name: ch.name, icon: ch.icon, object: ch.object, detected };
-  }).filter(item => {
-    if (!lower) return true;
-    return item.name.toLowerCase().includes(lower) ||
-           item.object.toLowerCase().includes(lower) ||
-           item.id.includes(lower);
-  });
-  if (items.length === 0) { hideMentionDropdown(); return; }
-  mentionDropdown.innerHTML = items.map(item =>
-    `<div class="mention-option${item.detected ? ' detected' : ''}" data-id="${item.id}">
-      <span class="mention-opt-icon">${item.icon}</span>
-      <span class="mention-opt-name">${item.name}</span>
-      <span class="mention-opt-object">${item.object}</span>
-      ${item.detected ? '<span class="mention-opt-live">LIVE</span>' : ''}
-    </div>`
-  ).join('');
-  mentionDropdown.classList.remove('hidden');
-  mentionDropdown.querySelectorAll('.mention-option').forEach(el => {
-    el.addEventListener('click', () => insertMention(el.dataset.id));
-  });
-}
-
-function hideMentionDropdown() {
-  mentionDropdown.classList.add('hidden');
-  mentionActive = false;
-  mentionStartIdx = -1;
-}
-
-function insertMention(charId) {
-  const ch = CHARACTERS[charId];
-  if (!ch) return;
-  const val = chatInput.value;
-  if (mentionStartIdx >= 0) {
-    const before = val.substring(0, mentionStartIdx);
-    const after = val.substring(chatInput.selectionStart);
-    chatInput.value = `${before}@${ch.name.toLowerCase()} ${after}`;
-  } else {
-    const pos = chatInput.selectionStart || chatInput.value.length;
-    chatInput.value = val.substring(0, pos) + `@${ch.name.toLowerCase()} ` + val.substring(pos);
-  }
-  hideMentionDropdown();
-  chatInput.focus();
-}
-
-function handleMentionInput() {
-  const val = chatInput.value;
-  const pos = chatInput.selectionStart;
-  const before = val.substring(0, pos);
-  const atIdx = before.lastIndexOf('@');
-  if (atIdx >= 0 && (atIdx === 0 || before[atIdx - 1] === ' ')) {
-    const query = before.substring(atIdx + 1);
-    if (query.length <= 15 && !query.includes(' ')) {
-      mentionActive = true;
-      mentionStartIdx = atIdx;
-      mentionQuery = query;
-      showMentionDropdown(query);
-      return;
+/** The LLM can ask to change a tracker (add a to-do, log a sip…). */
+function applyActions(id, actions) {
+  const t = trackers[id];
+  let changed = false;
+  for (const a of actions) {
+    const text = (a.text || '').toLowerCase();
+    if (t.type === 'todo' && a.action === 'add_todo' && a.text && t.items.length < 20) {
+      t.items.push({ text: a.text.slice(0, 200), done: false }); changed = true;
+    } else if (t.type === 'todo' && a.action === 'done_todo' && text) {
+      const item = t.items.find((i) => !i.done && i.text.toLowerCase().includes(text));
+      if (item) { item.done = true; changed = true; }
+    } else if (t.type === 'todo' && a.action === 'del_todo' && text) {
+      const i = t.items.findIndex((x) => x.text.toLowerCase().includes(text));
+      if (i >= 0) { t.items.splice(i, 1); changed = true; }
+    } else if (t.type === 'break_timer' && a.action === 'log_break') {
+      t.breaks_today += 1; t.last_break = new Date().toISOString(); changed = true;
+    } else if (t.type === 'sip_counter' && a.action === 'log_sip') {
+      t.sips += 1; t.last_sip = new Date().toISOString(); changed = true;
+    } else if (t.type === 'snack_log' && a.action === 'log_snack' && a.label) {
+      t.entries.push({ label: a.label.slice(0, 60), healthy: !!a.healthy, time: new Date().toISOString() }); changed = true;
     }
   }
-  if (mentionActive) hideMentionDropdown();
+  if (changed) trackerChanged(id);
 }
 
-// ————— Safety Rules / Zone Editor —————
-let availableObjects = [];
+// ————— @mentions —————
+let mentionStart = -1;
+let mentionIndex = 0;
 
-async function loadAndRenderRules() {
-  if (!state.liveMode) {
-    settingsContent.innerHTML = `<div class="settings-section">
-      <div class="settings-info">Connect to the server to edit safety config.</div></div>`;
-    return;
-  }
-  try {
-    const [rRules, rHabit] = await Promise.all([
-      fetch(`${backend.baseUrl}/api/rules`),
-      fetch(`${backend.baseUrl}/api/habit_policy`),
-    ]);
-    const data = await rRules.json();
-    const habitPolicy = rHabit.ok ? await rHabit.json() : { dnd_enabled: false, dnd_start_hour: 22, dnd_end_hour: 7 };
-    availableObjects = data.available_objects || [];
-    window._lastHabitPolicy = habitPolicy;
-    renderRulesEditor(data, habitPolicy);
-  } catch (e) {
-    settingsContent.innerHTML = `<div class="settings-section">
-      <div class="settings-info">Failed to load config.</div></div>`;
-  }
+function mentionMatches(query) {
+  const q = query.toLowerCase();
+  return CHAR_IDS.filter((id) => !q || CHARACTERS[id].name.toLowerCase().startsWith(q)
+    || Object.entries(ALIASES).some(([word, cid]) => cid === id && word.startsWith(q)));
 }
 
-function renderRulesEditor(data, habitPolicy) {
-  const zones = data.danger_zones || {};
-  const edge  = data.edge_proximity || {};
-  const zoneKeys = Object.keys(zones);
-  const hp = habitPolicy || { dnd_enabled: false, dnd_start_hour: 22, dnd_end_hour: 7, dnd_active_now: false };
-
-  const zonesHtml = zoneKeys.map(cls => {
-    const z = zones[cls];
-    return `
-    <div class="rule-card" data-zone="${escapeHtml(cls)}">
-      <div class="rule-header">
-        <span class="rule-pair">${escapeHtml(cls)}</span>
-        <button class="zone-delete" data-zone="${escapeHtml(cls)}" aria-label="Remove zone">✕</button>
-      </div>
-      <div class="rule-label-row">
-        <input type="text" class="zone-label-input" data-zone="${escapeHtml(cls)}"
-          value="${escapeHtml(z.label || '')}" placeholder="Zone label...">
-      </div>
-      <div class="rule-distance-row">
-        <label class="rule-dist-label">Zone radius</label>
-        <input type="range" class="zone-slider" data-zone="${escapeHtml(cls)}"
-          min="10" max="200" value="${z.expand || 60}">
-        <span class="rule-dist-value">${z.expand || 60}px</span>
-      </div>
-      <p class="rule-relation-hint">Expand the bounding box by this many px. Other objects entering the zone trigger a danger event.</p>
-    </div>`;
+function updateMentions() {
+  const input = $('#input');
+  const before = input.value.slice(0, input.selectionStart);
+  const at = before.lastIndexOf('@');
+  const query = at >= 0 ? before.slice(at + 1) : '';
+  const box = $('#mentions');
+  if (at < 0 || (at > 0 && before[at - 1] !== ' ') || /\s/.test(query) || query.length > 12) {
+    box.hidden = true; mentionStart = -1; return;
+  }
+  const ids = mentionMatches(query);
+  if (!ids.length) { box.hidden = true; mentionStart = -1; return; }
+  mentionStart = at;
+  mentionIndex = Math.min(mentionIndex, ids.length - 1);
+  box.innerHTML = ids.map((id, i) => {
+    const onDesk = state.mentionOptions.find((o) => o.id === id)?.detected;
+    return `<button type="button" class="mention-opt" role="option" data-id="${id}" aria-selected="${i === mentionIndex}">
+      <img src="${CHARACTERS[id].art}" alt="">${esc(CHARACTERS[id].name)}${onDesk ? '<small>on the desk</small>' : ''}</button>`;
   }).join('');
-
-  const objOptions = availableObjects.map(o =>
-    `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('');
-
-  settingsContent.innerHTML = `
-    <div class="settings-section">
-      <div class="settings-section-title">Danger Zones</div>
-      <div class="settings-subtitle">Each object class can have an expanded danger zone. Other objects entering that zone trigger an alert.</div>
-      <div id="zones-list">${zonesHtml || '<div class="settings-info">No danger zones defined.</div>'}</div>
-    </div>
-    <div class="settings-section">
-      <div class="settings-section-title">Add Danger Zone</div>
-      <div class="add-rule-form">
-        <div class="add-rule-row">
-          <select id="new-zone-class" class="rule-select">${objOptions}</select>
-        </div>
-        <div class="add-rule-row">
-          <input type="text" id="new-zone-label" class="rule-label-input" placeholder="Zone label (e.g. Spill zone)">
-        </div>
-        <div class="add-rule-row">
-          <label class="rule-dist-label">Radius:</label>
-          <input type="range" id="new-zone-expand" class="rule-slider" min="10" max="200" value="60">
-          <span id="new-zone-val" class="rule-dist-value">60px</span>
-        </div>
-        <button class="add-rule-btn" id="btn-add-zone">+ Add Zone</button>
-      </div>
-    </div>
-    <div class="settings-section">
-      <div class="settings-section-title">Edge Proximity</div>
-      <div class="settings-subtitle">Objects near the edge of the frame are at risk of falling off the desk.</div>
-      <div class="rule-distance-row">
-        <label class="rule-dist-label">Danger margin</label>
-        <input type="range" id="edge-danger-px" class="rule-slider" min="10" max="120"
-          value="${edge.danger_px || 35}">
-        <span class="rule-dist-value">${edge.danger_px || 35}px</span>
-      </div>
-      <div class="rule-distance-row">
-        <label class="rule-dist-label">Warning margin</label>
-        <input type="range" id="edge-warn-px" class="rule-slider" min="20" max="200"
-          value="${edge.warn_px || 75}">
-        <span class="rule-dist-value">${edge.warn_px || 75}px</span>
-      </div>
-    </div>
-    <div class="settings-section" id="habit-policy-section">
-      <div class="settings-section-title">Habit reminders (DND)</div>
-      <div class="settings-subtitle">When do-not-disturb is on, timed habit nudges are queued until the window ends. Desk signals still feed the LLM when a reminder is sent.</div>
-      <label class="settings-inline-check"><input type="checkbox" id="habit-dnd-enabled" ${hp.dnd_enabled ? 'checked' : ''}/> Do not disturb (local hours)</label>
-      <p class="settings-info habit-dnd-status">${hp.dnd_active_now ? 'DND active now' : 'DND not active'}</p>
-      <div class="add-rule-row">
-        <label class="rule-dist-label">Quiet from hour</label>
-        <input type="number" id="habit-dnd-start" class="rule-label-input" min="0" max="23" value="${hp.dnd_start_hour != null ? hp.dnd_start_hour : 22}">
-        <span class="rule-dist-value">to</span>
-        <input type="number" id="habit-dnd-end" class="rule-label-input" min="0" max="23" value="${hp.dnd_end_hour != null ? hp.dnd_end_hour : 7}">
-        <span class="rule-dist-value">(24h, wraps overnight)</span>
-      </div>
-      <button type="button" class="add-rule-btn" id="btn-save-habit-policy">Save habit DND</button>
-      <div id="habit-policy-status" class="save-status"></div>
-    </div>
-    <div class="settings-section">
-      <button class="save-rules-btn" id="btn-save-rules">Save Configuration</button>
-      <div id="save-status" class="save-status"></div>
-    </div>`;
-
-  // Wire zone sliders
-  settingsContent.querySelectorAll('.zone-slider').forEach(s => {
-    s.addEventListener('input', (e) => {
-      e.target.nextElementSibling.textContent = `${e.target.value}px`;
-      const cls = e.target.dataset.zone;
-      if (cls && zones[cls]) zones[cls].expand = parseInt(e.target.value);
-    });
-  });
-  settingsContent.querySelectorAll('.zone-label-input').forEach(inp => {
-    inp.addEventListener('input', (e) => {
-      const cls = e.target.dataset.zone;
-      if (cls && zones[cls]) zones[cls].label = e.target.value;
-    });
-  });
-  settingsContent.querySelectorAll('.zone-delete').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      delete zones[e.target.dataset.zone];
-      renderRulesEditor(data, window._lastHabitPolicy);
-    });
-  });
-
-  // Edge sliders
-  const edgeDanger = $('#edge-danger-px');
-  const edgeWarn   = $('#edge-warn-px');
-  if (edgeDanger) edgeDanger.addEventListener('input', (e) => {
-    e.target.nextElementSibling.textContent = `${e.target.value}px`;
-    data.edge_proximity = data.edge_proximity || {};
-    data.edge_proximity.danger_px = parseInt(e.target.value);
-  });
-  if (edgeWarn) edgeWarn.addEventListener('input', (e) => {
-    e.target.nextElementSibling.textContent = `${e.target.value}px`;
-    data.edge_proximity = data.edge_proximity || {};
-    data.edge_proximity.warn_px = parseInt(e.target.value);
-  });
-
-  // New zone expand slider
-  const nzSlider = $('#new-zone-expand');
-  const nzVal = $('#new-zone-val');
-  if (nzSlider) nzSlider.addEventListener('input', () => { nzVal.textContent = `${nzSlider.value}px`; });
-
-  // Add zone
-  const addBtn = $('#btn-add-zone');
-  if (addBtn) addBtn.addEventListener('click', () => {
-    const cls = $('#new-zone-class').value;
-    const label = $('#new-zone-label').value || `${cls} danger zone`;
-    const expand = parseInt($('#new-zone-expand').value);
-    data.danger_zones = data.danger_zones || {};
-    data.danger_zones[cls] = { expand, label };
-    renderRulesEditor(data, window._lastHabitPolicy);
-  });
-
-  // Save — store the current state back as _settingsData so saveRules can use it
-  window._settingsData = data;
-  const saveBtn = $('#btn-save-rules');
-  if (saveBtn) saveBtn.addEventListener('click', saveRules);
-  const saveHabit = document.getElementById('btn-save-habit-policy');
-  if (saveHabit) saveHabit.addEventListener('click', saveHabitPolicy);
+  box.hidden = false;
 }
 
-async function saveHabitPolicy() {
-  const st = document.getElementById('habit-policy-status');
-  if (!state.liveMode || !backend?.baseUrl) return;
-  if (st) { st.textContent = 'Saving...'; st.className = 'save-status saving'; }
-  const payload = {
-    dnd_enabled: !!document.getElementById('habit-dnd-enabled')?.checked,
-    dnd_start_hour: parseInt(document.getElementById('habit-dnd-start')?.value, 10) || 22,
-    dnd_end_hour: parseInt(document.getElementById('habit-dnd-end')?.value, 10) || 7,
-  };
-  try {
-    const r = await fetch(`${backend.baseUrl}/api/habit_policy`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+function insertMention(id) {
+  const input = $('#input');
+  const after = input.value.slice(input.selectionStart);
+  const word = `@${CHARACTERS[id].name.toLowerCase()} `;
+  input.value = input.value.slice(0, mentionStart) + word + after;
+  const pos = mentionStart + word.length;
+  input.setSelectionRange(pos, pos);
+  $('#mentions').hidden = true;
+  mentionStart = -1;
+  input.focus();
+}
+
+// ————— Trackers UI —————
+function renderTracker() {
+  const box = $('#tracker');
+  const id = state.chat;
+  const t = trackers[id];
+  if (!t) { box.hidden = true; return; }
+  box.hidden = false;
+  box.style.setProperty('--tint', CHARACTERS[id].tint);
+
+  if (t.type === 'todo') {
+    box.innerHTML = `
+      <ul class="todo">${t.items.map((item, i) => `<li>
+        <label><input type="checkbox" data-i="${i}" ${item.done ? 'checked' : ''}><span class="${item.done ? 'done' : ''}">${esc(item.text)}</span></label>
+        <button type="button" class="x" data-del="${i}" aria-label="Remove ${esc(item.text)}">×</button></li>`).join('')}</ul>
+      <form class="inline-add"><input type="text" maxlength="200" placeholder="Add a task" aria-label="New task"><button type="submit" class="btn-quiet">Add</button></form>`;
+    box.querySelectorAll('input[type="checkbox"]').forEach((cb) => cb.addEventListener('change', () => {
+      t.items[+cb.dataset.i].done = cb.checked; trackerChanged(id);
+    }));
+    box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => {
+      t.items.splice(+b.dataset.del, 1); trackerChanged(id);
+    }));
+    box.querySelector('form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const v = e.target.querySelector('input').value.trim();
+      if (!v) return;
+      t.items.push({ text: v.slice(0, 200), done: false });
+      trackerChanged(id);
+      $('#tracker input[type="text"]')?.focus();
     });
-    const d = await r.json();
-    if (d.ok) {
-      if (st) { st.textContent = 'Habit DND saved.'; st.className = 'save-status success'; }
-    } else if (st) { st.textContent = 'Error'; st.className = 'save-status error'; }
-  } catch (e) {
-    if (st) { st.textContent = 'Failed.'; st.className = 'save-status error'; }
+    return;
   }
-  setTimeout(() => { if (st) { st.textContent = ''; st.className = 'save-status'; } }, 3000);
-}
 
-async function saveRules() {
-  const statusEl = $('#save-status');
-  statusEl.textContent = 'Saving...';
-  statusEl.className = 'save-status saving';
-  const payload = window._settingsData || {};
-  try {
-    const r = await fetch(`${backend.baseUrl}/api/rules`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+  if (t.type === 'break_timer') {
+    box.innerHTML = `<div class="tracker-row">
+        <div class="tracker-stats">
+          <div class="stat"><strong>${t.breaks_today}</strong><span>breaks today</span></div>
+          <div class="stat"><strong id="slouch-min">–</strong><span>slouching (min)</span></div>
+          <div class="stat"><strong id="nail-cues">–</strong><span>nail biting</span></div>
+        </div>
+        <button type="button" class="btn-quiet" id="log-break">Log a break</button>
+      </div>
+      <p class="tracker-note">${t.last_break ? `Last break ${timeAgo(t.last_break)}. ` : ''}Breaks log themselves when you leave the desk for 5 minutes. <a class="link" data-open="habits">Habit log</a></p>`;
+    $('#log-break').addEventListener('click', () => {
+      t.breaks_today += 1; t.last_break = new Date().toISOString(); trackerChanged(id);
+      addMessage(id, { char: id, text: pick(['Break logged. Roll your shoulders while you are at it.', 'Thank you. Look at something far away for 20 seconds.', 'Logged. My fans are calming down already.']) });
     });
-    const data = await r.json();
-    if (data.ok) {
-      statusEl.textContent = 'Saved! Config reloaded.';
-      statusEl.className = 'save-status success';
-    } else {
-      statusEl.textContent = `Error: ${data.error || 'Unknown'}`;
-      statusEl.className = 'save-status error';
+    if (state.live) {
+      api('/api/habit_log?limit=1').then((d) => {
+        const s = d?.summary || {};
+        const sm = $('#slouch-min'); const nc = $('#nail-cues');
+        if (sm) sm.textContent = Math.round((s.posture_bad_seconds_today || 0) / 60);
+        if (nc) nc.textContent = s.nail_biting_count_today ?? 0;
+      }).catch(() => {});
     }
-  } catch (e) {
-    statusEl.textContent = 'Failed to save.';
-    statusEl.className = 'save-status error';
+    return;
   }
-  setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'save-status'; }, 3000);
-}
 
-// ————— Listeners —————
-document.querySelectorAll('.bottom-nav-btn[data-screen]').forEach((btn) => {
-  btn.addEventListener('click', () => navigateTo(btn.dataset.screen));
-});
-document.getElementById('btn-settings')?.addEventListener('click', () => navigateTo('settings'));
-$('#btn-settings-back').addEventListener('click', () => navigateTo('chatlist'));
-$('#btn-camera').addEventListener('click', () => navigateTo('camera'));
-document.getElementById('btn-captures')?.addEventListener('click', () => navigateTo('captures'));
-document.getElementById('btn-captures-back')?.addEventListener('click', () => navigateTo('chatlist'));
-const goLiveBtn = document.getElementById('btn-go-live');
-if (goLiveBtn) goLiveBtn.addEventListener('click', () => navigateTo('camera'));
-$('#btn-back').addEventListener('click', () => navigateTo(state.currentChat === 'group' ? 'chatlist' : 'characters'));
-$('#btn-cam-back').addEventListener('click', () => {
-  const b = state.liveBack || { screen: 'chatlist', chatId: null };
-  navigateTo(b.screen, b.chatId);
-});
-$('#btn-send').addEventListener('click', () => { const t = chatInput.value.trim(); if (!t) return; chatInput.value = ''; addUserMessage(t); });
-chatInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter') { e.preventDefault(); const t = chatInput.value.trim(); if (!t) return; chatInput.value = ''; addUserMessage(t); }
-  if (e.key === 'Escape' && mentionActive) { hideMentionDropdown(); e.preventDefault(); }
-});
-let _lastActivityPing = 0;
-function notifyTyping() {
-  const now = Date.now();
-  if (now - _lastActivityPing < 3000) return;  // throttle: at most one ping / 3s
-  _lastActivityPing = now;
-  if (backend) backend.pingActivity();
-}
-chatInput.addEventListener('input', (e) => { notifyTyping(); handleMentionInput(e); });
-$('#btn-mention').addEventListener('click', () => {
-  fetchMentionOptions();
-  const pos = chatInput.selectionStart || chatInput.value.length;
-  const val = chatInput.value;
-  const needsSpace = pos > 0 && val[pos - 1] !== ' ';
-  chatInput.value = val.substring(0, pos) + (needsSpace ? ' @' : '@') + val.substring(pos);
-  chatInput.focus();
-  chatInput.selectionStart = chatInput.selectionEnd = pos + (needsSpace ? 2 : 1);
-  mentionActive = true;
-  mentionStartIdx = pos + (needsSpace ? 1 : 0);
-  showMentionDropdown('');
-});
-
-// ————— Init —————
-let splashDone = false;
-
-function finishSplash(targetChat = null) {
-  if (splashDone) return;
-  splashDone = true;
-  if (targetChat && CHARACTERS[targetChat]) {
-    navigateTo('chat', targetChat);
-  } else {
-    navigateTo('chatlist');
-    renderChatList();
+  if (t.type === 'sip_counter') {
+    box.innerHTML = `<div class="tracker-row">
+        <div class="stat"><strong>${t.sips} of ${t.goal}</strong><span>sips today</span></div>
+        <div class="drops" aria-hidden="true">${Array.from({ length: t.goal }, (_, i) => `<span class="drop ${i < t.sips ? 'full' : ''}"></span>`).join('')}</div>
+        <button type="button" class="btn-quiet" id="log-sip">Log a sip</button>
+      </div>
+      <p class="tracker-note">${t.last_sip ? `Last sip ${timeAgo(t.last_sip)}. ` : ''}A sip counts when the cup leaves the desk and comes back.</p>`;
+    $('#log-sip').addEventListener('click', () => {
+      t.sips += 1; t.last_sip = new Date().toISOString(); trackerChanged(id);
+      addMessage(id, { char: id, text: t.sips >= t.goal ? 'That is your goal! I am so proud and also slightly empty.' : pick(['Sip logged!', 'Refreshing. For you, I mean.', 'One more down.']) });
+    });
+    return;
   }
+
+  // snack log
+  box.innerHTML = `<div class="pills">${t.entries.map((e, i) => `<span class="pill ${e.healthy ? 'healthy' : 'treat'}">${esc(e.label)}<button type="button" data-del="${i}" aria-label="Remove ${esc(e.label)}">×</button></span>`).join('') || '<span class="muted">Nothing logged yet today.</span>'}</div>
+    <form class="inline-add"><input type="text" maxlength="60" placeholder="What did you eat?" aria-label="Snack name">
+      <button type="submit" class="btn-quiet" data-healthy="1">Healthy</button><button type="button" class="btn-quiet" data-healthy="0">Treat</button></form>`;
+  const add = (healthy) => {
+    const input = box.querySelector('input');
+    const label = input.value.trim().slice(0, 60);
+    if (!label) { input.focus(); return; }
+    t.entries.push({ label, healthy, time: new Date().toISOString() });
+    trackerChanged(id);
+    addMessage(id, { char: id, text: healthy ? pick(['Respectable.', 'Fine. Very nutritious. Very responsible.']) : pick(['Now we are talking.', 'Life is short. Napkin is optional.']) });
+  };
+  box.querySelector('form').addEventListener('submit', (e) => { e.preventDefault(); add(true); });
+  box.querySelector('[data-healthy="0"]').addEventListener('click', () => add(false));
+  box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => {
+    t.entries.splice(+b.dataset.del, 1); trackerChanged(id);
+  }));
 }
 
-/** Server can report `camera: false` until OpenCV finishes opening devices — poll briefly. */
-async function pollBackendCamera(maxMs = 26000, stepMs = 700) {
-  const t0 = Date.now();
-  let prevOk = backend.cameraOk;
-  while (state.liveMode && backend.connected && Date.now() - t0 < maxMs) {
-    if (backend.cameraOk) break;
-    await new Promise((r) => setTimeout(r, stepMs));
-    try {
-      const res = await fetchWithTimeout(`${backend.baseUrl}/api/status`, 4000);
-      if (!res.ok) continue;
-      const d = await res.json();
-      backend.cameraOk = !!d.camera;
-      backend.cameraIndices = Array.isArray(d.camera_indices) ? d.camera_indices : [];
-      backend.llmOk = !!d.llm;
-      backend.llmLabel = d.llm_label || '';
+/** After an auto-detected break/sip/snack, pull the server's counts into the tracker. */
+async function refreshTrackerFromServer(id) {
+  if (!state.live || !trackers[id]) return;
+  try {
+    const { widget } = await api(`/api/chat_widget/${id}`);
+    const t = trackers[id];
+    if (!widget || widget.type !== t.type) return;
+    if (t.type === 'break_timer') { t.breaks_today = widget.breaks_today ?? t.breaks_today; t.last_break = widget.last_break ?? t.last_break; }
+    if (t.type === 'sip_counter') { t.sips = widget.sips ?? t.sips; t.last_sip = widget.last_sip ?? t.last_sip; }
+    if (t.type === 'snack_log' && widget.entries) t.entries = widget.entries;
+    saveTrackers();
+    if (state.chat === id && state.view === 'chat') renderTracker();
+  } catch { /* keep local counts */ }
+}
 
-      if (backend.cameraOk !== prevOk) {
-        prevOk = backend.cameraOk;
-        setupCameraView();
-        setupDrawerFeeds();
-        cameraDrawer.style.display = backend.cameraOk ? '' : 'none';
-        updateConnectionBadge();
-        if (state.currentScreen === 'camera') {
-          renderCameraStatus();
-          startDetectionPolling();
-        }
+// ————— Habits page —————
+async function renderHabits() {
+  const page = $('#view-habits');
+  const data = state.live ? await api(`/api/habit_log?category=${state.habitFilter}&limit=40`).catch(() => null) : null;
+  const s = data?.summary || {};
+  const events = data?.events || [];
+  page.innerHTML = `
+    <header><h1 class="page-title">Habits</h1>
+      <p class="page-intro">What the camera noticed today, plus anything you want to count yourself.</p></header>
+    <section><h2>Today</h2>
+      <div class="today">
+        <div class="stat"><strong>${s.breaks_today ?? trackers.monty.breaks_today}</strong><span>screen breaks</span></div>
+        <div class="stat"><strong>${state.live ? Math.round((s.posture_bad_seconds_today || 0) / 60) : '–'}</strong><span>minutes slouching</span></div>
+        <div class="stat"><strong>${state.live ? (s.nail_biting_count_today ?? 0) : '–'}</strong><span>nail biting</span></div>
+        <div class="stat"><strong>${trackers.glug.sips}</strong><span>sips of water</span></div>
+      </div></section>
+    <section><h2>Your own counters</h2>
+      <p class="hint">Tap + whenever it happens. They reset every morning.</p>
+      <ul class="counter-list">${habits.items.map((h, i) => `<li><span>${esc(h.label)}</span>
+        <button type="button" class="round" data-dec="${i}" aria-label="Minus one">−</button><strong>${h.count}</strong>
+        <button type="button" class="round" data-inc="${i}" aria-label="Plus one">+</button>
+        <button type="button" class="round" data-del="${i}" aria-label="Remove ${esc(h.label)}">×</button></li>`).join('')}</ul>
+      <form class="inline-add" id="add-habit" style="max-width:520px"><input type="text" maxlength="60" placeholder="Something else to count" aria-label="New counter"><button type="submit" class="btn-quiet">Add</button></form></section>
+    <section><h2>Camera log</h2>
+      <div class="chips" role="group" aria-label="Filter">${[['all', 'Everything'], ['posture_bad', 'Posture'], ['nail_biting', 'Nail biting']]
+        .map(([k, label]) => `<button type="button" class="chip" data-filter="${k}" aria-pressed="${state.habitFilter === k}">${label}</button>`).join('')}</div>
+      ${events.length ? `<ul class="log">${events.map((ev) => `<li><time>${clock(ev.ts || 0)}</time>
+          ${ev.snapshot_id ? `<img src="/api/snapshot/${esc(ev.snapshot_id)}" alt="" data-photo="/api/snapshot/${esc(ev.snapshot_id)}">` : ''}
+          <p>${esc(ev.title || '')}${ev.detail ? `<small>${esc(ev.detail)}</small>` : ''}</p></li>`).join('')}</ul>`
+        : `<p class="muted">${state.live ? 'Nothing yet. Posture and nail-biting entries appear here when Ollama vision is set up in .env.' : 'Run the server to see what the camera notices.'}</p>`}
+    </section>`;
+
+  page.querySelectorAll('[data-inc],[data-dec],[data-del]').forEach((b) => b.addEventListener('click', () => {
+    const i = +(b.dataset.inc ?? b.dataset.dec ?? b.dataset.del);
+    if (b.dataset.inc) habits.items[i].count += 1;
+    if (b.dataset.dec) habits.items[i].count = Math.max(0, habits.items[i].count - 1);
+    if (b.dataset.del) habits.items.splice(i, 1);
+    saveHabits(); renderHabits();
+  }));
+  $('#add-habit').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const v = e.target.querySelector('input').value.trim();
+    if (!v) return;
+    habits.items.push({ label: v.slice(0, 60), count: 0 });
+    saveHabits(); renderHabits();
+  });
+  page.querySelectorAll('[data-filter]').forEach((b) => b.addEventListener('click', () => {
+    state.habitFilter = b.dataset.filter; renderHabits();
+  }));
+}
+
+// ————— Captures page —————
+async function renderCaptures() {
+  const page = $('#view-captures');
+  const head = `<header><h1 class="page-title">Captures</h1>
+    <p class="page-intro">Photos the desk cam saved: proof for alerts, and snapshots when easy-to-lose things show up.</p></header>`;
+  if (!state.live) {
+    page.innerHTML = `${head}<p class="muted">Run the server to collect desk photos.</p>`;
+    return;
+  }
+  const data = await api('/api/snapshots').catch(() => null);
+  const items = data?.items || [];
+  page.innerHTML = head + (items.length
+    ? `<div class="gallery">${items.map((it) => `<button type="button" data-photo="/api/snapshot/${esc(it.id)}">
+        <img src="/api/snapshot/${esc(it.id)}" alt="" loading="lazy">
+        <strong>${esc(it.label || 'Capture')}</strong><span>${new Date((it.ts || 0) * 1000).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</span></button>`).join('')}</div>`
+    : '<p class="muted">No photos yet. They appear when something gets too close, or when your phone, keys, or wallet show up.</p>');
+}
+
+// ————— Settings page —————
+async function renderSettings() {
+  const page = $('#view-settings');
+  const head = `<header><h1 class="page-title">Settings</h1>
+    <p class="page-intro">How close is too close, and when the desk should stay quiet.</p></header>`;
+  if (!state.live) {
+    page.innerHTML = `${head}<p class="muted">Settings are saved by the server. Run python server.py to change them.</p>`;
+    return;
+  }
+  let rules; let policy;
+  try {
+    [rules, policy] = await Promise.all([api('/api/rules'), api('/api/habit_policy')]);
+  } catch {
+    page.innerHTML = `${head}<p class="muted">Could not load settings from the server.</p>`;
+    return;
+  }
+  const zones = { ...(rules.danger_zones || {}) };
+  const edge = { danger_px: 35, warn_px: 75, ...(rules.edge_proximity || {}) };
+  const range = (name, value, min, max) => `<label class="range"><input type="range" name="${name}" min="${min}" max="${max}" value="${value}"><output>${value} px</output></label>`;
+
+  const draw = () => {
+    page.innerHTML = `${head}
+    <section><h2>Danger zones</h2>
+      <p class="hint">Each object gets an invisible bubble around it. When something risky enters the bubble (a cup near the laptop), the desk speaks up.</p>
+      <div class="form-rows">${Object.entries(zones).map(([cls, z]) => `<div class="zone" data-zone="${esc(cls)}">
+          <strong>${esc(cls)}</strong>
+          <input type="text" name="label" value="${esc(z.label || '')}" aria-label="Name for the ${esc(cls)} zone">
+          ${range('expand', z.expand || 60, 10, 200)}
+          <button type="button" class="round" data-remove aria-label="Remove ${esc(cls)} zone">×</button></div>`).join('') || '<p class="muted">No zones yet.</p>'}
+        <form class="inline-add" id="add-zone"><select aria-label="Object">${(rules.available_objects || []).filter((o) => !zones[o]).map((o) => `<option>${esc(o)}</option>`).join('')}</select>
+          <button type="submit" class="btn-quiet">Add zone</button></form>
+      </div></section>
+    <section><h2>Desk edge</h2>
+      <p class="hint">Warn when things drift toward the edge of the camera view, where they could fall off.</p>
+      <div class="form-rows">
+        <div class="field"><span>Warn at</span>${range('warn_px', edge.warn_px, 20, 200)}</div>
+        <div class="field"><span>Alert at</span>${range('danger_px', edge.danger_px, 10, 120)}</div>
+      </div></section>
+    <section><h2>Quiet hours</h2>
+      <p class="hint">Habit reminders wait until quiet hours end. Safety alerts still come through.</p>
+      <div class="form-rows">
+        <label class="check"><input type="checkbox" id="dnd-on" ${policy.dnd_enabled ? 'checked' : ''}> Use quiet hours</label>
+        <div class="field"><span>From</span><input type="number" id="dnd-start" min="0" max="23" value="${policy.dnd_start_hour ?? 22}"><span>to</span><input type="number" id="dnd-end" min="0" max="23" value="${policy.dnd_end_hour ?? 7}"><span class="muted">(24-hour clock)</span></div>
+      </div></section>
+    <div class="save-row"><button type="button" class="btn" id="save-settings">Save settings</button><span class="saved" id="saved" role="status"></span></div>`;
+
+    page.querySelectorAll('.range input').forEach((r) => r.addEventListener('input', () => {
+      r.nextElementSibling.textContent = `${r.value} px`;
+      const z = r.closest('.zone');
+      if (z) zones[z.dataset.zone].expand = +r.value;
+      else edge[r.name] = +r.value;
+    }));
+    page.querySelectorAll('.zone input[name="label"]').forEach((inp) => inp.addEventListener('input', () => {
+      zones[inp.closest('.zone').dataset.zone].label = inp.value;
+    }));
+    page.querySelectorAll('[data-remove]').forEach((b) => b.addEventListener('click', () => {
+      delete zones[b.closest('.zone').dataset.zone]; draw();
+    }));
+    $('#add-zone')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const cls = e.target.querySelector('select').value;
+      if (cls) { zones[cls] = { expand: 60, label: `${cls} zone` }; draw(); }
+    });
+    $('#save-settings').addEventListener('click', async () => {
+      const out = $('#saved');
+      out.className = 'saved'; out.textContent = 'Saving…';
+      try {
+        await api('/api/rules', { method: 'PUT', body: { danger_zones: zones, edge_proximity: { ...edge } } });
+        await api('/api/habit_policy', { method: 'PUT', body: {
+          dnd_enabled: $('#dnd-on').checked,
+          dnd_start_hour: +$('#dnd-start').value || 0,
+          dnd_end_hour: +$('#dnd-end').value || 0,
+        } });
+        out.textContent = 'Saved';
+      } catch {
+        out.className = 'saved error'; out.textContent = 'Not saved. Check that the server is running.';
       }
-    } catch (_) { /* network blip */ }
+    });
+  };
+  draw();
+}
+
+// ————— Desk cam panel —————
+function feedUrl() {
+  return `/api/${state.feed === 'clean' ? 'video_feed_raw' : 'video_feed'}/${state.camIndex}`;
+}
+
+function renderCamStage() {
+  const stage = $('#cam-stage');
+  $('#cam-caption')?.remove();
+  stage.classList.toggle('is-pairing', state.live && state.phoneMode && !state.camOk);
+  if (!state.live) {
+    stage.innerHTML = '<img class="scene" src="art/desk-scene.svg" alt="Illustration of the desk characters">';
+    stage.insertAdjacentHTML('afterend', '<p class="cam-caption" id="cam-caption">This is a demo. Run the server and connect your phone to see your real desk.</p>');
+    return;
   }
-  if (!backend.cameraOk && state.liveMode && backend.connected) {
-    console.warn(
-      '[Desk Talk] API is live but no camera — allow Camera access for Terminal/Python in macOS Settings, '
-      + 'try CAMERA_INDICES=0, and open http://127.0.0.1:5000 (not a downloaded file / file://).',
-    );
+  if (state.camOk) {
+    // One MJPEG stream; the server only sends a frame when a new one is ready.
+    stage.innerHTML = `<img src="${feedUrl()}" alt="Live view of your desk">`;
+    return;
+  }
+  if (!state.phoneMode) {
+    stage.innerHTML = '<p class="cam-caption">No webcam found. Check the terminal running server.py for tips.</p>';
+    return;
+  }
+  const p = state.phone;
+  stage.innerHTML = p?.url ? `<div class="pair">
+      ${p.qr_svg ? `<div class="pair-qr">${p.qr_svg}</div>` : ''}
+      <h3>Scan with your phone</h3>
+      <ol>
+        <li>Use the same Wi-Fi as this computer.</li>
+        <li>If it says the connection is not private, tap <b>Show Details</b>, then <b>visit this website</b>.</li>
+        <li>Tap <b>Start camera</b> and point it at your desk.</li>
+      </ol>
+      <p class="pair-url">${esc(p.url)}</p></div>`
+    : '<div class="pair"><h3>Starting the phone link…</h3><p class="muted">If this does not change, check the terminal running server.py.</p></div>';
+}
+
+function renderOnDesk(det) {
+  const list = $('#on-desk');
+  if (!state.live) {
+    list.innerHTML = CHAR_IDS.map((id) => `<li style="--tint:${CHARACTERS[id].tint}"><img src="${CHARACTERS[id].art}" alt="">${CHARACTERS[id].name}</li>`).join('');
+    return;
+  }
+  const objs = Object.entries(det?.objects || {});
+  const extras = (det?.extras || []).filter((e) => !objs.some(([, o]) => o.class === e.yolo_class));
+  if (!objs.length && !extras.length) {
+    list.innerHTML = `<li class="extra">${state.camOk ? 'Nothing recognized yet' : 'Waiting for the camera'}</li>`;
+    return;
+  }
+  list.innerHTML = objs.map(([id, o]) => {
+    const c = CHARACTERS[id];
+    return c ? `<li style="--tint:${c.tint}" title="Detected as ${esc(o.class)}"><img src="${c.art}" alt="">${c.name} <small>${Math.round((o.confidence || 0) * 100)}%</small></li>` : '';
+  }).join('') + extras.map((e) => `<li class="extra">${esc(e.label || e.yolo_class)}</li>`).join('');
+}
+
+function renderRisks(safety) {
+  const list = $('#risks');
+  if (!state.live) {
+    list.innerHTML = '<li>Cup is a little close to Computer.</li>';
+    return;
+  }
+  const lines = (safety?.explanations || []).slice(0, 6);
+  list.innerHTML = lines.length
+    ? lines.map((l) => `<li>${esc(l)}</li>`).join('')
+    : `<li class="calm">${state.camOk ? 'All calm on the desk.' : 'Nothing to report yet.'}</li>`;
+}
+
+async function renderProofs() {
+  const box = $('#proofs');
+  if (!state.live) { box.innerHTML = '<p class="muted" style="grid-column:1/-1">Proof photos from alerts show up here.</p>'; return; }
+  const data = await api('/api/snapshots').catch(() => null);
+  const items = (data?.items || []).slice(0, 6);
+  const ids = items.map((i) => i.id).join(',');
+  if (ids === state.snapshotIds) return;    // nothing new → don't reload images
+  state.snapshotIds = ids;
+  box.innerHTML = items.length
+    ? items.map((it) => `<img src="/api/snapshot/${esc(it.id)}" alt="${esc(it.label || 'Desk photo')}" title="${esc(it.label || '')}" data-photo="/api/snapshot/${esc(it.id)}" loading="lazy">`).join('')
+    : '<p class="muted" style="grid-column:1/-1">None yet. Photos are saved when something gets too close.</p>';
+}
+
+/** One request every 1.5 s: camera status, detections, and risks together. */
+async function pollLive() {
+  let d;
+  try {
+    d = await api(`/api/live${state.phone?.qr_svg ? '' : '?qr=1'}`, { timeout: 5000 });
+  } catch {
+    return;   // a missed poll is fine; the next one will catch up
+  }
+  const wasOk = state.camOk;
+  state.phoneMode = d.phone_mode;
+  state.camOk = d.camera;
+  state.camIndex = d.camera_index ?? 0;
+  if (d.phone && (d.phone.url || d.phone.qr_svg)) state.phone = { ...state.phone, ...d.phone };
+  if (state.camOk !== wasOk) {
+    renderCamStage();
+    renderConn();
+    if (state.phoneMode) toast(null, state.camOk ? 'Phone camera connected' : 'Phone camera disconnected');
+  } else if (!state.camOk && state.phone && !$('#cam-stage .pair-qr') && state.phone.qr_svg) {
+    renderCamStage();   // pairing link just arrived
+  }
+  renderOnDesk(d.detections);
+  renderRisks(d.safety);
+}
+
+// ————— Live connection —————
+function listenForEvents() {
+  const es = new EventSource('/api/events');
+  es.onmessage = (e) => {
+    let d;
+    try { d = JSON.parse(e.data); } catch { return; }
+    if (!d.text) return;
+    if (d.type === 'group_message' && d.character) {
+      addMessage('group', { char: d.character, text: d.text, snapshot: d.snapshot, replyTo: d.reply_to });
+      if (d.snapshot) renderProofs();
+    } else if (d.type === 'habit_reminder' && d.character) {
+      addMessage(d.character, { char: d.character, text: d.text });
+      refreshTrackerFromServer(d.character);
+    } else if (d.type === 'scenario_alert') {
+      const id = CHARACTERS[d.character] ? d.character : 'group';
+      addMessage(id, { char: id === 'group' ? 'sheets' : id, text: d.text });
+    }
+  };
+}
+
+async function startLive(status) {
+  state.live = true;
+  state.phoneMode = !!status.phone_mode;
+  state.camOk = !!status.camera;
+  state.camIndex = status.camera_indices?.[0] ?? 0;
+  // Let the characters know what's on your trackers (to-dos, sips…).
+  const byChat = Object.fromEntries(CHAR_IDS.map((id) => [id, trackerPayload(id)]));
+  api('/api/chat_todos_sync', { method: 'POST', body: { by_chat: byChat } }).catch(() => {});
+  listenForEvents();
+  renderConn();
+  renderCamStage();
+  await pollLive();
+  setInterval(pollLive, 1500);
+  renderProofs();
+  setInterval(renderProofs, 10000);
+  setInterval(() => {
+    api('/api/context').then((c) => { state.mentionOptions = c.mention_options || []; }).catch(() => {});
+  }, 10000);
+  if (!status.llm) {
+    addMessage('group', { note: true, text: 'No AI key found, so the characters will stay quiet. Add one to .env and restart the server.' });
   }
 }
 
-async function enterLiveMode() {
-  const ok = await backend.connect();
-  if (!ok) return false;
-  state.liveMode = true;
-  await syncAllWidgetsToServer();
-  console.log('[Desk Talk] Connected —', backend.llmLabel, '— cameras:', backend.cameraIndices);
-  updateConnectionBadge();
-  cameraDrawer.style.display = backend.cameraOk ? '' : 'none';
-  setupCameraView();
-  setupDrawerFeeds();
-  startDetectionPolling();
-  startDrawerPolling();
-  if (!backend.cameraOk) void pollBackendCamera();
-  return true;
+// ————— Demo (no server, e.g. GitHub Pages) —————
+let demoPlayed = false;
+const DEMO_SCRIPT = [
+  ['glug', 'Just sitting here. Minding my own business.'],
+  ['monty', 'You are about four centimeters from my keyboard. I can feel the condensation.'],
+  ['munch', 'Relax, Computer. Crumbs are basically confetti.'],
+  ['sheets', 'Could everyone please stay away from the homework? It is due tomorrow.'],
+  ['monty', '@user could you move the cup? Asking for a friend. The friend is me.'],
+];
+async function playDemoOnce() {
+  if (demoPlayed || state.live) return;
+  demoPlayed = true;
+  addMessage('group', { note: true, text: 'Demo conversation. With the server running, this chat reacts to your real desk.' });
+  for (const [id, text] of DEMO_SCRIPT) {
+    await sleep(900);
+    showTyping(id, 'group');
+    await sleep(900 + text.length * 12);
+    addMessage('group', { char: id, text });
+  }
+}
+const DEMO_REPLIES = {
+  monty: ['I would answer properly, but I am a demo right now. Run the server and I will actually see your desk.'],
+  glug: ['In the real app I count your sips. Right now I am just a very calm drawing.'],
+  munch: ['Demo snack here. Start the server and I will judge your real food.'],
+  sheets: ['I am only a demo for now. The to-do list above still works, though.'],
+};
+async function demoReply(chatId, text) {
+  const id = chatId === 'group'
+    ? (CHAR_IDS.find((c) => text.toLowerCase().includes(`@${CHARACTERS[c].name.toLowerCase()}`)) || pick(CHAR_IDS))
+    : chatId;
+  showTyping(id, chatId);
+  await sleep(1100);
+  addMessage(chatId, { char: id, text: pick(DEMO_REPLIES[id]) });
 }
 
-function enterDemoMode() {
-  stopDetectionPolling();
-  stopDrawerPolling();
-  stopLiveFramePoll();
-  stopDrawerFramePoll();
-  if (liveMjpegFailSafeTimer) {
-    clearTimeout(liveMjpegFailSafeTimer);
-    liveMjpegFailSafeTimer = null;
-  }
-  state.liveStreamPreferPoll = false;
-  backend.disconnect();
-  state.liveMode = false;
-  updateConnectionBadge();
-  cameraDrawer.style.display = 'none';
-  setupCameraView();
-  startSimulation();
-  console.log('[Desk Talk] Switched to demo mode');
+// ————— Wiring —————
+function wire() {
+  $('#chat-list').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-chat]');
+    if (b) openChat(b.dataset.chat);
+  });
+  $$('.page-link').forEach((b) => b.addEventListener('click', () => openPage(b.dataset.view)));
+
+  // Links inside messages/trackers that open a page, and photos that open full size.
+  document.addEventListener('click', (e) => {
+    const open = e.target.closest('[data-open]');
+    if (open) { e.preventDefault(); openPage(open.dataset.open); return; }
+    const photo = e.target.closest('[data-photo]');
+    if (photo) {
+      const dlg = $('#photo');
+      dlg.querySelector('img').src = photo.dataset.photo;
+      dlg.showModal();
+    }
+  });
+  $('#photo-close').addEventListener('click', () => $('#photo').close());
+  $('#photo').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
+
+  // Composer
+  const input = $('#input');
+  let lastPing = 0;
+  $('#composer').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    $('#mentions').hidden = true;
+    send(text);
+  });
+  input.addEventListener('input', () => {
+    updateMentions();
+    if (state.live && Date.now() - lastPing > 3000) {      // hold off idle chatter while you type
+      lastPing = Date.now();
+      navigator.sendBeacon?.('/api/activity');
+    }
+  });
+  input.addEventListener('keydown', (e) => {
+    const box = $('#mentions');
+    if (box.hidden) return;
+    const opts = $$('.mention-opt', box);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      mentionIndex = (mentionIndex + (e.key === 'ArrowDown' ? 1 : -1) + opts.length) % opts.length;
+      updateMentions();
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      insertMention(opts[mentionIndex].dataset.id);
+    } else if (e.key === 'Escape') {
+      box.hidden = true;
+    }
+  });
+  $('#mentions').addEventListener('mousedown', (e) => {
+    const opt = e.target.closest('.mention-opt');
+    if (opt) { e.preventDefault(); insertMention(opt.dataset.id); }
+  });
+
+  // Desk cam panel
+  $$('.seg button').forEach((b) => b.addEventListener('click', () => {
+    state.feed = b.dataset.feed;
+    $$('.seg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    if (state.live && state.camOk) renderCamStage();
+  }));
+  $('#cam-toggle').addEventListener('click', () => $('#cam').classList.add('open'));
+  $('#cam-close').addEventListener('click', () => $('#cam').classList.remove('open'));
+  $('#conn').addEventListener('click', () => {
+    if (!state.live) toast(null, 'Demo mode. Run python server.py and open http://localhost:5000 to use your real desk.');
+    else if (state.phoneMode && !state.camOk) $('#cam').classList.add('open');
+  });
 }
 
 async function init() {
-  updateStatusBarTime();
-  setInterval(updateStatusBarTime, 10000);
-
-  loadWidgets();
-  loadCustomHabits();
-  backend = new Backend();
-
-  // Wire splash first — must work even if connect/sync hangs or fails (otherwise Get Started does nothing).
-  document.getElementById('splash-start')?.addEventListener('click', () => finishSplash());
-  document.querySelectorAll('.splash-pill[data-chat]').forEach((pill) => {
-    pill.addEventListener('click', () => finishSplash(pill.dataset.chat));
-  });
-
-  const toggleInput = document.getElementById('mode-toggle-input');
-  const toggleLabel = document.getElementById('mode-toggle-label');
-
-  if (window.location.protocol === 'file:') {
-    console.warn('[Desk Talk] Open http://127.0.0.1:5000 in the browser — file:// cannot reach the Flask API.');
+  wire();
+  renderConn();
+  let status = null;
+  if (location.protocol.startsWith('http')) {
+    status = await api('/api/status', { timeout: 4000 }).catch(() => null);
   }
-
-  const serverAvailable = await backend.connect();
-  if (serverAvailable) {
-    state.liveMode = true;
-    void syncAllWidgetsToServer();
-    console.log('[Desk Talk] Connected —', backend.llmLabel, '— cameras:', backend.cameraIndices);
-    if (toggleInput) toggleInput.checked = true;
-    if (toggleLabel) toggleLabel.textContent = 'Live';
-    if (!backend.cameraOk) void pollBackendCamera();
+  if (status) {
+    await startLive(status);
   } else {
-    state.liveMode = false;
-    console.log('[Desk Talk] No server — demo mode');
-    startSimulation();
-    if (toggleInput) toggleInput.checked = false;
-    if (toggleLabel) toggleLabel.textContent = 'Demo';
+    state.live = false;
+    $('#about-link').hidden = false;   // the landing page sits next to the demo on GitHub Pages
+    renderConn();
+    renderCamStage();
+    renderOnDesk(null);
+    renderRisks(null);
+    renderProofs();
   }
-
-  if (toggleInput) {
-    toggleInput.addEventListener('change', async () => {
-      if (toggleInput.checked) {
-        if (toggleLabel) toggleLabel.textContent = 'Live';
-        const ok = await enterLiveMode();
-        if (!ok) {
-          toggleInput.checked = false;
-          if (toggleLabel) toggleLabel.textContent = 'Demo';
-          enterDemoMode();
-          showToast('📡', 'Could not connect — is the server running?');
-        }
-      } else {
-        if (toggleLabel) toggleLabel.textContent = 'Demo';
-        enterDemoMode();
-      }
-      updateGreeting();
-    });
-  }
-
-  updateConnectionBadge();
-  updateGreeting();
-  updateBottomNav(state.currentScreen);
-  if (cameraDrawer) {
-    cameraDrawer.style.display = (state.liveMode && backend.cameraOk) ? '' : 'none';
-  }
-
-  const camIconBtn = document.getElementById('btn-camera');
-  if (camIconBtn && camIconBtn.classList.contains('icon-detailed-camera')) {
-    camIconBtn.innerHTML = DETAILED_CAMERA_SVG;
-  }
-
-  attachSwipeLiveChat();
-
-  chatMessages?.addEventListener('click', (e) => {
-    const btn = e.target.closest('.msg-cta-btn');
-    if (!btn || btn.dataset.action !== 'captures') return;
-    navigateTo('captures');
-  });
+  openChat('group');
 }
+
 document.addEventListener('DOMContentLoaded', init);
