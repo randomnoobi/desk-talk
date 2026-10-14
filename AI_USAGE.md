@@ -4,6 +4,8 @@ The Congressional App Challenge requires disclosing all AI use. This file lists 
 
 **Still Sam's original work:** YOLO detection and the camera loop, the relationship and danger-zone engine (`backend/relationships.py`), the character personalities and LLM prompts, habit tracking, lost-object tracking, the idle-chat director, the daily recap, and the website's text and scene drawings.
 
+**See for yourself:** [Sam's code before any AI help](https://github.com/randomnoobi/desk-talk/tree/original-by-sam) · [every AI-assisted change since](https://github.com/randomnoobi/desk-talk/compare/original-by-sam...main)
+
 ---
 
 ## Oct 8, 2026: phone camera over Wi-Fi
