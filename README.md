@@ -203,6 +203,12 @@ One window on the computer, three columns:
 
 Characters are original SVG drawings in `app/art/` (flat cut-paper style with a grain texture).
 
+**Lens** is the phone camera itself. It speaks up in the group chat when the view needs fixing (too dark, glare, blurry, covered, an object cut off at the side, the phone got bumped, slow or stopped video) and says thanks when it's fixed. It doesn't use the AI (`backend/camera_health.py`).
+
+**Desk edges:** in Settings, tap the corners of your desk on the camera picture. Only those lines count as edges for "about to fall off" warnings. Sides along the border of the picture are ignored, since the desk keeps going there.
+
+**Reminders** only come with a reason the camera saw (for example "no sip in 47 minutes"), never in the first 15 minutes, and never while the camera is off or during quiet hours (`backend/reminders.py`).
+
 ---
 
 ## Detection System
@@ -350,8 +356,10 @@ Phone (Safari/Chrome)                          Computer (python server.py)
 ```
 
 - Phones only allow the camera on `https://` pages, so the server makes a self-signed certificate in `certs/` the first time it runs. That is why the phone shows a "not private" warning once.
-- The QR link includes a random pairing key, so other devices on the Wi-Fi can't send frames. Restarting the server makes a new key (scan again).
+- The QR link includes a random pairing key, so other devices on the Wi-Fi can't send frames. The key is saved in `certs/pair-key.txt` and reused after a restart (delete that file to make a new one).
 - If the phone stops streaming for 3 seconds, analysis pauses so the characters don't react to an old frame.
+- Sideways is fine: the phone page uses its motion sensor to send the picture the right way up, even with rotation lock on. "Computer sees" on the phone shows exactly what's sent, and **Turn** adds a quarter turn by hand.
+- If the characters stop answering, the chat says why (usually the free AI limit). Background chatter pauses for 10 minutes after a limit so your messages still get through.
 - `CAMERA_SOURCE=webcam` in `.env` switches back to a webcam plugged into the computer.
 
 The server:

@@ -43,6 +43,27 @@ class PhoneFrameSource:
         self._fps = 0.0
         self.width = 0
         self.height = 0
+        self.gravity = None      # (x, y, z) from the phone's motion sensor, if it has one
+        self.gravity_ts = 0.0
+        self.rotation = 0        # how much the phone turned the picture (0/90/180/270)
+        self.stopped_by_user = False
+
+    def mark_stopped(self):
+        """The user pressed Stop on the phone (as opposed to the video dropping out)."""
+        with self._cond:
+            self.stopped_by_user = True
+            self.last_frame_ts = 0.0
+
+    def set_motion(self, gravity=None, rotation=None):
+        """Phone tilt info sent with each frame. Used to notice when the phone gets bumped."""
+        if gravity is not None:
+            self.gravity = gravity
+            self.gravity_ts = time.time()
+        if rotation is not None:
+            self.rotation = rotation
+
+    def recent_gravity(self, max_age: float = 5.0):
+        return self.gravity if (time.time() - self.gravity_ts) < max_age else None
 
     # ---- called by the Flask route when the phone uploads a frame ----
     def push_jpeg(self, data: bytes) -> bool:
@@ -56,6 +77,7 @@ class PhoneFrameSource:
             if 0 < gap < 2:
                 # Smoothed frames-per-second estimate for the status display.
                 self._fps = 0.8 * self._fps + 0.2 * (1.0 / gap)
+            self.stopped_by_user = False
             self._frame = frame
             self._jpeg = data
             self._seq += 1
@@ -96,9 +118,52 @@ class PhoneFrameSource:
         return round(self._fps, 1) if self.connected else 0.0
 
 
-def make_pair_key() -> str:
-    """Short random key included in the QR link so only your phone can send frames."""
-    return secrets.token_urlsafe(6)
+def make_pair_key(path: str | None = None) -> str:
+    """Short random key included in the QR link so only your phone can send frames.
+
+    With `path`, the key is saved there and reused next time, so the phone's
+    bookmarked page keeps working after you restart the server."""
+    if path:
+        try:
+            with open(path) as f:
+                key = f.read().strip()
+            if 6 <= len(key) <= 64 and key.replace('-', '').replace('_', '').isalnum():
+                return key
+        except OSError:
+            pass
+    key = secrets.token_urlsafe(6)
+    if path:
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w') as f:
+                f.write(key)
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+    return key
+
+
+def parse_gravity(header: str | None):
+    """'x,y,z' from the X-Desk-Gravity header -> (x, y, z) floats, or None."""
+    if not header:
+        return None
+    try:
+        parts = [float(v) for v in header.split(',')[:3]]
+    except ValueError:
+        return None
+    if len(parts) != 3 or not all(abs(v) < 50 for v in parts):
+        return None
+    return tuple(parts)
+
+
+def tilt_between(g1, g2) -> float:
+    """Angle in degrees between two gravity readings (how far the phone has tipped)."""
+    import math
+    a = math.sqrt(sum(v * v for v in g1)); b = math.sqrt(sum(v * v for v in g2))
+    if a < 1 or b < 1:
+        return 0.0
+    cos = sum(x * y for x, y in zip(g1, g2)) / (a * b)
+    return math.degrees(math.acos(max(-1.0, min(1.0, cos))))
 
 
 def lan_ip() -> str:

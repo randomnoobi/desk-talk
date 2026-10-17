@@ -24,7 +24,7 @@
   --teal: #1F9A83;     --teal-tint: #DDF2ED;
   --tang: #C8601A;     --tang-tint: #FDEADB;
   --mustard: #9A6C00;  --mustard-tint: #FCF0CC;
-  --coral: #EE8C9C;    --coral-tint: #FCE4E8;
+  --coral: #EE8C9C;    --coral-tint: #FCE4E8;   --coral-ink: #B8475B;
   --mint: #2BC08F;
   --danger: #C8324A;
 
@@ -460,6 +460,9 @@ h1, h2, h3 { font-variation-settings: 'opsz' 96; line-height: 1.1; }
 }
 .cam-stage.is-pairing { aspect-ratio: auto; }
 .cam-stage > img { width: 100%; height: 100%; object-fit: contain; background: var(--ink); }
+/* Live video: the box takes the picture's own shape (wide or tall), so nothing looks squashed */
+.cam-stage.has-video { aspect-ratio: auto; min-height: 140px; background: var(--ink); }
+.cam-stage.has-video > img { display: block; height: auto; max-height: 56vh; }
 .cam-stage > img.scene { background: none; }
 .cam-caption { margin-top: -10px; font-size: 13px; color: var(--ink-2); }
 .cam-stage > .cam-caption { margin: 0; padding: 18px; }
@@ -498,6 +501,9 @@ h1, h2, h3 { font-variation-settings: 'opsz' 96; line-height: 1.1; }
 .risks { list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 .risks li { padding: 8px 12px; border-radius: 12px; background: var(--coral-tint); }
 .risks li.calm { background: var(--teal-tint); }
+.risks li.lens-issue { display: flex; gap: 10px; align-items: flex-start; background: var(--mustard-tint); }
+.risks li.lens-issue img { flex: 0 0 30px; width: 30px; height: 30px; margin-top: -2px; }
+.risks li.lens-issue strong { font-weight: 700; }
 .muted { color: var(--ink-3); font-size: 14px; }
 .proofs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .proofs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; cursor: zoom-in; }
@@ -559,3 +565,27 @@ h1, h2, h3 { font-variation-settings: 'opsz' 96; line-height: 1.1; }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* ---------- AI status line above the composer ---------- */
+.ai-banner {
+  margin: 0 28px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--mustard-tint);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+/* ---------- desk edge editor (Settings) ---------- */
+.edge-editor { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; max-width: 640px; }
+.edge-pic { position: relative; border-radius: 16px; overflow: hidden; background: var(--mist); cursor: crosshair; line-height: 0; }
+.edge-pic img { width: 100%; height: auto; display: block; user-select: none; -webkit-user-drag: none; }
+.edge-pic svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.edge-fill { fill: rgba(47, 95, 208, 0.18); }
+.edge-real { stroke: #E3405A; stroke-linecap: round; }
+.edge-ignored { stroke: rgba(255, 255, 255, 0.85); stroke-linecap: round; }
+.edge-dot { fill: #fff; stroke: var(--ink); stroke-width: 2; }
+.edge-num { fill: var(--ink); font-weight: 700; text-anchor: middle; dominant-baseline: central; font-family: var(--font); }
+.edge-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.edge-off { padding: 18px; border-radius: 16px; background: var(--mist); }

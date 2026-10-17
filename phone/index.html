@@ -25,18 +25,27 @@
     <h1>Point this phone at your desk</h1>
     <p>Your computer watches the video, and your desk objects start talking in the chat there.</p>
     <ol>
-      <li>Lean the phone so it looks down at your desk.</li>
+      <li>Lean the phone so it looks down at your desk. Sideways works too.</li>
       <li>Keep this page open while you work.</li>
+      <li>If your phone asks about motion access, tap Allow. It keeps the picture the right way up.</li>
     </ol>
     <button type="button" class="start" id="start">Start camera</button>
     <p class="error" id="error" role="alert" hidden></p>
   </section>
 
   <!-- Shown while streaming -->
+  <p class="tip" id="tip" role="status" hidden></p>
   <footer class="controls" id="controls" hidden>
+    <figure class="sent-box">
+      <canvas id="sent" width="132" height="99" aria-label="What your computer sees"></canvas>
+      <figcaption>Computer sees</figcaption>
+    </figure>
     <span class="stats" id="stats">Starting…</span>
-    <button type="button" class="round" id="flip">Flip</button>
-    <button type="button" class="round stop" id="stop">Stop</button>
+    <div class="buttons">
+      <button type="button" class="round" id="turn" title="Turn the picture a quarter turn">Turn</button>
+      <button type="button" class="round" id="flip">Flip</button>
+      <button type="button" class="round stop" id="stop">Stop</button>
+    </div>
   </footer>
 
   <script src="/phone/phone.js"></script>

@@ -97,13 +97,18 @@ DISAPPEAR_FRAMES = int(os.getenv('DISAPPEAR_FRAMES', '40'))
 MAX_SNAPSHOTS    = 150
 MIN_LLM_INTERVAL = float(os.getenv('MIN_LLM_INTERVAL', '6'))
 LLM_MAX_RETRIES  = 3
+AI_PAUSE_ON_LIMIT_SEC = int(os.getenv('AI_PAUSE_ON_LIMIT_SEC', '600'))   # background AI rests 10 min after a rate limit
+
+# No reminders or small talk until the camera has been running this long:
+# nobody wants a "drink water!" the second they open the app.
+REMINDER_WARMUP_SEC = int(float(os.getenv('REMINDER_WARMUP_MIN', '15')) * 60)
 
 # Lost object framework: timed loop + scene/heartbeat gate + YOLO then VLM fallback
 LOST_LOOP_SEC         = int(os.getenv('LOST_LOOP_SEC', '60'))
 LOST_SCENE_DIFF_THR   = float(os.getenv('LOST_SCENE_DIFF_THR', '8.0'))  # mean abs diff 0-255, small 64x64 grays
 LOST_HEARTBEAT_SEC    = int(os.getenv('LOST_HEARTBEAT_SEC', '300'))    # rescan if scene looks static
 LOST_VISION_MODEL     = os.getenv('LOST_VISION_MODEL', os.getenv('OLLAMA_MODEL', 'llava'))
-HABIT_MIN_GAP_SEC     = int(os.getenv('HABIT_MIN_GAP_SEC', '120'))     # min seconds between any habit nudges
+HABIT_MIN_GAP_SEC     = int(os.getenv('HABIT_MIN_GAP_SEC', '600'))     # min seconds between any two habit nudges
 HABIT_DND_ENABLED     = os.getenv('HABIT_DND_ENABLED', '0').lower() in ('1', 'true', 'yes')
 HABIT_DND_START_HOUR  = int(os.getenv('HABIT_DND_START_HOUR', '22'))   # inclusive, local time
 HABIT_DND_END_HOUR    = int(os.getenv('HABIT_DND_END_HOUR', '7'))      # exclusive end of DND in morning
@@ -285,6 +290,7 @@ SCENARIOS = {
 
 # Classes that are tracked but not assigned to a character
 PET_CLASSES = {'cat', 'dog'}
+PLANT_CLASSES = {'potted plant'}
 LOST_OBJECT_CLASSES = {'cell phone', 'remote', 'handbag', 'scissors'}
 LOST_OBJECT_ALERT_SEC = 600  # 10 min default
 LOSEABLE_SNAPSHOT_COOLDOWN_SEC = int(os.getenv('LOSEABLE_SNAPSHOT_COOLDOWN_SEC', '75'))
@@ -318,15 +324,22 @@ SAFETY_RULES_RAW = []  # original JSON rules for the /api/rules endpoint
 
 
 from relationships import RelationshipAnalyzer, load_config as load_rel_config
+from reminders import pick_reminder
+from camera_health import CameraHealth
 from phone_camera import (
     PhoneFrameSource, make_pair_key, lan_ip, ensure_cert, qr_svg, print_qr,
+    parse_gravity, tilt_between,
 )
 
 rel_analyzer = RelationshipAnalyzer()
+# Lens, the camera character: notices dark / blurry / bumped / cut-off views
+camera_health = CameraHealth(watch_classes=set(YOLO_TO_CHAR))
+CAMERA_REFERENCE_GRAVITY = None   # phone tilt when the desk edges were marked
 
 # Phone camera state (only used when PHONE_MODE is on)
 phone_source = PhoneFrameSource()
-PHONE_PAIR_KEY = make_pair_key()
+# Saved in certs/ so the phone's link keeps working after a restart.
+PHONE_PAIR_KEY = make_pair_key(os.path.join(PROJECT_ROOT, 'certs', 'pair-key.txt'))
 PHONE_STATIC = os.path.join(PROJECT_ROOT, 'phone')
 phone_url = ''          # filled in at startup, e.g. https://192.168.1.20:5443/phone?key=...
 
@@ -345,6 +358,10 @@ def _load_safety_rules():
 
     with open(rules_path, 'r') as f:
         data = json.load(f)
+
+    global CAMERA_REFERENCE_GRAVITY
+    g = (data.get('camera_reference') or {}).get('gravity')
+    CAMERA_REFERENCE_GRAVITY = tuple(g) if g and len(g) == 3 and data.get('desk_outline') else None
 
     # Also build SAFETY_RULES from "rules" array if present (backward compat)
     SAFETY_RULES_RAW = data.get('rules', [])
@@ -397,6 +414,57 @@ RELATIONSHIP_DESCRIPTIONS = {
     frozenset({'munch', 'sheets'}): 'Snack near Paper — oil/grease stain risk.',
     frozenset({'munch', 'glug'}):  'Snack near Cup — increased hand movement near liquid.',
 }
+
+def _a_or_an(word):
+    return 'an' if str(word)[:1].lower() in 'aeiou' else 'a'
+
+
+def _warm(now):
+    """Camera has watched long enough for nudges (called with desk.lock held)."""
+    return bool(desk.session_start) and now - desk.session_start >= REMINDER_WARMUP_SEC
+
+
+def _is_rate_limit(err):
+    e = str(err).lower()
+    return '429' in e or 'quota' in e or 'rate limit' in e or 'resource_exhausted' in e or 'exhausted' in e
+
+
+def _friendly_ai_error(err, label=''):
+    """Turn an AI error into one plain sentence the user can act on."""
+    e = str(err).lower()
+    who = (label or 'the AI').split(' ')[0]
+    if _is_rate_limit(e):
+        return (f'{who} hit its free usage limit. Free plans allow only a few messages per minute '
+                f'and a set number per day. Wait a minute and try again; if it keeps happening, '
+                f'the daily limit resets tomorrow.')
+    if any(s in e for s in ('401', '403', 'api key', 'api_key', 'unauthorized', 'permission')):
+        return f'{who} rejected the key in .env. Copy the key again, paste it into .env, and restart the server.'
+    if '404' in e or 'not found' in e or 'does not exist' in e:
+        return (f'{who} could not find the model named in .env. Put a current model name in .env '
+                f'(for Gemini, GEMINI_MODEL=...) and restart the server.')
+    if any(s in e for s in ('connect', 'timed out', 'timeout', 'unreachable', 'name or service')):
+        if 'ollama' in (label or '').lower():
+            return 'Could not reach Ollama. Open the Ollama app, then try again.'
+        return 'Could not reach the AI service. Check the internet connection and try again.'
+    return f'The AI returned an error: {str(err)[:160]}'
+
+
+def _proximity_fallback_text(char_id, event):
+    """In-character warning used when the AI can't write one."""
+    other = CHARACTERS.get(event.get('near', ''), {}).get('name')
+    rule = (event.get('rule_label') or '').strip()
+    if other:
+        lines = {
+            'monty': f'{other} is getting really close to me. Could you move it back a little?',
+            'glug': f'I\'m just sitting here near {other}, but apparently that\'s a problem. Maybe move one of us?',
+            'munch': f'Me and {other} are pretty close right now. Crumbs happen. Just saying.',
+            'sheets': f'{other} is too close to me. Please give me some space before something spills.',
+        }
+        return lines.get(char_id, f'{other} is too close. Could you move it back?')
+    if rule:
+        return f'Heads up: {rule.rstrip(".")}. Could you move me back a bit?'
+    return 'Something is getting too close. Could you check the desk?'
+
 
 RELATIONSHIP_CONTEXT = """DESK ECOSYSTEM RELATIONSHIPS:
 
@@ -583,6 +651,13 @@ class DeskState:
         self.vlm_posture_slouch_since = None
         self.vlm_prev_nail_biting = False
         self.habit_nail_last_event_ts = 0.0
+        # Evidence for reminders (so nobody gets nagged without a reason)
+        self.session_start = None      # when the camera started watching this session
+        self.last_break_ts = None      # last break: away 5+ min, or camera off 5+ min
+        self.last_sip_ts = None        # last time the cup left the desk and came back
+        self.last_motion_ts = None     # last time the picture changed (someone working)
+        self.snack_since = None        # food has been on the desk since…
+        self.snack_name = ''
 
     def save_snapshot(self, cam_idx=None, crop_bboxes=None, label='Capture'):
         """Copy frame bytes under lock; run cv2 crop *outside* lock so the camera thread never stalls."""
@@ -985,6 +1060,8 @@ class LostObjectFrameworkThread(threading.Thread):
         for feat_id, feat in SCENARIOS['lost_object']['features'].items():
             if not feat.get('active'):
                 continue
+            if PHONE_MODE and feat_id == 'track_phone':
+                continue   # your phone is the camera, so it is never on the desk
             yc = feat.get('yolo_class', '')
             alert_sec = feat.get('alert_after_sec', LOST_OBJECT_ALERT_SEC)
             if yc in extra:
@@ -1024,7 +1101,7 @@ class LostObjectFrameworkThread(threading.Thread):
             text = self.gen._call_llm([
                 {'role': 'system', 'content': 'You are a lost desk item speaking in first person. Be brief, natural, and helpful.'},
                 {'role': 'user', 'content': prompt},
-            ], max_tokens=60, temperature=0.7)
+            ], max_tokens=60, temperature=0.7, background=True)
             if text:
                 return text
         return f'{item_name}: hasn\'t been seen for {gone_mins} min.{near_hint}'
@@ -1190,11 +1267,13 @@ class CameraThread(threading.Thread):
             new_objects = {}
             person_detected = False
             extra_detections = {}
+            all_boxes = []
             for r in results:
                 for box in r.boxes:
                     cls_name = self.model.names[int(box.cls[0])]
                     x1, y1, x2, y2 = box.xyxy[0].tolist()
                     conf = float(box.conf[0])
+                    all_boxes.append((cls_name, (x1, y1, x2, y2)))
                     if cls_name == 'person':
                         person_detected = True
                         continue
@@ -1209,7 +1288,7 @@ class CameraThread(threading.Thread):
                                 'center': [(x1 + x2) / 2, (y1 + y2) / 2],
                                 'conf': conf, 'cam': self.cam_idx,
                             }
-                    if cls_name in PET_CLASSES or cls_name in LOST_OBJECT_CLASSES:
+                    if cls_name in PET_CLASSES or cls_name in LOST_OBJECT_CLASSES or cls_name in PLANT_CLASSES:
                         extra_detections[cls_name] = {
                             'bbox': [x1, y1, x2, y2],
                             'center': [(x1 + x2) / 2, (y1 + y2) / 2],
@@ -1217,6 +1296,9 @@ class CameraThread(threading.Thread):
                         }
             self.person_detected = person_detected
             self.extra_detections = extra_detections
+            if camera_health.sample(frame, all_boxes) and camera_health.motion_ts:
+                with desk.lock:
+                    desk.last_motion_ts = max(desk.last_motion_ts or 0, camera_health.motion_ts)
 
             raw = set(new_objects.keys())
             for cid in set(list(seen_count) + list(gone_count) + list(raw)):
@@ -1298,14 +1380,25 @@ class DetectionMerger(threading.Thread):
         self.cam_threads = cam_threads
 
     def run(self):
+        paused_since = None
         while True:
+            now = time.time()
             if PHONE_MODE and not phone_source.connected:
                 # Phone isn't streaming (locked, closed, out of Wi-Fi). Pause analysis so the
                 # characters don't react to an old frame or log fake breaks/sips.
                 with desk.lock:
                     desk.objects = {}
+                paused_since = paused_since or now
                 time.sleep(0.5)
                 continue
+            with desk.lock:
+                if desk.session_start is None or (paused_since and now - paused_since >= BREAK_THRESHOLD_SEC):
+                    # First frames, or the camera was off 5+ minutes: a new session starts,
+                    # and that time away counts as a break.
+                    if desk.session_start is not None:
+                        desk.last_break_ts = now
+                    desk.session_start = now
+            paused_since = None
             merged = {}
             person_seen = False
             for ct in self.cam_threads:
@@ -1382,6 +1475,7 @@ class DetectionMerger(threading.Thread):
                     away_dur = now - desk.person_away_since
                     if away_dur >= BREAK_THRESHOLD_SEC and not desk.person_break_logged:
                         desk.person_break_logged = True
+                        desk.last_break_ts = now
                         w = desk.char_widgets.get('monty')
                         if w and w.get('type') == 'break_timer':
                             w['breaks_today'] = w.get('breaks_today', 0) + 1
@@ -1407,6 +1501,7 @@ class DetectionMerger(threading.Thread):
                 if desk.glug_gone_since is not None:
                     gone_dur = now - desk.glug_gone_since
                     if SIP_GONE_MIN_SEC <= gone_dur <= SIP_GONE_MAX_SEC:
+                        desk.last_sip_ts = now
                         w = desk.char_widgets.get('glug')
                         if w and w.get('type') == 'sip_counter':
                             w['sips'] = w.get('sips', 0) + 1
@@ -1422,6 +1517,11 @@ class DetectionMerger(threading.Thread):
 
             # ── 3. SNACK DETECTION (Snack) ──────────────────────────
             munch_present = 'munch' in objects
+            if munch_present and desk.snack_since is None:
+                desk.snack_since = now
+                desk.snack_name = objects['munch'].get('class_name', 'snack')
+            elif not munch_present:
+                desk.snack_since = None
             if munch_present:
                 cls_name = objects['munch'].get('class_name', 'snack')
                 if cls_name not in desk.munch_seen_classes:
@@ -1435,7 +1535,7 @@ class DetectionMerger(threading.Thread):
                         emoji = '\U0001F34E' if is_healthy else '\U0001F355'
                         desk.events_queue.put({
                             'type': 'habit_reminder', 'character': 'munch',
-                            'text': f'{emoji} Spotted a {cls_name} on the desk \u2014 logged it!',
+                            'text': f'{emoji} Spotted {_a_or_an(cls_name)} {cls_name} on the desk, so I logged it!',
                         })
 
             # ── 4. PET RISK DETECTION ───────────────────────────────
@@ -1467,7 +1567,8 @@ class DetectionMerger(threading.Thread):
                 if desk.phone_on_desk_since is None:
                     desk.phone_on_desk_since = now
                     desk.phone_focus_alerted = False
-                elif not desk.phone_focus_alerted and (now - desk.phone_on_desk_since) > 300:
+                elif (not desk.phone_focus_alerted and (now - desk.phone_on_desk_since) > 300
+                      and _warm(now)):
                     desk.phone_focus_alerted = True
                     desk.events_queue.put({
                         'type': 'scenario_alert',
@@ -1482,54 +1583,29 @@ class DetectionMerger(threading.Thread):
             # ── 7. DESK ORGANIZATION (clutter) ──────────────────────
             total_items = len(objects) + len(extra)
             clutter_threshold = SCENARIOS['reminders']['features']['organization'].get('clutter_threshold', 6)
-            if total_items >= clutter_threshold and (now - desk.last_clutter_alert) > 1800:
+            if total_items >= clutter_threshold and (now - desk.last_clutter_alert) > 1800 and _warm(now):
                 desk.last_clutter_alert = now
                 desk.events_queue.put({
                     'type': 'scenario_alert',
                     'scenario': 'reminders', 'feature': 'organization',
                     'character': 'sheets',
-                    'text': f'Your desk has {total_items} items detected. Maybe tidy up a bit?',
+                    'text': f'I count {total_items} things on the desk right now. Maybe tidy up a bit?',
                 })
 
-            # ── 8. POSTURE CHECK (time-based) ───────────────────────
-            posture_interval = SCENARIOS['reminders']['features']['posture_check'].get('interval_sec', 2400)
-            if person_seen and (now - desk.last_posture_reminder) > posture_interval:
-                desk.last_posture_reminder = now
-                desk.events_queue.put({
-                    'type': 'scenario_alert',
-                    'scenario': 'reminders', 'feature': 'posture_check',
-                    'character': 'monty',
-                    'text': random.choice([
-                        'Posture check! Sit up straight and relax your shoulders.',
-                        'How\'s your posture? Roll your shoulders back and sit tall.',
-                        'Time to check your posture \u2014 are your feet flat on the floor?',
-                        'Stretch your neck \u2014 tilt your head side to side gently.',
-                    ]),
-                })
-
-            # ── 9. SCREEN TIME (continuous presence) ────────────────
-            if person_seen and desk.person_continuous_since:
-                session_min = (now - desk.person_continuous_since) / 60
-                if session_min >= 45 and (now - desk.last_screen_time_reminder) > 2700:
-                    desk.last_screen_time_reminder = now
-                    desk.events_queue.put({
-                        'type': 'scenario_alert',
-                        'scenario': 'reminders', 'feature': 'screen_time',
-                        'character': 'monty',
-                        'text': f'You\'ve been at the desk for {int(session_min)} minutes straight. Take a quick break!',
-                    })
+            # ── 8/9. Posture and screen time: the old timer-only nudges were removed.
+            #     Computer's break reminder (backend/reminders.py) and the vision posture
+            #     check (HabitSceneVlmThread) cover them, with evidence.
 
             # ── 10. WATER PLANTS (time-based) ───────────────────────
             water_interval = SCENARIOS['reminders']['features']['water_plants'].get('interval_sec', 86400)
-            if desk.last_water_plants_reminder == 0:
-                desk.last_water_plants_reminder = now
-            elif (now - desk.last_water_plants_reminder) > water_interval:
+            if ('potted plant' in extra and _warm(now)
+                    and (now - desk.last_water_plants_reminder) > water_interval):
                 desk.last_water_plants_reminder = now
                 desk.events_queue.put({
                     'type': 'scenario_alert',
                     'scenario': 'reminders', 'feature': 'water_plants',
                     'character': 'glug',
-                    'text': 'Daily reminder: have you watered your plants today?',
+                    'text': 'I can see a plant on the desk. Has it had any water today?',
                 })
 
         # ── Daily stats accumulation (outside desk.lock) ──
@@ -2456,8 +2532,32 @@ class MessageGenerator(threading.Thread):
         t = threading.Thread(target=_ping, daemon=True, name='OllamaKeepAlive')
         t.start()
 
-    def _call_llm(self, messages, max_tokens=120, temperature=0.85):
+    # ── AI health ──────────────────────────────────────────────────
+    # Background features (idle chatter, reminders, alerts) pause when the AI hits
+    # its rate limit, so the free quota is saved for replying to you.
+    ai_problem_text = None        # friendly text of the last failure, None once a call works
+    ai_problem_ts = 0.0
+    background_paused_until = 0.0
+
+    def _ai_failed(self, exc):
+        err = str(exc)
+        self.ai_problem_text = _friendly_ai_error(err, self.llm_label)
+        self.ai_problem_ts = time.time()
+        if _is_rate_limit(err):
+            self.background_paused_until = time.time() + AI_PAUSE_ON_LIMIT_SEC
+            print(f'  [llm] Rate limit hit: background AI paused for {AI_PAUSE_ON_LIMIT_SEC // 60} min')
+
+    def ai_problem(self):
+        """The current AI problem in plain words, or None if the last call worked."""
+        return self.ai_problem_text
+
+    def background_ok(self):
+        return bool(self.client) and time.time() >= self.background_paused_until
+
+    def _call_llm(self, messages, max_tokens=120, temperature=0.85, background=False):
         if not self.client:
+            return None
+        if background and not self.background_ok():
             return None
         elapsed = time.time() - self._last_llm_call
         if elapsed < MIN_LLM_INTERVAL:
@@ -2484,21 +2584,23 @@ class MessageGenerator(threading.Thread):
                     if kwargs['messages'] and kwargs['messages'][-1]['role'] == 'user':
                         kwargs['messages'][-1]['content'] += '\n(Please respond with at least one sentence.)'
                     continue
+                self.ai_problem_text = None     # a call worked, so any earlier problem is over
                 return text
             except Exception as exc:
                 err = str(exc)
-                is_rate_limit = '429' in err or 'rate' in err.lower() or 'quota' in err.lower()
-                if is_rate_limit and attempt < LLM_MAX_RETRIES - 1:
-                    wait = (2 ** attempt) * 4
-                    print(f'  [llm] Rate limited, retry {attempt+1}/{LLM_MAX_RETRIES} in {wait}s...')
-                    time.sleep(wait)
+                # One short retry for a per-minute limit when you're waiting on a reply.
+                # Background calls don't retry: retries just use up more of the quota.
+                if _is_rate_limit(err) and not background and attempt == 0:
+                    print(f'  [llm] Rate limited, retrying once in 5s...')
+                    time.sleep(5)
                     continue
-                if self._is_ollama and attempt < LLM_MAX_RETRIES - 1:
+                if self._is_ollama and not _is_rate_limit(err) and attempt < LLM_MAX_RETRIES - 1:
                     print(f'  [llm] Ollama error, retry {attempt+1}: {exc}')
                     time.sleep(2.0)
                     self._last_llm_call = time.time()
                     continue
                 print(f'  [llm] Error (attempt {attempt+1}): {exc}')
+                self._ai_failed(exc)
                 return None
         return None
 
@@ -2507,7 +2609,10 @@ class MessageGenerator(threading.Thread):
         client = self.vision_client or self.client
         if not client or not jpeg_bytes or self._vision_unsupported:
             return None
-        m = model or (LOST_VISION_MODEL if self.vision_client else self.model_name)
+        if not self.vision_client and not self.background_ok():
+            return None   # vision on a cloud AI shares its quota, so it pauses with the rest
+        # A vision model name like "llava" only exists on Ollama; on a cloud AI use its own model.
+        m = (model or LOST_VISION_MODEL) if self.vision_client else self.model_name
         b64 = base64.b64encode(jpeg_bytes).decode('ascii')
         for attempt in range(LLM_MAX_RETRIES):
             try:
@@ -2530,6 +2635,9 @@ class MessageGenerator(threading.Thread):
                 return (resp.choices[0].message.content or '').strip()
             except Exception as exc:
                 err = str(exc).lower()
+                if _is_rate_limit(err):
+                    self._ai_failed(exc)     # out of quota: don't burn more by retrying
+                    return None
                 # A text-only model can't accept images — retrying won't help.
                 # Disable vision for the rest of the session and log a clear hint once.
                 if 'multimodal' in err or 'does not support' in err or 'not support multimodal' in err:
@@ -2738,13 +2846,24 @@ class MessageGenerator(threading.Thread):
         char_id = event['character']
         snapshot = event.get('snapshot')
         follow_up = event.get('follow_up', 0)
+
+        # Alerts that already carry their own text (sip logged, phone on desk, lost item…)
+        # are sent as written. Before, that text was thrown away and the AI was asked to
+        # write about "Event: scenario_alert" with no facts, which produced vague nudges.
+        if event.get('text') and event['type'] in ('scenario_alert', 'habit_reminder'):
+            msg = {'type': event['type'], 'character': char_id, 'text': event['text']}
+            if snapshot:
+                msg['snapshot'] = snapshot
+            return msg
+
         ikey = self._interaction_key(event) if event['type'] == 'proximity' else None
         prev = self._sent_messages.get(ikey) if ikey and follow_up > 0 else None
 
-        if self.client:
-            result = self._llm_event(char_id, event, prev)
-        else:
-            result = None
+        result = self._llm_event(char_id, event, prev) if self.client else None
+        if not result and event['type'] == 'proximity':
+            # No AI (or it failed): still warn, using the rule that fired.
+            result = {'type': 'group_message', 'character': char_id,
+                      'text': _proximity_fallback_text(char_id, event)}
 
         if result:
             if snapshot:
@@ -2805,7 +2924,7 @@ Say ONE thing as {char['name']} about this situation (max 20 words). Speak natur
         text = self._call_llm([
             {'role': 'system', 'content': system},
             {'role': 'user', 'content': user},
-        ], temperature=0.55)
+        ], temperature=0.55, background=True)
         if text:
             if len(text.split()) < 4 or text.rstrip().endswith(('the', 'a', 'an', 'is', 'are', 'to', 'and', 'but', 'or', 'in', 'of', 'that', 'this')):
                 return None
@@ -3003,8 +3122,9 @@ USING THE THREAD:
             if len(mem) > CHAR_MEMORY_MAX:
                 desk.char_memory[char_id] = mem[-CHAR_MEMORY_MAX:]
 
-    def generate_habit_reminder(self, char_id):
-        """Generate a periodic habit reminder from a character (uses desk+habit state + optional VLM)."""
+    def generate_habit_reminder(self, char_id, evidence=''):
+        """Phrase a habit reminder in character. `evidence` is what the camera saw (it must be mentioned).
+        Returns None when the AI isn't available; the caller then uses a ready-made message."""
         char = CHARACTERS[char_id]
         habit = HABIT_FOCUS.get(char_id, {})
         if not habit:
@@ -3015,6 +3135,10 @@ USING THE THREAD:
             vlmx = (desk.habit_vlm_brief or '').strip()
         widget_block = _format_widget_for_prompt(widget, char_id)
         sig_block = f'\nDESK SIGNALS (from camera rules): {sig}'
+        if evidence:
+            sig_block += f'\nWHY YOU ARE SPEAKING (true, seen by the camera, mention it): {evidence}'
+        if not self.background_ok():
+            return None
         if vlmx:
             sig_block += f'\nVISION NOTE (optional): {vlmx}'
         if self.client:
@@ -3025,7 +3149,9 @@ PERSONALITY: {char['personality']}
 HABIT FOCUS: {habit.get('area', '')}
 {widget_block}
 
-RULES: ONE short sentence, max 12 words. Include an actionable nudge. Stay in character."""
+WHY YOU ARE SPEAKING (true, mention it): {evidence or 'routine check-in'}
+
+RULES: ONE or two short sentences, max 25 words. Mention why you're speaking. Include an actionable nudge. Stay in character."""
             else:
                 system = f"""You are {char['name']}, a {char['object']} on someone's desk. You're sending a quick habit reminder to the desk owner.
 
@@ -3035,7 +3161,7 @@ YOUR HABIT FOCUS: {habit.get('area', '')}
 {sig_block}
 
 RULES:
-- ONE short sentence only. Max 12 words.
+- One or two short sentences, max 25 words. Mention WHY YOU ARE SPEAKING so the nudge has a reason.
 - Use the user's widget data above (open todos, break count, sip progress, snack log) to make the nudge specific.
 - You may reference DESK SIGNALS if it fits (e.g. phone on desk) — do not invent facts.
 - Do not rename your character or others (you stay {char['object']}; do not describe other items with made-up types).
@@ -3046,17 +3172,11 @@ RULES:
             text = self._call_llm([
                 {'role': 'system', 'content': system},
                 {'role': 'user', 'content': 'Send a quick habit reminder right now.'},
-            ], max_tokens=60, temperature=char.get('temperature', 0.85))
+            ], max_tokens=60, temperature=char.get('temperature', 0.85), background=True)
             if text and len(text.split()) >= 4 and not text.rstrip().endswith(('the', 'a', 'an', 'is', 'are', 'to', 'and', 'but', 'or', 'in', 'of', 'that', 'this')):
                 self._record_memory(char_id, text, 'habit reminder')
                 return text
-        tips = habit.get('tips', ['Check in on your habits!'])
-        tip = random.choice(tips)
-        if widget and widget.get('type') == 'todo':
-            open_items = [t['text'] for t in widget.get('items', []) if not t.get('done')]
-            if open_items:
-                tip = f"{tip} ({open_items[0]} — still open?)"
-        return tip
+        return None
 
     def _broadcast(self, msg):
         with self._lock:
@@ -3077,74 +3197,138 @@ RULES:
 
 
 # ═══════════════════════════════════════════════════════════════════
+#  Lens: the camera's own character (see backend/camera_health.py)
+# ═══════════════════════════════════════════════════════════════════
+LENS_SNAPSHOT_KEYS = {'cutoff', 'bumped', 'empty', 'glare'}
+
+
+class LensThread(threading.Thread):
+    """Every 2 seconds, asks CameraHealth whether the camera needs fixing and posts
+    what Lens says to the group chat. No AI is used, so it works even without a key."""
+
+    def __init__(self, gen):
+        super().__init__(daemon=True)
+        self.gen = gen
+
+    def run(self):
+        import relationships
+        while True:
+            time.sleep(2)
+            try:
+                now = time.time()
+                if PHONE_MODE:
+                    connected = phone_source.connected
+                    kw = dict(fps=phone_source.fps, gravity=phone_source.recent_gravity(),
+                              stopped=phone_source.stopped_by_user)
+                else:
+                    with desk.lock:
+                        connected = bool(desk.cameras)
+                    kw = {}
+                msgs = camera_health.check(
+                    now, connected=connected, reference_gravity=CAMERA_REFERENCE_GRAVITY,
+                    has_outline=bool(relationships.DESK_OUTLINE), **kw)
+                if not msgs or _habit_dnd_active():
+                    continue
+                for m in msgs:
+                    out = {'type': 'group_message', 'character': 'lens', 'text': m['text'],
+                           'lens': m['kind']}
+                    if m['kind'] == 'problem' and m['key'] in LENS_SNAPSHOT_KEYS:
+                        snap = desk.save_snapshot(cam_idx=PHONE_CAM_IDX if PHONE_MODE else None,
+                                                  label='Lens: camera view')
+                        if snap:
+                            out['snapshot'] = snap
+                    self.gen._broadcast(out)
+                    print(f'  [lens] {m["text"][:90]}')
+            except Exception as exc:
+                print(f'  [lens] {exc}')
+
+
+# ═══════════════════════════════════════════════════════════════════
 #  Habit Reminder Thread (clock + desk/vision state → DND, min gap, hold queue, LLM text)
 # ═══════════════════════════════════════════════════════════════════
 class HabitReminderThread(threading.Thread):
+    """Habit nudges, but only with evidence from the camera (see backend/reminders.py).
+
+    Nothing is sent until the camera has been running REMINDER_WARMUP_SEC, while
+    quiet hours are on, or while the phone camera is off. At most one reminder
+    every HABIT_MIN_GAP_SEC, and each message says what the camera noticed."""
+
     def __init__(self, gen):
         super().__init__(daemon=True, name='HabitReminders')
         self.gen = gen
-        self._last_reminder = {cid: 0.0 for cid in HABIT_FOCUS}
-        self._enrich_t = 0.0
-
-    def _send_one(self, cid, habit, now):
-        with desk.lock:
-            last = float(desk.last_habit_fire.get(cid, 0) or 0)
-        if now - last < HABIT_MIN_GAP_SEC:
-            with desk.lock:
-                if not any(p.get('character') == cid for p in desk.habit_pending):
-                    desk.habit_pending.append({'character': cid})
-            return
-        if now - self._enrich_t > HABIT_VISION_ENRICH_SEC and OLLAMA_URL:
-            self._enrich_t = now
-            self.gen._habit_vision_enrich()
-        try:
-            text = self.gen.generate_habit_reminder(cid)
-            if not text:
-                return
-            self.gen._broadcast({
-                'type': 'habit_reminder',
-                'character': cid,
-                'text': text,
-                'area': habit['area'],
-            })
-            with desk.lock:
-                desk.last_habit_fire[cid] = time.time()
-        except Exception as exc:
-            print(f'  [habit] Error for {cid}: {exc}')
 
     def run(self):
-        time.sleep(60)
         while True:
-            now = time.time()
-            if not _habit_dnd_active():
-                with desk.lock:
-                    queued = list(desk.habit_pending)
-                    desk.habit_pending = []
-                for rec in queued:
-                    cid = rec.get('character')
-                    if not cid or cid not in HABIT_FOCUS:
-                        continue
-                    self._send_one(cid, HABIT_FOCUS[cid], now)
-            for cid, habit in HABIT_FOCUS.items():
-                if now - self._last_reminder[cid] < habit['interval']:
-                    continue
-                self._last_reminder[cid] = now
-                if _habit_dnd_active():
-                    with desk.lock:
-                        if not any(p.get('character') == cid for p in desk.habit_pending):
-                            desk.habit_pending.append({'character': cid})
-                    continue
-                self._send_one(cid, habit, now)
             time.sleep(30)
+            try:
+                self._tick(time.time())
+            except Exception as exc:
+                print(f'  [habit] Error: {exc}')
+
+    def _tick(self, now):
+        if not _reminders_ready(now) or not _user_active(now):
+            return
+        with desk.lock:
+            last_any = max([float(v or 0) for v in desk.last_habit_fire.values()] or [0])
+        if now - last_any < HABIT_MIN_GAP_SEC:
+            return
+        choice = pick_reminder(_reminder_state(now), now)
+        if not choice:
+            return
+        cid, evidence, fallback = choice
+        text = self.gen.generate_habit_reminder(cid, evidence) or fallback
+        self.gen._broadcast({
+            'type': 'habit_reminder',
+            'character': cid,
+            'text': text,
+            'area': HABIT_FOCUS.get(cid, {}).get('area', ''),
+        })
+        with desk.lock:
+            desk.last_habit_fire[cid] = now
+        print(f'  [habit] {CHARACTERS[cid]["name"]}: {evidence}')
+
+
+def _reminders_ready(now):
+    """True once the camera has watched long enough for reminders to make sense."""
+    with desk.lock:
+        start = desk.session_start
+    if not start or now - start < REMINDER_WARMUP_SEC:
+        return False
+    if PHONE_MODE and not phone_source.connected:
+        return False
+    return not _habit_dnd_active()
+
+
+def _user_active(now, window=600):
+    """Someone seems to be at the desk: a person or movement was seen in the last 10 minutes."""
+    with desk.lock:
+        seen = [desk.person_last_seen, desk.last_motion_ts]
+    return any(t and now - t < window for t in seen)
+
+
+def _reminder_state(now):
+    """Snapshot of the facts the reminder rules look at."""
+    with desk.lock:
+        todo = desk.char_widgets.get('sheets') or {}
+        return {
+            'session_start': desk.session_start,
+            'last_break_ts': desk.last_break_ts,
+            'last_sip_ts': desk.last_sip_ts,
+            'cup_on_desk': 'glug' in desk.objects,
+            'snack_since': desk.snack_since,
+            'snack_name': desk.snack_name,
+            'open_todos': [t.get('text', '') for t in todo.get('items', []) if not t.get('done')],
+            'last_fire': dict(desk.last_habit_fire),
+        }
 
 
 # ═══════════════════════════════════════════════════════════════════
 #  Idle Chat Thread — objects randomly chat with each other
 # ═══════════════════════════════════════════════════════════════════
-IDLE_CHAT_MIN_SEC = int(os.getenv('IDLE_CHAT_MIN_SEC', '30'))
-IDLE_CHAT_MAX_SEC = int(os.getenv('IDLE_CHAT_MAX_SEC', '90'))
+IDLE_CHAT_MIN_SEC = int(os.getenv('IDLE_CHAT_MIN_SEC', '720'))     # 12 min (was 30 s, which used up free AI limits)
+IDLE_CHAT_MAX_SEC = int(os.getenv('IDLE_CHAT_MAX_SEC', '1500'))    # 25 min
 IDLE_CHAT_START_DELAY_SEC = int(os.getenv('IDLE_CHAT_START_DELAY_SEC', '15'))
-IDLE_CHAT_MAX_TURNS = int(os.getenv('IDLE_CHAT_MAX_TURNS', '5'))  # max replies after the kickoff line
+IDLE_CHAT_MAX_TURNS = int(os.getenv('IDLE_CHAT_MAX_TURNS', '3'))  # max replies after the kickoff line
 IDLE_CHAT_QUIET_SEC = int(os.getenv('IDLE_CHAT_QUIET_SEC', '10'))  # wait this long after the user types/sends before chattering
 
 
@@ -3201,7 +3385,7 @@ class IdleChatThread(threading.Thread):
         )
         topic = self.gen._call_llm(
             [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
-            max_tokens=200, temperature=0.9,
+            max_tokens=200, temperature=0.9, background=True,
         )
         if not topic:
             return None
@@ -3236,7 +3420,7 @@ class IdleChatThread(threading.Thread):
             )
         text = self.gen._call_llm(
             [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
-            max_tokens=200, temperature=char.get('temperature', 0.85),
+            max_tokens=200, temperature=char.get('temperature', 0.85), background=True,
         )
         if not text:
             return None
@@ -3267,7 +3451,7 @@ class IdleChatThread(threading.Thread):
         )
         raw = self.gen._call_llm(
             [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
-            max_tokens=200, temperature=0.4,
+            max_tokens=200, temperature=0.4, background=True,
         )
         if not raw:
             return None
@@ -3351,13 +3535,19 @@ class IdleChatThread(threading.Thread):
                 time.sleep(quiet_remaining)
                 quiet_remaining = IDLE_CHAT_QUIET_SEC - (time.time() - desk.last_user_activity)
 
-            if _habit_dnd_active():
-                print('  [idle-chat] skipped: do-not-disturb active')
+            now = time.time()
+            if not _reminders_ready(now) or not _user_active(now):
+                print('  [idle-chat] skipped: camera warming up, off, quiet hours, or nobody around')
+                continue
+            if not self.gen.background_ok():
+                print('  [idle-chat] skipped: AI is resting after hitting its limit')
                 continue
 
-            participants = list(CHARACTERS.keys())
+            # Only objects the camera can actually see join the conversation.
+            with desk.lock:
+                participants = [c for c in desk.objects if c in CHARACTERS]
             if len(participants) < 2:
-                print('  [idle-chat] skipped: need at least 2 characters')
+                print('  [idle-chat] skipped: fewer than 2 objects on the desk')
                 continue
 
             try:
@@ -3433,7 +3623,9 @@ class DailySummaryThread(threading.Thread):
             hour = now_local.tm_hour
             today = _habit_local_day()
 
-            if hour == DAILY_SUMMARY_HOUR and today != self._last_summary_day:
+            with desk.lock:
+                watched = bool(desk.session_start) and (desk.daily_stats.get(today) or {}).get('objects_seen')
+            if hour == DAILY_SUMMARY_HOUR and today != self._last_summary_day and watched:
                 day_key = today
                 with desk.lock:
                     stats = desk.daily_stats.get(day_key)
@@ -3500,7 +3692,7 @@ class DailySummaryThread(threading.Thread):
             text = self.gen._call_llm([
                 {'role': 'system', 'content': system},
                 {'role': 'user', 'content': prompt},
-            ], max_tokens=120, temperature=0.7)
+            ], max_tokens=120, temperature=0.7, background=True)
         else:
             text = None
 
@@ -3634,6 +3826,7 @@ class HabitSceneVlmThread(threading.Thread):
     def __init__(self, gen):
         super().__init__(daemon=True, name='HabitSceneVlm')
         self.gen = gen
+        self._prev_seen = {}
 
     def _cooldown_fire(self, key, min_gap_sec):
         now = time.time()
@@ -3676,55 +3869,43 @@ class HabitSceneVlmThread(threading.Thread):
             desk.vlm_habit_ts = now
 
         _apply_habit_vlm_tracking(j, now)
+        with desk.lock:
+            if not _warm(now):
+                return   # still logging what vision saw, just not nudging yet
 
+        # Each nudge needs the same thing seen on two passes in a row (about 1.5 min),
+        # and then waits at least 20-25 minutes before it can come back.
         dist = str(j.get('face_screen_distance') or '').lower()
-        if dist == 'too_close' and self._cooldown_fire('vlm_too_close', 95):
-            desk.events_queue.put({
-                'type': 'scenario_alert',
-                'scenario': 'reminders',
-                'feature': 'posture_check',
-                'character': 'monty',
-                'text': 'Desk cam: you look really close to the screen — lean back a bit for eyes & neck.',
-            })
-
-        phone = str(j.get('phone') or '').lower()
-        if phone == 'in_hand' and self._cooldown_fire('vlm_phone_hand', 125):
-            desk.events_queue.put({
-                'type': 'scenario_alert',
-                'scenario': 'reminders',
-                'feature': 'focus',
-                'character': 'sheets',
-                'text': 'Vision: phone in hand — stash it if you\'re trying to focus.',
-            })
-
         posture = str(j.get('posture') or '').lower()
-        if posture == 'slouch' and self._cooldown_fire('vlm_slouch', 190):
-            desk.events_queue.put({
-                'type': 'scenario_alert',
-                'scenario': 'reminders',
-                'feature': 'posture_check',
-                'character': 'monty',
-                'text': 'Camera posture cue: sit taller — shoulders back, chin neutral.',
-            })
-
+        phone = str(j.get('phone') or '').lower()
         att = str(j.get('attention') or '').lower()
-        if att == 'phone' and phone != 'in_hand' and self._cooldown_fire('vlm_attn_phone', 125):
-            desk.events_queue.put({
-                'type': 'scenario_alert',
-                'scenario': 'reminders',
-                'feature': 'focus',
-                'character': 'sheets',
-                'text': 'Looks like attention is on the phone — try face-down for 20 minutes.',
-            })
-
-        if j.get('break_suggestion') and self._cooldown_fire('vlm_break', 620):
-            desk.events_queue.put({
-                'type': 'scenario_alert',
-                'scenario': 'reminders',
-                'feature': 'take_a_break',
-                'character': 'monty',
-                'text': 'Micro-break from the desk cam — stand, stretch, look away from the screen.',
-            })
+        seen_now = {
+            'too_close': dist == 'too_close',
+            'slouch': posture == 'slouch',
+            'phone': phone == 'in_hand' or att == 'phone',
+        }
+        prev = self._prev_seen
+        self._prev_seen = seen_now
+        nudges = {
+            'too_close': ('monty', 1200, "You've been leaning really close to my screen for a bit. "
+                                         "Could you sit back a little? Your eyes will thank you."),
+            'slouch': ('monty', 1500, "The camera has seen you slouching for a couple of minutes. "
+                                      "Quick reset? Shoulders back, chin level."),
+            'phone': ('sheets', 1500, "I keep seeing your phone in your hand. If you're trying to focus, "
+                                      "maybe put it face down for 20 minutes?"),
+        }
+        for key, (cid, gap, text) in nudges.items():
+            if seen_now[key] and prev.get(key) and self._cooldown_fire(f'vlm_{key}', gap):
+                desk.events_queue.put({
+                    'type': 'scenario_alert',
+                    'scenario': 'reminders',
+                    'feature': 'posture_check' if cid == 'monty' else 'focus',
+                    'character': cid,
+                    'text': text,
+                })
+                break   # one nudge at a time
+        # (The vision model's own "take a break" guess was removed: Computer's break
+        #  reminder in reminders.py only fires after 50 real minutes without a break.)
 
     def run(self):
         time.sleep(12)
@@ -3785,7 +3966,23 @@ def phone_frame():
         return jsonify({'error': 'Pairing key does not match. Scan the QR code on your computer again.'}), 403
     if not phone_source.push_jpeg(request.get_data()):
         return jsonify({'error': 'not a JPEG image'}), 400
-    return jsonify({'ok': True, 'fps': phone_source.fps})
+    rot = request.headers.get('X-Desk-Rotation', '')
+    phone_source.set_motion(parse_gravity(request.headers.get('X-Desk-Gravity')),
+                            int(rot) % 360 if rot.lstrip('-').isdigit() else None)
+    out = {'ok': True, 'fps': phone_source.fps}
+    tip = camera_health.phone_tip() if camera_health else None
+    if tip:
+        out['tip'] = tip     # shown on the phone too, e.g. "Too dark"
+    return jsonify(out)
+
+
+@phone_app.route('/api/phone/stop', methods=['POST'])
+def phone_stop():
+    """The phone's Stop button: tells the computer this was on purpose (so Lens doesn't worry)."""
+    if request.headers.get('X-Desk-Key') != PHONE_PAIR_KEY:
+        return jsonify({'error': 'Pairing key does not match.'}), 403
+    phone_source.mark_stopped()
+    return jsonify({'ok': True})
 
 
 def _is_local_request():
@@ -4059,6 +4256,7 @@ def chat():
         speaker_ids = _group_speaker_order(message, history)
         rolling_history = list(history)
         prev_msg = None
+        sent = []
         for char_id in speaker_ids:
             # Pass the literal user message; earlier speakers' lines ride along
             # in rolling_history so later speakers stay connected to the thread.
@@ -4066,11 +4264,13 @@ def chat():
                 char_id, message, rolling_history)
             if not text:
                 continue
-            msg = {'type': 'group_message', 'character': char_id, 'text': text}
+            msg = {'type': 'group_message', 'character': char_id, 'text': text,
+                   'id': uuid.uuid4().hex[:12]}
             if prev_msg:
                 msg['reply_to'] = {'character': prev_msg['character'], 'text': prev_msg['text']}
             # Push each reply the moment it finishes generating so the UI shows
-            # it immediately instead of waiting for the whole batch.
+            # it immediately instead of waiting for the whole batch. It's also in the
+            # response below (same id), in case the live connection dropped.
             generator._broadcast(msg)
             rolling_history.append({
                 'role': 'assistant',
@@ -4078,7 +4278,11 @@ def chat():
                 'text': text,
             })
             prev_msg = msg
-        return jsonify({'messages': [], 'streamed': True})
+            sent.append(msg)
+        out = {'messages': sent, 'streamed': True}
+        if not sent:
+            out['error'] = _no_reply_reason()
+        return jsonify(out)
     else:
         char_id = chat_id
         if char_id not in CHARACTERS:
@@ -4090,11 +4294,19 @@ def chat():
                     desk.char_widgets[char_id] = w
     text, actions = generator.generate_chat_response(char_id, message, history)
     if not text:
-        return jsonify({'messages': []})
+        return jsonify({'messages': [], 'error': _no_reply_reason()})
     resp = {'messages': [{'character': char_id, 'text': text}]}
     if actions:
         resp['actions'] = actions
     return jsonify(resp)
+
+
+def _no_reply_reason():
+    """Why nobody answered, in plain words (shown in the chat)."""
+    if not generator.client:
+        return ('The characters need an AI to chat. Add a key to .env (GEMINI_API_KEY is free; '
+                'see .env.example) and restart the server.')
+    return generator.ai_problem() or 'The AI sent back an empty reply. Try saying it again.'
 
 
 @app.route('/api/chat_widget/<char_id>')
@@ -4299,6 +4511,13 @@ def live_snapshot():
         'camera_index': cam_idx,
         'detections': _detections_payload(),
         'safety': _safety_payload(),
+        # Problems Lens has noticed with the camera view (too dark, bumped, ...)
+        'camera_issues': camera_health.issues(),
+        'ai': {
+            'ready': bool(generator.client),
+            'label': generator.llm_label,
+            'problem': generator.ai_problem(),
+        },
     }
     if PHONE_MODE:
         local = _is_local_request()
@@ -4334,6 +4553,7 @@ def get_rules():
     from relationships import DANGER_ZONES, EDGE_DANGER_PX, EDGE_WARN_PX, EDGE_OBJECTS
     return jsonify({
         'loaded': HAS_SAFETY_RULES,
+        'desk_outline': cfg.get('desk_outline', []),
         'danger_zones': cfg.get('danger_zones', {k: v for k, v in DANGER_ZONES.items()}),
         'edge_proximity': cfg.get('edge_proximity', {
             'danger_px': EDGE_DANGER_PX,
@@ -4361,6 +4581,23 @@ def save_rules():
     for key in ('danger_zones', 'edge_proximity', 'chain_reaction', 'temporal'):
         if key in data:
             existing[key] = data[key]
+    if 'desk_outline' in data:
+        try:
+            pts = [[round(min(1.0, max(0.0, float(x))), 4), round(min(1.0, max(0.0, float(y))), 4)]
+                   for x, y in (data['desk_outline'] or [])]
+        except (TypeError, ValueError):
+            return jsonify({'error': 'desk_outline must be a list of [x, y] points'}), 400
+        if pts and len(pts) < 3:
+            return jsonify({'error': 'Mark at least 3 corners of the desk'}), 400
+        existing['desk_outline'] = pts[:12]
+        # Remember how the phone was tilted when the desk was marked, so Lens can
+        # tell if it gets bumped later.
+        g = phone_source.recent_gravity() if PHONE_MODE else None
+        if pts and g:
+            existing['camera_reference'] = {'gravity': [round(v, 2) for v in g]}
+        else:
+            existing.pop('camera_reference', None)
+        camera_health.forget('bumped')   # new reference: the old "you moved me" no longer applies
     with open(rules_path, 'w') as f:
         json.dump(existing, f, indent=4)
     HAS_SAFETY_RULES = _load_safety_rules()
@@ -4438,6 +4675,7 @@ if __name__ == '__main__':
     LostObjectFrameworkThread(generator).start()
     HabitSceneVlmThread(generator).start()
     HabitReminderThread(generator).start()
+    LensThread(generator).start()
     IdleChatThread(generator).start()
     DailySummaryThread(generator).start()
     print(f'  Idle chat  : director-led, every {IDLE_CHAT_MIN_SEC}-{IDLE_CHAT_MAX_SEC}s, up to {IDLE_CHAT_MAX_TURNS} turns')

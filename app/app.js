@@ -34,9 +34,16 @@ const GROUP = {
   about: 'Everyone on your desk, talking to you and to each other.',
   empty: 'When the camera sees something worth talking about, the desk starts chatting here. Type @ to talk to one of them.',
 };
+// Lens is the phone camera. It only talks in the group chat, about the camera view.
+const LENS = {
+  name: 'Lens', art: 'art/lens.svg', color: 'var(--coral-ink)', tint: 'var(--coral-tint)',
+  about: 'The phone camera. Speaks up when the view needs fixing.',
+};
 const CHAT_IDS = ['group', 'monty', 'glug', 'munch', 'sheets'];
 const CHAR_IDS = CHAT_IDS.slice(1);
 const who = (id) => (id === 'group' ? GROUP : CHARACTERS[id]);
+/** Whoever wrote a message: a character, Lens, or the desk as a whole. */
+const speaker = (id) => CHARACTERS[id] || (id === 'lens' ? LENS : GROUP);
 
 // Words people type for each character in @mentions.
 const ALIASES = {
@@ -110,7 +117,28 @@ const state = {
   mentionOptions: [],
   habitFilter: 'all',
   snapshotIds: null,     // ids of the proof photos on screen (null = not drawn yet)
+  seen: new Set(),       // message ids already shown (replies can arrive twice)
+  aiText: '',            // what the AI banner says right now
 };
+
+// ————— Chat history (kept in this browser so a refresh doesn't wipe the chats) —————
+const HISTORY_KEY = 'desktalk_chats_v1';
+let historyTimer = null;
+function saveHistory() {
+  if (!state.live) return;            // the demo never saves
+  clearTimeout(historyTimer);
+  historyTimer = setTimeout(() => {
+    const chats = Object.fromEntries(CHAT_IDS.map((id) => [id, state.messages[id].filter((m) => !m.note).slice(-60)]));
+    storage.save(HISTORY_KEY, { saved: Date.now(), chats });
+  }, 400);
+}
+function loadHistory() {
+  const d = storage.load(HISTORY_KEY, null);
+  if (!d?.chats) return;
+  for (const id of CHAT_IDS) {
+    if (Array.isArray(d.chats[id])) state.messages[id] = d.chats[id].filter((m) => m && typeof m.text === 'string');
+  }
+}
 
 // ————— Trackers (per-character widgets, saved in the browser, synced to the server) —————
 const TRACKER_KEY = 'desktalk_trackers_v3';
@@ -167,7 +195,7 @@ function renderChatList() {
     const last = state.messages[id].findLast((m) => !m.note);
     let preview = id === 'group' ? 'Everyone' : c.about.split('.')[0];
     if (last?.mine) preview = `You: ${last.text}`;
-    else if (last) preview = id === 'group' ? `${(CHARACTERS[last.char] || GROUP).name}: ${last.text}` : last.text;
+    else if (last) preview = id === 'group' ? `${speaker(last.char).name}: ${last.text}` : last.text;
     const unread = state.unread[id];
     const current = state.view === 'chat' && state.chat === id;
     return `<button type="button" class="chat-link" data-chat="${id}" aria-current="${current}">
@@ -245,12 +273,13 @@ function formatText(text) {
 function messageHtml(m, chatId) {
   if (m.note) return `<p class="note">${esc(m.text)}</p>`;
   if (m.mine) return `<div class="msg mine"><div class="msg-body"><div class="bubble">${formatText(m.text)}</div></div></div>`;
-  const c = CHARACTERS[m.char] || GROUP;
-  const quote = m.replyTo && CHARACTERS[m.replyTo.character]
-    ? `<div class="quote" style="--quote-color:${CHARACTERS[m.replyTo.character].color}">${esc(CHARACTERS[m.replyTo.character].name)}: ${esc(m.replyTo.text.slice(0, 90))}</div>`
+  const c = speaker(m.char);
+  const quote = m.replyTo && m.replyTo.text
+    ? `<div class="quote" style="--quote-color:${speaker(m.replyTo.character).color}">${esc(speaker(m.replyTo.character).name)}: ${esc(m.replyTo.text.slice(0, 90))}</div>`
     : '';
+  // Photos live on the server; after a restart old ones may be gone, so hide broken ones.
   const photo = m.snapshot && state.live
-    ? `<img src="/api/snapshot/${esc(m.snapshot)}" alt="Proof photo from the desk cam" data-photo="/api/snapshot/${esc(m.snapshot)}" loading="lazy">`
+    ? `<img src="/api/snapshot/${esc(m.snapshot)}" alt="Photo from the desk cam" data-photo="/api/snapshot/${esc(m.snapshot)}" loading="lazy" onerror="this.remove()">`
     : '';
   const cta = m.cta && m.cta.action === 'captures'
     ? `<button type="button" class="btn-quiet msg-cta" data-open="captures">${esc(m.cta.label || 'Desk captures')}</button>`
@@ -278,6 +307,10 @@ function renderMessages() {
 }
 
 function addMessage(chatId, msg) {
+  if (msg.id) {
+    if (state.seen.has(msg.id)) return;     // already shown (came over /api/events too)
+    state.seen.add(msg.id);
+  }
   const list = state.messages[chatId];
   list.push({ time: Date.now(), ...msg });
   if (list.length > 200) list.splice(0, list.length - 200);
@@ -291,16 +324,17 @@ function addMessage(chatId, msg) {
   } else if (!msg.mine && !msg.note) {
     state.unread[chatId] += 1;
   }
-  if (!msg.mine && !msg.note && msg.text.includes('@user') && !visible) {
-    toast(CHARACTERS[msg.char] || GROUP, msg.text.replace(/@user/g, '@you'));
+  if (!msg.mine && !msg.note && !visible && (msg.toast || msg.text.includes('@user'))) {
+    toast(speaker(msg.char), msg.text.replace(/@user/g, '@you'));
   }
   renderChatList();
+  if (!msg.note) saveHistory();
 }
 
 function showTyping(charId, chatId) {
   hideTyping();
   if (state.view !== 'chat' || state.chat !== chatId) return;   // only in the chat being answered
-  const c = CHARACTERS[charId] || GROUP;
+  const c = speaker(charId);
   const box = $('#messages');
   box.querySelector('.empty')?.remove();
   box.insertAdjacentHTML('beforeend', `<div class="msg" id="typing" style="--tint:${c.tint}">
@@ -323,7 +357,7 @@ function toast(character, text) {
 function historyFor(chatId) {
   return state.messages[chatId].filter((m) => !m.note).slice(-11, -1).map((m) => ({
     role: m.mine ? 'user' : 'assistant',
-    name: m.mine ? undefined : (CHARACTERS[m.char] || GROUP).name,
+    name: m.mine ? undefined : speaker(m.char).name,
     text: m.text.slice(0, 1200),
   }));
 }
@@ -333,7 +367,8 @@ async function send(text) {
   addMessage(chatId, { mine: true, text });
   if (!state.live) return demoReply(chatId, text);
 
-  showTyping(chatId === 'group' ? pick(CHAR_IDS) : chatId, chatId);
+  // In the group the server decides who answers, so show the desk typing.
+  showTyping(chatId, chatId);
   let res = null;
   try {
     res = await api('/api/chat', {
@@ -347,11 +382,13 @@ async function send(text) {
     return;
   }
   hideTyping();
-  // Group replies arrive one by one over /api/events; other replies come back here.
+  // Group replies also arrive one by one over /api/events; the ids stop doubles.
   for (const r of res?.messages || []) {
-    addMessage(chatId, { char: r.character || chatId, text: r.text, replyTo: r.reply_to, cta: r.cta });
+    addMessage(chatId, { id: r.id, char: r.character || chatId, text: r.text, replyTo: r.reply_to, cta: r.cta });
   }
   if (res?.actions && chatId !== 'group') applyActions(chatId, res.actions);
+  // Nobody answered: say why instead of staying silent.
+  if (res?.error && !(res.messages || []).length) addMessage(chatId, { note: true, text: res.error });
 }
 
 /** The LLM can ask to change a tracker (add a to-do, log a sip…). */
@@ -614,6 +651,10 @@ async function renderSettings() {
   }
   const zones = { ...(rules.danger_zones || {}) };
   const edge = { danger_px: 35, warn_px: 75, ...(rules.edge_proximity || {}) };
+  let outline = (rules.desk_outline || []).map(([x, y]) => [x, y]);
+  let outlineChanged = false;
+  let startOver = outline.length >= 3;   // a saved outline: the first tap starts a new one
+  let picSize = null;     // natural size of the camera picture, once it loads
   const range = (name, value, min, max) => `<label class="range"><input type="range" name="${name}" min="${min}" max="${max}" value="${value}"><output>${value} px</output></label>`;
 
   const draw = () => {
@@ -628,8 +669,19 @@ async function renderSettings() {
         <form class="inline-add" id="add-zone"><select aria-label="Object">${(rules.available_objects || []).filter((o) => !zones[o]).map((o) => `<option>${esc(o)}</option>`).join('')}</select>
           <button type="submit" class="btn-quiet">Add zone</button></form>
       </div></section>
-    <section><h2>Desk edge</h2>
-      <p class="hint">Warn when things drift toward the edge of the camera view, where they could fall off.</p>
+    <section><h2>Desk edges</h2>
+      <p class="hint">Tap the corners of your desk top on the picture, going around the desk. If the desk runs past the side of the picture, tap where it meets the side. Lines along the side of the picture are ignored, because the desk keeps going there. Until you do this, nobody warns about falling off.</p>
+      <div class="edge-editor">
+        ${state.camOk
+          ? `<div class="edge-pic" id="edge-pic"><img id="edge-img" src="/api/latest_frame_raw/${state.camIndex}?t=${Date.now()}" alt="What the desk cam sees"><svg id="edge-svg" aria-hidden="true"></svg></div>`
+          : `<p class="muted edge-off">Turn on the phone camera to mark the desk. ${outline.length ? `(${outline.length} corners are saved.)` : ''}</p>`}
+        <div class="edge-tools">
+          <button type="button" class="btn-quiet" id="edge-undo">Undo</button>
+          <button type="button" class="btn-quiet" id="edge-clear">Clear</button>
+          ${state.camOk ? '<button type="button" class="btn-quiet" id="edge-photo">New picture</button>' : ''}
+          <span class="muted" id="edge-status" role="status"></span>
+        </div>
+      </div>
       <div class="form-rows">
         <div class="field"><span>Warn at</span>${range('warn_px', edge.warn_px, 20, 200)}</div>
         <div class="field"><span>Alert at</span>${range('danger_px', edge.danger_px, 10, 120)}</div>
@@ -640,7 +692,10 @@ async function renderSettings() {
         <label class="check"><input type="checkbox" id="dnd-on" ${policy.dnd_enabled ? 'checked' : ''}> Use quiet hours</label>
         <div class="field"><span>From</span><input type="number" id="dnd-start" min="0" max="23" value="${policy.dnd_start_hour ?? 22}"><span>to</span><input type="number" id="dnd-end" min="0" max="23" value="${policy.dnd_end_hour ?? 7}"><span class="muted">(24-hour clock)</span></div>
       </div></section>
-    <div class="save-row"><button type="button" class="btn" id="save-settings">Save settings</button><span class="saved" id="saved" role="status"></span></div>`;
+    <div class="save-row"><button type="button" class="btn" id="save-settings">Save settings</button><span class="saved" id="saved" role="status"></span></div>
+    <section><h2>Chats</h2>
+      <p class="hint">Your chats are saved in this browser so they survive a refresh.</p>
+      <button type="button" class="btn-quiet" id="clear-chats">Clear all chats</button></section>`;
 
     page.querySelectorAll('.range input').forEach((r) => r.addEventListener('input', () => {
       r.nextElementSibling.textContent = `${r.value} px`;
@@ -659,11 +714,25 @@ async function renderSettings() {
       const cls = e.target.querySelector('select').value;
       if (cls) { zones[cls] = { expand: 60, label: `${cls} zone` }; draw(); }
     });
+    wireEdgeEditor();
+    $('#clear-chats').addEventListener('click', () => {
+      for (const id of CHAT_IDS) { state.messages[id] = []; state.unread[id] = 0; }
+      storage.save(HISTORY_KEY, null);
+      renderChatList();
+      toast(null, 'Chats cleared');
+    });
     $('#save-settings').addEventListener('click', async () => {
       const out = $('#saved');
       out.className = 'saved'; out.textContent = 'Saving…';
+      if (outline.length && outline.length < 3) {
+        out.className = 'saved error'; out.textContent = 'Tap at least 3 corners of the desk, or press Clear.';
+        return;
+      }
       try {
-        await api('/api/rules', { method: 'PUT', body: { danger_zones: zones, edge_proximity: { ...edge } } });
+        const body = { danger_zones: zones, edge_proximity: { ...edge } };
+        if (outlineChanged) body.desk_outline = outline;   // only when you changed it (it also resets Lens's "bumped" check)
+        await api('/api/rules', { method: 'PUT', body });
+        outlineChanged = false;
         await api('/api/habit_policy', { method: 'PUT', body: {
           dnd_enabled: $('#dnd-on').checked,
           dnd_start_hour: +$('#dnd-start').value || 0,
@@ -675,6 +744,66 @@ async function renderSettings() {
       }
     });
   };
+
+  // ——— Desk edge editor: tap corners on the camera picture ———
+  const SNAP = 0.03;   // taps this close to the picture border snap onto it
+  const sameBorder = (a, b) => (a[0] <= SNAP && b[0] <= SNAP) || (a[0] >= 1 - SNAP && b[0] >= 1 - SNAP)
+    || (a[1] <= SNAP && b[1] <= SNAP) || (a[1] >= 1 - SNAP && b[1] >= 1 - SNAP);
+
+  function drawOutline() {
+    const svg = $('#edge-svg');
+    const status = $('#edge-status');
+    const real = outline.length >= 3
+      ? outline.filter((p, i) => !sameBorder(p, outline[(i + 1) % outline.length])).length : 0;
+    if (status) {
+      status.textContent = outline.length < 3
+        ? `${outline.length} of at least 3 corners`
+        : `${outline.length} corners, ${real} real desk edge${real === 1 ? '' : 's'}${outlineChanged ? '. Press Save settings.' : '. Tap the picture to start over.'}`;
+    }
+    if (!svg || !picSize) return;
+    const { w, h } = picSize;
+    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    const P = (p) => `${(p[0] * w).toFixed(1)},${(p[1] * h).toFixed(1)}`;
+    const sw = Math.max(2, w / 220);
+    let out = '';
+    if (outline.length >= 3) out += `<polygon points="${outline.map(P).join(' ')}" class="edge-fill"/>`;
+    outline.forEach((p, i) => {
+      if (i === outline.length - 1 && outline.length < 3) return;
+      const q = outline[(i + 1) % outline.length];
+      const ignored = sameBorder(p, q);
+      out += `<line x1="${p[0] * w}" y1="${p[1] * h}" x2="${q[0] * w}" y2="${q[1] * h}" class="${ignored ? 'edge-ignored' : 'edge-real'}" stroke-width="${ignored ? sw * 0.7 : sw * 1.4}" ${ignored ? `stroke-dasharray="${sw * 3} ${sw * 3}"` : ''}/>`;
+    });
+    outline.forEach((p, i) => {
+      out += `<circle cx="${p[0] * w}" cy="${p[1] * h}" r="${sw * 4}" class="edge-dot"/><text x="${p[0] * w}" y="${p[1] * h}" font-size="${sw * 5}" class="edge-num">${i + 1}</text>`;
+    });
+    svg.innerHTML = out;
+  }
+
+  function wireEdgeEditor() {
+    const img = $('#edge-img');
+    if (img) {
+      const ready = () => { picSize = { w: img.naturalWidth || 4, h: img.naturalHeight || 3 }; drawOutline(); };
+      if (img.complete && img.naturalWidth) ready(); else img.addEventListener('load', ready, { once: true });
+      img.addEventListener('error', () => { $('#edge-status').textContent = 'Could not load the camera picture. Try New picture.'; });
+      $('#edge-pic').addEventListener('click', (e) => {
+        if (startOver) { outline = []; startOver = false; }
+        if (outline.length >= 12) return;
+        const r = img.getBoundingClientRect();
+        let x = (e.clientX - r.left) / r.width;
+        let y = (e.clientY - r.top) / r.height;
+        if (x < 0 || x > 1 || y < 0 || y > 1) return;
+        x = x <= SNAP ? 0 : x >= 1 - SNAP ? 1 : x;
+        y = y <= SNAP ? 0 : y >= 1 - SNAP ? 1 : y;
+        outline.push([+x.toFixed(4), +y.toFixed(4)]);
+        outlineChanged = true;
+        drawOutline();
+      });
+    }
+    $('#edge-undo').addEventListener('click', () => { startOver = false; outline.pop(); outlineChanged = true; drawOutline(); });
+    $('#edge-clear').addEventListener('click', () => { startOver = false; outline = []; outlineChanged = true; drawOutline(); });
+    $('#edge-photo')?.addEventListener('click', () => { img.src = `/api/latest_frame_raw/${state.camIndex}?t=${Date.now()}`; });
+    drawOutline();
+  }
   draw();
 }
 
@@ -687,6 +816,7 @@ function renderCamStage() {
   const stage = $('#cam-stage');
   $('#cam-caption')?.remove();
   stage.classList.toggle('is-pairing', state.live && state.phoneMode && !state.camOk);
+  stage.classList.toggle('has-video', state.live && state.camOk);
   if (!state.live) {
     stage.innerHTML = '<img class="scene" src="art/desk-scene.svg" alt="Illustration of the desk characters">';
     stage.insertAdjacentHTML('afterend', '<p class="cam-caption" id="cam-caption">This is a demo. Run the server and connect your phone to see your real desk.</p>');
@@ -732,16 +862,19 @@ function renderOnDesk(det) {
   }).join('') + extras.map((e) => `<li class="extra">${esc(e.label || e.yolo_class)}</li>`).join('');
 }
 
-function renderRisks(safety) {
+function renderRisks(safety, cameraIssues) {
   const list = $('#risks');
   if (!state.live) {
     list.innerHTML = '<li>Cup is a little close to Computer.</li>';
     return;
   }
-  const lines = (safety?.explanations || []).slice(0, 6);
-  list.innerHTML = lines.length
-    ? lines.map((l) => `<li>${esc(l)}</li>`).join('')
-    : `<li class="calm">${state.camOk ? 'All calm on the desk.' : 'Nothing to report yet.'}</li>`;
+  // Camera problems first (from Lens), then things on the desk.
+  const lens = (cameraIssues || []).slice(0, 2).map((i) => `<li class="lens-issue">
+      <img src="${LENS.art}" alt="Lens"><span><strong>${esc(i.title)}.</strong> ${esc(i.fix)}</span></li>`);
+  const lines = (safety?.explanations || []).slice(0, 6).map((l) => `<li>${esc(l)}</li>`);
+  const html = [...lens, ...lines].join('')
+    || `<li class="calm">${state.camOk ? 'All calm on the desk.' : 'Nothing to report yet.'}</li>`;
+  if (list.innerHTML !== html) list.innerHTML = html;
 }
 
 async function renderProofs() {
@@ -778,7 +911,21 @@ async function pollLive() {
     renderCamStage();   // pairing link just arrived
   }
   renderOnDesk(d.detections);
-  renderRisks(d.safety);
+  renderRisks(d.safety, d.camera_issues);
+  renderAi(d.ai);
+}
+
+/** A line above the message box when the AI can't answer (no key, quota used up…). */
+function renderAi(ai) {
+  if (!ai) return;
+  let text = '';
+  if (!ai.ready) text = 'The characters need an AI to chat. Add a key to .env (GEMINI_API_KEY is free) and restart the server.';
+  else if (ai.problem) text = ai.problem;
+  if (text === state.aiText) return;
+  state.aiText = text;
+  const el = $('#ai-banner');
+  el.textContent = text;
+  el.hidden = !text;
 }
 
 // ————— Live connection —————
@@ -789,10 +936,13 @@ function listenForEvents() {
     try { d = JSON.parse(e.data); } catch { return; }
     if (!d.text) return;
     if (d.type === 'group_message' && d.character) {
-      addMessage('group', { char: d.character, text: d.text, snapshot: d.snapshot, replyTo: d.reply_to });
+      addMessage('group', {
+        id: d.id, char: d.character, text: d.text, snapshot: d.snapshot, replyTo: d.reply_to,
+        toast: d.character === 'lens' && d.lens === 'problem',   // camera problems pop up anywhere
+      });
       if (d.snapshot) renderProofs();
-    } else if (d.type === 'habit_reminder' && d.character) {
-      addMessage(d.character, { char: d.character, text: d.text });
+    } else if (d.type === 'habit_reminder' && CHARACTERS[d.character]) {
+      addMessage(d.character, { char: d.character, text: d.text, toast: true });
       refreshTrackerFromServer(d.character);
     } else if (d.type === 'scenario_alert') {
       const id = CHARACTERS[d.character] ? d.character : 'group';
@@ -803,6 +953,7 @@ function listenForEvents() {
 
 async function startLive(status) {
   state.live = true;
+  loadHistory();
   state.phoneMode = !!status.phone_mode;
   state.camOk = !!status.camera;
   state.camIndex = status.camera_indices?.[0] ?? 0;
@@ -819,9 +970,7 @@ async function startLive(status) {
   setInterval(() => {
     api('/api/context').then((c) => { state.mentionOptions = c.mention_options || []; }).catch(() => {});
   }, 10000);
-  if (!status.llm) {
-    addMessage('group', { note: true, text: 'No AI key found, so the characters will stay quiet. Add one to .env and restart the server.' });
-  }
+  renderAi({ ready: !!status.llm });
 }
 
 // ————— Demo (no server, e.g. GitHub Pages) —————

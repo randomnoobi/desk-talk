@@ -39,6 +39,7 @@ import numpy as np
 # ════════════════════════════════════════════════════════════════════
 
 # --- 1. Edge proximity ---
+DESK_OUTLINE    = []      # [[x, y], ...] corners of the desk, 0-1 of the picture size (user marks these)
 EDGE_DANGER_PX  = 35      # bbox edge within this many px of frame edge → danger
 EDGE_WARN_PX    = 75      # → warning
 EDGE_OBJECTS    = {        # which classes are checked for edge risk
@@ -174,7 +175,7 @@ def load_config(path=None):
     with open(path) as f:
         data = json.load(f)
 
-    global EDGE_DANGER_PX, EDGE_WARN_PX, EDGE_OBJECTS, DANGER_ZONES
+    global EDGE_DANGER_PX, EDGE_WARN_PX, EDGE_OBJECTS, DANGER_ZONES, DESK_OUTLINE
     global CROWD_RADIUS_PX, CROWD_MIN_OBJECTS
     global APPROACH_MIN_FRAMES, APPROACH_RATE, REPEATED_INTRUSION_N
     global ZONE_DANGER_INTRUDERS
@@ -184,6 +185,9 @@ def load_config(path=None):
         EDGE_DANGER_PX  = ep.get('danger_px', EDGE_DANGER_PX)
         EDGE_WARN_PX    = ep.get('warn_px',   EDGE_WARN_PX)
         EDGE_OBJECTS.update(set(ep.get('objects', [])))
+
+    outline = data.get('desk_outline') or []
+    DESK_OUTLINE = [[float(x), float(y)] for x, y in outline] if len(outline) >= 3 else []
 
     dz = data.get('danger_zones', {})
     if dz:
@@ -246,6 +250,91 @@ def nearest_edge(bbox, fw, fh):
     d = edge_distances(bbox, fw, fh)
     side = min(d, key=d.get)
     return d[side], side
+
+
+BORDER_FRACTION = 0.03   # outline points this close to the picture border are "on the border"
+
+
+def desk_edges(fw, fh):
+    """Real desk edges in pixels: the outline's sides, minus sides that run along
+    the picture border (there the desk just continues out of view)."""
+    pts = [(x * fw, y * fh) for x, y in DESK_OUTLINE]
+    if len(pts) < 3:
+        return []
+
+    def border_side(p):
+        sides = set()
+        if p[0] <= fw * BORDER_FRACTION: sides.add('left')
+        if p[0] >= fw * (1 - BORDER_FRACTION): sides.add('right')
+        if p[1] <= fh * BORDER_FRACTION: sides.add('top')
+        if p[1] >= fh * (1 - BORDER_FRACTION): sides.add('bottom')
+        return sides
+
+    edges = []
+    for i, a in enumerate(pts):
+        b = pts[(i + 1) % len(pts)]
+        if border_side(a) & border_side(b):
+            continue   # both corners sit on the same picture border → not a real edge
+        edges.append((a, b))
+    return edges
+
+
+def edge_name(seg, fw, fh):
+    """Plain name for an edge, from where its middle is in the picture."""
+    mx = (seg[0][0] + seg[1][0]) / 2 / fw
+    my = (seg[0][1] + seg[1][1]) / 2 / fh
+    dx, dy = mx - 0.5, my - 0.5
+    if abs(dy) >= abs(dx):
+        return 'front' if dy > 0 else 'back'
+    return 'right' if dx > 0 else 'left'
+
+
+def _point_seg_dist(p, a, b):
+    ax, ay = a; bx, by = b; px, py = p
+    dx, dy = bx - ax, by - ay
+    if dx == dy == 0:
+        return math.hypot(px - ax, py - ay)
+    t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
+    return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+
+
+def _segments_cross(a, b, c, d):
+    def orient(p, q, r):
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+    return (orient(a, b, c) * orient(a, b, d) < 0) and (orient(c, d, a) * orient(c, d, b) < 0)
+
+
+def bbox_seg_dist(bbox, seg):
+    """Shortest distance in px between a box and a line segment (0 if they touch)."""
+    x1, y1, x2, y2 = bbox
+    a, b = seg
+    if (x1 <= a[0] <= x2 and y1 <= a[1] <= y2) or (x1 <= b[0] <= x2 and y1 <= b[1] <= y2):
+        return 0.0
+    corners = [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
+    sides = [(corners[i], corners[(i + 1) % 4]) for i in range(4)]
+    if any(_segments_cross(a, b, c, d) for c, d in sides):
+        return 0.0
+    d1 = min(_point_seg_dist(c, a, b) for c in corners)
+    d2 = min(_point_seg_dist(p, c, d) for p in (a, b) for c, d in sides)
+    return min(d1, d2)
+
+
+def footprint(bbox):
+    """The bottom strip of a box: roughly where the object sits on the desk."""
+    x1, y1, x2, y2 = bbox
+    return [x1, y2 - max(4.0, 0.2 * (y2 - y1)), x2, y2]
+
+
+def point_in_outline(p, fw, fh):
+    pts = [(x * fw, y * fh) for x, y in DESK_OUTLINE]
+    inside = False
+    for i, a in enumerate(pts):
+        b = pts[(i + 1) % len(pts)]
+        if (a[1] > p[1]) != (b[1] > p[1]):
+            x_cross = a[0] + (p[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1])
+            if p[0] < x_cross:
+                inside = not inside
+    return inside
 
 
 def expand_bbox(bbox, px):
@@ -427,19 +516,27 @@ class RelationshipAnalyzer:
     # ── 1. Edge Proximity ───────────────────────────────────────
 
     def _edge_proximity(self, dets, result):
+        """Objects close to a real desk edge (one the user marked), where they could fall off.
+
+        The old version measured distance to the edge of the *picture*, so anything near
+        the border of the camera view was called a fall risk even in the middle of the desk.
+        Without a marked outline there's no way to know where the desk ends, so no alerts."""
         fw, fh = self.frame_w, self.frame_h
+        edges = desk_edges(fw, fh)
+        if not edges:
+            return
         for cid, det in dets.items():
             if det['class_name'] not in EDGE_OBJECTS:
                 continue
-            min_d, side = nearest_edge(det['bbox'], fw, fh)
-
-            # Laptop/keyboard often fill the top of the frame — "0px to top" is camera framing, not a fall risk.
-            if (
-                det['class_name'] in ('laptop', 'keyboard', 'tv')
-                and (side or '').lower() == 'top'
-                and min_d < 20
-            ):
-                continue
+            # Use the bottom of the box (where the object touches the desk). The camera looks
+            # at the desk at an angle, so the top of a tall bottle can look like it's past the
+            # back edge even when it's standing safely in the middle.
+            foot = footprint(det['bbox'])
+            base = ((foot[0] + foot[2]) / 2, foot[3])
+            min_d, seg = min((bbox_seg_dist(foot, e), e) for e in edges)
+            if not point_in_outline(base, fw, fh) and min_d >= EDGE_DANGER_PX:
+                continue   # not on the desk (e.g. in your hand, or on the floor)
+            side = edge_name(seg, fw, fh)
 
             if min_d < EDGE_DANGER_PX:
                 severity = 'danger'
@@ -449,7 +546,7 @@ class RelationshipAnalyzer:
                     'distance_px': round(min_d, 1),
                 })
                 result['explanations'].append(
-                    f"{det['class_name']} only {int(min_d)}px from {side} edge — fall risk!")
+                    f"{det['class_name']} is right at the {side} edge of the desk and could fall off.")
             elif min_d < EDGE_WARN_PX:
                 severity = 'warning'
                 result['risk_events'].append({
@@ -464,6 +561,7 @@ class RelationshipAnalyzer:
                 'type': 'edge_proximity', 'severity': severity,
                 'object': cid, 'edge': side,
                 'distance_px': round(min_d, 1),
+                'segment': [list(map(round, seg[0])), list(map(round, seg[1]))],
             })
 
     # ── 2. Danger-Zone Intrusion ────────────────────────────────
@@ -681,11 +779,9 @@ class RelationshipAnalyzer:
     def _draw_edges(self, frame, dets, result, name):
         h, w = frame.shape[:2]
 
-        # Draw frame-edge margin lines
-        _dashed_rect(frame,
-                     EDGE_DANGER_PX, EDGE_DANGER_PX,
-                     w - EDGE_DANGER_PX, h - EDGE_DANGER_PX,
-                     CLR_DANGER, 1, 8, 8)
+        # The desk edges the user marked (sides along the picture border are left out)
+        for a, b in desk_edges(w, h):
+            cv2.line(frame, (int(a[0]), int(a[1])), (int(b[0]), int(b[1])), CLR_WARN, 2, cv2.LINE_AA)
 
         for rel in result['relationships']:
             if rel['type'] != 'edge_proximity':
@@ -694,29 +790,21 @@ class RelationshipAnalyzer:
             if cid not in dets:
                 continue
             bbox = dets[cid]['bbox']
-            d_px = rel['distance_px']
-            side = rel['edge']
             clr = CLR_DANGER if rel['severity'] == 'danger' else CLR_WARN
-
-            # Highlight the object bbox
-            cv2.rectangle(frame,
-                          (int(bbox[0]), int(bbox[1])),
-                          (int(bbox[2]), int(bbox[3])),
+            cv2.rectangle(frame, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])),
                           clr, 2, cv2.LINE_AA)
-
-            # Draw measurement line from bbox edge to frame edge
-            if side == 'left':
-                a, b = (int(bbox[0]), int((bbox[1]+bbox[3])//2)), (0, int((bbox[1]+bbox[3])//2))
-            elif side == 'right':
-                a, b = (int(bbox[2]), int((bbox[1]+bbox[3])//2)), (w, int((bbox[1]+bbox[3])//2))
-            elif side == 'top':
-                a, b = (int((bbox[0]+bbox[2])//2), int(bbox[1])), (int((bbox[0]+bbox[2])//2), 0)
-            else:
-                a, b = (int((bbox[0]+bbox[2])//2), int(bbox[3])), (int((bbox[0]+bbox[2])//2), h)
-
-            _arrow(frame, a, b, clr, 2)
-            mx, my = (a[0] + b[0]) // 2, (a[1] + b[1]) // 2
-            _label(frame, f"{int(d_px)}px to {side}", mx, my, clr)
+            seg = rel.get('segment')
+            if seg:
+                f = footprint(bbox)
+                c = ((f[0] + f[2]) / 2, (f[1] + f[3]) / 2)
+                (ax, ay), (bx, by) = seg
+                # closest point on the edge, for the measurement arrow
+                dx, dy = bx - ax, by - ay
+                t = 0.0 if dx == dy == 0 else max(0.0, min(1.0, ((c[0] - ax) * dx + (c[1] - ay) * dy) / (dx * dx + dy * dy)))
+                q = (int(ax + t * dx), int(ay + t * dy))
+                _arrow(frame, (int(c[0]), int(c[1])), q, clr, 2)
+                _label(frame, f"{int(rel['distance_px'])}px to {rel['edge']} edge",
+                       (int(c[0]) + q[0]) // 2, (int(c[1]) + q[1]) // 2, clr)
 
     # -- 2. Danger-Zone overlays --
 
