@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none"><defs><filter id="g" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
+<feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3" seed="11" result="n"/>
+<feColorMatrix in="n" type="saturate" values="0" result="g"/>
+<feComponentTransfer in="g" result="c"><feFuncR type="linear" slope="1.77" intercept="-0.39"/><feFuncG type="linear" slope="1.77" intercept="-0.39"/><feFuncB type="linear" slope="1.77" intercept="-0.39"/><feFuncA type="linear" slope="0" intercept="1"/></feComponentTransfer>
+<feBlend in="c" in2="SourceGraphic" mode="soft-light" result="t"/>
+<feComposite in="t" in2="SourceGraphic" operator="in"/></filter></defs><g filter="url(#g)">
+<path d="M14 30V18C14 15.8 15.8 14 18 14H30M90 14H102C104.2 14 106 15.8 106 18V30M106 90V102C106 104.2 104.2 106 102 106H90M30 106H18C15.8 106 14 104.2 14 102V90" stroke="#EDB52C" stroke-width="4.6" stroke-linecap="round" fill="none"/>
+<path d="M38.4 21.6C52.4 19.8 67.6 19.6 81.8 21.4C87.6 22.2 90.8 25.8 90.8 31.6L90.2 89.6C90.2 95.4 86.6 98.8 80.8 99.2C67.4 100.2 52.2 100.2 39 99.2C33.2 98.8 29.6 95.4 29.6 89.6L29.2 31.6C29.2 25.8 32.6 22.2 38.4 21.6Z" fill="#E36A7E"/>
+<path d="M40.4 34.6C53.4 33.4 66.8 33.4 79.6 34.6L79.2 86.6C66.4 87.8 53.4 87.8 40.8 86.6Z" fill="#FCE4E8"/>
+<circle cx="60" cy="27.4" r="3.1" fill="#2B2440"/>
+<path d="M53.4 92.6H66.6" stroke="#B8475B" stroke-width="3.2" stroke-linecap="round"/>
+<ellipse cx="47.6" cy="69" rx="4.4" ry="2.4" fill="#EE8C9C"/>
+<ellipse cx="72.6" cy="69" rx="4.4" ry="2.4" fill="#EE8C9C"/>
+<path d="M95.4 40.4C99.4 37 99.6 32 96.6 28.4M100.6 45C107.6 39.4 107.8 30.6 102.6 24.6" stroke="#2F5FD0" stroke-width="3.4" stroke-linecap="round" fill="none"/>
+</g><circle cx="51.6" cy="57.6" r="4.6" fill="#2B2440"/><circle cx="68.4" cy="57.6" r="4.6" fill="#2B2440"/><circle cx="53.2" cy="56" r="1.5" fill="#fff"/><circle cx="70" cy="56" r="1.5" fill="#fff"/><path d="M55 73.4c3.2 3.4 6.8 3.4 10 0" fill="none" stroke="#2B2440" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>

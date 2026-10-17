@@ -121,7 +121,25 @@ button { font: inherit; border: 0; cursor: pointer; }
   padding: 18px 18px calc(env(safe-area-inset-bottom) + 18px);
   background: linear-gradient(to top, rgba(43, 36, 64, 0.85), rgba(43, 36, 64, 0));
 }
-.stats { flex: 1; font-size: 13px; opacity: 0.85; font-variant-numeric: tabular-nums; }
+.controls { flex-wrap: wrap; align-items: flex-end; }
+.stats { flex: 1; min-width: 120px; font-size: 13px; opacity: 0.85; font-variant-numeric: tabular-nums; }
+.buttons { display: flex; gap: 8px; }
+.sent-box { display: flex; flex-direction: column; gap: 4px; }
+.sent-box canvas { display: block; max-width: 132px; max-height: 132px; border-radius: 10px; border: 2px solid rgba(255, 255, 255, 0.8); background: #000; }
+.sent-box figcaption { font-size: 11px; font-weight: 700; opacity: 0.85; }
+.tip {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 64px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--mustard);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
 .round {
   padding: 12px 20px;
   border-radius: 999px;
@@ -131,3 +149,12 @@ button { font: inherit; border: 0; cursor: pointer; }
   font-weight: 700;
 }
 .round.stop { background: var(--danger); }
+
+/* Phone turned sideways: keep the controls small so the preview stays visible */
+@media (orientation: landscape) and (max-height: 500px) {
+  .card { max-height: calc(100% - 28px); overflow-y: auto; top: 14px; }
+  .cast { display: none; }
+  .sent-box canvas { max-width: 96px; max-height: 96px; }
+  .controls { padding-top: 10px; padding-bottom: calc(env(safe-area-inset-bottom) + 10px); }
+  .tip { top: calc(env(safe-area-inset-top) + 56px); }
+}
