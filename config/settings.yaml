@@ -1,0 +1,165 @@
+# ════════════════════════════════════════════════════════════════════
+#  Desk Talk settings
+#
+#  Every number the app uses lives in this file, grouped by what it does.
+#  Change a value, save, and restart `python server.py`.
+#
+#  Your own overrides: put just the lines you change in
+#  config/settings.local.yaml (same layout). That file is not uploaded
+#  to GitHub, so personal tweaks don't end up in the repo.
+#
+#  API keys go in .env (see .env.example), never in this file.
+#  Other config files:
+#    config/agents.yaml     who each detected object becomes in the chat
+#    config/protocols.yaml  the habit rules from the book "Protocols"
+#    config/safety_rules.json  danger zones + desk corners (the Settings page saves this one)
+# ════════════════════════════════════════════════════════════════════
+
+# ── Camera ──────────────────────────────────────────────────────────
+camera:
+  # pi     = Raspberry Pi camera (pi/camera_node.py runs on the Pi and sends pictures here)
+  # phone  = phone browser streams over Wi-Fi (scan the QR code)
+  # webcam = a USB / built-in webcam on this computer
+  source: pi
+  fps: 3                      # pictures analysed per second (the Pi takes pictures at this rate too)
+  disconnect_after_sec: 3     # no picture for this long = camera is off, analysis pauses
+  webcam_indices: [0]         # which webcam(s) when source is webcam (0 = built-in on most Macs)
+  phone_port: 5443            # HTTPS port the phone page uses (phones only allow cameras on https)
+
+# ── Raspberry Pi (read by pi/camera_node.py on the Pi) ─────────────
+pi:
+  fps: 3                      # pictures per second
+  width: 1280                 # picture size
+  height: 720
+  jpeg_quality: 80
+  photo_dir: ~/desk-talk-photos     # where the Pi keeps its pictures
+  delete_every_min: 10        # delete the stored pictures this often
+  keep_last_min: 0            # minutes of pictures a cleanup leaves behind (0 = delete them all)
+  min_free_mb: 300            # if the Pi's disk gets this full, delete the oldest pictures right away
+  upload_timeout_sec: 5
+
+# ── Object detection (runs on this computer) ───────────────────────
+detector:
+  # yolo26m-objv1-150.pt knows 365 kinds of objects (Objects365), including
+  # earphones, keys, pens, watches, glasses and notepaper. The old yolo26n.pt only knew 80.
+  # Other choices (scripts/download_models.py fetches any of them):
+  #   weights/yolo26s-objv1-150.pt  faster, a bit less accurate (older laptops)
+  #   weights/yolo26l-objv1-150.pt  slower, most accurate
+  #   weights/yolo26m.pt            80 everyday COCO objects
+  model: weights/yolo26m-objv1-150.pt
+  confidence: 0.35            # lowest confidence a box needs to be kept at all
+  image_size: 640
+  device: auto                # auto = Apple GPU (mps) or NVIDIA (cuda) when available, else cpu
+
+# ── Agents joining and leaving the group chat ──────────────────────
+agents:
+  join_after_sec: 3           # seen this long → "Cup joined the chat"
+  leave_after_sec: 45         # gone this long → "Cup left the chat"
+  min_confidence: 0.45        # weaker boxes don't count as "seen" (agents.yaml can raise it per object)
+  only_on_desk: true          # once desk corners are marked, things off the desk can't join
+  max_agents: 12              # most agents in the chat at once
+  announce: true              # post "joined / left the chat" notes
+  greet_on_join: true         # the agent says hi when it joins (no AI used)
+  greet_again_after_min: 30   # don't say hi again if it rejoins sooner than this
+  invent_personality: true    # ask the AI for a personality when an unknown object joins
+
+# ── Short-term presence (used by the habit rules, not the chat) ────
+presence:
+  appear_after_sec: 1.0       # seen this long = on the desk
+  disappear_after_sec: 2.5    # missing this long = gone (shorter than leaving the chat)
+  user_active_window_sec: 90  # a person or movement seen this recently = someone is at the desk
+
+# ── Event stream and event log ─────────────────────────────────────
+event_log:
+  folder: data/events         # one folder per day on this computer
+  compact_every_min: 10       # turn per-picture events into "on the desk from … to …" intervals
+  merge_gap_sec: 3            # gaps shorter than this don't split an interval
+  keep_days: 30               # older days are deleted
+  log_empty_frames: true      # also log pictures where nothing was detected
+
+# ── Safety alerts (danger zones are in safety_rules.json) ─────────
+alerts:
+  cooldown_sec: 25            # first wait between alerts about the same pair (doubles each repeat, up to 8x)
+  reset_after_sec: 300        # a pair quiet this long starts over at the short wait
+  pet_cooldown_sec: 120
+  clutter_threshold: 6        # this many things on the desk = "maybe tidy up?"
+  clutter_cooldown_sec: 1800
+  plant_water_every_sec: 86400
+
+# ── Reminders (the habit rules are in protocols.yaml) ─────────────
+reminders:
+  warmup_min: 15              # no reminders until the camera has watched this long
+  min_gap_sec: 600            # at least this long between any two reminders
+  check_every_sec: 30
+  quiet_hours:                # habit reminders wait; safety alerts still come through
+    enabled: false
+    start_hour: 22            # 24-hour clock
+    end_hour: 7
+
+# ── AI (keys are in .env) ──────────────────────────────────────────
+llm:
+  # Which AI answers: the first one with a key in .env wins:
+  # Gemini → OpenAI → Groq → Ollama (OLLAMA_URL, no key needed)
+  gemini_model: gemini-2.5-flash
+  openai_model: gpt-4o-mini
+  groq_model: llama-3.3-70b-versatile
+  ollama_model: llama3.2
+  vision_model: llava         # Ollama vision model for posture / lost items (ollama pull llava)
+  min_interval_sec: 6         # at least this long between two AI calls (protects free limits)
+  max_retries: 3
+  pause_on_limit_sec: 600     # after a rate limit, background chatter rests this long
+  chat_history_turns: 6       # recent messages sent word for word; older ones are summarized
+  memory_per_agent: 8         # things each agent remembers saying
+
+# ── Small talk between agents ──────────────────────────────────────
+idle_chat:
+  min_sec: 720                # 12 to 25 minutes between rounds
+  max_sec: 1500
+  start_delay_sec: 15
+  max_turns: 3                # replies after the opening line
+  quiet_after_typing_sec: 10  # wait this long after you type before chatting
+
+# ── Lost items ("have you seen my keys?") ──────────────────────────
+lost_items:
+  check_every_sec: 60
+  scene_change: 8.0           # how different the picture must look to run a vision scan (0-255)
+  rescan_every_sec: 300       # vision scan at least this often even if nothing changed
+  snapshot_every_sec: 120     # "Desk scan" photo at most this often
+  spotted_photo_cooldown_sec: 75
+  items:                      # labels = detector words for the item; words = what you might type
+    phone:   {name: Phone,   labels: [cell phone],          alert_after_min: 10, words: [phone, iphone, mobile, cell, cellphone, android]}
+    keys:    {name: Keys,    labels: [key, remote],         alert_after_min: 15, words: [key, keys, keychain, keyring, fob]}
+    wallet:  {name: Wallet,  labels: [wallet, handbag],     alert_after_min: 15, words: [wallet, purse, card, cards, bag, handbag]}
+    airpods: {name: AirPods, labels: [earphone, earbuds],   alert_after_min: 15, words: [airpod, airpods, earbud, earbuds, earphone, earphones]}
+
+# ── Vision checks with Ollama (only when OLLAMA_URL is set) ───────
+vision_habits:
+  every_sec: 42               # posture / screen distance / phone-in-hand check
+  slouch_log_min_sec: 90      # shortest slouch worth logging
+  nail_log_cooldown_sec: 50
+  max_log_events: 120
+
+# ── Lens (the camera's own character) ──────────────────────────────
+lens:
+  sample_every_sec: 1.0
+  covered_below: 12           # average brightness 0-255
+  dark_below: 45
+  glare_above: 0.30           # share of pure-white pixels
+  blur_below: 25
+  motion_above: 6.0
+  bump_degrees: 12            # phone camera only
+  slow_fps_below: 1.5
+  speak_gap_sec: 20
+  repeat_after_min: 20
+
+# ── Daily recap ─────────────────────────────────────────────────────
+daily_summary:
+  hour: 21                    # local time
+
+# ── Proof photos ────────────────────────────────────────────────────
+snapshots:
+  max_kept: 150               # photos kept in memory for chat proof / Captures
+
+# ── Web server ──────────────────────────────────────────────────────
+web:
+  port: 5000

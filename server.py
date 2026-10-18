@@ -1,19 +1,22 @@
 """
-Desk Talk server entry point.
+Desk Talk: start everything on this computer.
 
-Runs `backend/server.py` with the project root as the working directory so
-paths (config, .env, YOLO weights) resolve consistently.
+    python server.py
 
-Usage:  python server.py
+Then open http://localhost:5000. Settings are in config/settings.yaml.
+The Raspberry Pi side is pi/camera_node.py (the command to run on the Pi is
+printed when this starts).
 """
 
 from __future__ import annotations
 
 import os
-import runpy
+import sys
 
-_ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.abspath(__file__))
 
-if __name__ == "__main__":
-    os.chdir(_ROOT)
-    runpy.run_path(os.path.join(_ROOT, "backend", "server.py"), run_name="__main__")
+if __name__ == '__main__':
+    os.chdir(ROOT)
+    sys.path.insert(0, ROOT)
+    from desktalk.app import main
+    main()

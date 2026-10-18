@@ -4,7 +4,7 @@
    computer as JPEGs over Wi-Fi (POST /api/phone/frame).
    ============================================ */
 
-const TARGET_FPS = 10;     // frames per second sent to the computer
+let TARGET_FPS = 3;       // frames per second sent to the computer (the computer's camera.fps setting)
 const MAX_SIDE = 960;      // longest side of each frame in pixels (YOLO works at 640)
 const JPEG_QUALITY = 0.7;
 
@@ -231,6 +231,7 @@ function updateStats() {
 // ---------- start / stop ----------
 async function startStreaming() {
   $('error').hidden = true;
+  fetch('/api/phone/config').then((r) => r.json()).then((c) => { if (c && c.fps > 0) TARGET_FPS = c.fps; }).catch(() => {});
 
   if (!pairKey) {
     showError('Open this page by scanning the QR code on your computer (it has your pairing key).');

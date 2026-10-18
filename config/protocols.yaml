@@ -1,0 +1,85 @@
+# ════════════════════════════════════════════════════════════════════
+#  Habit rules, based on Andrew Huberman,
+#  "Protocols: An Operating Manual for the Human Body" (2025)
+#
+#  Four habits: hydration, breaks, light (day / night) and phone-free time.
+#  The desk only nudges when the camera saw a reason, and the message says
+#  what it saw. Numbers below come from the book; the chapter is noted
+#  next to each one. Change any of them to fit your day.
+#
+#  The camera can't see everything (it doesn't know if you went outside),
+#  so some habits also have a button in the app to log them yourself.
+# ════════════════════════════════════════════════════════════════════
+
+# Your day. Most rules are timed from these. You can also change them in
+# the app (Settings → Your day); the app's values win over these.
+schedule:
+  wake_time: "07:00"
+  bed_time: "22:30"
+  # Optional, for real sunset times. Leave empty to use sunset_fallback.
+  latitude: null              # e.g. 33.88
+  longitude: null             # e.g. -118.40
+  sunset_fallback: "18:30"
+
+# ── 1. Hydration ── Nutrition Protocol 2: "Stay Hydrated" ──────────
+hydration:
+  enabled: true
+  on_waking_ml: 600           # "18 to 24 ounces of water upon waking", before coffee (~530-710 ml)
+  daily_goal_ml: 2400         # "about 80 ounces ... across the first ten hours of the day"
+  goal_window_hours: 10       # the first ten hours after waking
+  ml_per_sip: 80              # a guess for one pick-up of the cup (the camera can't see how much)
+  sip_gone_min_sec: 3         # cup leaves the desk at least this long...
+  sip_gone_max_sec: 120       # ...and comes back within this = one sip
+  remind_after_min: 45        # no sip for this long...
+  behind_by_ml: 300           # ...and this far behind pace → nudge
+  stop_before_bed_hours: 2    # "best to avoid a lot of water in the hours before bedtime"
+
+# ── 2. Breaks ── Exercise Protocol 1 + Learning Protocol 5 ─────────
+breaks:
+  enabled: true
+  sit_limit_min: 30           # "walk or pace for at least five minutes for every thirty minutes of sitting"
+  break_min: 5                # away from the desk this long = a break
+  repeat_after_min: 15        # still sitting after a nudge → ask again after this long
+  walk_after_meal: true       # "walk for five to ten minutes after meals"
+  meal_min_on_desk_min: 3     # food that sat on the desk at least this long counts as a meal
+  # Learning Protocol 5: "short breaks of five to ten minutes ... (meaning, no checking your phone!)"
+  no_phone_on_breaks: true    # the nudge reminds you to leave the phone
+
+# ── 3. Light, day and night ── Sleep 1-3, Light 1-3, Sleep 14 ──────
+light:
+  enabled: true
+  morning_window_min: 60      # sunlight "within the first thirty to sixty minutes of waking"
+  morning_minutes: {clear: 10, partly_cloudy: 20, overcast: 30}   # how long, by weather
+  afternoon: true             # Sleep Protocol 2: "ten to fifteen minutes ... before the sun sets"
+  afternoon_start_min_before_sunset: 120
+  afternoon_end_min_before_sunset: 20
+  evening_dim_before_bed_min: 60   # Light Protocol 3: avoid bright light one hour before bedtime
+  screens_off_before_bed_min: 60   # Sleep Protocol 14: no screens within an hour of bedtime
+  # How bright is "bright"? The Pi camera reports lux. Phones and webcams only
+  # give a 0-255 picture brightness (and adjust exposure), so it's rougher.
+  night_bright_lux: 120       # brighter than this after sunset → "dim the lights"
+  day_dim_lux: 80             # darker than this in the daytime → "open the blinds"
+  night_bright_level: 150     # same idea for cameras without lux (0-255)
+  day_dim_level: 50
+  day_dim_min: 10             # dim for this long before saying anything
+  repeat_after_min: 60
+
+# ── 4. Phone-free time ── Learning Protocol 1 + Sleep Protocol 14 ──
+phone_free:
+  enabled: true
+  # "Put your phone away ... even just having your phone in the same room ...
+  #  reduces your ability to focus." The camera can only tell if it's on the desk.
+  nudge_after_min: 5          # phone on the desk this long while you work → nudge
+  repeat_after_min: 25
+  goal_min_per_day: 120       # phone-free desk time to aim for
+  celebrate_every_min: 45     # cheer after this much phone-free desk time in a row
+  before_bed_min: 60          # phone away an hour before bed
+
+# ── Kept from the original Desk Talk reminders ─────────────────────
+food:
+  enabled: true
+  remind_after_min: 20        # food sitting on the desk this long → "eat it or move it"
+
+tasks:
+  enabled: true
+  remind_after_min: 40        # open to-dos → check-in this often

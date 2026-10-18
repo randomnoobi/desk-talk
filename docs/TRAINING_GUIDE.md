@@ -1,12 +1,15 @@
 # Training Guide — Staged Object Detection
 
+> **Note:** this page is about the standalone safety pipeline (`python main.py`). The main app (`python server.py`) is described in [ARCHITECTURE.md](ARCHITECTURE.md); its settings are in `config/settings.yaml`.
+
+
 This guide walks through training and testing the safety monitoring system in three stages.
 
 ---
 
 ## Pre-built Model (Quick Start)
 
-The project ships with `yolo26n.pt` — YOLO26 Nano, pre-trained on the COCO dataset (80 classes). This already detects `cell phone`, `laptop`, `cup`, `bottle`, `keyboard`, `book`, and many more.
+The main app now uses `yolo26m-objv1-150.pt` (YOLO26 medium, Objects365, 365 classes); this standalone pipeline can use any YOLO file (`PIPELINE_MODEL`). The original `yolo26n.pt` — YOLO26 Nano, pre-trained on the COCO dataset (80 classes) — also works. This already detects `cell phone`, `laptop`, `cup`, `bottle`, `keyboard`, `book`, and many more.
 
 **For Stages 1-3 below, you do NOT need to train a custom model.** The pre-trained model handles phone and laptop detection out of the box.
 

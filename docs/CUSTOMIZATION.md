@@ -1,5 +1,8 @@
 # User Customization Guide
 
+> **Note:** this page is about the standalone safety pipeline (`python main.py`). The main app (`python server.py`) is described in [ARCHITECTURE.md](ARCHITECTURE.md); its settings are in `config/settings.yaml`.
+
+
 This guide explains how to customize which objects the safety monitoring system watches, which pairs it checks, and what "comfortable distance" means for each pair.
 
 ---

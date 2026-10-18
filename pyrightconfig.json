@@ -1,8 +1,8 @@
 {
-  "include": ["backend", "scripts", "server.py"],
+  "include": ["desktalk", "pi", "scripts", "tests", "server.py", "main.py"],
   "exclude": ["**/.venv", "**/venv", "**/__pycache__"],
   "venvPath": ".",
   "venv": ".venv",
-  "pythonVersion": "3.9",
+  "pythonVersion": "3.10",
   "typeCheckingMode": "basic"
 }

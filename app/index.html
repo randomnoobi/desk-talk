@@ -20,6 +20,7 @@
       <nav class="chat-list" id="chat-list"></nav>
       <nav class="page-list" aria-label="Pages">
         <button type="button" class="page-link" data-view="habits">Habits</button>
+        <button type="button" class="page-link" data-view="log">Event log</button>
         <button type="button" class="page-link" data-view="captures">Captures</button>
         <button type="button" class="page-link" data-view="settings">Settings</button>
         <a class="page-link" id="about-link" href="website/" hidden>About Desk Talk</a>
@@ -34,7 +35,7 @@
     <main class="main">
       <section class="view view-chat" id="view-chat">
         <header class="chat-head">
-          <img class="chat-head-art" id="chat-art" src="art/desk.svg" alt="" width="56" height="56">
+          <span class="chat-head-art" id="chat-art"></span>
           <div class="chat-head-text">
             <h1 id="chat-name">The desk</h1>
             <p id="chat-about"></p>
@@ -54,11 +55,12 @@
       </section>
 
       <section class="view page" id="view-habits" hidden></section>
+      <section class="view page" id="view-log" hidden></section>
       <section class="view page" id="view-captures" hidden></section>
       <section class="view page" id="view-settings" hidden></section>
     </main>
 
-    <!-- Right: what the phone camera sees -->
+    <!-- Right: what the desk camera sees -->
     <aside class="cam" id="cam" aria-label="Desk cam">
       <header class="cam-head">
         <h2>Desk cam</h2>

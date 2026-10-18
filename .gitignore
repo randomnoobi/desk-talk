@@ -7,10 +7,17 @@ venv/
 venv
 .env
 *.egg-info/
+.pytest_cache/
 
-# Local HTTPS certificate for the phone camera (made automatically, private key inside)
+# Local HTTPS certificate + pairing key for the camera (made automatically, private key inside)
 certs/
 .eggs/
+
+# Your own data: event log, habit days, preferences (stays on this computer)
+data/
+
+# Personal settings overrides
+config/settings.local.yaml
 
 # Large / local-only (GitHub file limit; use Releases or external hosting for video / weights)
 *.mp4

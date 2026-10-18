@@ -2,43 +2,60 @@
 
 **A habit-tracking app that brings your desk objects to life.**
 
-Desk Talk uses cameras to watch your physical desk, detect everyday objects, and turn them into chatty characters inside a mobile chat interface. When a cup wanders too close to your laptop, Monty panics. When a snack appears nearby, crumbs threaten the keyboard. Your desk objects hold each other accountable — and they hold you accountable too.
+A camera watches your desk. Every object it recognizes joins a group chat as a
+character ("Cup joined the chat"), and leaves when you take it away. The
+characters look out for each other (Computer panics when the cup gets close) and
+for you: water, movement breaks, sunlight and dim evenings, and phone-free
+focus time, following Andrew Huberman's *Protocols*.
 
 ---
 
-## Concept
+## How it works
 
-Your desk is a small ecosystem. 7 objects — laptop (includes keyboard), cup, snack, paper, cable, power bank, phone — each become a persistent character that lives inside a group chat on your phone. Cameras run Ultralytics YOLO26 object detection to track where each object is, whether it's being used, and how it interacts with the others.
+```
+Raspberry Pi camera                         Your computer
+┌───────────────────────────┐   pictures   ┌──────────────────────────────────────────────┐
+│ 3 pictures a second       │ ───────────▶ │ YOLO detects objects → one event per picture  │
+│ saved on the Pi           │    Wi-Fi     │ event stream → event log (data/events/)       │
+│ deleted every 10 minutes  │              │   → agents join / leave the chat              │
+└───────────────────────────┘              │   → safety alerts, habit reminders            │
+                                           │ app at http://localhost:5000                  │
+                                           └──────────────────────────────────────────────┘
+```
 
-The result: a living chatroom where your stuff talks to each other — and to you.
+- **The Pi** (`pi/camera_node.py`) takes the pictures, keeps them on its own storage and deletes them every 10 minutes.
+- **Your computer** (`python server.py`) runs the object detector and turns every picture into a
+  detection event. Events flow through an **event stream** to separate consumers (decoupled, so a
+  slow AI reply never holds up the camera), and are saved in the **event log**. Every 10 minutes
+  the log is compacted: per-picture events become "the cup was on the desk from 2:02 to 2:31" intervals.
+- A phone (over Wi-Fi) or a webcam can still be the camera instead: `camera.source` in `config/settings.yaml`.
+
+More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
 ## Characters
 
-| Character | Object | Icon | Personality |
-|-----------|--------|------|-------------|
-| **Monty** | Laptop | 💻 | Fragile, anxious, emotional center of the desk. Expresses discomfort through subtle physical metaphors. |
-| **Glug** | Cup / Bottle | ☕ | Passive, innocent, completely unaware of its own danger. Insists it's just sitting there. |
-| **Munch** | Snack / Food | 🍕 | Hedonistic and unapologetic. Dismisses all concerns. "Life's too short to worry." |
-| **Sheets** | Paper / Homework | 📄 | Gentle, anxious, extremely vulnerable. Represents value and deadlines. Loves other papers. |
-| **Zip** | Cable / Charger | 🔌 | Chaotic and unpredictable. Causes accidents and denies responsibility. |
-| **Surge** | Power Bank | 🔋 | Physically dominant but emotionally clueless. Doesn't realize it's too heavy. |
-| **Buzz** | Phone | 📱 | Charismatic, attention-seeking. Reshapes the ecosystem by pulling user attention. |
+Nobody is in the chat at first. When the camera has seen something for 3 seconds it joins;
+when it's been gone 45 seconds it leaves. These objects have their own personalities
+(`config/agents.yaml`):
 
-### Bubble Styles
+| Character | Objects | Personality | Looks after |
+|-----------|---------|-------------|-------------|
+| **Computer** (Monty) | laptop, keyboard, mouse, monitor | Fragile, anxious, emotional center of the desk | breaks, screens at night |
+| **Cup** (Glug) | cup, mug, bottle, glass | Innocent, unaware of its own danger | water |
+| **Snack** (Munch) | fruit, pizza, chips… | Hedonistic and unapologetic | food log |
+| **Paper** (Sheets) | book, notepaper, folder | Gentle, anxious, loves other papers | to-do list, lost items |
+| **Phone** (Buzz) | cell phone | Charismatic, attention-seeking | phone-free time |
+| **Lamp** | lamp | Warm, a morning person | sunlight, dim evenings |
+| **AirPods, Headphones, Keys, Cable (Zip), Sprout, Pen, Watch, Glasses, Scissors, Power Bank (Surge)** | | | |
 
-| Character | Bubble Color | Font Style |
-|-----------|-------------|------------|
-| Monty | Muted blue | Clean sans-serif |
-| Glug | Soft teal, rounded | Bouncy rounded |
-| Munch | Warm orange-red | Comic Sans / casual |
-| Sheets | Off-white with lines | Monospace, list-formatted |
-| Zip | Warm orange, italic | Serif italic |
-| Surge | Soft purple, bold | Bold sans-serif |
-| Buzz | Pink, modern | Modern sans-serif |
+**Anything else** the detector finds joins too (a stapler becomes "Stapler"), and the AI
+invents a personality for it. People, chairs and the desk itself never join.
 
----
+**Lens** is the camera. It speaks up when the view needs fixing (too dark, glare, blurry,
+covered, something cut off, the Pi stopped sending pictures) and says thanks when it's fixed.
+It doesn't use the AI.
 
 ## Character Relationships
 
@@ -165,249 +182,141 @@ The result: a living chatroom where your stuff talks to each other — and to yo
 
 ---
 
-## Chat Structure
+## Habits from *Protocols*
 
-### Group Chat — "The Desk"
+The desk only nudges when the camera saw a reason, and the message says what it saw.
+All numbers are in `config/protocols.yaml`, with the chapter each one comes from.
 
-All eight characters share a single group thread. Messages appear based on real-time camera detection:
+| Habit | What the book says | What the desk does |
+|---|---|---|
+| **Water** (Nutrition Protocol 2) | 18–24 oz on waking; ~80 oz (2.4 L) in the first 10 hours; less in the hours before bed | A sip counts when the cup leaves the desk and comes back. Nudges when you're behind pace and haven't sipped in 45 min; quiet in the 2 hours before bed. |
+| **Breaks** (Exercise Protocol 1, Learning Protocol 5) | Walk 5 min for every 30 min sitting; 5–10 min after meals; no phone during breaks | Counts sitting time; a break logs itself when you're away 5 min. Nudges after 30 min, and after food leaves the desk. |
+| **Light, day and night** (Sleep 1–3, Light 1–3, Sleep 14) | Sunlight within an hour of waking (10/20/30 min clear/cloudy/overcast); light before sunset; dim lights and no screens in the last hour before bed | Asks about morning sunlight, reminds before sunset, notices a bright room at night (the Pi camera measures lux) or a dim room in the day, and says "screens off" an hour before bed. |
+| **Phone-free time** (Learning Protocol 1) | Put your phone away; even having it nearby costs focus | Tracks phone-free desk time and streaks; nudges when the phone sits on the desk while you work, and in the last hour before bed. |
 
-- **Object placed on desk** — the character announces itself
-- **Object removed** — the character reacts
-- **Two objects near each other** — the threatened object speaks up, sends a cropped proof screenshot
-- **Symbiotic pair detected** — positive messages (Phone near Laptop)
-- **@user mentions** — any character can tag you directly for habit reminders
-
-### Individual Chats
-
-Each character has a 1-on-1 thread with you for personal conversations.
-
-### Proof Screenshots
-
-When a concerning interaction is detected (e.g., cup near laptop), the speaking character sends a **cropped screenshot** zoomed into the area of the interaction. This "proof" only appears for confirmed proximity interactions — not for simple appear/disappear events.
+Set your wake time and bedtime in the app (Settings → Your day). The Habits page shows
+today's numbers and has buttons for what the camera can't see (a glass of water, going outside).
 
 ---
 
-## UI Design
+## The app
 
-### Philosophy
+One window, three columns:
 
-Minimalistic. The interface feels like a standard messaging app — familiar, lightweight, no learning curve. Personality lives in the chat bubbles, not in heavy UI chrome. Each character's identity comes from their bubble shape, color, and font.
+1. **Chats (left)**: "The desk" group chat, then everyone who's on the desk (green dot) and
+   anyone who left earlier. Habits, Event log, Captures and Settings sit underneath.
+2. **Conversation (middle)**: join / leave notes, colored bubbles, proof photos, @mentions.
+   Each 1-on-1 chat has its tracker on top (Cup's water, Computer's breaks, Paper's to-do list…).
+3. **Desk cam (right)**: the live picture with boxes, who's on the desk, current risks, proof photos.
+   Until the camera connects it shows the command to run on the Pi.
 
-### Key Screens
+**Event log** page: a timeline of what was on the desk today, the events (joins, leaves,
+alerts, habits, reminders, camera problems), and what one picture's event looks like.
 
-One window on the computer, three columns:
-
-1. **Chats (left)** — "The desk" group chat plus a 1-on-1 chat with Computer, Cup, Snack, and Paper. Habits, Captures, and Settings sit underneath.
-2. **Conversation (middle)** — colored bubbles per character, proof photos, @mentions. Each 1-on-1 chat has its tracker on top (Paper's to-do list, Computer's breaks, Cup's sips, Snack's food log).
-3. **Desk cam (right)** — the phone's live video with YOLO boxes, what's on the desk, current risks, and recent proof photos. Shows a QR code until the phone connects.
-
-Characters are original SVG drawings in `app/art/` (flat cut-paper style with a grain texture).
-
-**Lens** is the phone camera itself. It speaks up in the group chat when the view needs fixing (too dark, glare, blurry, covered, an object cut off at the side, the phone got bumped, slow or stopped video) and says thanks when it's fixed. It doesn't use the AI (`backend/camera_health.py`).
-
-**Desk edges:** in Settings, tap the corners of your desk on the camera picture. Only those lines count as edges for "about to fall off" warnings. Sides along the border of the picture are ignored, since the desk keeps going there.
-
-**Reminders** only come with a reason the camera saw (for example "no sip in 47 minutes"), never in the first 15 minutes, and never while the camera is off or during quiet hours (`backend/reminders.py`).
+**Desk edges**: in Settings, tap the corners of your desk on the camera picture. Then only
+things on the desk can join the chat, and things near a real edge get a warning.
 
 ---
 
-## Detection System
+## Detection
 
-Cameras monitor the desk using **YOLO26** (Ultralytics) for real-time object detection.
-
-### YOLO Class Mappings
-
-| Character | YOLO Classes | Notes |
-|-----------|-------------|-------|
-| Monty | `laptop`, `tv` | Direct match |
-| Glug | `bottle`, `cup`, `wine glass` | Direct match |
-| Monty | `keyboard` | Also detected as Laptop |
-| Munch | `banana`, `apple`, `sandwich`, `orange`, `pizza`, `donut`, `cake`, etc. | Food items |
-| Sheets | `book` | Best proxy for papers/homework |
-| Zip | `remote`, `tie` | Proxy — elongated objects |
-| Surge | `mouse` | Proxy — similar size/shape on desk |
-| Buzz | `cell phone` | Direct match |
-
-> **Note:** Cable, Power Bank use proxy classes. For best accuracy, train a custom YOLO model on your specific desk objects.
-
-### Interaction Rules
-
-All proximity interactions are **data-driven** — defined as pairs with severity levels and threshold multipliers:
-
-| Severity | Threshold | Description |
-|----------|-----------|-------------|
-| 🔴 Critical | 1.5× | Triggers from further away (cup near laptop, cable near cup) |
-| 🟡 High | 1.0–1.3× | Standard proximity (snack near laptop, power bank on paper) |
-| 🟠 Medium | 0.9–1.0× | Moderate distance (cable near paper, snack near cup) |
-| 🔵 Low | 0.7–0.8× | Only when very close (phone near laptop, snack near phone) |
-
-### Temporal Smoothing
-
-To avoid false positives from shaky detection:
-- Objects must be seen for **10 consecutive frames** (`APPEAR_FRAMES`) to confirm "appeared"
-- Objects must be missing for **40 consecutive frames** (`DISAPPEAR_FRAMES`) to confirm "disappeared"
-
-### LLM Integration
-
-Messages are generated by an LLM (Gemini or OpenAI) that receives:
-- The full relationship chart as context
-- The current desk state (which objects are detected)
-- The specific event (which pair triggered, severity)
-- The speaking character's personality
-
-The LLM generates 1-2 sentences that are 100% in-character. Templates serve as a minimal fallback if no LLM is configured.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Object Detection | YOLO26 (ultralytics) on frames streamed from the phone camera |
-| Phone camera | Web page using `getUserMedia` + canvas JPEG, sent over HTTPS (self-signed cert) |
-| Backend | Flask (Python) — camera threads, event engine, LLM proxy |
-| Frontend | Vanilla HTML/CSS/JS, desktop layout, Bricolage Grotesque font (bundled) |
-| LLM | Google Gemini (free tier) or OpenAI GPT — via OpenAI SDK |
-| Real-time | SSE (Server-Sent Events) for messages, MJPEG for video |
-| Detection | Temporal smoothing, spatial proximity analysis |
-
----
-
-## Project Structure
-
-```
-Habit Project/
-├── README.md
-├── server.py                 # Entry: runs backend/server.py from repo root
-├── main.py                   # Standalone safety pipeline (CLI)
-├── requirements.txt
-├── .env.example
-├── app/                      # Web UI (Flask static + open locally)
-│   ├── index.html
-│   ├── style.css
-│   └── app.js
-├── phone/                    # Phone camera page (served over HTTPS to the phone)
-│   ├── index.html
-│   ├── phone.css
-│   └── phone.js
-├── backend/
-│   ├── server.py             # Flask API, cameras, LLM, detection
-│   ├── phone_camera.py       # Phone frame source, HTTPS cert, QR code
-│   └── relationships.py      # Spatial relationship engine
-├── config/
-│   └── safety_rules.json     # Per-pair thresholds + zone config
-├── pipeline/                 # Chart-flow pipeline modules (main.py)
-├── scripts/
-│   ├── cameraOpen.py         # Camera preview + snapshot
-│   └── cameraRecognition.py  # YOLO webcam preview
-├── website/                  # Marketing site (GitHub Pages)
-│   ├── assets/scenes/        # Scene illustrations
-│   └── assets/flows/         # “How it works” flow diagrams
-├── weights/                    # YOLO weights (local; *.pt gitignored)
-└── docs/                     # Design notes
-```
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- Python 3.8–3.12
-- A phone on the same Wi-Fi as your computer (or a webcam with `CAMERA_SOURCE=webcam`)
-- (Optional) A Gemini API key (free tier available) or OpenAI API key
-
-### Installation
+| | |
+|---|---|
+| Model | **YOLO26 medium, Objects365** (`yolo26m-objv1-150.pt`): 365 kinds of objects, including earphones, keys, pens, watches, glasses and notepaper. The old `yolo26n.pt` knew 80. |
+| Speed | 3 pictures a second; on an Apple-chip Mac it runs on the GPU (`device: auto`). Too slow? `yolo26s-objv1-150.pt`. |
+| Joining | seen 3 s → joins; gone 45 s → leaves (habit rules use a shorter 1 s / 2.5 s) |
+| Safety | danger zones, desk edges, chain reactions, objects approaching (`desktalk/vision/relationships.py`, tuned in `config/safety_rules.json` and the Settings page) |
 
 ```bash
+python scripts/download_models.py --test    # download the model and time it on your computer
+python scripts/download_models.py --list    # every object it can detect
+```
+
+---
+
+## Getting started
+
+### On your computer
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-### Quick Start — Full App (Camera + LLM + Web UI)
-
-```bash
-# 1. Copy and edit the config
-cp .env.example .env
-# Add your GEMINI_API_KEY or OPENAI_API_KEY to .env
-
-# 2. Start the server
+cp .env.example .env              # add an AI key, or OLLAMA_URL for Ollama
+python scripts/download_models.py # the YOLO model (about 45 MB)
 python server.py
-
-# 3. Open http://localhost:5000 in your browser
-
-# 4. Scan the QR code (on the Home screen or in the terminal) with your phone
-#    → tap "Show Details → visit this website" on the privacy warning
-#    → tap Start camera and point the phone at your desk
 ```
 
-### How the phone camera works
+Open **http://localhost:5000**. `server.py` prints the command to run on the Pi.
 
-```
-Phone (Safari/Chrome)                          Computer (python server.py)
-┌──────────────────────┐   JPEG frames over    ┌───────────────────────────────┐
-│ phone/  page         │   Wi-Fi, ~10 per sec  │ phone_app  (HTTPS :5443)      │
-│ camera → canvas →    │ ────────────────────▶ │   POST /api/phone/frame       │
-│ JPEG → fetch() POST  │   HTTPS + pairing key │        ↓                      │
-└──────────────────────┘                       │ PhoneFrameSource → YOLO loop  │
-                                               │        ↓                      │
-                                               │ app (http://localhost:5000)   │
-                                               │   group chat UI + live view   │
-                                               └───────────────────────────────┘
-```
+### On the Raspberry Pi
 
-- Phones only allow the camera on `https://` pages, so the server makes a self-signed certificate in `certs/` the first time it runs. That is why the phone shows a "not private" warning once.
-- The QR link includes a random pairing key, so other devices on the Wi-Fi can't send frames. The key is saved in `certs/pair-key.txt` and reused after a restart (delete that file to make a new one).
-- If the phone stops streaming for 3 seconds, analysis pauses so the characters don't react to an old frame.
-- Sideways is fine: the phone page uses its motion sensor to send the picture the right way up, even with rotation lock on. "Computer sees" on the phone shows exactly what's sent, and **Turn** adds a quarter turn by hand.
-- If the characters stop answering, the chat says why (usually the free AI limit). Background chatter pauses for 10 minutes after a limit so your messages still get through.
-- `CAMERA_SOURCE=webcam` in `.env` switches back to a webcam plugged into the computer.
-
-The server:
-- Receives your phone's camera feed (or a webcam) and runs YOLO26 object detection
-- Maps detected objects to 8 characters with temporal smoothing
-- Analyzes spatial relationships using data-driven proximity rules
-- Generates in-character messages via LLM with full relationship context
-- Sends cropped proof screenshots for confirmed interactions
-- Streams annotated camera feed to the web UI via MJPEG
-- Pushes real-time events to the frontend via Server-Sent Events
-
-### Quick Start — Demo Mode (No Server)
-
-Open the GitHub Pages site, or serve the `app/` folder with any static server (`python -m http.server` inside `app/`). Without the Python server the app plays a short demo conversation. No camera needed.
-
-### Standalone Camera Tools
+See [pi/README.md](pi/README.md). In short:
 
 ```bash
-# Camera preview (press s to snapshot, q to quit)
-python scripts/cameraOpen.py
-
-# YOLO detection preview (press q to quit)
-python scripts/cameraRecognition.py
+sudo apt install -y git python3-picamera2 python3-opencv python3-yaml
+git clone https://github.com/randomnoobi/desk-talk.git && cd desk-talk
+python3 pi/camera_node.py --server http://<your computer>:5000 --key <key>
 ```
+
+### Demo without a server
+
+Open the GitHub Pages site, or serve `app/` with any static server. The app plays a short
+demo where four characters join the chat.
 
 ---
 
-## Configuration (.env)
+## Configuration
 
-```ini
-# LLM (pick ONE — first match wins)
-GEMINI_API_KEY=your-key-here
-GEMINI_MODEL=gemini-2.0-flash-lite
+| File | What's in it |
+|---|---|
+| `config/settings.yaml` | every number: camera source and rate, Pi cleanup, model, join/leave times, event log, AI limits, idle chat, Lens |
+| `config/agents.yaml` | who each object becomes: name, personality, color, which habits it speaks for |
+| `config/protocols.yaml` | the habit rules from *Protocols* and your day (wake / bed) |
+| `config/safety_rules.json` | danger zones and desk corners (the Settings page writes this) |
+| `config/settings.local.yaml` | your own overrides (optional, not uploaded) |
+| `.env` | AI keys / `OLLAMA_URL` (never uploaded) |
 
-OPENAI_API_KEY=your-key-here
-LLM_MODEL=gpt-4o-mini
+---
 
-# Camera: phone (default, streams over Wi-Fi) or webcam
-CAMERA_SOURCE=phone
+## Tests
 
-# Webcam indices when CAMERA_SOURCE=webcam (comma-separated for multiple)
-CAMERA_INDICES=0,1
+```bash
+pip install -r requirements-dev.txt
+python -m pytest
+```
 
-# Detection tuning
-CONFIDENCE=0.45
-EVENT_COOLDOWN=25
-APPEAR_FRAMES=10
-DISAPPEAR_FRAMES=40
+Unit tests (`tests/unit/`) check each piece on its own; integration tests (`tests/integration/`)
+run them together: scripted pictures through the whole pipeline, the web API with a fake AI,
+the Pi node streaming to a real server, and the real YOLO model on sample photos.
+
+---
+
+## Project structure
+
+```
+desk-talk/
+├── server.py                 # start the app on your computer
+├── main.py                   # standalone safety pipeline (CLI, docs/SYSTEM_LOGIC.md)
+├── config/                   # settings.yaml, agents.yaml, protocols.yaml, safety_rules.json
+├── desktalk/                 # the app (Python package)
+│   ├── app.py                #   builds everything and starts it
+│   ├── settings.py           #   reads config/ and .env
+│   ├── events/               #   event stream + event log
+│   ├── vision/               #   camera sources, YOLO, producer, desk geometry, Lens
+│   ├── agents/               #   profiles + roster (join / leave)
+│   ├── habits/               #   Protocols rules, habit tracker, reminders
+│   ├── chat/                 #   the AI: replies, alerts, idle chat, lost items, recap
+│   └── web/                  #   Flask routes (app, Pi, phone)
+├── pi/                       # runs on the Raspberry Pi
+├── app/                      # the computer app (HTML / CSS / JS)
+├── phone/                    # phone camera page
+├── pipeline/                 # the standalone pipeline's modules
+├── scripts/                  # download_models.py, camera preview tools
+├── tests/                    # unit + integration tests
+├── website/                  # project website (GitHub Pages)
+├── weights/                  # YOLO model files (not uploaded)
+└── data/                     # event log, habit days (not uploaded)
 ```
 
 ---
@@ -432,7 +341,7 @@ Pushing to **`main`** runs [`.github/workflows/deploy-pages.yml`](.github/workfl
 3. Open the **Actions** tab and confirm the **Deploy site to GitHub Pages** workflow succeeds.
 4. Your site URL will be `https://<username>.github.io/<repo>/` (unless you use a custom domain).
 
-Model weights (`*.pt`) are gitignored by default. Put them in **`weights/`** (defaults: `weights/yolo26n.pt`) or set `YOLO_MODEL` / `PIPELINE_MODEL` to another path.
+Model weights (`*.pt`) are gitignored. `python scripts/download_models.py` puts them in **`weights/`**.
 
 ---
 

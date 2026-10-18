@@ -1,5 +1,8 @@
 # System Logic — Safety Monitoring Pipeline
 
+> **Note:** this page is about the standalone safety pipeline (`python main.py`). The main app (`python server.py`) is described in [ARCHITECTURE.md](ARCHITECTURE.md); its settings are in `config/settings.yaml`.
+
+
 This document describes the system architecture based on the approved class chart.
 
 ---
