@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Download YOLO model files into weights/.
+Download YOLO model files into models/.
 
     python scripts/download_models.py            # the model in config/settings.yaml (detector.model)
     python scripts/download_models.py yolo26l-objv1-150.pt

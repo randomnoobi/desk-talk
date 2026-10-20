@@ -1,4 +1,4 @@
-# Publishes the interactive app at / and the marketing site at /website/.
+# Publishes the app (in demo mode) on GitHub Pages.
 # Repo → Settings → Pages → Build and deployment → Source: GitHub Actions
 name: Deploy site to GitHub Pages
 
@@ -25,12 +25,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v4
-      - name: Build Pages bundle (app + landing site)
+      - name: Build Pages bundle (the app)
         run: |
           set -e
-          mkdir -p _pages/website
-          cp -r app/. _pages/          # index.html, style.css, app.js, art/, fonts/
-          cp -r website/. _pages/website/
+          mkdir -p _pages
+          cp -r web_app/. _pages/          # index.html, style.css, app.js, art/, fonts/
           touch _pages/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:

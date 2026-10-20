@@ -3,7 +3,7 @@
 from desktalk.agents.profiles import ProfileBook
 from desktalk.agents.roster import PresenceTracker, Roster
 from desktalk.events.stream import EventStream
-from desktalk.state import DeskState
+from desktalk.desk_state import DeskState
 from desktalk.vision import relationships
 
 

@@ -1,5 +1,5 @@
 """
-pipeline/camera.py — Image / Footage input stage.
+safety_pipeline/camera.py — Image / Footage input stage.
 
 Chart stage: "Image/footage"
 
@@ -12,7 +12,7 @@ Returns numpy frames (BGR, as OpenCV expects).
 """
 
 import cv2
-from pipeline.config import CAMERA_INDEX, VIDEO_SOURCE
+from safety_pipeline.config import CAMERA_INDEX, VIDEO_SOURCE
 
 
 class Camera:

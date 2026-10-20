@@ -23,12 +23,12 @@ Raspberry Pi camera                         Your computer
                                            └──────────────────────────────────────────────┘
 ```
 
-- **The Pi** (`pi/camera_node.py`) takes the pictures, keeps them on its own storage and deletes them every 10 minutes.
+- **The Pi** (`raspberry_pi/camera_node.py`) takes the pictures, keeps them on its own storage and deletes them every 10 minutes.
 - **Your computer** (`python server.py`) runs the object detector and turns every picture into a
   detection event. Events flow through an **event stream** to separate consumers (decoupled, so a
   slow AI reply never holds up the camera), and are saved in the **event log**. Every 10 minutes
   the log is compacted: per-picture events become "the cup was on the desk from 2:02 to 2:31" intervals.
-- A phone (over Wi-Fi) or a webcam can still be the camera instead: `camera.source` in `config/settings.yaml`.
+- A phone (the page in `phone_camera/`, over Wi-Fi) or a webcam can still be the camera instead: `camera.source` in `config/settings.yaml`.
 
 More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -256,12 +256,12 @@ See [pi/README.md](pi/README.md). In short:
 ```bash
 sudo apt install -y git python3-picamera2 python3-opencv python3-yaml
 git clone https://github.com/randomnoobi/desk-talk.git && cd desk-talk
-python3 pi/camera_node.py --server http://<your computer>:5000 --key <key>
+python3 raspberry_pi/camera_node.py --server http://<your computer>:5000 --key <key>
 ```
 
 ### Demo without a server
 
-Open the GitHub Pages site, or serve `app/` with any static server. The app plays a short
+Open the GitHub Pages site, or serve `web_app/` with any static server. The app plays a short
 demo where four characters join the chat.
 
 ---
@@ -296,27 +296,29 @@ the Pi node streaming to a real server, and the real YOLO model on sample photos
 
 ```
 desk-talk/
-├── server.py                 # start the app on your computer
-├── main.py                   # standalone safety pipeline (CLI, docs/SYSTEM_LOGIC.md)
-├── config/                   # settings.yaml, agents.yaml, protocols.yaml, safety_rules.json
-├── desktalk/                 # the app (Python package)
+├── server.py                 # start Desk Talk on your computer
+├── config/                   # every setting: settings.yaml, agents.yaml, protocols.yaml, safety_rules.json
+├── desktalk/                 # the Python code that runs on your computer
 │   ├── app.py                #   builds everything and starts it
 │   ├── settings.py           #   reads config/ and .env
+│   ├── paths.py              #   where every folder is
+│   ├── desk_state.py         #   what's on the desk right now
 │   ├── events/               #   event stream + event log
 │   ├── vision/               #   camera sources, YOLO, producer, desk geometry, Lens
 │   ├── agents/               #   profiles + roster (join / leave)
-│   ├── habits/               #   Protocols rules, habit tracker, reminders
+│   ├── habits/               #   Protocols rules, habit tracker, reminders, sun times
 │   ├── chat/                 #   the AI: replies, alerts, idle chat, lost items, recap
-│   └── web/                  #   Flask routes (app, Pi, phone)
-├── pi/                       # runs on the Raspberry Pi
-├── app/                      # the computer app (HTML / CSS / JS)
-├── phone/                    # phone camera page
-├── pipeline/                 # the standalone pipeline's modules
-├── scripts/                  # download_models.py, camera preview tools
+│   └── web/                  #   Flask routes (the app, the Pi, the phone camera)
+├── web_app/                  # the app you open at localhost:5000 (HTML / CSS / JS, art, fonts)
+├── raspberry_pi/             # runs on the Raspberry Pi: takes, sends and deletes pictures
+├── phone_camera/             # the page a phone opens to be the camera instead of the Pi
+├── models/                   # YOLO model files (downloaded, not uploaded)
 ├── tests/                    # unit + integration tests
-├── website/                  # project website (GitHub Pages)
-├── weights/                  # YOLO model files (not uploaded)
-└── data/                     # event log, habit days (not uploaded)
+├── scripts/                  # download_models.py, camera_preview.py, yolo_webcam_detect.py, capture_app_screenshots.py
+├── docs/                     # ARCHITECTURE.md, AGENT_SYSTEM.md, SAFETY_*.md, images/
+├── run_safety_pipeline.py    # the older standalone safety checker (docs/SAFETY_PIPELINE.md)
+├── safety_pipeline/          #   its modules
+└── data/                     # event log, habit days, preferences (made when it runs, not uploaded)
 ```
 
 ---
@@ -332,16 +334,16 @@ desk-talk/
 
 ---
 
-## GitHub Pages (portfolio site + app demo)
+## GitHub Pages (app demo)
 
-Pushing to **`main`** runs [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml), which publishes the **`app/`** UI at the site root and **`website/`** under **`/website/`**, with links to switch between them.
+Pushing to **`main`** runs [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml), which publishes the **`web_app/`** folder (in demo mode, since there's no server there).
 
 1. Create a new repository on GitHub and push this project (`main`).
 2. On GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 3. Open the **Actions** tab and confirm the **Deploy site to GitHub Pages** workflow succeeds.
 4. Your site URL will be `https://<username>.github.io/<repo>/` (unless you use a custom domain).
 
-Model weights (`*.pt`) are gitignored. `python scripts/download_models.py` puts them in **`weights/`**.
+Model files (`*.pt`) are gitignored. `python scripts/download_models.py` puts them in **`models/`**.
 
 ---
 

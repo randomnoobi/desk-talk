@@ -17,8 +17,8 @@
 
 # ── Camera ──────────────────────────────────────────────────────────
 camera:
-  # pi     = Raspberry Pi camera (pi/camera_node.py runs on the Pi and sends pictures here)
-  # phone  = phone browser streams over Wi-Fi (scan the QR code)
+  # pi     = Raspberry Pi camera (raspberry_pi/camera_node.py runs on the Pi and sends pictures here)
+  # phone  = a phone streams over Wi-Fi (scan the QR code; the page is phone_camera/)
   # webcam = a USB / built-in webcam on this computer
   source: pi
   fps: 3                      # pictures analysed per second (the Pi takes pictures at this rate too)
@@ -26,7 +26,7 @@ camera:
   webcam_indices: [0]         # which webcam(s) when source is webcam (0 = built-in on most Macs)
   phone_port: 5443            # HTTPS port the phone page uses (phones only allow cameras on https)
 
-# ── Raspberry Pi (read by pi/camera_node.py on the Pi) ─────────────
+# ── Raspberry Pi (read by raspberry_pi/camera_node.py on the Pi) ─────────────
 pi:
   fps: 3                      # pictures per second
   width: 1280                 # picture size
@@ -43,10 +43,10 @@ detector:
   # yolo26m-objv1-150.pt knows 365 kinds of objects (Objects365), including
   # earphones, keys, pens, watches, glasses and notepaper. The old yolo26n.pt only knew 80.
   # Other choices (scripts/download_models.py fetches any of them):
-  #   weights/yolo26s-objv1-150.pt  faster, a bit less accurate (older laptops)
-  #   weights/yolo26l-objv1-150.pt  slower, most accurate
-  #   weights/yolo26m.pt            80 everyday COCO objects
-  model: weights/yolo26m-objv1-150.pt
+  #   models/yolo26s-objv1-150.pt  faster, a bit less accurate (older laptops)
+  #   models/yolo26l-objv1-150.pt  slower, most accurate
+  #   models/yolo26m.pt            80 everyday COCO objects
+  model: models/yolo26m-objv1-150.pt
   confidence: 0.35            # lowest confidence a box needs to be kept at all
   image_size: 640
   device: auto                # auto = Apple GPU (mps) or NVIDIA (cuda) when available, else cpu

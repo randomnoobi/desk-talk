@@ -19,7 +19,7 @@ How a picture on the Raspberry Pi turns into "Cup joined the chat".
                                                     │             │              │
                                                     └──────┬──────┴──────────────┘
                                                            ▼
-                                                  MessageGenerator (the AI) ──SSE──▶ the app (app/)
+                                                  MessageGenerator (the AI) ──SSE──▶ the app (web_app/)
  Threads: reminders (Protocols nudges), Lens (camera health), idle chat, vision checks, daily recap.
  Scheduler: compact the event log every 10 minutes, delete days older than 30.
 ```
@@ -28,9 +28,9 @@ How a picture on the Raspberry Pi turns into "Cup joined the chat".
 
 | Folder / file | Job |
 |---|---|
-| `pi/camera_node.py` | Runs on the Pi: takes, saves, sends and deletes pictures. Standard library only. |
-| `desktalk/vision/sources.py` | Where pictures come from: `PiFrameSource`, `PhoneFrameSource`, `WebcamSource`. Same `read()` as OpenCV. |
-| `desktalk/vision/detector.py` | The YOLO model (`detector.model` in settings). Downloads it into `weights/` the first time. |
+| `raspberry_pi/camera_node.py` | Runs on the Pi: takes, saves, sends and deletes pictures. Standard library only. |
+| `desktalk/vision/camera_sources.py` | Where pictures come from: `PiFrameSource`, `PhoneFrameSource`, `WebcamSource`. Same `read()` as OpenCV. |
+| `desktalk/vision/detector.py` | The YOLO model (`detector.model` in settings). Downloads it into `models/` the first time. |
 | `desktalk/vision/producer.py` | **Producer.** Newest picture → YOLO → one `detection` event, 3 times a second. Also keeps the live view pictures. |
 | `desktalk/events/stream.py` | **Event stream.** Publish / subscribe inside the program. Each consumer has its own queue and thread, so a slow AI call never holds up the camera ("decoupling"). |
 | `desktalk/events/log.py` | **Event log** on this computer, `data/events/<day>/`. Compaction turns per-picture events into intervals. |
@@ -39,7 +39,9 @@ How a picture on the Raspberry Pi turns into "Cup joined the chat".
 | `desktalk/vision/desk_monitor.py` | Safety alerts from desk geometry (`relationships.py`), pets, clutter. |
 | `desktalk/habits/` | `protocols.py` (the book's rules, as plain functions), `tracker.py` (today's numbers), `reminders.py` (when to nudge, who says it). |
 | `desktalk/chat/` | The AI: replies, alerts, idle chat, lost items, Lens, recap. All prompts are in `prompts.py`. |
-| `desktalk/web/` | Flask routes for the app, the Pi and the phone. |
+| `desktalk/web/` | Flask routes: `routes.py` for the app and the Pi, `phone_server.py` for the phone camera, `video_stream.py` for the live view. |
+| `web_app/` | The app you open at http://localhost:5000 (HTML, CSS, JavaScript, drawings, font). |
+| `phone_camera/` | The page a phone opens to be the camera instead of the Pi (only with `camera.source: phone`). |
 | `config/` | Every setting: `settings.yaml`, `agents.yaml`, `protocols.yaml`, `safety_rules.json`. |
 
 ## Events

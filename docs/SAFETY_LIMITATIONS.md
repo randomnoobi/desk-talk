@@ -1,4 +1,6 @@
-# Limitations & Assumptions
+# Safety Pipeline — Limitations & Assumptions
+
+> **Note:** this page is about the standalone safety pipeline (`python run_safety_pipeline.py`). The main app (`python server.py`) is described in [ARCHITECTURE.md](ARCHITECTURE.md); its settings are in `config/settings.yaml`.
 
 This document outlines the assumptions, simplifications, and known limitations of the safety monitoring pipeline. These are important for understanding what the system can and cannot do in its current version.
 

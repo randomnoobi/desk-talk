@@ -1,5 +1,5 @@
 """
-pipeline/detection.py — Object Recognition stage.
+safety_pipeline/detection.py — Object Recognition stage.
 
 Chart stage: "Object Recognition (real time)"
 
@@ -8,7 +8,7 @@ structured detection results with bounding boxes and center points.
 """
 
 from ultralytics import YOLO
-from pipeline.config import MODEL_PATH, CONFIDENCE, TARGET_CLASSES
+from safety_pipeline.config import MODEL_PATH, CONFIDENCE, TARGET_CLASSES
 
 
 class Detector:

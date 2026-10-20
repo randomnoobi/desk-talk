@@ -20,7 +20,7 @@ from conftest import obj
 from desktalk.web.routes import create_web_app
 
 ROOT = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location('camera_node', ROOT / 'pi' / 'camera_node.py')
+spec = importlib.util.spec_from_file_location('camera_node', ROOT / 'raspberry_pi' / 'camera_node.py')
 node = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(node)
 

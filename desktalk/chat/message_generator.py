@@ -25,7 +25,7 @@ from . import prompts
 from .context import (budget_history, build_live_context, response_violates_evidence, sanitize_chat_history,
                       single_speaker_text)
 from .llm import looks_cut_off
-from .widgets import action_instructions, parse_actions, strip_action_tags, tracker_prompt
+from .tracker_actions import action_instructions, parse_actions, strip_action_tags, tracker_prompt
 
 HABIT_AREAS = {
     'hydration': 'Hydration', 'breaks': 'Movement breaks', 'screens': 'Screens and eye health',
@@ -234,7 +234,7 @@ class MessageGenerator:
         with self.app.desk.lock:
             todo = self.app.desk.char_widgets.get(pid)
             signals = self.app.desk.habit_vision_brief
-            vlmx = (self.app.desk.habit_vlm_brief or '').strip()
+            vlmx = (self.app.desk.vision_habit_brief or '').strip()
         block = tracker_prompt(a.tracker, today, todo)
         if vlmx:
             signals += f'; vision note: {vlmx}'

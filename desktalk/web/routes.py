@@ -1,5 +1,5 @@
 """
-The web API the computer app (app/) and the Raspberry Pi talk to.
+The web API the computer app (web_app/) and the Raspberry Pi talk to.
 
     Camera     /api/pi/frame  /api/pi/config  /api/phone/info  /api/video_feed…  /api/latest_frame…
     Live       /api/live  /api/status  /api/detections  /api/safety  /api/events (messages, SSE)
@@ -22,11 +22,11 @@ from flask_cors import CORS
 
 from .. import paths
 from ..chat.context import build_live_context, group_speaker_order, sanitize_chat_history
-from ..chat.habit_vlm import HabitSceneVlmThread
-from ..chat.widgets import apply_habit_actions, normalize_todo
+from ..chat.vision_habits import HabitSceneVlmThread
+from ..chat.tracker_actions import apply_habit_actions, normalize_todo
 from ..util import local_day
 from ..vision import relationships
-from .mjpeg import NO_CACHE, mjpeg_response
+from .video_stream import NO_CACHE, mjpeg_response
 
 AVAILABLE_ZONE_OBJECTS = [
     'cell phone', 'laptop', 'keyboard', 'mouse', 'remote', 'book', 'notepaper', 'tablet',
@@ -37,7 +37,7 @@ AVAILABLE_ZONE_OBJECTS = [
 
 
 def create_web_app(app) -> Flask:
-    web = Flask(__name__, static_folder=str(paths.APP_DIR), static_url_path='')
+    web = Flask(__name__, static_folder=str(paths.WEB_APP_DIR), static_url_path='')
     web.config['MAX_CONTENT_LENGTH'] = 8 * 1024 * 1024
     CORS(web)
     desk, gen = app.desk, app.generator
@@ -55,7 +55,7 @@ def create_web_app(app) -> Flask:
 
     @web.route('/')
     def index():
-        return send_from_directory(paths.APP_DIR, 'index.html')
+        return send_from_directory(paths.WEB_APP_DIR, 'index.html')
 
     # ════════════════════════════════════════════════════════════════
     #  Raspberry Pi camera
@@ -212,7 +212,7 @@ def create_web_app(app) -> Flask:
 
     @web.route('/api/safety', methods=['POST'])
     def safety_receive():
-        """Safety updates from the standalone pipeline (main.py)."""
+        """Safety updates from the standalone safety pipeline (run_safety_pipeline.py)."""
         data = request.json or {}
         with desk.lock:
             if data.get('type') == 'danger_alert':
@@ -239,7 +239,7 @@ def create_web_app(app) -> Flask:
 
     def pi_command():
         from ..vision.pairing import lan_ip
-        return (f'python3 pi/camera_node.py --server http://{lan_ip()}:{int(app.settings.web.get("port", 5000))} '
+        return (f'python3 raspberry_pi/camera_node.py --server http://{lan_ip()}:{int(app.settings.web.get("port", 5000))} '
                 f'--key {app.pair_key}')
 
     @web.route('/api/status')

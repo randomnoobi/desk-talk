@@ -2,7 +2,7 @@
 """
 Desk Talk camera node: runs on the Raspberry Pi.
 
-    python3 pi/camera_node.py --server http://192.168.1.20:5000 --key abc123
+    python3 raspberry_pi/camera_node.py --server http://192.168.1.20:5000 --key abc123
 
 (server.py prints this exact command, with your computer's address and key.)
 

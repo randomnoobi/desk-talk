@@ -1,5 +1,5 @@
 """
-pipeline/state.py — Real-Time danger/safe decision logic.
+safety_pipeline/state.py — Real-Time danger/safe decision logic.
 
 Chart stage: "RT → branch into: 1. distance is dangerous  2. all distance > safe distance"
 
@@ -11,7 +11,7 @@ This is the state machine that:
 """
 
 import time
-from pipeline.config import DANGER_UPDATE_INTERVAL, SAFE_CONFIRM_FRAMES
+from safety_pipeline.config import DANGER_UPDATE_INTERVAL, SAFE_CONFIRM_FRAMES
 
 
 # State constants

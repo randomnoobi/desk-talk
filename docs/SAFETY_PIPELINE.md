@@ -1,6 +1,6 @@
-# System Logic — Safety Monitoring Pipeline
+# Safety Pipeline — System Logic
 
-> **Note:** this page is about the standalone safety pipeline (`python main.py`). The main app (`python server.py`) is described in [ARCHITECTURE.md](ARCHITECTURE.md); its settings are in `config/settings.yaml`.
+> **Note:** this page is about the standalone safety pipeline (`python run_safety_pipeline.py`). The main app (`python server.py`) is described in [ARCHITECTURE.md](ARCHITECTURE.md); its settings are in `config/settings.yaml`.
 
 
 This document describes the system architecture based on the approved class chart.
@@ -31,14 +31,14 @@ Each stage of the chart maps to a specific module in the codebase:
 
 | Chart Stage | Module | Entry Function |
 |-------------|--------|---------------|
-| Image / Footage | `pipeline/camera.py` | `Camera.read()` |
-| Object Recognition | `pipeline/detection.py` | `Detector.detect(frame)` |
-| Distance Detection | `pipeline/distance.py` | `compute_distances(detections)` |
-| RT → Danger/Safe | `pipeline/state.py` | `SafetyState.update(is_dangerous)` |
-| Ollama Message | `pipeline/messaging.py` | `generate_danger_message(...)` |
-| Send to Server | `pipeline/messaging.py` | `notify_server_danger(...)` / `notify_server_safe()` |
-| Configuration | `pipeline/config.py` | All thresholds, classes, intervals |
-| Full Pipeline | `main.py` | `run_pipeline()` |
+| Image / Footage | `safety_pipeline/camera.py` | `Camera.read()` |
+| Object Recognition | `safety_pipeline/detection.py` | `Detector.detect(frame)` |
+| Distance Detection | `safety_pipeline/distance.py` | `compute_distances(detections)` |
+| RT → Danger/Safe | `safety_pipeline/state.py` | `SafetyState.update(is_dangerous)` |
+| Ollama Message | `safety_pipeline/messaging.py` | `generate_danger_message(...)` |
+| Send to Server | `safety_pipeline/messaging.py` | `notify_server_danger(...)` / `notify_server_safe()` |
+| Configuration | `safety_pipeline/config.py` | All thresholds, classes, intervals |
+| Full Pipeline | `run_safety_pipeline.py` | `run_pipeline()` |
 
 ---
 
@@ -189,14 +189,14 @@ PIPELINE_SERVER_URL=http://localhost:5000
 
 ```bash
 # Default: webcam + preview window
-python main.py
+python run_safety_pipeline.py
 
 # Custom threshold
-python main.py --threshold 200
+python run_safety_pipeline.py --threshold 200
 
 # From a video file
-python main.py --source test_video.mp4
+python run_safety_pipeline.py --source test_video.mp4
 
 # Headless (no window)
-python main.py --no-preview
+python run_safety_pipeline.py --no-preview
 ```

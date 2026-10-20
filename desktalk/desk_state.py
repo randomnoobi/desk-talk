@@ -70,7 +70,7 @@ class DeskState:
 
         # ── Vision (Ollama) habit checks ──
         self.habit_vision_brief = ''
-        self.habit_vlm_brief = ''
+        self.vision_habit_brief = ''
         self.vlm_habit_state: dict = {}
         self.vlm_habit_ts = 0.0
         self.vlm_habit_alert_ts: dict = {}

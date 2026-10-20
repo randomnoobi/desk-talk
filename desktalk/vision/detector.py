@@ -6,7 +6,7 @@ Object detection with Ultralytics YOLO.
     # → [{'label': 'cup', 'conf': 0.83, 'bbox': [x1, y1, x2, y2], 'center': [cx, cy]}, ...]
 
 The model file is set in config/settings.yaml (detector.model). If it isn't in
-weights/ yet, it is downloaded the first time (or run scripts/download_models.py).
+models/ yet, it is downloaded the first time (or run scripts/download_models.py).
 """
 
 from __future__ import annotations
@@ -36,18 +36,18 @@ def pick_device(wanted: str = 'auto') -> str:
 
 
 def resolve_model_path(model: str) -> Path:
-    """Where the model file is (or should be downloaded to): always inside weights/ unless a full path is given."""
+    """Where the model file is (or should be downloaded to): always inside models/ unless a full path is given."""
     p = Path(model).expanduser()
     if p.is_absolute():
         return p
     candidate = paths.PROJECT_ROOT / p
     if candidate.is_file():
         return candidate
-    return paths.WEIGHTS_DIR / p.name
+    return paths.MODELS_DIR / p.name
 
 
 def ensure_model_file(model: str) -> Path:
-    """Download the model into weights/ if it isn't there yet. Returns its path."""
+    """Download the model into models/ if it isn't there yet. Returns its path."""
     path = resolve_model_path(model)
     if path.is_file():
         return path

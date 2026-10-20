@@ -1054,7 +1054,7 @@ function renderCamStage() {
         <li>Put the Pi on the same Wi-Fi as this computer.</li>
         <li>On the Pi, in the desk-talk folder, run:</li>
       </ol>
-      <pre class="json pi-cmd">${esc(state.piCommand || 'python3 pi/camera_node.py --server … --key … (printed by server.py)')}</pre>
+      <pre class="json pi-cmd">${esc(state.piCommand || 'python3 raspberry_pi/camera_node.py --server … --key … (printed by server.py)')}</pre>
       ${state.piCommand ? '<button type="button" class="btn-quiet" id="copy-pi">Copy command</button>' : ''}
       <p class="pair-url">It takes 3 pictures a second, keeps them on the Pi, and deletes them every 10 minutes.</p></div>`;
     $('#copy-pi')?.addEventListener('click', () => {
@@ -1236,7 +1236,7 @@ const DEMO_SCRIPT = [
   ['computer', 'You are about four centimeters from my keyboard. I can feel the condensation.'],
   ['snack', 'Relax, Computer. Crumbs are basically confetti.'],
   ['paper', 'Could everyone please stay away from the homework? It is due tomorrow.'],
-  ['computer', '@user you have been sitting for 34 minutes. Five-minute walk? I will count it when you leave.'],
+  ['computer', '@user 34 minutes of sitting! Five-minute walk? I will count it when you leave.'],
 ];
 function demoHabits() {
   const now = Date.now() / 1000;
@@ -1267,6 +1267,7 @@ async function playDemoOnce() {
     await sleep(500);
     upsertAgent({ ...a, on_desk: true, joined_at: Date.now() / 1000 });
     addMessage('group', { system: 'joined', agent: a.id, text: `${a.name} joined the chat` });
+    renderOnDesk(null);
   }
   for (const [id, text] of DEMO_SCRIPT) {
     await sleep(900);
@@ -1369,7 +1370,6 @@ async function init() {
   } else {
     state.live = false;
     state.habits = demoHabits();
-    $('#about-link').hidden = false;   // the landing page sits next to the demo on GitHub Pages
     renderConn();
     renderCamStage();
     renderOnDesk(null);

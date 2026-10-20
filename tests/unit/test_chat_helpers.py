@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from desktalk.agents.profiles import ProfileBook
-from desktalk.chat import widgets
+from desktalk.chat import tracker_actions
 from desktalk.chat.context import (budget_history, group_speaker_order, parse_mentions, response_violates_evidence,
                                    sanitize_chat_history, single_speaker_text)
 
@@ -62,14 +62,14 @@ def test_history_helpers():
     ('light', 'Sunshine! [LOG_SUNLIGHT:15]', [{'action': 'log_sunlight', 'minutes': 15}]),
 ])
 def test_action_tags(tracker, text, actions):
-    clean, got = widgets.parse_actions(text, tracker)
+    clean, got = tracker_actions.parse_actions(text, tracker)
     assert got == actions and '[' not in clean
 
 
 def test_other_agents_tags_are_hidden_not_applied():
-    clean, got = widgets.parse_actions('Splash! That counts. [LOG_SIP]', 'breaks')   # Computer copying Cup
+    clean, got = tracker_actions.parse_actions('Splash! That counts. [LOG_SIP]', 'breaks')   # Computer copying Cup
     assert got == [] and clean == 'Splash! That counts.'
-    assert widgets.strip_action_tags('Done [ADD_TODO:Essay] and [LOG_SUNLIGHT:10] ok [not a tag]') == \
+    assert tracker_actions.strip_action_tags('Done [ADD_TODO:Essay] and [LOG_SUNLIGHT:10] ok [not a tag]') == \
         'Done and ok [not a tag]'
 
 
@@ -84,9 +84,9 @@ def test_tracker_prompt_uses_habit_numbers(settings, tmp_path):
     r = HabitRig(settings, tmp_path)
     r.tracker.log('hydration', 'glass')
     today = r.tracker.today(r.t)
-    assert '240 ml of a 2400 ml goal' in widgets.tracker_prompt('hydration', today, None)
-    assert "TO-DO LIST" in widgets.tracker_prompt('todo', today, {'items': [{'text': 'Essay', 'done': False}]})
-    assert widgets.normalize_todo({'type': 'todo', 'items': [{'text': ' x '}, {'text': ''}]}) == \
+    assert '240 ml of a 2400 ml goal' in tracker_actions.tracker_prompt('hydration', today, None)
+    assert "TO-DO LIST" in tracker_actions.tracker_prompt('todo', today, {'items': [{'text': 'Essay', 'done': False}]})
+    assert tracker_actions.normalize_todo({'type': 'todo', 'items': [{'text': ' x '}, {'text': ''}]}) == \
         {'type': 'todo', 'items': [{'text': 'x', 'done': False}]}
 
 

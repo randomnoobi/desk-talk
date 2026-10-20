@@ -1,5 +1,5 @@
 {
-  "include": ["desktalk", "pi", "scripts", "tests", "server.py", "main.py"],
+  "include": ["desktalk", "raspberry_pi", "scripts", "tests", "server.py", "run_safety_pipeline.py"],
   "exclude": ["**/.venv", "**/venv", "**/__pycache__"],
   "venvPath": ".",
   "venv": ".venv",

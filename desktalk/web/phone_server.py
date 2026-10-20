@@ -24,17 +24,17 @@ def create_phone_app(app) -> Flask:
     @phone.route('/phone')
     @phone.route('/phone/')
     def phone_page():
-        return send_from_directory(paths.PHONE_DIR, 'index.html')
+        return send_from_directory(paths.PHONE_CAMERA_DIR, 'index.html')
 
     @phone.route('/phone/<path:filename>')
     def phone_static(filename):
-        return send_from_directory(paths.PHONE_DIR, filename)
+        return send_from_directory(paths.PHONE_CAMERA_DIR, filename)
 
     @phone.route('/art/<path:filename>')
     @phone.route('/fonts/<path:filename>')
     def shared_assets(filename):
         folder = 'art' if request.path.startswith('/art/') else 'fonts'
-        return send_from_directory(paths.APP_DIR / folder, filename)
+        return send_from_directory(paths.WEB_APP_DIR / folder, filename)
 
     @phone.route('/api/phone/config')
     def phone_config():
@@ -77,7 +77,7 @@ def start_phone_server(app, ip: str) -> str | None:
     app.phone_qr_svg = qr_svg(url)
     from werkzeug.serving import make_server
 
-    from .quiet import QuietHandler
+    from .request_logging import QuietHandler
     srv = make_server('0.0.0.0', port, create_phone_app(app), threaded=True, ssl_context=cert,
                       request_handler=QuietHandler)
     threading.Thread(target=srv.serve_forever, daemon=True, name='PhoneHTTPS').start()

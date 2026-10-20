@@ -5,7 +5,7 @@ import time
 import pytest
 
 from desktalk.habits import protocols as P
-from desktalk.habits.solar import sun_times
+from desktalk.habits.sun_times import sun_times
 from desktalk.util import at_time_today
 
 MIN = 60

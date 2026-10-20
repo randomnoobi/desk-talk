@@ -115,7 +115,7 @@ class HabitSceneVlmThread(threading.Thread):
         with app.desk.lock:
             app.desk.vlm_habit_state = j
             app.desk.vlm_habit_ts = now
-            app.desk.habit_vlm_brief = ', '.join(f'{k}={v}' for k, v in j.items() if k in ('posture', 'phone', 'attention'))
+            app.desk.vision_habit_brief = ', '.join(f'{k}={v}' for k, v in j.items() if k in ('posture', 'phone', 'attention'))
         self.apply(j, now)
         if not app.warm(now):
             return

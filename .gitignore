@@ -31,3 +31,6 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+
+# App screenshots made by scripts/capture_app_screenshots.py
+_screenshots/

@@ -4,7 +4,7 @@ Desk Talk: start everything on this computer.
     python server.py
 
 Then open http://localhost:5000. Settings are in config/settings.yaml.
-The Raspberry Pi side is pi/camera_node.py (the command to run on the Pi is
+The Raspberry Pi side is raspberry_pi/camera_node.py (the command to run on the Pi is
 printed when this starts).
 """
 

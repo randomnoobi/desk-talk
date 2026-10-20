@@ -28,7 +28,7 @@ from desktalk.agents.profiles import ProfileBook  # noqa: E402
 from desktalk.events.stream import EventStream  # noqa: E402
 from desktalk.habits.tracker import HabitTracker  # noqa: E402
 from desktalk.settings import Preferences, load_settings  # noqa: E402
-from desktalk.state import DeskState  # noqa: E402
+from desktalk.desk_state import DeskState  # noqa: E402
 
 
 # ── fake parts ───────────────────────────────────────────────────────

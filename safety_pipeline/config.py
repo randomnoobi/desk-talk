@@ -1,5 +1,5 @@
 """
-pipeline/config.py — Central configuration for the safety monitoring pipeline.
+safety_pipeline/config.py — Central configuration for the safety monitoring pipeline.
 
 Loads user-customizable rules from safety_rules.json (if it exists),
 then falls back to environment variables / .env for everything else.
@@ -37,7 +37,7 @@ VIDEO_SOURCE = os.getenv('PIPELINE_VIDEO', '')
 # ---------------------------------------------------------------------------
 #  Object Detection
 # ---------------------------------------------------------------------------
-MODEL_PATH = os.getenv('PIPELINE_MODEL', 'weights/yolo26m-objv1-150.pt')
+MODEL_PATH = os.getenv('PIPELINE_MODEL', 'models/yolo26m-objv1-150.pt')
 CONFIDENCE = float(os.getenv('PIPELINE_CONFIDENCE', '0.45'))
 
 # ---------------------------------------------------------------------------

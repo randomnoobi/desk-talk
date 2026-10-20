@@ -25,7 +25,7 @@ git clone https://github.com/randomnoobi/desk-talk.git
 cd desk-talk
 ```
 
-Only `pi/camera_node.py` runs on the Pi; nothing else needs installing there.
+Only `raspberry_pi/camera_node.py` runs on the Pi; nothing else needs installing there.
 
 ## Run it
 
@@ -33,7 +33,7 @@ Only `pi/camera_node.py` runs on the Pi; nothing else needs installing there.
    your computer's address and the pairing key, for example:
 
    ```bash
-   python3 pi/camera_node.py --server http://192.168.1.20:5000 --key AbC123xY
+   python3 raspberry_pi/camera_node.py --server http://192.168.1.20:5000 --key AbC123xY
    ```
 
    (The app shows the same command in the Desk cam panel and in Settings.)
@@ -68,7 +68,7 @@ Wants=network-online.target
 [Service]
 User=$USER
 WorkingDirectory=$HOME/desk-talk
-ExecStart=/usr/bin/python3 pi/camera_node.py --server http://192.168.1.20:5000 --key AbC123xY
+ExecStart=/usr/bin/python3 raspberry_pi/camera_node.py --server http://192.168.1.20:5000 --key AbC123xY
 Restart=always
 RestartSec=5
 

@@ -1,15 +1,15 @@
 """
 The real detector (YOLO26 Objects365 model) on real pictures.
-Skipped when the model file isn't in weights/ (python scripts/download_models.py).
+Skipped when the model file isn't in models/ (python scripts/download_models.py).
 """
 
 import pytest
 
 from conftest import Feeder
-from desktalk.paths import WEIGHTS_DIR
+from desktalk.paths import MODELS_DIR
 
 pytestmark = pytest.mark.slow
-MODEL = WEIGHTS_DIR / 'yolo26m-objv1-150.pt'
+MODEL = MODELS_DIR / 'yolo26m-objv1-150.pt'
 
 
 @pytest.fixture(scope='module')

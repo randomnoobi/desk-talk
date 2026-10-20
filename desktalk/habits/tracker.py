@@ -26,7 +26,7 @@ from ..agents.roster import PresenceTracker
 from ..events.stream import HABIT
 from ..util import local_day
 from . import protocols as P
-from .solar import sun_times
+from .sun_times import sun_times
 
 HEALTHY_FOODS = {'banana', 'apple', 'orange', 'broccoli', 'carrot', 'pear', 'peach', 'strawberry', 'grapes',
                  'tangerine', 'nuts', 'kiwi fruit', 'cucumber', 'tomato', 'avocado', 'mango', 'cherry', 'plum',

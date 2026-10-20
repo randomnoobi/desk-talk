@@ -1,6 +1,6 @@
-# User Customization Guide
+# Safety Pipeline — Safety Rules (customization guide)
 
-> **Note:** this page is about the standalone safety pipeline (`python main.py`). The main app (`python server.py`) is described in [ARCHITECTURE.md](ARCHITECTURE.md); its settings are in `config/settings.yaml`.
+> **Note:** this page is about the standalone safety pipeline (`python run_safety_pipeline.py`). The main app (`python server.py`) is described in [ARCHITECTURE.md](ARCHITECTURE.md); its settings are in `config/settings.yaml`.
 
 
 This guide explains how to customize which objects the safety monitoring system watches, which pairs it checks, and what "comfortable distance" means for each pair.
@@ -9,7 +9,7 @@ This guide explains how to customize which objects the safety monitoring system 
 
 ## Quick Start
 
-Edit **`config/safety_rules.json`**. The system reads this file at startup (Flask server and standalone `main.py` pipeline).
+Edit **`config/safety_rules.json`**. The system reads this file at startup (Flask server and standalone `run_safety_pipeline.py` pipeline).
 
 ---
 
@@ -74,7 +74,7 @@ Object names must match **COCO class names** that the YOLO model understands:
 
 Full list of all 80 COCO classes: https://docs.ultralytics.com/datasets/detect/coco/
 
-> **Important:** You can only detect objects that YOLO has been trained on. If you need to detect something not in the COCO dataset (e.g., "power bank"), you'll need to train a custom model. See `docs/TRAINING_GUIDE.md`.
+> **Important:** You can only detect objects that YOLO has been trained on. If you need to detect something not in the COCO dataset (e.g., "power bank"), you'll need to train a custom model. See [SAFETY_TRAINING.md](SAFETY_TRAINING.md).
 
 ---
 
@@ -96,7 +96,7 @@ The camera produces a 2D image. Without calibration, we can only measure distanc
 
 ### How to Pick a Good Threshold
 
-1. Run the pipeline: `python main.py`
+1. Run the pipeline: `python run_safety_pipeline.py`
 2. Place the two objects at the distance you consider "just barely safe"
 3. Read the pixel distance shown on the preview window between them
 4. Use that number (minus a small margin) as your `safe_distance`
@@ -216,11 +216,11 @@ You can have multiple rule files for different setups:
 
 ```bash
 # Default (uses config/safety_rules.json)
-python main.py
+python run_safety_pipeline.py
 
 # Custom rules file
-python main.py --rules my_classroom_rules.json
-python main.py --rules configs/strict_rules.json
+python run_safety_pipeline.py --rules my_classroom_rules.json
+python run_safety_pipeline.py --rules configs/strict_rules.json
 ```
 
 ---
@@ -253,7 +253,7 @@ Say you want to monitor a chemistry lab desk:
 Save as `lab_rules.json`, then:
 
 ```bash
-python main.py --rules lab_rules.json
+python run_safety_pipeline.py --rules lab_rules.json
 ```
 
 ---
@@ -266,4 +266,4 @@ python main.py --rules lab_rules.json
 4. **No depth** — the system can't tell if objects are beside each other vs. stacked.
 5. **Detection noise** — objects may flicker in/out of detection, causing brief gaps in rule evaluation.
 
-See `docs/LIMITATIONS.md` for the full analysis.
+See [SAFETY_LIMITATIONS.md](SAFETY_LIMITATIONS.md) for the full analysis.

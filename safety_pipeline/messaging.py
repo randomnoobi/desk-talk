@@ -1,5 +1,5 @@
 """
-pipeline/messaging.py — Ollama message generation + Server notification.
+safety_pipeline/messaging.py — Ollama message generation + Server notification.
 
 Chart stages:
   DANGEROUS → "send to Ollama" → "Ollama generates message" → "send to Server"
@@ -11,7 +11,7 @@ Uses the OpenAI-compatible API to talk to Ollama locally.
 import json
 import time
 import requests
-from pipeline.config import OLLAMA_URL, OLLAMA_MODEL, SERVER_URL
+from safety_pipeline.config import OLLAMA_URL, OLLAMA_MODEL, SERVER_URL
 
 # Try to import the OpenAI SDK (used for Ollama's compatible endpoint)
 try:

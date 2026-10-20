@@ -15,7 +15,7 @@
 #    name         shown in the chat
 #    nickname     also works for @mentions
 #    icon         emoji used when there is no drawing
-#    art          drawing in app/art/ (optional)
+#    art          drawing in web_app/art/ (optional)
 #    color        cobalt | teal | tang | mustard | coral | plum | moss | slate
 #    about        one line under the name in the chat header
 #    personality  how the AI plays it

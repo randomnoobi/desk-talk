@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-main.py — Safety Monitoring Pipeline Runner
+run_safety_pipeline.py — Safety Monitoring Pipeline Runner
 
 Implements the full chart flow:
 
@@ -13,11 +13,11 @@ Implements the full chart flow:
 User customization is loaded from `config/safety_rules.json` (per-pair thresholds).
 
 Usage:
-    python main.py                          # webcam + default rules
-    python main.py --rules my_rules.json    # custom rules file
-    python main.py --source video.mp4       # video file
-    python main.py --source photo.jpg       # single image
-    python main.py --no-preview             # headless (no window)
+    python run_safety_pipeline.py                          # webcam + default rules
+    python run_safety_pipeline.py --rules my_rules.json    # custom rules file
+    python run_safety_pipeline.py --source video.mp4       # video file
+    python run_safety_pipeline.py --source photo.jpg       # single image
+    python run_safety_pipeline.py --no-preview             # headless (no window)
 
 Press 'q' in the preview window to quit.
 """
@@ -26,12 +26,12 @@ import argparse
 import time
 import cv2
 
-from pipeline.config import load_rules, print_config, SHOW_PREVIEW, DANGER_UPDATE_INTERVAL
-from pipeline.camera import Camera
-from pipeline.detection import Detector
-from pipeline.distance import compute_distances, any_dangerous, summarize
-from pipeline.state import SafetyState, SAFE, DANGEROUS
-from pipeline.messaging import (
+from safety_pipeline.config import load_rules, print_config, SHOW_PREVIEW, DANGER_UPDATE_INTERVAL
+from safety_pipeline.camera import Camera
+from safety_pipeline.detection import Detector
+from safety_pipeline.distance import compute_distances, any_dangerous, summarize
+from safety_pipeline.state import SafetyState, SAFE, DANGEROUS
+from safety_pipeline.messaging import (
     generate_danger_message, notify_server_danger, notify_server_safe,
 )
 

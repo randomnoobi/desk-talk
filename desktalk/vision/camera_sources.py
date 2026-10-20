@@ -6,7 +6,7 @@ producer works the same whatever the camera is:
 
     ok, frame = source.read(timeout=1.0)
 
-    PiFrameSource     the Raspberry Pi POSTs pictures to /api/pi/frame (pi/camera_node.py)
+    PiFrameSource     the Raspberry Pi POSTs pictures to /api/pi/frame (raspberry_pi/camera_node.py)
     PhoneFrameSource  the phone page POSTs pictures to /api/phone/frame (HTTPS)
     WebcamSource      a webcam plugged into this computer (OpenCV)
 

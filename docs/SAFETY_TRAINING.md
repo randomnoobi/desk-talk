@@ -1,6 +1,6 @@
-# Training Guide — Staged Object Detection
+# Safety Pipeline — Training Guide (staged object detection)
 
-> **Note:** this page is about the standalone safety pipeline (`python main.py`). The main app (`python server.py`) is described in [ARCHITECTURE.md](ARCHITECTURE.md); its settings are in `config/settings.yaml`.
+> **Note:** this page is about the standalone safety pipeline (`python run_safety_pipeline.py`). The main app (`python server.py`) is described in [ARCHITECTURE.md](ARCHITECTURE.md); its settings are in `config/settings.yaml`.
 
 
 This guide walks through training and testing the safety monitoring system in three stages.
@@ -31,7 +31,7 @@ PIPELINE_DANGER_PAIRS=
 ### Test
 
 ```bash
-python main.py
+python run_safety_pipeline.py
 ```
 
 Place a phone in front of the camera. You should see:
@@ -64,7 +64,7 @@ PIPELINE_DANGER_PAIRS=cell phone:laptop
 ### Test
 
 ```bash
-python main.py
+python run_safety_pipeline.py
 ```
 
 Place both a phone and a laptop in view. You should see:
@@ -93,7 +93,7 @@ PIPELINE_DANGER_THRESHOLD=150
 ### Test
 
 ```bash
-python main.py --threshold 150
+python run_safety_pipeline.py --threshold 150
 ```
 
 ### Experiment

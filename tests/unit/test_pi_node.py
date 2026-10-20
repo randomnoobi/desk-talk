@@ -1,4 +1,4 @@
-"""pi/camera_node.py: taking, storing, cleaning up and handing over pictures."""
+"""raspberry_pi/camera_node.py: taking, storing, cleaning up and handing over pictures."""
 
 import importlib.util
 import os
@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location('camera_node', ROOT / 'pi' / 'camera_node.py')
+spec = importlib.util.spec_from_file_location('camera_node', ROOT / 'raspberry_pi' / 'camera_node.py')
 node = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(node)
 

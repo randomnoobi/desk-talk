@@ -72,4 +72,4 @@ The `tracker:` field puts a panel on top of the agent's 1-on-1 chat. The AI can
 change it with tags in its reply: `[LOG_SIP]`, `[LOG_GLASS]`, `[LOG_BREAK]`,
 `[LOG_SNACK_HEALTHY:almonds]`, `[LOG_SUNLIGHT:15]`, `[ADD_TODO:…]`,
 `[DONE_TODO:…]`, `[DEL_TODO:…]`. Habit tags are applied on the server; to-do tags
-in the browser. See `desktalk/chat/widgets.py`.
+in the browser. See `desktalk/chat/tracker_actions.py`.

@@ -22,7 +22,7 @@ import time
 
 from . import prompts
 from .context import build_live_context, single_speaker_text
-from .widgets import strip_action_tags
+from .tracker_actions import strip_action_tags
 
 
 class IdleChatThread(threading.Thread):

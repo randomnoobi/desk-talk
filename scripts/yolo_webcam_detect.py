@@ -6,7 +6,7 @@ from ultralytics import YOLO
 def main():
     cam_index = 0
     _root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    _rel = os.getenv('YOLO_MODEL', 'weights/yolo26m-objv1-150.pt')
+    _rel = os.getenv('YOLO_MODEL', 'models/yolo26m-objv1-150.pt')
     _path = _rel if os.path.isabs(_rel) else os.path.join(_root, _rel)
     model = YOLO(_path)
 

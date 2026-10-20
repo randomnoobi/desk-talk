@@ -1,5 +1,5 @@
 """
-pipeline/distance.py — Distance computation and threshold evaluation.
+safety_pipeline/distance.py — Distance computation and threshold evaluation.
 
 Chart stage: "detects distance between objects"
 
@@ -9,7 +9,7 @@ from the user's safety_rules.json.
 """
 
 import math
-from pipeline.config import (
+from safety_pipeline.config import (
     DANGER_PAIRS, DISTANCE_MODE, get_threshold, get_label,
 )
 

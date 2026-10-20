@@ -24,7 +24,7 @@ from pathlib import Path
 from . import paths
 from .agents.profiles import ProfileBook
 from .agents.roster import Roster
-from .chat.generator import MessageGenerator
+from .chat.message_generator import MessageGenerator
 from .chat.llm import LLMClient
 from .chat.lost_items import LostItems
 from .events import stream as ev
@@ -34,12 +34,12 @@ from .habits.reminders import quiet_hours_now
 from .habits.tracker import HabitTracker
 from .scheduler import Scheduler
 from .settings import Preferences, load_settings
-from .state import DeskState
+from .desk_state import DeskState
 from .vision import camera_health as ch
 from .vision import relationships
 from .vision.desk_monitor import DeskMonitor
 from .vision.pairing import make_pair_key
-from .vision.sources import PhoneFrameSource, PiFrameSource, WebcamSource
+from .vision.camera_sources import PhoneFrameSource, PiFrameSource, WebcamSource
 
 
 class DeskTalkApp:
@@ -180,7 +180,7 @@ class DeskTalkApp:
 
     def start_background(self):
         from .chat.daily_summary import DailySummaryThread
-        from .chat.habit_vlm import HabitSceneVlmThread
+        from .chat.vision_habits import HabitSceneVlmThread
         from .chat.idle_chat import IdleChatThread
         from .chat.lens import LensThread
         from .habits.reminders import HabitReminderThread
@@ -205,7 +205,7 @@ class DeskTalkApp:
 
 def main():
     from .web.routes import create_web_app
-    from .web.phone import start_phone_server
+    from .web.phone_server import start_phone_server
     from .vision.pairing import lan_ip, print_qr
 
     app = DeskTalkApp()
@@ -232,7 +232,7 @@ def main():
     ip = lan_ip()
     if app.source_kind == 'pi':
         print('\n  📷 Raspberry Pi camera: on the Pi, run')
-        print(f'     python3 pi/camera_node.py --server http://{ip}:{port} --key {app.pair_key}\n')
+        print(f'     python3 raspberry_pi/camera_node.py --server http://{ip}:{port} --key {app.pair_key}\n')
     elif app.source_kind == 'phone':
         url = start_phone_server(app, ip)
         if url:
@@ -243,7 +243,7 @@ def main():
             print('  Tap Show Details → visit this website, then tap Start camera.\n')
     print(f'  → Open http://localhost:{port} on this computer\n')
     try:
-        from .web.quiet import QuietHandler
+        from .web.request_logging import QuietHandler
         web.run(host='0.0.0.0', port=port, threaded=True, request_handler=QuietHandler)
     finally:
         app.shutdown()
