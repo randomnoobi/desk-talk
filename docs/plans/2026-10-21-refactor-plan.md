@@ -262,7 +262,7 @@ After each one finishes, a review agent checks the work against this plan before
 - [x] uv workspace: root `pyproject.toml`, `shared/` and `raspberry_pi/detector_service/` packages, `uv.lock`;
       `uv sync` works; remove `requirements*.txt`, `pytest.ini` (moved into `pyproject.toml`)
 - [x] ruff settings in `pyproject.toml`; GitHub Actions job: `uv sync`, `uv run ruff check .`, `uv run pytest -m "not slow and not docker"`
-- [ ] Characterization tests for all 44 routes against the current Flask app
+- [x] Characterization tests for every route (54 on both servers, 133 cases) against the current Flask app
 - [x] Check on this computer that Ultralytics exports `yolo26m-objv1-150` to ncnn and that it finds the same objects as the `.pt`
       ([results](2026-10-21-ncnn-check.md); decision 9)
 - [x] First Docker image (just Ultralytics + the benchmark script) and `compose.yaml` (`benchmarks/`)
