@@ -8,8 +8,9 @@ import time
 import cv2
 import numpy as np
 
-from desktalk.config import LensSettings, LensWaits, PiSettings
+from desktalk.config import LensSettings, LensWaits, PiSettings, SnapshotsSettings
 from desktalk.core.chat.workers.lens import Lens
+from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.desk_state import DeskState
 from desktalk.domain import CameraNotice, DetectorState, PiHealth, UploadInfo
 from tests.fakes import FakeCameraHealth, FakeClock, FakeFrameSource, FakePreferences, RecordingNotifier, SyncEventBus
@@ -17,6 +18,7 @@ from tests.fakes import FakeCameraHealth, FakeClock, FakeFrameSource, FakePrefer
 SETTINGS = LensSettings.model_construct(check_every_sec=2.0, repeat_after_min=20.0, fixed_after_sec=5.0,
                                         wait_before_saying_sec=LensWaits.model_construct(pi=10.0, pi_detector=60.0))
 PI = PiSettings.model_construct(hot_warning_c=75.0, clock_off_warning_sec=5.0)
+SNAPSHOTS = SnapshotsSettings(max_kept=150, crop_padding=0.25, crop_min_px=40, jpeg_quality=85)
 LOST = {'key': 'lost', 'kind': 'problem', 'text': "I can't see anything: the Raspberry Pi stopped sending pictures."}
 
 
@@ -67,7 +69,8 @@ class Rig:
         self.desk = DeskState()
         self.pi = pi
         self.lens = Lens(self.health, self.source, layout or Layout(), prefs or FakePreferences(), self.notifier,
-                         self.bus, self.desk, SETTINGS, PI, phone=phone, pi_uploads=pi)
+                         self.bus, ProofPhotos(self.desk, self.clock, SNAPSHOTS), SETTINGS, PI, phone=phone,
+                         pi_uploads=pi)
 
     def tick(self, after=0.0):
         self.clock.advance(after)
@@ -144,6 +147,7 @@ def test_a_photo_goes_with_problems_you_can_see_in_the_picture():
     rig.tick()
     snap = rig.notifier.sent[0]['snapshot']
     assert rig.desk.snapshot_order[0]['id'] == snap and rig.desk.snapshot_order[0]['label'] == 'Lens: camera view'
+    assert rig.desk.snapshot_order[0]['ts'] == rig.clock.now()
 
 
 def test_no_photo_for_other_problems():

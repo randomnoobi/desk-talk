@@ -7,8 +7,9 @@ import time
 import cv2
 import numpy as np
 
-from desktalk.config import AiReplies, AiReply, LostItem, LostItemsSettings
+from desktalk.config import AiReplies, AiReply, LostItem, LostItemsSettings, SnapshotsSettings
 from desktalk.core.chat.workers.lost_items import LostItems
+from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.desk_state import DeskState
 from desktalk.domain import AgentProfile, Alert, BBox, Detection, DetectionEvent, Light
 from tests.fakes import FakeChatModel, FakeClock, FakeHabits, FakeProfiles, StaticRoster, SyncEventBus
@@ -33,6 +34,7 @@ PROFILES = FakeProfiles([AgentProfile(id='computer', name='Computer', object='la
                          AgentProfile(id='keys', name='Keys', object='keys'),
                          AgentProfile(id='paper', name='Paper', object='notepad', habits=['tasks'], temperature=0.5),
                          AgentProfile(id='lamp', name='Lamp'), AgentProfile(id='pen', name='Pen')])
+SNAPSHOTS = SnapshotsSettings(max_kept=150, crop_padding=0.25, crop_min_px=40, jpeg_quality=85)
 CTA = {'label': '🖼 Desk captures', 'action': 'captures'}
 NO_AI = FakeChatModel(ready=False)
 
@@ -52,7 +54,8 @@ class Rig:
         self.habits = FakeHabits()
         self.chat, self.vision = chat, vision
         self.lost = LostItems(self.clock, self.bus, self.desk, StaticRoster(members), PROFILES, self.habits, chat,
-                              vision, SETTINGS, REPLIES, default_temperature=0.8, phone_is_camera=phone_is_camera)
+                              vision, SETTINGS, REPLIES, photos=ProofPhotos(self.desk, self.clock, SNAPSHOTS),
+                              default_temperature=0.8, phone_is_camera=phone_is_camera)
         self.show(DARK)
 
     def show(self, jpeg):
@@ -138,6 +141,7 @@ def test_an_item_that_turns_up_gets_a_spotted_photo_but_not_too_often():
     rig.see(after=1)
     rig.see('key', after=15)
     assert rig.photos() == ['Spotted: Keys', 'Spotted: Keys']
+    assert rig.desk.snapshot_order[0]['ts'] == rig.clock.now()
 
 
 # ── alerts ──

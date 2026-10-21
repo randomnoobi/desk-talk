@@ -8,7 +8,7 @@ detection being off (and why: this computer then detects instead). No AI is used
 without a key. Everything Lens says is also published as a CameraNotice for the log.
 Nothing is said during quiet hours.
 
-    lens = Lens(camera_health, source, desk_layout, preferences, notifier, bus, desk, config.lens, config.pi,
+    lens = Lens(camera_health, source, desk_layout, preferences, notifier, bus, proof_photos, config.lens, config.pi,
                 phone=<the phone source, if it's the camera>, pi_uploads=<the Pi source, if it's the camera>)
     supervisor.add(lens, start_after=config.lens.check_every_sec)
 """
@@ -22,7 +22,7 @@ from typing import Any
 from desktalk.config import LensSettings, PiSettings
 from desktalk.core.chat.workers.needs import DeskLayout, PhoneCamera, PiUploads
 from desktalk.core.chat.workers.speakers import LENS
-from desktalk.desk_state import DeskState
+from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.domain import CameraNotice, DetectorState, PiHealth, UploadInfo
 from desktalk.ports import CameraHealthView, EventBus, FrameSource, Notifier, Preferences
 from desktalk.util import in_hour_window
@@ -88,7 +88,8 @@ class Lens:
     name = 'lens'
 
     def __init__(self, health: CameraHealthView, source: FrameSource, layout: DeskLayout, prefs: Preferences,
-                 notifier: Notifier, bus: EventBus, desk: DeskState, settings: LensSettings, pi_settings: PiSettings,
+                 notifier: Notifier, bus: EventBus, photos: ProofPhotos, settings: LensSettings,
+                 pi_settings: PiSettings,
                  *, phone: PhoneCamera | None = None, pi_uploads: PiUploads | None = None):
         """How long the Pi must be hot (or its clock off) before Lens says so: lens.wait_before_saying_sec.pi;
         how long its own detection must be off: lens.wait_before_saying_sec.pi_detector."""
@@ -98,7 +99,7 @@ class Lens:
         self._prefs = prefs
         self._notifier = notifier
         self._bus = bus
-        self._desk = desk
+        self._photos = photos
         self._settings = settings
         self._pi_settings = pi_settings
         self._phone = phone
@@ -181,7 +182,7 @@ class Lens:
         kind, text = found['kind'], found['text']
         message = {'type': 'group_message', 'character': LENS, 'text': text, 'lens': kind, 'toast': kind == 'problem'}
         if kind == 'problem' and found['key'] in PHOTO_KEYS:
-            photo = self._desk.save_snapshot(label='Lens: camera view')
+            photo = self._photos.save('Lens: camera view')
             if photo:
                 message['snapshot'] = photo
         self._notifier.send(message)

@@ -12,7 +12,8 @@ words for it and the words you might type.
   4. When you ask, the answer uses those sightings, plus a look at a saved photo or the live picture.
 
     lost = LostItems(clock, bus, desk, roster, profiles, habits, chat_model, ollama_or_none, config.lost_items,
-                     config.llm.replies, default_temperature=config.agents_file.default.temperature,
+                     config.llm.replies, photos=proof_photos,
+                     default_temperature=config.agents_file.default.temperature,
                      phone_is_camera=config.camera.source == 'phone')
     supervisor.add(lost, start_after=config.lost_items.start_delay_sec)
     lost.items, lost.is_lost_query(text), lost.answer(text), lost.sightings()     # for the web routes
@@ -34,6 +35,7 @@ from desktalk.core.chat import prompts
 from desktalk.core.chat.workers.ai import ask, look
 from desktalk.core.chat.workers.speakers import LENS, speaker_for
 from desktalk.core.chat.workers.text import json_in
+from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.desk_state import DeskState
 from desktalk.domain import Alert, DetectionEvent, Event
 from desktalk.ports import ChatModel, Clock, EventBus, HabitsView, Profiles, RosterView
@@ -89,7 +91,8 @@ class LostItems:
 
     def __init__(self, clock: Clock, bus: EventBus, desk: DeskState, roster: RosterView, profiles: Profiles,
                  habits: HabitsView, chat: ChatModel, vision: ChatModel | None, settings: LostItemsSettings,
-                 replies: AiReplies, *, default_temperature: float, phone_is_camera: bool = False):
+                 replies: AiReplies, *, photos: ProofPhotos, default_temperature: float,
+                 phone_is_camera: bool = False):
         """`replies`: settings → llm.replies (this uses lost_alert and lost_answer). `default_temperature`:
         agents.yaml's default, for Lens when those settings have none. `phone_is_camera`: the phone can't be lost."""
         self._clock = clock
@@ -100,6 +103,7 @@ class LostItems:
         self._habits = habits
         self._chat = chat
         self._vision = vision
+        self._photos = photos
         self._settings = settings
         self._replies = replies
         self._default_temperature = default_temperature
@@ -193,7 +197,7 @@ class LostItems:
             self._first_picture_done = True          # the first picture is only the starting point
             self._in_last_picture = set(present)
         for label in spotted:
-            self._desk.save_snapshot(label=label)
+            self._photos.save(label)
 
     # ── 2 + 3. on a timer ──
     def tick(self, now: float) -> float:
@@ -247,8 +251,8 @@ class LostItems:
             desk_photo_due = (self._desk_photo_at is None
                               or now - self._desk_photo_at >= self._settings.snapshot_every_sec)
         for label in spotted:
-            self._desk.save_snapshot(label=label)
-        if desk_photo_due and self._desk.save_snapshot(label='Desk scan'):
+            self._photos.save(label)
+        if desk_photo_due and self._photos.save('Desk scan'):
             with self._lock:
                 self._desk_photo_at = now
         return hits

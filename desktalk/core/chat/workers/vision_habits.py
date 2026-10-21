@@ -6,7 +6,8 @@ distance and a phone in hand. Long slouching stretches and nail biting go in the
 (Habits page → Camera log). A nudge needs the same thing seen twice in a row, and the same nudge
 waits vision_habits.repeat_after_sec before it's sent again.
 
-    vision_habits = VisionHabits(ollama_or_none, bus, desk, roster, profiles, desk_status, config.vision_habits, clock)
+    vision_habits = VisionHabits(ollama_or_none, bus, desk, roster, profiles, desk_status, config.vision_habits, clock,
+                                 proof_photos)
     supervisor.add(vision_habits, start_after=config.vision_habits.start_delay_sec)
     vision_habits.summary(), .events(), .latest()       # for the web routes
 """
@@ -23,6 +24,7 @@ from desktalk.core.chat import prompts
 from desktalk.core.chat.workers.ai import look
 from desktalk.core.chat.workers.speakers import speaker_for
 from desktalk.core.chat.workers.text import json_in
+from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.desk_state import DeskState
 from desktalk.domain import Alert
 from desktalk.ports import ChatModel, Clock, DeskStatus, EventBus, Profiles, RosterView
@@ -58,7 +60,8 @@ class VisionHabits:
     name = 'vision habits'
 
     def __init__(self, vision: ChatModel | None, bus: EventBus, desk: DeskState, roster: RosterView,
-                 profiles: Profiles, status: DeskStatus, settings: VisionHabitsSettings, clock: Clock):
+                 profiles: Profiles, status: DeskStatus, settings: VisionHabitsSettings, clock: Clock,
+                 photos: ProofPhotos):
         self._vision = vision
         self._bus = bus
         self._desk = desk
@@ -67,6 +70,7 @@ class VisionHabits:
         self._status = status
         self._settings = settings
         self._clock = clock
+        self._photos = photos
         self._every = max(settings.min_every_sec, settings.every_sec)
         self._lock = threading.Lock()                # the web routes read the log and the summary
         self._latest: dict[str, Any] = {}
@@ -142,11 +146,11 @@ class VisionHabits:
             self._nails_before = nails
         if slouched is not None:
             minutes = max(1, round(slouched / 60))
-            photo = self._desk.save_snapshot(label=f'Posture: ~{minutes}m slouch')
+            photo = self._photos.save(f'Posture: ~{minutes}m slouch')
             self._add('posture_bad', f'Poor posture ~{minutes} min', now, duration_sec=slouched, snapshot_id=photo,
                       detail='The desk camera saw a slouched stretch until your posture looked neutral again.')
         if nails_started:
-            photo = self._desk.save_snapshot(label='Habit: nail biting')
+            photo = self._photos.save('Habit: nail biting')
             self._add('nail_biting', 'Nail biting noticed', now, snapshot_id=photo,
                       detail='The vision check saw nail biting, or a hand at your mouth near your nails.')
 
