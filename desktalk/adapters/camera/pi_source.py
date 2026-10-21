@@ -3,8 +3,9 @@ Pictures from the Raspberry Pi: it POSTs each one to /api/pi/frame with what it 
 when it was taken, the light level, its own health, and what its detector found).
 
 Besides the pictures, this keeps what the Pi said lately, for the app:
-    pi_info()   what the Pi said about itself (/api/live → camera_info.pi)
-    status()    that plus its detector and clock (/api/health)
+    pi_info()        what the Pi said about itself (/api/live → camera_info.pi)
+    status()         that plus its detector and clock (/api/health)
+    latest_upload()  what came with the newest picture, and when (Lens: a hot Pi, its clock, its detector)
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ class PiFrameSource(PushFrameSource):
         self._last_frame_id = ''
         self._reported: dict[str, Any] = {}     # what the Pi said about itself; a value it stops sending is kept
         self._info: UploadInfo | None = None    # what came with the newest picture
+        self._info_at = 0.0                     # when that picture arrived (this computer's clock)
         self._detect_ms: float | None = None    # the Pi's detector's last time
         self._model = ''
         self._clock_off: float | None = None    # the Pi's clock minus this computer's
@@ -34,7 +36,7 @@ class PiFrameSource(PushFrameSource):
         info = frame.pi
         if info is None:
             return
-        self._info = info
+        self._info, self._info_at = info, frame.received_at
         self._last_frame_id = info.frame_id
         self._reported.update({k: v for k, v in asdict(info.health).items() if v not in (None, '')})
         if info.detect_ms is not None:
@@ -48,6 +50,12 @@ class PiFrameSource(PushFrameSource):
         """The newest picture's id and everything the Pi has said about itself (only what it sent)."""
         with self._cond:
             return {'last_frame_id': self._last_frame_id, **self._reported}
+
+    def latest_upload(self) -> tuple[UploadInfo, float] | None:
+        """What the Pi sent with its newest picture and when that picture arrived (this computer's clock).
+        None before the first picture."""
+        with self._cond:
+            return (self._info, self._info_at) if self._info is not None else None
 
     def status(self) -> dict[str, Any]:
         """pi_info() plus the upload format, the Pi's detector (ok / busy / off and why, how long it took,

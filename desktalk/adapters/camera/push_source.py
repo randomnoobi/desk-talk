@@ -1,7 +1,8 @@
 """
 Cameras that send us pictures (the Pi, the phone). The web layer hands each upload to push();
 the detection producer takes the newest one with read(). Only the newest picture is kept, so a
-slow computer skips pictures instead of falling behind.
+slow computer skips pictures instead of falling behind. One exception: a Pi picture marked busy
+(live view only) never pushes out one still waiting to be analysed (ok or off), as on the Pi.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import numpy as np
 
 from desktalk.adapters.camera.speed import SpeedMeter
 from desktalk.config import CameraSettings
-from desktalk.domain import Frame, UploadInfo
+from desktalk.domain import DetectorState, Frame, UploadInfo
 from desktalk.ports import Clock
 
 
@@ -44,9 +45,13 @@ class PushFrameSource:
             self._last_at = self._clock.monotonic()
             self._speed.picture_at(self._last_at)
             self._stopped = False
-            self._newest = Frame(picture=picture, received_at=self._clock.now(), source=self.kind,
-                                 number=self._number, jpeg=jpeg, pi=info)
-            self._took(self._newest)
+            frame = Frame(picture=picture, received_at=self._clock.now(), source=self.kind, number=self._number,
+                          jpeg=jpeg, pi=info)
+            self._took(frame)
+            waiting = self._newest
+            if not (frame.detector_state is DetectorState.BUSY and waiting is not None
+                    and waiting.detector_state is not DetectorState.BUSY):
+                self._newest = frame
             self._cond.notify_all()
         return True
 

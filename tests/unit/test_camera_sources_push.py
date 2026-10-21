@@ -12,6 +12,7 @@ import yaml
 
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource
 from desktalk.config import CameraSettings
+from desktalk.core.chat.workers import PiUploads
 from desktalk.domain import BBox, Detection, DetectorState, PiHealth, UploadInfo
 from desktalk.ports import FrameSource, PictureInbox
 from desktalk_shared.wire import info_from_v1_headers
@@ -175,6 +176,26 @@ def test_a_pi_picture_carries_what_the_pi_sent(clock):
     assert frame.frame_id == 'pi-000007'
 
 
+@pytest.mark.parametrize('waiting', [DetectorState.OK, DetectorState.OFF])
+def test_a_busy_picture_never_pushes_out_one_still_to_be_analysed(clock, waiting):
+    source = pi_source(clock)
+    cup = (Detection('cup', 0.8, BBox(1, 2, 30, 40)),) if waiting is DetectorState.OK else ()
+    to_analyse = UploadInfo(frame_id='pi-000001', taken_at=None, detector=waiting, detections=cup)
+    busy = UploadInfo(frame_id='pi-000002', taken_at=None, detector=DetectorState.BUSY)
+    assert source.push(jpeg_of(picture(10)), to_analyse) and source.push(jpeg_of(picture(20)), busy)
+    assert source.read(timeout=0).frame_id == 'pi-000001'
+    assert source.pictures_received == 2 and source.latest_upload()[0] == busy
+    source.push(jpeg_of(picture(30)), busy)                 # nothing waiting now: the busy one is the newest
+    assert source.read(timeout=0).frame_id == 'pi-000002'
+
+
+def test_a_newer_picture_still_replaces_a_waiting_busy_one(clock):
+    source = pi_source(clock)
+    source.push(jpeg_of(picture(10)), UploadInfo(frame_id='pi-000001', taken_at=None, detector=DetectorState.BUSY))
+    source.push(jpeg_of(picture(20)), UploadInfo(frame_id='pi-000002', taken_at=None, detector=DetectorState.BUSY))
+    assert source.read(timeout=0).frame_id == 'pi-000002'
+
+
 def test_pi_info_before_any_picture_has_only_the_frame_id():
     assert pi_source(FakeClock()).pi_info() == {'last_frame_id': ''}
 
@@ -235,6 +256,19 @@ def test_status_before_any_picture():
     status = pi_source(FakeClock()).status()
     assert status == {'last_frame_id': '', 'upload_format': None, 'detector': None, 'detector_reason': '',
                       'detect_ms': None, 'model': '', 'clock_off_sec': None}
+
+
+def test_latest_upload_is_what_came_with_the_newest_picture_and_when_it_arrived(clock):
+    source = pi_source(clock)
+    assert isinstance(source, PiUploads) and source.latest_upload() is None
+    hot = UploadInfo(frame_id='pi-000001', taken_at=1_760_000_000.0, health=PiHealth(cpu_temp_c=78.0))
+    source.push(jpeg_of(picture(10)), hot)
+    arrived = clock.now()
+    clock.advance(4)
+    assert source.latest_upload() == (hot, arrived)
+    cooler = UploadInfo(frame_id='pi-000002', taken_at=1_760_000_004.0, health=PiHealth(cpu_temp_c=60.0))
+    source.push(jpeg_of(picture(10)), cooler)
+    assert source.latest_upload() == (cooler, arrived + 4)
 
 
 # ── the phone ────────────────────────────────────────────────────────
