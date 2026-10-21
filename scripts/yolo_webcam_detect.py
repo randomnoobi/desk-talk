@@ -1,37 +1,53 @@
-# yolo_webcam_detect.py
-import os
-import cv2
-from ultralytics import YOLO
+#!/usr/bin/env python3
+"""
+Run Desk Talk's object detection on a webcam on this computer and show the boxes in a window.
+The model, confidence and webcam come from config/settings.yaml (detector: and camera:).
+
+    uv run python scripts/yolo_webcam_detect.py
+    uv run python scripts/yolo_webcam_detect.py --index 1    # another webcam
+
+Press q to quit.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
 
 def main():
-    cam_index = 0
-    _root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    _rel = os.getenv('YOLO_MODEL', 'models/yolo26m-objv1-150.pt')
-    _path = _rel if os.path.isabs(_rel) else os.path.join(_root, _rel)
-    model = YOLO(_path)
+    import cv2
 
-    cap = cv2.VideoCapture(cam_index)
+    from desktalk.adapters.detector import UltralyticsDetector
+    from desktalk.config import load_config
+    from desktalk.core.vision.drawing import draw_boxes
+
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument('--index', type=int, help='which webcam (default: the first in camera.webcam_indices)')
+    a = p.parse_args()
+    config = load_config()
+    s = config.detector
+    detector = UltralyticsDetector(config.resolve(s.model), s, end2end=s.end2end, rect=s.rect)
+    print(f'Detector: {detector.label}')
+    index = config.camera.webcam_indices[0] if a.index is None else a.index
+    cap = cv2.VideoCapture(index)
     if not cap.isOpened():
-        raise RuntimeError(f"Cannot open camera index={cam_index}. Try 1/2...")
-
-    print("Press 'q' to quit.")
+        sys.exit(f'Could not open webcam {index}. Try --index 1 or 2.')
+    print('Press q to quit.')
     while True:
-        ok, frame = cap.read()
+        ok, picture = cap.read()
         if not ok:
             break
-
-        # 推理（conf 可调：越高越“谨慎”，漏检可能增多）
-        results = model.predict(source=frame, conf=0.35, verbose=False)
-
-        # 把框和类别画回图像
-        annotated = results[0].plot()
-
-        cv2.imshow("YOLO - Webcam", annotated)
-        if (cv2.waitKey(1) & 0xFF) == ord("q"):
+        cv2.imshow('Desk Talk detection', draw_boxes(picture, detector.detect(picture)))
+        if (cv2.waitKey(1) & 0xFF) == ord('q'):
             break
-
     cap.release()
     cv2.destroyAllWindows()
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     main()
