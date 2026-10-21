@@ -52,7 +52,7 @@ def _jpeg() -> bytes:
 
 PICTURE = _jpeg()                     # a real 640x480 JPEG
 
-# What raspberry_pi/camera_node.py sends with each picture (Uploader._post).
+# What the old raspberry_pi/camera_node.py sent with each picture (upload format 1, still accepted).
 PI_HEADERS = {'Content-Type': 'image/jpeg', 'X-Desk-Key': PAIR_KEY, 'X-Frame-Id': 'pi-000042',
               'X-Taken-At': '1792569600.250', 'X-Pi-Camera': 'picamera2', 'X-Pi-Photos': '42',
               'X-Pi-Free-MB': '1234', 'X-Pi-Last-Cleanup': '1792569000', 'X-Lux': '312.5'}

@@ -14,12 +14,12 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from desktalk.config import ChatSettings
+from desktalk.core.agents.speakers import LENS
 from desktalk.desk_state import DeskState
 from desktalk.domain import AgentProfile
 from desktalk.ports import Profiles
 from desktalk.util import format_duration
 
-LENS = 'lens'
 _TRAILING_WORDS = ('the', 'a', 'an', 'is', 'are', 'to', 'and', 'but', 'or', 'in', 'of', 'that', 'this')
 
 

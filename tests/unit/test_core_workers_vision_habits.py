@@ -64,7 +64,7 @@ def test_it_looks_every_few_seconds_but_never_more_often_than_the_minimum():
 def test_nothing_happens_without_a_vision_ai():
     rig = Rig(vision=None)
     assert rig.habits.tick(rig.clock.now()) == 42
-    assert rig.desk.vlm_habit_ts == 0.0
+    assert rig.habits.latest() == ({}, 0.0)
 
 
 def test_no_question_without_a_picture():
@@ -92,7 +92,7 @@ def test_the_question_is_about_the_newest_picture_and_waits_for_no_one():
 def test_an_ai_that_cannot_answer_changes_nothing():
     rig = Rig(vision=FakeChatModel(fail='Ollama is not running'))
     assert rig.habits.tick(rig.clock.now()) == 42
-    assert rig.desk.vlm_habit_ts == 0.0 and rig.habits.events() == []
+    assert rig.habits.latest() == ({}, 0.0) and rig.habits.events() == []
 
 
 # ── what it saw ──
@@ -102,14 +102,13 @@ def test_the_answer_is_kept_for_the_app_and_the_chat():
     state, ts = rig.habits.latest()
     assert state == {'posture': 'slouch', 'phone': 'on_desk', 'attention': 'screen', 'nail_biting': False}
     assert ts == rig.clock.now()
-    assert rig.desk.vlm_habit_state == state and rig.desk.vlm_habit_ts == ts
     assert rig.desk.vision_habit_brief == 'posture=slouch, phone=on_desk, attention=screen'
 
 
 def test_an_answer_that_is_not_json_is_ignored():
     rig = Rig()
     rig.look('I think the person is sitting fine.')
-    assert rig.habits.latest() == ({}, 0.0) and rig.desk.vlm_habit_ts == 0.0
+    assert rig.habits.latest() == ({}, 0.0) and rig.desk.vision_habit_brief == ''
 
 
 def test_a_long_slouch_goes_in_the_habit_log_with_a_photo():

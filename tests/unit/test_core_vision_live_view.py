@@ -115,3 +115,77 @@ def test_overlays_that_keep_failing_the_same_way_are_logged_once(caplog):
         for _ in range(5):
             painter.paint(blank(), [])
     assert len([r for r in caplog.records if 'overlays' in r.getMessage()]) == 2
+
+
+# ── each desk overlay, in the colours the old live view used ──
+WARN, ZONE_OK, CHAIN, MOVING, WHITE = (0, 190, 255), (200, 160, 0), (220, 80, 255), (255, 200, 0), (255, 255, 255)
+FRONT_EDGE = {'desk_outline': [[0, 0], [1, 0], [1, 0.8], [0, 0.8]]}       # the front edge is at y = 384
+MORE_PROFILES = FakeProfiles([*PROFILES.all(), AgentProfile('mouse', 'Mouse', labels=['mouse']),
+                              AgentProfile('snack', 'Snack', labels=['apple']),
+                              AgentProfile('drink', 'Drink', labels=['bottle'])])
+
+
+def painted(*pictures, saved=None):
+    """The live view after the analyzer looked at each picture (agent → (label, box)), one second apart."""
+    desk = DeskState()
+    analyzer = DeskAnalyzer(SafetyRules(InMemoryKeyValueStore({'safety_rules': saved} if saved else {}),
+                                        app_config().safety))
+    for k, agents in enumerate(pictures):
+        desk.objects = {a: desk_object(label, box) for a, (label, box) in agents.items()}
+        analyzer.analyze({a: Thing.from_desk(a, o) for a, o in desk.objects.items()}, (640, 480), 1000 + k)
+    return DeskPainter(desk, MORE_PROFILES, analyzer).paint(blank(), [])
+
+
+def near(color, want, most=12):
+    """Lines 1 pixel wide are smoothed, so they come out a little lighter than their colour."""
+    return all(abs(a - b) <= most for a, b in zip(color, want, strict=True))
+
+
+def test_the_desk_edges_you_marked_are_drawn_but_not_the_picture_border():
+    picture = painted({'snack': ('apple', (300, 100, 340, 140))}, saved=FRONT_EDGE)
+    assert pixel(picture, 50, 384) == WARN
+    assert pixel(picture, 1, 200) == (100, 100, 100)          # the outline's left side is the picture's border
+
+
+def test_something_close_to_the_edge_gets_a_red_box():
+    picture = painted({'cup': ('cup', (100, 330, 140, 370))}, saved=FRONT_EDGE)
+    assert pixel(picture, 100, 345) == RED
+
+
+def test_every_danger_zone_is_drawn_dashed_even_with_nothing_in_it():
+    picture = painted({'computer': ('laptop', (200, 200, 400, 350))})
+    assert near(pixel(picture, 480, 208), ZONE_OK)              # the right side, 80 px out from the laptop
+    assert pixel(picture, 480, 216) == (100, 100, 100)          # a gap between dashes
+    assert pixel(picture, 130, 125) == (60, 60, 60)             # the zone's name, on a dark grey label
+
+
+def test_a_thing_in_between_a_danger_pair_gets_a_magenta_ring():
+    picture = painted({'computer': ('laptop', (60, 250, 340, 300)), 'cup': ('cup', (400, 270, 430, 300)),
+                       'mouse': ('mouse', (350, 270, 370, 290))})
+    assert pixel(picture, 376, 280) == pixel(picture, 360, 264) == pixel(picture, 360, 296) == CHAIN
+
+
+def test_a_crowd_is_shaded():
+    picture = painted({'cup': ('cup', (300, 300, 330, 340)), 'snack': ('apple', (340, 300, 370, 330)),
+                       'drink': ('bottle', (380, 300, 400, 340))})
+    assert pixel(picture, 230, 200) == (90, 109, 116)           # a tenth of WARN over the grey picture
+    assert pixel(picture, 600, 200) == (100, 100, 100)          # outside the crowd
+
+
+def test_things_moving_closer_get_a_cyan_arrow():
+    picture = painted(*[{'cup': ('cup', (5 * k, 200, 5 * k + 20, 220)), 'snack': ('apple', (300, 200, 320, 220))}
+                        for k in range(10)])
+    assert pixel(picture, 160, 210) == pixel(picture, 260, 210) == MOVING
+
+
+def test_going_back_into_a_zone_again_and_again_gets_a_red_dot_with_the_count():
+    near_cup, far_cup = ('cup', CUP_NEAR), ('cup', (560, 380, 600, 450))
+    picture = painted(*[{'computer': ('laptop', LAPTOP), 'cup': near_cup if k % 2 == 0 else far_cup}
+                        for k in range(5)])
+    assert pixel(picture, 453, 260) == pixel(picture, 475, 260) == RED      # the dot, right of the cup
+    assert pixel(picture, 462, 260) == WHITE                                # the count, 3
+
+
+def test_things_that_move_leave_a_trail():
+    picture = painted(*[{'cup': ('cup', (100 + 20 * k, 100, 140 + 20 * k, 140))} for k in range(4)])
+    assert [pixel(picture, x, 120) for x in (120, 140, 160)] == [(80, 80, 80), (110, 110, 110), (140, 140, 140)]

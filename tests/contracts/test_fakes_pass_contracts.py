@@ -13,6 +13,7 @@ from tests.contracts.event_bus_contract import EventBusContract
 from tests.contracts.event_store_contract import EventStoreContract
 from tests.contracts.frame_source_contract import FrameSourceContract
 from tests.contracts.key_value_contract import KeyValueContract
+from tests.contracts.notifier_contract import NotifierContract
 from tests.contracts.push_source_contract import PushSourceContract
 from tests.fakes import (
     FakeChatModel,
@@ -20,6 +21,7 @@ from tests.fakes import (
     FakeFrameSource,
     InMemoryEventStore,
     InMemoryKeyValueStore,
+    RecordingNotifier,
     SyncEventBus,
 )
 
@@ -102,3 +104,9 @@ def test_fake_profiles_find_agents_by_word():
     assert profiles.for_label('mug') is cup
     assert profiles.for_label('person') is None
     assert profiles.mention_words() == {'cup': 'cup', 'mug': 'cup'}
+
+
+class TestRecordingNotifier(NotifierContract):
+    @pytest.fixture
+    def notifier(self, clock):
+        return RecordingNotifier(clock)

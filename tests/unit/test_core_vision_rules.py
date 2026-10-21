@@ -22,6 +22,21 @@ def test_built_in_rules_when_nothing_was_saved():
     assert rules.outline == ()
 
 
+def test_every_built_in_rule_keeps_the_value_the_old_code_had():
+    rules = make_rules(SAFETY)
+    assert rules.zones == {'laptop': Zone(80, 'Spill / pressure zone'), 'keyboard': Zone(60, 'Crumb / debris zone'),
+                           'book': Zone(45, 'Stacking zone'), 'cell phone': Zone(35, 'Screen scratch zone')}
+    assert rules.zone_intruders['cell phone'] == {'cup', 'bottle', 'wine glass', 'scissors', 'knife'}
+    assert (rules.crowd_radius_px, rules.crowd_min_objects, rules.path_ratio) == (140, 3, 0.30)
+    assert (rules.approach_min_frames, rules.approach_rate, rules.repeated_times) == (8, 0.12, 3)
+    assert rules.history_length == 30
+    assert rules.risk_weights == {'edge_danger': 2, 'edge_warning': 1, 'zone_intrusion': 2, 'chain_reaction': 3,
+                                  'crowd': 1, 'approaching': 2, 'repeated_intrusion': 2}
+    assert rules.harmless_crowd == {'book', 'laptop', 'keyboard', 'mouse', 'cell phone', 'remote', 'tv'}
+    assert rules.desk_border_share == 0.03
+    assert rules.edge_objects == {'cup', 'bottle', 'cell phone', 'laptop', 'remote', 'mouse'}
+
+
 def test_saved_zone_wins_over_the_built_in_one():
     rules = make_rules(SAFETY, SAVED_FILE)
     assert rules.zones['laptop'] == Zone(expand=134, label='Spill / pressure zone')

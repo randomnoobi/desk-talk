@@ -110,7 +110,8 @@ def make_run_combo(cfg: dict, models_dir: Path, data_dir: Path, pictures: list[P
 def write_report(cfg: dict, results_dir: Path) -> Path:
     rows = results.all_rows(results_dir)
     path = results_dir / 'README.md'
-    path.write_text(report.render(rows, cfg['report']['camera_fps'], cfg['report']['min_accuracy_share']),
+    r = cfg['report']
+    path.write_text(report.render(rows, r['camera_fps'], r['min_accuracy_share'], r['pick_formats']),
                     encoding='utf-8')
     return path
 

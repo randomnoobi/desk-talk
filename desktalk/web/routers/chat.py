@@ -20,13 +20,14 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import StreamingResponse
 
+from desktalk.core.agents.speakers import LENS
 from desktalk.core.chat.message_generator import UnknownChat
 from desktalk.web.deps import Desk, Streams
 from desktalk.web.schemas import ChatMessage, Ok, PanelEvent, PanelList, PanelLists
 from desktalk.web.streams import SSE_HEADERS, SSE_TYPE
 
-LENS = {'id': 'lens', 'name': 'Lens', 'art': 'art/lens.svg', 'color': 'coral',
-        'about': 'The camera. Speaks up when the view needs fixing.'}
+LENS_CARD = {'id': LENS, 'name': 'Lens', 'art': 'art/lens.svg', 'color': 'coral',
+             'about': 'The camera. Speaks up when the view needs fixing.'}
 UNKNOWN_CHAT = 'unknown chat'
 MESSAGE_ID_LENGTH = 12          # as the MessageHub makes them
 
@@ -35,7 +36,7 @@ router = APIRouter()
 
 @router.get('/api/agents')
 def agents(desk: Desk) -> dict[str, Any]:
-    return {'agents': desk.roster.snapshot(), 'lens': LENS}
+    return {'agents': desk.roster.snapshot(), 'lens': LENS_CARD}
 
 
 @router.get('/api/events')

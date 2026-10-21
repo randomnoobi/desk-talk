@@ -20,8 +20,8 @@ import time
 from typing import Any
 
 from desktalk.config import LensSettings, PiSettings
+from desktalk.core.agents.speakers import LENS
 from desktalk.core.chat.workers.needs import DeskLayout, PhoneCamera, PiUploads
-from desktalk.core.chat.workers.speakers import LENS
 from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.domain import CameraNotice, DetectorState, PiHealth, UploadInfo
 from desktalk.ports import CameraHealthView, EventBus, FrameSource, Notifier, Preferences

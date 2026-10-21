@@ -50,6 +50,8 @@ combination_timeout_sec: 3600
 report:
   camera_fps: 3               # pictures a second the app wants; a pick must finish 95% of pictures within 1/fps seconds
   min_accuracy_share: 0.9     # and reach at least this share of the best accuracy (mAP50-95) on that device
+  pick_formats: [ncnn, pt]    # and be one of these formats: the Pi's detector service (raspberry_pi/detector_service/)
+                              # runs only ncnn and pt models, so an onnx combination is measured but never picked
 
 # ── Where things go (relative to the project folder) ───────────────
 paths:

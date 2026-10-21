@@ -1,4 +1,4 @@
-"""Who says something in the chat: an agent that speaks for the habit, or Lens (the camera itself)."""
+"""Who says something about a habit in the chat: an agent that speaks for it, or Lens (the camera itself)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from collections.abc import Iterable, Sequence
 
 from desktalk.ports import Profiles
 
-LENS = 'lens'
+LENS = 'lens'           # Lens, the camera's own character: speaks when no agent fits
 
 
 def speaker_for(habits: Iterable[str], member_ids: Sequence[str], profiles: Profiles) -> str:

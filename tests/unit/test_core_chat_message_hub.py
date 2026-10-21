@@ -3,8 +3,11 @@
 import logging
 import queue
 
+import pytest
+
 from desktalk.core.chat.message_hub import CLOSED, MessageHub
 from desktalk.ports import Notifier
+from tests.contracts.notifier_contract import NotifierContract
 from tests.fakes import FakeClock
 
 
@@ -103,3 +106,9 @@ def test_recent_is_a_copy():
     h.send({'type': 'roster', 'text': 'Cup joined the chat'})
     h.recent().clear()
     assert len(h.recent()) == 1
+
+
+class TestMessageHubContract(NotifierContract):
+    @pytest.fixture
+    def notifier(self, clock):
+        return hub(clock)

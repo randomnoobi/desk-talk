@@ -31,9 +31,9 @@ import cv2
 import numpy as np
 
 from desktalk.config import AiReplies, LostItemsSettings
+from desktalk.core.agents.speakers import LENS, speaker_for
 from desktalk.core.chat import prompts
 from desktalk.core.chat.workers.ai import ask, look
-from desktalk.core.chat.workers.speakers import LENS, speaker_for
 from desktalk.core.chat.workers.text import json_in
 from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.desk_state import DeskState

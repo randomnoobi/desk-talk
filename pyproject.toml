@@ -18,8 +18,6 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "pydantic>=2.7",
-    "flask>=3.0",              # until the FastAPI web server replaces it
-    "flask-cors>=4.0",
     "opencv-python>=4.8",
     "ultralytics==8.4.14",     # same version as on the Pi, so labels and boxes match
     "torch",
@@ -78,6 +76,9 @@ source = ["desktalk", "shared/desktalk_shared", "raspberry_pi"]
 [tool.ruff]
 line-length = 120
 target-version = "py312"
+# The safety pipeline is a separate program that was left out of the refactor on purpose: it is kept working
+# as it is, untouched, so it isn't linted.
+extend-exclude = ["safety_pipeline", "run_safety_pipeline.py"]
 
 [tool.ruff.per-file-target-version]
 # These run on the Pi's own Python, which may be 3.11: ruff must flag anything newer.

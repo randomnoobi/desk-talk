@@ -16,6 +16,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from desktalk.config import AlertsSettings
+from desktalk.core.agents.speakers import LENS
 from desktalk.core.vision.analyzer import DeskAnalyzer
 from desktalk.core.vision.findings import Thing
 from desktalk.core.vision.geometry import Box
@@ -24,7 +25,6 @@ from desktalk.desk_state import DeskState
 from desktalk.domain import Alert, DetectionEvent
 from desktalk.ports import DeskStatus, EventBus, HabitsView, Profiles
 
-LENS = 'lens'                    # Lens, the camera's own character, speaks when no agent fits
 PHOTO_LABEL = 'Proximity alert'
 
 

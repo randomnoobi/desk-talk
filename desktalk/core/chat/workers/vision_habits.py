@@ -20,9 +20,9 @@ import uuid
 from typing import Any
 
 from desktalk.config import VisionHabitsSettings
+from desktalk.core.agents.speakers import speaker_for
 from desktalk.core.chat import prompts
 from desktalk.core.chat.workers.ai import look
-from desktalk.core.chat.workers.speakers import speaker_for
 from desktalk.core.chat.workers.text import json_in
 from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.desk_state import DeskState
@@ -119,8 +119,6 @@ class VisionHabits:
         with self._lock:
             self._latest, self._latest_ts = dict(answer), now
         with self._desk.lock:
-            self._desk.vlm_habit_state = dict(answer)
-            self._desk.vlm_habit_ts = now
             self._desk.vision_habit_brief = brief
         self._log_habits(answer, now)
         self._maybe_nudge(answer, now)

@@ -1,5 +1,6 @@
-"""UltralyticsDetector with the real model from config/settings.yaml (slow; downloads it into models/ the
-first time). Run with: uv run pytest -m slow tests/unit/test_detector_adapter_real_model.py"""
+"""UltralyticsDetector with the real model from config/settings.yaml (slow).
+Skipped when the model isn't in models/ (uv run python scripts/download_models.py).
+Run with: uv run pytest -m slow tests/unit/test_detector_adapter_real_model.py"""
 
 from __future__ import annotations
 
@@ -30,6 +31,8 @@ def sample(name: str):
 @pytest.fixture(scope='module')
 def real_detector():
     s = detector_settings()
+    if not (ROOT / s.model).is_file():
+        pytest.skip(f'{Path(s.model).name} not downloaded (uv run python scripts/download_models.py)')
     return UltralyticsDetector(ROOT / s.model, s, end2end=False, rect=False, load_model=load_yolo)
 
 
