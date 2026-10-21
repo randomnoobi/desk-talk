@@ -5,6 +5,7 @@ import logging
 
 import pytest
 
+from desktalk.core.chat.workers import DeskLayout
 from desktalk.core.vision.rules import SafetyRules, Zone, make_rules
 from tests.fakes import InMemoryKeyValueStore
 from tests.unit.test_core_vision_kit import ROOT, app_config
@@ -72,6 +73,14 @@ def test_camera_tilt_is_remembered_only_with_a_desk_outline():
     tilt = {'camera_reference': {'gravity': [0.1, -9.7, 0.4]}}
     assert make_rules(SAFETY, {**tilt, 'desk_outline': OUTLINE}).reference_gravity == (0.1, -9.7, 0.4)
     assert make_rules(SAFETY, tilt).reference_gravity is None
+
+
+def test_the_rules_say_whether_the_desk_is_marked_and_how_the_phone_was_tilted_for_lens():
+    rules = SafetyRules(InMemoryKeyValueStore(), SAFETY)
+    assert isinstance(rules, DeskLayout)
+    assert not rules.has_outline() and rules.reference_gravity() is None
+    rules.save({'desk_outline': OUTLINE, 'camera_reference': {'gravity': [0.1, -9.7, 0.4]}})
+    assert rules.has_outline() and rules.reference_gravity() == (0.1, -9.7, 0.4)
 
 
 def test_drink_and_food_words_from_the_agents_count_too():
