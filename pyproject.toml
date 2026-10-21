@@ -76,6 +76,9 @@ source = ["desktalk", "shared/desktalk_shared", "raspberry_pi"]
 [tool.ruff]
 line-length = 120
 target-version = "py312"
+# The safety pipeline is a separate program that was left out of the refactor on purpose: it is kept working
+# as it is, untouched, so it isn't linted.
+extend-exclude = ["safety_pipeline", "run_safety_pipeline.py"]
 
 [tool.ruff.per-file-target-version]
 # These run on the Pi's own Python, which may be 3.11: ruff must flag anything newer.
