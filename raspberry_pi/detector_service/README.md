@@ -59,7 +59,7 @@ Needs 64-bit Raspberry Pi OS and about 3 GB free on the SD card. A Pi with 4 GB 
 4. **On the Pi**, check it answers. It says `starting` until the camera program tells it which model to run:
 
    ```bash
-   curl http://127.0.0.1:8765/health
+   curl http://127.0.0.1:8100/health
    ```
 
 It starts again by itself after a crash and when the Pi boots.
@@ -69,10 +69,10 @@ It starts again by itself after a crash and when the Pi boots.
 **On the Pi**:
 
 ```bash
-curl -X PUT http://127.0.0.1:8765/model -H 'Content-Type: application/json' \
+curl -X PUT http://127.0.0.1:8100/model -H 'Content-Type: application/json' \
      -d '{"model": "yolo11n.pt", "format": "ncnn", "image_size": 640, "confidence": 0.35, "half": true}'
-curl http://127.0.0.1:8765/health          # "loading" for a few minutes the first time, then "ready"
-curl -X POST http://127.0.0.1:8765/detect -H 'Content-Type: image/jpeg' --data-binary @some-photo.jpg
+curl http://127.0.0.1:8100/health          # "loading" for a few minutes the first time, then "ready"
+curl -X POST http://127.0.0.1:8100/detect -H 'Content-Type: image/jpeg' --data-binary @some-photo.jpg
 ```
 
 ## Your own model file
@@ -98,7 +98,7 @@ The container's settings are in `.env` next to `compose.yaml`. After changing on
 
 | Setting | Default | What it does |
 |---|---|---|
-| `DETECTOR_PORT` | 8765 | the port, on the Pi's 127.0.0.1 only. The camera program must use the same one. |
+| `DETECTOR_PORT` | 8100 | the port, on the Pi's 127.0.0.1 only. Must match `pi.detector.url` in `config/settings.yaml` (the camera program gets it from there). |
 | `DETECTOR_MEMORY_LIMIT` | 2g | most memory the container may use; over it Docker restarts it instead of the Pi freezing |
 | `DETECTOR_MAX_PICTURE_MB` | 10 | biggest picture `/detect` accepts |
 | `DETECTOR_RETRY_FIRST_SEC` | 5 | wait before trying a model that failed to load again; doubles each time ... |

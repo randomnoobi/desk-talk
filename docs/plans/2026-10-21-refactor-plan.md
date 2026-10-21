@@ -65,9 +65,9 @@ Details:
   the one Ultralytics recommends for the Pi. The container does this export itself on first start and keeps the
   result in a Docker volume. The model and format are settings (`pi.detector.model`, `pi.detector.format: ncnn | pt`),
   so trying plain PyTorch for comparison is a settings change, not a code change.
-- **The image** is built from Ultralytics' official 64-bit ARM image (`ultralytics/ultralytics:<exact version>-arm64`,
-  pinned, never `latest`), plus our small detector service. uv installs the service's packages inside the image.
-  It needs 64-bit Raspberry Pi OS and a few GB of space on the SD card.
+- **The image** is Python 3.12 slim plus the packages from `uv.lock` (`uv sync --frozen --package desktalk-detector`),
+  so the Pi runs exactly the versions tested on this computer, with PyTorch's CPU-only build. The benchmark showed
+  this works on the Pi's 64-bit ARM. It needs 64-bit Raspberry Pi OS and a few GB of space on the SD card.
 - **One upload per picture**, as now, but it carries the detections too: a JPEG plus a small JSON part
   (`frame_id`, `taken_at`, `lux`, disk info, detector state, `detections`, and how many ms detection took).
   The format has a version number. The old header-only upload keeps working until the new Pi program is in place.
@@ -150,10 +150,10 @@ raspberry_pi/
     health.py        CPU temperature, throttling, disk
     main.py          the loop, settings, command-line flags, --self-test
   detector_service/  runs in Docker
-    Dockerfile       FROM ultralytics/ultralytics:<pinned>-arm64, adds the service with uv
-    compose.yaml     restart policy, health check, memory limit, 127.0.0.1 port, models volume
-    app.py           FastAPI: POST /detect, GET /health, PUT /model (load or export a model)
-    benchmark.py     times each model size / picture size (Phase 0)
+    Dockerfile       Python 3.12 slim + uv.lock (CPU-only PyTorch)
+    compose.yaml     restart policy, health check, memory limit, 127.0.0.1 port, models volume; numbers in .env
+    desktalk_detector/  FastAPI: POST /detect, GET /health, PUT /model; model manager (convert, keep the last good one)
+  (timing models on the Pi: benchmarks/, which has its own Docker image)
 desktalk/
   domain/          plain data, no I/O: Detection, BBox, Event types (dataclasses), Agent, Habit
   ports.py         the interfaces (below)
