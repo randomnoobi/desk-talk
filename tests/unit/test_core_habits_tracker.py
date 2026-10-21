@@ -514,6 +514,31 @@ def test_a_failed_save_is_logged_and_tried_again(config, caplog):
     assert store.data[DAY_KEY]['water_ml'] == 240
 
 
+def test_yesterdays_numbers_are_kept_until_they_can_be_saved(config, caplog):
+    store = FlakyStore()                           # the disk is full over midnight
+    r = Rig(config, store=store)
+    with caplog.at_level(logging.WARNING):
+        r.tracker.log('hydration', 'glass')
+        r.clock.advance(86400)
+        r.run(1, 'laptop')                         # a new day: yesterday can't be saved yet
+    assert r.today()['day'] == '2026-06-16' and DAY_KEY not in store.data
+    store.fail = False
+    r.tracker.save()
+    assert store.data[DAY_KEY]['water_ml'] == 240
+    assert store.data['habits/2026-06-16']['day'] == '2026-06-16'
+
+
+@pytest.mark.parametrize('ml', [float('nan'), float('inf'), -50])
+def test_a_bad_amount_is_refused_and_counts_no_sip(config, ml):
+    r = Rig(config)
+    with pytest.raises(ValueError):
+        r.tracker.log('hydration', 'sip', ml=ml)
+    with pytest.raises(ValueError):
+        r.tracker.log('hydration', 'glass', ml=ml)
+    hydration = r.today()['hydration']
+    assert (hydration['sips'], hydration['water_ml'], hydration['last_sip_ts']) == (0, 0, None)
+
+
 def test_only_detection_events_are_handled(config):
     r = Rig(config)
     r.bus.publish(Alert(ts=1.0, kind='proximity'))

@@ -78,6 +78,27 @@ def test_a_bad_hour_is_refused(config, store):
     assert p.all() == DEFAULTS
 
 
+@pytest.mark.parametrize('changes', [{'quiet_start_hour': [22]}, {'quiet_end_hour': {'h': 7}},
+                                     {'quiet_start_hour': float('inf')}])
+def test_a_value_of_the_wrong_kind_is_a_value_error_and_changes_nothing(config, store, changes):
+    p = prefs_from(config, store)
+    with pytest.raises(ValueError):
+        p.update(changes)
+    assert p.all() == DEFAULTS and store.data == {}
+
+
+class BrokenStore(InMemoryKeyValueStore):
+    def save(self, key, value):
+        raise OSError('disk full')
+
+
+def test_a_change_that_cannot_be_saved_changes_nothing(config):
+    p = prefs_from(config, BrokenStore())
+    with pytest.raises(OSError):
+        p.update({'wake_time': '06:00'})
+    assert p.get('wake_time') == '07:00'
+
+
 def test_unknown_and_empty_changes_are_ignored(config, store):
     p = prefs_from(config, store)
     assert p.update({'favorite_color': 'teal', 'wake_time': None}) == DEFAULTS

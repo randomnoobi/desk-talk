@@ -26,13 +26,16 @@ HOURS_IN_DAY = 24
 
 
 def _clean(key: str, value: Any) -> Any:
-    """A preference value as it is kept. Raises ValueError for a bad time or hour."""
+    """A preference value as it is kept. Raises ValueError for a bad time or hour (a list, say, or infinity)."""
     if key in ('wake_time', 'bed_time'):
         h, m = parse_hhmm(str(value))
         return f'{h:02d}:{m:02d}'
     if key == 'quiet_enabled':
         return bool(value)
-    return int(value) % HOURS_IN_DAY            # quiet_start_hour / quiet_end_hour: 25 → 1
+    try:
+        return int(value) % HOURS_IN_DAY        # quiet_start_hour / quiet_end_hour: 25 → 1
+    except (TypeError, OverflowError):
+        raise ValueError(f'{key} must be an hour from 0 to 23 (got {value!r})') from None
 
 
 class Preferences:
@@ -70,12 +73,12 @@ class Preferences:
 
     def update(self, changes: Mapping[str, Any]) -> dict[str, Any]:
         """Change some preferences and save them. Unknown names and None are ignored.
-        Raises ValueError (and changes nothing) if any value is bad."""
+        Raises ValueError (and changes nothing) if any value is bad; if saving fails, nothing changes either."""
         with self._lock:
             clean = {k: _clean(k, v) for k, v in changes.items() if k in self._data and v is not None}
-            self._data.update(clean)
-            out = dict(self._data)
+            out = {**self._data, **clean}
             self._store.save(KEY, out)
+            self._data = out
         return dict(out)
 
 

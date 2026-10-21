@@ -89,6 +89,7 @@ class HabitTracker:
         self._presence = PresenceTracker(presence.appear_after_sec, presence.disappear_after_sec)
         self._lock = threading.RLock()     # re-entrant: a new day saves while holding it
         self._d = self._load(local_day(clock.now()))
+        self._unsaved_days: dict[str, dict[str, Any]] = {}   # earlier days whose save failed: kept until it works
         self._dirty = False
         self._last_save = 0.0
         # moment-to-moment state (not saved)
@@ -123,8 +124,9 @@ class HabitTracker:
         return d
 
     def save(self, force: bool = False) -> None:
-        """Save today's numbers if they changed (or always, with force)."""
+        """Save today's numbers if they changed (or always, with force), and any earlier day not saved yet."""
         with self._lock:
+            self._save_earlier_days()
             if not (self._dirty or force):
                 return
             data = copy.deepcopy(self._d)
@@ -136,11 +138,24 @@ class HabitTracker:
                 self._dirty = True              # try again next time
                 log.warning('Could not save the habits for %s: %s', data['day'], exc)
 
+    def _save_earlier_days(self) -> None:
+        for day, data in list(self._unsaved_days.items()):
+            try:
+                self._store.save(day_key(day), data)
+            except OSError as exc:
+                log.debug('Still could not save the habits for %s: %s', day, exc)
+                continue
+            del self._unsaved_days[day]
+            log.info('Saved the habits for %s after all', day)
+
     def _roll_day(self, now: float) -> None:
         day = local_day(now)
         if day != self._d['day']:
             self.save(force=True)
-            self._d = self._load(day)
+            if self._dirty:
+                # The old day couldn't be saved: keep its numbers and try again at every save.
+                self._unsaved_days[self._d['day']] = self._d
+            self._d = self._unsaved_days.pop(day, None) or self._load(day)
             self._celebrated = 0
             self._phone_free_streak = 0.0
 
@@ -305,6 +320,8 @@ class HabitTracker:
         return 'breaks', 'break', text, {'minutes': mins, 'how': how, 'count': self._d['breaks']}
 
     def _log_sip(self, now: float, ml: float, how: str) -> Said:
+        if not 0 < ml < float('inf'):           # also false for nan
+            raise ValueError(f'a drink must be a number of ml above 0 (got {ml})')
         self._d['sips'] += 1
         self._d['water_ml'] = int(self._d['water_ml'] + ml)
         self._d['last_sip_ts'] = now
