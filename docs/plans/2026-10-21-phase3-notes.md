@@ -60,3 +60,24 @@ Decide on purpose in Phase 3, and re-record the snapshot (`DESKTALK_RECORD_SNAPS
 - The phone server's automatic `/static/<path>` route always gives 404 (the folder doesn't exist). **Fix:** drop the route.
 - Pi upload replies always include `"tip": null`; phone upload replies leave `tip` out. Keep as is (the pages
   don't mind).
+
+## Wiring notes from the Phase 2 agents
+
+**A. Detector service**
+- The camera program reads `pi.detector.*` from `/api/pi/config` (now includes `detector`).
+- The service's port (`raspberry_pi/detector_service/.env`) must match `pi.detector.url`; a test checks this.
+- Error replies from the service are FastAPI's `{"detail": ...}`: 400 / 413 / 503 / 500.
+- The docker tests (`-m docker`) and the image build have not run: no Docker on the Mac.
+
+**C. Events and storage**
+- New setting: `storage.folder: data`, the root of `JsonFileStore`. Under it are `preferences.json`,
+  `habits/<day>.json` and `learned_personalities.json`.
+- `EventLog(config.resolve(config.event_log.folder), config.event_log)`.
+- Scheduler jobs: `every(compact_every_min * 60, lambda: log.compact(clock.now()))`, and the same for `prune`
+  (`prune_every_min`).
+- `safety_rules.json`: a second `JsonFileStore(config dir)`, key `safety_rules`.
+- Shutdown: `stream.wait_idle(t)`, then `stream.close(t)`. `close` is on `EventStream`, not on the port.
+- `JsonFileStore.save` raises `OSError` / `TypeError` and leaves the old file as it was. Callers decide whether to
+  log it and carry on.
+- Day names are checked strictly (`YYYY-MM-DD`). The old routes' check let `../a-bc-de` through. Use the store's
+  check in the log routes.
