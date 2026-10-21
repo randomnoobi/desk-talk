@@ -27,7 +27,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import cv2
-from conftest import blank_frame
+
+from tests.conftest import blank_frame
 
 from .client import THIS_COMPUTER
 

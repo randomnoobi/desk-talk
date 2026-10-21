@@ -21,11 +21,11 @@ import time
 from pathlib import Path
 
 import pytest
-from conftest import Feeder, obj
 
 from desktalk.chat.vision_habits import HabitSceneVlmThread
 from desktalk.settings import load_settings
 from desktalk.vision.pairing import qr_svg
+from tests.conftest import Feeder, obj
 
 from .cases import PAIR_KEY, PHONE_HEADERS, PHONE_URL, PI_HEADERS, PICTURE
 from .client import WebClient
