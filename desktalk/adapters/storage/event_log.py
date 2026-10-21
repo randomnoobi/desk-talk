@@ -66,6 +66,7 @@ class EventLog:
         self._keep_days = settings.keep_days
         self._log_empty_frames = settings.log_empty_frames
         self._lock = threading.Lock()
+        self._compacting = threading.Lock()          # one compaction at a time, so no picture is counted twice
         self._broken_seen: dict[Path, int] = {}      # file → broken lines already reported
         self.last_compaction: dict[str, Any] | None = None     # the last compact() summary and its ts
 
@@ -112,7 +113,12 @@ class EventLog:
 
     def compact(self, now: float) -> dict[str, Any]:
         """Turn the per-picture lines of every day into intervals, then delete them.
-        Returns {'frames', 'intervals', 'from', 'to'}; when there were pictures, a Compaction event is logged."""
+        Returns {'frames', 'intervals', 'from', 'to'}; when there were pictures, a Compaction event is logged.
+        A second compaction asked for meanwhile waits for this one, then finds nothing left to do."""
+        with self._compacting:
+            return self._compact(now)
+
+    def _compact(self, now: float) -> dict[str, Any]:
         # Move the pictures aside first, so new ones go to a fresh detections.jsonl meanwhile.
         stamp = f'{now:.3f}'.replace('.', '')
         with self._lock:

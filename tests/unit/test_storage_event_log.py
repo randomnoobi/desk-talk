@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -100,6 +101,44 @@ def test_a_compaction_cut_off_before_the_new_presence_file_is_swapped_in_loses_n
     log.compact(NOW)                                       # the next compaction picks them all up
     assert sorted(i['label'] for i in log.presence(TODAY, include_live=False)) == ['book', 'cup', 'laptop']
     assert sorted(p.name for p in presence.parent.iterdir()) == ['events.jsonl', 'presence.jsonl']
+
+
+def test_two_compactions_at_once_count_each_picture_once(tmp_path, monkeypatch):
+    """The scheduler's compaction and the Log page's "compact now" button can run at the same moment."""
+    from desktalk.adapters.storage import event_log
+
+    log = make_log(tmp_path)
+    for i in range(6):
+        log.write(picture(NOW - 60 + i, 'cup'))
+    first_inside, release = threading.Event(), threading.Event()
+    real_build = event_log.build_intervals
+
+    def slow_build(frames, gap):
+        if not first_inside.is_set():          # hold the first compaction half-way through
+            first_inside.set()
+            release.wait(5)
+        return real_build(frames, gap)
+
+    monkeypatch.setattr(event_log, 'build_intervals', slow_build)
+    results, errors = [], []
+
+    def compact(now):
+        try:
+            results.append(log.compact(now))
+        except Exception as exc:
+            errors.append(exc)
+
+    first = threading.Thread(target=compact, args=(NOW,))
+    first.start()
+    assert first_inside.wait(5)
+    second = threading.Thread(target=compact, args=(NOW + 1,))
+    second.start()
+    second.join(0.2)                           # give the second one the chance to run into the first
+    release.set()
+    first.join(5), second.join(5)
+    assert errors == []
+    assert sum(r['frames'] for r in results) == 6
+    assert [iv['frames'] for iv in log.presence(TODAY, include_live=False)] == [6]
 
 
 def test_empty_pictures_can_be_left_out(tmp_path):
