@@ -116,7 +116,8 @@ def test_the_check_gets_the_pi_cameras_state_and_the_desk_layout():
     rig = Rig(layout=Layout(outline=False, gravity=(0.0, -9.8, 0.0)))
     rig.tick()
     assert rig.health.checks == [{'now': rig.clock.now(), 'connected': True, 'fps': 3.0, 'gravity': None,
-                                  'reference_gravity': (0.0, -9.8, 0.0), 'has_outline': False, 'stopped': False}]
+                                  'reference_gravity': (0.0, -9.8, 0.0), 'has_outline': False, 'stopped': False,
+                                  'quiet': False}]
 
 
 def test_the_check_gets_the_phones_tilt_and_stop_button():
