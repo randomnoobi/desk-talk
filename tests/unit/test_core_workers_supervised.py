@@ -63,7 +63,8 @@ def all_workers(clock):
         LostItems(clock, bus, desk, roster, profiles, FakeHabits(), ai, None, LostItemsSettings(
             check_every_sec=60, scene_change=8.0, rescan_every_sec=300, snapshot_every_sec=120,
             spotted_photo_cooldown_sec=75, start_delay_sec=5, compare_size=64, min_confidence=0.3, just_seen_sec=90,
-            detector_fresh_sec=5, nearby_kept=5, nearby_mentioned=3, answer_min_words=3, items={}),
+            detector_fresh_sec=5, nearby_kept=5, nearby_mentioned=3, answer_min_words=3, question_max_chars=200,
+            message_max_chars=500, photo_note_max_chars=450, live_note_max_chars=220, items={}),
             REPLIES, photos=photos, default_temperature=0.8),
         Lens(FakeCameraHealth(), FakeFrameSource('pi', clock), Layout(), FakePreferences(), notifier, bus, photos,
              LensSettings.model_construct(check_every_sec=2.0, repeat_after_min=20.0, fixed_after_sec=5.0,

@@ -393,6 +393,10 @@ class LostItemsSettings(_Section):
     nearby_kept: Count
     nearby_mentioned: Count
     answer_min_words: Count
+    question_max_chars: PositiveInt
+    message_max_chars: PositiveInt
+    photo_note_max_chars: PositiveInt
+    live_note_max_chars: PositiveInt
     items: dict[str, LostItem]
 
 

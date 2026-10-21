@@ -54,11 +54,6 @@ OTHER_THINGS = {'laptop', 'cup', 'bottle', 'book', 'remote', 'card', 'scissors'}
 CTA = {'label': '🖼 Desk captures', 'action': 'captures'}
 NOT_SPOTTED = ("I checked the desk camera but couldn't confidently spot that. Try naming it directly "
                "(keys, phone, wallet, AirPods…), or browse saved desk photos below.")
-# How much of your question goes to the AI, and how much of a picture answer is kept (letters).
-QUESTION_MAX_CHARS = 200
-MESSAGE_MAX_CHARS = 500
-SAVED_PHOTO_NOTE_MAX_CHARS = 450
-LIVE_PICTURE_NOTE_MAX_CHARS = 220
 
 
 def _words(text: str) -> set[str]:
@@ -298,7 +293,7 @@ class LostItems:
         speaker = speaker_for(('tasks',), self._roster.member_ids(), self._profiles)
         if not wanted:
             note = look(self._vision, self._live_picture(),
-                        prompts.lost_anything(user_message[:QUESTION_MAX_CHARS]), background=False,
+                        prompts.lost_anything(user_message[:self._settings.question_max_chars]), background=False,
                         what='a lost-item question')
             return {'speaker': speaker, 'cta': dict(CTA), 'text': note or NOT_SPOTTED}
         notes = {}
@@ -315,7 +310,7 @@ class LostItems:
         profile = self._profiles.get(speaker)
         system = prompts.LOST_ITEM_SYSTEM.format(name=profile.name if profile else 'Lens',
                                                  obj=profile.object if profile else 'camera')
-        user = f'User wrote:\n{user_message[:MESSAGE_MAX_CHARS]}\n\nFACTS:\n' + '\n'.join(facts)
+        user = f'User wrote:\n{user_message[:self._settings.message_max_chars]}\n\nFACTS:\n' + '\n'.join(facts)
         text = ask(self._chat, [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
                    self._replies.lost_answer, background=False, what='a lost-item answer',
                    own_temperature=profile.temperature if profile else self._default_temperature)
@@ -374,7 +369,7 @@ class LostItems:
                 note = look(self._vision, jpeg, prompts.lost_in_saved_photo(about, name), background=False,
                             what='a lost-item photo')
                 if note and len(note.split()) >= self._settings.answer_min_words:
-                    return note.strip()[:SAVED_PHOTO_NOTE_MAX_CHARS]
+                    return note.strip()[:self._settings.photo_note_max_chars]
         note = look(self._vision, self._live_picture(), prompts.lost_in_live_picture(name), background=False,
                     what='a lost-item look')
-        return note.strip()[:LIVE_PICTURE_NOTE_MAX_CHARS] if note else None
+        return note.strip()[:self._settings.live_note_max_chars] if note else None

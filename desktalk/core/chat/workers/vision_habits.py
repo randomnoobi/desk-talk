@@ -33,7 +33,6 @@ from desktalk.util import local_day
 log = logging.getLogger(__name__)
 
 BRIEF_KEYS = ('posture', 'phone', 'attention')      # what the chat's AI is told about the last look
-DETAIL_MAX_CHARS = 500
 # Nudges, in order of importance: what was seen → (the habit whose agent says it, the text)
 NUDGES = {
     'too_close': ('screens', "You've been leaning really close to my screen for a bit. "
@@ -157,7 +156,7 @@ class VisionHabits:
     def _add(self, category: str, title: str, now: float, *, detail: str, duration_sec: int | None = None,
              snapshot_id: str | None = None) -> None:
         entry: dict[str, Any] = {'id': uuid.uuid4().hex[:10], 'ts': now, 'category': category, 'title': title,
-                                 'detail': detail[:DETAIL_MAX_CHARS]}
+                                 'detail': detail}
         if duration_sec is not None:
             entry['duration_sec'] = duration_sec
         if snapshot_id:
