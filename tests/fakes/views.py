@@ -26,6 +26,16 @@ class FakeProfiles:
     def get(self, agent_id: str) -> AgentProfile | None:
         return self.by_id.get(agent_id)
 
+    def for_label(self, label: str) -> AgentProfile | None:
+        if label in self.ignored:
+            return None
+        return next((p for p in self.by_id.values() if label in p.labels), None)
+
+    def mention_words(self) -> dict[str, str]:
+        words = {p.name.lower(): p.id for p in self.by_id.values()}
+        words.update({label: p.id for p in self.by_id.values() for label in p.labels})
+        return words
+
     def all(self) -> list[AgentProfile]:
         return list(self.by_id.values())
 

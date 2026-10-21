@@ -247,6 +247,14 @@ class Profiles(Protocol):
     def get(self, agent_id: str) -> AgentProfile | None:
         ...
 
+    def for_label(self, label: str) -> AgentProfile | None:
+        """The agent a detector word belongs to (None for ignored words)."""
+        ...
+
+    def mention_words(self) -> dict[str, str]:
+        """Every word that can @mention an agent in the chat → its id."""
+        ...
+
     def all(self) -> list[AgentProfile]:
         ...
 
@@ -278,6 +286,7 @@ class HabitsView(Protocol):
         ...
 
     def nudges(self, now: float, open_todos: Sequence[str]) -> list[Nudge]:
+        """The reminders ready to send now, best first (ones sent too recently are left out)."""
         ...
 
     def note_fired(self, nudge: Nudge, now: float) -> None:

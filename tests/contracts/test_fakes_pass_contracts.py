@@ -92,3 +92,13 @@ def test_every_fake_has_all_of_its_interface(fake, port):
     import desktalk.ports as ports
     import tests.fakes as fakes
     assert isinstance(getattr(fakes, fake)(), getattr(ports, port))
+
+
+def test_fake_profiles_find_agents_by_word():
+    from desktalk.domain import AgentProfile
+    from tests.fakes import FakeProfiles
+    cup = AgentProfile(id='cup', name='Cup', labels=['cup', 'mug'])
+    profiles = FakeProfiles([cup], ignored=['person'])
+    assert profiles.for_label('mug') is cup
+    assert profiles.for_label('person') is None
+    assert profiles.mention_words() == {'cup': 'cup', 'mug': 'cup'}
