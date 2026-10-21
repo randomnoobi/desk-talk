@@ -19,6 +19,7 @@
             "label": "str"
           }
         ],
+        "detected_on": "str",
         "frame_id": "str",
         "id": "str",
         "light": {

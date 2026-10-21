@@ -5,13 +5,13 @@ Fixtures for the characterization tests: ready-made desks, each with its two web
     desk.main               # WebClient for the main server (web_app/ and the Pi)
     desk.phone              # WebClient for the phone camera's own server
 
-Everything runs in temp folders with a fake detector and a fake AI; nothing touches data/, .env, a camera,
-the network or a Pi. The settings come only from the config files in git (not your settings.local.yaml),
-the danger-zone rules from the copy next to this file, and the clock is pinned to 10:00 on 21 Oct 2026
-(local time) so "today" is the same on every run.
+Each desk is the whole app built by bootstrap.build(), in temp folders, with a fake detector, a fake AI and a
+FakeClock; nothing touches data/, .env, a camera, the network or a Pi. The settings come only from the config
+files in git (not your settings.local.yaml), the danger-zone rules from the copy next to this file, and the
+clock reads 10:00 on 21 Oct 2026 (local time) when the requests are sent, so "today" is the same on every run.
 
-When the app moves to FastAPI (Phase 3), this file (how a desk is built) and client.py (how requests are
-sent) are the only places that should need changes.
+client.py (how requests are sent) and this file (how a desk is built) are the only places that know about
+the web framework and how the app is put together.
 """
 
 from __future__ import annotations
@@ -19,29 +19,37 @@ from __future__ import annotations
 import shutil
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from desktalk.chat.vision_habits import HabitSceneVlmThread
-from desktalk.settings import load_settings
-from desktalk.vision.pairing import qr_svg
-from tests.conftest import Feeder, obj
+from desktalk.bootstrap import DeskTalk, build
+from desktalk.domain import BBox, Detection
+from desktalk.web.pairing import Links
+from tests.conftest import FakeAI
+from tests.fakes import FakeClock, FakeDetector
+from tests.integration.app_kit import changed, desk_config
 
 from .cases import PAIR_KEY, PHONE_HEADERS, PHONE_URL, PI_HEADERS, PICTURE
 from .client import WebClient
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent.parent
-CONFIG_FILES_IN_GIT = ('settings.yaml', 'protocols.yaml', 'agents.yaml')
 RULES_COPY = HERE / 'safety_rules.json'     # config/safety_rules.json as committed (the app rewrites the real one)
-PINNED_NOW = (2026, 10, 21, 10, 0, 0)       # local time every test starts at
+PINNED_NOW = (2026, 10, 21, 10, 0, 0)       # local time when the requests are sent
 WATCH_SEC = 6                               # how long the camera watches the busy desk
 WATCH_STARTS_AGO_SEC = 60
+COMPUTER_ADDRESS = '192.168.1.20'           # this computer on the Wi-Fi (in the Pi command and the phone link)
 
-# What the camera "sees" on a busy desk (plus a person, added by Feeder).
-ON_THE_DESK = [obj('laptop', 200, 200, 400, 350), obj('cup', 410, 250, 450, 320), obj('key', 50, 50, 80, 70),
-               obj('book', 470, 380, 600, 460), obj('remote', 560, 20, 620, 60, conf=0.3)]
-# What the fake vision AI says about the picture (HabitSceneVlmThread asks it).
+
+def det(label: str, x1: float, y1: float, x2: float, y2: float, conf: float = 0.9) -> Detection:
+    return Detection(label, conf, BBox(x1, y1, x2, y2))
+
+
+# What the camera "sees" on a busy desk (plus a person, added by Desk.watch).
+ON_THE_DESK = [det('laptop', 200, 200, 400, 350), det('cup', 410, 250, 450, 320), det('key', 50, 50, 80, 70),
+               det('book', 470, 380, 600, 460), det('remote', 560, 20, 620, 60, conf=0.3)]
+PERSON = det('person', 400, 0, 640, 300, conf=0.95)
+# What the fake vision AI says about the picture (the vision habit check asks it).
 SCENE = '{"posture": "good", "nail_biting": true, "phone": "none", "attention": "screen"}'
 
 
@@ -58,81 +66,64 @@ def fake_ai(request: dict) -> str:
     return 'Hey! All good over here on the desk.'
 
 
-@pytest.fixture
-def settings(tmp_path_factory):
-    """Settings from the config files in git only, so a local config/settings.local.yaml can't change replies."""
-    folder = tmp_path_factory.mktemp('config')
-    for name in CONFIG_FILES_IN_GIT:
-        shutil.copy(ROOT / 'config' / name, folder / name)
-    s = load_settings(config_dir=folder, environ={}, dotenv=Path('/nonexistent'))
-    s.llm['min_interval_sec'] = 0          # no waiting between fake AI calls
-    return s
-
-
-@pytest.fixture
-def clock(monkeypatch):
-    """time.time() starts at PINNED_NOW and then runs at normal speed."""
-    start = time.mktime(PINNED_NOW + (0, 0, -1))
-    t0 = time.monotonic()
-
-    def now() -> float:
-        return start + (time.monotonic() - t0)
-
-    monkeypatch.setattr(time, 'time', now)
-    return now
-
-
 class Desk:
-    def __init__(self, app, clock):
+    def __init__(self, app: DeskTalk, clock: FakeClock, detector: FakeDetector, links: Links):
         self.app = app
         self.clock = clock
-        self.main = WebClient.main_server(app)
+        self.detector = detector
+        self.main = WebClient.main_server(app, links)
         self.phone = WebClient.phone_server(app)
 
     def server(self, name: str) -> WebClient:
         return {'main': self.main, 'phone': self.phone}[name]
 
-    def watch(self, seconds: float, objects=(), started_ago: float = 0.0) -> None:
-        """The camera takes pictures (3 a second) of `objects` and a person, and the app looks at them."""
-        Feeder(self.app, start=self.clock() - started_ago).run(seconds, list(objects))
+    def watch(self, seconds: float, objects=()) -> None:
+        """The camera takes pictures (camera.fps a second) of `objects` and a person, and the app looks at
+        each one as it arrives."""
+        step = 1 / self.app.config.camera.fps
+        for _ in range(max(1, round(seconds / step))):
+            self.detector.detections = [*objects, PERSON]
+            assert self.app.source.push(PICTURE)
+            self.app.producer.tick(self.clock.now())
+            self.clock.advance(step)
 
 
 @pytest.fixture
-def desks(make_app, settings, clock, tmp_path):
+def desks(tmp_path):
     """desks(name) builds one of the desks listed in cases.py. One desk per test (they share the temp folder)."""
     built: dict[str, Desk] = {}
+    pinned = time.mktime(PINNED_NOW + (0, 0, -1))
 
-    def build(name: str) -> Desk:
+    def make(name: str) -> Desk:
         if name in built:
             return built[name]
         assert not built, f'one desk per test: already built {list(built)}, asked for {name}'
-        shutil.copy(RULES_COPY, tmp_path / 'safety_rules.json')    # make_app uses this file if it's there
-        if name == 'fresh':
-            app = make_app(ai_reply=fake_ai, secrets={'gemini_api_key': 'fake'})
-        elif name == 'busy':
-            # ollama_url also gives the app a (fake) vision AI, for the habit checks on pictures
-            app = make_app(ai_reply=fake_ai, secrets={'gemini_api_key': 'fake', 'ollama_url': 'http://ollama.test'})
-        elif name == 'no_ai':
-            app = make_app()
-        elif name == 'ai_down':
-            app = make_app(ai_reply=ConnectionError('Connection refused'), secrets={'gemini_api_key': 'fake'})
-        elif name == 'phone':
-            settings.camera['source'] = 'phone'
-            app = make_app(ai_reply=fake_ai, secrets={'gemini_api_key': 'fake'})
-            app.phone_url, app.phone_qr_svg = PHONE_URL, qr_svg(PHONE_URL)    # what start_phone_server() sets
-        else:
+        if name not in ('fresh', 'busy', 'no_ai', 'ai_down', 'phone'):
             raise ValueError(f'no desk called {name!r}')
-        app.habits.clock = clock          # its default clock was bound before the clock was pinned
-        assert app.pair_key == PAIR_KEY
-        desk = Desk(app, clock)
+        reply: Any = {'no_ai': None, 'ai_down': ConnectionError('Connection refused')}.get(name, fake_ai)
+        # ollama also gives the busy desk a (fake) vision AI, for the habit checks on pictures
+        config = desk_config(tmp_path, ai=reply is not None, ollama=name == 'busy')
+        shutil.copy(RULES_COPY, config.config_folder / 'safety_rules.json')
+        if name == 'phone':
+            config = changed(config, 'camera', source='phone')
+        clock = FakeClock(pinned - WATCH_STARTS_AGO_SEC)
+        detector = FakeDetector()
+        app = build(config, clock=clock, detector=detector, data_folder=tmp_path / 'run', pair_key=PAIR_KEY,
+                    synchronous_events=True, set_up_logging=False,
+                    client_factory=None if reply is None else lambda **kw: FakeAI(reply=reply, **kw))
+        phone_port = config.camera.phone_port if name == 'phone' else None    # its server runs only then
+        links = Links(COMPUTER_ADDRESS, config.web.port, app.pair_key, phone_port=phone_port)
+        desk = Desk(app, clock, detector, links)
         if name in ('busy', 'no_ai', 'ai_down'):
-            desk.watch(WATCH_SEC, ON_THE_DESK, started_ago=WATCH_STARTS_AGO_SEC)
+            desk.watch(WATCH_SEC, ON_THE_DESK)
+        clock.advance(pinned - clock.now())
         if name == 'busy':
             assert desk.main.post('/api/pi/frame', data=PICTURE, headers=PI_HEADERS).status == 200
-            HabitSceneVlmThread(app).tick()        # one round of the vision habit check
+            app.vision_habits.tick(clock.now())        # one round of the vision habit check
         if name == 'phone':
+            assert links.phone_url == PHONE_URL
             assert desk.phone.post('/api/phone/frame', data=PICTURE, headers=PHONE_HEADERS).status == 200
         built[name] = desk
         return desk
 
-    return build
+    return make
