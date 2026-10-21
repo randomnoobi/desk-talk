@@ -2,13 +2,13 @@
 
 Made by `deskbench report` from the CSV files in this folder. Don't edit by hand.
 
-Best pick = the fastest combination that finishes 95% of pictures within 333 ms (the app takes 3 pictures a second) and reaches at least 90% of the best accuracy (mAP50-95 on 128 COCO photos) on that device.
+Best pick = the fastest combination in ncnn or pt (what the Pi's detector service runs) that finishes 95% of pictures within 333 ms (the app takes 3 pictures a second) and reaches at least 90% of the best accuracy (mAP50-95 on 128 COCO photos) in those formats on that device.
 
 ## laptop
 
 Latest run `2026-10-21T1747Z_laptop` on **Apple M4 Max**, commit `b512915409`.
 
-**Best pick: `yolo11s-480-onnx-fp32`** (51.9 pictures/s, p95 28 ms, mAP50-95 0.572)
+**Best pick: `yolo11s-480-ncnn-fp16`** (48.6 pictures/s, p95 36 ms, mAP50-95 0.573)
 
 | combination | pictures/s | inference p50 ms | inference p95 ms | total p95 ms | CPU % | peak MB | max °C | mAP50-95 | mAP50 | found/picture | model MB |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -62,4 +62,4 @@ Latest run `2026-10-21T1747Z_laptop` on **Apple M4 Max**, commit `b512915409`.
 
 | run | device | hardware | commit | ok / failed | best pick |
 |---|---|---|---|---|---|
-| `2026-10-21T1747Z_laptop` | laptop | Apple M4 Max | `b512915409` | 45 / 0 | `yolo11s-480-onnx-fp32` |
+| `2026-10-21T1747Z_laptop` | laptop | Apple M4 Max | `b512915409` | 45 / 0 | `yolo11s-480-ncnn-fp16` |
