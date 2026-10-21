@@ -119,8 +119,6 @@ class VisionHabits:
         with self._lock:
             self._latest, self._latest_ts = dict(answer), now
         with self._desk.lock:
-            self._desk.vlm_habit_state = dict(answer)
-            self._desk.vlm_habit_ts = now
             self._desk.vision_habit_brief = brief
         self._log_habits(answer, now)
         self._maybe_nudge(answer, now)

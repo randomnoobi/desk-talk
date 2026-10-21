@@ -284,11 +284,9 @@ class MessageGenerator:
         now = self._clock.now()
         with self._desk.lock:
             todo = self._desk.char_widgets.get(a.id)
-            signals = self._desk.habit_vision_brief
             vision_note = (self._desk.vision_habit_brief or '').strip()
         block = tracker_prompt(a.tracker, self._habits.today(now), todo, [], now, self._chat)
-        if vision_note:
-            signals += f'; vision note: {vision_note}'
+        signals = f'; vision note: {vision_note}' if vision_note else ''
         system = prompts.habit_system(a, prompts.habit_area(a), block, signals or 'none', nudge.evidence, nudge.tip,
                                       short=self._local)
         text = self._ask([{'role': 'system', 'content': system},

@@ -54,8 +54,9 @@ class Rig:
         self.desk = DeskState()
         self.habits = FakeHabits()
         self.chat, self.vision = chat, vision
+        self.proof_photos = ProofPhotos(self.desk, self.clock, SNAPSHOTS)
         self.lost = LostItems(self.clock, self.bus, self.desk, StaticRoster(members), PROFILES, self.habits, chat,
-                              vision, settings, REPLIES, photos=ProofPhotos(self.desk, self.clock, SNAPSHOTS),
+                              vision, settings, REPLIES, photos=self.proof_photos,
                               default_temperature=0.8, phone_is_camera=phone_is_camera)
         self.show(DARK)
 
@@ -353,7 +354,7 @@ def test_a_never_seen_item_gets_a_look_at_a_saved_photo_tagged_with_it():
     rig = Rig(vision=FakeChatModel('Your keys are under the notebook on the left.'))
     rig.desk.frames[0] = BRIGHT
     rig.desk.seen_labels = {'remote': {}}
-    photo = rig.desk.save_snapshot(label='Spotted: Keys')
+    photo = rig.proof_photos.save('Spotted: Keys')
     rig.desk.seen_labels = {}
     text = rig.lost.answer('have you seen my keys?')['text']
     assert text.endswith('A quick look at the live picture: Your keys are under the notebook on the left.')
@@ -365,7 +366,7 @@ def test_a_never_seen_item_gets_a_look_at_a_saved_photo_tagged_with_it():
 def test_a_saved_photo_answer_that_says_too_little_falls_back_to_the_live_picture():
     rig = Rig(vision=FakeChatModel(['Not sure.', 'Visible: left of the laptop.']))
     rig.desk.seen_labels = {'key': {}}
-    rig.desk.save_snapshot(label='Spotted: Keys')
+    rig.proof_photos.save('Spotted: Keys')
     rig.desk.seen_labels = {}
     text = rig.lost.answer('have you seen my keys?')['text']
     assert text.endswith('A quick look at the live picture: Visible: left of the laptop.')
@@ -385,7 +386,7 @@ def test_how_much_of_the_vision_ais_answers_is_kept_comes_from_the_settings():
     assert rig.lost.answer('have you seen my keys?')['text'].endswith('A quick look at the live picture: Not visib')
     rig = Rig(vision=FakeChatModel('Your keys are under the notebook on the left.'), settings=short)
     rig.desk.seen_labels = {'key': {}}
-    rig.desk.save_snapshot(label='Spotted: Keys')
+    rig.proof_photos.save('Spotted: Keys')
     rig.desk.seen_labels = {}
     assert rig.lost.answer('have you seen my keys?')['text'].endswith('live picture: Your keys ar')
 
