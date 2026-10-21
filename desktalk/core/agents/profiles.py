@@ -15,11 +15,10 @@ from __future__ import annotations
 import logging
 import threading
 import zlib
-from typing import Protocol, runtime_checkable
 
 from desktalk.config import AgentsFile
 from desktalk.domain import HABITS, AgentProfile
-from desktalk.ports import KeyValueStore, Profiles
+from desktalk.ports import KeyValueStore
 from desktalk.util import slug, title_label
 
 log = logging.getLogger(__name__)
@@ -27,14 +26,6 @@ log = logging.getLogger(__name__)
 LEARNED_KEY = 'learned_personalities'
 # Colors for agents without their own; the order keeps each agent's color the same as before.
 PALETTE = ('cobalt', 'teal', 'tang', 'mustard', 'coral', 'plum', 'moss', 'slate')
-
-
-@runtime_checkable
-class ProfileLookup(Profiles, Protocol):
-    """Profiles, plus finding the agent for a detector word (what the roster and habit tracker need)."""
-
-    def for_label(self, label: str) -> AgentProfile | None:
-        ...
 
 
 def color_for(key: str) -> str:

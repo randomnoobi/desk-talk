@@ -24,12 +24,11 @@ from typing import Any
 
 from desktalk.config import AgentsSettings, HabitTrackerSettings, PresenceSettings, Protocols
 from desktalk.core.agents.presence import PresenceTracker
-from desktalk.core.agents.profiles import ProfileLookup
 from desktalk.core.habits import protocols as P
 from desktalk.core.habits.sun_times import sun_times
 from desktalk.desk_state import DeskState
 from desktalk.domain import DetectionEvent, HabitEvent, Nudge
-from desktalk.ports import Clock, EventBus, KeyValueStore, Preferences
+from desktalk.ports import Clock, EventBus, KeyValueStore, Preferences, Profiles
 from desktalk.util import a_or_an, local_day
 
 log = logging.getLogger(__name__)
@@ -67,7 +66,7 @@ Said = tuple[str, str, str, dict[str, Any]]
 class HabitTracker:
     """Implements HabitsView (desktalk/ports.py). Also log() and day_times() for the web routes."""
 
-    def __init__(self, clock: Clock, bus: EventBus, store: KeyValueStore, profiles: ProfileLookup,
+    def __init__(self, clock: Clock, bus: EventBus, store: KeyValueStore, profiles: Profiles,
                  prefs: Preferences, desk: DeskState, protocols: Protocols, settings: HabitTrackerSettings,
                  presence: PresenceSettings, agents: AgentsSettings, *, phone_counts: bool):
         self._clock = clock
