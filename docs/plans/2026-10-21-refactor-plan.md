@@ -286,6 +286,7 @@ After each one finishes, a review agent checks the work against this plan before
 ### Phase 2: parallel subagents (each test-first, each in its own worktree)
 
 Full briefs, with the rules every agent follows: [2026-10-21-phase2-briefs.md](2026-10-21-phase2-briefs.md).
+**Done** (all 8 merged into `refactor`, 1540 fast tests). What Phase 3 must wire: [2026-10-21-phase3-notes.md](2026-10-21-phase3-notes.md).
 New code goes in new folders; the old modules keep the app running until Phase 3 switches over.
 
 | Agent | Owns | In short |
