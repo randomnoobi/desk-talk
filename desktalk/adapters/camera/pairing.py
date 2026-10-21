@@ -11,10 +11,11 @@ import secrets
 import string
 from pathlib import Path
 
+from desktalk.adapters.storage.files import write_atomically
+
 log = logging.getLogger(__name__)
 
 _URL_SAFE = set(string.ascii_letters + string.digits + '-_')
-_ONLY_YOU = 0o600          # file permissions: only you can read or change it
 
 
 def make_pair_key(path: Path | None, key_bytes: int) -> str:
@@ -32,9 +33,9 @@ def make_pair_key(path: Path | None, key_bytes: int) -> str:
     key = secrets.token_urlsafe(key_bytes)
     if path is not None:
         try:
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
-            Path(path).write_text(key)
-            Path(path).chmod(_ONLY_YOU)
+            # All-or-nothing, and only you can read it from the start (the temp file is made with mode 0600):
+            # a crash never leaves a cut-off key that could pass as one you wrote yourself.
+            write_atomically(Path(path), key)
         except OSError as exc:
             log.warning('Could not save the pairing key in %s (%s): the Pi command and phone link will '
                         'change after a restart', path, exc)

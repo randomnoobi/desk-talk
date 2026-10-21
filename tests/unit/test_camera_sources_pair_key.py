@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import stat
 
 from desktalk.adapters.camera import make_pair_key
@@ -53,3 +54,20 @@ def test_a_folder_that_cant_be_written_still_gives_a_key(tmp_path, caplog):
     key = make_pair_key(blocker / 'pair-key.txt', key_bytes=6)
     assert len(key) == 8
     assert 'pairing key' in caplog.text
+
+
+def test_a_save_cut_off_part_way_leaves_the_old_file_whole(tmp_path, monkeypatch, caplog):
+    """The key is written to a temp file only you can read, then swapped in: a crash or a full disk never
+    leaves a cut-off key (which could pass as a key you wrote yourself next time)."""
+    path = tmp_path / 'pair-key.txt'
+    path.write_text('abc')                              # too short: a new key gets made and saved
+
+    def disk_full(src, dst):
+        raise OSError(28, 'No space left on device')
+
+    monkeypatch.setattr(os, 'replace', disk_full)
+    key = make_pair_key(path, key_bytes=6)
+    assert len(key) == 8
+    assert path.read_text() == 'abc'
+    assert [p.name for p in tmp_path.iterdir()] == ['pair-key.txt']      # no temp file left behind
+    assert 'No space left' in caplog.text

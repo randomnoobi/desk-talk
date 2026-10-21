@@ -9,7 +9,8 @@ from pathlib import Path
 
 def write_atomically(path: Path, text: str) -> None:
     """Replace `path` with `text`. The new file is written next to the old one, then swapped in, so a crash or
-    a full disk leaves either the old file or the new one, never half of it. Makes the folder if needed."""
+    a full disk leaves either the old file or the new one, never half of it. Makes the folder if needed.
+    The new file is only yours to read and change (mode 0600, as tempfile.mkstemp makes it)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f'.{path.name}.', suffix='.tmp')
     try:
