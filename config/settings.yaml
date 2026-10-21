@@ -2,7 +2,7 @@
 #  Desk Talk settings
 #
 #  Every number the app uses lives in this file, grouped by what it does.
-#  Change a value, save, and restart `python server.py`.
+#  Change a value, save, and restart `uv run python server.py`.
 #
 #  Your own overrides: put just the lines you change in
 #  config/settings.local.yaml (same layout). That file is not uploaded
@@ -17,7 +17,7 @@
 
 # ── Camera ──────────────────────────────────────────────────────────
 camera:
-  # pi     = Raspberry Pi camera (raspberry_pi/camera_node.py runs on the Pi and sends pictures here)
+  # pi     = Raspberry Pi camera (the camera program, raspberry_pi/camera/, runs on the Pi and sends pictures here)
   # phone  = a phone streams over Wi-Fi (scan the QR code; the page is phone_camera/)
   # webcam = a USB / built-in webcam on this computer
   source: pi
@@ -47,7 +47,7 @@ camera:
   pi_clock_pictures: 30       # the Pi's clock is judged by the quickest of its last this many pictures (the others
                               # waited for its detector or a slow Wi-Fi)
 
-# ── Raspberry Pi (read by raspberry_pi/camera_node.py on the Pi) ─────────────
+# ── Raspberry Pi (read by the camera program on the Pi, raspberry_pi/camera/) ─
 pi:
   fps: 3                      # pictures per second
   width: 1280                 # picture size
