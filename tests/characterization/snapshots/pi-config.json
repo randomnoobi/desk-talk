@@ -31,6 +31,7 @@
       "min_free_mb": "number",
       "pause_after_error_sec": "number",
       "photo_dir": "str",
+      "restart_after_missed_pictures": "number",
       "settings_check_every_sec": "number",
       "status_every_sec": "number",
       "upload_retry_max_sec": "number",
