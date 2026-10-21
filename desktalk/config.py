@@ -106,6 +106,7 @@ class CameraSettings(_Section):
     pair_key_bytes: PositiveInt
     pair_key_file: Path
     keep_newer_picture_sec: ZeroOrMore
+    pi_clock_pictures: PositiveInt
 
 
 class PiDetector(_Section):

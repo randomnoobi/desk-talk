@@ -260,6 +260,26 @@ def test_status_tells_how_far_the_pis_clock_is_off(clock):
     assert source.status()['clock_off_sec'] == -6.0          # a picture without a time doesn't change it
 
 
+def test_the_pis_clock_is_judged_by_its_quickest_recent_picture_without_detection_time(clock):
+    source = pi_source(clock)
+    assert source.clock_off_sec() is None
+    slow = UploadInfo(frame_id='pi-000002', taken_at=clock.now() - 6.5, detector=DetectorState.OK, detect_ms=2000.0)
+    source.push(jpeg_of(picture(10)), slow)
+    assert source.clock_off_sec() == -4.5                # the 2 seconds of detection don't count against the clock
+    quick = UploadInfo(frame_id='pi-000003', taken_at=clock.now() - 0.4, detector=DetectorState.BUSY)
+    source.push(jpeg_of(picture(10)), quick)
+    source.push(jpeg_of(picture(10)), slow)
+    assert source.clock_off_sec() == -0.4 and source.status()['clock_off_sec'] == -0.4
+
+
+def test_only_the_last_few_pictures_count_for_the_pis_clock(clock):
+    source = pi_source(clock, pi_clock_pictures=2)
+    source.push(jpeg_of(picture(10)), UploadInfo(frame_id='pi-000001', taken_at=clock.now() - 0.4))
+    for n in (2, 3):
+        source.push(jpeg_of(picture(10)), UploadInfo(frame_id=f'pi-00000{n}', taken_at=clock.now() - 12.0))
+    assert source.clock_off_sec() == -12.0
+
+
 def test_status_before_any_picture():
     status = pi_source(FakeClock()).status()
     assert status == {'last_frame_id': '', 'upload_format': None, 'detector': None, 'detector_reason': '',

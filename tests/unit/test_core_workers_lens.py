@@ -46,16 +46,22 @@ class PiReports:
 
     def __init__(self):
         self.latest = None
+        self.clock_off = None
 
     def picture(self, received_at, *, temp=None, throttled='0x0', taken_at=None, detector=DetectorState.OK,
-                reason=''):
-        info = UploadInfo(frame_id='pi-000001', taken_at=received_at if taken_at is None else taken_at,
-                          detector=detector, detector_reason=reason,
+                reason='', clock_off=None):
+        """`clock_off`: how far off the source judges the Pi's clock (from this picture's times if not given)."""
+        taken_at = received_at if taken_at is None else taken_at
+        info = UploadInfo(frame_id='pi-000001', taken_at=taken_at, detector=detector, detector_reason=reason,
                           health=PiHealth(cpu_temp_c=temp, throttled=throttled))
         self.latest = (info, received_at)
+        self.clock_off = round(taken_at - received_at, 1) if clock_off is None else clock_off
 
     def latest_upload(self):
         return self.latest
+
+    def clock_off_sec(self):
+        return self.clock_off
 
 
 class Rig:
@@ -269,6 +275,15 @@ def test_lens_mentions_a_pi_clock_that_is_ahead():
 def test_a_picture_that_took_a_moment_to_arrive_is_not_a_clock_problem():
     rig = Rig(pi=PiReports())
     rig.pi.picture(rig.clock.now(), taken_at=rig.clock.now() - 4.5)
+    rig.tick()
+    rig.tick(after=10)
+    assert rig.said() == []
+
+
+def test_lens_goes_by_the_pis_clock_as_the_pi_source_judges_it():
+    """One picture can arrive late (detection, slow Wi-Fi): the source judges the clock by the quickest recent one."""
+    rig = Rig(pi=PiReports())
+    rig.pi.picture(rig.clock.now(), taken_at=rig.clock.now() - 12.3, clock_off=-0.4)
     rig.tick()
     rig.tick(after=10)
     assert rig.said() == []

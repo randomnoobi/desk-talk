@@ -42,6 +42,8 @@ camera:
                               # link stay the same after a restart
   keep_newer_picture_sec: 3   # a Pi picture can arrive after one taken later (the Pi sends it once its detector
                               # is done): the live view keeps the later one, unless it hasn't changed for this long
+  pi_clock_pictures: 30       # the Pi's clock is judged by the quickest of its last this many pictures (the others
+                              # waited for its detector or a slow Wi-Fi)
 
 # ── Raspberry Pi (read by raspberry_pi/camera_node.py on the Pi) ─────────────
 pi:

@@ -128,9 +128,9 @@ class Lens:
         latest = self._pi.latest_upload() if self._pi is not None and connected else None
         if latest is None:
             return []
-        info, received_at = latest
+        info, _ = latest
         texts = {'pi_hot': self._hot_text(info.health), 'pi_power': self._power_text(info.health),
-                 'pi_clock': self._clock_text(info.taken_at, received_at), 'pi_detector': self._detector_text(info)}
+                 'pi_clock': self._clock_text(self._pi.clock_off_sec()), 'pi_detector': self._detector_text(info)}
         said = [watch.update(now, texts[watch.key]) for watch in self._pi_watches]
         return [message for message in said if message]
 
@@ -151,14 +151,12 @@ class Lens:
                     "The official Raspberry Pi power supply fixes this.")
         return ''
 
-    def _clock_text(self, taken_at: float | None, received_at: float) -> str:
-        if taken_at is None:
+    def _clock_text(self, off: float | None) -> str:
+        """`off`: the Pi's clock minus this computer's, as the Pi source judges it (negative = behind)."""
+        if off is None or abs(off) <= self._pi_settings.clock_off_warning_sec:
             return ''
-        behind = received_at - taken_at          # how long ago the Pi says it took the picture
-        if abs(behind) <= self._pi_settings.clock_off_warning_sec:
-            return ''
-        way = 'behind' if behind > 0 else 'ahead of'
-        return (f"The Raspberry Pi's clock is {round(abs(behind))} seconds {way} this computer's. "
+        way = 'behind' if off < 0 else 'ahead of'
+        return (f"The Raspberry Pi's clock is {round(abs(off))} seconds {way} this computer's. "
                 f"I go by this computer's time, but turning on network time on the Pi fixes it: "
                 f"sudo timedatectl set-ntp true")
 
