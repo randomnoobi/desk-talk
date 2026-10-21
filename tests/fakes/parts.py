@@ -180,7 +180,10 @@ class FakeChatModel:
     label = 'Fake AI'
 
     def __init__(self, reply: str | list[str] | Callable[[Sequence[Mapping[str, Any]]], str] = 'Hi there!',
-                 fail: str = '', rate_limited: bool = False, ready: bool = True):
+                 fail: str = '', rate_limited: bool = False, ready: bool = True, is_local: bool = False,
+                 local_vision: bool = False):
+        self.is_local = is_local
+        self.local_vision = local_vision
         self.reply = reply
         self.fail = fail
         self.rate_limited = rate_limited

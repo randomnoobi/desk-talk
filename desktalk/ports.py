@@ -199,6 +199,16 @@ class ChatModel(Protocol):
         """An AI is set up (a key in .env, or Ollama)."""
         ...
 
+    @property
+    def is_local(self) -> bool:
+        """The chat runs on this computer (Ollama)."""
+        ...
+
+    @property
+    def local_vision(self) -> bool:
+        """Pictures go to Ollama on this computer, so looking at them uses no cloud quota."""
+        ...
+
     def chat(self, messages: Sequence[Mapping[str, Any]], *, max_tokens: int, temperature: float,
              background: bool = False) -> str:
         """Reply text. `background` = nobody is waiting (idle chat, reminders): these pause after a rate limit
