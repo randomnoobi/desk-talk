@@ -33,6 +33,7 @@ class Clock(Protocol):
         ...
 
     def sleep(self, seconds: float) -> None:
+        """Wait. (Background jobs don't call this: the Supervisor does their waiting, so stopping is instant.)"""
         ...
 
 
@@ -42,12 +43,14 @@ class PeriodicWorker(Protocol):
 
     The Supervisor (desktalk/runtime/) calls tick() over and over in the job's own thread.
     Tests call tick() directly with a FakeClock: no threads, no waiting.
+    A job that should wait before its first round says so when it's added:
+    supervisor.add(job, start_after=seconds).
     """
 
     name: str
 
     def tick(self, now: float) -> float:
-        """Do one round of work. Returns how many seconds to wait before the next round.
+        """Do one round of work. Returns how many seconds to wait before the next round (a number, never None).
 
         Raising means this round failed: the Supervisor logs it and tries again after a
         growing wait (settings → supervisor), so one bad round never switches a feature off."""
