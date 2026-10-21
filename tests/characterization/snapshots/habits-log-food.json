@@ -1,0 +1,68 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "breaks": {
+      "count": "number",
+      "last_break_ts": "null",
+      "log": [],
+      "longest_sit_sec": "number",
+      "sit_limit_min": "number",
+      "sitting_sec": "number"
+    },
+    "danger_count": "number",
+    "day": "str",
+    "desk_sec": "number",
+    "food": {
+      "entries": [
+        {
+          "healthy": "bool",
+          "how": "str",
+          "label": "str",
+          "ts": "number"
+        }
+      ]
+    },
+    "hourly_activity": [
+      "number"
+    ],
+    "hydration": {
+      "goal_ml": "number",
+      "last_sip_ts": "null",
+      "ml_per_sip": "number",
+      "on_waking_ml": "number",
+      "pace_ml": "number",
+      "sips": "number",
+      "water_ml": "number"
+    },
+    "light": {
+      "afternoon_light_ts": "null",
+      "brightness": "number",
+      "lux": "null",
+      "sunlight_minutes": "number",
+      "sunlight_ts": "null"
+    },
+    "lost_alerts": "number",
+    "objects_seen": [
+      "str"
+    ],
+    "phone_free": {
+      "best_sec": "number",
+      "counted": "bool",
+      "goal_min": "number",
+      "phone_free_sec": "number",
+      "phone_on_desk": "bool",
+      "phone_on_desk_sec": "number",
+      "streak_sec": "number"
+    },
+    "times": {
+      "bed_ts": "number",
+      "sunrise_ts": "null",
+      "sunset_ts": "number",
+      "wake_ts": "number"
+    }
+  },
+  "request": "POST /api/habits/log (main server, busy desk)"
+}

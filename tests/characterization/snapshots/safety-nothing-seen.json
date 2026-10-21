@@ -1,0 +1,16 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "dangers": [],
+    "explanations": [],
+    "relationships": [],
+    "risk_events": [],
+    "risk_level": "number",
+    "rules_loaded": "bool",
+    "state": "str"
+  },
+  "request": "GET /api/safety (main server, fresh desk)"
+}

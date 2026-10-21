@@ -1,0 +1,43 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "agents": [
+      {
+        "about": "str",
+        "art": "null|str",
+        "auto": "bool",
+        "color": "str",
+        "confidence": "number",
+        "fragile": "bool",
+        "habits": [
+          "str"
+        ],
+        "icon": "str",
+        "id": "str",
+        "joined_at": "number",
+        "label_seen": "str",
+        "labels": [
+          "str"
+        ],
+        "learned": "bool",
+        "left_at": "null",
+        "name": "str",
+        "nickname": "str",
+        "object": "str",
+        "on_desk": "bool",
+        "tracker": "null|str"
+      }
+    ],
+    "lens": {
+      "about": "str",
+      "art": "str",
+      "color": "str",
+      "id": "str",
+      "name": "str"
+    }
+  },
+  "request": "GET /api/agents (main server, busy desk)"
+}

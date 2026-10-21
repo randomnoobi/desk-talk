@@ -1,0 +1,41 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "day": "str",
+    "detections": [
+      {
+        "detected_obj": [
+          {
+            "bbox": [
+              "number"
+            ],
+            "center": [
+              "number"
+            ],
+            "conf": "number",
+            "label": "str"
+          }
+        ],
+        "frame_id": "str",
+        "id": "str",
+        "light": {
+          "brightness": "number",
+          "lux": "null"
+        },
+        "moved": "bool",
+        "person": "bool",
+        "size": [
+          "number"
+        ],
+        "source": "str",
+        "taken_at": "null",
+        "ts": "number",
+        "type": "str"
+      }
+    ]
+  },
+  "request": "GET /api/log/detections?limit=1 (main server, busy desk)"
+}

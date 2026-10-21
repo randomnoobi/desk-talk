@@ -1,0 +1,30 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "messages": [
+      {
+        "character": "str",
+        "id": "str",
+        "reply_to": {
+          "character": "str",
+          "text": "str"
+        },
+        "text": "str",
+        "ts": "number",
+        "type": "str"
+      },
+      {
+        "character": "str",
+        "id": "str",
+        "text": "str",
+        "ts": "number",
+        "type": "str"
+      }
+    ],
+    "streamed": "bool"
+  },
+  "request": "POST /api/chat (main server, busy desk)"
+}

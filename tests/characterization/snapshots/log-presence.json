@@ -1,0 +1,25 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "day": "str",
+    "intervals": [
+      {
+        "avg_conf": "number",
+        "center": [
+          "number"
+        ],
+        "frames": "number",
+        "interval": [
+          "number"
+        ],
+        "label": "str",
+        "source": "str",
+        "type": "str"
+      }
+    ]
+  },
+  "request": "GET /api/log/presence (main server, busy desk)"
+}

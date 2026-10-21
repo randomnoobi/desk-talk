@@ -1,0 +1,59 @@
+{
+    "_comment": "Desk Talk \u2014 Relationship Detection Config",
+    "_instructions": [
+        "danger_zones: expanded bounding-box zones around protected objects (expand = px on each side).",
+        "  Alerts only for 'meaningful' intruders: see zone_danger_intruders in relationships.py defaults",
+        "  (liquids/food on laptop & keyboard, liquids/food on book, liquid/sharp on phone).",
+        "  Optional: override with \"zone_danger_intruders\": { \"laptop\": [\"cup\", \"bottle\", ...] }.",
+        "edge_proximity: objects near the frame/desk edge.",
+        "  danger_px = red zone, warn_px = yellow zone.",
+        "  objects = which YOLO classes are checked.",
+        "chain_reaction / temporal: tuning for advanced detectors."
+    ],
+    "danger_zones": {
+        "book": {
+            "expand": 45,
+            "label": "Stacking zone"
+        },
+        "cell phone": {
+            "expand": 35,
+            "label": "Screen scratch zone"
+        },
+        "keyboard": {
+            "expand": 60,
+            "label": "Crumb / debris zone"
+        },
+        "laptop": {
+            "expand": 134,
+            "label": "Spill / pressure zone"
+        }
+    },
+    "edge_proximity": {
+        "danger_px": 35,
+        "objects": [
+            "cup",
+            "bottle",
+            "cell phone",
+            "laptop",
+            "remote",
+            "mouse"
+        ],
+        "warn_px": 75
+    },
+    "chain_reaction": {
+        "crowd_min_objects": 3,
+        "crowd_radius_px": 140
+    },
+    "temporal": {
+        "approach_min_frames": 8,
+        "approach_rate": 0.12,
+        "repeated_intrusion_threshold": 3
+    },
+    "_supported_objects_reference": [
+        "Common COCO classes that YOLO can detect on a desk:",
+        "cell phone, laptop, keyboard, mouse, remote, book,",
+        "bottle, cup, wine glass, fork, knife, spoon, bowl,",
+        "banana, apple, sandwich, orange, pizza, donut, cake,",
+        "scissors, clock, vase, tv"
+    ]
+}

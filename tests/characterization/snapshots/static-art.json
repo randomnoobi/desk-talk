@@ -1,0 +1,8 @@
+{
+  "content_type": "image/svg+xml; charset=utf-8",
+  "headers": {
+    "access-control-allow-origin": "*",
+    "cache-control": "no-cache"
+  },
+  "request": "GET /art/desk.svg (main server, fresh desk)"
+}

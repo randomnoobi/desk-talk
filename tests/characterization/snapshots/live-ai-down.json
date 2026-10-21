@@ -1,0 +1,186 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "agents": [
+      {
+        "about": "str",
+        "art": "null|str",
+        "auto": "bool",
+        "color": "str",
+        "confidence": "number",
+        "fragile": "bool",
+        "habits": [
+          "str"
+        ],
+        "icon": "str",
+        "id": "str",
+        "joined_at": "number",
+        "label_seen": "str",
+        "labels": [
+          "str"
+        ],
+        "learned": "bool",
+        "left_at": "null",
+        "name": "str",
+        "nickname": "str",
+        "object": "str",
+        "on_desk": "bool",
+        "tracker": "null|str"
+      }
+    ],
+    "ai": {
+      "label": "str",
+      "problem": "str",
+      "ready": "bool"
+    },
+    "camera": "bool",
+    "camera_index": "number",
+    "camera_info": {
+      "connected": "bool",
+      "fps": "number",
+      "frames_received": "number",
+      "model": "str",
+      "pi": {
+        "last_frame_id": "str"
+      },
+      "source": "str",
+      "yolo_ms": "number"
+    },
+    "camera_issues": [],
+    "camera_source": "str",
+    "detections": {
+      "extras": [
+        {
+          "bbox": [
+            "number"
+          ],
+          "confidence": "number",
+          "highlight": "bool",
+          "ignored": "bool",
+          "yolo_class": "str"
+        }
+      ],
+      "frame": {
+        "h": "number",
+        "w": "number"
+      },
+      "light": {
+        "brightness": "number",
+        "lux": "null"
+      },
+      "lost_vlm_labels": [],
+      "objects": {
+        "computer": {
+          "bbox": [
+            "number"
+          ],
+          "cam": "number",
+          "center": [
+            "number"
+          ],
+          "class": "str",
+          "confidence": "number",
+          "icon": "str",
+          "name": "str"
+        },
+        "cup": {
+          "bbox": [
+            "number"
+          ],
+          "cam": "number",
+          "center": [
+            "number"
+          ],
+          "class": "str",
+          "confidence": "number",
+          "icon": "str",
+          "name": "str"
+        },
+        "keys": {
+          "bbox": [
+            "number"
+          ],
+          "cam": "number",
+          "center": [
+            "number"
+          ],
+          "class": "str",
+          "confidence": "number",
+          "icon": "str",
+          "name": "str"
+        },
+        "paper": {
+          "bbox": [
+            "number"
+          ],
+          "cam": "number",
+          "center": [
+            "number"
+          ],
+          "class": "str",
+          "confidence": "number",
+          "icon": "str",
+          "name": "str"
+        }
+      },
+      "relationship_edges": [
+        {
+          "from": "str",
+          "kind": "str",
+          "label": "str",
+          "to": "str"
+        }
+      ],
+      "timestamp": "number",
+      "vlm_habit": {},
+      "vlm_habit_ts": "number"
+    },
+    "phone_mode": "bool",
+    "pi_command": "str",
+    "safety": {
+      "dangers": [
+        {
+          "depth_px": "number",
+          "label": "str",
+          "pair": [
+            "str"
+          ],
+          "type": "str"
+        }
+      ],
+      "explanations": [
+        "str"
+      ],
+      "relationships": [
+        {
+          "depth_px": "number",
+          "intruder": "str",
+          "severity": "str",
+          "target": "str",
+          "type": "str",
+          "zone_label": "str"
+        }
+      ],
+      "risk_events": [
+        {
+          "center_dist_px": "number",
+          "depth_px": "number",
+          "intruder": "str",
+          "intruder_class": "str",
+          "target": "str",
+          "target_class": "str",
+          "type": "str",
+          "zone_expand": "number",
+          "zone_label": "str"
+        }
+      ],
+      "risk_level": "number",
+      "rules_loaded": "bool",
+      "state": "str"
+    }
+  },
+  "request": "GET /api/live (main server, ai_down desk)"
+}

@@ -1,0 +1,32 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "events": [
+      {
+        "category": "str",
+        "detail": "str",
+        "id": "str",
+        "snapshot_id": "str",
+        "title": "str",
+        "ts": "number"
+      }
+    ],
+    "summary": {
+      "breaks_today": "number",
+      "nail_biting_count_today": "number",
+      "ongoing_slouch_seconds": "number",
+      "posture_bad_seconds_today": "number"
+    },
+    "vlm_state": {
+      "attention": "str",
+      "nail_biting": "bool",
+      "phone": "str",
+      "posture": "str"
+    },
+    "vlm_ts": "number"
+  },
+  "request": "GET /api/habit_log (main server, busy desk)"
+}
