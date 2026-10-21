@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from desktalk.runtime import SystemClock
 from tests.contracts.clock_contract import ClockContract
 from tests.fakes import FakeClock
 
@@ -10,6 +11,12 @@ class TestFakeClock(ClockContract):
     @pytest.fixture
     def clock(self):
         return FakeClock()
+
+
+class TestSystemClock(ClockContract):
+    @pytest.fixture
+    def clock(self):
+        return SystemClock()
 
 
 def test_fake_clock_moves_only_when_told():
