@@ -81,3 +81,25 @@ Decide on purpose in Phase 3, and re-record the snapshot (`DESKTALK_RECORD_SNAPS
   log it and carry on.
 - Day names are checked strictly (`YYYY-MM-DD`). The old routes' check let `../a-bc-de` through. Use the store's
   check in the log routes.
+
+**E1. Cameras, detector, producer**
+- New settings:
+  - `detector.end2end: false`: run YOLO26's second head plus the overlap filter, like the Pi's ncnn model.
+  - `detector.rect: false`: always pad pictures to a square, like ncnn.
+  - `camera.pair_key_bytes: 6`: an 8-character pairing key.
+- `camera.pause_after_error_sec` is now unused (the Supervisor's retry wait replaces it). Remove it.
+- `UltralyticsDetector(config.resolve(config.detector.model), config.detector, end2end=..., rect=...)`, then `.warmup()`.
+  A model that won't load leaves Pi detections working (no crash at startup).
+- `DetectionProducer(source, detector, bus, desk, clock, lens, painter, config.camera,
+  new_session_after_sec=config.protocols.breaks.break_min * 60)`.
+- Webcam: `WebcamSource(clock, config.camera, config.camera.webcam_indices[0])`.
+- `/api/live`:
+  - `frames_received` comes from `source.pictures_received`;
+  - `camera_info.pi` comes from `pi_source.pi_info()`;
+  - `yolo_ms` comes from `producer.last_detect_ms or 0`.
+- `/api/health` gets `pi_source.status()` (upload format, detector state and reason, detect time, model,
+  how far off the Pi's clock is).
+- `/api/pi/frame`:
+  - reply 413 above `web.pi_upload_max_mb` before calling `push`;
+  - `push() == False` means 400 (this also fixes the empty-upload 500).
+- `parse_gravity` (phone route) isn't ported yet. The web layer needs it.
