@@ -10,12 +10,14 @@ The refactor in progress: [docs/plans/2026-10-21-refactor-plan.md](docs/plans/20
 - Show the test and ruff output. Don't just say they passed.
 
 ## Config, not code
-- IMPORTANT: Never hardcode a number, timing, threshold, path or model name. Add it to `config/settings.yaml`, with a plain-language comment, and a typed field in `desktalk/config.py`; parts get their typed section passed in (`config.camera.fps`, etc.). The old code still reads `desktalk/settings.py` until the refactor removes it.
+- IMPORTANT: Never hardcode a number, timing, threshold, path or model name. Add it to `config/settings.yaml`, with a plain-language comment, and a typed field in `desktalk/config.py`; parts get their typed section passed in (`config.camera.fps`, etc.). The Pi's numbers go in the `pi:` section (the camera program reads it from the computer); the detector container's in `raspberry_pi/detector_service/.env`.
 - Habit rules go in `config/protocols.yaml`, characters in `config/agents.yaml`, and API keys in `.env` (also add new keys to `.env.example`). Never put keys in YAML.
 - `config/settings.local.yaml` is the user's own file and isn't in git. Don't edit it.
 
 ## Interfaces first
 - Parts talk through the interfaces in `desktalk/ports.py` and pass the plain data in `desktalk/domain/`. A part asks for only the interfaces it uses in its constructor. Never pass the whole `app` object.
+- `desktalk/bootstrap.py` is the only place that knows the real classes: it builds every part and connects them. A new part gets built there; everything else only sees interfaces. (The camera program's `main.py` and the detector service's `bootstrap.py` do the same on the Pi.)
+- New routes go in `desktalk/web/routers/` (one module per area) and need a characterization case in `tests/characterization/cases.py`; `test_route_coverage.py` fails without one.
 - Ask a `Clock` for the time instead of calling `time.time()`, so tests can move time by hand.
 - Background jobs are `PeriodicWorker`s run by the Supervisor, so one failure never switches a feature off for good.
 - Use `logging`, never `print` (ruff rule T20). Scripts in `scripts/` may print.
@@ -29,8 +31,8 @@ The refactor in progress: [docs/plans/2026-10-21-refactor-plan.md](docs/plans/20
 
 ## Raspberry Pi
 - Two things run on the Pi:
-  - **The camera program**, on the Pi's own Python 3 (3.11 or newer). Standard library only, plus `picamera2`, `cv2` and `yaml` from apt, plus `desktalk_shared` straight from the cloned repo. Import the apt packages inside the function that uses them. Today the camera program is `raspberry_pi/camera_node.py`; the refactor replaces it with `raspberry_pi/camera/`.
-  - **The detector service** (`raspberry_pi/detector_service/`), which runs in Docker and may use anything uv installs.
+  - **The camera program** (`raspberry_pi/camera/`, run with `python3 -m raspberry_pi.camera` from the repo folder), on the Pi's own Python 3 (3.11 or newer). Standard library only, plus `picamera2`, `cv2` and `yaml` from apt, plus `desktalk_shared` straight from the cloned repo. No imports from `desktalk/`. Import the apt packages inside the function that uses them.
+  - **The detector service** (`raspberry_pi/detector_service/`), which runs in Docker and may use anything uv installs, but never imports `desktalk/` (only `desktalk_shared`).
 - `shared/desktalk_shared/` is used on the Pi and on this computer. It must stay standard library only and work on Python 3.11.
 - Code gets to the Pi with `git pull` on the Pi (or scp from the Mac). You can't run anything on the Pi, so don't say a Pi change works. Tell the user what to copy and run there, and label each command **on the Pi** or **on your Mac**.
 
