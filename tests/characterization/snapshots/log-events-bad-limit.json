@@ -1,0 +1,10 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "error": "str"
+  },
+  "request": "GET /api/log/events?limit=all (main server, busy desk)"
+}

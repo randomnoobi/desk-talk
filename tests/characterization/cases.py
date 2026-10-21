@@ -128,9 +128,8 @@ CASES = [
     Case('pi-frame-usb-camera', 'POST', '/api/pi/frame', 200, desk='fresh', data=PICTURE, headers=PI_USB_HEADERS),
     Case('pi-frame-wrong-key', 'POST', '/api/pi/frame', 403, desk='fresh', data=PICTURE,
          headers={**PI_HEADERS, **WRONG_KEY}),
-    # An empty upload crashes inside OpenCV today (500 with an HTML page), where 400 was probably meant.
-    Case('pi-frame-no-picture', 'POST', '/api/pi/frame', 500, desk='fresh', reply=STATUS, data=b'',
-         headers=PI_HEADERS),
+    # An empty upload is a bad picture like any other (the Flask server crashed inside OpenCV: 500).
+    Case('pi-frame-no-picture', 'POST', '/api/pi/frame', 400, desk='fresh', data=b'', headers=PI_HEADERS),
     Case('pi-frame-not-a-jpeg', 'POST', '/api/pi/frame', 400, desk='fresh', data=b'this is not a picture',
          headers=PI_HEADERS),
     Case('pi-frame-camera-is-phone', 'POST', '/api/pi/frame', 409, desk='phone', data=PICTURE, headers=PI_HEADERS),
@@ -180,6 +179,8 @@ CASES = [
          before=(Step('POST', '/api/phone/stop', headers=KEY, server='phone'),), values={'camera': False}),
     Case('status', 'GET', '/api/status', 200),
     Case('status-nothing-seen', 'GET', '/api/status', 200, desk='fresh'),
+    Case('health', 'GET', '/api/health', 200),
+    Case('health-phone-camera', 'GET', '/api/health', 200, desk='phone', values={'pi': None}),
 
     # ── Agents and chat ──
     Case('agents', 'GET', '/api/agents', 200),
@@ -227,7 +228,7 @@ CASES = [
     Case('habits-log-unknown-habit', 'POST', '/api/habits/log', 400, json={'habit': 'nope', 'action': 'x'}),
     Case('habit-log', 'GET', '/api/habit_log', 200),
     Case('habit-log-one-category', 'GET', '/api/habit_log?category=posture_bad&limit=5', 200),
-    Case('habit-log-bad-limit', 'GET', '/api/habit_log?limit=lots', 500, reply=STATUS),
+    Case('habit-log-bad-limit', 'GET', '/api/habit_log?limit=lots', 400),     # the Flask server crashed: 500
     Case('daily-stats', 'GET', '/api/daily_stats', 200),
     Case('preferences', 'GET', '/api/preferences', 200),
     Case('preferences-old-url', 'GET', '/api/habit_policy', 200),
@@ -246,11 +247,12 @@ CASES = [
     Case('log-events-joins-only', 'GET', '/api/log/events?types=agent_joined&limit=2', 200),
     Case('log-events-other-day', 'GET', '/api/log/events?day=2026-10-20', 200, values={'day': '2026-10-20'}),
     Case('log-events-bad-day', 'GET', '/api/log/events?day=yesterday', 200, values={'day': '2026-10-21'}),
-    Case('log-events-bad-limit', 'GET', '/api/log/events?limit=all', 500, reply=STATUS),
+    Case('log-events-bad-limit', 'GET', '/api/log/events?limit=all', 400),     # the Flask server crashed: 500
     Case('log-presence', 'GET', '/api/log/presence', 200),
     Case('log-presence-nothing-seen', 'GET', '/api/log/presence', 200, desk='fresh'),
     Case('log-detections', 'GET', '/api/log/detections?limit=1', 200),
     Case('log-detections-nothing-seen', 'GET', '/api/log/detections', 200, desk='fresh'),
+    Case('log-detections-bad-limit', 'GET', '/api/log/detections?limit=some', 400),
     Case('log-status', 'GET', '/api/log/status', 200),
     Case('log-status-nothing-seen', 'GET', '/api/log/status', 200, desk='fresh'),
     Case('log-compact', 'POST', '/api/log/compact', 200),
@@ -280,6 +282,7 @@ CASES = [
     Case('phone-art', 'GET', '/art/desk.svg', 200, desk='phone', server='phone', reply=FILE, starts_with=b'<svg'),
     Case('phone-font', 'GET', '/fonts/bricolage-grotesque.woff2', 200, desk='phone', server='phone', reply=FILE,
          starts_with=b'wOF2'),
+    # The Flask server had an automatic /static/ route here, for a folder that doesn't exist; it's gone.
     Case('phone-static-folder', 'GET', '/static/style.css', 404, desk='phone', server='phone', reply=STATUS),
     Case('phone-config', 'GET', '/api/phone/config', 200, desk='phone', server='phone'),
     Case('phone-frame', 'POST', '/api/phone/frame', 200, desk='phone', server='phone', data=PICTURE,
@@ -288,8 +291,8 @@ CASES = [
          headers={'Content-Type': 'image/jpeg', **KEY}),
     Case('phone-frame-wrong-key', 'POST', '/api/phone/frame', 403, desk='phone', server='phone', data=PICTURE,
          headers={**PHONE_HEADERS, **WRONG_KEY}),
-    Case('phone-frame-no-picture', 'POST', '/api/phone/frame', 500, desk='phone', server='phone', reply=STATUS,
-         data=b'', headers=PHONE_HEADERS),     # crashes inside OpenCV today, like the Pi's
+    Case('phone-frame-no-picture', 'POST', '/api/phone/frame', 400, desk='phone', server='phone', data=b'',
+         headers=PHONE_HEADERS),     # a bad picture, like the Pi's (the Flask server crashed: 500)
     Case('phone-frame-not-a-jpeg', 'POST', '/api/phone/frame', 400, desk='phone', server='phone',
          data=b'this is not a picture', headers=PHONE_HEADERS),
     Case('phone-stop', 'POST', '/api/phone/stop', 200, desk='phone', server='phone', headers=KEY),

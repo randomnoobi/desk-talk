@@ -25,6 +25,8 @@ camera:
   disconnect_after_sec: 3     # no picture for this long = camera is off, analysis pauses
   webcam_indices: [0]         # which webcam(s) when source is webcam (0 = built-in on most Macs)
   phone_port: 5443            # HTTPS port the phone page uses (phones only allow cameras on https)
+  phone_cert_folder: certs    # the phone page's own HTTPS certificate is made and kept here
+  phone_cert_days: 365        # a new certificate is good for this long (a new one is made when it runs out)
   wait_for_picture_sec: 1.0   # analysis waits this long for a new picture, then checks again
   jpeg_quality: 78            # JPEG quality when this computer makes the picture itself (webcam)
   boxes_jpeg_quality: 70      # JPEG quality of the live view with boxes ("Boxes" in the app)
@@ -408,7 +410,11 @@ habit_tracker:
 
 # ── Web server ──────────────────────────────────────────────────────
 web:
+  host: 0.0.0.0               # listen on every network this computer is on, so the Pi and the phone can connect
   port: 5000
+  app_folder: web_app         # the app's page and files (what you open at http://localhost:5000)
+  phone_folder: phone_camera  # the page a phone opens to be the camera
+  stop_wait_sec: 3            # when the server stops, requests still running get this long to finish
   max_request_mb: 8           # biggest request the app and the phone page may send
   pi_upload_max_mb: 4         # biggest picture upload the Pi may send to /api/pi/frame
   live_retry_ms: 2000         # the app reconnects to live updates after this long if cut off

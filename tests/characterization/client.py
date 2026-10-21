@@ -1,12 +1,12 @@
 """
 How the characterization tests talk to the two web servers.
 
-    main = WebClient.main_server(app)     # what web_app/ and the Pi talk to (port 5000)
-    phone = WebClient.phone_server(app)   # the phone camera page's own HTTPS server (port 5443)
-    reply = main.get('/api/live')         # Reply: status, headers, body; reply.json()
+    main = WebClient.main_server(desktalk, links)   # what web_app/ and the Pi talk to (port 5000)
+    phone = WebClient.phone_server(desktalk)        # the phone camera page's own HTTPS server (port 5443)
+    reply = main.get('/api/live')                   # Reply: status, headers, body; reply.json()
 
-This is the only file that knows the servers are Flask apps. Phase 3 (FastAPI) changes the inside of
-WebClient to use FastAPI's TestClient; the tests and the saved shapes stay as they are.
+This is the only file that knows the servers are FastAPI apps (desktalk/web/app.py). Requests go through
+FastAPI's TestClient, which can also read the start of a reply that never ends (SSE, video) and hang up.
 """
 
 from __future__ import annotations
@@ -17,16 +17,21 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from werkzeug.exceptions import HTTPException
-from werkzeug.routing import RequestRedirect
+from fastapi import FastAPI
+from fastapi.routing import iter_route_contexts
+from fastapi.testclient import TestClient
+from starlette.routing import Match, Mount
 
-from desktalk.web.phone_server import create_phone_app
-from desktalk.web.routes import create_web_app
+from desktalk.bootstrap import DeskTalk
+from desktalk.web.app import create_app, create_phone_app
+from desktalk.web.pairing import Links
 
 THIS_COMPUTER = '127.0.0.1'         # where the browser on this computer connects from
+CLIENT_PORT = 50000                 # the port the requests seem to come from (nothing listens on it)
 STREAM_TIMEOUT_SEC = 10             # give up on a live stream (SSE, video) after this long
 STREAM_MAX_BYTES = 2_000_000        # never read more than this from a live stream
 AUTOMATIC_METHODS = {'HEAD', 'OPTIONS'}   # the web framework answers these by itself
+FILES = '{path}'                    # how a folder of files shows up in routes(), e.g. /art/{path}
 
 
 @dataclass
@@ -48,28 +53,32 @@ class StreamTimeout(AssertionError):
 
 
 class WebClient:
-    def __init__(self, flask_app):
-        self._app = flask_app
-        self._client = flask_app.test_client()
+    def __init__(self, app: FastAPI):
+        self._app = app
+        self._clients: dict[str, TestClient] = {}
 
     @classmethod
-    def main_server(cls, app) -> WebClient:
-        return cls(create_web_app(app))
+    def main_server(cls, desktalk: DeskTalk, links: Links) -> WebClient:
+        return cls(create_app(desktalk, links))
 
     @classmethod
-    def phone_server(cls, app) -> WebClient:
-        return cls(create_phone_app(app))
+    def phone_server(cls, desktalk: DeskTalk) -> WebClient:
+        return cls(create_phone_app(desktalk))
+
+    def _client(self, from_ip: str) -> TestClient:
+        """A client whose requests come from `from_ip`. Without `with`, the app's lifespan never runs, so the
+        background jobs stay off: the tests drive the desk by hand. Errors come back as replies (500), as
+        from a real server, and redirects aren't followed, so they can be checked."""
+        if from_ip not in self._clients:
+            self._clients[from_ip] = TestClient(self._app, client=(from_ip, CLIENT_PORT),
+                                                raise_server_exceptions=False, follow_redirects=False)
+        return self._clients[from_ip]
 
     # ── requests ──
     def request(self, method: str, path: str, *, json: Any = None, data: bytes | None = None,
                 headers: dict | None = None, from_ip: str = THIS_COMPUTER) -> Reply:
-        kw: dict[str, Any] = {'method': method, 'headers': headers or {}, 'environ_base': {'REMOTE_ADDR': from_ip}}
-        if json is not None:
-            kw['json'] = json
-        if data is not None:
-            kw['data'] = data
-        r = self._client.open(path, **kw)
-        return Reply(r.status_code, {k.lower(): v for k, v in r.headers.items()}, r.get_data())
+        r = self._client(from_ip).request(method, path, json=json, content=data, headers=headers or {})
+        return Reply(r.status_code, {k.lower(): v for k, v in r.headers.items()}, r.content)
 
     def get(self, path: str, **kw) -> Reply:
         return self.request('GET', path, **kw)
@@ -93,20 +102,19 @@ class WebClient:
 
         def run():
             try:
-                r = self._client.get(path, buffered=False, environ_base={'REMOTE_ADDR': from_ip})
-                try:
+                # A client of its own: this thread reads while the test's thread sends other requests.
+                client = TestClient(self._app, client=(from_ip, CLIENT_PORT), raise_server_exceptions=False)
+                with client.stream('GET', path) as r:
                     out['status'] = r.status_code
                     out['headers'] = {k.lower(): v for k, v in r.headers.items()}
                     if after_open:
                         after_open()
                     body = b''
-                    for chunk in r.response:
-                        body += chunk.encode() if isinstance(chunk, str) else chunk
+                    for chunk in r.iter_raw():
+                        body += chunk
                         if until(body) or len(body) >= STREAM_MAX_BYTES:
                             break
                     out['body'] = body
-                finally:
-                    r.close()
             except Exception as exc:      # handed to the test's thread below
                 out['error'] = exc
 
@@ -123,15 +131,21 @@ class WebClient:
 
     # ── which URLs exist ──
     def routes(self) -> set[tuple[str, str]]:
-        """Every (method, URL rule) this server answers, not counting HEAD and OPTIONS."""
-        return {(m, rule.rule) for rule in self._app.url_map.iter_rules() for m in rule.methods - AUTOMATIC_METHODS}
+        """Every (method, URL rule) this server answers, not counting HEAD and OPTIONS.
+        A folder of files is one rule: GET /art/{path}."""
+        out = set()
+        for context in iter_route_contexts(self._app.routes):        # the routes of included routers too
+            if isinstance(context.route, Mount):
+                out.add(('GET', f'{context.path}/{FILES}'))
+            else:
+                out |= {(m, context.path) for m in (context.methods or set()) - AUTOMATIC_METHODS}
+        return out
 
     def route_for(self, method: str, path: str) -> tuple[str, str] | None:
         """The (method, URL rule) that answers this request, or None if no rule does."""
-        try:
-            rule, _ = self._app.url_map.bind('localhost').match(path.split('?')[0], method=method, return_rule=True)
-        except RequestRedirect:
-            return None
-        except HTTPException:
-            return None
-        return method, rule.rule
+        scope = {'type': 'http', 'method': method, 'path': path.split('?')[0], 'root_path': '', 'headers': []}
+        for context in iter_route_contexts(self._app.routes):
+            match, _ = context.route.matches(scope)
+            if match is Match.FULL:
+                return (method, f'{context.path}/{FILES}' if isinstance(context.route, Mount) else context.path)
+        return None

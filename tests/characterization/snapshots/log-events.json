@@ -18,13 +18,16 @@
       {
         "agent": "str",
         "depth_px": "number",
+        "feature": "str",
         "follow_up": "number",
         "id": "str",
         "kind": "str",
         "near": "str",
         "rule_label": "str",
+        "scenario": "str",
         "severity": "str",
         "snapshot": "str",
+        "text": "str",
         "ts": "number",
         "type": "str"
       }

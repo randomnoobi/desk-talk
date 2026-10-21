@@ -1,0 +1,71 @@
+"""The phone camera page's own server (create_phone_app): its pages, its pictures, and the phone's tilt."""
+
+from __future__ import annotations
+
+import pytest
+
+from desktalk.web.app import create_phone_app
+from desktalk.web.routers.phone import parse_gravity
+from tests.integration.app_kit import PAIR_KEY, DeskRig, changed, desk_config
+from tests.integration.web_kit import web_client
+
+
+@pytest.fixture
+def rig(tmp_path):
+    return DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'camera', source='phone'))
+
+
+@pytest.fixture
+def phone(rig):
+    return web_client(create_phone_app(rig.app), from_ip='192.168.1.50')
+
+
+@pytest.mark.parametrize('header, gravity', [
+    ('0.12,-9.71,0.85', (0.12, -9.71, 0.85)),
+    ('1,2,3,4', (1.0, 2.0, 3.0)),          # anything after the third number is ignored
+    ('', None),
+    (None, None),
+    ('1,2', None),                         # not three numbers
+    ('1,a,3', None),
+    ('0,-60,0', None),                     # far more than gravity: not a real reading
+])
+def test_the_tilt_header_is_read_as_three_numbers(header, gravity):
+    assert parse_gravity(header) == gravity
+
+
+def test_a_picture_from_the_phone_reaches_the_camera_with_its_tilt_and_turn(rig, phone):
+    headers = {'X-Desk-Key': PAIR_KEY, 'Content-Type': 'image/jpeg', 'X-Desk-Rotation': '-90',
+               'X-Desk-Gravity': '0.12,-9.71,0.85'}
+    reply = phone.post('/api/phone/frame', content=rig.jpeg, headers=headers)
+    assert reply.status_code == 200 and reply.json() == {'ok': True, 'fps': 0.0}      # no tip: nothing wrong
+    source = rig.app.phone_source
+    assert source.pictures_received == 1
+    assert source.recent_gravity() == (0.12, -9.71, 0.85) and source.rotation == 270
+    assert 'access-control-allow-origin' not in reply.headers
+
+
+def test_bad_phone_uploads_are_refused(rig, phone):
+    wrong_key = phone.post('/api/phone/frame', content=rig.jpeg, headers={'X-Desk-Key': 'nope'})
+    assert wrong_key.status_code == 403 and 'Scan the QR code' in wrong_key.json()['error']
+    for body in (b'', b'not a picture'):
+        bad = phone.post('/api/phone/frame', content=body, headers={'X-Desk-Key': PAIR_KEY})
+        assert (bad.status_code, bad.json()) == (400, {'error': 'not a JPEG image'})
+    assert rig.app.phone_source.pictures_received == 0
+
+
+def test_stop_on_the_phone_disconnects_the_camera(rig, phone):
+    phone.post('/api/phone/frame', content=rig.jpeg, headers={'X-Desk-Key': PAIR_KEY})
+    assert rig.app.desk_status.camera_connected()
+    assert phone.post('/api/phone/stop', headers={'X-Desk-Key': 'nope'}).status_code == 403
+    assert phone.post('/api/phone/stop', headers={'X-Desk-Key': PAIR_KEY}).json() == {'ok': True}
+    assert not rig.app.desk_status.camera_connected()
+
+
+def test_the_phone_page_and_its_files_are_served_and_nothing_else(rig, phone):
+    for path in ('/', '/phone', '/phone/'):
+        assert phone.get(path).text.startswith('<!DOCTYPE html>'), path
+    assert phone.get('/phone/camera.js').headers['cache-control'] == 'no-cache'
+    assert phone.get('/art/desk.svg').status_code == 200
+    assert phone.get('/api/phone/config').json() == {'fps': rig.config.camera.fps}
+    for path in ('/static/style.css', '/phone/nope.js', '/api/live', '/phone/../config/settings.yaml'):
+        assert phone.get(path).status_code == 404, path

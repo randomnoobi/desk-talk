@@ -1,0 +1,49 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "ai": {
+      "label": "str",
+      "problem": "null",
+      "ready": "bool"
+    },
+    "camera": {
+      "connected": "bool",
+      "fps": "number",
+      "pictures_received": "number",
+      "source": "str"
+    },
+    "detection": {
+      "detect_ms": "null",
+      "model": "str",
+      "pictures_analysed": "number",
+      "problem": "null"
+    },
+    "events": [
+      {
+        "dropped": "number",
+        "errors": "number",
+        "handled": "number",
+        "name": "str",
+        "waiting": "number"
+      }
+    ],
+    "jobs": [],
+    "pi": "null",
+    "scheduler": [
+      {
+        "every_sec": "number",
+        "last_error": "null",
+        "last_run_at": "null",
+        "name": "str",
+        "next_in_sec": "number",
+        "next_run_at": "number",
+        "runs": "number"
+      }
+    ],
+    "uptime_sec": "number"
+  },
+  "request": "GET /api/health (main server, phone desk)"
+}

@@ -44,6 +44,12 @@ COMPACTING = 'detections-*.compacting.jsonl'
 _DAY = re.compile(r'\d{4}-\d{2}-\d{2}')          # a day folder's name, e.g. 2026-10-21
 
 
+def is_day(text: str) -> bool:
+    """A day's name like 2026-10-21: the only names the log reads, so a name sent to the app can't point
+    anywhere else."""
+    return bool(_DAY.fullmatch(text))
+
+
 def _day_of(ts: float) -> str:
     """'2026-10-21' for a timestamp, in local time."""
     return time.strftime('%Y-%m-%d', time.localtime(ts))
@@ -174,11 +180,11 @@ class EventLog:
     def _day_folders(self) -> list[Path]:
         if not self.folder.is_dir():
             return []
-        return [d for d in self.folder.iterdir() if d.is_dir() and _DAY.fullmatch(d.name)]
+        return [d for d in self.folder.iterdir() if d.is_dir() and is_day(d.name)]
 
     def _day_folder(self, day: str) -> Path | None:
         """The folder of a day, or None if `day` isn't a date like 2026-10-21 (so it can't point elsewhere)."""
-        return self.folder / day if _DAY.fullmatch(day) else None
+        return self.folder / day if is_day(day) else None
 
     def days(self) -> list[str]:
         """Days with a log, newest first."""
