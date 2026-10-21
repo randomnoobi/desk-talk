@@ -244,6 +244,8 @@ things on the desk can join the chat, and things near a real edge get a warning.
 | Joining | seen 3 s → joins; gone 45 s → leaves (habit rules use a shorter 1 s / 2.5 s) |
 | Safety | danger zones, desk edges, chain reactions, objects approaching (`desktalk/core/vision/`, tuned in `config/safety_rules.json` and the Settings page) |
 
+**On your Mac**, in the `desk-talk` folder:
+
 ```bash
 uv run python scripts/download_models.py --test    # download the model and time it on your computer
 uv run python scripts/download_models.py --list    # every object it can detect
