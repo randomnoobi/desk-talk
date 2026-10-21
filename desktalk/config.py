@@ -425,6 +425,7 @@ class LensWaits(_Section):
     cutoff: ZeroOrMore
     slow: ZeroOrMore
     pi: ZeroOrMore
+    pi_detector: ZeroOrMore
 
 
 class LensSettings(_Section):

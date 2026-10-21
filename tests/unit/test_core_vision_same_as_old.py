@@ -202,6 +202,7 @@ def test_lens_numbers_left_in_the_old_code_match_the_settings():
     assert in_settings == (ch.SAMPLE_WIDTH, ch.EDGE_TOUCH_PX, ch.CLEAR_HOLD_SEC, ch.EDGE_TIP_AFTER_SEC)
     waits = lens.wait_before_saying_sec.model_dump()
     waits.pop('pi')                  # new: the Pi's health, which the old code never checked
+    waits.pop('pi_detector')         # new: the Pi's own detector
     assert {key: wait for key, (wait, _, _) in ch.ISSUES.items()} == waits
     assert app_config().camera.moved_within_sec == 1.5          # the old producer's "moved" window
 

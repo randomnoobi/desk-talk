@@ -10,6 +10,7 @@ from desktalk.config import (
     DailySummarySettings,
     IdleChatSettings,
     LensSettings,
+    LensWaits,
     LostItemsSettings,
     PiSettings,
     VisionHabitsSettings,
@@ -61,8 +62,9 @@ def all_workers(clock):
             detector_fresh_sec=5, nearby_kept=5, nearby_mentioned=3, answer_min_words=3, items={}),
             REPLIES, default_temperature=0.8),
         Lens(FakeCameraHealth(), FakeFrameSource('pi', clock), Layout(), FakePreferences(), notifier, bus, desk,
-             LensSettings.model_construct(check_every_sec=2.0, repeat_after_min=20.0, fixed_after_sec=5.0),
-             PiSettings.model_construct(hot_warning_c=75.0, clock_off_warning_sec=5.0), pi_wait_before_saying_sec=10),
+             LensSettings.model_construct(check_every_sec=2.0, repeat_after_min=20.0, fixed_after_sec=5.0,
+                                          wait_before_saying_sec=LensWaits.model_construct(pi=10, pi_detector=60)),
+             PiSettings.model_construct(hot_warning_c=75.0, clock_off_warning_sec=5.0)),
         DailySummary(ai, notifier, roster, FakeHabits(), InMemoryKeyValueStore(), DailySummarySettings(
             hour=21, start_delay_sec=120, check_every_sec=60, objects_listed=8), REPLIES, default_temperature=0.8),
         VisionHabits(None, bus, desk, roster, profiles, status, VisionHabitsSettings(

@@ -362,6 +362,7 @@ lens:
     cutoff: 45                # an object cut off at the side of the picture
     slow: 30
     pi: 10                    # the Pi is too hot, its power supply is weak, or its clock is off
+    pi_detector: 60           # the Pi's own object detection is off (this computer detects instead)
 
 # ── Daily recap ─────────────────────────────────────────────────────
 daily_summary:
