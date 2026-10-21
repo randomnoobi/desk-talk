@@ -280,8 +280,8 @@ After each one finishes, a review agent checks the work against this plan before
 - [x] The detector service's HTTP API (request/reply models for `/detect`, `/health`, `/model`)
 - [x] `domain/` data types and `ports.py`
 - [x] `tests/fakes/` and `tests/contracts/`
-- [ ] Typed settings (pydantic) that load today's `config/*.yaml` unchanged; move hardcoded numbers into `settings.yaml`
-- [ ] `runtime/`: `Supervisor`, `Scheduler`, `SystemClock`, logging
+- [x] Typed settings (pydantic) that load today's `config/*.yaml` unchanged; move hardcoded numbers into `settings.yaml`
+- [x] `runtime/`: `Supervisor`, `Scheduler`, `SystemClock`, logging
 
 ### Phase 2: parallel subagents (each test-first, each in its own worktree)
 

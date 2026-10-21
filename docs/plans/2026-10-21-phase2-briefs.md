@@ -12,6 +12,7 @@ the same file.
 - Set up with `uv sync --all-packages`, then run everything with `uv run`.
 
 **What's frozen (you build on it, you don't change it)**
+- Where each old hardcoded number lives now: [2026-10-21-settings-map.md](2026-10-21-settings-map.md).
 - `desktalk/ports.py` (the interfaces), `desktalk/domain/` (plain data), `shared/desktalk_shared/`
   (Detection, the upload format, the detector API, the Ultralytics converter), `tests/fakes/`,
   `tests/contracts/*_contract.py`, `desktalk/config.py` (typed settings), `config/*.yaml`, `desktalk/runtime/`,
