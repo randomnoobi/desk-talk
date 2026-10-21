@@ -20,9 +20,9 @@ import uuid
 from typing import Any
 
 from desktalk.config import VisionHabitsSettings
+from desktalk.core.agents.speakers import speaker_for
 from desktalk.core.chat import prompts
 from desktalk.core.chat.workers.ai import look
-from desktalk.core.chat.workers.speakers import speaker_for
 from desktalk.core.chat.workers.text import json_in
 from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.desk_state import DeskState

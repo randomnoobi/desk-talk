@@ -16,13 +16,13 @@ from __future__ import annotations
 
 import logging
 import random
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from desktalk.config import AgentsSettings, ChatSettings, LlmSettings
+from desktalk.core.agents.speakers import LENS, speaker_for
 from desktalk.core.chat import prompts
 from desktalk.core.chat.context import (
-    LENS,
     budget_history,
     build_live_context,
     group_speaker_order,
@@ -58,17 +58,6 @@ NOBODY_HERE = ('Nobody is on the desk yet. Put something in front of the camera,
 
 class UnknownChat(ValueError):
     """answer() was asked to reply in a 1-on-1 chat with an agent that doesn't exist."""
-
-
-def speaker_for(habits: Iterable[str], member_ids: Sequence[str], profiles: Profiles) -> str:
-    """Who says something about a habit: an agent in the chat that speaks for it, else Lens (the camera)."""
-    members = list(member_ids)
-    for habit in habits:
-        for pid in members:
-            p = profiles.get(pid)
-            if p and habit in p.habits:
-                return pid
-    return LENS
 
 
 class MessageGenerator:

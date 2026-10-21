@@ -9,8 +9,9 @@ import pytest
 from desktalk.config import load_config
 from desktalk.core.agents.profiles import ProfileBook
 from desktalk.core.agents.roster import Roster
+from desktalk.core.agents.speakers import LENS, speaker_for
 from desktalk.core.habits.desk_status import DeskStatus
-from desktalk.core.habits.reminders import LENS, HabitReminders, speaker_for
+from desktalk.core.habits.reminders import HabitReminders
 from desktalk.core.habits.tracker import HabitTracker
 from desktalk.desk_state import DeskState
 from desktalk.domain import AgentProfile, BBox, Detection, DetectionEvent, Light, Nudge, NudgeSent

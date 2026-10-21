@@ -14,25 +14,13 @@ after the last one.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
 
 from desktalk.config import RemindersSettings
+from desktalk.core.agents.speakers import LENS, speaker_for
 from desktalk.domain import NudgeSent
 from desktalk.ports import ChatVoice, DeskStatus, EventBus, HabitsView, Notifier, Profiles, RosterView
 
 log = logging.getLogger(__name__)
-
-LENS = 'lens'
-
-
-def speaker_for(habits: Iterable[str], member_ids: Sequence[str], profiles: Profiles) -> str:
-    """Which agent says a nudge: the first one in the chat that speaks for the first habit it can, else Lens."""
-    for habit in habits:
-        for pid in member_ids:
-            prof = profiles.get(pid)
-            if prof and habit in prof.habits:
-                return pid
-    return LENS
 
 
 class HabitReminders:
