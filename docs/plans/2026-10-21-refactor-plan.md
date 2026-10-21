@@ -1,6 +1,6 @@
 # Refactor plan: easier to change, harder to break
 
-Date: 2026-10-21. Status: **draft, waiting for your OK.** Nothing in the app code has changed yet.
+Date: 2026-10-21. Status: **in progress** on the `refactor` branch (started 2026-10-21).
 
 Goal: make Desk Talk easy to change (maintainable), hard to break (reliable), and able to keep
 going when one part fails (fault-tolerant). As part of it, **object detection moves to the Raspberry Pi**:
@@ -119,7 +119,15 @@ Details:
 7. **Threads stay.** The parts already run in threads. Rewriting everything to `async` would be a big risk for
    little gain. Only the web layers are async.
 8. **Phone and webcam cameras keep working**, detected on this computer with Ultralytics, as now.
-9. ❓ **`safety_pipeline/` and `run_safety_pipeline.py`.** A separate program that posts to `/api/safety`.
+9. ❓ **How YOLO26 runs on this computer, so it matches the Pi** (from [the ncnn check](2026-10-21-ncnn-check.md)).
+   ncnn can't run YOLO26's end-to-end head, so the exported model uses its second head plus the usual
+   overlap filter, and always pads pictures to a square. Against the `.pt` run the same way, ncnn matches
+   99.5% of boxes (fp32, 640); against the `.pt` as the app runs it today, about 91%.
+   Default in this plan: run the `.pt` on this computer the same way too (two new `detector` settings,
+   `end2end: false` and `rect: false`), so the Pi and this computer find the same objects.
+   The other choice, swapping the head's weights before export, stays closer to today's results but depends on
+   Ultralytics' internals. (yolo11 models have no end-to-end head; for them only the padding setting matters.)
+10. ❓ **`safety_pipeline/` and `run_safety_pipeline.py`.** A separate program that posts to `/api/safety`.
    Default in this plan: keep it working but leave it out of the refactor. Other choices: fold it into Desk Talk,
    or delete it.
 
@@ -249,12 +257,13 @@ each in its own git worktree and branch, each owning its own folders so no two t
 After each one finishes, a review agent checks the work against this plan before it's merged.
 
 ### Phase 0: tools, safety net, and the Pi speed test
-- [ ] uv workspace: root `pyproject.toml`, `shared/` and `raspberry_pi/detector_service/` packages, `uv.lock`;
+- [x] uv workspace: root `pyproject.toml`, `shared/` and `raspberry_pi/detector_service/` packages, `uv.lock`;
       `uv sync` works; remove `requirements*.txt`, `pytest.ini` (moved into `pyproject.toml`)
-- [ ] ruff settings in `pyproject.toml`; GitHub Actions job: `uv sync`, `uv run ruff check .`, `uv run pytest -m "not slow and not docker"`
+- [x] ruff settings in `pyproject.toml`; GitHub Actions job: `uv sync`, `uv run ruff check .`, `uv run pytest -m "not slow and not docker"`
 - [ ] Characterization tests for all 44 routes against the current Flask app
-- [ ] Check on this computer that Ultralytics exports `yolo26m-objv1-150` to ncnn and that it finds the same objects as the `.pt`
-- [ ] First Docker image (just Ultralytics + the benchmark script) and `compose.yaml`
+- [x] Check on this computer that Ultralytics exports `yolo26m-objv1-150` to ncnn and that it finds the same objects as the `.pt`
+      ([results](2026-10-21-ncnn-check.md); decision 9)
+- [x] First Docker image (just Ultralytics + the benchmark script) and `compose.yaml` (`benchmarks/`)
 - [x] Benchmark tool: `benchmarks/` (`deskbench`, settings in `config/benchmark.yaml`, results in
       `benchmarks/results/`). Tries yolo11 n / s / m at 320 / 480 / 640 as pt, ncnn (fp32, fp16) and onnx
       (fp32, int8), on this computer and on the Pi in Docker
@@ -262,7 +271,7 @@ After each one finishes, a review agent checks the work against this plan before
       We pick the model, picture size and detection rate from the results and write them into `config/settings.yaml`.
       yolo11 models only know the 80 COCO objects; if the pick has to find keys or earphones, add the
       Objects365 models to `config/benchmark.yaml` and run again
-- [ ] Update AGENTS.md (new Pi rule, `uv run ...` commands) and README
+- [x] Update AGENTS.md (new Pi rule, `uv run ...` commands) and README
 
 ### Phase 1: interfaces and fakes (one at a time; the contract every subagent builds against)
 - [ ] `desktalk_shared.wire` (upload format version 2, detector states `ok` / `busy` / `off`) and `Detection`
