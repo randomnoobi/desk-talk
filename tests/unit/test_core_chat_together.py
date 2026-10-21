@@ -5,12 +5,14 @@ import queue
 import random
 from pathlib import Path
 
+import pytest
+
 from desktalk.adapters.llm import OpenAICompatibleChatModel, ResilientChatModel
 from desktalk.config import Secrets, load_config
 from desktalk.core.chat.message_generator import MessageGenerator
 from desktalk.core.chat.message_hub import MessageHub
 from desktalk.desk_state import DeskState
-from desktalk.domain import AgentJoined, AgentProfile
+from desktalk.domain import AgentJoined, AgentProfile, AIUnavailable
 from tests.conftest import FakeAI
 from tests.fakes import FakeClock, FakeDeskStatus, FakeHabits, FakeProfiles, StaticRoster, SyncEventBus
 
@@ -86,3 +88,21 @@ def test_with_the_ai_down_the_chat_says_why_and_then_stops_asking():
     assert asked == CONFIG.llm.breaker_failures * CONFIG.llm.max_retries
     assert 'leaving it alone' in gen.answer('cup', 'hi')['error']
     assert len(clients[-1].requests) == asked and model.problem()
+
+
+def test_an_ollama_that_keeps_answering_with_nothing_is_asked_at_most_max_retries_times():
+    """The AI connection already asks Ollama again after an empty reply; the wrapper must not ask all over again."""
+    clock = FakeClock()
+    clients = []
+
+    def factory(**kw):
+        clients.append(FakeAI(reply='', **kw))
+        return clients[-1]
+    llm = CONFIG.llm.model_copy(update={'min_interval_sec': 0, 'max_retries': 3})
+    ai = OpenAICompatibleChatModel(llm, Secrets(gemini_api_key='', openai_api_key='', groq_api_key='',
+                                                ollama_url='http://ollama.test/v1'), clock, client_factory=factory)
+    model = ResilientChatModel(ai, clock, llm, time_limit_sec=ai.time_limit_sec)
+    with pytest.raises(AIUnavailable) as err:
+        model.chat([{'role': 'user', 'content': 'hi'}], max_tokens=50, temperature=0.5)
+    assert 'empty reply' in err.value.reason
+    assert sum(len(c.requests) for c in clients) == 3

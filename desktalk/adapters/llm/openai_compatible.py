@@ -7,7 +7,9 @@ vision model even when the chat runs on a cloud AI. Model names and limits: conf
 
 Each request has a time limit (llm.timeout_sec, or llm.ollama_timeout_sec for Ollama), set with the
 OpenAI client's own `timeout` option. Every failure is raised as AIUnavailable in plain words.
-Trying again, pausing after a rate limit and the circuit breaker are ResilientChatModel's job.
+Trying again, pausing after a rate limit and the circuit breaker are ResilientChatModel's job, with one
+exception: Ollama is asked again here after an empty reply (up to llm.max_retries times), and when it
+still sends nothing the error is an AIRefused, so ResilientChatModel doesn't ask all over again.
 """
 
 from __future__ import annotations
@@ -135,6 +137,9 @@ class OpenAICompatibleChatModel:
                 self._problem = None      # a call worked, so any earlier problem is over
                 return text
         self._problem = EMPTY_REPLY_REASON
+        if tries > 1:
+            # Already asked again here: AIRefused so ResilientChatModel doesn't ask max_retries times more.
+            raise AIRefused(EMPTY_REPLY_REASON)
         raise AIUnavailable(EMPTY_REPLY_REASON)
 
     def vision(self, jpeg: bytes, prompt: str, *, background: bool = True) -> str:

@@ -8,8 +8,9 @@ What it adds (numbers: config/settings.yaml → llm):
 - A failed call is tried again after retry_start_sec, doubling up to retry_max_sec, max_retries tries in all.
   A refusal (bad key, unknown model) is not tried again. A failed picture question waits
   vision_retry_sec × the try number instead.
-- Time limit: no new try starts once a call has been going for time_limit_sec. (Each single request is
-  cut off at its own limit by the OpenAI client's `timeout` option.)
+- Time limit: no new try starts once a call has been going for time_limit_sec. Picture questions have
+  their own limit: ollama_timeout_sec when they go to Ollama on this computer, else timeout_sec. (Each
+  single request is cut off at its own limit by the OpenAI client's `timeout` option.)
 - Rate limits: when you're waiting on a reply, one more try after rate_limit_retry_sec. Background calls
   never try again, and for pause_on_limit_sec after a rate limit they aren't sent at all, so the quota
   is saved for replying to you. (Picture questions on Ollama, on this computer, carry on.)
@@ -93,7 +94,10 @@ class ResilientChatModel:
         self._inner = inner
         self._clock = clock
         self._s = settings
-        self._time_limit = settings.timeout_sec if time_limit_sec is None else time_limit_sec
+        self._time_limit = {
+            CHAT: settings.timeout_sec if time_limit_sec is None else time_limit_sec,
+            VISION: settings.ollama_timeout_sec if self.local_vision else settings.timeout_sec,
+        }
         self._lock = threading.Lock()
         self._breakers = {kind: _Breaker(settings.breaker_failures, settings.breaker_open_sec)
                           for kind in (CHAT, VISION)}
@@ -155,7 +159,7 @@ class ResilientChatModel:
             except AIUnavailable as err:
                 wait = self._wait_before_next_try(kind, err, attempt, background, rate_limit_retried)
                 elapsed = self._clock.monotonic() - started
-                if wait is None or attempt + 1 >= tries or elapsed + wait > self._time_limit:
+                if wait is None or attempt + 1 >= tries or elapsed + wait > self._time_limit[kind]:
                     self._failed(kind, err)
                     raise
                 log.info('AI %s failed (%s); trying again in %g s', kind, err.reason, wait)

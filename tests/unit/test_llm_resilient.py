@@ -301,6 +301,26 @@ def test_picture_questions_on_this_computer_carry_on_after_a_rate_limit(llm):
     assert look(model) == 'A cup.'
 
 
+def test_picture_questions_on_ollama_get_ollamas_longer_time_limit(llm):
+    """The chat runs on a cloud AI (30 s), but Ollama on this computer may take up to 90 s on a picture."""
+    clock = FakeClock()
+    inner = Scripted(clock, DOWN, takes=40, local_vision=True)        # each try hangs 40 s, then fails
+    model = ResilientChatModel(inner, clock, llm.model_copy(update={'ollama_timeout_sec': 90}), time_limit_sec=30)
+    with pytest.raises(AIUnavailable):
+        look(model)
+    # try 1: 0-40 s; wait 1 s; try 2: 41-81 s; wait 2 s; try 3 starts at 83 s, inside 90 s
+    assert len(inner.calls) == 3
+
+
+def test_cloud_picture_questions_keep_the_cloud_time_limit(llm):
+    clock = FakeClock()
+    inner = Scripted(clock, DOWN, takes=40)
+    model = ResilientChatModel(inner, clock, llm.model_copy(update={'ollama_timeout_sec': 90}), time_limit_sec=30)
+    with pytest.raises(AIUnavailable):
+        look(model)
+    assert len(inner.calls) == 1
+
+
 def test_failing_picture_questions_do_not_stop_the_chat(llm):
     clock = FakeClock()
     inner = Scripted(clock, DOWN, DOWN, DOWN, 'Chat still works.')

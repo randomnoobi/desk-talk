@@ -3,7 +3,8 @@ AI errors in plain words.
 
 Every failure of the AI service becomes an AIUnavailable (desktalk.domain) whose text the app can
 show as it is. AIRefused is the kind where trying again can't help (a bad key, a model name that
-doesn't exist, a model that can't look at pictures), so ResilientChatModel doesn't retry it.
+doesn't exist, a model that can't look at pictures, an Ollama that was already asked again and still
+sent nothing), so ResilientChatModel doesn't retry it.
 """
 
 from __future__ import annotations
