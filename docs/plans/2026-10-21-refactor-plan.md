@@ -301,10 +301,10 @@ New code goes in new folders; the old modules keep the app running until Phase 3
 | F. Agents and habits | `core/agents/`, `core/habits/` | roster, profiles, habit tracker, reminders, preferences, desk status; Protocols rules unchanged and tested |
 
 ### Phase 3: web layer (after Phase 2 is merged)
-- [ ] FastAPI app split into routers; pydantic request/reply models; SSE; phone HTTPS server
-- [ ] `/api/pi/frame` takes version 2 uploads (and still the old ones); `/api/pi/config` adds the detector settings
-- [ ] Characterization tests from Phase 0 pass against FastAPI
-- [ ] `bootstrap.py` builds the real app; `server.py` starts uvicorn; lifespan start/stop
+- [x] FastAPI app split into routers; pydantic request/reply models; SSE; phone HTTPS server
+- [x] `/api/pi/frame` takes version 2 uploads (and still the old ones); `/api/pi/config` adds the detector settings
+- [x] Characterization tests from Phase 0 pass against FastAPI
+- [x] `bootstrap.py` builds the real app; `server.py` starts uvicorn; lifespan start/stop
 
 ### Phase 4: finish
 - [ ] Integration, failure and Docker tests end to end (camera program → container → real local server → SSE)
