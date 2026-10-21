@@ -184,19 +184,20 @@ def test_wait_idle_waits_for_busy_consumers_and_the_events_they_publish(threaded
 
 
 def test_close_stops_every_consumer_thread():
-    before = set(threading.enumerate())
     bus = stream()
-    bus.subscribe('log', lambda e: None)
-    bus.subscribe('roster', lambda e: None)
-    assert len(set(threading.enumerate()) - before) == 2
+    threads = set()
+    bus.subscribe('log', lambda e: threads.add(threading.current_thread()))
+    bus.subscribe('roster', lambda e: threads.add(threading.current_thread()))
+    bus.publish(joined(1))
+    assert bus.wait_idle(WAIT)
+    assert len(threads) == 2 and threading.current_thread() not in threads      # each has its own thread
     assert bus.close(timeout=WAIT) == []
-    assert set(threading.enumerate()) - before == set()
+    assert not any(t.is_alive() for t in threads)
 
 
-def test_close_names_the_consumers_still_busy_after_the_wait(threaded):
+def test_close_names_a_consumer_still_busy_after_the_wait(threaded):
     bus = threaded()
     blocked = Blocked(bus, detection(0))
-    bus.subscribe('idle', lambda e: None)
     assert bus.close(timeout=0.01) == ['blocked']
     blocked.release()
 
