@@ -2,7 +2,8 @@
 The detector service's HTTP API. The service runs YOLO in Docker on the Pi, on 127.0.0.1 only;
 the camera program on the Pi is its only client.
 
-    POST /detect   body: one JPEG (Content-Type: image/jpeg)      → DetectReply
+    POST /detect   body: one JPEG (Content-Type: image/jpeg)      → DetectReply (429 while it's still
+                                                                     detecting another picture)
     GET  /health                                                   → DetectorHealth
     PUT  /model    body: ModelSettings as JSON (load, converting   → DetectorHealth
                    to ncnn first if needed; the last good model
@@ -10,6 +11,9 @@ the camera program on the Pi is its only client.
 
 Replies are written with to_dict() and read with from_dict(), on both sides, so the JSON
 looks the same everywhere. Standard library only (the camera program imports this).
+
+DetectorHealth carries API_VERSION. The camera program stops using a container that speaks another
+version, and says to rebuild it (docker compose up -d --build). Raise it when the API changes.
 """
 
 from __future__ import annotations

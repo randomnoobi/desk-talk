@@ -2,7 +2,8 @@
 The detector service's web API. The shapes are in desktalk_shared.detector_api, and every reply is
 written with their to_dict(), so the JSON is exactly what the camera program reads.
 
-    POST /detect   one JPEG              → DetectReply   (400 not a JPEG, 413 too big, 503 no model yet)
+    POST /detect   one JPEG              → DetectReply   (400 not a JPEG, 413 too big, 429 busy with another
+                                                          picture, 503 no model yet)
     GET  /health                         → DetectorHealth
     PUT  /model    ModelSettings as JSON → DetectorHealth (400 bad settings); the model loads in the background
 
@@ -22,7 +23,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
-from desktalk_detector.manager import ModelManager
+from desktalk_detector.manager import DetectorBusy, ModelManager
 from desktalk_detector.settings import BYTES_PER_MB
 from desktalk_shared.detection import DetectorUnavailable
 from desktalk_shared.detector_api import ModelSettings
@@ -49,6 +50,8 @@ def create_app(manager: ModelManager, *, max_picture_bytes: int) -> FastAPI:
             return _problem(400, 'The body must be one JPEG picture.')
         try:
             reply = manager.detect(picture)
+        except DetectorBusy as exc:
+            return _problem(429, str(exc))
         except DetectorUnavailable as exc:
             return _problem(503, str(exc))
         except Exception as exc:     # whatever the model raised: say so, and keep serving

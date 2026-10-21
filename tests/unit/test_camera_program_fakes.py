@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from desktalk_shared.detection import BBox, Detection
-from desktalk_shared.detector_api import DetectorHealth, DetectReply, ModelSettings, ServiceState
+from desktalk_shared.detector_api import API_VERSION, DetectorHealth, DetectReply, ModelSettings, ServiceState
 from desktalk_shared.wire import UploadInfo, WireError, decode_upload
 
 JPEG = b'\xff\xd8\xff\xe0 a picture \xff\xd9'          # the camera program never decodes pictures
@@ -157,6 +157,7 @@ class FakeContainer(FakeServer):
         self.model = model
         self.state = ServiceState.READY
         self.message = ''
+        self.api_version = API_VERSION
         self.detect_status = 200
         self.models_put: list[ModelSettings] = []
         self.routes[('POST', '/detect')] = self._detect
@@ -164,7 +165,7 @@ class FakeContainer(FakeServer):
         self.routes[('PUT', '/model')] = self._put_model
 
     def _health(self) -> DetectorHealth:
-        return DetectorHealth(state=self.state, model=self.model, message=self.message)
+        return DetectorHealth(state=self.state, model=self.model, message=self.message, api_version=self.api_version)
 
     def _detect(self, req):
         if self.detect_status != 200:
@@ -174,7 +175,8 @@ class FakeContainer(FakeServer):
 
     def _put_model(self, req):
         self.models_put.append(ModelSettings.from_dict(json.loads(req.body)))
-        return 200, DetectorHealth(state=ServiceState.LOADING, model=self.model, message='loading').to_dict()
+        return 200, DetectorHealth(state=ServiceState.LOADING, model=self.model, message='loading',
+                                   api_version=self.api_version).to_dict()
 
 
 @dataclass

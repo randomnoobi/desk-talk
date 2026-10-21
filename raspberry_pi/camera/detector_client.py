@@ -10,6 +10,9 @@ When it can't answer, the picture goes to the computer as `off`, with the reason
 detects it itself:
   - No model yet (503; the first conversion to ncnn takes minutes): off until /health says ready.
     That's not a crash, so it doesn't count as a failure.
+  - Still busy with an earlier picture (429): this one goes out as `busy`. Not a failure either.
+  - A container that speaks another version of the API (api_version in the replies to /health and
+    PUT /model): off, with what to run to update it, until /health says the same version as this program.
   - Anything else (crashed, too slow, not running): after failures_before_pause failures in a row it
     stops asking for a while (pause_start_sec, doubling each time up to pause_max_sec), asks /health
     every health_check_every_sec meanwhile, and comes back early when it's ready.
@@ -27,13 +30,22 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from desktalk_shared.detection import DetectorUnavailable
-from desktalk_shared.detector_api import DetectorHealth, DetectReply, ModelSettings, ServiceState
+from desktalk_shared.detector_api import API_VERSION, DetectorHealth, DetectReply, ModelSettings, ServiceState
 from desktalk_shared.wire import DetectorState
 from raspberry_pi.camera import net
 from raspberry_pi.camera.cameras import Picture
 from raspberry_pi.camera.clock import Clock
 
 log = logging.getLogger(__name__)
+
+
+def version_problem(api_version: int) -> str:
+    """'' when the container speaks this program's version of the API; otherwise what to do about it."""
+    if api_version == API_VERSION:
+        return ''
+    return (f'the detector container speaks version {api_version} of its API, but this camera program speaks '
+            f'version {API_VERSION}. On the Pi: git pull in the desk-talk folder, then run docker compose up -d '
+            f'--build in raspberry_pi/detector_service, and restart the camera program')
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -95,6 +107,8 @@ class DetectorClient:
             return self._failed(f"the detector isn't answering: {exc}")
         if status == 503:
             return self._no_model_yet(net.error_text(body) or 'the detector has no model yet')
+        if status == 429:
+            return Verdict(DetectorState.BUSY)          # still on a picture the camera gave up waiting for
         if status != 200:
             return self._failed(net.error_text(body) or f'the detector replied {status}')
         try:
@@ -125,9 +139,13 @@ class DetectorClient:
         if status != 200:
             raise DetectorUnavailable(net.error_text(body) or f'the detector replied {status}')
         try:
-            return DetectorHealth.from_dict(json.loads(body))
+            health = DetectorHealth.from_dict(json.loads(body))
         except ValueError as exc:
             raise DetectorUnavailable(f"the detector sent a reply this program can't read ({exc})") from None
+        problem = version_problem(health.api_version)
+        if problem:
+            raise DetectorUnavailable(problem)
+        return health
 
     # ── inside ──
     def _url(self, path: str) -> str:
@@ -194,9 +212,23 @@ class DetectorClient:
             self._model_due = False          # sent (or refused: sending the same again won't help)
         if status == 200:
             log.info('Asked the detector to use %s (%s, %d pixels)', model.model, model.format, model.image_size)
+            self._check_version(body)
         else:
             log.warning("The detector won't use these model settings (%s). Check pi.detector in config/settings.yaml "
                         'on your computer.', net.error_text(body) or status)
+
+
+    def _check_version(self, body: bytes) -> None:
+        """PUT /model replies with the container's health: stop using a container from another version."""
+        try:
+            api_version = DetectorHealth.from_dict(json.loads(body)).api_version
+        except ValueError as exc:
+            log.debug("Could not read the detector's reply to PUT /model: %s", exc)
+            return
+        problem = version_problem(api_version)
+        if problem:
+            log.warning('Not using the detector: %s', problem)
+            self._off(problem, resume_at=None)
 
 
 class DetectorWorker:

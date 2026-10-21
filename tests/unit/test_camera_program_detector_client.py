@@ -10,7 +10,8 @@ import socket
 import pytest
 from test_camera_program_fakes import JPEG, MODEL, FakeClock, FakeContainer, cup
 
-from desktalk_shared.detector_api import ModelSettings, ServiceState
+from desktalk_shared.detection import DetectorUnavailable
+from desktalk_shared.detector_api import API_VERSION, ModelSettings, ServiceState
 from desktalk_shared.wire import DetectorState
 from raspberry_pi.camera.cameras import Picture
 from raspberry_pi.camera.detector_client import DetectorClient, DetectorConfig, DetectorWorker, NoDetector
@@ -184,6 +185,15 @@ def test_no_model_yet_does_not_count_as_a_failure(container, client, clock):
     assert client.off_now() == ''                       # the 503s weren't counted as crashes
 
 
+def test_the_containers_busy_answer_means_busy_and_is_no_failure(container, client):
+    """The container turns a picture away (429) while it's still detecting one the camera already gave up on."""
+    container.routes[('POST', '/detect')] = lambda req: (429, {'detail': 'The detector is still working on '
+                                                                         'another picture.'})
+    verdicts = fail(client, 5)
+    assert {v.state for v in verdicts} == {DetectorState.BUSY}
+    assert client.off_now() == ''                       # not counted as failures: no pause
+
+
 # ── which model (PUT /model) ──────────────────────────────────────────
 def test_tells_the_container_which_model_on_start_once(container, client):
     assert client.upkeep() is None
@@ -229,6 +239,25 @@ def test_settings_the_container_refuses_are_not_sent_again(container, client, ca
         client.upkeep()
     assert container.paths('PUT') == ['/model']
     assert 'model must be a .pt file' in caplog.text
+
+
+def test_a_container_from_another_version_is_off_and_says_how_to_update_it(container, client, clock):
+    container.api_version = API_VERSION + 1
+    client.upkeep()                                     # the reply to PUT /model says which version it speaks
+    assert 'docker compose up -d --build' in client.off_now()
+    clock.advance(HEALTH_EVERY)
+    client.upkeep()
+    assert 'docker compose up -d --build' in client.off_now()    # still off while /health says the same
+    container.api_version = API_VERSION                 # rebuilt
+    clock.advance(HEALTH_EVERY)
+    client.upkeep()
+    assert client.off_now() == ''
+
+
+def test_health_from_another_version_is_a_problem_that_says_how_to_update_it(container, client):
+    container.api_version = API_VERSION + 1
+    with pytest.raises(DetectorUnavailable, match=r'docker compose up -d --build'):
+        client.health()
 
 
 # ── one picture at a time, always the newest ──────────────────────────

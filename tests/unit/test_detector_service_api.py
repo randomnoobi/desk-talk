@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 
 import cv2
@@ -113,6 +114,22 @@ def test_an_unexpected_failure_while_detecting_is_500_with_the_reason(client, re
     r = post_picture(client, jpeg())
     assert r.status_code == 500
     assert 'ncnn crashed' in r.json()['detail']
+
+
+def test_a_picture_sent_while_another_is_being_detected_is_429_busy_at_once(client, ready, yolo):
+    answers, sent = [], []
+
+    def second_picture_meanwhile():
+        if not sent:
+            sent.append(threading.Thread(target=lambda: answers.append(post_picture(client, jpeg()))))
+            sent[0].start()
+            sent[0].join(2)                     # a second picture that has to wait for this one isn't answered yet
+
+    yolo.during_predict = second_picture_meanwhile
+    assert post_picture(client, jpeg()).status_code == 200
+    sent[0].join(5)
+    assert [a.status_code for a in answers] == [429]
+    assert 'another picture' in answers[0].json()['detail']
 
 
 def test_put_model_starts_loading_it(client, manager):

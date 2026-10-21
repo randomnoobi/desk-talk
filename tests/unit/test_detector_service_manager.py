@@ -8,7 +8,7 @@ import time
 import numpy as np
 import pytest
 
-from desktalk_detector.manager import ModelManager
+from desktalk_detector.manager import DetectorBusy, ModelManager
 from desktalk_detector.model_folder import ModelFolder
 from desktalk_shared.detection import DetectorUnavailable
 from desktalk_shared.detector_api import ModelSettings, ServiceState
@@ -214,29 +214,29 @@ def test_other_models_need_no_such_note(manager, settings):
     assert 'end-to-end' not in manager.health().message
 
 
-def test_runs_one_detection_at_a_time(manager, yolo):
-    """Ultralytics' predictor breaks when two threads use it at once (FastAPI answers requests in threads)."""
+def test_a_picture_sent_while_another_is_being_detected_is_turned_away_as_busy(manager, yolo):
+    """Ultralytics' predictor breaks when two threads use it at once (FastAPI answers requests in threads).
+    And the camera program has already given up on a picture that would have to wait, so it isn't kept."""
     manager.want(MODEL)
     manager.load_step()
-    first_inside, release, second_inside = threading.Event(), threading.Event(), threading.Event()
+    first_inside, release = threading.Event(), threading.Event()
 
     def hold_the_first_one():
-        if not first_inside.is_set():
-            first_inside.set()
-            release.wait(5)
-        else:
-            second_inside.set()
+        first_inside.set()
+        release.wait(5)
 
     yolo.during_predict = hold_the_first_one
     first = threading.Thread(target=manager.detect, args=(picture(),))
     first.start()
     assert first_inside.wait(5)
-    second = threading.Thread(target=manager.detect, args=(picture(),))
-    second.start()
-    assert not second_inside.wait(0.05)        # the second picture waits for the first
+    with pytest.raises(DetectorBusy, match='another picture'):
+        manager.detect(picture())
     release.set()
-    first.join(5), second.join(5)
-    assert second_inside.is_set() and manager.health().detections_done == 2
+    first.join(5)
+    assert manager.health().detections_done == 1 and len(yolo.predictions) == 2     # the warm-up and the first
+    yolo.during_predict = None
+    manager.detect(picture())                                # free again once the first is done
+    assert manager.health().detections_done == 2
 
 
 def wait_for(condition, seconds=5.0) -> bool:

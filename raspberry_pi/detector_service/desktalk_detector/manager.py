@@ -4,7 +4,9 @@ The model manager: keeps the model that answers /detect, and loads new ones.
 - PUT /model calls want(); a background thread loads the model (converting it to ncnn the first time)
   while the last good model keeps answering.
 - A model that fails to load is tried again after 5 s, 10 s, 20 s ... (settings), and /health says why.
-- One detection at a time: Ultralytics breaks when two threads use a model at once.
+- One detection at a time: Ultralytics breaks when two threads use a model at once. A picture sent while
+  another is being detected is turned away at once (DetectorBusy, 429): the camera program has already
+  given up on it, and keeping it waiting would only keep the Pi busy and hot.
 - The model asked for last is remembered in the models folder, so a restarted container loads it by itself.
 """
 
@@ -25,6 +27,12 @@ from desktalk_shared.detector_api import DetectorHealth, DetectReply, ModelSetti
 from desktalk_shared.ultralytics_results import detections_from_results
 
 log = logging.getLogger(__name__)
+
+BUSY = 'The detector is still working on another picture.'
+
+
+class DetectorBusy(Exception):
+    """A picture came while another one was being detected. It is not kept: the camera sends a newer one."""
 
 
 def describe(s: ModelSettings) -> str:
@@ -155,12 +163,16 @@ class ModelManager:
         if current is None:
             raise DetectorUnavailable(f'The detector has no model yet. {self.health().message}')
         s = current.settings
-        with self._one_at_a_time:
+        if not self._one_at_a_time.acquire(blocking=False):
+            raise DetectorBusy(BUSY)
+        try:
             start = self._clock()
             results = current.model.predict(source=picture, conf=s.confidence, imgsz=s.image_size, device=DEVICE,
                                             verbose=False)
             found = detections_from_results(results)
             ms = round((self._clock() - start) * 1000, 1)
+        finally:
+            self._one_at_a_time.release()
         with self._lock:
             self._detections_done += 1
             self._last_detect_ms = ms
