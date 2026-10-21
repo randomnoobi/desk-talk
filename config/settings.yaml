@@ -38,6 +38,8 @@ camera:
   webcam_warmup_reads: 10     # pictures tried before deciding a webcam doesn't work
   webcam_max_index: 4         # if the chosen webcam doesn't work, webcams 0 up to (not including) this are tried
   pair_key_bytes: 6           # random bytes in a new pairing key (6 makes an 8-letter key)
+  pair_key_file: certs/pair-key.txt  # the pairing key is kept here, so the Pi's command and the phone
+                              # link stay the same after a restart
   keep_newer_picture_sec: 3   # a Pi picture can arrive after one taken later (the Pi sends it once its detector
                               # is done): the live view keeps the later one, unless it hasn't changed for this long
 
@@ -114,6 +116,9 @@ presence:
 supervisor:
   restart_start_sec: 1        # a background job that crashed starts again after this long...
   restart_max_sec: 60         # ...doubling each time it crashes again, up to this
+  scheduler_longest_wait_sec: 60  # the timed jobs (compacting the event log, saving habits) are checked
+                              # at least this often
+  stop_wait_sec: 5            # when Desk Talk stops, how long to wait for each background job to finish
 
 # ── Event stream and event log ─────────────────────────────────────
 event_stream:
