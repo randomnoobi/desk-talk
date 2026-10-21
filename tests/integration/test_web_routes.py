@@ -273,3 +273,14 @@ def test_the_phone_info_shows_the_link_only_on_this_computer(tmp_path):
     assert here['qr_svg'].startswith('<svg')
     there = web_client(web, from_ip=ON_THE_WIFI).get('/api/phone/info').json()
     assert (there['url'], there['qr_svg']) == ('', None)
+
+
+def test_the_agents_lens_the_status_and_the_recent_messages_have_their_values(tmp_path):
+    rig = DeskRig(tmp_path)
+    rig.watch(4, LAPTOP)
+    client = web_client(rig.app)
+    assert client.get('/api/agents').json()['lens']['name'] == 'Lens'
+    assert client.get('/api/status').json()['agents'] == ['computer']
+    assert client.get('/api/context').json()['mention_options']
+    assert client.get('/api/messages/recent').json()['messages'][0]['text'] == 'Computer joined the chat'
+    assert client.get('/api/habit_log').json()['summary']['breaks_today'] == 0

@@ -6,16 +6,15 @@ so your own .env and config/settings.local.yaml never change the result.
 
 from __future__ import annotations
 
-import importlib.util
 import shutil
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
+import yaml
 from pydantic import BaseModel, SecretStr, ValidationError
 
 from desktalk.config import ConfigError, load_config
-from desktalk.settings import load_settings
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_FILES = ('settings.yaml', 'agents.yaml', 'protocols.yaml')
@@ -46,6 +45,12 @@ def test_real_config_files_load(project):
     assert cfg.protocols.schedule.latitude is None
     assert cfg.agents_file.agents['computer'].name == 'Computer'
     assert 'person' in cfg.agents_file.ignore
+    assert cfg.event_log.compact_every_min == 10
+    assert cfg.protocols.light.morning_window_min == 60
+    assert cfg.detector.model == 'models/yolo26m-objv1-150.pt'
+    assert cfg.lost_items.items['airpods'].labels == ('earphone', 'earbuds')
+    assert cfg.agents_file.agents['cup'].labels == ('cup', 'bottle', 'wine glass', 'mug', 'water bottle',
+                                                    'measuring cup', 'kettle')
 
 
 def test_local_file_overrides_only_the_lines_it_has(project):
@@ -251,40 +256,34 @@ def test_every_smaller_larger_pair_is_checked(project, local, section, smaller, 
         load_config(root=project, environ={})
 
 
-def test_the_pi_program_still_reads_its_settings(project):
-    """raspberry_pi/camera_node.py reads the pi: section; new keys there (like pi.detector) must not upset it."""
-    spec = importlib.util.spec_from_file_location('camera_node', ROOT / 'raspberry_pi' / 'camera_node.py')
-    node = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(node)
-    on_the_pi = node.build_config(node.parse_args(['--offline']))
+def test_the_pi_section_has_the_values_the_old_camera_program_used(project):
     pi = load_config(root=project, environ={}).pi
-    assert on_the_pi == {key: getattr(pi, key) for key in node.DEFAULTS}
+    assert (pi.fps, pi.width, pi.height, pi.jpeg_quality, pi.photo_dir) == (3, 1280, 720, 80, '~/desk-talk-photos')
+    assert (pi.delete_every_min, pi.keep_last_min, pi.min_free_mb, pi.upload_timeout_sec) == (10, 0, 300, 5)
 
 
-def test_numbers_moved_out_of_the_old_code_have_the_same_values(project):
-    """Until Phase 3 switches the app over, the old modules still hold their own copies of these numbers.
-    (Only constants the old code never changes at run time are compared here.)"""
-    from desktalk.vision import camera_health, relationships
+def test_numbers_moved_out_of_the_old_code_keep_their_values(project):
+    """Lens's checks and the desk rules kept these numbers in the code before they moved to settings.yaml."""
     cfg = load_config(root=project, environ={})
     lens, safety = cfg.lens, cfg.safety
-    assert lens.measure_width == camera_health.SAMPLE_WIDTH
-    assert lens.edge_touch_px == camera_health.EDGE_TOUCH_PX
-    assert lens.fixed_after_sec == camera_health.CLEAR_HOLD_SEC
-    assert lens.edge_tip_after_sec == camera_health.EDGE_TIP_AFTER_SEC
-    waits = lens.wait_before_saying_sec.model_dump()
-    waits.pop('pi')                  # new: the Pi's health, which the old code never checked
-    waits.pop('pi_detector')         # new: the Pi's own detector
-    assert waits == {k: v[0] for k, v in camera_health.ISSUES.items()}
-    assert safety.temporal.history_length == relationships.HISTORY_LENGTH
-    assert safety.chain_reaction.path_ratio == relationships.CHAIN_PATH_RATIO
-    assert set(safety.chain_reaction.harmless_crowd) == relationships.BENIGN_CROWD_CLASSES
-    assert safety.risk_weights.model_dump() == relationships.RISK_WEIGHTS
-    assert safety.desk_border_share == relationships.BORDER_FRACTION
+    assert (lens.measure_width, lens.edge_touch_px, lens.fixed_after_sec, lens.edge_tip_after_sec) == (240, 3, 5, 120)
+    assert lens.wait_before_saying_sec.model_dump() == {
+        'lost': 15, 'covered': 4, 'dark': 8, 'glare': 8, 'blurry': 12, 'bumped': 5, 'empty': 180, 'cutoff': 45,
+        'slow': 30, 'pi': 10, 'pi_detector': 60}
+    assert cfg.camera.moved_within_sec == 1.5
+    assert safety.temporal.history_length == 30
+    assert safety.chain_reaction.path_ratio == 0.30
+    assert set(safety.chain_reaction.harmless_crowd) == {'book', 'laptop', 'keyboard', 'mouse', 'cell phone',
+                                                         'remote', 'tv'}
+    assert safety.risk_weights.model_dump() == {'edge_danger': 2, 'edge_warning': 1, 'zone_intrusion': 2,
+                                                'chain_reaction': 3, 'crowd': 1, 'approaching': 2,
+                                                'repeated_intrusion': 2}
+    assert safety.desk_border_share == 0.03
 
 
-# ── parity with today's loader (desktalk/settings.py), until the app switches over ──
+# ── every line of the config files reaches the config unchanged ──
 def _plain(value):
-    """A config value the way the old loader gives it: lists, text, dicts with only the keys the file had."""
+    """A config value as plain YAML data: lists, text, dicts with only the keys the file had."""
     if isinstance(value, BaseModel):
         return {k: _plain(getattr(value, k)) for k in value.model_fields_set}
     if isinstance(value, (list, tuple)):
@@ -312,21 +311,27 @@ def _lookup(config, path):
     return config
 
 
-@pytest.mark.parametrize('environ', [
-    {},
-    {'OLLAMA_MODEL': 'gpt-oss:20b', 'YOLO_MODEL': 'models/yolo26s.pt', 'GEMINI_API_KEY': 'abc',
-     'OLLAMA_URL': 'http://localhost:11434/v1', 'CAMERA_SOURCE': 'phone'},
-])
-def test_every_value_the_old_loader_gives_is_the_same(project, environ):
-    old = load_settings(config_dir=project / 'config', environ=dict(environ), dotenv=project / '.env')
-    new = load_config(root=project, environ=dict(environ))
-    renamed = {'_env_applied': 'env_applied', '_env_moved': 'env_moved'}
+def test_every_value_in_the_config_files_reaches_the_config_unchanged(project):
+    cfg = load_config(root=project, environ={})
     checked = []
-    for path, value in _leaves(old):
-        if path[0] == '_config_dir':
-            continue
-        path = (renamed.get(path[0], path[0]),) + path[1:]
-        assert _plain(_lookup(new, path)) == value, '.'.join(map(str, path))
-        checked.append(path)
-    assert ('protocols', 'hydration', 'daily_goal_ml') in checked
-    assert ('agents_file', 'agents', 'cup', 'labels') in checked
+    for name, section in [('settings.yaml', cfg), ('protocols.yaml', cfg.protocols),
+                          ('agents.yaml', cfg.agents_file)]:
+        for path, value in _leaves(yaml.safe_load((project / 'config' / name).read_text())):
+            assert _plain(_lookup(section, path)) == value, f'{name}: {".".join(map(str, path))}'
+            checked.append((name, path))
+    assert ('protocols.yaml', ('hydration', 'daily_goal_ml')) in checked
+    assert ('agents.yaml', ('agents', 'cup', 'labels')) in checked
+    assert len(checked) > 500
+
+
+def test_environment_variables_win_and_moved_ones_are_listed(project):
+    environ = {'OLLAMA_MODEL': 'gpt-oss:20b', 'YOLO_MODEL': 'models/yolo26s.pt', 'GEMINI_API_KEY': 'abc',
+               'OLLAMA_URL': 'http://localhost:11434/v1', 'CAMERA_SOURCE': 'phone'}
+    cfg = load_config(root=project, environ=environ)
+    assert cfg.llm.ollama_model == 'gpt-oss:20b'
+    assert cfg.detector.model == 'models/yolo26s.pt'
+    assert cfg.secrets.gemini_api_key.get_secret_value() == 'abc'
+    assert cfg.secrets.ollama_url == 'http://localhost:11434/v1'
+    assert cfg.camera.source == 'pi'
+    assert cfg.env_applied == {'OLLAMA_MODEL': 'llm.ollama_model', 'YOLO_MODEL': 'detector.model'}
+    assert cfg.env_moved == ('CAMERA_SOURCE',)

@@ -118,3 +118,37 @@ def test_the_latest_result_and_the_history_are_kept():
     history = an.history()
     assert len(history) == app_config().safety.temporal.history_length == 30
     assert history[-1]['cup'].box == (34, 0, 54, 20)
+
+
+def test_every_check_runs_in_order_on_one_picture():
+    """Edges, zones, things in between, crowds, things moving closer, repeat visits: in that order."""
+    an = analyzer({'desk_outline': [[0, 0], [1, 0], [1, 0.8], [0, 0.8]]})[0]       # front edge at y = 384
+    mouse = ('mouse', 'mouse', (420, 270, 430, 280))
+    apple = ('snack', 'apple', (470, 330, 500, 360))
+    bottle = ('drink', 'bottle', (100, 360, 140, 400))                              # on the front edge
+    cup_far = ('cup', 'cup', (560, 300, 600, 370))
+    for k, cup in enumerate([cup_far] * 4 + [CUP_NEAR, cup_far, CUP_NEAR, cup_far, CUP_NEAR]):
+        result = an.analyze(things(LAPTOP, cup, mouse, apple, bottle), SIZE, now=1000 + k)
+    assert kinds(result) == ['edge_danger', 'edge_warning', 'edge_danger'] + ['zone_intrusion'] * 3 + \
+        ['chain_reaction'] * 3 + ['crowd'] * 3 + ['approaching'] * 4 + ['repeated_intrusion']
+
+
+def test_a_zone_saved_on_the_settings_page_is_checked_like_the_built_in_ones():
+    an = analyzer({'danger_zones': {'mouse': {'expand': 40, 'label': 'Mouse zone'}},
+                   'zone_danger_intruders': {'mouse': ['cup']}})[0]
+    result = an.analyze(things(('mouse', 'mouse', (300, 300, 340, 330)), ('cup', 'cup', (350, 300, 380, 340))),
+                        SIZE, now=1)
+    [event] = result['risk_events']
+    assert (event['type'], event['target'], event['intruder'], event['zone_label']) == (
+        'zone_intrusion', 'mouse', 'cup', 'Mouse zone')
+    assert result['explanations'] == ["cup (hazard) in mouse's Mouse zone — 30px"]
+
+
+def test_how_many_pictures_back_to_compare_can_be_saved():
+    an = analyzer({'temporal': {'approach_min_frames': 4}})[0]
+    seen = []
+    for k in range(7):
+        cup = ('cup', 'cup', (5 * k, 0, 5 * k + 20, 20))
+        seen.append('approaching' in kinds(an.analyze(things(cup, ('apple', 'apple', (100, 0, 120, 20))), SIZE,
+                                                       now=100 + k)))
+    assert seen == [False] * 4 + [True] * 3            # from the 5th picture on

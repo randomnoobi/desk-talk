@@ -325,3 +325,80 @@ def test_a_problem_still_there_after_quiet_hours_is_said_then():
     h = health()
     said = run(h, 20, DARK, quiet=True) + run(h, 2, DARK, start=1020)
     assert said == ['dark:problem']
+
+
+# ── what Lens says for each problem, word for word (as the old code said it) ──
+TILTED = {'gravity': (0, 9.8, 0), 'reference_gravity': (0, 9.8, 4)}
+PROBLEMS = {     # key: (picture, things in it, check arguments)
+    'dark': (DARK, (CUP,), {}),
+    'glare': (WHITE, (CUP,), {}),
+    'blurry': (FLAT, (CUP,), {}),
+    'covered': (BLACK, (CUP,), {}),
+    'empty': (bright(), (), {}),
+    'slow': (bright(), (CUP,), {'fps': 1.0}),
+    'bumped': (bright(), (CUP,), TILTED),
+}
+
+
+def first_words(h, key, start=1000, most=400):
+    """(seconds until Lens said something, what it said) for one picture and one check a second."""
+    picture, things, check = PROBLEMS[key]
+    for t in range(start, start + most):
+        h.sample(picture, list(things), t)
+        said = h.check(t, **{'connected': True, 'fps': 3.0, **check})
+        if said:
+            return t - start, said
+    return None, []
+
+
+@pytest.mark.parametrize('key, waited, text, detail, title, fix', [
+    ('dark', 8, "It's too dark for me to see the desk well. Could you turn on a lamp?", {},
+     'Too dark', 'Turn on a lamp near the desk.'),
+    ('glare', 8, 'Something really bright is shining into my camera. Can you angle me away from the window or lamp?',
+     {}, 'Glare', 'Angle the camera away from windows or bright lights.'),
+    ('blurry', 12, 'Everything looks blurry to me. Could you wipe my lens, or move me back a little so I can focus?',
+     {}, 'Blurry picture', 'Wipe the lens, or move the camera back a little so it can focus.'),
+    ('covered', 4, 'Everything just went black. Is something covering my lens, or did the camera get turned away?',
+     {}, 'Camera is covered', 'Check nothing is on the lens and the camera is facing the desk.'),
+    ('empty', 181, "I can't spot anything I recognize on the desk. Am I pointed at it? Tilt me so the whole desk "
+     'top is in the picture.', {}, 'Nothing recognized', 'Tilt the camera so the whole desk top is in the picture.'),
+    ('slow', 30, 'The pictures are only coming through at about 1.0 a second. Keeping the camera near the Wi-Fi '
+     'router (and plugged in) helps.', {'fps': 1.0}, 'Video is slow',
+     'Move the camera (or the Wi-Fi router) closer, and keep it plugged in.'),
+    ('bumped', 5, "Whoa, I think I got bumped. I'm tilted about 22° from where I was, so the desk edges you marked "
+     'are off now. Put me back, or mark the edges again in Settings.', {'degrees': 22}, 'Phone was moved',
+     'Put the phone back, or mark the desk edges again in Settings.'),
+])
+def test_each_problem_is_said_in_the_same_words_after_the_same_wait(key, waited, text, detail, title, fix):
+    h = health()
+    assert first_words(h, key) == (waited, [{'key': key, 'kind': 'problem', 'text': text, 'detail': detail}])
+    assert h.issues() == [{'key': key, 'title': title, 'fix': fix}]
+    assert h.phone_tip() == (title if key not in ('empty', 'slow') else None)
+
+
+@pytest.mark.parametrize('key, thanks', [
+    ('dark', 'Much better, thanks for the light!'),
+    ('glare', 'Glare is gone. Thanks!'),
+    ('blurry', 'Sharp again. I can see clearly now.'),
+    ('covered', 'There we go, I can see again.'),
+    ('empty', 'I can see the desk now. Thanks!'),
+    ('bumped', "Thanks, I'm back where I was."),
+])
+def test_each_problem_that_clears_up_gets_its_own_thanks(key, thanks):
+    h = health()
+    waited, _ = first_words(h, key)
+    start = 1000 + waited + 1
+    said = []
+    for t in range(start, start + 30):
+        h.sample(bright(), [CUP], t)
+        said += h.check(t, connected=True, fps=3.0, gravity=(0, 9.8, 0), reference_gravity=(0, 9.8, 0))
+    assert said == [{'key': key, 'kind': 'fixed', 'text': thanks}]
+
+
+def test_the_tip_to_mark_the_desk_word_for_word():
+    h = health()
+    assert run(h, 120, bright(), has_outline=False) == []
+    h.sample(bright(), [CUP], 1120)
+    assert h.check(1120, connected=True, fps=3.0, has_outline=False) == [{'key': 'edge_tip', 'kind': 'tip', 'text': (
+        'Tip from me, Lens: open Settings and tap the corners of your desk on the picture. Then I know where the '
+        'desk really ends, and everyone can warn you before something slides off the edge.')}]

@@ -5,6 +5,7 @@ its flags and settings, and starting it with python3 -m raspberry_pi.camera.
 
 import logging
 import os
+import socket
 import subprocess
 import sys
 import threading
@@ -391,6 +392,21 @@ def test_runs_end_to_end_with_the_container_and_the_computer(tmp_path, container
     assert DetectorState.OK in {i.detector for i in infos}
     assert len({i.frame_id for i in infos}) == len(infos)                 # each picture at most once
     assert len(list((tmp_path / 'photos').glob('*/*.jpg'))) == 15
+
+
+def test_pictures_keep_coming_while_the_computer_cannot_be_reached(tmp_path, container):
+    pictures = tmp_path / 'pictures'
+    pictures.mkdir()
+    (pictures / 'a.jpg').write_bytes(JPEG)
+    with socket.socket() as s:                                            # a port nothing listens on
+        s.bind(('127.0.0.1', 0))
+        away = f'http://127.0.0.1:{s.getsockname()[1]}'
+    repo = repo_file(tmp_path, min_free_mb=0, detector={'url': container.url}, restart_after_missed_pictures=10 ** 6,
+                     upload_timeout_sec=0.5)
+    code = main(['--server', away, '--key', KEY, '--camera', f'folder:{pictures}', '--fps', '50',
+                 '--photo-dir', str(tmp_path / 'photos'), '--max-pictures', '10'], repo_settings=repo)
+    assert code == 0
+    assert len(list((tmp_path / 'photos').glob('*/*.jpg'))) == 10       # every picture taken and saved
 
 
 def test_help_shows_the_run_command_with_only_the_standard_library():

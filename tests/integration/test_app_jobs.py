@@ -10,6 +10,7 @@ import json
 import time
 
 from desktalk.core.chat import prompts
+from desktalk.core.chat.tracker_actions import tracker_prompt
 from desktalk.domain import BBox, Detection, DetectorState, UploadInfo
 from tests.integration.app_kit import (
     CUP_FAR,
@@ -219,3 +220,11 @@ def test_a_reply_that_logs_a_sip_counts_it_on_the_habits_page(tmp_path):
     assert reply['messages'] == [{'character': 'cup', 'text': 'Splash, nice one!'}]
     assert rig.app.habits.today()['hydration']['sips'] == 1
     assert json.loads(json.dumps(rig.app.generator.live_context()))['summary']
+
+
+def test_the_water_tracker_tells_the_ai_the_real_habit_numbers(tmp_path):
+    rig = DeskRig(tmp_path)
+    rig.app.habits.log('hydration', 'glass')
+    now = rig.clock.now()
+    text = tracker_prompt('hydration', rig.app.habits.today(now), None, [], now, rig.config.chat)
+    assert '240 ml of a 2400 ml goal' in text                # a glass, and the goal in config/protocols.yaml
