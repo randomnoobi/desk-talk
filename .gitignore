@@ -37,3 +37,6 @@ _screenshots/
 
 # Benchmark models (downloaded and converted by deskbench; ncnn folders hold .param/.bin files)
 models/bench/
+
+# Models converted to ncnn (yolo export ... format=ncnn makes a folder next to the .pt)
+models/*_ncnn_model/
