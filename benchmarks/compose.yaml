@@ -1,0 +1,13 @@
+# On the Pi, in desk-talk/benchmarks:
+#   docker compose build
+#   docker compose run --rm bench run
+services:
+  bench:
+    build: .
+    image: deskbench:local
+    # Run as the Pi's first user (id 1000), so the result files belong to you and not to root.
+    # If `id -u` on your Pi says something else, change both numbers.
+    user: "1000:1000"
+    volumes:
+      - ..:/repo                                               # the whole project: code, config, models, results
+      - /sys/firmware/devicetree/base/model:/host/model:ro     # the Pi's model name (Docker hides /sys/firmware)

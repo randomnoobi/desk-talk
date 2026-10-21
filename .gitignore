@@ -34,3 +34,6 @@ Thumbs.db
 
 # App screenshots made by scripts/capture_app_screenshots.py
 _screenshots/
+
+# Benchmark models (downloaded and converted by deskbench; ncnn folders hold .param/.bin files)
+models/bench/
