@@ -6,13 +6,30 @@
   "json": {
     "camera_source": "str",
     "pi": {
+      "clock_off_warning_sec": "number",
       "delete_every_min": "number",
+      "detector": {
+        "confidence": "number",
+        "failures_before_pause": "number",
+        "format": "str",
+        "half": "bool",
+        "health_check_every_sec": "number",
+        "image_size": "number",
+        "model": "str",
+        "pause_max_sec": "number",
+        "pause_start_sec": "number",
+        "url": "str",
+        "wait_per_picture_sec": "number"
+      },
       "fps": "number",
       "height": "number",
+      "hot_warning_c": "number",
       "jpeg_quality": "number",
       "keep_last_min": "number",
       "min_free_mb": "number",
       "photo_dir": "str",
+      "upload_retry_max_sec": "number",
+      "upload_retry_start_sec": "number",
       "upload_timeout_sec": "number",
       "width": "number"
     }

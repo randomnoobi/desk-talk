@@ -10,7 +10,7 @@ The refactor in progress: [docs/plans/2026-10-21-refactor-plan.md](docs/plans/20
 - Show the test and ruff output. Don't just say they passed.
 
 ## Config, not code
-- IMPORTANT: Never hardcode a number, timing, threshold, path or model name. Add it to `config/settings.yaml`, with a plain-language comment, and read it through the settings (`settings.camera.fps`, etc.).
+- IMPORTANT: Never hardcode a number, timing, threshold, path or model name. Add it to `config/settings.yaml`, with a plain-language comment, and a typed field in `desktalk/config.py`; parts get their typed section passed in (`config.camera.fps`, etc.). The old code still reads `desktalk/settings.py` until the refactor removes it.
 - Habit rules go in `config/protocols.yaml`, characters in `config/agents.yaml`, and API keys in `.env` (also add new keys to `.env.example`). Never put keys in YAML.
 - `config/settings.local.yaml` is the user's own file and isn't in git. Don't edit it.
 
