@@ -1,0 +1,17 @@
+# Starts Desk Talk's camera program when the Pi boots, and again if it stops.
+# Replace PI_USER, SERVER_URL and PAIR_KEY (raspberry_pi/camera/README.md shows a command that does it),
+# then copy this file to /etc/systemd/system/desk-talk-camera.service on the Pi.
+[Unit]
+Description=Desk Talk camera
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=PI_USER
+WorkingDirectory=/home/PI_USER/desk-talk
+ExecStart=/usr/bin/python3 -m raspberry_pi.camera --server SERVER_URL --key PAIR_KEY
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
