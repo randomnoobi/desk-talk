@@ -30,7 +30,7 @@ import cv2
 import numpy as np
 
 from desktalk.config import AiReplies, LostItemsSettings
-from desktalk.core.chat.workers import prompts
+from desktalk.core.chat import prompts
 from desktalk.core.chat.workers.ai import ask, look
 from desktalk.core.chat.workers.speakers import LENS, speaker_for
 from desktalk.core.chat.workers.text import json_in

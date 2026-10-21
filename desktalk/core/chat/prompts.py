@@ -170,6 +170,30 @@ def lost_alert(item_name: str, gone_mins: int, near_hint: str) -> list:
     ]
 
 
+def lost_scan(item_names: str) -> str:
+    """The vision scan that looks for small things the detector misses."""
+    return ('Look at the image. For desk lost-item tracking reply ONLY this JSON, no other text: '
+            '{"visible":["label",...]}. Labels: short English for visible items such as '
+            f'{item_names}, keys, airpods, wallet, phone, scissors. Omit items you are not confident about.')
+
+
+def lost_in_saved_photo(photo: str, item_name: str) -> str:
+    return (f'{photo} The user is looking for their {item_name}. Describe where it appears in '
+            f'THIS image — left/right, near laptop, under paper, etc. If you truly '
+            f'cannot see it, say so in one sentence.')
+
+
+def lost_in_live_picture(item_name: str) -> str:
+    return (f'Is a {item_name} visible on the desk in this image? Reply with one short sentence. '
+            f'Start with "Visible:" or "Not visible:". If visible, mention where on the '
+            f'desk relative to other objects.')
+
+
+def lost_anything(question: str) -> str:
+    return (f'The user asked: "{question}". Is that item visible on this '
+            f'desk? Answer in one or two friendly sentences, saying where it is.')
+
+
 # ── Small talk between agents ──
 TOPIC_SYSTEM = ('You set up small talk between desk objects. Output ONE short topic '
                 "line (max 12 words) they'd plausibly chat about, grounded in the desk "
@@ -199,6 +223,10 @@ DAILY_SUMMARY_SYSTEM = (
     'Highlight anything notable (water, breaks, phone-free time, sunlight, near-spills, lost items). '
     'End on a positive or encouraging note. No bullet points — just flowing text.'
 )
+
+def daily_summary_user(facts: str) -> str:
+    return f"Here are today's desk stats:\n{facts}\n\nWrite the daily summary."
+
 
 # ── Vision: posture / screen distance / phone in hand (Ollama) ──
 HABIT_SCENE_VLM_PROMPT = '''You are analyzing a single desk webcam frame. Reply ONLY with valid JSON (no markdown, no prose):

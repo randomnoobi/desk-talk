@@ -53,7 +53,8 @@ def all_workers(clock):
         IdleChat(ai, notifier, status, roster, profiles, desk, lambda: '', IdleChatSettings(
             min_sec=720, max_sec=1500, start_delay_sec=15, max_turns=3, quiet_after_typing_sec=10,
             pause_between_lines_sec=3, pause_random_sec=3, memory_per_agent=2, memory_lines=6, topic_min_words=2,
-            line_min_words=3), REPLIES, memory_kept=8, memory_chars=120, default_temperature=0.8),
+            line_min_words=3), REPLIES, memory_kept=8, memory_chars=120, default_temperature=0.8,
+            reply_max_chars=500),
         LostItems(clock, bus, desk, roster, profiles, FakeHabits(), ai, None, LostItemsSettings(
             check_every_sec=60, scene_change=8.0, rescan_every_sec=300, snapshot_every_sec=120,
             spotted_photo_cooldown_sec=75, start_delay_sec=5, compare_size=64, min_confidence=0.3, just_seen_sec=90,
