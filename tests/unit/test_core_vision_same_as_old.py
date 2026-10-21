@@ -200,7 +200,9 @@ def test_lens_numbers_left_in_the_old_code_match_the_settings():
     ch, lens = old_camera_health(), app_config().lens
     in_settings = (lens.measure_width, lens.edge_touch_px, lens.fixed_after_sec, lens.edge_tip_after_sec)
     assert in_settings == (ch.SAMPLE_WIDTH, ch.EDGE_TOUCH_PX, ch.CLEAR_HOLD_SEC, ch.EDGE_TIP_AFTER_SEC)
-    assert {key: wait for key, (wait, _, _) in ch.ISSUES.items()} == lens.wait_before_saying_sec.model_dump()
+    waits = lens.wait_before_saying_sec.model_dump()
+    waits.pop('pi')                  # new: the Pi's health, which the old code never checked
+    assert {key: wait for key, (wait, _, _) in ch.ISSUES.items()} == waits
     assert app_config().camera.moved_within_sec == 1.5          # the old producer's "moved" window
 
 
