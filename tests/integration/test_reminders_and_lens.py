@@ -3,9 +3,9 @@
 import queue
 import time
 
-from conftest import Feeder, obj
 from desktalk.chat.lens import LensThread
 from desktalk.habits.reminders import HabitReminderThread, speaker_for
+from tests.conftest import Feeder, obj
 
 
 def drain(q):

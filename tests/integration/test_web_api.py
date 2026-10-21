@@ -7,8 +7,8 @@ import cv2
 import numpy as np
 import pytest
 
-from conftest import Feeder, blank_frame, obj
 from desktalk.web.routes import create_web_app
+from tests.conftest import Feeder, blank_frame, obj
 
 
 def jpeg(value=140):

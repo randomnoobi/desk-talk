@@ -1,6 +1,6 @@
 """The habit tracker: sips, breaks, phone-free time, food and light from detection events."""
 
-from conftest import HabitRig as Rig
+from tests.conftest import HabitRig as Rig
 
 
 def test_sip_when_the_cup_leaves_and_comes_back(settings, tmp_path):

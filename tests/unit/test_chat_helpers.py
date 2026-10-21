@@ -6,8 +6,14 @@ import pytest
 
 from desktalk.agents.profiles import ProfileBook
 from desktalk.chat import tracker_actions
-from desktalk.chat.context import (budget_history, group_speaker_order, parse_mentions, response_violates_evidence,
-                                   sanitize_chat_history, single_speaker_text)
+from desktalk.chat.context import (
+    budget_history,
+    group_speaker_order,
+    parse_mentions,
+    response_violates_evidence,
+    sanitize_chat_history,
+    single_speaker_text,
+)
 
 
 @pytest.fixture
@@ -80,7 +86,7 @@ def test_broadcast_hides_leftover_tags(make_app):
 
 
 def test_tracker_prompt_uses_habit_numbers(settings, tmp_path):
-    from conftest import HabitRig
+    from tests.conftest import HabitRig
     r = HabitRig(settings, tmp_path)
     r.tracker.log('hydration', 'glass')
     today = r.tracker.today(r.t)

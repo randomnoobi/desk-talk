@@ -5,7 +5,7 @@ pictures → detection events → roster / desk monitor / habits / event log →
 
 import queue
 
-from conftest import Feeder, obj, read_jsonl
+from tests.conftest import Feeder, obj, read_jsonl
 
 LAPTOP = obj('laptop', 200, 200, 400, 350)
 CUP_FAR = obj('cup', 560, 380, 600, 450)
