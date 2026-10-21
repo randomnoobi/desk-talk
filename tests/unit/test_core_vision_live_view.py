@@ -100,3 +100,18 @@ def test_boxes_still_show_when_the_overlays_fail(caplog):
         painted = DeskPainter(desk, PROFILES, broken).paint(blank(), [det('laptop', LAPTOP)])
     assert pixel(painted, 200, 300) == GREEN
     assert 'overlays' in caplog.text
+
+
+def test_overlays_that_keep_failing_the_same_way_are_logged_once(caplog):
+    """The live view is painted about 3 times a second: the same full error each time would flood the log."""
+    desk = DeskState()
+    desk.objects = {'computer': desk_object('laptop', LAPTOP)}
+    broken = SimpleNamespace(latest={'no': 'relationships'}, rules=None, history=lambda: [])
+    painter = DeskPainter(desk, PROFILES, broken)
+    with caplog.at_level(logging.ERROR):
+        for _ in range(5):
+            painter.paint(blank(), [])
+        broken.history = lambda: 1 / 0                          # a different problem: logged again
+        for _ in range(5):
+            painter.paint(blank(), [])
+    assert len([r for r in caplog.records if 'overlays' in r.getMessage()]) == 2

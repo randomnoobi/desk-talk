@@ -25,7 +25,6 @@ from desktalk.util import at_time_today, clock_text, local_day
 MIN = 60
 HOUR = 3600
 DAY_SEC = 86400
-TASK_NAME_SHOWN_CHARS = 60      # how much of a to-do's name goes into the message
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -335,7 +334,7 @@ def task_nudges(s: RuleState, cfg: TasksRule, now: float) -> list[Nudge]:
         return []
     n = len(todos)
     plural = 's' if n != 1 else ''
-    first = todos[0][:TASK_NAME_SHOWN_CHARS]
+    first = todos[0][:cfg.name_shown_chars]
     return [Nudge('tasks', 'tasks.open',
                   evidence=f'The user has {n} open task{plural} on their list, starting with "{first}".',
                   text=(f'You still have {n} open task{plural}, like "{first}". '

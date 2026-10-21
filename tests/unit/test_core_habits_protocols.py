@@ -346,6 +346,13 @@ def test_food_repeat_comes_from_protocols_yaml(rules):
     assert P.food_nudges(s, changed(rules.food, repeat_after_hours=2), now)[0].repeat_after_sec == 2 * HOUR
 
 
+def test_how_much_of_a_task_name_is_shown_comes_from_protocols_yaml(rules):
+    now = at('14:00')
+    s = day_state(now, open_todos=('Write the history essay about the river towns',))
+    n = P.task_nudges(s, changed(rules.tasks, name_shown_chars=9), now)
+    assert 'like "Write the"' in n[0].text and '"Write the h' not in n[0].text
+
+
 def test_task_check_in_waits_until_the_camera_has_watched_long_enough(rules):
     now = at('14:00')
     assert P.task_nudges(day_state(now, open_todos=('Essay',), session_start=now - 30 * MIN), rules.tasks, now) == []

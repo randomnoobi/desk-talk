@@ -610,6 +610,7 @@ class FoodRule(_Section):
 class TasksRule(_Section):
     enabled: bool
     remind_after_min: ZeroOrMore
+    name_shown_chars: PositiveInt
 
 
 class Protocols(_Section):

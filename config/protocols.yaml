@@ -100,3 +100,4 @@ food:
 tasks:
   enabled: true
   remind_after_min: 40        # open to-dos → check-in this often
+  name_shown_chars: 60        # the check-in names your first to-do, cut to this many letters

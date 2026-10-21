@@ -1,6 +1,9 @@
 """
 The live view with boxes ("Boxes" in the app): every detection box, green for the agents in the chat
 and grey for the rest, plus the desk overlays from the desk analyzer's latest result.
+
+If the overlays can't be drawn, the boxes are still shown. The problem is logged once (with its
+traceback), not with every picture, until a different one comes up or the overlays work again.
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ class DeskPainter:
         self._desk = desk
         self._profiles = profiles
         self._analyzer = analyzer
+        self._last_problem = ''          # the overlay problem already logged
 
     def paint(self, picture: Any, detections: Sequence[Detection]) -> Any:
         out = picture.copy()
@@ -39,6 +43,11 @@ class DeskPainter:
         things = {agent: Thing.from_desk(agent, o) for agent, o in objects.items()}
         try:
             draw_overlays(out, things, names, self._analyzer.latest, self._analyzer.rules, self._analyzer.history())
-        except Exception:
-            log.exception('Could not draw the desk overlays on the live view (the boxes are still shown)')
+        except Exception as exc:
+            problem = f'{type(exc).__name__}: {exc}'
+            if problem != self._last_problem:
+                self._last_problem = problem
+                log.exception('Could not draw the desk overlays on the live view (the boxes are still shown)')
+        else:
+            self._last_problem = ''
         return out
