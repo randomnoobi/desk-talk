@@ -183,10 +183,18 @@ def test_a_busy_picture_never_pushes_out_one_still_to_be_analysed(clock, waiting
     to_analyse = UploadInfo(frame_id='pi-000001', taken_at=None, detector=waiting, detections=cup)
     busy = UploadInfo(frame_id='pi-000002', taken_at=None, detector=DetectorState.BUSY)
     assert source.push(jpeg_of(picture(10)), to_analyse) and source.push(jpeg_of(picture(20)), busy)
-    assert source.read(timeout=0).frame_id == 'pi-000001'
+    first = source.read(timeout=0)
+    assert first.frame_id == 'pi-000001' and first.pi_detections == cup
+    assert source.read(timeout=0).frame_id == 'pi-000002'        # the busy one still reaches the live view
+    assert source.read(timeout=0) is None
     assert source.pictures_received == 2 and source.latest_upload()[0] == busy
-    source.push(jpeg_of(picture(30)), busy)                 # nothing waiting now: the busy one is the newest
-    assert source.read(timeout=0).frame_id == 'pi-000002'
+
+
+def test_a_newer_picture_to_analyse_replaces_an_unread_one(clock):
+    source = pi_source(clock)
+    source.push(jpeg_of(picture(10)), UploadInfo(frame_id='pi-000001', taken_at=None, detector=DetectorState.OFF))
+    source.push(jpeg_of(picture(20)), UploadInfo(frame_id='pi-000002', taken_at=None, detector=DetectorState.OFF))
+    assert source.read(timeout=0).frame_id == 'pi-000002' and source.read(timeout=0) is None
 
 
 def test_a_newer_picture_still_replaces_a_waiting_busy_one(clock):

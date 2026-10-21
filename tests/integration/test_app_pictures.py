@@ -157,11 +157,17 @@ def test_an_ok_picture_that_arrives_after_later_busy_ones_is_analysed_but_not_sh
 
 def test_a_busy_picture_never_pushes_out_an_ok_one_not_analysed_yet(tmp_path):
     rig = DeskRig(tmp_path)
+    busy_jpeg = desk_jpeg(200)
     assert rig.app.source.push(rig.jpeg, from_pi(rig, DetectorState.OK, LAPTOP, number=1))
-    assert rig.app.source.push(rig.jpeg, from_pi(rig, DetectorState.BUSY, number=2))
+    rig.clock.advance(0.3)
+    assert rig.app.source.push(busy_jpeg, from_pi(rig, DetectorState.BUSY, number=2))
     rig.app.producer.tick(rig.clock.now())
     [event] = detection_events(rig)
     assert event['frame_id'] == 'pi-000001' and event['detected_obj'][0]['label'] == 'laptop'
+    rig.app.producer.tick(rig.clock.now())                  # then the busy one, for the live view only
+    with rig.app.desk.lock:
+        assert rig.app.desk.raw_frames[0] == busy_jpeg
+    assert len(detection_events(rig)) == 1
 
 
 def test_each_analysed_picture_is_one_detection_event(tmp_path):
