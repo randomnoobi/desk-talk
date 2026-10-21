@@ -1,13 +1,15 @@
 """
-The chat: turns events into messages and puts habit reminders into words.
+The chat: turns events into messages, puts habit reminders into words, and answers you.
 
 It listens on the event bus:
     AgentJoined / AgentLeft  → "Cup joined the chat" (+ a hello, and an AI personality for a new kind of object)
     Alert                    → an agent warns about what the camera saw
     HabitEvent               → "Sip detected! That's 3 today."
+and answer() replies to what you type, 1-on-1 or in the group (/api/chat).
 
 When the AI is unavailable the characters still speak: alerts fall back to the agent's own
-too_close line, and reminders to the nudge's ready-made text.
+too_close line, and reminders to the nudge's ready-made text. Your own messages get a plain
+reason instead of a reply.
 """
 
 from __future__ import annotations
@@ -40,7 +42,7 @@ from desktalk.core.chat.tracker_actions import (
     tracker_prompt,
 )
 from desktalk.desk_state import DeskState
-from desktalk.domain import AgentJoined, AgentLeft, AgentProfile, AIUnavailable, Alert, Event, HabitEvent, Nudge
+from desktalk.domain import AgentJoined, AgentLeft, AgentProfile, AIUnavailable, Alert, HabitEvent, Nudge
 from desktalk.ports import ChatModel, Clock, DeskStatus, EventBus, HabitsView, Notifier, Profiles, RosterView
 
 log = logging.getLogger(__name__)
@@ -154,7 +156,7 @@ class MessageGenerator:
     # ════════════════════════════════════════════════════════════════
     #  Events
     # ════════════════════════════════════════════════════════════════
-    def on_roster(self, ev: Event) -> None:
+    def on_roster(self, ev: AgentJoined | AgentLeft) -> None:
         a = self._profiles.get(ev.agent)
         if not a:
             return
