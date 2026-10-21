@@ -80,6 +80,7 @@ class DailySummary:
         self._reply = replies.daily_recap
         self._default_temperature = default_temperature
         self._rng = rng or random.Random()
+        self._sent_day: str | None = None      # kept here too, in case saving it fails
 
     def tick(self, now: float) -> float:
         if time.localtime(now).tm_hour == self._settings.hour:
@@ -89,7 +90,7 @@ class DailySummary:
         return self._settings.check_every_sec
 
     def _sent_on(self, day: str) -> bool:
-        return (self._store.load(SENT_KEY) or {}).get('sent_day') == day
+        return self._sent_day == day or (self._store.load(SENT_KEY) or {}).get('sent_day') == day
 
     def _send(self, stats: dict[str, Any]) -> None:
         facts = recap_facts(stats, self._settings.objects_listed)
@@ -101,5 +102,10 @@ class DailySummary:
         members = self._roster.member_ids()
         speaker = self._rng.choice(members) if members else LENS
         self._notifier.send({'type': 'group_message', 'character': speaker, 'text': text, 'recap': True})
-        self._store.save(SENT_KEY, {'sent_day': stats['day']})
+        self._sent_day = stats['day']
         log.info('Daily recap from %s: %s', speaker, text[:100])
+        try:
+            self._store.save(SENT_KEY, {'sent_day': stats['day']})
+        except OSError as exc:
+            log.warning('Could not remember that the recap went out today (%s): it may be sent again after a '
+                        'restart', exc)
