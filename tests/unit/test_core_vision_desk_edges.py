@@ -42,6 +42,11 @@ def test_point_inside_the_outline():
     assert not de.inside_outline((480, 650), DESK, SIZE)
 
 
+def test_on_the_desk_is_inside_the_outline_or_anywhere_when_none_is_marked():
+    assert de.on_desk((480, 300), DESK, SIZE) and not de.on_desk((480, 650), DESK, SIZE)
+    assert de.on_desk((480, 650), (), SIZE)
+
+
 # Ported from test_desk_edges_ignore_picture_border
 @pytest.mark.parametrize('outline, box, edges', [
     ((), (0, 300, 60, 400), []),                  # nothing marked: no edge alerts

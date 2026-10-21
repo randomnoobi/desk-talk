@@ -15,7 +15,8 @@ until you've stopped for idle_chat.quiet_after_typing_sec, and a chat in progres
     idle = IdleChat(chat_model, notifier, desk_status, roster, profiles, desk, desk_summary, config.idle_chat,
                     config.llm.replies, memory_kept=config.llm.memory_per_agent,
                     memory_chars=config.chat.memory_reply_chars,
-                    default_temperature=config.agents_file.default.temperature)
+                    default_temperature=config.agents_file.default.temperature,
+                    reply_max_chars=config.chat.reply_max_chars)
     supervisor.add(idle, start_after=config.idle_chat.start_delay_sec)
 """
 
@@ -27,10 +28,11 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 from desktalk.config import AiReplies, IdleChatSettings
-from desktalk.core.chat.workers import prompts
+from desktalk.core.chat import prompts
+from desktalk.core.chat.context import single_speaker_text, speaker_names
+from desktalk.core.chat.tracker_actions import strip_action_tags
 from desktalk.core.chat.workers.ai import ask
-from desktalk.core.chat.workers.speakers import LENS
-from desktalk.core.chat.workers.text import json_in, single_speaker_text, strip_action_tags
+from desktalk.core.chat.workers.text import json_in
 from desktalk.desk_state import DeskState
 from desktalk.ports import ChatModel, DeskStatus, Notifier, Profiles, RosterView
 
@@ -57,11 +59,12 @@ class IdleChat:
     def __init__(self, chat: ChatModel, notifier: Notifier, status: DeskStatus, roster: RosterView,
                  profiles: Profiles, desk: DeskState, desk_summary: Callable[[], str], settings: IdleChatSettings,
                  replies: AiReplies, *, memory_kept: int, memory_chars: int, default_temperature: float,
-                 rng: random.Random | None = None):
+                 reply_max_chars: int, rng: random.Random | None = None):
         """`replies`: settings → llm.replies (idle_topic, idle_line, idle_director). `memory_kept` /
         `memory_chars`: settings → llm.memory_per_agent / chat.memory_reply_chars, for the lines each agent
         remembers saying. `default_temperature`: agents.yaml's default, for the topic writer and the
-        director when their settings have none."""
+        director when their settings have none. `reply_max_chars`: settings → chat.reply_max_chars, the
+        longest line kept."""
         self._chat = chat
         self._notifier = notifier
         self._status = status
@@ -74,6 +77,7 @@ class IdleChat:
         self._memory_kept = memory_kept
         self._memory_chars = memory_chars
         self._default_temperature = default_temperature
+        self._reply_max_chars = reply_max_chars
         self._rng = rng or random.Random()
         self._first_round = True
         self._talk: _Talk | None = None
@@ -166,7 +170,8 @@ class IdleChat:
                                 {'role': 'user', 'content': user}],
                    self._replies.idle_line, own_temperature=agent.temperature, background=True,
                    what=f"{agent.name}'s small talk")
-        text = strip_action_tags(single_speaker_text(text, agent, self._all_names()))
+        text = strip_action_tags(single_speaker_text(text, agent, speaker_names(self._profiles.all()),
+                                                     self._reply_max_chars))
         return text if text and len(text.split()) >= self._settings.line_min_words else None
 
     def _next_speaker(self, talk: _Talk) -> str | None:
@@ -218,14 +223,6 @@ class IdleChat:
 
     def _names(self, agent_ids: Sequence[str]) -> str:
         return ', '.join(self._name(a) for a in agent_ids)
-
-    def _all_names(self) -> dict[str, str]:
-        """Lower-case names and ids → agent id, to spot lines the AI wrote for someone else."""
-        names = {LENS: LENS}
-        for profile in self._profiles.all():
-            names[profile.name.lower()] = profile.id
-            names[profile.id.lower()] = profile.id
-        return names
 
     def _transcript(self, talk: _Talk) -> str:
         if not talk.recent:

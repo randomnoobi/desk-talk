@@ -74,6 +74,11 @@ def inside_outline(p: Point, outline: Sequence[Point], size: Size) -> bool:
     return inside
 
 
+def on_desk(p: Point, outline: Sequence[Point], size: Size) -> bool:
+    """The point (in pixels) is on the desk, or no outline is marked (so there's no telling: it counts)."""
+    return not outline or inside_outline(p, outline, size)
+
+
 def edge_risks(things: Mapping[str, Thing], rules: DeskRules, size: Size) -> Findings:
     """Edge objects close to a real desk edge: closer than edge_danger_px is a danger, closer than
     edge_warn_px a warning."""

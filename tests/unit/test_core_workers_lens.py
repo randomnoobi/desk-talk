@@ -1,4 +1,5 @@
-"""Lens, the camera's own character: says what the camera check finds, and when the Pi is hot or its clock is off."""
+"""Lens, the camera's own character: says what the camera check finds, and when the Pi is hot, its clock is off
+or its own object detection is off."""
 
 from __future__ import annotations
 
@@ -7,15 +8,17 @@ import time
 import cv2
 import numpy as np
 
-from desktalk.config import LensSettings, PiSettings
+from desktalk.config import LensSettings, LensWaits, PiSettings, SnapshotsSettings
 from desktalk.core.chat.workers.lens import Lens
+from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.desk_state import DeskState
 from desktalk.domain import CameraNotice, DetectorState, PiHealth, UploadInfo
 from tests.fakes import FakeCameraHealth, FakeClock, FakeFrameSource, FakePreferences, RecordingNotifier, SyncEventBus
 
-SETTINGS = LensSettings.model_construct(check_every_sec=2.0, repeat_after_min=20.0, fixed_after_sec=5.0)
+SETTINGS = LensSettings.model_construct(check_every_sec=2.0, repeat_after_min=20.0, fixed_after_sec=5.0,
+                                        wait_before_saying_sec=LensWaits.model_construct(pi=10.0, pi_detector=60.0))
 PI = PiSettings.model_construct(hot_warning_c=75.0, clock_off_warning_sec=5.0)
-PI_WAIT = 10.0
+SNAPSHOTS = SnapshotsSettings(max_kept=150, crop_padding=0.25, crop_min_px=40, jpeg_quality=85)
 LOST = {'key': 'lost', 'kind': 'problem', 'text': "I can't see anything: the Raspberry Pi stopped sending pictures."}
 
 
@@ -43,14 +46,22 @@ class PiReports:
 
     def __init__(self):
         self.latest = None
+        self.clock_off = None
 
-    def picture(self, received_at, *, temp=None, throttled='0x0', taken_at=None):
-        info = UploadInfo(frame_id='pi-000001', taken_at=received_at if taken_at is None else taken_at,
-                          detector=DetectorState.OFF, health=PiHealth(cpu_temp_c=temp, throttled=throttled))
+    def picture(self, received_at, *, temp=None, throttled='0x0', taken_at=None, detector=DetectorState.OK,
+                reason='', clock_off=None):
+        """`clock_off`: how far off the source judges the Pi's clock (from this picture's times if not given)."""
+        taken_at = received_at if taken_at is None else taken_at
+        info = UploadInfo(frame_id='pi-000001', taken_at=taken_at, detector=detector, detector_reason=reason,
+                          health=PiHealth(cpu_temp_c=temp, throttled=throttled))
         self.latest = (info, received_at)
+        self.clock_off = round(taken_at - received_at, 1) if clock_off is None else clock_off
 
     def latest_upload(self):
         return self.latest
+
+    def clock_off_sec(self):
+        return self.clock_off
 
 
 class Rig:
@@ -64,7 +75,7 @@ class Rig:
         self.desk = DeskState()
         self.pi = pi
         self.lens = Lens(self.health, self.source, layout or Layout(), prefs or FakePreferences(), self.notifier,
-                         self.bus, self.desk, SETTINGS, PI, pi_wait_before_saying_sec=PI_WAIT, phone=phone,
+                         self.bus, ProofPhotos(self.desk, self.clock, SNAPSHOTS), SETTINGS, PI, phone=phone,
                          pi_uploads=pi)
 
     def tick(self, after=0.0):
@@ -142,6 +153,7 @@ def test_a_photo_goes_with_problems_you_can_see_in_the_picture():
     rig.tick()
     snap = rig.notifier.sent[0]['snapshot']
     assert rig.desk.snapshot_order[0]['id'] == snap and rig.desk.snapshot_order[0]['label'] == 'Lens: camera view'
+    assert rig.desk.snapshot_order[0]['ts'] == rig.clock.now()
 
 
 def test_no_photo_for_other_problems():
@@ -162,6 +174,20 @@ def test_lens_mentions_a_hot_pi_once_it_has_been_hot_a_while():
     [(kind, text)] = rig.said()
     assert kind == 'problem' and '78' in text and 'Raspberry Pi' in text
     assert [(n.key, n.kind) for n in rig.bus.of_type(CameraNotice)] == [('pi_hot', 'problem')]
+
+
+def test_a_hot_spell_during_quiet_hours_gets_no_thanks_afterwards():
+    """The Pi is not checked during quiet hours, so you never get thanks for a warning you didn't see."""
+    prefs = FakePreferences({'quiet_enabled': True, 'quiet_start_hour': 13, 'quiet_end_hour': 15})
+    rig = Rig(pi=PiReports(), prefs=prefs)
+    rig.pi.picture(rig.clock.now(), temp=80.0)
+    rig.tick()
+    rig.tick(after=12)
+    prefs.update({'quiet_enabled': False})
+    rig.pi.picture(rig.clock.now(), temp=60.0)
+    rig.tick(after=2)
+    rig.tick(after=10)
+    assert rig.said() == [] and rig.bus.published == []
 
 
 def test_lens_says_a_hot_pi_again_only_after_the_repeat_time():
@@ -254,6 +280,15 @@ def test_a_picture_that_took_a_moment_to_arrive_is_not_a_clock_problem():
     assert rig.said() == []
 
 
+def test_lens_goes_by_the_pis_clock_as_the_pi_source_judges_it():
+    """One picture can arrive late (detection, slow Wi-Fi): the source judges the clock by the quickest recent one."""
+    rig = Rig(pi=PiReports())
+    rig.pi.picture(rig.clock.now(), taken_at=rig.clock.now() - 12.3, clock_off=-0.4)
+    rig.tick()
+    rig.tick(after=10)
+    assert rig.said() == []
+
+
 def test_the_pi_is_not_checked_while_its_pictures_have_stopped():
     rig = Rig(pi=PiReports())
     rig.pi.picture(rig.clock.now(), temp=90.0)
@@ -268,3 +303,50 @@ def test_the_pi_is_not_checked_before_its_first_picture():
     rig.tick()
     rig.tick(after=10)
     assert rig.said() == []
+
+
+# ── the Pi's own object detection ──
+NO_CONTAINER = 'the detector container is not answering'
+
+
+def test_lens_says_why_the_pis_own_detection_is_off_once_it_has_been_off_a_while():
+    rig = Rig(pi=PiReports())
+    rig.pi.picture(rig.clock.now(), detector=DetectorState.OFF, reason=NO_CONTAINER)
+    rig.tick()
+    rig.tick(after=59)
+    assert rig.said() == []
+    rig.tick(after=1)
+    [(kind, text)] = rig.said()
+    assert kind == 'problem' and NO_CONTAINER in text and 'This computer' in text
+    assert [(n.key, n.kind) for n in rig.bus.of_type(CameraNotice)] == [('pi_detector', 'problem')]
+
+
+def test_busy_is_not_off():
+    rig = Rig(pi=PiReports())
+    rig.pi.picture(rig.clock.now(), detector=DetectorState.BUSY)
+    rig.tick()
+    rig.tick(after=60)
+    assert rig.said() == []
+
+
+def test_a_short_spell_without_detection_on_the_pi_is_not_mentioned():
+    rig = Rig(pi=PiReports())
+    rig.pi.picture(rig.clock.now(), detector=DetectorState.OFF, reason=NO_CONTAINER)
+    rig.tick()
+    rig.pi.picture(rig.clock.now(), detector=DetectorState.OK)
+    rig.tick(after=40)
+    rig.pi.picture(rig.clock.now(), detector=DetectorState.OFF, reason=NO_CONTAINER)
+    rig.tick(after=40)
+    assert rig.said() == []
+
+
+def test_lens_says_thanks_when_the_pi_detects_again():
+    rig = Rig(pi=PiReports())
+    rig.pi.picture(rig.clock.now(), detector=DetectorState.OFF, reason=NO_CONTAINER)
+    rig.tick()
+    rig.tick(after=60)
+    rig.pi.picture(rig.clock.now(), detector=DetectorState.OK)
+    rig.tick(after=2)
+    rig.tick(after=5)
+    assert [kind for kind, _ in rig.said()] == ['problem', 'fixed']
+    assert rig.bus.of_type(CameraNotice)[-1].key == 'pi_detector'

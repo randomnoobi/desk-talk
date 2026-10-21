@@ -9,6 +9,10 @@ About 3 times a second (settings → camera.fps) it takes the newest picture and
 
 Then it publishes one DetectionEvent and updates the live view. Everything else (agents joining,
 alerts, habits, the event log) happens in the parts that subscribe to the event.
+
+A Pi picture taken before the one in the live view (the Pi sends an ok picture once its detector is
+done, after the busy ones taken meanwhile) is analysed but not shown, unless the live view has stood
+still for camera.keep_newer_picture_sec (so a Pi clock that jumps back can't freeze it).
 """
 
 from __future__ import annotations
@@ -79,6 +83,8 @@ class DetectionProducer:
         self._drawing = _Trouble('Drawing the live view')
         self._analysed = 0
         self._detect_ms: float | None = None
+        self._shown_taken_at: float | None = None    # the Pi's time on the picture in the live view
+        self._shown_at = 0.0                         # clock.monotonic() when the live view last changed
 
     @property
     def pictures_analysed(self) -> int:
@@ -109,11 +115,11 @@ class DetectionProducer:
         picture = frame.picture
         jpeg = frame.jpeg if frame.jpeg is not None else self._encode(picture, self._camera.jpeg_quality)
         if frame.detector_state is DetectorState.BUSY:
-            self._show(picture, jpeg, self._newest)     # live view only, with the newest boxes
+            self._show(frame, jpeg, self._newest)       # live view only, with the newest boxes
             return
         found = self._find(frame)
         if found is None:
-            self._show(picture, jpeg, [])               # detection failed: we don't know what's there
+            self._show(frame, jpeg, [])                 # detection failed: we don't know what's there
             return
         detections, where = found
         self._lens.sample(picture, detections, now)
@@ -122,7 +128,7 @@ class DetectionProducer:
         self._bus.publish(event)
         self._analysed += 1
         self._newest = detections
-        self._show(picture, jpeg, detections)
+        self._show(frame, jpeg, detections)
 
     def _find(self, frame: Frame) -> tuple[list[Detection], str] | None:
         """What's in the picture and where it was worked out (pi or computer); None if detection failed."""
@@ -169,8 +175,19 @@ class DetectionProducer:
             self._desk.seen_labels = {label: d.to_dict() for label, d in best.items()}
         self._last_analysed_at = now
 
-    def _show(self, picture: Any, jpeg: bytes, detections: list[Detection]) -> None:
+    def _older_than_shown(self, taken_at: float | None) -> bool:
+        """The picture was taken before the one in the live view, which changed only a moment ago."""
+        if taken_at is None or self._shown_taken_at is None or taken_at >= self._shown_taken_at:
+            return False
+        return self._clock.monotonic() - self._shown_at < self._camera.keep_newer_picture_sec
+
+    def _show(self, frame: Frame, jpeg: bytes, detections: list[Detection]) -> None:
         """The live view: the plain picture and the one with boxes."""
+        taken_at = frame.pi.taken_at if frame.pi else None
+        if self._older_than_shown(taken_at):
+            return
+        self._shown_taken_at, self._shown_at = taken_at, self._clock.monotonic()
+        picture = frame.picture
         try:
             painted = self._painter.paint(picture, detections)
             self._drawing.worked()

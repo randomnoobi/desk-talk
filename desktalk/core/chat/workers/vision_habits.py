@@ -6,7 +6,8 @@ distance and a phone in hand. Long slouching stretches and nail biting go in the
 (Habits page → Camera log). A nudge needs the same thing seen twice in a row, and the same nudge
 waits vision_habits.repeat_after_sec before it's sent again.
 
-    vision_habits = VisionHabits(ollama_or_none, bus, desk, roster, profiles, desk_status, config.vision_habits, clock)
+    vision_habits = VisionHabits(ollama_or_none, bus, desk, roster, profiles, desk_status, config.vision_habits, clock,
+                                 proof_photos)
     supervisor.add(vision_habits, start_after=config.vision_habits.start_delay_sec)
     vision_habits.summary(), .events(), .latest()       # for the web routes
 """
@@ -19,10 +20,11 @@ import uuid
 from typing import Any
 
 from desktalk.config import VisionHabitsSettings
-from desktalk.core.chat.workers import prompts
+from desktalk.core.chat import prompts
 from desktalk.core.chat.workers.ai import look
 from desktalk.core.chat.workers.speakers import speaker_for
 from desktalk.core.chat.workers.text import json_in
+from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.desk_state import DeskState
 from desktalk.domain import Alert
 from desktalk.ports import ChatModel, Clock, DeskStatus, EventBus, Profiles, RosterView
@@ -31,7 +33,6 @@ from desktalk.util import local_day
 log = logging.getLogger(__name__)
 
 BRIEF_KEYS = ('posture', 'phone', 'attention')      # what the chat's AI is told about the last look
-DETAIL_MAX_CHARS = 500
 # Nudges, in order of importance: what was seen → (the habit whose agent says it, the text)
 NUDGES = {
     'too_close': ('screens', "You've been leaning really close to my screen for a bit. "
@@ -58,7 +59,8 @@ class VisionHabits:
     name = 'vision habits'
 
     def __init__(self, vision: ChatModel | None, bus: EventBus, desk: DeskState, roster: RosterView,
-                 profiles: Profiles, status: DeskStatus, settings: VisionHabitsSettings, clock: Clock):
+                 profiles: Profiles, status: DeskStatus, settings: VisionHabitsSettings, clock: Clock,
+                 photos: ProofPhotos):
         self._vision = vision
         self._bus = bus
         self._desk = desk
@@ -67,6 +69,7 @@ class VisionHabits:
         self._status = status
         self._settings = settings
         self._clock = clock
+        self._photos = photos
         self._every = max(settings.min_every_sec, settings.every_sec)
         self._lock = threading.Lock()                # the web routes read the log and the summary
         self._latest: dict[str, Any] = {}
@@ -142,18 +145,18 @@ class VisionHabits:
             self._nails_before = nails
         if slouched is not None:
             minutes = max(1, round(slouched / 60))
-            photo = self._desk.save_snapshot(label=f'Posture: ~{minutes}m slouch')
+            photo = self._photos.save(f'Posture: ~{minutes}m slouch')
             self._add('posture_bad', f'Poor posture ~{minutes} min', now, duration_sec=slouched, snapshot_id=photo,
                       detail='The desk camera saw a slouched stretch until your posture looked neutral again.')
         if nails_started:
-            photo = self._desk.save_snapshot(label='Habit: nail biting')
+            photo = self._photos.save('Habit: nail biting')
             self._add('nail_biting', 'Nail biting noticed', now, snapshot_id=photo,
                       detail='The vision check saw nail biting, or a hand at your mouth near your nails.')
 
     def _add(self, category: str, title: str, now: float, *, detail: str, duration_sec: int | None = None,
              snapshot_id: str | None = None) -> None:
         entry: dict[str, Any] = {'id': uuid.uuid4().hex[:10], 'ts': now, 'category': category, 'title': title,
-                                 'detail': detail[:DETAIL_MAX_CHARS]}
+                                 'detail': detail}
         if duration_sec is not None:
             entry['duration_sec'] = duration_sec
         if snapshot_id:

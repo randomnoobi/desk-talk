@@ -177,6 +177,14 @@ class SafetyRules:
     def current(self) -> DeskRules:
         return self._current
 
+    def has_outline(self) -> bool:
+        """The desk corners are marked (Lens's DeskLayout)."""
+        return bool(self._current.outline)
+
+    def reference_gravity(self) -> tuple[float, ...] | None:
+        """How the phone was tilted when the desk corners were marked (Lens's DeskLayout)."""
+        return self._current.reference_gravity
+
     @property
     def loaded(self) -> bool:
         """Rules were saved from the Settings page (otherwise only the built-in ones are used)."""

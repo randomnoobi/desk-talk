@@ -8,8 +8,9 @@ import time
 import cv2
 import numpy as np
 
-from desktalk.config import VisionHabitsSettings, VisionNudgeRepeats
+from desktalk.config import SnapshotsSettings, VisionHabitsSettings, VisionNudgeRepeats
 from desktalk.core.chat.workers.vision_habits import VisionHabits
+from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.desk_state import DeskState
 from desktalk.domain import AgentProfile, Alert
 from tests.fakes import FakeChatModel, FakeClock, FakeDeskStatus, FakeProfiles, StaticRoster, SyncEventBus
@@ -17,6 +18,7 @@ from tests.fakes import FakeChatModel, FakeClock, FakeDeskStatus, FakeProfiles, 
 SETTINGS = VisionHabitsSettings(every_sec=42, slouch_log_min_sec=90, nail_log_cooldown_sec=50, max_log_events=120,
                                 start_delay_sec=12, min_every_sec=18,
                                 repeat_after_sec=VisionNudgeRepeats(too_close=1200, slouch=1500, phone=1500))
+SNAPSHOTS = SnapshotsSettings(max_kept=150, crop_padding=0.25, crop_min_px=40, jpeg_quality=85)
 GOOD = {'posture': 'good', 'face_screen_distance': 'ok', 'phone': 'none', 'attention': 'screen', 'nail_biting': False}
 SLOUCH = dict(GOOD, posture='slouch')
 NAILS = dict(GOOD, nail_biting=True)
@@ -40,7 +42,7 @@ class Rig:
         self.bus = SyncEventBus()
         self.status = FakeDeskStatus(warm=warm)
         self.habits = VisionHabits(self.ai, self.bus, self.desk, StaticRoster(members), PROFILES, self.status,
-                                   settings, self.clock)
+                                   settings, self.clock, ProofPhotos(self.desk, self.clock, SNAPSHOTS))
 
     def look(self, answer, after=0.0):
         """One round where the vision AI answers `answer` (a dict, or raw text)."""
@@ -120,6 +122,7 @@ def test_a_long_slouch_goes_in_the_habit_log_with_a_photo():
     assert entry['ts'] == rig.clock.now()
     assert rig.desk.snapshot_order[0]['id'] == entry['snapshot_id']
     assert rig.desk.snapshot_order[0]['label'] == 'Posture: ~2m slouch'
+    assert rig.desk.snapshot_order[0]['ts'] == rig.clock.now()
 
 
 def test_a_short_slouch_is_not_logged():

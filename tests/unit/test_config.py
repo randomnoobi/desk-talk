@@ -273,6 +273,7 @@ def test_numbers_moved_out_of_the_old_code_have_the_same_values(project):
     assert lens.edge_tip_after_sec == camera_health.EDGE_TIP_AFTER_SEC
     waits = lens.wait_before_saying_sec.model_dump()
     waits.pop('pi')                  # new: the Pi's health, which the old code never checked
+    waits.pop('pi_detector')         # new: the Pi's own detector
     assert waits == {k: v[0] for k, v in camera_health.ISSUES.items()}
     assert safety.temporal.history_length == relationships.HISTORY_LENGTH
     assert safety.chain_reaction.path_ratio == relationships.CHAIN_PATH_RATIO

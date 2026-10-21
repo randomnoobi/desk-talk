@@ -38,6 +38,12 @@ camera:
   webcam_warmup_reads: 10     # pictures tried before deciding a webcam doesn't work
   webcam_max_index: 4         # if the chosen webcam doesn't work, webcams 0 up to (not including) this are tried
   pair_key_bytes: 6           # random bytes in a new pairing key (6 makes an 8-letter key)
+  pair_key_file: certs/pair-key.txt  # the pairing key is kept here, so the Pi's command and the phone
+                              # link stay the same after a restart
+  keep_newer_picture_sec: 3   # a Pi picture can arrive after one taken later (the Pi sends it once its detector
+                              # is done): the live view keeps the later one, unless it hasn't changed for this long
+  pi_clock_pictures: 30       # the Pi's clock is judged by the quickest of its last this many pictures (the others
+                              # waited for its detector or a slow Wi-Fi)
 
 # ── Raspberry Pi (read by raspberry_pi/camera_node.py on the Pi) ─────────────
 pi:
@@ -114,6 +120,9 @@ presence:
 supervisor:
   restart_start_sec: 1        # a background job that crashed starts again after this long...
   restart_max_sec: 60         # ...doubling each time it crashes again, up to this
+  scheduler_longest_wait_sec: 60  # the timed jobs (compacting the event log, saving habits) are checked
+                              # at least this often
+  stop_wait_sec: 5            # when Desk Talk stops, how long to wait for each background job to finish
 
 # ── Event stream and event log ─────────────────────────────────────
 event_stream:
@@ -310,6 +319,10 @@ lost_items:
   nearby_kept: 5              # agents remembered as "near it"...
   nearby_mentioned: 3         # ...and how many are mentioned
   answer_min_words: 3         # shorter vision answers are thrown away
+  question_max_chars: 200     # how much of your question the vision AI is shown...
+  message_max_chars: 500      # ...and the chat AI
+  photo_note_max_chars: 450   # how much of the vision AI's answer about a saved photo is kept...
+  live_note_max_chars: 220    # ...and about the live picture
   items:                      # labels = detector words for the item; words = what you might type
     phone:   {name: Phone,   labels: [cell phone],          alert_after_min: 10, words: [phone, iphone, mobile, cell, cellphone, android]}
     keys:    {name: Keys,    labels: [key, remote],         alert_after_min: 15, words: [key, keys, keychain, keyring, fob]}
@@ -362,6 +375,7 @@ lens:
     cutoff: 45                # an object cut off at the side of the picture
     slow: 30
     pi: 10                    # the Pi is too hot, its power supply is weak, or its clock is off
+    pi_detector: 60           # the Pi's own object detection is off (this computer detects instead)
 
 # ── Daily recap ─────────────────────────────────────────────────────
 daily_summary:

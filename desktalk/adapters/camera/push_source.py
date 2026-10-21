@@ -1,7 +1,9 @@
 """
 Cameras that send us pictures (the Pi, the phone). The web layer hands each upload to push();
 the detection producer takes the newest one with read(). Only the newest picture is kept, so a
-slow computer skips pictures instead of falling behind.
+slow computer skips pictures instead of falling behind. A Pi picture marked busy (live view only)
+waits in a place of its own, so it never pushes out a picture still waiting to be analysed (ok or
+off); read() hands out the one to analyse first, then the busy one.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ import numpy as np
 
 from desktalk.adapters.camera.speed import SpeedMeter
 from desktalk.config import CameraSettings
-from desktalk.domain import Frame, UploadInfo
+from desktalk.domain import DetectorState, Frame, UploadInfo
 from desktalk.ports import Clock
 
 
@@ -26,7 +28,8 @@ class PushFrameSource:
         self._clock = clock
         self._camera = camera
         self._cond = threading.Condition()
-        self._newest: Frame | None = None      # not handed out by read() yet
+        self._to_analyse: Frame | None = None  # the newest picture to analyse, not handed out by read() yet
+        self._live_only: Frame | None = None   # the newest busy Pi picture (live view only), not handed out yet
         self._number = 0                       # counts every picture that came in
         self._last_at: float | None = None     # clock.monotonic() of the newest picture
         self._speed = SpeedMeter(camera.fps_smoothing, camera.fps_gap_max_sec)
@@ -44,9 +47,13 @@ class PushFrameSource:
             self._last_at = self._clock.monotonic()
             self._speed.picture_at(self._last_at)
             self._stopped = False
-            self._newest = Frame(picture=picture, received_at=self._clock.now(), source=self.kind,
-                                 number=self._number, jpeg=jpeg, pi=info)
-            self._took(self._newest)
+            frame = Frame(picture=picture, received_at=self._clock.now(), source=self.kind, number=self._number,
+                          jpeg=jpeg, pi=info)
+            self._took(frame)
+            if frame.detector_state is DetectorState.BUSY:
+                self._live_only = frame
+            else:
+                self._to_analyse = frame
             self._cond.notify_all()
         return True
 
@@ -54,11 +61,15 @@ class PushFrameSource:
         """For subclasses: a new picture was taken in (called with the lock held)."""
 
     def read(self, timeout: float) -> Frame | None:
-        """The newest picture not handed out yet; waits up to `timeout` seconds, then None."""
+        """The newest picture not handed out yet (one to analyse before a busy one); waits up to `timeout`
+        seconds, then None."""
         with self._cond:
-            if self._newest is None:
+            if self._to_analyse is None and self._live_only is None:
                 self._cond.wait(timeout)
-            frame, self._newest = self._newest, None
+            if self._to_analyse is not None:
+                frame, self._to_analyse = self._to_analyse, None
+            else:
+                frame, self._live_only = self._live_only, None
             return frame
 
     def mark_stopped(self) -> None:

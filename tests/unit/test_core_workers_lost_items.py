@@ -7,8 +7,9 @@ import time
 import cv2
 import numpy as np
 
-from desktalk.config import AiReplies, AiReply, LostItem, LostItemsSettings
+from desktalk.config import AiReplies, AiReply, LostItem, LostItemsSettings, SnapshotsSettings
 from desktalk.core.chat.workers.lost_items import LostItems
+from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.desk_state import DeskState
 from desktalk.domain import AgentProfile, Alert, BBox, Detection, DetectionEvent, Light
 from tests.fakes import FakeChatModel, FakeClock, FakeHabits, FakeProfiles, StaticRoster, SyncEventBus
@@ -26,13 +27,15 @@ ITEMS = {
 SETTINGS = LostItemsSettings(check_every_sec=60, scene_change=8.0, rescan_every_sec=300, snapshot_every_sec=120,
                              spotted_photo_cooldown_sec=75, start_delay_sec=5, compare_size=64, min_confidence=0.3,
                              just_seen_sec=90, detector_fresh_sec=5, nearby_kept=5, nearby_mentioned=3,
-                             answer_min_words=3, items=ITEMS)
+                             answer_min_words=3, question_max_chars=200, message_max_chars=500,
+                             photo_note_max_chars=450, live_note_max_chars=220, items=ITEMS)
 REPLIES = AiReplies.model_construct(lost_alert=AiReply(max_tokens=60, temperature=0.7),
                                     lost_answer=AiReply(max_tokens=200, temperature=0.35))
 PROFILES = FakeProfiles([AgentProfile(id='computer', name='Computer', object='laptop', habits=['screens']),
                          AgentProfile(id='keys', name='Keys', object='keys'),
                          AgentProfile(id='paper', name='Paper', object='notepad', habits=['tasks'], temperature=0.5),
                          AgentProfile(id='lamp', name='Lamp'), AgentProfile(id='pen', name='Pen')])
+SNAPSHOTS = SnapshotsSettings(max_kept=150, crop_padding=0.25, crop_min_px=40, jpeg_quality=85)
 CTA = {'label': '🖼 Desk captures', 'action': 'captures'}
 NO_AI = FakeChatModel(ready=False)
 
@@ -45,14 +48,15 @@ DARK, BRIGHT = picture(20), picture(230)
 
 
 class Rig:
-    def __init__(self, chat=NO_AI, vision=None, members=('computer',), phone_is_camera=False):
+    def __init__(self, chat=NO_AI, vision=None, members=('computer',), phone_is_camera=False, settings=SETTINGS):
         self.clock = FakeClock(time.mktime((2026, 10, 21, 14, 0, 0, 0, 0, -1)))
         self.bus = SyncEventBus()
         self.desk = DeskState()
         self.habits = FakeHabits()
         self.chat, self.vision = chat, vision
         self.lost = LostItems(self.clock, self.bus, self.desk, StaticRoster(members), PROFILES, self.habits, chat,
-                              vision, SETTINGS, REPLIES, default_temperature=0.8, phone_is_camera=phone_is_camera)
+                              vision, settings, REPLIES, photos=ProofPhotos(self.desk, self.clock, SNAPSHOTS),
+                              default_temperature=0.8, phone_is_camera=phone_is_camera)
         self.show(DARK)
 
     def show(self, jpeg):
@@ -138,6 +142,7 @@ def test_an_item_that_turns_up_gets_a_spotted_photo_but_not_too_often():
     rig.see(after=1)
     rig.see('key', after=15)
     assert rig.photos() == ['Spotted: Keys', 'Spotted: Keys']
+    assert rig.desk.snapshot_order[0]['ts'] == rig.clock.now()
 
 
 # ── alerts ──
@@ -372,6 +377,28 @@ def test_a_never_seen_item_gets_a_look_at_the_live_picture():
     text = rig.lost.answer('have you seen my keys?')['text']
     assert text.endswith('A quick look at the live picture: Not visible: no keys on the desk.')
     assert rig.vision.calls[0]['jpeg'] == DARK
+
+
+def test_how_much_of_the_vision_ais_answers_is_kept_comes_from_the_settings():
+    short = SETTINGS.model_copy(update={'photo_note_max_chars': 12, 'live_note_max_chars': 9})
+    rig = Rig(vision=FakeChatModel('Not visible: no keys on the desk.'), settings=short)
+    assert rig.lost.answer('have you seen my keys?')['text'].endswith('A quick look at the live picture: Not visib')
+    rig = Rig(vision=FakeChatModel('Your keys are under the notebook on the left.'), settings=short)
+    rig.desk.seen_labels = {'key': {}}
+    rig.desk.save_snapshot(label='Spotted: Keys')
+    rig.desk.seen_labels = {}
+    assert rig.lost.answer('have you seen my keys?')['text'].endswith('live picture: Your keys ar')
+
+
+def test_how_much_of_your_question_the_ais_are_shown_comes_from_the_settings():
+    short = SETTINGS.model_copy(update={'question_max_chars': 12, 'message_max_chars': 16})
+    rig = Rig(vision=FakeChatModel('Yes, it is there.'), settings=short)
+    rig.lost.answer('have you seen my laptop anywhere?')
+    assert '"have you see"' in rig.vision.calls[0]['prompt']
+    chat = FakeChatModel('Your keys were by the laptop a minute ago.')
+    rig = Rig(chat=chat, settings=short)
+    rig.lost.answer('have you seen my keys anywhere?')
+    assert 'User wrote:\nhave you seen my\n' in chat.calls[0]['messages'][1]['content']
 
 
 def test_a_question_about_something_else_gets_a_look_at_the_live_picture():

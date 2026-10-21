@@ -41,7 +41,8 @@ class Dice:
 
 
 class Rig:
-    def __init__(self, replies=(), members=('cup', 'computer'), status=None, ai=None, settings=SETTINGS):
+    def __init__(self, replies=(), members=('cup', 'computer'), status=None, ai=None, settings=SETTINGS,
+                 reply_max_chars=500):
         self.clock = FakeClock(time.mktime((2026, 10, 21, 14, 0, 0, 0, 0, -1)))
         self.replies = list(replies)
         self.ai = ai or FakeChatModel(lambda messages: self.replies.pop(0))
@@ -50,7 +51,7 @@ class Rig:
         self.desk = DeskState()
         self.idle = IdleChat(self.ai, self.notifier, self.status, StaticRoster(members), PROFILES, self.desk,
                              lambda: SUMMARY, settings, REPLIES, memory_kept=8, memory_chars=120,
-                             default_temperature=0.8, rng=Dice())
+                             default_temperature=0.8, reply_max_chars=reply_max_chars, rng=Dice())
         assert self.idle.tick(self.clock.now()) == 720     # the first round only sets the time of the next one
 
     def tick(self, after=0.0):
@@ -163,6 +164,12 @@ def test_lines_are_cleaned_up_and_too_short_ones_end_the_chat():
     assert rig.lines() == [('cup', OPENING)]
     assert rig.tick(after=4.5) == 720
     assert rig.lines() == [('cup', OPENING)]
+
+
+def test_a_runaway_line_is_cut_to_the_longest_reply():
+    rig = Rig([TOPIC, 'Computer, tell me more about your fans please', STOP], reply_max_chars=20)
+    rig.tick(after=720)
+    assert rig.lines() == [('cup', 'Computer, tell me mo')]
 
 
 def test_the_director_can_end_the_chat_or_name_someone_unknown():

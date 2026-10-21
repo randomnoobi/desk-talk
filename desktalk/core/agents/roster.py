@@ -18,10 +18,9 @@ from collections.abc import Callable
 
 from desktalk.config import AgentsSettings, PresenceSettings
 from desktalk.core.agents.presence import PresenceTracker
-from desktalk.core.agents.profiles import ProfileLookup
 from desktalk.desk_state import DeskState
 from desktalk.domain import AgentJoined, AgentLeft, Detection, DetectionEvent
-from desktalk.ports import EventBus
+from desktalk.ports import EventBus, Profiles
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +31,7 @@ OnDesk = Callable[[float, float, int, int], bool]
 class Roster:
     """Detection events → AgentJoined / AgentLeft. Implements RosterView."""
 
-    def __init__(self, bus: EventBus, profiles: ProfileLookup, desk: DeskState, agents: AgentsSettings,
+    def __init__(self, bus: EventBus, profiles: Profiles, desk: DeskState, agents: AgentsSettings,
                  presence: PresenceSettings, on_desk: OnDesk | None = None):
         self._bus = bus
         self._profiles = profiles

@@ -12,6 +12,7 @@ import yaml
 
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource
 from desktalk.config import CameraSettings
+from desktalk.core.chat.workers import PiUploads
 from desktalk.domain import BBox, Detection, DetectorState, PiHealth, UploadInfo
 from desktalk.ports import FrameSource, PictureInbox
 from desktalk_shared.wire import info_from_v1_headers
@@ -175,6 +176,34 @@ def test_a_pi_picture_carries_what_the_pi_sent(clock):
     assert frame.frame_id == 'pi-000007'
 
 
+@pytest.mark.parametrize('waiting', [DetectorState.OK, DetectorState.OFF])
+def test_a_busy_picture_never_pushes_out_one_still_to_be_analysed(clock, waiting):
+    source = pi_source(clock)
+    cup = (Detection('cup', 0.8, BBox(1, 2, 30, 40)),) if waiting is DetectorState.OK else ()
+    to_analyse = UploadInfo(frame_id='pi-000001', taken_at=None, detector=waiting, detections=cup)
+    busy = UploadInfo(frame_id='pi-000002', taken_at=None, detector=DetectorState.BUSY)
+    assert source.push(jpeg_of(picture(10)), to_analyse) and source.push(jpeg_of(picture(20)), busy)
+    first = source.read(timeout=0)
+    assert first.frame_id == 'pi-000001' and first.pi_detections == cup
+    assert source.read(timeout=0).frame_id == 'pi-000002'        # the busy one still reaches the live view
+    assert source.read(timeout=0) is None
+    assert source.pictures_received == 2 and source.latest_upload()[0] == busy
+
+
+def test_a_newer_picture_to_analyse_replaces_an_unread_one(clock):
+    source = pi_source(clock)
+    source.push(jpeg_of(picture(10)), UploadInfo(frame_id='pi-000001', taken_at=None, detector=DetectorState.OFF))
+    source.push(jpeg_of(picture(20)), UploadInfo(frame_id='pi-000002', taken_at=None, detector=DetectorState.OFF))
+    assert source.read(timeout=0).frame_id == 'pi-000002' and source.read(timeout=0) is None
+
+
+def test_a_newer_picture_still_replaces_a_waiting_busy_one(clock):
+    source = pi_source(clock)
+    source.push(jpeg_of(picture(10)), UploadInfo(frame_id='pi-000001', taken_at=None, detector=DetectorState.BUSY))
+    source.push(jpeg_of(picture(20)), UploadInfo(frame_id='pi-000002', taken_at=None, detector=DetectorState.BUSY))
+    assert source.read(timeout=0).frame_id == 'pi-000002'
+
+
 def test_pi_info_before_any_picture_has_only_the_frame_id():
     assert pi_source(FakeClock()).pi_info() == {'last_frame_id': ''}
 
@@ -231,10 +260,43 @@ def test_status_tells_how_far_the_pis_clock_is_off(clock):
     assert source.status()['clock_off_sec'] == -6.0          # a picture without a time doesn't change it
 
 
+def test_the_pis_clock_is_judged_by_its_quickest_recent_picture_without_detection_time(clock):
+    source = pi_source(clock)
+    assert source.clock_off_sec() is None
+    slow = UploadInfo(frame_id='pi-000002', taken_at=clock.now() - 6.5, detector=DetectorState.OK, detect_ms=2000.0)
+    source.push(jpeg_of(picture(10)), slow)
+    assert source.clock_off_sec() == -4.5                # the 2 seconds of detection don't count against the clock
+    quick = UploadInfo(frame_id='pi-000003', taken_at=clock.now() - 0.4, detector=DetectorState.BUSY)
+    source.push(jpeg_of(picture(10)), quick)
+    source.push(jpeg_of(picture(10)), slow)
+    assert source.clock_off_sec() == -0.4 and source.status()['clock_off_sec'] == -0.4
+
+
+def test_only_the_last_few_pictures_count_for_the_pis_clock(clock):
+    source = pi_source(clock, pi_clock_pictures=2)
+    source.push(jpeg_of(picture(10)), UploadInfo(frame_id='pi-000001', taken_at=clock.now() - 0.4))
+    for n in (2, 3):
+        source.push(jpeg_of(picture(10)), UploadInfo(frame_id=f'pi-00000{n}', taken_at=clock.now() - 12.0))
+    assert source.clock_off_sec() == -12.0
+
+
 def test_status_before_any_picture():
     status = pi_source(FakeClock()).status()
     assert status == {'last_frame_id': '', 'upload_format': None, 'detector': None, 'detector_reason': '',
                       'detect_ms': None, 'model': '', 'clock_off_sec': None}
+
+
+def test_latest_upload_is_what_came_with_the_newest_picture_and_when_it_arrived(clock):
+    source = pi_source(clock)
+    assert isinstance(source, PiUploads) and source.latest_upload() is None
+    hot = UploadInfo(frame_id='pi-000001', taken_at=1_760_000_000.0, health=PiHealth(cpu_temp_c=78.0))
+    source.push(jpeg_of(picture(10)), hot)
+    arrived = clock.now()
+    clock.advance(4)
+    assert source.latest_upload() == (hot, arrived)
+    cooler = UploadInfo(frame_id='pi-000002', taken_at=1_760_000_004.0, health=PiHealth(cpu_temp_c=60.0))
+    source.push(jpeg_of(picture(10)), cooler)
+    assert source.latest_upload() == (cooler, arrived + 4)
 
 
 # ── the phone ────────────────────────────────────────────────────────

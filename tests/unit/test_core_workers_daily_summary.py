@@ -116,3 +116,16 @@ def test_lens_gives_the_recap_when_nobody_is_in_the_chat():
     recap, notifier = make(members=())
     recap.tick(local(21, 30))
     assert notifier.sent[0]['character'] == 'lens'
+
+
+class FullDisk(InMemoryKeyValueStore):
+    def save(self, key, value):
+        raise OSError('No space left on device')
+
+
+def test_a_recap_that_cannot_be_remembered_on_disk_is_still_sent_only_once(caplog):
+    recap, notifier = make(store=FullDisk())
+    assert recap.tick(local(21, 0)) == SETTINGS.check_every_sec          # no error: the Supervisor won't retry
+    recap.tick(local(21, 1))
+    assert len(notifier.sent) == 1
+    assert 'No space left on device' in caplog.text

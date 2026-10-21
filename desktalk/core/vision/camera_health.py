@@ -66,13 +66,14 @@ SIDE_HINT = {
 # What to check when the video stops, by camera (settings → camera.source).
 LOST_TEXT = {
     'pi': ('I lost the pictures from the Raspberry Pi. Is it still on and connected to the Wi-Fi? '
-           'On the Pi, check that camera_node.py is still running.'),
+           'On the Pi, check that the camera program is still running (sudo systemctl status desk-talk-camera, '
+           'or start it with python3 -m raspberry_pi.camera).'),
     'phone': ('I lost the video from the phone. Is its screen still on? Phones stop the camera '
               'when they lock, so keep the Desk Talk page open on it.'),
     'webcam': 'I lost the webcam picture. Is it still plugged in, or is another app using it?',
 }
 LOST_FIX = {
-    'pi': 'Check the Pi is on, on the Wi-Fi, and running camera_node.py.',
+    'pi': 'Check the Pi is on, on the Wi-Fi, and running the camera program (python3 -m raspberry_pi.camera).',
     'phone': 'Keep the phone unlocked with the Desk Talk page open.',
     'webcam': 'Plug the webcam back in or close other apps using it.',
 }

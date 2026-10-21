@@ -36,6 +36,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, m
 from pydantic.fields import FieldInfo
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+CONFIG_FOLDER = 'config'           # under the project folder: settings.yaml, protocols.yaml, agents.yaml ...
 
 
 class ConfigError(Exception):
@@ -103,6 +104,9 @@ class CameraSettings(_Section):
     webcam_warmup_reads: PositiveInt
     webcam_max_index: PositiveInt
     pair_key_bytes: PositiveInt
+    pair_key_file: Path
+    keep_newer_picture_sec: ZeroOrMore
+    pi_clock_pictures: PositiveInt
 
 
 class PiDetector(_Section):
@@ -178,6 +182,8 @@ class SupervisorSettings(_Section):
     _in_order = (('restart_start_sec', 'restart_max_sec'),)
     restart_start_sec: PositiveNumber
     restart_max_sec: PositiveNumber
+    scheduler_longest_wait_sec: PositiveNumber
+    stop_wait_sec: PositiveNumber
 
 
 class EventStreamSettings(_Section):
@@ -389,6 +395,10 @@ class LostItemsSettings(_Section):
     nearby_kept: Count
     nearby_mentioned: Count
     answer_min_words: Count
+    question_max_chars: PositiveInt
+    message_max_chars: PositiveInt
+    photo_note_max_chars: PositiveInt
+    live_note_max_chars: PositiveInt
     items: dict[str, LostItem]
 
 
@@ -425,6 +435,7 @@ class LensWaits(_Section):
     cutoff: ZeroOrMore
     slow: ZeroOrMore
     pi: ZeroOrMore
+    pi_detector: ZeroOrMore
 
 
 class LensSettings(_Section):
@@ -727,6 +738,11 @@ class AppConfig(_Section):
         path = Path(path).expanduser()
         return path if path.is_absolute() else self.root / path
 
+    @property
+    def config_folder(self) -> Path:
+        """The folder the config files came from (config/safety_rules.json is kept there too)."""
+        return self.root / CONFIG_FOLDER
+
 
 # ════════════════════════════════════════════════════════════════════
 #  Loading
@@ -919,7 +935,7 @@ def load_config(root: Path | None = None, environ: Mapping[str, str] | None = No
     environ = os.environ if environ is None else environ
     env = _read_dotenv(Path(dotenv) if dotenv is not None else root / '.env')
     env.update({k: v for k, v in environ.items() if v})
-    config_dir = root / 'config'
+    config_dir = root / CONFIG_FOLDER
     sources = _Sources()
 
     def read(name: str, prefix: Loc = ()) -> dict:

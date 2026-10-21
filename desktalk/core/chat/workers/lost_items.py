@@ -12,7 +12,8 @@ words for it and the words you might type.
   4. When you ask, the answer uses those sightings, plus a look at a saved photo or the live picture.
 
     lost = LostItems(clock, bus, desk, roster, profiles, habits, chat_model, ollama_or_none, config.lost_items,
-                     config.llm.replies, default_temperature=config.agents_file.default.temperature,
+                     config.llm.replies, photos=proof_photos,
+                     default_temperature=config.agents_file.default.temperature,
                      phone_is_camera=config.camera.source == 'phone')
     supervisor.add(lost, start_after=config.lost_items.start_delay_sec)
     lost.items, lost.is_lost_query(text), lost.answer(text), lost.sightings()     # for the web routes
@@ -30,10 +31,11 @@ import cv2
 import numpy as np
 
 from desktalk.config import AiReplies, LostItemsSettings
-from desktalk.core.chat.workers import prompts
+from desktalk.core.chat import prompts
 from desktalk.core.chat.workers.ai import ask, look
 from desktalk.core.chat.workers.speakers import LENS, speaker_for
 from desktalk.core.chat.workers.text import json_in
+from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.desk_state import DeskState
 from desktalk.domain import Alert, DetectionEvent, Event
 from desktalk.ports import ChatModel, Clock, EventBus, HabitsView, Profiles, RosterView
@@ -52,11 +54,6 @@ OTHER_THINGS = {'laptop', 'cup', 'bottle', 'book', 'remote', 'card', 'scissors'}
 CTA = {'label': '🖼 Desk captures', 'action': 'captures'}
 NOT_SPOTTED = ("I checked the desk camera but couldn't confidently spot that. Try naming it directly "
                "(keys, phone, wallet, AirPods…), or browse saved desk photos below.")
-# How much of your question goes to the AI, and how much of a picture answer is kept (letters).
-QUESTION_MAX_CHARS = 200
-MESSAGE_MAX_CHARS = 500
-SAVED_PHOTO_NOTE_MAX_CHARS = 450
-LIVE_PICTURE_NOTE_MAX_CHARS = 220
 
 
 def _words(text: str) -> set[str]:
@@ -89,7 +86,8 @@ class LostItems:
 
     def __init__(self, clock: Clock, bus: EventBus, desk: DeskState, roster: RosterView, profiles: Profiles,
                  habits: HabitsView, chat: ChatModel, vision: ChatModel | None, settings: LostItemsSettings,
-                 replies: AiReplies, *, default_temperature: float, phone_is_camera: bool = False):
+                 replies: AiReplies, *, photos: ProofPhotos, default_temperature: float,
+                 phone_is_camera: bool = False):
         """`replies`: settings → llm.replies (this uses lost_alert and lost_answer). `default_temperature`:
         agents.yaml's default, for Lens when those settings have none. `phone_is_camera`: the phone can't be lost."""
         self._clock = clock
@@ -100,6 +98,7 @@ class LostItems:
         self._habits = habits
         self._chat = chat
         self._vision = vision
+        self._photos = photos
         self._settings = settings
         self._replies = replies
         self._default_temperature = default_temperature
@@ -193,7 +192,7 @@ class LostItems:
             self._first_picture_done = True          # the first picture is only the starting point
             self._in_last_picture = set(present)
         for label in spotted:
-            self._desk.save_snapshot(label=label)
+            self._photos.save(label)
 
     # ── 2 + 3. on a timer ──
     def tick(self, now: float) -> float:
@@ -247,8 +246,8 @@ class LostItems:
             desk_photo_due = (self._desk_photo_at is None
                               or now - self._desk_photo_at >= self._settings.snapshot_every_sec)
         for label in spotted:
-            self._desk.save_snapshot(label=label)
-        if desk_photo_due and self._desk.save_snapshot(label='Desk scan'):
+            self._photos.save(label)
+        if desk_photo_due and self._photos.save('Desk scan'):
             with self._lock:
                 self._desk_photo_at = now
         return hits
@@ -294,7 +293,7 @@ class LostItems:
         speaker = speaker_for(('tasks',), self._roster.member_ids(), self._profiles)
         if not wanted:
             note = look(self._vision, self._live_picture(),
-                        prompts.lost_anything(user_message[:QUESTION_MAX_CHARS]), background=False,
+                        prompts.lost_anything(user_message[:self._settings.question_max_chars]), background=False,
                         what='a lost-item question')
             return {'speaker': speaker, 'cta': dict(CTA), 'text': note or NOT_SPOTTED}
         notes = {}
@@ -311,7 +310,7 @@ class LostItems:
         profile = self._profiles.get(speaker)
         system = prompts.LOST_ITEM_SYSTEM.format(name=profile.name if profile else 'Lens',
                                                  obj=profile.object if profile else 'camera')
-        user = f'User wrote:\n{user_message[:MESSAGE_MAX_CHARS]}\n\nFACTS:\n' + '\n'.join(facts)
+        user = f'User wrote:\n{user_message[:self._settings.message_max_chars]}\n\nFACTS:\n' + '\n'.join(facts)
         text = ask(self._chat, [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
                    self._replies.lost_answer, background=False, what='a lost-item answer',
                    own_temperature=profile.temperature if profile else self._default_temperature)
@@ -370,7 +369,7 @@ class LostItems:
                 note = look(self._vision, jpeg, prompts.lost_in_saved_photo(about, name), background=False,
                             what='a lost-item photo')
                 if note and len(note.split()) >= self._settings.answer_min_words:
-                    return note.strip()[:SAVED_PHOTO_NOTE_MAX_CHARS]
+                    return note.strip()[:self._settings.photo_note_max_chars]
         note = look(self._vision, self._live_picture(), prompts.lost_in_live_picture(name), background=False,
                     what='a lost-item look')
-        return note.strip()[:LIVE_PICTURE_NOTE_MAX_CHARS] if note else None
+        return note.strip()[:self._settings.live_note_max_chars] if note else None
