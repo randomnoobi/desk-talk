@@ -91,6 +91,8 @@ class CameraSettings(_Section):
     disconnect_after_sec: PositiveNumber
     webcam_indices: tuple[Count, ...]
     phone_port: Port
+    phone_cert_folder: Path
+    phone_cert_days: PositiveInt
     wait_for_picture_sec: PositiveNumber
     jpeg_quality: JpegQuality
     boxes_jpeg_quality: JpegQuality
@@ -504,7 +506,11 @@ class ListSizes(_Section):
 
 
 class WebSettings(_Section):
+    host: str
     port: Port
+    app_folder: Path
+    phone_folder: Path
+    stop_wait_sec: PositiveNumber
     max_request_mb: PositiveNumber
     pi_upload_max_mb: PositiveNumber
     live_retry_ms: PositiveInt

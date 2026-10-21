@@ -44,6 +44,9 @@ setting. New code reads the setting, never the number. Each part gets its typed 
 | `llm.timeout_sec`, `retry_start_sec`, `retry_max_sec`, `breaker_failures`, `breaker_open_sec` (`max_retries` = tries) | `ResilientChatModel`. Cloud calls had no time limit before; 30 s is new behavior |
 | `event_stream.queue_size` | per consumer (today's 2000) |
 | `web.pi_upload_max_mb` | biggest `/api/pi/frame` upload |
+| `web.host`, `web.app_folder`, `web.phone_folder` | where the web server listens and the pages it serves (`0.0.0.0` and `paths.py` in the old code) |
+| `web.stop_wait_sec` | when the server stops, how long requests still running may take (uvicorn's graceful shutdown) |
+| `camera.phone_cert_folder`, `camera.phone_cert_days` | the phone page's HTTPS certificate (`paths.CERTS_DIR` and 365 days in the old code) |
 | `logging.folder`, `level`, `file_size_mb`, `files_kept` | `setup_logging` |
 
 ## Things to keep the same as the old code
