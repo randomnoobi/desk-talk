@@ -16,12 +16,27 @@ import json
 import random
 from types import SimpleNamespace
 
+import cv2
+import numpy as np
 import pytest
+import yaml
 
 from desktalk.core.vision.analyzer import DeskAnalyzer
+from desktalk.core.vision.camera_health import CameraHealth
+from desktalk.core.vision.desk_monitor import DeskMonitor
 from desktalk.core.vision.findings import Thing
+from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.core.vision.rules import SafetyRules, make_rules
-from tests.fakes import InMemoryKeyValueStore
+from desktalk.desk_state import DeskState
+from desktalk.domain import AgentProfile, Alert, BBox, Detection, DetectionEvent, Light
+from tests.fakes import (
+    FakeClock,
+    FakeDeskStatus,
+    FakeHabits,
+    FakeProfiles,
+    InMemoryKeyValueStore,
+    SyncEventBus,
+)
 from tests.unit.test_core_vision_kit import ROOT, app_config, desk_object
 
 SAVED = json.loads((ROOT / 'config' / 'safety_rules.json').read_text())
@@ -170,3 +185,218 @@ def test_changed_rules_give_the_same_analysis(tmp_path):
     steps = list(scenes(42))
     assert run_old(old_relationships(tmp_path, saved), steps) == run_new(new_rules(saved), steps)
 
+
+
+# ── Lens's camera checks ──
+def old_camera_health():
+    ch = fresh_old('camera_health')
+    raw = yaml.safe_load((ROOT / 'config' / 'settings.yaml').read_text())
+    ch.configure(raw['lens'])
+    return ch
+
+
+def test_lens_numbers_left_in_the_old_code_match_the_settings():
+    ch, lens = old_camera_health(), app_config().lens
+    in_settings = (lens.measure_width, lens.edge_touch_px, lens.fixed_after_sec, lens.edge_tip_after_sec)
+    assert in_settings == (ch.SAMPLE_WIDTH, ch.EDGE_TOUCH_PX, ch.CLEAR_HOLD_SEC, ch.EDGE_TIP_AFTER_SEC)
+    assert {key: wait for key, (wait, _, _) in ch.ISSUES.items()} == lens.wait_before_saying_sec.model_dump()
+    assert app_config().camera.moved_within_sec == 1.5          # the old producer's "moved" window
+
+
+def _picture(kind, size=(480, 360)):        # twice the measuring width: quick to shrink
+    w, h = size
+    if kind == 'black':
+        return np.zeros((h, w, 3), np.uint8)
+    if kind == 'white':
+        return np.full((h, w, 3), 255, np.uint8)
+    if kind == 'flat':
+        return np.full((h, w, 3), 140, np.uint8)
+    f = np.full((h, w, 3), 140, np.uint8)
+    f[::8] = 30
+    return (f * 0.15).astype(np.uint8) if kind == 'dark' else f
+
+
+PICTURES = {k: _picture(k) for k in ('bright', 'dark', 'black', 'white', 'flat')}
+BOXES = {
+    'cup': [('cup', [100, 100, 200, 200])],
+    'cup cut left': [('cup', [0, 200, 80, 300]), ('laptop', [200, 100, 400, 300])],
+    'two cut': [('cup', [0, 200, 80, 300]), ('book', [380, 100, 480, 200])],
+    'book cut right': [('book', [380, 100, 480, 200])],
+    'chair cut': [('chair', [0, 200, 80, 300]), ('cup', [100, 100, 200, 200])],
+    'person only': [('person', [300, 0, 480, 300])],
+    'nothing': [],
+    'fills': [('laptop', [0, 10, 450, 300])],
+}
+
+
+def lens_timeline(seed, seconds=3000):
+    """(time, what the camera shows, Lens's check arguments) for each second, in random stretches."""
+    rnd = random.Random(seed)
+    t, out = 1_760_000_000.0, []
+    while len(out) < seconds:
+        stretch = rnd.choice([1, 3, 6, 10, 20, 50, 90, 200])
+        picture = rnd.choice(['bright'] * 4 + ['dark', 'black', 'white', 'flat'])
+        boxes = BOXES[rnd.choice(list(BOXES))]
+        connected = rnd.random() > 0.12
+        check = {'connected': connected, 'fps': rnd.choice([3.0, 2.9, 1.0, 0.0, None]),
+                 'has_outline': rnd.random() > 0.3, 'stopped': (not connected) and rnd.random() < 0.3}
+        if rnd.random() < 0.25:
+            check['gravity'], check['reference_gravity'] = (0, 9.8, rnd.choice([0, 1, 4])), (0, 9.8, 0)
+        for _ in range(stretch):
+            out.append((t, picture if connected else None, boxes, check))
+            t += 1
+    return out[:seconds]
+
+
+def as_detections(boxes):
+    return [Detection(label, 0.9, BBox(*box)) for label, box in boxes]
+
+
+@pytest.mark.parametrize('seed, source', [(0, 'pi'), (1, 'phone'), (2, 'webcam')])
+def test_lens_says_the_same_things_at_the_same_times(seed, source):
+    ch = old_camera_health()
+    lens = app_config().lens
+    ignore = app_config().agents_file.ignore
+    old = ch.CameraHealth(ignore_classes=ignore, source_kind=source)
+    new = CameraHealth(lens, source_kind=source, moved_within_sec=1.5, ignore_labels=ignore)
+    said = []
+    for t, picture, boxes, check in lens_timeline(seed):
+        if picture is not None:
+            for dt in (0, 1 / 3, 2 / 3):                       # three pictures a second, as the camera sends
+                old.sample(PICTURES[picture], boxes, now=t + dt)
+                new.sample(PICTURES[picture], as_detections(boxes), t + dt)
+        mts = old.motion_ts
+        assert new.moved_recently(t + 0.9) == bool(mts and 0 <= t + 0.9 - mts < 1.5), t
+        a, b = old.check(t, **check), new.check(t, **check)
+        assert a == b, t
+        assert old.issues() == new.issues(), t
+        assert old.phone_tip() == new.phone_tip(), t
+        said += [m['key'] for m in b]
+    assert {'lost', 'covered', 'dark', 'glare', 'blurry', 'cutoff', 'slow', 'bumped'} <= set(said)
+
+
+def test_lens_forget_is_the_same():
+    ch = old_camera_health()
+    old = ch.CameraHealth(source_kind='phone')
+    new = CameraHealth(app_config().lens, source_kind='phone', moved_within_sec=1.5)
+    tilted = {'connected': True, 'fps': 3.0, 'gravity': (0, 9.8, 0), 'reference_gravity': (0, 9.8, 4)}
+    for t in range(1000, 1010):
+        old.sample(PICTURES['bright'], BOXES['cup'], now=t)
+        new.sample(PICTURES['bright'], as_detections(BOXES['cup']), t)
+        assert old.check(t, **tilted) == new.check(t, **tilted)
+    old.forget('bumped')
+    new.forget('bumped')
+    for t in range(1010, 1030):
+        assert old.check(t, connected=True, fps=3.0) == new.check(t, connected=True, fps=3.0) == []
+
+
+# ── the desk monitor ──
+PROFILES = [
+    AgentProfile('computer', 'Computer', labels=['laptop', 'keyboard'], fragile=True),
+    AgentProfile('cup', 'Cup', labels=['cup'], habits=['hydration']),
+    AgentProfile('drink', 'Drink', labels=['bottle'], habits=['hydration']),
+    AgentProfile('snack', 'Snack', labels=['apple'], habits=['food']),
+    AgentProfile('banana', 'Banana', labels=['banana'], habits=['food']),
+    AgentProfile('paper', 'Paper', labels=['book'], habits=['tasks'], fragile=True),
+    AgentProfile('phone', 'Phone', labels=['cell phone'], fragile=True),
+    AgentProfile('plant', 'Plant', labels=['potted plant', 'flower']),
+]
+EXTRAS = ['person', 'chair', 'pen', 'clock', 'vase', 'potted plant', 'flower', 'key', 'spoon', 'fork']
+
+
+def monitor_steps(seed):
+    """(time, agents' objects, every word in the picture, warm, risk detection on) for each picture."""
+    rnd = random.Random(seed)
+    warm, risk_on = True, True
+    for t, objects in scenes(seed, steps=1500):
+        if rnd.random() < 0.01:
+            warm = not warm
+        if rnd.random() < 0.01:
+            risk_on = not risk_on
+        words = [o['class_name'] for o in objects.values()] + rnd.sample(EXTRAS, rnd.randint(0, 6))
+        if rnd.random() < 0.03:
+            words.append(rnd.choice(['cat', 'dog']))           # one pet at a time (the old code's order is random)
+        yield t, objects, words, warm, risk_on
+
+
+class _OldApp:
+    """Just enough of the old DeskTalkApp for the old DeskMonitor."""
+
+    def __init__(self, rel, desk, habits):
+        raw = yaml.safe_load((ROOT / 'config' / 'settings.yaml').read_text())
+        self.settings = SimpleNamespace(alerts=raw['alerts'])
+        self.desk, self.habits = desk, habits
+        self.analyzer = rel.RelationshipAnalyzer(*SIZE)
+        self.profiles = FakeProfiles(PROFILES, ignored=app_config().agents_file.ignore)
+        self.published = []
+        self.stream = SimpleNamespace(publish=lambda event_type, ts, **data: self.published.append({'ts': ts, **data}))
+        self.is_warm = True
+
+    def warm(self, now):
+        return self.is_warm
+
+
+def _live_view_jpeg():
+    picture = np.random.default_rng(7).integers(0, 255, (SIZE[1], SIZE[0], 3), dtype=np.uint8)
+    return cv2.imencode('.jpg', picture)[1].tobytes()
+
+
+def _alert_as_old(alert):
+    """A new Alert as the old code published it: no id or type, and no empty text / scenario / feature."""
+    d = alert.to_dict()
+    for key in ('id', 'type'):
+        d.pop(key)
+    for key in ('text', 'scenario', 'feature'):
+        if not d[key]:
+            d.pop(key)
+    return d
+
+
+def _safety(desk):
+    with desk.lock:
+        return (desk.safety_state, desk.safety_dangers, desk.rel_result, desk.danger_active_since,
+                desk.recent_events)
+
+
+@pytest.mark.parametrize('seed', range(4))
+def test_desk_monitor_alerts_are_the_same(tmp_path, seed):
+    from desktalk.vision.desk_monitor import DeskMonitor as OldDeskMonitor
+
+    rel = old_relationships(tmp_path, {**SAVED, 'desk_outline': OUTLINE})
+    clock = [0.0]
+    rel.time = SimpleNamespace(time=lambda: clock[0])
+    rel.set = _OrderedSet
+    old_desk, new_desk = DeskState(), DeskState()
+    old_desk.frames[0] = new_desk.frames[0] = _live_view_jpeg()
+    old_habits, new_habits = FakeHabits(), FakeHabits()
+    app = _OldApp(rel, old_desk, old_habits)
+    old = OldDeskMonitor(app)
+    bus, status = SyncEventBus(), FakeDeskStatus()
+    rules = new_rules({**SAVED, 'desk_outline': OUTLINE})
+    DeskMonitor(bus, new_desk, DeskAnalyzer(rules), app.profiles, new_habits, status,
+                ProofPhotos(new_desk, FakeClock(), app_config().snapshots), app_config().alerts)
+    seen = set()
+    for t, objects, words, warm, risk_on in monitor_steps(seed):
+        clock[0] = t
+        app.is_warm = status.is_warm = warm
+        for desk in (old_desk, new_desk):
+            desk.objects = dict(objects)
+            desk.frame_w, desk.frame_h = SIZE
+            desk.active_scenarios['risk_detection'] = risk_on
+        found = tuple(Detection(w, 0.9, BBox(0, 0, 10, 10)) for w in words)
+        before_old, before_new = len(app.published), len(bus.published)
+        old.on_detection({'ts': t, 'detected_obj': [d.to_dict() for d in found]})
+        bus.publish(DetectionEvent(ts=t, frame_id='x', source='pi', size=SIZE, detections=found, person=False,
+                                   light=Light(brightness=100)))
+        olds = app.published[before_old:]
+        news = [e for e in bus.published[before_new:] if isinstance(e, Alert)]
+        assert len(olds) == len(news), t
+        for a, b in zip(olds, news, strict=True):
+            b = _alert_as_old(b)
+            if 'snapshot' in a:            # the same proof photo, with a different id
+                assert old_desk.snapshots[a.pop('snapshot')] == new_desk.snapshots[b.pop('snapshot')]
+            assert a == b, t
+            seen.add(b.get('feature') or b['kind'])
+        assert _safety(old_desk) == _safety(new_desk), t
+    assert old_habits.bumps == new_habits.bumps
+    assert {'proximity', 'pet_risk', 'organization', 'water_plants'} <= seen
