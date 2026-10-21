@@ -1,0 +1,21 @@
+# Lint and fast tests on every push and pull request.
+# No network, API keys, camera, Pi or Docker needed: the slow (real YOLO) and docker tests are skipped.
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.4"
+      - name: System library OpenCV needs
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgl1
+      - run: uv sync --all-packages --frozen
+      - run: uv run ruff check .
+      - run: uv run pytest -m "not slow and not docker"

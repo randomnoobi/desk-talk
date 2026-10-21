@@ -1,0 +1,15 @@
+# Code used both on the Pi and on this computer. Standard library only, so the camera program
+# can import it with the Pi's own python3 (3.11 or newer) straight from the cloned repo.
+[project]
+name = "desktalk-shared"
+version = "2.0.0"
+description = "Desk Talk: the Pi ↔ computer upload format and YOLO result → Detection"
+requires-python = ">=3.11"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["desktalk_shared"]
