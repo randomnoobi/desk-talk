@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
-import tempfile
 from pathlib import Path
 from typing import Any
+
+from desktalk.adapters.storage.files import write_atomically
 
 log = logging.getLogger(__name__)
 
@@ -51,18 +51,7 @@ class JsonFileStore:
         """Write `value` as JSON. Raises TypeError if it can't be written as JSON, OSError if the disk fails;
         either way the file keeps its old value."""
         path = self._path(key)
-        text = json.dumps(value, indent=2)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f'.{path.name}.', suffix='.tmp')
-        try:
-            with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                f.write(text)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp, path)
-        except BaseException:
-            Path(tmp).unlink(missing_ok=True)
-            raise
+        write_atomically(path, json.dumps(value, indent=2))
 
     def delete(self, key: str) -> None:
         self._path(key).unlink(missing_ok=True)
