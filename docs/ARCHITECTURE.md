@@ -83,10 +83,10 @@ See [AGENT_SYSTEM.md](AGENT_SYSTEM.md).
 ## Tests
 
 ```bash
-pip install -r requirements-dev.txt
-python -m pytest                 # all (about a minute)
-python -m pytest tests/unit      # fast unit tests
-python -m pytest -m "not slow"   # skip the real-YOLO tests
+uv sync --all-packages
+uv run pytest                    # all (about a minute)
+uv run pytest tests/unit         # fast unit tests
+uv run pytest -m "not slow"      # skip the real-YOLO tests
 ```
 
 `tests/unit/` checks each piece on its own (settings, event stream, event log,

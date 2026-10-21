@@ -238,20 +238,20 @@ python scripts/download_models.py --list    # every object it can detect
 
 ### On your computer
 
+Install [uv](https://docs.astral.sh/uv/) once (`brew install uv`, or see its page), then:
+
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env              # add an AI key, or OLLAMA_URL for Ollama
-python scripts/download_models.py # the YOLO model (about 45 MB)
-python server.py
+uv sync --all-packages                   # Python 3.12 and every package, exactly as in uv.lock
+cp .env.example .env                     # add an AI key, or OLLAMA_URL for Ollama
+uv run python scripts/download_models.py # the YOLO model (about 45 MB)
+uv run python server.py
 ```
 
 Open **http://localhost:5000**. `server.py` prints the command to run on the Pi.
 
 ### On the Raspberry Pi
 
-See [pi/README.md](pi/README.md). In short:
+See [raspberry_pi/README.md](raspberry_pi/README.md). In short:
 
 ```bash
 sudo apt install -y git python3-picamera2 python3-opencv python3-yaml
@@ -282,10 +282,12 @@ demo where four characters join the chat.
 ## Tests
 
 ```bash
-pip install -r requirements-dev.txt
-python -m pytest
+uv run pytest -m "not slow"     # fast tests (no model, network, camera or Pi needed)
+uv run pytest                   # also the real-YOLO tests (needs the model in models/)
+uv run ruff check <files>       # lint
 ```
 
+GitHub runs the lint and the fast tests on every push (`.github/workflows/tests.yml`).
 Unit tests (`tests/unit/`) check each piece on its own; integration tests (`tests/integration/`)
 run them together: scripted pictures through the whole pipeline, the web API with a fake AI,
 the Pi node streaming to a real server, and the real YOLO model on sample photos.
