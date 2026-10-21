@@ -329,3 +329,24 @@ class DeskStatus(Protocol):
 
     def open_todos(self) -> list[str]:
         ...
+
+
+@runtime_checkable
+class PictureCheck(Protocol):
+    """Lens looking at every analysed picture (brightness, blur, glare, the camera moving)."""
+
+    def sample(self, picture: Any, detections: Sequence[Detection], now: float) -> None:
+        ...
+
+    def moved_recently(self, now: float) -> bool:
+        """The camera itself moved in the last moment (so "things moved" isn't the desk changing)."""
+        ...
+
+
+@runtime_checkable
+class LiveViewPainter(Protocol):
+    """Draws the boxes and desk overlays (danger zones, desk edges, agent names) for the live view."""
+
+    def paint(self, picture: Any, detections: Sequence[Detection]) -> Any:
+        """A new picture with the drawings; the one passed in is left as it was."""
+        ...

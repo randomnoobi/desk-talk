@@ -19,6 +19,8 @@ from tests.fakes.views import (
     FakeChatVoice,
     FakeDeskStatus,
     FakeHabits,
+    FakePainter,
+    FakePictureCheck,
     FakePreferences,
     FakeProfiles,
     StaticRoster,
@@ -26,6 +28,6 @@ from tests.fakes.views import (
 
 __all__ = [
     'FakeCameraHealth', 'FakeChatModel', 'FakeChatVoice', 'FakeClock', 'FakeDeskStatus', 'FakeDetector',
-    'FakeFrameSource', 'FakeHabits', 'FakePreferences', 'FakeProfiles', 'InMemoryEventStore',
-    'InMemoryKeyValueStore', 'RecordingNotifier', 'StaticRoster', 'SyncEventBus',
+    'FakeFrameSource', 'FakeHabits', 'FakePainter', 'FakePictureCheck', 'FakePreferences', 'FakeProfiles',
+    'InMemoryEventStore', 'InMemoryKeyValueStore', 'RecordingNotifier', 'StaticRoster', 'SyncEventBus',
 ]

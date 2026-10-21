@@ -126,3 +126,24 @@ class FakeCameraHealth:
         self.checks.append({'now': now, **kw})
         out, self.messages = self.messages, []
         return out
+
+
+class FakePictureCheck:
+    def __init__(self, moved: bool = False):
+        self.moved = moved
+        self.samples: list[tuple[Any, list, float]] = []
+
+    def sample(self, picture: Any, detections: Sequence, now: float) -> None:
+        self.samples.append((picture, list(detections), now))
+
+    def moved_recently(self, now: float) -> bool:
+        return self.moved
+
+
+class FakePainter:
+    def __init__(self):
+        self.painted = 0
+
+    def paint(self, picture: Any, detections: Sequence) -> Any:
+        self.painted += 1
+        return picture.copy()
