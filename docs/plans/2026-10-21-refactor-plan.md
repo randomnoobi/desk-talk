@@ -1,6 +1,6 @@
 # Refactor plan: easier to change, harder to break
 
-Date: 2026-10-21. Status: **in progress** on the `refactor` branch (started 2026-10-21).
+Date: 2026-10-21. Status: **code done** on the `refactor` branch (2026-10-21). Not pushed. Not yet run on the Pi or in Docker.
 
 Goal: make Desk Talk easy to change (maintainable), hard to break (reliable), and able to keep
 going when one part fails (fault-tolerant). As part of it, **object detection moves to the Raspberry Pi**:
@@ -308,9 +308,9 @@ New code goes in new folders; the old modules keep the app running until Phase 3
 
 ### Phase 4: finish
 - [ ] Integration, failure and Docker tests end to end (camera program → container → real local server → SSE)
-- [ ] Remove Flask, `raspberry_pi/camera_node.py`, old `app`-passing code
-- [ ] `ruff check .` clean, all tests pass, coverage report
-- [ ] Update README, `raspberry_pi/README.md` (Docker setup, systemd service for the camera program),
+- [x] Remove Flask, `raspberry_pi/camera_node.py`, old `app`-passing code
+- [x] `ruff check .` clean, all tests pass, coverage report
+- [x] Update README, `raspberry_pi/README.md` (Docker setup, systemd service for the camera program),
       ARCHITECTURE.md, AGENT_SYSTEM.md, AGENTS.md
 - [ ] Try it for real with you: on the Pi, `docker compose up -d` and the camera program's self-test; open the app,
       check chat, alerts, habits, event log; then break things on purpose (`docker compose stop`, stop the server,
