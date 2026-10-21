@@ -48,7 +48,7 @@ class FakeYolo:
 
 def settings(**changes) -> DetectorSettings:
     return DetectorSettings(**{'model': 'models/yolo26m-objv1-150.pt', 'confidence': 0.35, 'image_size': 640,
-                               'device': 'cpu', **changes})
+                               'device': 'cpu', 'end2end': False, 'rect': False, **changes})
 
 
 def detector_with(yolo, end2end=False, rect=False, **changes):

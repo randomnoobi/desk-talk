@@ -26,7 +26,6 @@ camera:
   webcam_indices: [0]         # which webcam(s) when source is webcam (0 = built-in on most Macs)
   phone_port: 5443            # HTTPS port the phone page uses (phones only allow cameras on https)
   wait_for_picture_sec: 1.0   # analysis waits this long for a new picture, then checks again
-  pause_after_error_sec: 0.2  # a picture that couldn't be analysed: wait this long before the next one
   jpeg_quality: 78            # JPEG quality when this computer makes the picture itself (webcam)
   boxes_jpeg_quality: 70      # JPEG quality of the live view with boxes ("Boxes" in the app)
   light_measure_width: 64     # pictures are shrunk to this width to measure how bright the room is
@@ -38,6 +37,7 @@ camera:
   webcam_height: 720
   webcam_warmup_reads: 10     # pictures tried before deciding a webcam doesn't work
   webcam_max_index: 4         # if the chosen webcam doesn't work, webcams 0 up to (not including) this are tried
+  pair_key_bytes: 6           # random bytes in a new pairing key (6 makes an 8-letter key)
 
 # ── Raspberry Pi (read by raspberry_pi/camera_node.py on the Pi) ─────────────
 pi:
@@ -54,6 +54,12 @@ pi:
   upload_retry_max_sec: 10    # ...a little longer after each miss, up to this
   hot_warning_c: 75           # Lens mentions it when the Pi's processor is this hot (°C); it slows down at about 80
   clock_off_warning_sec: 5    # Lens mentions it when the Pi's clock is this far from this computer's
+  camera_warmup_sec: 1        # the Pi camera gets this long to settle its exposure when it starts
+  pause_after_error_sec: 0.5  # a picture (or a background job on the Pi) failed: wait this long before trying again
+  status_every_sec: 30        # how often the camera program writes a status line
+  health_every_sec: 3         # how often the Pi checks its disk, temperature and stored pictures
+  settings_check_every_sec: 60  # how often the Pi asks this computer for new settings (new detector settings go
+                              # to the container right away; others need the camera program restarted)
   detector:                   # object detection on the Pi itself, in Docker (raspberry_pi/detector_service/)
     model: yolo26m-objv1-150.pt  # in the container's models folder; the Pi speed test (benchmarks/) picks the final one
     format: ncnn              # ncnn = fastest on the Pi's processor; pt = plain PyTorch, to compare
@@ -79,6 +85,9 @@ detector:
   confidence: 0.35            # lowest confidence a box needs to be kept at all
   image_size: 640
   device: auto                # auto = Apple GPU (mps) or NVIDIA (cuda) when available, else cpu
+  end2end: false              # false = run YOLO26 the way the Pi's ncnn model runs (its second head plus the
+                              # overlap filter), so the Pi and this computer find the same objects
+  rect: false                 # false = always pad pictures to a square, like the Pi's ncnn model
 
 # ── Agents joining and leaving the group chat ──────────────────────
 agents:
@@ -91,6 +100,7 @@ agents:
   greet_on_join: true         # the agent says hi when it joins (no AI used)
   greet_again_after_min: 30   # don't say hi again if it rejoins sooner than this
   invent_personality: true    # ask the AI for a personality when an unknown object joins
+  personality_max_chars: 400  # longest personality the AI may write for an object
 
 # ── Short-term presence (used by the habit rules, not the chat) ────
 presence:
@@ -254,6 +264,7 @@ chat:
   summary_chars: 70           # ...each cut to this many letters
   memory_reply_chars: 120     # an agent remembers this much of what it said...
   memory_user_chars: 80       # ...and of what you said
+  reply_max_chars: 500        # an AI reply is cut to this many letters
   memory_match_chars: 40      # a memory that starts like a message already shown isn't repeated
   ollama_memory_lines: 3      # Ollama gets only the newest memories
   recent_events_kept: 10      # recent alerts the AI is told about...
@@ -348,6 +359,7 @@ lens:
     empty: 180                # nothing recognized on the desk
     cutoff: 45                # an object cut off at the side of the picture
     slow: 30
+    pi: 10                    # the Pi is too hot, its power supply is weak, or its clock is off
 
 # ── Daily recap ─────────────────────────────────────────────────────
 daily_summary:
@@ -399,3 +411,7 @@ logging:
   level: INFO                 # DEBUG (everything), INFO, WARNING or ERROR (problems only)
   file_size_mb: 5             # start a new log file at this size...
   files_kept: 5               # ...and keep this many old ones
+
+# ── Your data on this computer ──────────────────────────────────────
+storage:
+  folder: data                # preferences.json, habits/<day>.json and learned_personalities.json live here

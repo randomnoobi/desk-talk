@@ -266,7 +266,9 @@ def test_numbers_moved_out_of_the_old_code_have_the_same_values(project):
     assert lens.edge_touch_px == camera_health.EDGE_TOUCH_PX
     assert lens.fixed_after_sec == camera_health.CLEAR_HOLD_SEC
     assert lens.edge_tip_after_sec == camera_health.EDGE_TIP_AFTER_SEC
-    assert lens.wait_before_saying_sec.model_dump() == {k: v[0] for k, v in camera_health.ISSUES.items()}
+    waits = lens.wait_before_saying_sec.model_dump()
+    waits.pop('pi')                  # new: the Pi's health, which the old code never checked
+    assert waits == {k: v[0] for k, v in camera_health.ISSUES.items()}
     assert safety.temporal.history_length == relationships.HISTORY_LENGTH
     assert safety.chain_reaction.path_ratio == relationships.CHAIN_PATH_RATIO
     assert set(safety.chain_reaction.harmless_crowd) == relationships.BENIGN_CROWD_CLASSES

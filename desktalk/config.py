@@ -91,7 +91,6 @@ class CameraSettings(_Section):
     webcam_indices: tuple[Count, ...]
     phone_port: Port
     wait_for_picture_sec: PositiveNumber
-    pause_after_error_sec: ZeroOrMore
     jpeg_quality: JpegQuality
     boxes_jpeg_quality: JpegQuality
     light_measure_width: PositiveInt
@@ -103,6 +102,7 @@ class CameraSettings(_Section):
     webcam_height: PositiveInt
     webcam_warmup_reads: PositiveInt
     webcam_max_index: PositiveInt
+    pair_key_bytes: PositiveInt
 
 
 class PiDetector(_Section):
@@ -137,6 +137,11 @@ class PiSettings(_Section):
     upload_retry_max_sec: PositiveNumber
     hot_warning_c: PositiveNumber
     clock_off_warning_sec: PositiveNumber
+    camera_warmup_sec: ZeroOrMore
+    pause_after_error_sec: ZeroOrMore
+    status_every_sec: PositiveNumber
+    health_every_sec: PositiveNumber
+    settings_check_every_sec: PositiveNumber
     detector: PiDetector
 
 
@@ -145,6 +150,8 @@ class DetectorSettings(_Section):
     confidence: Fraction
     image_size: PositiveInt
     device: str
+    end2end: bool
+    rect: bool
 
 
 class AgentsSettings(_Section):
@@ -157,6 +164,7 @@ class AgentsSettings(_Section):
     greet_on_join: bool
     greet_again_after_min: ZeroOrMore
     invent_personality: bool
+    personality_max_chars: PositiveInt
 
 
 class PresenceSettings(_Section):
@@ -328,6 +336,7 @@ class ChatSettings(_Section):
     summary_chars: PositiveInt
     memory_reply_chars: PositiveInt
     memory_user_chars: PositiveInt
+    reply_max_chars: PositiveInt
     memory_match_chars: PositiveInt
     ollama_memory_lines: Count
     recent_events_kept: Count
@@ -398,6 +407,10 @@ class VisionHabitsSettings(_Section):
     repeat_after_sec: VisionNudgeRepeats
 
 
+class StorageSettings(_Section):
+    folder: Path
+
+
 class LensWaits(_Section):
     """How long each camera problem must last before Lens says something."""
 
@@ -410,6 +423,7 @@ class LensWaits(_Section):
     empty: ZeroOrMore
     cutoff: ZeroOrMore
     slow: ZeroOrMore
+    pi: ZeroOrMore
 
 
 class LensSettings(_Section):
@@ -699,6 +713,7 @@ class AppConfig(_Section):
     habit_tracker: HabitTrackerSettings
     web: WebSettings
     logging: LoggingSettings
+    storage: StorageSettings
     protocols: Protocols
     agents_file: AgentsFile
     secrets: Secrets

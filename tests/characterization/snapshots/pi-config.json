@@ -6,6 +6,7 @@
   "json": {
     "camera_source": "str",
     "pi": {
+      "camera_warmup_sec": "number",
       "clock_off_warning_sec": "number",
       "delete_every_min": "number",
       "detector": {
@@ -22,12 +23,16 @@
         "wait_per_picture_sec": "number"
       },
       "fps": "number",
+      "health_every_sec": "number",
       "height": "number",
       "hot_warning_c": "number",
       "jpeg_quality": "number",
       "keep_last_min": "number",
       "min_free_mb": "number",
+      "pause_after_error_sec": "number",
       "photo_dir": "str",
+      "settings_check_every_sec": "number",
+      "status_every_sec": "number",
       "upload_retry_max_sec": "number",
       "upload_retry_start_sec": "number",
       "upload_timeout_sec": "number",
