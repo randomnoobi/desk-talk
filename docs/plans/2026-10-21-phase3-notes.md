@@ -103,3 +103,79 @@ Decide on purpose in Phase 3, and re-record the snapshot (`DESKTALK_RECORD_SNAPS
   - reply 413 above `web.pi_upload_max_mb` before calling `push`;
   - `push() == False` means 400 (this also fixes the empty-upload 500).
 - `parse_gravity` (phone route) isn't ported yet. The web layer needs it.
+
+**F. Agents and habits**
+- New setting: `agents.personality_max_chars: 400` (the longest personality the AI may write for an object).
+- `Profiles` now has `for_label` and `mention_words`, so F's local `ProfileLookup` is no longer needed. Tidy it up.
+- `ProfileBook(config.agents_file, store, personality_max_chars=...)`; learned personalities are under the key
+  `learned_personalities`.
+- Roster: `Roster(bus, profiles, desk, config.agents, config.presence, on_desk=...)`.
+  - `on_desk(x, y, w, h)` comes from E2's desk outline and returns True when there's no outline.
+- Habit tracker: `HabitTracker(clock, bus, store, profiles, prefs, desk, config.protocols, config.habit_tracker,
+  config.presence, config.agents, phone_counts=<camera isn't the phone>)`.
+  - Save it every `habit_tracker.save_check_every_sec`, and `save(force=True)` on shutdown.
+- `HabitReminders(habits, desk_status, roster, profiles, generator, hub, bus, config.reminders)`, added with
+  `start_after=check_every_sec`.
+- `Preferences(store, schedule, quiet_hours)` from `config.protocols`; `DeskStatus(desk, source, prefs, config.reminders)`.
+- `desktalk/util.py` is used by the new code. Keep it in Phase 4.
+- Behavior changed on purpose:
+  - once-a-day nudges use their habit's own repeat time;
+  - `{object}` is filled in for agents without a personality;
+  - a preferences update is all-or-nothing;
+  - a failed habit save is retried.
+
+**D1. AI and message generator**
+- New setting: `chat.reply_max_chars: 500` (an AI reply is cut to this many letters).
+- Bootstrap:
+  - `ai = OpenAICompatibleChatModel(config.llm, config.secrets, clock)`
+  - `model = ResilientChatModel(ai, clock, config.llm, time_limit_sec=ai.time_limit_sec)`
+  - Ollama keep-alive: `supervisor.add(ai.keepalive_worker(), start_after=config.llm.ollama_keepalive_start_sec)`,
+    only when the worker isn't None.
+  - `hub = MessageHub(clock, recent_kept=config.chat.recent_kept, queue_size=config.web.live_queue_size)`
+  - `generator = MessageGenerator(model, hub, roster, profiles, habits, desk, clock, status=desk_status,
+    habit_log=habits, llm=config.llm, chat=config.chat, agents=config.agents,
+    sunlight_default_min=config.habit_tracker.sunlight_default_min, reply_max_chars=...,
+    local_model=ai.is_local)`, then `generator.subscribe_to(bus)`.
+- Routes:
+  - `POST /api/chat`:
+    - First, keep what the route does today: set `desk.last_user_activity`, reply 400 for an empty message, and
+      run the lost-items check.
+    - Then `generator.answer(chat_id, message, recent_messages or history, widget=...)`; `UnknownChat` → 400
+      `{'error': 'unknown chat'}`.
+  - The SSE route: `q = hub.subscribe()`, `q.get(timeout=web.live_keepalive_sec)`, and `hub.unsubscribe(q)` in
+    `finally`.
+  - `/api/messages/recent` → `{'messages': hub.recent()}`.
+  - `/api/context` → `generator.live_context()`.
+  - `/api/chat_todos` and `/api/chat_todos_sync` → `generator.save_widget(pid, w)`.
+  - `/api/widget_event` → `generator.note_panel_event(pid, action)`.
+  - Everywhere else, `generator.broadcast(m)` becomes `hub.send(m)`; use the dict it returns.
+- To fix on purpose later: the memory check that skips memories already shown never matches, so every memory is
+  repeated (ported as it was).
+
+**D2. Background chat jobs** (`desktalk/core/chat/workers/`)
+- New setting: `lens.wait_before_saying_sec.pi: 10`, how long the Pi must be hot or its clock off before Lens says so.
+- Vision: pass `model` to `LostItems` / `VisionHabits` only when `model.local_vision`; otherwise pass `None`, so no
+  cloud quota goes on scans.
+- `IdleChat(..., desk_summary=<D1's live context summary>)`, with `start_after=idle_chat.start_delay_sec`.
+- Interfaces in `workers/needs.py` to connect (or move into `ports.py`):
+  - `PiUploads.latest_upload() -> (UploadInfo, received_at) | None`, from E1's `PiFrameSource` (add the method);
+  - `PhoneCamera`, from `PhoneFrameSource` (`recent_gravity()`, `stopped_by_user`);
+  - `DeskLayout.has_outline()` / `reference_gravity()`, from E2.
+- `DailySummary` remembers "sent today" under store key `daily_summary`.
+- `/api/scenarios` uses `lost_items.sightings()` instead of `desk.lost_objects`, and `vision_habits.events()`
+  instead of `desk.habit_events`.
+- Copies of D1's code to point at D1's versions: `workers/prompts.py` and `workers/text.py`.
+- Not done yet: Lens saying "Pi detection off" and why (plan's failure table). Add it with its own wait setting.
+
+**B. Camera program** (`raspberry_pi/camera/`, run with `python3 -m raspberry_pi.camera` from the repo folder)
+- Five new `pi:` settings, in `settings.yaml` and `PiSettings` (the program won't start without them):
+  - `camera_warmup_sec: 1`
+  - `pause_after_error_sec: 0.5`
+  - `status_every_sec: 30`
+  - `health_every_sec: 3`
+  - `settings_check_every_sec: 60`
+- `/api/pi/frame` must take format 2 (`decode_upload`) as well as format 1 (`info_from_v1_headers`).
+- An `ok` picture can arrive after `busy` pictures taken later. The live view must not show an older picture over
+  a newer one (compare `taken_at` / the frame number).
+- `server.py` must print `python3 -m raspberry_pi.camera --server ... --key ...` instead of the `camera_node.py`
+  command.
