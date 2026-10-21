@@ -22,7 +22,7 @@ class OneReply:
     def _serve(self):
         conn, _ = self.sock.accept()
         with conn:
-            conn.recv(65536)
+            read_whole_request(conn)
             conn.sendall(self.reply)
 
     def __enter__(self):
@@ -32,6 +32,19 @@ class OneReply:
     def __exit__(self, *exc):
         self.sock.close()
         self.thread.join(2)
+
+
+def read_whole_request(conn: socket.socket) -> None:
+    """Read the headers and then the whole body. The body can come a moment after the headers on a busy
+    machine; hanging up with it still unread would reset the connection, and the reply would be lost."""
+    data = b''
+    while b'\r\n\r\n' not in data and (more := conn.recv(65536)):
+        data += more
+    head, _, body = data.partition(b'\r\n\r\n')
+    length = next((int(line.split(b':', 1)[1]) for line in head.split(b'\r\n')
+                   if line.lower().startswith(b'content-length:')), 0)
+    while len(body) < length and (more := conn.recv(65536)):
+        body += more
 
 
 def test_an_error_reply_comes_back_with_its_status_and_body():
