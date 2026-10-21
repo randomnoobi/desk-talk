@@ -57,6 +57,7 @@ class CameraSettings:
     status_every_sec: float
     health_every_sec: float
     settings_check_every_sec: float
+    restart_after_missed_pictures: int
     detector: DetectorConfig
 
 
@@ -80,10 +81,11 @@ TEXT = _Kind('text', lambda v: isinstance(v, str) and v != '')
 
 FIELDS = {
     'fps': POSITIVE, 'width': WHOLE, 'height': WHOLE, 'jpeg_quality': QUALITY, 'photo_dir': TEXT,
-    'delete_every_min': POSITIVE, 'keep_last_min': ZERO_OR_MORE, 'min_free_mb': ZERO_OR_MORE,
+    'delete_every_min': ZERO_OR_MORE, 'keep_last_min': ZERO_OR_MORE, 'min_free_mb': ZERO_OR_MORE,
     'upload_timeout_sec': POSITIVE, 'upload_retry_start_sec': POSITIVE, 'upload_retry_max_sec': POSITIVE,
     'hot_warning_c': POSITIVE, 'camera_warmup_sec': ZERO_OR_MORE, 'pause_after_error_sec': ZERO_OR_MORE,
     'status_every_sec': POSITIVE, 'health_every_sec': POSITIVE, 'settings_check_every_sec': POSITIVE,
+    'restart_after_missed_pictures': WHOLE,
 }
 DETECTOR_FIELDS = {
     'url': TEXT, 'wait_per_picture_sec': POSITIVE, 'failures_before_pause': WHOLE, 'pause_start_sec': POSITIVE,

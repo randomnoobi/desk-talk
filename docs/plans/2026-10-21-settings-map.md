@@ -39,6 +39,7 @@ setting. New code reads the setting, never the number. Each part gets its typed 
 | `pi.detector.*` | `model`, `format` (ncnn / pt), `image_size`, `confidence`, `half`, `url` (127.0.0.1:8100), `wait_per_picture_sec`, `failures_before_pause`, `pause_start_sec`, `pause_max_sec`, `health_check_every_sec` |
 | `pi.upload_retry_start_sec` / `upload_retry_max_sec` | the camera program's back-off when the computer is away |
 | `pi.hot_warning_c`, `pi.clock_off_warning_sec` | when Lens mentions a hot Pi or a Pi clock that's off |
+| `pi.restart_after_missed_pictures` | the camera program's watchdog: no picture for this many picture times, so it stops and systemd starts it again. `pi.delete_every_min: 0` means never, as in the old program |
 | `supervisor.restart_start_sec` / `restart_max_sec` | the Supervisor's `first_retry_sec` / `max_retry_sec` |
 | `llm.timeout_sec`, `retry_start_sec`, `retry_max_sec`, `breaker_failures`, `breaker_open_sec` (`max_retries` = tries) | `ResilientChatModel`. Cloud calls had no time limit before; 30 s is new behavior |
 | `event_stream.queue_size` | per consumer (today's 2000) |

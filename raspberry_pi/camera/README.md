@@ -70,7 +70,7 @@ it uses the copy of `config/settings.yaml` on the Pi. Flags win over both:
 | `--camera` | `auto` (default), `picamera2` (camera module), `usb` / `usb:1` (USB webcam), `folder:<dir>` or `video:<file>` for testing |
 | `--fps` | pictures per second |
 | `--photo-dir` | where the pictures are saved on the Pi |
-| `--delete-every-min` | delete the saved pictures this often |
+| `--delete-every-min` | delete the saved pictures this often (0 = never) |
 | `--keep-last-min` | minutes of pictures a cleanup keeps (0 = delete them all) |
 | `--min-free-mb` | if the disk gets this full, delete the oldest pictures right away |
 | `--no-detector` | don't use the detector container; your computer detects every picture |
@@ -104,3 +104,6 @@ The log (in the terminal, or `journalctl -u desk-talk-camera -f` **on the Pi**) 
 - **"The detector has no model yet"**: the first time a model is used, the container converts it, which takes
   a few minutes. Your computer detects the pictures until then.
 - **Camera problem**: `rpicam-hello` should show a picture; check the ribbon cable. For a USB webcam use `--camera usb`.
+- **"No picture from the camera ... it seems stuck"**: the camera stopped giving pictures for
+  `pi.restart_after_missed_pictures` picture times, so the camera program stopped and systemd started it again
+  (only when it runs as the service above). If it keeps happening, check the ribbon cable or the USB plug.

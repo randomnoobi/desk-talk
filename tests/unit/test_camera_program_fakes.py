@@ -225,7 +225,7 @@ def pi_settings(**changes) -> dict:
         'delete_every_min': 10, 'keep_last_min': 0, 'min_free_mb': 300, 'upload_timeout_sec': 5,
         'upload_retry_start_sec': 1, 'upload_retry_max_sec': 10, 'hot_warning_c': 75, 'clock_off_warning_sec': 5,
         'camera_warmup_sec': 1, 'pause_after_error_sec': 0.5, 'status_every_sec': 30, 'health_every_sec': 3,
-        'settings_check_every_sec': 60,
+        'settings_check_every_sec': 60, 'restart_after_missed_pictures': 30,
         'detector': {
             'model': 'yolo11s.pt', 'format': 'ncnn', 'image_size': 480, 'confidence': 0.35, 'half': False,
             'url': 'http://127.0.0.1:8100', 'wait_per_picture_sec': 2, 'failures_before_pause': 3,

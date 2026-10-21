@@ -2,17 +2,21 @@
 The pictures the Pi keeps on its own disk, in one folder per day (~/desk-talk-photos/2026-10-21/).
 
 They get deleted on a schedule (settings → pi.delete_every_min, pi.keep_last_min), and right away,
-oldest first, when the disk gets nearly full (pi.min_free_mb).
+oldest first, when the disk gets nearly full (pi.min_free_mb). A picture that can't be deleted (say, a
+file left by root) is skipped, and one line in the log says so.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 MB = 1024 * 1024
 
@@ -57,6 +61,7 @@ class PhotoStore:
         """Delete pictures taken more than keep_last_sec before `now` (all of them when it's 0)."""
         cutoff = now - self.keep_last_sec
         removed = 0
+        problems: list[OSError] = []
         with self._lock:
             for path in self.photos():
                 try:
@@ -65,16 +70,23 @@ class PhotoStore:
                         removed += 1
                 except FileNotFoundError:
                     pass
+                except OSError as exc:
+                    problems.append(exc)
             for day in self.folder.iterdir():
-                if day.is_dir() and not any(day.iterdir()):
-                    day.rmdir()
+                try:
+                    if day.is_dir() and not any(day.iterdir()):
+                        day.rmdir()
+                except OSError as exc:
+                    problems.append(exc)
             self.last_cleanup = now
+        self._say_problems(problems)
         self.deleted_total += removed
         return removed
 
     def free_up_space(self) -> int:
         """Disk nearly full: delete the oldest pictures until there is room again."""
         removed = 0
+        problems: list[OSError] = []
         with self._lock:
             for path in self.photos():
                 if self.free_mb() >= self.min_free_mb:
@@ -84,5 +96,14 @@ class PhotoStore:
                     removed += 1
                 except FileNotFoundError:
                     pass
+                except OSError as exc:
+                    problems.append(exc)
+        self._say_problems(problems)
         self.deleted_total += removed
         return removed
+
+    def _say_problems(self, problems: list[OSError]) -> None:
+        """One log line for everything a cleanup couldn't delete."""
+        if problems:
+            log.warning('Could not delete %d file(s) in %s, for example: %s. Check who owns them (ls -l).',
+                        len(problems), self.folder, problems[0])

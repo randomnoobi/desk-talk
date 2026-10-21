@@ -46,7 +46,7 @@ pi:
   height: 720
   jpeg_quality: 80
   photo_dir: ~/desk-talk-photos     # where the Pi keeps its pictures
-  delete_every_min: 10        # delete the stored pictures this often
+  delete_every_min: 10        # delete the stored pictures this often (0 = never)
   keep_last_min: 0            # minutes of pictures a cleanup leaves behind (0 = delete them all)
   min_free_mb: 300            # if the Pi's disk gets this full, delete the oldest pictures right away
   upload_timeout_sec: 5
@@ -60,6 +60,8 @@ pi:
   health_every_sec: 3         # how often the Pi checks its disk, temperature and stored pictures
   settings_check_every_sec: 60  # how often the Pi asks this computer for new settings (new detector settings go
                               # to the container right away; others need the camera program restarted)
+  restart_after_missed_pictures: 30  # no new picture for this many picture times (30 at 3 a second = 10 s): the
+                              # camera seems stuck, so the camera program stops and systemd starts it again
   detector:                   # object detection on the Pi itself, in Docker (raspberry_pi/detector_service/)
     model: yolo26m-objv1-150.pt  # in the container's models folder; the Pi speed test (benchmarks/) picks the final one
     format: ncnn              # ncnn = fastest on the Pi's processor; pt = plain PyTorch, to compare

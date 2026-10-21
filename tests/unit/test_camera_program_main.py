@@ -17,6 +17,7 @@ from test_camera_program_fakes import JPEG, KEY, FakeCamera, FakeClock, FakeComp
 from desktalk_shared.wire import DetectorState
 from raspberry_pi.camera.main import WorkerThread, build_program, load_settings, main, parse_args
 from raspberry_pi.camera.settings import from_layers
+from raspberry_pi.camera.watchdog import Watchdog
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -197,6 +198,89 @@ def test_pictures_are_deleted_on_schedule(tmp_path, container, computer):
     assert program.maybe_cleanup(started + 1202) == 0
 
 
+def test_delete_every_min_0_never_deletes(tmp_path, container, computer):
+    clock = FakeClock()
+    program, workers = make_program(tmp_path, container, computer, clock, delete_every_min=0)
+    program.step()
+    assert program.maybe_cleanup(clock.now() + 10 ** 6) is None
+    assert program.store.count() == 1
+
+
+def test_a_cleanup_that_fails_does_not_stop_the_camera(tmp_path, container, computer, caplog):
+    clock = FakeClock()
+    program, workers = make_program(tmp_path, container, computer, clock, fps=4, delete_every_min=0.001)
+
+    def broken_cleanup(now):
+        raise PermissionError(13, 'Permission denied', str(program.store.folder))
+
+    program.store.cleanup = broken_cleanup
+    program.run(max_pictures=5)
+    assert program.taken == 5
+    assert caplog.text.count('Permission denied') == 1
+
+
+def test_a_picture_that_cannot_be_saved_is_still_detected_and_sent(tmp_path, container, computer, caplog):
+    program, workers = make_program(tmp_path, container, computer, FakeClock())
+
+    def disk_full(jpeg, taken_at, frame_id):
+        raise OSError(28, 'No space left on device')
+
+    program.store.save = disk_full
+    program.step_safely()
+    workers.detector.tick()
+    workers.uploader.tick()
+    assert states(computer) == [('pi-000001', DetectorState.OK)]
+    program.step_safely()
+    assert program.taken == 2 and program.errors == 0
+    assert caplog.text.count('No space left on device') == 1
+
+
+# ── the watchdog ──────────────────────────────────────────────────────
+def test_the_watchdog_stops_the_program_when_no_picture_comes(caplog):
+    clock = FakeClock()
+    stops = []
+    dog = Watchdog(10, clock, stop_now=lambda: stops.append(clock.monotonic()))
+    clock.advance(9)
+    assert dog.tick() == pytest.approx(1)
+    dog.picture_taken()
+    clock.advance(9.9)
+    dog.tick()
+    assert stops == []
+    clock.advance(0.1)
+    dog.tick()
+    assert stops == [19.0]
+    assert 'systemd' in caplog.text
+
+
+def test_each_picture_taken_keeps_the_watchdog_quiet(tmp_path, container, computer):
+    clock = FakeClock()
+    program, workers = make_program(tmp_path, container, computer, clock, fps=2, restart_after_missed_pictures=6)
+    stops = []
+    workers.watchdog.stop_now = lambda: stops.append(clock.monotonic())
+    clock.advance(2.5)
+    program.step()                                                        # a picture: the 3 s start again
+    clock.advance(2.5)
+    workers.watchdog.tick()
+    assert stops == []
+    clock.advance(0.5)                                                    # 6 pictures at 2 a second = 3 s
+    workers.watchdog.tick()
+    assert stops == [5.5]
+
+
+def test_a_camera_that_keeps_failing_also_trips_the_watchdog(tmp_path, container, computer):
+    clock = FakeClock()
+    camera = FakeCamera()
+    camera.broken = OSError('camera cable loose')
+    program, workers = make_program(tmp_path, container, computer, clock, camera=camera, fps=2,
+                                    restart_after_missed_pictures=6)
+    stops = []
+    workers.watchdog.stop_now = lambda: stops.append(clock.monotonic())
+    for _ in range(7):
+        program.step_safely()                                             # 0.5 s pause after each failure
+    workers.watchdog.tick()
+    assert stops == [3.5]
+
+
 def test_writes_a_status_line_now_and_then(tmp_path, container, computer, caplog):
     clock = FakeClock()
     program, workers = make_program(tmp_path, container, computer, clock, status_every_sec=30)
@@ -295,7 +379,8 @@ def test_runs_end_to_end_with_the_container_and_the_computer(tmp_path, container
     pictures = tmp_path / 'pictures'
     pictures.mkdir()
     (pictures / 'a.jpg').write_bytes(JPEG)
-    repo = repo_file(tmp_path, min_free_mb=0, detector={'url': container.url})
+    # a picture now and then takes longer on a busy test machine: the watchdog must not stop pytest itself
+    repo = repo_file(tmp_path, min_free_mb=0, detector={'url': container.url}, restart_after_missed_pictures=10 ** 6)
     computer.pi = {}                                                      # the repo's settings are enough
     code = main(['--server', computer.url, '--key', KEY, '--camera', f'folder:{pictures}', '--fps', '50',
                  '--photo-dir', str(tmp_path / 'photos'), '--max-pictures', '15'], repo_settings=repo)

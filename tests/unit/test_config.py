@@ -57,6 +57,11 @@ def test_local_file_overrides_only_the_lines_it_has(project):
     assert cfg.reminders.quiet_hours.start_hour == 22    # nested sections are merged, not replaced
 
 
+def test_pi_delete_every_min_0_means_never(project):
+    write_local(project, 'pi:\n  delete_every_min: 0\n')
+    assert load_config(root=project, environ={}).pi.delete_every_min == 0
+
+
 def test_bad_value_names_the_file_the_setting_and_what_is_wrong(project):
     write_local(project, 'camera:\n  fps: fast\n')
     with pytest.raises(ConfigError) as err:

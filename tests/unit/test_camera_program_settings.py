@@ -1,6 +1,7 @@
 """raspberry_pi/camera/settings.py: the camera program's settings, from the repo, the computer and flags."""
 
 import logging
+from pathlib import Path
 
 import pytest
 from test_camera_program_fakes import KEY, MODEL, FakeClock, FakeComputer, FakeContainer, pi_settings
@@ -63,6 +64,25 @@ def test_a_missing_detector_setting_is_named():
 def test_a_bad_value_is_named_in_plain_words(changes, message):
     with pytest.raises(SettingsError, match=message):
         from_layers(pi_settings(**changes))
+
+
+def test_delete_every_min_0_means_never():
+    """The old camera program treated 0 as "never clean up"; a Pi set up that way keeps working."""
+    assert from_layers(pi_settings(delete_every_min=0)).delete_every_min == 0
+    with pytest.raises(SettingsError, match=r'pi\.delete_every_min must be a number, 0 or more'):
+        from_layers(pi_settings(delete_every_min=-1))
+
+
+def test_restart_after_missed_pictures_is_a_whole_number():
+    assert from_layers(pi_settings(restart_after_missed_pictures=12)).restart_after_missed_pictures == 12
+    with pytest.raises(SettingsError, match=r'pi\.restart_after_missed_pictures must be a whole number above 0'):
+        from_layers(pi_settings(restart_after_missed_pictures=0))
+
+
+def test_the_repos_own_pi_section_has_every_setting_the_camera_program_needs():
+    repo = read_repo_settings(Path(__file__).resolve().parents[2] / 'config' / 'settings.yaml')
+    settings = from_layers(repo)
+    assert settings.restart_after_missed_pictures > 0
 
 
 def test_true_is_not_a_number():

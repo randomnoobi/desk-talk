@@ -129,7 +129,7 @@ class PiSettings(_Section):
     height: PositiveInt
     jpeg_quality: JpegQuality
     photo_dir: str                    # a folder on the Pi, so it is never resolved on this computer
-    delete_every_min: PositiveNumber
+    delete_every_min: ZeroOrMore      # 0 = never
     keep_last_min: ZeroOrMore
     min_free_mb: ZeroOrMore
     upload_timeout_sec: PositiveNumber
@@ -142,6 +142,7 @@ class PiSettings(_Section):
     status_every_sec: PositiveNumber
     health_every_sec: PositiveNumber
     settings_check_every_sec: PositiveNumber
+    restart_after_missed_pictures: PositiveInt
     detector: PiDetector
 
 
