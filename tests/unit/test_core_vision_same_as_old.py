@@ -21,6 +21,7 @@ import numpy as np
 import pytest
 import yaml
 
+from desktalk.core.vision import camera_health as new_camera_health
 from desktalk.core.vision.analyzer import DeskAnalyzer
 from desktalk.core.vision.camera_health import CameraHealth
 from desktalk.core.vision.desk_monitor import DeskMonitor
@@ -193,6 +194,8 @@ def old_camera_health():
     ch = fresh_old('camera_health')
     raw = yaml.safe_load((ROOT / 'config' / 'settings.yaml').read_text())
     ch.configure(raw['lens'])
+    # Changed on purpose: the Pi runs a new camera program (python3 -m raspberry_pi.camera, not camera_node.py).
+    ch.LOST_TEXT['pi'], ch.LOST_FIX['pi'] = new_camera_health.LOST_TEXT['pi'], new_camera_health.LOST_FIX['pi']
     return ch
 
 
