@@ -1,0 +1,11 @@
+# What the detector image's build may see. The build starts at the repo's top folder, so everything
+# else (.venv, models, data, the .env with your API keys ...) is left out here.
+*
+!pyproject.toml
+!uv.lock
+!.python-version
+!shared
+!raspberry_pi/detector_service
+**/__pycache__
+**/*.pyc
+raspberry_pi/detector_service/.env
