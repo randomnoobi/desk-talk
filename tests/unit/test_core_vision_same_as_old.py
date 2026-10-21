@@ -25,6 +25,7 @@ from desktalk.core.vision.analyzer import DeskAnalyzer
 from desktalk.core.vision.camera_health import CameraHealth
 from desktalk.core.vision.desk_monitor import DeskMonitor
 from desktalk.core.vision.findings import Thing
+from desktalk.core.vision.live_view import DeskPainter
 from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.core.vision.rules import SafetyRules, make_rules
 from desktalk.desk_state import DeskState
@@ -400,3 +401,40 @@ def test_desk_monitor_alerts_are_the_same(tmp_path, seed):
         assert _safety(old_desk) == _safety(new_desk), t
     assert old_habits.bumps == new_habits.bumps
     assert {'proximity', 'pet_risk', 'organization', 'water_plants'} <= seen
+
+
+# ── the live view ──
+@pytest.mark.parametrize('seed', range(3))
+def test_live_view_is_drawn_the_same(tmp_path, seed):
+    from desktalk.vision.detector import draw_boxes as old_draw_boxes
+
+    rel = old_relationships(tmp_path, {**SAVED, 'desk_outline': OUTLINE})
+    clock = [0.0]
+    rel.time = SimpleNamespace(time=lambda: clock[0])
+    rel.set = _OrderedSet
+    old = rel.RelationshipAnalyzer(*SIZE)
+    profiles = FakeProfiles(PROFILES)
+    desk = DeskState()
+    analyzer = DeskAnalyzer(new_rules({**SAVED, 'desk_outline': OUTLINE}))
+    painter = DeskPainter(desk, profiles, analyzer)
+    background = np.random.default_rng(seed).integers(0, 255, (SIZE[1], SIZE[0], 3), dtype=np.uint8)
+    drawn = 0
+    for t, objects in scenes(seed, steps=250):
+        clock[0] = t
+        desk.objects = dict(objects)
+        old.analyze(objects)
+        analyzer.analyze({a: Thing.from_desk(a, o) for a, o in objects.items()}, SIZE, t)
+        found = [Detection(o['class_name'], o['conf'], BBox(*o['bbox'])) for o in objects.values()]
+        found.append(Detection('pen', 0.42, BBox(5, 5, 60, 40)))       # seen, but not an agent
+        # the old producer's drawing
+        want = background.copy()
+        old_draw_boxes(want, [d.to_dict() | {'bbox': [d.bbox.x1, d.bbox.y1, d.bbox.x2, d.bbox.y2]} for d in found],
+                       highlight={o['class_name'] for o in objects.values()} or None)
+        if objects:
+            names = {a: p.name for a in objects if (p := profiles.get(a))}
+            old.update_frame_size(*SIZE)
+            old.draw_overlays(want, objects, names)
+        got = painter.paint(background, found)
+        assert np.array_equal(want, got), t
+        drawn += bool(old.latest_result['relationships'])
+    assert drawn > 50                     # most pictures had overlays to draw
