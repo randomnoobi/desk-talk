@@ -79,6 +79,11 @@ source = ["desktalk", "shared/desktalk_shared", "raspberry_pi"]
 line-length = 120
 target-version = "py312"
 
+[tool.ruff.per-file-target-version]
+# These run on the Pi's own Python, which may be 3.11: ruff must flag anything newer.
+"shared/**/*.py" = "py311"
+"raspberry_pi/camera/**/*.py" = "py311"
+
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "T20"]
 

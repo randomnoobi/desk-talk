@@ -109,3 +109,11 @@ def test_old_header_uploads_skip_values_that_are_not_numbers():
     info = info_from_v1_headers({'X-Frame-Id': 'pi-1', 'X-Taken-At': 'soon', 'X-Lux': '', 'X-Pi-Photos': 'many'})
     assert info.lux is None and info.health.photos_stored is None
     assert info.taken_at is None
+
+
+@pytest.mark.parametrize('bad', ['nan', 'inf', '-inf', 'Infinity', 'NaN'])
+def test_old_header_uploads_skip_values_that_are_not_finite(bad):
+    """nan and inf can't go into a JSON reply, so they must not get into the info at all."""
+    info = info_from_v1_headers({'X-Frame-Id': 'pi-1', 'X-Taken-At': bad, 'X-Lux': bad, 'X-Pi-Last-Cleanup': bad})
+    assert (info.taken_at, info.lux, info.health.last_cleanup_ts) == (None, None, None)
+    json.dumps(info.to_dict(), allow_nan=False)

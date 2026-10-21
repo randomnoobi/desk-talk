@@ -50,11 +50,18 @@ class PiCamera:
             from picamera2 import Picamera2
         except ImportError:
             raise CameraError('the Pi camera module needs picamera2: sudo apt install python3-picamera2') from None
-        self.cam = Picamera2()
-        config = self.cam.create_video_configuration(main={'size': (int(width), int(height)), 'format': 'RGB888'})
-        self.cam.configure(config)
-        self.cam.options['quality'] = int(quality)
-        self.cam.start()
+        self.cam = None
+        try:
+            self.cam = Picamera2()
+            config = self.cam.create_video_configuration(main={'size': (int(width), int(height)), 'format': 'RGB888'})
+            self.cam.configure(config)
+            self.cam.options['quality'] = int(quality)
+            self.cam.start()
+        except Exception as exc:          # Picamera2 raises almost anything when there's no camera or it's busy
+            if self.cam is not None:
+                self.close()
+            raise CameraError(f'the Pi camera module could not start ({exc}). Check the ribbon cable, and that '
+                              'no other program is using the camera') from None
         clock.sleep(warmup_sec)              # let the exposure settle
 
     def capture(self) -> tuple[bytes, float | None]:
@@ -113,8 +120,11 @@ class FolderCamera:
     name = 'folder'
 
     def __init__(self, folder: str | Path):
-        self.files = sorted((p for p in Path(folder).expanduser().iterdir()
-                             if p.suffix.lower() in ('.jpg', '.jpeg')), key=lambda p: p.name.lower())
+        try:
+            found = list(Path(folder).expanduser().iterdir())
+        except OSError as exc:
+            raise CameraError(f'no folder {folder} to take pictures from ({exc.strerror or exc})') from None
+        self.files = sorted((p for p in found if p.suffix.lower() in ('.jpg', '.jpeg')), key=lambda p: p.name.lower())
         if not self.files:
             raise CameraError(f'no .jpg files in {folder}')
         self.next = 0

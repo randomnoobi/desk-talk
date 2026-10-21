@@ -23,6 +23,7 @@ Standard library only: the camera program on the Pi imports this with the Pi's o
 from __future__ import annotations
 
 import json
+import math
 import secrets
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
@@ -194,13 +195,16 @@ def info_from_v1_headers(headers: Mapping[str, str]) -> UploadInfo:
     h = {str(k).lower(): v for k, v in headers.items()}
 
     def value(header: str, cast):
+        """The header as a number, or None when it's missing or not a plain number (nan and inf can't go
+        into a JSON reply)."""
         raw = h.get(header.lower())
         if raw in (None, ''):
             return None
         try:
-            return cast(raw)
+            number = cast(raw)
         except ValueError:
             return None
+        return number if math.isfinite(number) else None
 
     return UploadInfo(version=1, frame_id=h.get('x-frame-id', ''), taken_at=value('X-Taken-At', float),
                       lux=value('X-Lux', float), detector=DetectorState.OFF,

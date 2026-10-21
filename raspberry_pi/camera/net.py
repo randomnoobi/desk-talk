@@ -23,7 +23,10 @@ def call(method: str, url: str, *, timeout: float, body: bytes | None = None,
             return reply.status, reply.read()
     except urllib.error.HTTPError as exc:
         with exc:
-            return exc.code, exc.read()
+            try:
+                return exc.code, exc.read()
+            except (OSError, http.client.HTTPException) as cut_off:    # it hung up (or stalled) half-way
+                raise NoAnswer(_plain(cut_off, timeout)) from None
     except (OSError, http.client.HTTPException) as exc:
         raise NoAnswer(_plain(exc, timeout)) from None
 
@@ -57,4 +60,6 @@ def _plain(exc: BaseException, timeout: float) -> str:
         return "it's not running (connection refused)"
     if isinstance(reason, (ConnectionResetError, http.client.RemoteDisconnected, http.client.BadStatusLine)):
         return 'it hung up without answering'
+    if isinstance(reason, http.client.IncompleteRead):
+        return 'it hung up half-way through its answer'
     return str(reason) or type(reason).__name__

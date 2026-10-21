@@ -117,3 +117,26 @@ def test_pi_camera_module_gives_the_picture_and_the_light_level(monkeypatch):
     assert cam.requests[0].released
     camera.close()
     assert cam.stopped
+
+
+def test_a_folder_that_is_not_there_says_so(tmp_path):
+    with pytest.raises(CameraError, match='no folder'):
+        open_kind(f'folder:{tmp_path / "missing"}')
+
+
+class NoCameraAttached(FakePicamera2):
+    def __init__(self):
+        raise IndexError('list index out of range')          # what Picamera2() does with no camera module
+
+
+class CannotStart(FakePicamera2):
+    def start(self):
+        raise RuntimeError('Failed to start camera: Device or resource busy')
+
+
+@pytest.mark.parametrize('picamera2, why', [(NoCameraAttached, 'list index out of range'),
+                                            (CannotStart, 'resource busy')])
+def test_a_pi_camera_module_that_cannot_start_says_so_in_plain_words(monkeypatch, picamera2, why):
+    monkeypatch.setitem(sys.modules, 'picamera2', types.SimpleNamespace(Picamera2=picamera2))
+    with pytest.raises(CameraError, match=f'Pi camera module could not start.*{why}'):
+        open_kind('picamera2')
