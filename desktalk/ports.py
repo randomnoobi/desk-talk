@@ -325,8 +325,9 @@ class CameraHealthView(Protocol):
     """Lens's camera checks (brightness, blur, glare, the camera moving)."""
 
     def check(self, now: float, *, connected: bool, fps: float | None, gravity: Any, reference_gravity: Any,
-              has_outline: bool, stopped: bool) -> list[dict[str, Any]]:
-        """Things Lens should say: dicts with key, kind (problem / fixed / tip) and text."""
+              has_outline: bool, stopped: bool, quiet: bool = False) -> list[dict[str, Any]]:
+        """Things Lens should say: dicts with key, kind (problem / fixed / tip) and text.
+        `quiet` = quiet hours: problems are still followed, but nothing is said or counted as said."""
         ...
 
 

@@ -140,6 +140,16 @@ def test_quiet_hours_keep_lens_quiet():
     assert rig.notifier.sent == [] and rig.bus.published == []
 
 
+def test_quiet_hours_tell_the_camera_checks_to_stay_quiet_too():
+    """So the checks don't count a problem as said, and no "fixed, thanks" follows a problem nobody heard."""
+    quiet = Rig(prefs=FakePreferences({'quiet_enabled': True, 'quiet_start_hour': 13, 'quiet_end_hour': 15}))
+    quiet.tick()
+    awake = Rig(prefs=FakePreferences({'quiet_enabled': False, 'quiet_start_hour': 13, 'quiet_end_hour': 15}))
+    awake.tick()
+    assert quiet.health.checks[-1]['quiet'] is True
+    assert awake.health.checks[-1]['quiet'] is False
+
+
 def test_quiet_hours_switched_off_let_lens_speak():
     prefs = FakePreferences({'quiet_enabled': False, 'quiet_start_hour': 13, 'quiet_end_hour': 15})
     rig = Rig([LOST], prefs=prefs)

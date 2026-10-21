@@ -112,12 +112,13 @@ class Lens:
     def tick(self, now: float) -> float:
         source, phone = self._source, self._phone
         connected = source.connected
+        quiet = self._quiet_hours(now)
         found = self._health.check(now, connected=connected, fps=source.fps if source.kind in FPS_KINDS else None,
                                    gravity=phone.recent_gravity() if phone else None,
                                    reference_gravity=self._layout.reference_gravity(),
                                    has_outline=self._layout.has_outline(),
-                                   stopped=phone.stopped_by_user if phone else False)
-        if self._quiet_hours(now):
+                                   stopped=phone.stopped_by_user if phone else False, quiet=quiet)
+        if quiet:
             return self._settings.check_every_sec       # (the Pi isn't checked either: no thanks for unseen warnings)
         for message in list(found) + self._pi_messages(now, connected):
             self._say(message, now)
