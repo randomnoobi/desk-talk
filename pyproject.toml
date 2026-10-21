@@ -18,8 +18,6 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "pydantic>=2.7",
-    "flask>=3.0",              # until the FastAPI web server replaces it
-    "flask-cors>=4.0",
     "opencv-python>=4.8",
     "ultralytics==8.4.14",     # same version as on the Pi, so labels and boxes match
     "torch",
