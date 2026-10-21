@@ -19,7 +19,7 @@ desk builder in `tests/characterization/conftest.py`. The coverage guard reads r
   are always sent. Pydantic reply models must match this exactly.
 - 1-on-1 chat replies have no message `id`; group chat replies do.
 
-**SSE (`/api/stream`)**
+**SSE (`/api/events`)**
 - Content type `text/event-stream; charset=utf-8`.
 - Headers `Cache-Control: no-cache` and `X-Accel-Buffering: no`.
 - The first event is exactly `retry: 2000`, then one-line `data: {json}` events.
