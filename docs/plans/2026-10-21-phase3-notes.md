@@ -179,3 +179,28 @@ Decide on purpose in Phase 3, and re-record the snapshot (`DESKTALK_RECORD_SNAPS
   a newer one (compare `taken_at` / the frame number).
 - `server.py` must print `python3 -m raspberry_pi.camera --server ... --key ...` instead of the `camera_node.py`
   command.
+
+**E2. Desk rules, Lens checks, desk monitor** (`desktalk/core/vision/`)
+- `SafetyRules(store_for_config_dir, config.safety, liquids=profiles.labels_for_habit('hydration'),
+  foods=profiles.labels_for_habit('food'))`
+  - store key `safety_rules` = today's `config/safety_rules.json`;
+  - `.save(changes)`, `.clean_outline(points)`, `.for_settings_page()` (GET `/api/rules`);
+  - `.current.outline` / `.current.reference_gravity` feed D2's `DeskLayout` for Lens.
+- `DeskAnalyzer(rules)`; `DeskPainter(desk, profiles, analyzer)` (the producer's painter).
+- `CameraHealth(config.lens, source_kind=..., moved_within_sec=config.camera.moved_within_sec,
+  ignore_labels=..., watch_labels=...)`. It is the producer's `PictureCheck` and Lens's `CameraHealthView`, and also
+  has `issues()` and `phone_tip()`.
+- `ProofPhotos(desk, clock, config.snapshots)` replaces `desk.save_snapshot`, which kept its crop numbers in code.
+- `DeskMonitor(bus, desk, analyzer, profiles, habits, desk_status, photos, config.alerts)`.
+- F's Roster `on_desk` comes from `desk_edges.inside_outline(point, rules.current.outline, size)`.
+- Lens's lost-video text still says "check that camera_node.py is still running". Update it for the new camera
+  program.
+
+## Old behavior copied as it was, but probably wrong (for the user to decide)
+
+- A danger zone (or edge object) removed in Settings stays active: the built-in ones are always merged in.
+- A single zone intrusion is risk level 1, so the desk shows "SAFE" while the alert fires.
+- After a quiet spell resets the alert back-off, the next repeat waits 50 s, not `alerts.cooldown_sec` (25 s).
+- The memory check that skips memories already shown never matches, so every memory is repeated (D1).
+- Once-a-day nudges are once per calendar day, so bedtime nudges can fire again just after midnight (F).
+- Learned personalities apply to auto-made agents only after a restart (F).
