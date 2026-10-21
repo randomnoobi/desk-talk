@@ -170,6 +170,20 @@ def test_lens_mentions_a_hot_pi_once_it_has_been_hot_a_while():
     assert [(n.key, n.kind) for n in rig.bus.of_type(CameraNotice)] == [('pi_hot', 'problem')]
 
 
+def test_a_hot_spell_during_quiet_hours_gets_no_thanks_afterwards():
+    """The Pi is not checked during quiet hours, so you never get thanks for a warning you didn't see."""
+    prefs = FakePreferences({'quiet_enabled': True, 'quiet_start_hour': 13, 'quiet_end_hour': 15})
+    rig = Rig(pi=PiReports(), prefs=prefs)
+    rig.pi.picture(rig.clock.now(), temp=80.0)
+    rig.tick()
+    rig.tick(after=12)
+    prefs.update({'quiet_enabled': False})
+    rig.pi.picture(rig.clock.now(), temp=60.0)
+    rig.tick(after=2)
+    rig.tick(after=10)
+    assert rig.said() == [] and rig.bus.published == []
+
+
 def test_lens_says_a_hot_pi_again_only_after_the_repeat_time():
     rig = Rig(pi=PiReports())
     rig.pi.picture(rig.clock.now(), temp=80.0)

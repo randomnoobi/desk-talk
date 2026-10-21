@@ -117,10 +117,10 @@ class Lens:
                                    reference_gravity=self._layout.reference_gravity(),
                                    has_outline=self._layout.has_outline(),
                                    stopped=phone.stopped_by_user if phone else False)
-        found = list(found) + self._pi_messages(now, connected)
-        if found and not self._quiet_hours(now):
-            for message in found:
-                self._say(message, now)
+        if self._quiet_hours(now):
+            return self._settings.check_every_sec       # (the Pi isn't checked either: no thanks for unseen warnings)
+        for message in list(found) + self._pi_messages(now, connected):
+            self._say(message, now)
         return self._settings.check_every_sec
 
     # ── the Pi ──
