@@ -14,6 +14,9 @@ from pathlib import Path
 
 import pytest
 
+from desktalk.adapters.detector import load_yolo
+from desktalk.config import load_config
+
 pytestmark = pytest.mark.slow
 
 PICTURES = ('bus.jpg', 'zidane.jpg')     # come with Ultralytics, so no network needed
@@ -22,15 +25,18 @@ NEAR_THRESHOLD = 0.1                     # boxes this close to the confidence th
 
 
 @pytest.fixture(scope='module')
-def detector_settings():
-    from desktalk.settings import load_settings
-    return load_settings(environ={}, dotenv=Path('/nonexistent')).detector
+def config():
+    return load_config(environ={}, dotenv=Path('/nonexistent'))
 
 
 @pytest.fixture(scope='module')
-def models(detector_settings):
-    from desktalk.vision.detector import resolve_model_path
-    pt = resolve_model_path(detector_settings.model)
+def detector_settings(config):
+    return config.detector
+
+
+@pytest.fixture(scope='module')
+def models(config, detector_settings):
+    pt = config.resolve(detector_settings.model)
     ncnn_dir = pt.with_name(f'{pt.stem}_ncnn_model')
     if not pt.is_file():
         pytest.skip(f'{pt.name} not downloaded (uv run python scripts/download_models.py)')
@@ -39,7 +45,7 @@ def models(detector_settings):
                     f'model=models/{pt.name} format=ncnn imgsz={detector_settings.image_size})')
     pytest.importorskip('ncnn')
     from ultralytics import YOLO
-    return YOLO(str(pt)), YOLO(str(ncnn_dir), task='detect')
+    return load_yolo(pt), YOLO(str(ncnn_dir), task='detect')
 
 
 def detect(model, picture, s, **how):
