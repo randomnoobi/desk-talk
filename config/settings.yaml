@@ -38,6 +38,8 @@ camera:
   webcam_warmup_reads: 10     # pictures tried before deciding a webcam doesn't work
   webcam_max_index: 4         # if the chosen webcam doesn't work, webcams 0 up to (not including) this are tried
   pair_key_bytes: 6           # random bytes in a new pairing key (6 makes an 8-letter key)
+  keep_newer_picture_sec: 3   # a Pi picture can arrive after one taken later (the Pi sends it once its detector
+                              # is done): the live view keeps the later one, unless it hasn't changed for this long
 
 # ── Raspberry Pi (read by raspberry_pi/camera_node.py on the Pi) ─────────────
 pi:

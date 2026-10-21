@@ -330,6 +330,43 @@ def test_busy_pictures_are_painted_with_the_newest_boxes_so_they_dont_flicker():
     assert painter.given == [[CUP], [CUP]]
 
 
+def shown(rig) -> bytes:
+    with rig.desk.lock:
+        return rig.desk.raw_frames[0]
+
+
+def test_a_pi_picture_taken_before_the_one_shown_is_analysed_but_not_shown():
+    """The Pi sends busy pictures while it detects an earlier one, so the ok picture can come after them."""
+    rig = Rig()
+    newer, older = jpeg_of(desk_picture(200)), jpeg_of(desk_picture(60))
+    rig.picture(info=from_pi(DetectorState.BUSY, frame_id='pi-000008', taken_at=1000.0), jpeg=newer)
+    rig.clock.advance(0.3)
+    rig.picture(info=from_pi(DetectorState.OK, [CUP], frame_id='pi-000007', taken_at=999.7), jpeg=older)
+    assert shown(rig) == newer
+    assert [e.frame_id for e in rig.events()] == ['pi-000007']
+
+
+def test_a_newer_pi_picture_replaces_the_one_shown():
+    rig = Rig()
+    first, second = jpeg_of(desk_picture(200)), jpeg_of(desk_picture(60))
+    rig.picture(info=from_pi(DetectorState.OK, frame_id='pi-000007', taken_at=1000.0), jpeg=first)
+    rig.picture(info=from_pi(DetectorState.BUSY, frame_id='pi-000008', taken_at=1000.3), jpeg=second)
+    assert shown(rig) == second
+
+
+def test_an_earlier_taken_picture_is_shown_once_the_live_view_has_stood_still_a_while():
+    """The Pi's clock jumped back: its pictures look older than the one shown, but the live view must not freeze."""
+    rig = Rig(keep_newer_picture_sec=3)
+    before, after_jump = jpeg_of(desk_picture(200)), jpeg_of(desk_picture(60))
+    rig.picture(info=from_pi(DetectorState.OK, frame_id='pi-000007', taken_at=1000.0), jpeg=before)
+    rig.clock.advance(2.9)
+    rig.picture(info=from_pi(DetectorState.OK, frame_id='pi-000008', taken_at=400.0), jpeg=after_jump)
+    assert shown(rig) == before
+    rig.clock.advance(0.1)
+    rig.picture(info=from_pi(DetectorState.OK, frame_id='pi-000009', taken_at=400.3), jpeg=after_jump)
+    assert shown(rig) == after_jump
+
+
 # ── when something fails ─────────────────────────────────────────────
 def test_when_detection_here_fails_the_live_view_goes_on_without_boxes_or_events(caplog):
     painter = MarkingPainter()

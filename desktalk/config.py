@@ -103,6 +103,7 @@ class CameraSettings(_Section):
     webcam_warmup_reads: PositiveInt
     webcam_max_index: PositiveInt
     pair_key_bytes: PositiveInt
+    keep_newer_picture_sec: ZeroOrMore
 
 
 class PiDetector(_Section):
