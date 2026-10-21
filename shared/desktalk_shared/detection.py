@@ -120,3 +120,8 @@ def keep_inside(detections: Iterable[Detection], width: float, height: float) ->
         if box is not None:
             out.append(Detection(d.label, d.confidence, box))
     return out
+
+
+class DetectorUnavailable(RuntimeError):
+    """The detector can't answer right now (not started, model loading, crashed, too slow).
+    The text says why in plain words."""
