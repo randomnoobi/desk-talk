@@ -1,8 +1,9 @@
 """MessageHub: sends chat messages to every open app page and keeps the recent ones."""
 
+import logging
 import queue
 
-from desktalk.core.chat.message_hub import MessageHub
+from desktalk.core.chat.message_hub import CLOSED, MessageHub
 from desktalk.ports import Notifier
 from tests.fakes import FakeClock
 
@@ -71,15 +72,19 @@ def test_a_closed_page_gets_nothing_more():
     assert drain(q) == []
 
 
-def test_a_page_that_stopped_reading_is_dropped_and_the_others_carry_on():
+def test_a_page_that_stopped_reading_is_dropped_and_the_others_carry_on(caplog):
     h = hub(queue_size=2)
     stuck, live = h.subscribe(), h.subscribe()
-    for i in range(3):
-        h.send({'type': 'habit_update', 'habit': 'hydration', 'n': i})
-        drain(live)
-    h.send({'type': 'habit_update', 'habit': 'breaks'})
-    assert [m['n'] for m in drain(stuck)] == [0, 1]                 # nothing after its queue filled up
+    with caplog.at_level(logging.INFO):
+        for i in range(3):
+            h.send({'type': 'habit_update', 'habit': 'hydration', 'n': i})
+            drain(live)
+        h.send({'type': 'habit_update', 'habit': 'breaks'})
+    got = drain(stuck)
+    assert [m['n'] for m in got[:-1]] == [0, 1]                     # nothing after its queue filled up...
+    assert got[-1] is CLOSED                                         # ...but the marker that ends its stream
     assert drain(live)[0]['habit'] == 'breaks'
+    assert caplog.text.count('dropped') == 1
 
 
 def test_recent_keeps_chat_lines_and_roster_notes_only():

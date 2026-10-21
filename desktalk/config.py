@@ -357,6 +357,7 @@ class ChatSettings(_Section):
     panel_views_kept: PositiveInt
     panel_views_window_sec: PositiveNumber
     panel_views_min: PositiveInt
+    panel_action_max_chars: PositiveInt
 
 
 class IdleChatSettings(_Section):

@@ -443,9 +443,14 @@ class MessageGenerator:
             self._desk.char_widgets[pid] = widget
         return True
 
-    def note_panel_event(self, pid: str, action: str) -> None:
-        """The user opened (or used) an agent's tracker panel; the agent may mention it."""
+    def note_panel_event(self, pid: str, action: Any) -> bool:
+        """The user opened (or used) an agent's tracker panel; the agent may mention it.
+        False (nothing kept) for an agent that doesn't exist. The action is cut to chat.panel_action_max_chars."""
+        if not self._profiles.get(pid):
+            return False
+        action = str(action)[:self._chat.panel_action_max_chars]
         with self._desk.lock:
             views = self._desk.widget_views.setdefault(pid, [])
             views.append({'ts': self._clock.now(), 'action': action})
             self._desk.widget_views[pid] = views[-self._chat.panel_views_kept:]
+        return True

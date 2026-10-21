@@ -538,6 +538,19 @@ def test_panel_views_are_remembered_up_to_the_limit():
     assert r.desk.widget_views['cup'] == [{'ts': start + 1, 'action': 'view'}, {'ts': start + 2, 'action': 'close'}]
 
 
+def test_a_panel_event_for_an_unknown_agent_is_refused():
+    r = Rig()
+    assert r.gen.note_panel_event('ghost', 'view') is False
+    assert 'ghost' not in r.desk.widget_views
+    assert r.gen.note_panel_event('cup', 'view') is True
+
+
+def test_a_long_panel_action_is_cut_short():
+    r = Rig(chat=CONFIG.chat.model_copy(update={'panel_action_max_chars': 8}))
+    r.gen.note_panel_event('cup', 'v' * 5000)
+    assert r.desk.widget_views['cup'][0]['action'] == 'v' * 8
+
+
 def test_the_live_context_knows_when_the_camera_is_off():
     assert Rig(camera_on=False).gen.live_context()['summary'].startswith('THE CAMERA IS OFF RIGHT NOW')
     assert 'THE CAMERA IS OFF' not in Rig(camera_on=True).gen.live_context()['summary']

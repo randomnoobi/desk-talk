@@ -289,6 +289,7 @@ chat:
   panel_views_kept: 50        # times a tracker panel was opened, remembered per agent
   panel_views_window_sec: 3600  # opened this often within this long...
   panel_views_min: 2          # ...at least this many times = the agent mentions it
+  panel_action_max_chars: 40  # what the app says you did in a panel ("view", "close" ...) is cut to this many letters
 
 # ── Small talk between agents ──────────────────────────────────────
 idle_chat:
