@@ -1,6 +1,6 @@
 {
-  "include": ["desktalk", "shared", "raspberry_pi", "scripts", "tests", "server.py", "run_safety_pipeline.py"],
-  "exclude": ["**/.venv", "**/venv", "**/__pycache__"],
+  "include": ["desktalk", "shared", "raspberry_pi", "scripts", "tests", "server.py"],
+  "exclude": ["**/.venv", "**/venv", "**/__pycache__", "benchmarks", "safety_pipeline", "run_safety_pipeline.py"],
   "venvPath": ".",
   "venv": ".venv",
   "pythonVersion": "3.12",
