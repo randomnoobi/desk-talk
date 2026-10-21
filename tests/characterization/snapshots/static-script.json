@@ -1,0 +1,8 @@
+{
+  "content_type": "text/javascript; charset=utf-8",
+  "headers": {
+    "access-control-allow-origin": "*",
+    "cache-control": "no-cache"
+  },
+  "request": "GET /app.js (main server, fresh desk)"
+}

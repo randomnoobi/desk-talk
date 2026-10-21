@@ -1,0 +1,21 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "camera_source": "str",
+    "pi": {
+      "delete_every_min": "number",
+      "fps": "number",
+      "height": "number",
+      "jpeg_quality": "number",
+      "keep_last_min": "number",
+      "min_free_mb": "number",
+      "photo_dir": "str",
+      "upload_timeout_sec": "number",
+      "width": "number"
+    }
+  },
+  "request": "GET /api/pi/config (main server, fresh desk)"
+}

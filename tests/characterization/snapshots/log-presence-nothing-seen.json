@@ -1,0 +1,11 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "day": "str",
+    "intervals": []
+  },
+  "request": "GET /api/log/presence (main server, fresh desk)"
+}

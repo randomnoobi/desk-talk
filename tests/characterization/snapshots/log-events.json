@@ -1,0 +1,34 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "day": "str",
+    "events": [
+      {
+        "agent": "str",
+        "conf": "number",
+        "id": "str",
+        "label": "str",
+        "name": "str",
+        "ts": "number",
+        "type": "str"
+      },
+      {
+        "agent": "str",
+        "depth_px": "number",
+        "follow_up": "number",
+        "id": "str",
+        "kind": "str",
+        "near": "str",
+        "rule_label": "str",
+        "severity": "str",
+        "snapshot": "str",
+        "ts": "number",
+        "type": "str"
+      }
+    ]
+  },
+  "request": "GET /api/log/events (main server, busy desk)"
+}

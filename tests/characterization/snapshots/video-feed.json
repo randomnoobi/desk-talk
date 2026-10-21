@@ -1,0 +1,11 @@
+{
+  "content_type": "multipart/x-mixed-replace; boundary=frame",
+  "headers": {
+    "access-control-allow-origin": "*",
+    "cache-control": "no-cache, no-store, must-revalidate, max-age=0",
+    "expires": "0",
+    "pragma": "no-cache",
+    "x-accel-buffering": "no"
+  },
+  "request": "GET /api/video_feed (main server, busy desk)"
+}

@@ -1,0 +1,10 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "items": []
+  },
+  "request": "GET /api/snapshots (main server, fresh desk)"
+}

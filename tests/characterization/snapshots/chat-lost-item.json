@@ -1,0 +1,21 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "lost_object_lookup": "bool",
+    "messages": [
+      {
+        "character": "str",
+        "cta": {
+          "action": "str",
+          "label": "str"
+        },
+        "id": "str",
+        "text": "str"
+      }
+    ]
+  },
+  "request": "POST /api/chat (main server, busy desk)"
+}

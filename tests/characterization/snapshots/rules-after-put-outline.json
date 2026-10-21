@@ -1,0 +1,52 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "available_objects": [
+      "str"
+    ],
+    "chain_reaction": {
+      "crowd_min_objects": "number",
+      "crowd_radius_px": "number"
+    },
+    "danger_zones": {
+      "book": {
+        "expand": "number",
+        "label": "str"
+      },
+      "cell phone": {
+        "expand": "number",
+        "label": "str"
+      },
+      "keyboard": {
+        "expand": "number",
+        "label": "str"
+      },
+      "laptop": {
+        "expand": "number",
+        "label": "str"
+      }
+    },
+    "desk_outline": [
+      [
+        "number"
+      ]
+    ],
+    "edge_proximity": {
+      "danger_px": "number",
+      "objects": [
+        "str"
+      ],
+      "warn_px": "number"
+    },
+    "loaded": "bool",
+    "temporal": {
+      "approach_min_frames": "number",
+      "approach_rate": "number",
+      "repeated_intrusion_threshold": "number"
+    }
+  },
+  "request": "GET /api/rules (main server, busy desk)"
+}

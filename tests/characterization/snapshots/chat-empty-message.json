@@ -1,0 +1,10 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "error": "str"
+  },
+  "request": "POST /api/chat (main server, busy desk)"
+}

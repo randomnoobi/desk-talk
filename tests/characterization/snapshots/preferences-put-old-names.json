@@ -1,0 +1,17 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "ok": "bool",
+    "preferences": {
+      "bed_time": "str",
+      "quiet_enabled": "bool",
+      "quiet_end_hour": "number",
+      "quiet_start_hour": "number",
+      "wake_time": "str"
+    }
+  },
+  "request": "PUT /api/habit_policy (main server, busy desk)"
+}

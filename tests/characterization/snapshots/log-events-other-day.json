@@ -1,0 +1,11 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "day": "str",
+    "events": []
+  },
+  "request": "GET /api/log/events?day=2026-10-20 (main server, busy desk)"
+}

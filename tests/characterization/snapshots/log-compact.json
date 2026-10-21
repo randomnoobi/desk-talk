@@ -1,0 +1,13 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "frames": "number",
+    "from": "number",
+    "intervals": "number",
+    "to": "number"
+  },
+  "request": "POST /api/log/compact (main server, busy desk)"
+}

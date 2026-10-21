@@ -1,0 +1,8 @@
+{
+  "content_type": "text/css; charset=utf-8",
+  "headers": {
+    "access-control-allow-origin": "*",
+    "cache-control": "no-cache"
+  },
+  "request": "GET /style.css (main server, fresh desk)"
+}

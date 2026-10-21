@@ -1,0 +1,25 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "agents": [
+      "str"
+    ],
+    "camera": "bool",
+    "camera_indices": [
+      "number"
+    ],
+    "camera_source": "str",
+    "llm": "bool",
+    "llm_label": "str",
+    "phone_mode": "bool",
+    "risk_level": "number",
+    "safety_rules": "bool",
+    "safety_state": "str",
+    "status": "str",
+    "uptime_sec": "number"
+  },
+  "request": "GET /api/status (main server, busy desk)"
+}

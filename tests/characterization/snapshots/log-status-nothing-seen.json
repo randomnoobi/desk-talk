@@ -1,0 +1,44 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "camera": {
+      "connected": "bool",
+      "fps": "number",
+      "frames_received": "number",
+      "model": "str",
+      "pi": {
+        "last_frame_id": "str"
+      },
+      "source": "str",
+      "yolo_ms": "number"
+    },
+    "folder": "str",
+    "last_compaction": "null",
+    "scheduler": [
+      {
+        "every_sec": "number",
+        "last_error": "null",
+        "name": "str",
+        "next_in_sec": "number",
+        "runs": "number"
+      }
+    ],
+    "stream": [
+      {
+        "dropped": "number",
+        "errors": "number",
+        "handled": "number",
+        "name": "str",
+        "waiting": "number"
+      }
+    ],
+    "today": {
+      "events": {},
+      "pictures_waiting": "number"
+    }
+  },
+  "request": "GET /api/log/status (main server, fresh desk)"
+}
