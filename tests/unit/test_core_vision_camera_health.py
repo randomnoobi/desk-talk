@@ -1,5 +1,8 @@
 """Lens's camera checks: brightness, glare, blur, things cut off, the camera moving, slow or lost video."""
 
+import threading
+import time
+
 import numpy as np
 import pytest
 
@@ -269,3 +272,56 @@ def test_pictures_are_measured_at_most_once_a_second():
     h.sample(WHITE, [CUP], 1000.5)            # skipped: too soon
     assert not h.moved_recently(1000.5)
     assert run(h, 10, None, start=1001) == []  # and the white picture never counted as glare
+
+
+class SwitchingDict(dict):
+    """A dict that lets other threads run whenever it's asked what it holds: the thread switch that can come at
+    any moment on a busy computer, made to happen every time."""
+
+    def __contains__(self, key):
+        found = super().__contains__(key)
+        time.sleep(0.0005)
+        return found
+
+
+def test_the_web_thread_can_read_the_problems_while_lens_changes_them():
+    """issues() and phone_tip() run on the web server's threads while Lens's job checks and forgets problems."""
+    h = health(lens=lens_with(dark=0))
+    h._active = SwitchingDict()
+    h.sample(DARK, [CUP], 1000)
+    errors, stop = [], threading.Event()
+
+    def lens_job():
+        try:
+            while not stop.is_set():
+                h.check(1000, connected=True, fps=3.0)       # 'dark' comes back at once (no wait)...
+                h.forget('dark')                              # ...and goes away again
+        except Exception as exc:
+            errors.append(exc)
+
+    job = threading.Thread(target=lens_job)
+    job.start()
+    try:
+        for _ in range(300):
+            h.issues()
+            h.phone_tip()
+    except Exception as exc:
+        errors.append(exc)
+    finally:
+        stop.set()
+        job.join(5)
+    assert errors == []
+
+
+def test_problems_found_in_quiet_hours_are_never_thanked_for():
+    """Lens says nothing in quiet hours, so a problem then can't be 'fixed, thanks' later either."""
+    h = health()
+    said = run(h, 20, bright()) + run(h, 20, DARK, start=1020, quiet=True)
+    said += run(h, 20, bright(), start=1040)
+    assert said == []
+
+
+def test_a_problem_still_there_after_quiet_hours_is_said_then():
+    h = health()
+    said = run(h, 20, DARK, quiet=True) + run(h, 2, DARK, start=1020)
+    assert said == ['dark:problem']

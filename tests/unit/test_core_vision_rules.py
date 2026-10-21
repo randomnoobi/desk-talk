@@ -165,3 +165,41 @@ def test_settings_page_sees_the_built_in_rules_when_nothing_was_saved():
     assert page['edge_proximity'] == {'danger_px': 35, 'warn_px': 75,
                                       'objects': ['bottle', 'cell phone', 'cup', 'laptop', 'mouse', 'remote']}
     assert page['chain_reaction'] == {} and page['temporal'] == {}
+
+
+@pytest.mark.parametrize('section, key, field', [
+    ('temporal', 'history_length', 'history_length'),
+    ('temporal', 'approach_min_frames', 'approach_min_frames'),
+    ('temporal', 'repeated_intrusion_threshold', 'repeated_times'),
+    ('chain_reaction', 'crowd_min_objects', 'crowd_min_objects'),
+])
+@pytest.mark.parametrize('bad', [0, -1])
+def test_a_saved_count_below_1_keeps_the_built_in_value(caplog, section, key, field, bad):
+    built_in = getattr(make_rules(SAFETY), field)
+    with caplog.at_level(logging.WARNING):
+        rules = make_rules(SAFETY, {section: {key: bad}})
+    assert getattr(rules, field) == built_in
+    assert key in caplog.text
+
+
+@pytest.mark.parametrize('section, key, field', [
+    ('edge_proximity', 'danger_px', 'edge_danger_px'),
+    ('chain_reaction', 'crowd_radius_px', 'crowd_radius_px'),
+    ('temporal', 'repeated_window_sec', 'repeated_window_sec'),
+])
+@pytest.mark.parametrize('bad', [-5, float('nan'), float('inf')])
+def test_a_saved_negative_or_endless_number_keeps_the_built_in_value(caplog, section, key, field, bad):
+    built_in = getattr(make_rules(SAFETY), field)
+    with caplog.at_level(logging.WARNING):
+        rules = make_rules(SAFETY, {section: {key: bad}})
+    assert getattr(rules, field) == built_in
+    assert key in caplog.text
+
+
+def test_the_analyzer_starts_and_runs_with_a_saved_history_length_below_1():
+    """deque(maxlen=-1) raised on every picture, and again at startup."""
+    from desktalk.core.vision.analyzer import DeskAnalyzer
+
+    rules = SafetyRules(InMemoryKeyValueStore({'safety_rules': {'temporal': {'history_length': -1}}}), SAFETY)
+    analyzer = DeskAnalyzer(rules)
+    assert analyzer.analyze({}, (640, 480), 1.0)['risk_level'] == 0

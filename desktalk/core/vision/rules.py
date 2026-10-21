@@ -16,6 +16,7 @@ config/safety_rules.json always was:
 from __future__ import annotations
 
 import logging
+import math
 import threading
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -72,15 +73,21 @@ def _section(saved: Mapping, name: str) -> Mapping:
 
 
 def _number(section: Mapping, name: str, key: str, built_in, kind=float):
-    """The saved value of one setting, or the built-in one if it wasn't saved (or isn't a number)."""
+    """The saved value of one setting, or the built-in one if it wasn't saved or is out of range: not a
+    number, nan or infinity, below 0, or (for a count, kind=int) below 1. Those are logged."""
     if key not in section:
         return built_in
+    raw = section[key]
     try:
-        return kind(section[key])
-    except (TypeError, ValueError):
-        log.warning('Saved safety rules: %s.%s should be a number (got %r), using %s', name, key, section[key],
-                    built_in)
-        return built_in
+        value = kind(raw)
+        ok = math.isfinite(value) and value >= (1 if kind is int else 0)
+    except (TypeError, ValueError, OverflowError):
+        ok = False
+    if ok:
+        return value
+    should_be = 'a whole number, 1 or more' if kind is int else 'a number, 0 or more'
+    log.warning('Saved safety rules: %s.%s should be %s (got %r), using %s', name, key, should_be, raw, built_in)
+    return built_in
 
 
 def _zones(safety: SafetySettings, saved: Mapping) -> dict[str, Zone]:

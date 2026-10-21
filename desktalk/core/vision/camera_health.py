@@ -11,7 +11,8 @@ the problem goes away, Lens says thanks. All the numbers are in settings → len
     for msg in health.check(now, connected=True, fps=2.9, ...):   # every couple of seconds (Lens's job)
         msg['text']
 
-The camera job calls sample() and Lens's job calls check(), from different threads.
+The camera job calls sample(), Lens's job calls check() and forget(), and the web server calls issues()
+and phone_tip(), all from different threads. One lock guards everything they share.
 """
 
 from __future__ import annotations
@@ -132,7 +133,7 @@ class CameraHealth:
         # anything not in ignore_labels.
         self._watch = set(watch_labels)
         self._ignore = set(ignore_labels) | {PEOPLE}
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()     # re-entrant: check() holds it and its helpers take it again
 
         # what sample() saw
         self._last_sample = 0.0
@@ -181,8 +182,16 @@ class CameraHealth:
 
     # ── CameraHealthView: every couple of seconds; returns what Lens should say ──
     def check(self, now: float, *, connected: bool, fps: float | None = None, gravity: Any = None,
-              reference_gravity: Any = None, has_outline: bool = True, stopped: bool = False) -> list[dict[str, Any]]:
-        """`stopped` = the video was stopped on purpose (the phone's Stop button): no complaint."""
+              reference_gravity: Any = None, has_outline: bool = True, stopped: bool = False,
+              quiet: bool = False) -> list[dict[str, Any]]:
+        """`stopped` = the video was stopped on purpose (the phone's Stop button): no complaint.
+        `quiet` = quiet hours: problems are still followed, but nothing is said or counted as said, so no
+        "fixed, thanks" can come later for a problem nobody heard."""
+        with self._lock:
+            return self._check(now, connected, fps, gravity, reference_gravity, has_outline, stopped, quiet)
+
+    def _check(self, now, connected, fps, gravity, reference_gravity, has_outline, stopped,
+               quiet) -> list[dict[str, Any]]:
         raw = self._problems_now(now, connected, fps, gravity, reference_gravity, stopped)
         hidden = set()
         for big, small in HIDES.items():
@@ -191,6 +200,8 @@ class CameraHealth:
         for key in hidden:
             raw.pop(key, None)
         out = self._confirm_and_clear(now, raw, hidden)
+        if quiet:
+            return []
         if not self._last_spoke or now - self._last_spoke >= self._lens.speak_gap_sec:
             said = self._say_one(now)
             if said:
@@ -295,10 +306,11 @@ class CameraHealth:
         return out
 
     def _say_one(self, now) -> dict[str, Any] | None:
-        """The most important problem not mentioned lately."""
+        """The most important problem not mentioned lately (and not already going away: after quiet hours, a
+        problem nobody heard that has since cleared up isn't brought up)."""
         for key in PRIORITY:
             info = self._active.get(key)
-            if not info or (info['said_at'] and now - info['said_at'] < self._repeat_after):
+            if not info or key in self._clear_since or (info['said_at'] and now - info['said_at'] < self._repeat_after):
                 continue
             if key == 'cutoff':
                 obj = info['detail'].get('object', '')
@@ -347,22 +359,25 @@ class CameraHealth:
 
     def forget(self, key: str) -> None:
         """Drop a problem without a thank-you (e.g. the desk was just marked again)."""
-        self._active.pop(key, None)
-        self._raw_since.pop(key, None)
-        self._clear_since.pop(key, None)
+        with self._lock:
+            self._active.pop(key, None)
+            self._raw_since.pop(key, None)
+            self._clear_since.pop(key, None)
 
     # ── for the app ──
     def issues(self) -> list[dict[str, str]]:
         """Current problems, most important first: [{key, title, fix}]."""
+        with self._lock:
+            active = {key: dict(info) for key, info in self._active.items()}
         out = []
         for key in PRIORITY:
-            if key not in self._active:
+            if key not in active:
                 continue
             title, fix = TITLES[key]
             if key == 'lost':
                 title = 'No pictures from the camera'
                 fix = LOST_FIX.get(self._source_kind, fix)
-            d = self._active[key]['detail']
+            d = active[key]['detail']
             if key == 'cutoff' and d.get('object'):
                 title = f"{d['object'].capitalize()} is cut off ({d.get('side')})"
             out.append({'key': key, 'title': title, 'fix': fix})
@@ -370,7 +385,8 @@ class CameraHealth:
 
     def phone_tip(self) -> str | None:
         """A few words to show on the phone screen itself, or None."""
-        for key in PHONE_TIP_KEYS:
-            if key in self._active:
-                return TITLES[key][0]
+        with self._lock:
+            for key in PHONE_TIP_KEYS:
+                if key in self._active:
+                    return TITLES[key][0]
         return None
