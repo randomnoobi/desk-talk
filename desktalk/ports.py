@@ -28,3 +28,21 @@ class Clock(Protocol):
 
     def sleep(self, seconds: float) -> None:
         ...
+
+
+@runtime_checkable
+class PeriodicWorker(Protocol):
+    """A background job (reminders, Lens, idle chat, the scheduler, the camera producer ...).
+
+    The Supervisor (desktalk/runtime/) calls tick() over and over in the job's own thread.
+    Tests call tick() directly with a FakeClock: no threads, no waiting.
+    """
+
+    name: str
+
+    def tick(self, now: float) -> float:
+        """Do one round of work. Returns how many seconds to wait before the next round.
+
+        Raising means this round failed: the Supervisor logs it and tries again after a
+        growing wait (settings → supervisor), so one bad round never switches a feature off."""
+        ...
