@@ -25,7 +25,7 @@ What gets measured for each combination:
 | `cpu_cores_used`, `cpu_percent` | average CPU use (`cpu_percent` = share of all cores) |
 | `peak_memory_mb` | most memory the process used |
 | `temp_start_c`, `temp_max_c`, `temp_end_c` | CPU temperature (Pi only; macOS doesn't allow reading it) |
-| `throttled` | the Pi's slow-down flags, e.g. `0x0` = fine, `0x50005` = too hot or low voltage |
+| `cpu_mhz_min`, `cpu_mhz_top` | the CPU's lowest speed while timing, and its full speed (Pi only), as Linux reports them. Not checked yet: on a Pi 5 the firmware may slow the CPU without Linux showing it, so trust `temp_max_c` too (the Pi 5 slows down from about 80 °C) |
 | `detections_total`, `detections_per_picture`, `mean_confidence` | what it found on the timed pictures |
 | `map50_95`, `map50`, `box_precision`, `box_recall` | accuracy on 128 COCO photos with the right answers marked |
 | `model_size_mb` | size of the model file |

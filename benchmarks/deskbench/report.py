@@ -55,6 +55,7 @@ def _cell(value, digits=1) -> str:
 TABLE = [('combo', 'combination', None), ('fps', 'pictures/s', 1), ('inference_ms_p50', 'inference p50 ms', 0),
          ('inference_ms_p95', 'inference p95 ms', 0), ('total_ms_p95', 'total p95 ms', 0),
          ('cpu_percent', 'CPU %', 0), ('peak_memory_mb', 'peak MB', 0), ('temp_max_c', 'max °C', 0),
+         ('cpu_mhz_min', 'lowest MHz', 0),
          ('map50_95', 'mAP50-95', 3), ('map50', 'mAP50', 3), ('detections_per_picture', 'found/picture', 1),
          ('model_size_mb', 'model MB', 1)]
 

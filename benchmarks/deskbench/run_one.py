@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from . import probes
-from .measure import TempSampler, time_detections
+from .measure import SpeedSampler, TempSampler, time_detections
 
 
 def run(spec: dict) -> dict:
@@ -34,13 +34,16 @@ def run(spec: dict) -> dict:
         r = model.predict(picture, **kwargs)[0]
         return r.speed, r.boxes.conf.tolist()
 
-    sampler = TempSampler(probes.read_cpu_temp, spec['sample_every_sec'])
-    sampler.start()
+    samplers = [TempSampler(probes.read_cpu_temp, spec['sample_every_sec']),
+                SpeedSampler(probes.read_cpu_mhz, spec['sample_every_sec'])]
+    for sampler in samplers:
+        sampler.start()
     out.update(time_detections(predict, pictures, spec['warmup'], spec['timed']))
-    out.update(sampler.stop())
+    for sampler in samplers:
+        out.update(sampler.stop())
+    out['cpu_mhz_top'] = probes.read_cpu_top_mhz()
     out['peak_memory_mb'] = probes.peak_memory_mb(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
     out['cpu_percent'] = out['cpu_cores_used'] / (os.cpu_count() or 1) * 100
-    out['throttled'] = probes.read_throttled()
 
     acc = spec.get('accuracy')
     if acc:

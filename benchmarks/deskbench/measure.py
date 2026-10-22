@@ -57,8 +57,8 @@ def time_detections(predict: Callable, pictures: Sequence, warmup: int, timed: i
     return out
 
 
-class TempSampler:
-    """Reads the temperature in the background and keeps the first, highest and last value."""
+class Sampler:
+    """Reads a number in the background every so often and keeps every reading."""
 
     def __init__(self, read: Callable[[], float | None], every_sec: float):
         self.read, self.every = read, every_sec
@@ -89,9 +89,25 @@ class TempSampler:
         self._stop.set()
         if self._thread.is_alive():
             self._thread.join()
-        s = self.samples
+        return self.summary(self.samples)
+
+    def summary(self, samples: list[float]) -> dict:
+        raise NotImplementedError
+
+
+class TempSampler(Sampler):
+    """The temperature: first, highest and last reading."""
+
+    def summary(self, s: list[float]) -> dict:
         return {'temp_start_c': s[0] if s else None, 'temp_max_c': max(s) if s else None,
                 'temp_end_c': s[-1] if s else None}
+
+
+class SpeedSampler(Sampler):
+    """The CPU speed: the lowest reading, which shows if the Pi slowed itself down."""
+
+    def summary(self, s: list[float]) -> dict:
+        return {'cpu_mhz_min': min(s) if s else None}
 
 
 def wait_until_cool(read: Callable[[], float | None], below: float, max_wait: float, check_every: float,

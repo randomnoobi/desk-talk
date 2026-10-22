@@ -21,7 +21,7 @@ COLUMNS = [
     'load_time_s', 'model_size_mb',
     # machine load
     'cpu_cores_used', 'cpu_percent', 'peak_memory_mb',
-    'temp_start_c', 'temp_max_c', 'temp_end_c', 'throttled', 'cooldown_start_c', 'cooldown_wait_s',
+    'temp_start_c', 'temp_max_c', 'temp_end_c', 'cpu_mhz_min', 'cpu_mhz_top', 'cooldown_start_c', 'cooldown_wait_s',
     # what it found
     'detections_total', 'detections_per_picture', 'mean_confidence',
     # accuracy on the COCO photos
@@ -44,11 +44,16 @@ def append_row(path: Path, row: dict) -> None:
         raise KeyError(f'not a results column: {", ".join(sorted(unknown))}')
     path.parent.mkdir(parents=True, exist_ok=True)
     new = not path.exists()
+    # Carrying on with a file made before the columns changed: keep that file's columns, so rows stay lined up
+    columns = COLUMNS
+    if not new:
+        with open(path, newline='', encoding='utf-8') as f:
+            columns = next(csv.reader(f), COLUMNS)
     with open(path, 'a', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=COLUMNS)
+        writer = csv.DictWriter(f, fieldnames=columns)
         if new:
             writer.writeheader()
-        writer.writerow({k: _fmt(row.get(k)) for k in COLUMNS})
+        writer.writerow({k: _fmt(row.get(k)) for k in columns})
         f.flush()
 
 

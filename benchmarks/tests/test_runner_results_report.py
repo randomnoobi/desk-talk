@@ -19,6 +19,15 @@ def test_rows_are_written_one_at_a_time_and_read_back(tmp_path):
     assert results.finished_keys(path) == {'x'}
 
 
+def test_resuming_an_older_file_keeps_its_columns_lined_up(tmp_path):
+    path = tmp_path / 'run.csv'
+    path.write_text('combo,status,throttled,fps\nx,ok,0x0,3.5\n')     # made before the columns changed
+    results.append_row(path, {'combo': 'y', 'status': 'ok', 'fps': 4.0, 'cpu_mhz_min': 2400.0})
+    rows = results.read_rows(path)
+    assert [(r['combo'], r['fps']) for r in rows] == [('x', '3.5'), ('y', '4')]
+    assert rows[1]['throttled'] == ''
+
+
 def test_unknown_column_is_refused(tmp_path):
     with pytest.raises(KeyError):
         results.append_row(tmp_path / 'run.csv', {'combo': 'x', 'colour': 'red'})

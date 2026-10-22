@@ -37,13 +37,24 @@ def read_cpu_temp(root: Path = ROOT) -> float | None:
     return None
 
 
-def read_throttled(root: Path = ROOT) -> str | None:
-    """The Pi's throttling flags, e.g. 0x0 (fine) or 0x50005 (too hot / low voltage, now and earlier)."""
-    text = _read(root / 'sys/devices/platform/soc/soc:firmware/get_throttled')
-    try:
-        return hex(int(text, 16)) if text else None
-    except ValueError:
-        return None
+def _cpu_mhz(root: Path, name: str) -> list[float]:
+    mhz = []
+    for path in sorted((root / 'sys/devices/system/cpu').glob(f'cpu[0-9]*/cpufreq/{name}')):
+        try:
+            mhz.append(int(_read(path) or '') / 1000)       # the file is in kHz
+        except ValueError:
+            continue
+    return mhz
+
+
+def read_cpu_mhz(root: Path = ROOT) -> float | None:
+    """The slowest core's speed right now, in MHz (Linux / Pi). A hot Pi lowers it to cool down."""
+    return min(_cpu_mhz(root, 'scaling_cur_freq'), default=None)
+
+
+def read_cpu_top_mhz(root: Path = ROOT) -> float | None:
+    """The CPU's full speed in MHz, e.g. 2400 on a Pi 5. None where Linux doesn't show it (macOS)."""
+    return max(_cpu_mhz(root, 'cpuinfo_max_freq'), default=None)
 
 
 def hardware_name(root: Path = ROOT) -> str:
