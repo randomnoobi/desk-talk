@@ -1,0 +1,78 @@
+{
+  "run_id": "2026-10-21T1747Z_laptop",
+  "device": "laptop",
+  "hardware": "Apple M4 Max",
+  "cpu_count": 14,
+  "memory_total_mb": 36864,
+  "os": "macOS-27.0.1-arm64-arm-64bit",
+  "python": "3.12.15",
+  "in_docker": false,
+  "commit": "b512915409dc568c25b365bcda8f4439f7f6fee8",
+  "versions": {
+    "ultralytics": "8.4.14",
+    "torch": "2.14.1",
+    "ncnn": "1.0.20260526",
+    "onnxruntime": "1.31.0",
+    "onnx": "1.23.2",
+    "numpy": "2.5.4",
+    "cv2": "5.0.0"
+  },
+  "config": {
+    "models": [
+      "yolo11n",
+      "yolo11s",
+      "yolo11m"
+    ],
+    "image_sizes": [
+      320,
+      480,
+      640
+    ],
+    "formats": {
+      "pt": [
+        "fp32"
+      ],
+      "ncnn": [
+        "fp32",
+        "fp16"
+      ],
+      "onnx": [
+        "fp32",
+        "int8"
+      ]
+    },
+    "speed": {
+      "warmup_pictures": 5,
+      "timed_pictures": 50,
+      "confidence": 0.25,
+      "torch_device": "cpu",
+      "sample_every_sec": 0.5,
+      "pictures_folder": ""
+    },
+    "accuracy": {
+      "enabled": true,
+      "dataset": "coco128.yaml",
+      "share_of_pictures": 1.0
+    },
+    "cooldown": {
+      "start_below_c": 60,
+      "max_wait_sec": 300,
+      "check_every_sec": 5
+    },
+    "combination_timeout_sec": 3600,
+    "report": {
+      "camera_fps": 3,
+      "min_accuracy_share": 0.9
+    },
+    "paths": {
+      "models": "models/bench",
+      "data": "data/bench",
+      "results": "benchmarks/results"
+    },
+    "quick": {
+      "warmup_pictures": 1,
+      "timed_pictures": 5,
+      "accuracy_share_of_pictures": 0.1
+    }
+  }
+}

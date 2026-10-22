@@ -1,0 +1,48 @@
+[project]
+name = "deskbench"
+version = "0.1.0"
+description = "Times YOLO models on this computer and on the Raspberry Pi, and records the results"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "ultralytics==8.4.14",
+    "torch",
+    "torchvision",
+    "onnx",
+    "onnxruntime",
+    "onnxslim",
+    "ncnn==1.0.20260526",
+    "pnnx==20260526",          # turns PyTorch models into ncnn models
+    "psutil",
+    "pyyaml",
+]
+
+[project.scripts]
+deskbench = "deskbench.cli:main"
+
+# On Linux (the Pi's Docker image) use PyTorch's CPU-only build; the normal one brings several GB of NVIDIA files.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]

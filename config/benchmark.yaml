@@ -1,0 +1,65 @@
+# ════════════════════════════════════════════════════════════════════
+#  YOLO benchmark settings
+#
+#  Used by benchmarks/ (uv run deskbench run) on this computer, and by the
+#  Docker container on the Raspberry Pi. Every combination of model, picture
+#  size, format and precision below is timed and checked for accuracy.
+#  Results go to benchmarks/results/ (kept in git so we can compare runs).
+# ════════════════════════════════════════════════════════════════════
+
+# ── What to try ────────────────────────────────────────────────────
+models: [yolo11n, yolo11s, yolo11m]   # downloaded from Ultralytics the first time
+image_sizes: [320, 480, 640]          # pictures are shrunk to this many pixels (longest side) before detection
+
+# Which precisions to try for each format.
+#   fp32 = normal 32-bit numbers
+#   fp16 = 16-bit numbers (ncnn only): smaller model file
+#   int8 = 8-bit numbers (onnx only): made from the fp32 ONNX model with onnxruntime's quantizer
+formats:
+  pt: [fp32]
+  ncnn: [fp32, fp16]
+  onnx: [fp32, int8]
+
+# ── Speed test ─────────────────────────────────────────────────────
+speed:
+  warmup_pictures: 5          # detections run first and not timed (the first few are always slow)
+  timed_pictures: 50          # detections that are timed (the pictures are reused if there are fewer)
+  confidence: 0.25            # lowest confidence a box needs to count as a detection
+  torch_device: cpu           # pt models only: cpu keeps it fair against ncnn and onnx (mps = Apple GPU)
+  sample_every_sec: 0.5       # how often temperature is read during the timed part
+  # Your own desk photos instead of the COCO photos (a folder of .jpg/.png); empty = use the COCO photos
+  pictures_folder: ""
+
+# ── Accuracy test ──────────────────────────────────────────────────
+accuracy:
+  enabled: true
+  # 128 COCO photos with the right answers marked. Ultralytics downloads it (about 7 MB) the first time.
+  dataset: coco128.yaml
+  share_of_pictures: 1.0      # 0.25 = check only a quarter of them (faster on the Pi)
+
+# ── Keeping runs fair on the Pi ────────────────────────────────────
+cooldown:
+  start_below_c: 60           # before each combination, wait until the CPU is this cool (only where it can be read)
+  max_wait_sec: 300           # but never wait longer than this
+  check_every_sec: 5
+
+# Give up on one combination after this long (it is marked failed and the run goes on).
+combination_timeout_sec: 3600
+
+# ── Picking the best model (deskbench report) ──────────────────────
+report:
+  camera_fps: 3               # pictures a second the app wants; a pick must finish 95% of pictures within 1/fps seconds
+  min_accuracy_share: 0.9     # and reach at least this share of the best accuracy (mAP50-95) on that device
+
+# ── Where things go (relative to the project folder) ───────────────
+paths:
+  models: models/bench        # downloaded and converted models (not in git)
+  data: data/bench            # COCO photos and Ultralytics' own settings (not in git)
+  results: benchmarks/results # results (in git)
+
+# ── Quick check (deskbench run --quick): only to see that everything works ──
+# Its results go to data/bench/quick-results, not into git.
+quick:
+  warmup_pictures: 1
+  timed_pictures: 5
+  accuracy_share_of_pictures: 0.1
