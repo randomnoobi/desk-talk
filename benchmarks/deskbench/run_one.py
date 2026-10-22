@@ -26,7 +26,7 @@ def run(spec: dict) -> dict:
     kwargs = {'imgsz': spec['image_size'], 'conf': spec['confidence'], 'device': device, 'verbose': False}
 
     t0 = time.perf_counter()
-    model = YOLO(spec['model_path'], task='detect')
+    model = YOLO(spec['model_path'], task=spec['task'])
     model.predict(pictures[0], **kwargs)          # the first detection also loads the model's runtime
     out: dict = {'load_time_s': time.perf_counter() - t0}
 

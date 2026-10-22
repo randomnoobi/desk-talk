@@ -4,21 +4,42 @@
 #  Used by benchmarks/ (uv run deskbench run) on this computer, and by the
 #  Docker container on the Raspberry Pi. Every combination of model, picture
 #  size, format and precision below is timed and checked for accuracy.
+#  The desk test (uv run deskbench desk run, on the Mac) scores them on desk
+#  photos for Sam's desk things (desk: below), and the report names three picks.
 #  Results go to benchmarks/results/ (kept in git so we can compare runs).
 # ════════════════════════════════════════════════════════════════════
 
 # ── What to try ────────────────────────────────────────────────────
-models: [yolo11n, yolo11s, yolo11m]   # downloaded from Ultralytics the first time
 image_sizes: [320, 480, 640]          # pictures are shrunk to this many pixels (longest side) before detection
 
-# Which precisions to try for each format.
-#   fp32 = normal 32-bit numbers
-#   fp16 = 16-bit numbers (ncnn only): smaller model file
-#   int8 = 8-bit numbers (onnx only): made from the fp32 ONNX model with onnxruntime's quantizer
-formats:
-  pt: [fp32]
-  ncnn: [fp32, fp16]
-  onnx: [fp32, int8]
+# Kinds of models. Each kind has:
+#   models   the model files (downloaded from Ultralytics the first time), small to large
+#   names    which names its detections use: coco (80 kinds), objects365 (365 kinds), or
+#            words (yoloe: it finds whatever words it's given, see desk.kinds below)
+#   task     detect (the default), or segment for models that also draw each object's shape
+#   formats  which precisions to try for each format:
+#              fp32 = normal 32-bit numbers
+#              fp16 = 16-bit numbers (ncnn only): smaller model file
+#              int8 = 8-bit numbers (onnx only): made from the fp32 ONNX model with onnxruntime's quantizer
+# The newer kinds only try ncnn, which was the fastest on the Pi in the first run.
+model_kinds:
+  yolo11:
+    models: [yolo11n, yolo11s, yolo11m]
+    names: coco
+    formats: {pt: [fp32], ncnn: [fp32, fp16], onnx: [fp32, int8]}
+  yolo26:
+    models: [yolo26n, yolo26s, yolo26m]
+    names: coco
+    formats: {ncnn: [fp32, fp16]}
+  yolo26-objv1:                       # the kind the app uses (config/settings.yaml → detector.model)
+    models: [yolo26n-objv1-150, yolo26s-objv1-150, yolo26m-objv1-150]
+    names: objects365
+    formats: {ncnn: [fp32, fp16]}
+  yoloe-26:                           # made on the Mac with the words built in (needs: uv sync --group words)
+    models: [yoloe-26n-seg, yoloe-26s-seg, yoloe-26m-seg]
+    names: words
+    task: segment
+    formats: {ncnn: [fp32, fp16]}
 
 # ── Speed test ─────────────────────────────────────────────────────
 speed:
@@ -50,6 +71,7 @@ combination_timeout_sec: 3600
 report:
   camera_fps: 3               # pictures a second the app wants; a pick must finish 95% of pictures within 1/fps seconds
   min_accuracy_share: 0.9     # and reach at least this share of the best accuracy (mAP50-95) on that device
+  pick_device: pi             # the three desk picks must be fast enough on this device
 
 # ── Where things go (relative to the project folder) ───────────────
 paths:
@@ -63,3 +85,107 @@ quick:
   warmup_pictures: 1
   timed_pictures: 5
   accuracy_share_of_pictures: 0.1
+
+# ── Desk test (uv run deskbench desk prepare, then desk run) ───────
+# Scores every model on desk pictures for Sam's eight kinds of things. See
+# benchmarks/desk-test-design.md for why it works this way.
+desk:
+  # Sam's eight kinds of things, and what each set of names calls them:
+  #   coco        names of the 80-kind models (yolo11, yolo26)
+  #   objects365  names of the 365-kind models (yolo26-objv1), as the model itself spells them
+  #   words       what yoloe is told to look for. These are the app's own names (the
+  #               app_agent's labels in config/agents.yaml), so a yoloe model works in the
+  #               app as it is. Trash has no names in the app.
+  #   lvis        names in the LVIS labels of the public photos (the right answers)
+  #   app_agent   the agent(s) in config/agents.yaml that cover it (for how sure a model must be)
+  # Trash is a judgment call: no list has "trash", only pieces of it.
+  kinds:
+    book:
+      coco: [book]
+      objects365: [book]
+      words: [book]
+      lvis: [book, paperback_book, booklet]
+      app_agent: paper
+    water bottle:
+      coco: [bottle]
+      objects365: [bottle]
+      words: [bottle, water bottle]
+      lvis: [bottle, water_bottle]
+      app_agent: cup
+    mouse:
+      coco: [mouse]
+      objects365: [mouse]
+      words: [mouse]
+      lvis: [mouse_(computer_equipment)]
+      app_agent: computer
+    laptop:
+      coco: [laptop]
+      objects365: [laptop]
+      words: [laptop]
+      lvis: [laptop_computer]
+      app_agent: computer
+    food:
+      coco: [banana, apple, sandwich, orange, broccoli, carrot, hot dog, pizza, donut, cake]
+      objects365: [banana, apple, sandwich, orange, broccoli, carrot, hot dog, pizza, donut, cake, bread,
+                   bread/bun, cookies, candy, chips, nuts, hamburger, french fries, ice cream, strawberry,
+                   grapes, pear, peach, egg tart, pie, sushi, sausage]
+      words: [banana, apple, sandwich, orange, broccoli, carrot, hot dog, pizza, donut, cake, bread, cookies,
+              candy, chips, nuts, hamburger, french fries, ice cream, tangerine, strawberry, grapes, pear,
+              peach, egg tart, pie, sushi]
+      lvis: [apple, banana, sandwich, orange_(fruit), broccoli, carrot, sausage, pizza, doughnut, cake, bread,
+             cookie, candy_bar, crisp_(potato_chip), hamburger, icecream, mandarin_orange, strawberry,
+             grape, pear, peach, pie, sushi, bagel, cupcake, muffin, pastry, chocolate_bar, pretzel, cracker]
+      app_agent: snack
+    AirPods:                   # on the public photos these are mostly headphones, so their names count too
+      coco: []
+      objects365: [earphone, head phone]
+      words: [earphone, earbuds, head phone, headphones]
+      lvis: [earphone, headset]
+      app_agent: [earbuds, headphones]
+    phone:
+      coco: [cell phone]
+      objects365: [cell phone]
+      words: [cell phone]
+      lvis: [cellular_telephone]
+      app_agent: phone
+    trash:
+      coco: []
+      objects365: [tissue, towel/napkin, paper towel, canned]
+      words: [crumpled paper, snack wrapper, empty can, used tissue]
+      lvis: [garbage, can, tissue_paper, napkin, paper_towel, receipt, bottle_cap, straw_(for_drinking)]
+  # Other things often on desks, also given to yoloe, so it has somewhere to put them
+  # instead of calling everything a phone
+  yoloe_extra_words: [person, keyboard, cup, tissue box, pen, cable]
+  # ── Which public photos (from LVIS v1 val, COCO val2017 photos only) ──
+  anchor_kinds: [laptop, mouse, book, phone, AirPods]   # a desk photo has two of the kinds, one of them from here
+  rare_kinds: [AirPods, trash, food]                    # photos with these are always kept
+  max_pictures: 300            # at most this many; the rest are picked at random with this seed
+  seed: 7
+  # How the scenes are worked out from the labeled boxes:
+  scenes:
+    covered_share: 0.3         # "covering": a desk thing has this share of its box under another box
+    busy_objects: 10           # "busy": this many labeled things or more (surfaces not counted)
+    small_share: 0.01          # "small things": AirPods, or a phone or mouse smaller than this share of the photo
+    small_kinds: [phone, mouse]
+    # Things lie on these; that isn't covering, so they're left out of the scenes (LVIS names)
+    surfaces: [desk, table, dining_table, coffee_table, kitchen_table, mousepad, place_mat, tablecloth, tray,
+               plate, paper_plate, bed, sofa, bookcase, cabinet, drawer]
+  # ── Scoring and the report ──
+  low_confidence: 0.25         # also scored at this confidence, to show models held back by the app's threshold
+  min_photos_per_cell: 5       # a scene × kind score needs this many photos, else it shows "–"
+  few_photos_warning: 15       # the report warns when a kind has fewer photos than this
+  your_desk_gap: 0.15          # "does worse on your desk" when its score on Sam's photos is this much lower
+  weak_score: 0.4             # the report says so in words when even the best model scores below this on a kind
+  # The app's own confidence rule (agents.min_confidence, and per-agent min_confidence) is read from these:
+  app_settings: config/settings.yaml
+  app_agents: config/agents.yaml
+  # ── Downloads (desk prepare) ──
+  downloads:
+    lvis_labels: https://dl.fbaipublicfiles.com/LVIS/lvis_v1_val.json.zip      # 64 MB, once
+    coco_labels: https://github.com/ultralytics/assets/releases/download/v0.0.0/coco2017labels.zip   # 48 MB, once
+    timeout_sec: 60            # give up on one try after this long
+    tries: 3                   # tries per file before it counts as failed
+  # ── Where things go ──
+  set_file: benchmarks/desk/desk-set.json     # the chosen public photos and their right answers (in git)
+  photos: data/bench/desk/lvis                # the public photos themselves (not in git)
+  your_photos: data/bench/desk-photos         # Sam's own photos and labels.yaml (not in git)
