@@ -11,8 +11,14 @@ from . import results
 from .matrix import Combo
 
 
+def _speed(row: dict) -> str:
+    return (f'{row.get("fps") or 0:.1f} pictures/s, p95 {row.get("total_ms_p95") or 0:.0f} ms, '
+            f'mAP50-95 {row.get("map50_95") if row.get("map50_95") is not None else "-"}')
+
+
 def run_all(combos: list[Combo], run_combo: Callable[[Combo], dict], csv_path: Path, base: dict,
-            cooldown: Callable[[], dict], log: Callable[[str], None] = print) -> list[dict]:
+            cooldown: Callable[[], dict], log: Callable[[str], None] = print,
+            columns: list[str] = results.COLUMNS, describe: Callable[[dict], str] = _speed) -> list[dict]:
     done = results.finished_keys(csv_path)
     rows = []
     for i, combo in enumerate(combos, 1):
@@ -32,11 +38,10 @@ def run_all(combos: list[Combo], run_combo: Callable[[Combo], dict], csv_path: P
             row['status'] = 'failed'
             row['error'] = f'{type(exc).__name__}: {exc}'[-500:]
         row['combo_time_s'] = time.monotonic() - t0
-        results.append_row(csv_path, row)
+        results.append_row(csv_path, row, columns)
         rows.append(row)
         if row['status'] == 'ok':
-            log(f'{label}: {row.get("fps") or 0:.1f} pictures/s, p95 {row.get("total_ms_p95") or 0:.0f} ms, '
-                f'mAP50-95 {row.get("map50_95") if row.get("map50_95") is not None else "-"}')
+            log(f'{label}: {describe(row)}')
         else:
             log(f'{label}: FAILED {row["error"]}')
     return rows

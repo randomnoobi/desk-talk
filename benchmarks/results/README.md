@@ -4,9 +4,106 @@ Made by `deskbench report` from the CSV files in this folder. Don't edit by hand
 
 Best pick = the fastest combination that finishes 95% of pictures within 333 ms (the app takes 3 pictures a second) and reaches at least 90% of the best accuracy (mAP50-95 on 128 COCO photos) on that device.
 
+## Three picks to try
+
+Of the combinations that finish 95% of pictures within 333 ms on the Pi, the three different models with the highest desk score. Try each on your desk.
+
+### 1. `yolo11m` at 480 (ncnn fp32)
+
+- Desk score **0.43** (your desk 0.65). On the Pi: 3.2 pictures/s, 95% within 326 ms.
+- Best at: laptop (0.78), mouse (0.77). Worst at: trash (0.00), AirPods (0.00).
+- To try it, put this in `config/settings.local.yaml` (your own file):
+
+  ```yaml
+  detector:
+    model: models/bench/yolo11m.pt
+    image_size: 480
+  ```
+
+### 2. `yolo11s` at 640 (ncnn fp32)
+
+- Desk score **0.42** (your desk 0.64). On the Pi: 5.4 pictures/s, 95% within 188 ms.
+- Best at: laptop (0.78), mouse (0.76). Worst at: trash (0.00), AirPods (0.00).
+- To try it, put this in `config/settings.local.yaml` (your own file):
+
+  ```yaml
+  detector:
+    model: models/bench/yolo11s.pt
+    image_size: 640
+  ```
+
+### 3. `yolo11n` at 640 (ncnn fp32)
+
+- Desk score **0.34** (your desk 0.60). On the Pi: 12.0 pictures/s, 95% within 85 ms.
+- Best at: mouse (0.70), laptop (0.70). Worst at: trash (0.00), AirPods (0.00).
+- To try it, put this in `config/settings.local.yaml` (your own file):
+
+  ```yaml
+  detector:
+    model: models/bench/yolo11n.pt
+    image_size: 640
+  ```
+
+Each pick's own score for every kind and scene:
+
+| pick | book | water bottle | mouse | laptop | food | AirPods | phone | trash | covering | busy | small things | food | trash | tidy |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1. `yolo11m-480-ncnn-fp32` | 0.22 | 0.58 | 0.77 | 0.78 | 0.62 | 0.00 | 0.47 | 0.00 | 0.44 | 0.41 | 0.50 | 0.47 | 0.45 | 0.56 |
+| 2. `yolo11s-640-ncnn-fp32` | 0.24 | 0.56 | 0.76 | 0.78 | 0.60 | 0.00 | 0.41 | 0.00 | 0.45 | 0.41 | 0.50 | 0.43 | 0.46 | 0.53 |
+| 3. `yolo11n-640-ncnn-fp32` | 0.10 | 0.35 | 0.70 | 0.70 | 0.53 | 0.00 | 0.32 | 0.00 | 0.35 | 0.32 | 0.38 | 0.38 | 0.35 | 0.44 |
+
+Not timed on the Pi yet, so not in the picks: `yolo26m`, `yolo26m-objv1-150`, `yolo26n`, `yolo26n-objv1-150`, `yolo26s`, `yolo26s-objv1-150`, `yoloe-26m-seg`, `yoloe-26n-seg`, `yoloe-26s-seg`.
+
+## Desk test
+
+Runs `2026-10-22T0654Z_laptop` (newest ok row of each combination) on **Apple M4 Max**: 240 public desk photos and 6 of your own. A kind's score = found rate × (1 − false alarms); the desk score is the average over the kinds. "Found" uses the app's own rule for how sure a model must be (book 0.45, water bottle 0.55, mouse 0.45, laptop 0.45, food 0.45, AirPods 0.45, phone 0.45, trash 0.45); "at 0.25" counts weaker finds too.
+
+Each model's best combination:
+
+| model | combination | desk score | at 0.25 | your desk | book | water bottle | mouse | laptop | food | AirPods | phone | trash |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `yoloe-26m-seg` | `yoloe-26m-seg-640-ncnn-fp16` | 0.58 | 0.66 | 0.79 | 0.35 | 0.63 | 0.86 | 0.84 | 0.81 | 0.45 | 0.57 | 0.12 |
+| `yolo26m-objv1-150` | `yolo26m-objv1-150-640-ncnn-fp32` | 0.52 | 0.60 | 0.74 | 0.21 | 0.61 | 0.81 | 0.83 | 0.58 | 0.47 | 0.46 | 0.16 |
+| `yoloe-26s-seg` | `yoloe-26s-seg-640-ncnn-fp16` | 0.51 | 0.61 | 0.68 | 0.34 | 0.58 | 0.79 | 0.76 | 0.71 | 0.28 | 0.51 | 0.08 |
+| `yolo26m` | `yolo26m-640-ncnn-fp32` | 0.47 | 0.55 | 0.79 | 0.30 | 0.65 | 0.80 | 0.84 | 0.67 | 0.00 | 0.52 | 0.00 |
+| `yolo11m` | `yolo11m-640-ncnn-fp16` | 0.46 | 0.53 | 0.75 | 0.23 | 0.62 | 0.80 | 0.81 | 0.68 | 0.00 | 0.53 | 0.00 |
+| `yolo26s` | `yolo26s-640-ncnn-fp32` | 0.45 | 0.53 | 0.68 | 0.27 | 0.55 | 0.79 | 0.81 | 0.62 | 0.00 | 0.52 | 0.00 |
+| `yolo26s-objv1-150` | `yolo26s-objv1-150-640-ncnn-fp16` | 0.44 | 0.55 | 0.64 | 0.17 | 0.51 | 0.70 | 0.74 | 0.58 | 0.29 | 0.46 | 0.08 |
+| `yolo11s` | `yolo11s-640-onnx-fp32` | 0.42 | 0.50 | 0.64 | 0.24 | 0.56 | 0.76 | 0.78 | 0.62 | 0.00 | 0.40 | 0.00 |
+| `yoloe-26n-seg` | `yoloe-26n-seg-640-ncnn-fp16` | 0.38 | 0.53 | 0.60 | 0.15 | 0.42 | 0.67 | 0.67 | 0.63 | 0.17 | 0.27 | 0.04 |
+| `yolo11n` | `yolo11n-640-ncnn-fp32` | 0.34 | 0.44 | 0.60 | 0.10 | 0.35 | 0.70 | 0.70 | 0.53 | 0.00 | 0.32 | 0.00 |
+| `yolo26n-objv1-150` | `yolo26n-objv1-150-640-ncnn-fp32` | 0.32 | 0.43 | 0.54 | 0.01 | 0.39 | 0.72 | 0.67 | 0.35 | 0.12 | 0.22 | 0.08 |
+| `yolo26n` | `yolo26n-640-ncnn-fp16` | 0.32 | 0.41 | 0.56 | 0.06 | 0.32 | 0.66 | 0.73 | 0.52 | 0.00 | 0.25 | 0.00 |
+
+By scene (a scene needs 5 photos of a kind to score it, else "-"):
+
+| model | covering | busy | small things | food | trash | tidy |
+|---|---|---|---|---|---|---|
+| `yoloe-26m-seg` | 0.59 | 0.57 | 0.68 | 0.58 | 0.51 | 0.68 |
+| `yolo26m-objv1-150` | 0.54 | 0.54 | 0.62 | 0.51 | 0.46 | 0.59 |
+| `yoloe-26s-seg` | 0.51 | 0.49 | 0.57 | 0.57 | 0.52 | 0.61 |
+| `yolo26m` | 0.50 | 0.45 | 0.57 | 0.55 | 0.50 | 0.62 |
+| `yolo11m` | 0.49 | 0.44 | 0.56 | 0.51 | 0.50 | 0.59 |
+| `yolo26s` | 0.46 | 0.43 | 0.53 | 0.47 | 0.48 | 0.60 |
+| `yolo26s-objv1-150` | 0.46 | 0.45 | 0.51 | 0.43 | 0.45 | 0.47 |
+| `yolo11s` | 0.45 | 0.41 | 0.50 | 0.43 | 0.46 | 0.53 |
+| `yoloe-26n-seg` | 0.40 | 0.35 | 0.42 | 0.43 | 0.37 | 0.41 |
+| `yolo11n` | 0.35 | 0.32 | 0.38 | 0.38 | 0.35 | 0.44 |
+| `yolo26n-objv1-150` | 0.34 | 0.31 | 0.34 | 0.35 | 0.28 | 0.38 |
+| `yolo26n` | 0.32 | 0.29 | 0.33 | 0.31 | 0.35 | 0.40 |
+
+Public photos per kind (there / not there): book 115 / 125, water bottle 84 / 156, mouse 74 / 166, laptop 128 / 112, food 60 / 180, AirPods 17 / 223, phone 96 / 144, trash 24 / 216.
+
+- Every model is weak at book: the best is 0.35 (`yoloe-26m-seg`).
+- Every model is weak at trash: the best is 0.16 (`yolo26m-objv1-150`).
+- Trash is a judgment call: no list of names has "trash", only pieces of it (cans, tissues, napkins).
+- On the public photos, "AirPods" means any earphones or headset. For AirPods, trash and some foods, a photo marked "not there" may still have one nobody labeled.
+- The app has no trash agent, so trash a yoloe model finds would join the chat as a new, unknown object.
+- Your own photos are a check, not the ranking: a few pictures, one evening, one angle.
+
 ## laptop
 
-Latest run `2026-10-21T1747Z_laptop` on **Apple M4 Max**, commit `b512915409`.
+Runs `2026-10-21T1747Z_laptop` (newest row of each combination) on **Apple M4 Max**, latest commit `b512915409`.
 
 **Best pick: `yolo11s-480-onnx-fp32`** (51.9 pictures/s, p95 28 ms, mAP50-95 0.572)
 
@@ -60,7 +157,7 @@ Latest run `2026-10-21T1747Z_laptop` on **Apple M4 Max**, commit `b512915409`.
 
 ## pi
 
-Latest run `2026-10-21T2313Z_pi` on **Raspberry Pi 5 Model B Rev 1.1**, commit `abee845754`.
+Runs `2026-10-21T2313Z_pi` (newest row of each combination) on **Raspberry Pi 5 Model B Rev 1.1**, latest commit `abee845754`.
 
 **Best pick: `yolo11s-480-ncnn-fp32`** (10.1 pictures/s, p95 99 ms, mAP50-95 0.575)
 

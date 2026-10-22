@@ -30,16 +30,37 @@ class Combo:
         return models_dir / f'{self.model}_{self.image_size}_{self.precision}.{self.fmt}'
 
 
-def build_combos(cfg: dict, only_models: list[str] | None = None) -> list[Combo]:
-    for fmt, precisions in cfg['formats'].items():
+NAMES = ('coco', 'objects365', 'words')     # which names a kind of model uses (see desk.kinds in the config)
+
+
+def kind_of(cfg: dict, model: str) -> tuple[str, dict]:
+    """Which kind (yolo11, yoloe-26, ...) a model belongs to, and that kind's settings."""
+    for name, kind in cfg['model_kinds'].items():
+        if model in kind['models']:
+            return name, kind
+    raise KeyError(f'{model} is not in model_kinds')
+
+
+def _check(name: str, kind: dict) -> None:
+    if kind['names'] not in NAMES:
+        raise ValueError(f'{name}: names must be one of: {", ".join(NAMES)}')
+    for fmt, precisions in kind['formats'].items():
         if fmt not in ALLOWED:
             raise ValueError(f'Unknown format "{fmt}". Use one of: {", ".join(ALLOWED)}')
         bad = set(precisions) - ALLOWED[fmt]
         if bad:
             raise ValueError(f'{fmt} can\'t do {", ".join(sorted(bad))}. It can do: {", ".join(sorted(ALLOWED[fmt]))}')
-    models = [m for m in cfg['models'] if not only_models or m in only_models]
-    return [Combo(m, int(size), fmt, prec)
-            for m in models
-            for size in cfg['image_sizes']
-            for fmt, precisions in cfg['formats'].items()
-            for prec in precisions]
+
+
+def build_combos(cfg: dict, only_models: list[str] | None = None, only_kinds: list[str] | None = None) -> list[Combo]:
+    combos = []
+    for name, kind in cfg['model_kinds'].items():
+        _check(name, kind)
+        if only_kinds and name not in only_kinds:
+            continue
+        combos += [Combo(m, int(size), fmt, prec)
+                   for m in kind['models'] if not only_models or m in only_models
+                   for size in cfg['image_sizes']
+                   for fmt, precisions in kind['formats'].items()
+                   for prec in precisions]
+    return combos

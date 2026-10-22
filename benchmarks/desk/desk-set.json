@@ -1,0 +1,4759 @@
+{
+ "made_from": "LVIS v1 val + COCO val2017 labels (val2017 photos only)",
+ "kinds": [
+  "book",
+  "water bottle",
+  "mouse",
+  "laptop",
+  "food",
+  "AirPods",
+  "phone",
+  "trash"
+ ],
+ "pictures": [
+  {
+   "id": 1503,
+   "url": "http://images.cocodataset.org/val2017/000000001503.jpg",
+   "width": 320,
+   "height": 240,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "small things"
+   ]
+  },
+  {
+   "id": 9400,
+   "url": "http://images.cocodataset.org/val2017/000000009400.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 10707,
+   "url": "http://images.cocodataset.org/val2017/000000010707.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 13659,
+   "url": "http://images.cocodataset.org/val2017/000000013659.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "there"
+   },
+   "scenes": [
+    "busy",
+    "trash"
+   ]
+  },
+  {
+   "id": 14038,
+   "url": "http://images.cocodataset.org/val2017/000000014038.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 14226,
+   "url": "http://images.cocodataset.org/val2017/000000014226.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "food"
+   ]
+  },
+  {
+   "id": 15335,
+   "url": "http://images.cocodataset.org/val2017/000000015335.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "there"
+   },
+   "scenes": [
+    "covering",
+    "trash"
+   ]
+  },
+  {
+   "id": 17182,
+   "url": "http://images.cocodataset.org/val2017/000000017182.jpg",
+   "width": 640,
+   "height": 428,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "food"
+   ]
+  },
+  {
+   "id": 21503,
+   "url": "http://images.cocodataset.org/val2017/000000021503.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "food"
+   ]
+  },
+  {
+   "id": 22371,
+   "url": "http://images.cocodataset.org/val2017/000000022371.jpg",
+   "width": 425,
+   "height": 282,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 24610,
+   "url": "http://images.cocodataset.org/val2017/000000024610.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 25603,
+   "url": "http://images.cocodataset.org/val2017/000000025603.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "food",
+    "trash"
+   ]
+  },
+  {
+   "id": 26465,
+   "url": "http://images.cocodataset.org/val2017/000000026465.jpg",
+   "width": 500,
+   "height": 375,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 26564,
+   "url": "http://images.cocodataset.org/val2017/000000026564.jpg",
+   "width": 640,
+   "height": 426,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 27620,
+   "url": "http://images.cocodataset.org/val2017/000000027620.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "small things"
+   ]
+  },
+  {
+   "id": 31296,
+   "url": "http://images.cocodataset.org/val2017/000000031296.jpg",
+   "width": 640,
+   "height": 425,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 35279,
+   "url": "http://images.cocodataset.org/val2017/000000035279.jpg",
+   "width": 640,
+   "height": 463,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 36936,
+   "url": "http://images.cocodataset.org/val2017/000000036936.jpg",
+   "width": 640,
+   "height": 404,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 37740,
+   "url": "http://images.cocodataset.org/val2017/000000037740.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 45229,
+   "url": "http://images.cocodataset.org/val2017/000000045229.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 46031,
+   "url": "http://images.cocodataset.org/val2017/000000046031.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering"
+   ]
+  },
+  {
+   "id": 50811,
+   "url": "http://images.cocodataset.org/val2017/000000050811.jpg",
+   "width": 640,
+   "height": 605,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 51008,
+   "url": "http://images.cocodataset.org/val2017/000000051008.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering"
+   ]
+  },
+  {
+   "id": 56344,
+   "url": "http://images.cocodataset.org/val2017/000000056344.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "small things"
+   ]
+  },
+  {
+   "id": 59598,
+   "url": "http://images.cocodataset.org/val2017/000000059598.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "food"
+   ]
+  },
+  {
+   "id": 60899,
+   "url": "http://images.cocodataset.org/val2017/000000060899.jpg",
+   "width": 360,
+   "height": 640,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 62808,
+   "url": "http://images.cocodataset.org/val2017/000000062808.jpg",
+   "width": 640,
+   "height": 481,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy",
+    "food"
+   ]
+  },
+  {
+   "id": 63602,
+   "url": "http://images.cocodataset.org/val2017/000000063602.jpg",
+   "width": 640,
+   "height": 425,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 63740,
+   "url": "http://images.cocodataset.org/val2017/000000063740.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "food",
+    "trash"
+   ]
+  },
+  {
+   "id": 66771,
+   "url": "http://images.cocodataset.org/val2017/000000066771.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "there"
+   },
+   "scenes": [
+    "covering",
+    "trash"
+   ]
+  },
+  {
+   "id": 74733,
+   "url": "http://images.cocodataset.org/val2017/000000074733.jpg",
+   "width": 612,
+   "height": 612,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things",
+    "food"
+   ]
+  },
+  {
+   "id": 77396,
+   "url": "http://images.cocodataset.org/val2017/000000077396.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 78170,
+   "url": "http://images.cocodataset.org/val2017/000000078170.jpg",
+   "width": 640,
+   "height": 640,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 80949,
+   "url": "http://images.cocodataset.org/val2017/000000080949.jpg",
+   "width": 640,
+   "height": 438,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 84674,
+   "url": "http://images.cocodataset.org/val2017/000000084674.jpg",
+   "width": 480,
+   "height": 640,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "food"
+   ]
+  },
+  {
+   "id": 86582,
+   "url": "http://images.cocodataset.org/val2017/000000086582.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering"
+   ]
+  },
+  {
+   "id": 89648,
+   "url": "http://images.cocodataset.org/val2017/000000089648.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 91406,
+   "url": "http://images.cocodataset.org/val2017/000000091406.jpg",
+   "width": 640,
+   "height": 424,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "food"
+   ]
+  },
+  {
+   "id": 91615,
+   "url": "http://images.cocodataset.org/val2017/000000091615.jpg",
+   "width": 640,
+   "height": 425,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 93353,
+   "url": "http://images.cocodataset.org/val2017/000000093353.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "food"
+   ]
+  },
+  {
+   "id": 93437,
+   "url": "http://images.cocodataset.org/val2017/000000093437.jpg",
+   "width": 640,
+   "height": 361,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 97994,
+   "url": "http://images.cocodataset.org/val2017/000000097994.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 99428,
+   "url": "http://images.cocodataset.org/val2017/000000099428.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 110449,
+   "url": "http://images.cocodataset.org/val2017/000000110449.jpg",
+   "width": 500,
+   "height": 375,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "small things"
+   ]
+  },
+  {
+   "id": 112626,
+   "url": "http://images.cocodataset.org/val2017/000000112626.jpg",
+   "width": 423,
+   "height": 640,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 112798,
+   "url": "http://images.cocodataset.org/val2017/000000112798.jpg",
+   "width": 640,
+   "height": 359,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 115870,
+   "url": "http://images.cocodataset.org/val2017/000000115870.jpg",
+   "width": 640,
+   "height": 426,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 119233,
+   "url": "http://images.cocodataset.org/val2017/000000119233.jpg",
+   "width": 500,
+   "height": 334,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering"
+   ]
+  },
+  {
+   "id": 119365,
+   "url": "http://images.cocodataset.org/val2017/000000119365.jpg",
+   "width": 480,
+   "height": 640,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 119828,
+   "url": "http://images.cocodataset.org/val2017/000000119828.jpg",
+   "width": 500,
+   "height": 375,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "small things"
+   ]
+  },
+  {
+   "id": 120853,
+   "url": "http://images.cocodataset.org/val2017/000000120853.jpg",
+   "width": 640,
+   "height": 428,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "there"
+   },
+   "scenes": [
+    "covering",
+    "food",
+    "trash"
+   ]
+  },
+  {
+   "id": 122962,
+   "url": "http://images.cocodataset.org/val2017/000000122962.jpg",
+   "width": 640,
+   "height": 424,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "food",
+    "trash"
+   ]
+  },
+  {
+   "id": 124659,
+   "url": "http://images.cocodataset.org/val2017/000000124659.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 125129,
+   "url": "http://images.cocodataset.org/val2017/000000125129.jpg",
+   "width": 500,
+   "height": 333,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "small things"
+   ]
+  },
+  {
+   "id": 131138,
+   "url": "http://images.cocodataset.org/val2017/000000131138.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 134882,
+   "url": "http://images.cocodataset.org/val2017/000000134882.jpg",
+   "width": 640,
+   "height": 639,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 135872,
+   "url": "http://images.cocodataset.org/val2017/000000135872.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering"
+   ]
+  },
+  {
+   "id": 136600,
+   "url": "http://images.cocodataset.org/val2017/000000136600.jpg",
+   "width": 640,
+   "height": 457,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 139077,
+   "url": "http://images.cocodataset.org/val2017/000000139077.jpg",
+   "width": 500,
+   "height": 375,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 139684,
+   "url": "http://images.cocodataset.org/val2017/000000139684.jpg",
+   "width": 500,
+   "height": 333,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 144798,
+   "url": "http://images.cocodataset.org/val2017/000000144798.jpg",
+   "width": 425,
+   "height": 640,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 146489,
+   "url": "http://images.cocodataset.org/val2017/000000146489.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "there"
+   },
+   "scenes": [
+    "covering",
+    "food",
+    "trash"
+   ]
+  },
+  {
+   "id": 147415,
+   "url": "http://images.cocodataset.org/val2017/000000147415.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 148620,
+   "url": "http://images.cocodataset.org/val2017/000000148620.jpg",
+   "width": 500,
+   "height": 375,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering"
+   ]
+  },
+  {
+   "id": 149222,
+   "url": "http://images.cocodataset.org/val2017/000000149222.jpg",
+   "width": 500,
+   "height": 383,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "food"
+   ]
+  },
+  {
+   "id": 154705,
+   "url": "http://images.cocodataset.org/val2017/000000154705.jpg",
+   "width": 640,
+   "height": 464,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 156076,
+   "url": "http://images.cocodataset.org/val2017/000000156076.jpg",
+   "width": 640,
+   "height": 478,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "food",
+    "trash"
+   ]
+  },
+  {
+   "id": 156278,
+   "url": "http://images.cocodataset.org/val2017/000000156278.jpg",
+   "width": 640,
+   "height": 425,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "food"
+   ]
+  },
+  {
+   "id": 157601,
+   "url": "http://images.cocodataset.org/val2017/000000157601.jpg",
+   "width": 612,
+   "height": 612,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "small things",
+    "food"
+   ]
+  },
+  {
+   "id": 157767,
+   "url": "http://images.cocodataset.org/val2017/000000157767.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 160556,
+   "url": "http://images.cocodataset.org/val2017/000000160556.jpg",
+   "width": 640,
+   "height": 428,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 166478,
+   "url": "http://images.cocodataset.org/val2017/000000166478.jpg",
+   "width": 640,
+   "height": 426,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 172595,
+   "url": "http://images.cocodataset.org/val2017/000000172595.jpg",
+   "width": 640,
+   "height": 360,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 173302,
+   "url": "http://images.cocodataset.org/val2017/000000173302.jpg",
+   "width": 640,
+   "height": 425,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 174371,
+   "url": "http://images.cocodataset.org/val2017/000000174371.jpg",
+   "width": 640,
+   "height": 511,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 176446,
+   "url": "http://images.cocodataset.org/val2017/000000176446.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 178469,
+   "url": "http://images.cocodataset.org/val2017/000000178469.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 179898,
+   "url": "http://images.cocodataset.org/val2017/000000179898.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "food"
+   ]
+  },
+  {
+   "id": 180878,
+   "url": "http://images.cocodataset.org/val2017/000000180878.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "food"
+   ]
+  },
+  {
+   "id": 182162,
+   "url": "http://images.cocodataset.org/val2017/000000182162.jpg",
+   "width": 640,
+   "height": 425,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 182202,
+   "url": "http://images.cocodataset.org/val2017/000000182202.jpg",
+   "width": 640,
+   "height": 385,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 182611,
+   "url": "http://images.cocodataset.org/val2017/000000182611.jpg",
+   "width": 480,
+   "height": 640,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things",
+    "food"
+   ]
+  },
+  {
+   "id": 189820,
+   "url": "http://images.cocodataset.org/val2017/000000189820.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 190236,
+   "url": "http://images.cocodataset.org/val2017/000000190236.jpg",
+   "width": 640,
+   "height": 393,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 194724,
+   "url": "http://images.cocodataset.org/val2017/000000194724.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "food"
+   ]
+  },
+  {
+   "id": 195918,
+   "url": "http://images.cocodataset.org/val2017/000000195918.jpg",
+   "width": 640,
+   "height": 428,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "small things"
+   ]
+  },
+  {
+   "id": 199771,
+   "url": "http://images.cocodataset.org/val2017/000000199771.jpg",
+   "width": 640,
+   "height": 425,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "food"
+   ]
+  },
+  {
+   "id": 200252,
+   "url": "http://images.cocodataset.org/val2017/000000200252.jpg",
+   "width": 500,
+   "height": 375,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "small things"
+   ]
+  },
+  {
+   "id": 206579,
+   "url": "http://images.cocodataset.org/val2017/000000206579.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy",
+    "food"
+   ]
+  },
+  {
+   "id": 211825,
+   "url": "http://images.cocodataset.org/val2017/000000211825.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy",
+    "food"
+   ]
+  },
+  {
+   "id": 214224,
+   "url": "http://images.cocodataset.org/val2017/000000214224.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 215778,
+   "url": "http://images.cocodataset.org/val2017/000000215778.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 216277,
+   "url": "http://images.cocodataset.org/val2017/000000216277.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "food"
+   ]
+  },
+  {
+   "id": 222299,
+   "url": "http://images.cocodataset.org/val2017/000000222299.jpg",
+   "width": 500,
+   "height": 375,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 225757,
+   "url": "http://images.cocodataset.org/val2017/000000225757.jpg",
+   "width": 500,
+   "height": 367,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 226147,
+   "url": "http://images.cocodataset.org/val2017/000000226147.jpg",
+   "width": 480,
+   "height": 640,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things",
+    "food",
+    "trash"
+   ]
+  },
+  {
+   "id": 226171,
+   "url": "http://images.cocodataset.org/val2017/000000226171.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "trash"
+   ]
+  },
+  {
+   "id": 228214,
+   "url": "http://images.cocodataset.org/val2017/000000228214.jpg",
+   "width": 429,
+   "height": 640,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 229358,
+   "url": "http://images.cocodataset.org/val2017/000000229358.jpg",
+   "width": 640,
+   "height": 423,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 229659,
+   "url": "http://images.cocodataset.org/val2017/000000229659.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "there"
+   },
+   "scenes": [
+    "trash"
+   ]
+  },
+  {
+   "id": 231831,
+   "url": "http://images.cocodataset.org/val2017/000000231831.jpg",
+   "width": 481,
+   "height": 640,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 232088,
+   "url": "http://images.cocodataset.org/val2017/000000232088.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 245026,
+   "url": "http://images.cocodataset.org/val2017/000000245026.jpg",
+   "width": 640,
+   "height": 424,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "food",
+    "trash"
+   ]
+  },
+  {
+   "id": 246308,
+   "url": "http://images.cocodataset.org/val2017/000000246308.jpg",
+   "width": 480,
+   "height": 640,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "small things"
+   ]
+  },
+  {
+   "id": 248314,
+   "url": "http://images.cocodataset.org/val2017/000000248314.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 248631,
+   "url": "http://images.cocodataset.org/val2017/000000248631.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 250901,
+   "url": "http://images.cocodataset.org/val2017/000000250901.jpg",
+   "width": 640,
+   "height": 426,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "food"
+   ]
+  },
+  {
+   "id": 255165,
+   "url": "http://images.cocodataset.org/val2017/000000255165.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 262227,
+   "url": "http://images.cocodataset.org/val2017/000000262227.jpg",
+   "width": 474,
+   "height": 640,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering"
+   ]
+  },
+  {
+   "id": 271116,
+   "url": "http://images.cocodataset.org/val2017/000000271116.jpg",
+   "width": 640,
+   "height": 424,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "trash"
+   ]
+  },
+  {
+   "id": 271728,
+   "url": "http://images.cocodataset.org/val2017/000000271728.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 275749,
+   "url": "http://images.cocodataset.org/val2017/000000275749.jpg",
+   "width": 500,
+   "height": 375,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 278463,
+   "url": "http://images.cocodataset.org/val2017/000000278463.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 286182,
+   "url": "http://images.cocodataset.org/val2017/000000286182.jpg",
+   "width": 478,
+   "height": 640,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "food"
+   ]
+  },
+  {
+   "id": 287347,
+   "url": "http://images.cocodataset.org/val2017/000000287347.jpg",
+   "width": 478,
+   "height": 640,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "there"
+   },
+   "scenes": [
+    "busy",
+    "food",
+    "trash"
+   ]
+  },
+  {
+   "id": 287649,
+   "url": "http://images.cocodataset.org/val2017/000000287649.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "small things"
+   ]
+  },
+  {
+   "id": 287667,
+   "url": "http://images.cocodataset.org/val2017/000000287667.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "food"
+   ]
+  },
+  {
+   "id": 292446,
+   "url": "http://images.cocodataset.org/val2017/000000292446.jpg",
+   "width": 612,
+   "height": 612,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "food",
+    "trash"
+   ]
+  },
+  {
+   "id": 294162,
+   "url": "http://images.cocodataset.org/val2017/000000294162.jpg",
+   "width": 480,
+   "height": 640,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 294831,
+   "url": "http://images.cocodataset.org/val2017/000000294831.jpg",
+   "width": 640,
+   "height": 361,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "food"
+   ]
+  },
+  {
+   "id": 297353,
+   "url": "http://images.cocodataset.org/val2017/000000297353.jpg",
+   "width": 640,
+   "height": 640,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 300039,
+   "url": "http://images.cocodataset.org/val2017/000000300039.jpg",
+   "width": 500,
+   "height": 374,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 301421,
+   "url": "http://images.cocodataset.org/val2017/000000301421.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "small things"
+   ]
+  },
+  {
+   "id": 302030,
+   "url": "http://images.cocodataset.org/val2017/000000302030.jpg",
+   "width": 640,
+   "height": 359,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "small things"
+   ]
+  },
+  {
+   "id": 302452,
+   "url": "http://images.cocodataset.org/val2017/000000302452.jpg",
+   "width": 403,
+   "height": 403,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "small things"
+   ]
+  },
+  {
+   "id": 306139,
+   "url": "http://images.cocodataset.org/val2017/000000306139.jpg",
+   "width": 640,
+   "height": 426,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering"
+   ]
+  },
+  {
+   "id": 308430,
+   "url": "http://images.cocodataset.org/val2017/000000308430.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "food"
+   ]
+  },
+  {
+   "id": 316015,
+   "url": "http://images.cocodataset.org/val2017/000000316015.jpg",
+   "width": 500,
+   "height": 400,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "small things"
+   ]
+  },
+  {
+   "id": 316666,
+   "url": "http://images.cocodataset.org/val2017/000000316666.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 319100,
+   "url": "http://images.cocodataset.org/val2017/000000319100.jpg",
+   "width": 500,
+   "height": 333,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 321118,
+   "url": "http://images.cocodataset.org/val2017/000000321118.jpg",
+   "width": 640,
+   "height": 426,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering"
+   ]
+  },
+  {
+   "id": 324258,
+   "url": "http://images.cocodataset.org/val2017/000000324258.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 325483,
+   "url": "http://images.cocodataset.org/val2017/000000325483.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 325838,
+   "url": "http://images.cocodataset.org/val2017/000000325838.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 326082,
+   "url": "http://images.cocodataset.org/val2017/000000326082.jpg",
+   "width": 640,
+   "height": 426,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "food"
+   ]
+  },
+  {
+   "id": 326970,
+   "url": "http://images.cocodataset.org/val2017/000000326970.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 333402,
+   "url": "http://images.cocodataset.org/val2017/000000333402.jpg",
+   "width": 640,
+   "height": 425,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "small things"
+   ]
+  },
+  {
+   "id": 334309,
+   "url": "http://images.cocodataset.org/val2017/000000334309.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "food"
+   ]
+  },
+  {
+   "id": 340175,
+   "url": "http://images.cocodataset.org/val2017/000000340175.jpg",
+   "width": 640,
+   "height": 394,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "food"
+   ]
+  },
+  {
+   "id": 340894,
+   "url": "http://images.cocodataset.org/val2017/000000340894.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "small things"
+   ]
+  },
+  {
+   "id": 341828,
+   "url": "http://images.cocodataset.org/val2017/000000341828.jpg",
+   "width": 612,
+   "height": 612,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "food"
+   ]
+  },
+  {
+   "id": 342367,
+   "url": "http://images.cocodataset.org/val2017/000000342367.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 344100,
+   "url": "http://images.cocodataset.org/val2017/000000344100.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "food"
+   ]
+  },
+  {
+   "id": 345252,
+   "url": "http://images.cocodataset.org/val2017/000000345252.jpg",
+   "width": 640,
+   "height": 479,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "there",
+    "phone": "not there",
+    "trash": "there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things",
+    "trash"
+   ]
+  },
+  {
+   "id": 345356,
+   "url": "http://images.cocodataset.org/val2017/000000345356.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "there"
+   },
+   "scenes": [
+    "trash"
+   ]
+  },
+  {
+   "id": 346638,
+   "url": "http://images.cocodataset.org/val2017/000000346638.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering"
+   ]
+  },
+  {
+   "id": 346968,
+   "url": "http://images.cocodataset.org/val2017/000000346968.jpg",
+   "width": 640,
+   "height": 426,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "small things"
+   ]
+  },
+  {
+   "id": 348481,
+   "url": "http://images.cocodataset.org/val2017/000000348481.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 357941,
+   "url": "http://images.cocodataset.org/val2017/000000357941.jpg",
+   "width": 500,
+   "height": 375,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 360951,
+   "url": "http://images.cocodataset.org/val2017/000000360951.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 363188,
+   "url": "http://images.cocodataset.org/val2017/000000363188.jpg",
+   "width": 640,
+   "height": 425,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering"
+   ]
+  },
+  {
+   "id": 363461,
+   "url": "http://images.cocodataset.org/val2017/000000363461.jpg",
+   "width": 640,
+   "height": 478,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "small things"
+   ]
+  },
+  {
+   "id": 363840,
+   "url": "http://images.cocodataset.org/val2017/000000363840.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 366225,
+   "url": "http://images.cocodataset.org/val2017/000000366225.jpg",
+   "width": 541,
+   "height": 640,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 367095,
+   "url": "http://images.cocodataset.org/val2017/000000367095.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 367569,
+   "url": "http://images.cocodataset.org/val2017/000000367569.jpg",
+   "width": 469,
+   "height": 640,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 368684,
+   "url": "http://images.cocodataset.org/val2017/000000368684.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 370478,
+   "url": "http://images.cocodataset.org/val2017/000000370478.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering"
+   ]
+  },
+  {
+   "id": 371677,
+   "url": "http://images.cocodataset.org/val2017/000000371677.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 371699,
+   "url": "http://images.cocodataset.org/val2017/000000371699.jpg",
+   "width": 480,
+   "height": 640,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 372466,
+   "url": "http://images.cocodataset.org/val2017/000000372466.jpg",
+   "width": 640,
+   "height": 360,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 376264,
+   "url": "http://images.cocodataset.org/val2017/000000376264.jpg",
+   "width": 640,
+   "height": 481,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy",
+    "food"
+   ]
+  },
+  {
+   "id": 376322,
+   "url": "http://images.cocodataset.org/val2017/000000376322.jpg",
+   "width": 478,
+   "height": 640,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy",
+    "food"
+   ]
+  },
+  {
+   "id": 379441,
+   "url": "http://images.cocodataset.org/val2017/000000379441.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 384808,
+   "url": "http://images.cocodataset.org/val2017/000000384808.jpg",
+   "width": 375,
+   "height": 500,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 385719,
+   "url": "http://images.cocodataset.org/val2017/000000385719.jpg",
+   "width": 640,
+   "height": 421,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 387098,
+   "url": "http://images.cocodataset.org/val2017/000000387098.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 388903,
+   "url": "http://images.cocodataset.org/val2017/000000388903.jpg",
+   "width": 500,
+   "height": 332,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things",
+    "food"
+   ]
+  },
+  {
+   "id": 389109,
+   "url": "http://images.cocodataset.org/val2017/000000389109.jpg",
+   "width": 427,
+   "height": 640,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "there"
+   },
+   "scenes": [
+    "busy",
+    "food",
+    "trash"
+   ]
+  },
+  {
+   "id": 391722,
+   "url": "http://images.cocodataset.org/val2017/000000391722.jpg",
+   "width": 635,
+   "height": 640,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy",
+    "small things",
+    "food"
+   ]
+  },
+  {
+   "id": 393569,
+   "url": "http://images.cocodataset.org/val2017/000000393569.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 395701,
+   "url": "http://images.cocodataset.org/val2017/000000395701.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 396729,
+   "url": "http://images.cocodataset.org/val2017/000000396729.jpg",
+   "width": 640,
+   "height": 425,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering"
+   ]
+  },
+  {
+   "id": 398377,
+   "url": "http://images.cocodataset.org/val2017/000000398377.jpg",
+   "width": 500,
+   "height": 375,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 400082,
+   "url": "http://images.cocodataset.org/val2017/000000400082.jpg",
+   "width": 500,
+   "height": 283,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "there"
+   },
+   "scenes": [
+    "covering",
+    "food",
+    "trash"
+   ]
+  },
+  {
+   "id": 402720,
+   "url": "http://images.cocodataset.org/val2017/000000402720.jpg",
+   "width": 612,
+   "height": 612,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things",
+    "food"
+   ]
+  },
+  {
+   "id": 409630,
+   "url": "http://images.cocodataset.org/val2017/000000409630.jpg",
+   "width": 500,
+   "height": 375,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 413247,
+   "url": "http://images.cocodataset.org/val2017/000000413247.jpg",
+   "width": 640,
+   "height": 426,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 415716,
+   "url": "http://images.cocodataset.org/val2017/000000415716.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 416451,
+   "url": "http://images.cocodataset.org/val2017/000000416451.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 417632,
+   "url": "http://images.cocodataset.org/val2017/000000417632.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 425361,
+   "url": "http://images.cocodataset.org/val2017/000000425361.jpg",
+   "width": 640,
+   "height": 491,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "there"
+   },
+   "scenes": [
+    "small things",
+    "food",
+    "trash"
+   ]
+  },
+  {
+   "id": 426241,
+   "url": "http://images.cocodataset.org/val2017/000000426241.jpg",
+   "width": 500,
+   "height": 375,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 432085,
+   "url": "http://images.cocodataset.org/val2017/000000432085.jpg",
+   "width": 500,
+   "height": 375,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "food"
+   ]
+  },
+  {
+   "id": 433192,
+   "url": "http://images.cocodataset.org/val2017/000000433192.jpg",
+   "width": 500,
+   "height": 375,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 435003,
+   "url": "http://images.cocodataset.org/val2017/000000435003.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 435208,
+   "url": "http://images.cocodataset.org/val2017/000000435208.jpg",
+   "width": 480,
+   "height": 640,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 435880,
+   "url": "http://images.cocodataset.org/val2017/000000435880.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 440475,
+   "url": "http://images.cocodataset.org/val2017/000000440475.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy",
+    "food"
+   ]
+  },
+  {
+   "id": 450303,
+   "url": "http://images.cocodataset.org/val2017/000000450303.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 450399,
+   "url": "http://images.cocodataset.org/val2017/000000450399.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "food"
+   ]
+  },
+  {
+   "id": 453341,
+   "url": "http://images.cocodataset.org/val2017/000000453341.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 455937,
+   "url": "http://images.cocodataset.org/val2017/000000455937.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 459272,
+   "url": "http://images.cocodataset.org/val2017/000000459272.jpg",
+   "width": 480,
+   "height": 640,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering"
+   ]
+  },
+  {
+   "id": 465718,
+   "url": "http://images.cocodataset.org/val2017/000000465718.jpg",
+   "width": 640,
+   "height": 429,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "small things"
+   ]
+  },
+  {
+   "id": 465822,
+   "url": "http://images.cocodataset.org/val2017/000000465822.jpg",
+   "width": 500,
+   "height": 375,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 466125,
+   "url": "http://images.cocodataset.org/val2017/000000466125.jpg",
+   "width": 427,
+   "height": 640,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 472046,
+   "url": "http://images.cocodataset.org/val2017/000000472046.jpg",
+   "width": 640,
+   "height": 425,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy",
+    "food"
+   ]
+  },
+  {
+   "id": 472678,
+   "url": "http://images.cocodataset.org/val2017/000000472678.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 474021,
+   "url": "http://images.cocodataset.org/val2017/000000474021.jpg",
+   "width": 500,
+   "height": 375,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy"
+   ]
+  },
+  {
+   "id": 479248,
+   "url": "http://images.cocodataset.org/val2017/000000479248.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 480936,
+   "url": "http://images.cocodataset.org/val2017/000000480936.jpg",
+   "width": 482,
+   "height": 640,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "there"
+   },
+   "scenes": [
+    "food",
+    "trash"
+   ]
+  },
+  {
+   "id": 482970,
+   "url": "http://images.cocodataset.org/val2017/000000482970.jpg",
+   "width": 640,
+   "height": 360,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "small things"
+   ]
+  },
+  {
+   "id": 484351,
+   "url": "http://images.cocodataset.org/val2017/000000484351.jpg",
+   "width": 640,
+   "height": 426,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "food"
+   ]
+  },
+  {
+   "id": 486040,
+   "url": "http://images.cocodataset.org/val2017/000000486040.jpg",
+   "width": 480,
+   "height": 640,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "small things"
+   ]
+  },
+  {
+   "id": 492110,
+   "url": "http://images.cocodataset.org/val2017/000000492110.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "small things"
+   ]
+  },
+  {
+   "id": 492362,
+   "url": "http://images.cocodataset.org/val2017/000000492362.jpg",
+   "width": 427,
+   "height": 640,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things",
+    "food"
+   ]
+  },
+  {
+   "id": 492905,
+   "url": "http://images.cocodataset.org/val2017/000000492905.jpg",
+   "width": 500,
+   "height": 343,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 493334,
+   "url": "http://images.cocodataset.org/val2017/000000493334.jpg",
+   "width": 500,
+   "height": 311,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "food"
+   ]
+  },
+  {
+   "id": 494634,
+   "url": "http://images.cocodataset.org/val2017/000000494634.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering"
+   ]
+  },
+  {
+   "id": 497344,
+   "url": "http://images.cocodataset.org/val2017/000000497344.jpg",
+   "width": 500,
+   "height": 333,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering"
+   ]
+  },
+  {
+   "id": 498747,
+   "url": "http://images.cocodataset.org/val2017/000000498747.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 506933,
+   "url": "http://images.cocodataset.org/val2017/000000506933.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 507575,
+   "url": "http://images.cocodataset.org/val2017/000000507575.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 513688,
+   "url": "http://images.cocodataset.org/val2017/000000513688.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 516916,
+   "url": "http://images.cocodataset.org/val2017/000000516916.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 520077,
+   "url": "http://images.cocodataset.org/val2017/000000520077.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 522007,
+   "url": "http://images.cocodataset.org/val2017/000000522007.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "food"
+   ]
+  },
+  {
+   "id": 524456,
+   "url": "http://images.cocodataset.org/val2017/000000524456.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 527427,
+   "url": "http://images.cocodataset.org/val2017/000000527427.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 529148,
+   "url": "http://images.cocodataset.org/val2017/000000529148.jpg",
+   "width": 640,
+   "height": 426,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 529762,
+   "url": "http://images.cocodataset.org/val2017/000000529762.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "there"
+   },
+   "scenes": [
+    "covering",
+    "food",
+    "trash"
+   ]
+  },
+  {
+   "id": 535253,
+   "url": "http://images.cocodataset.org/val2017/000000535253.jpg",
+   "width": 612,
+   "height": 612,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "food"
+   ]
+  },
+  {
+   "id": 537991,
+   "url": "http://images.cocodataset.org/val2017/000000537991.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "busy",
+    "small things"
+   ]
+  },
+  {
+   "id": 543581,
+   "url": "http://images.cocodataset.org/val2017/000000543581.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 546626,
+   "url": "http://images.cocodataset.org/val2017/000000546626.jpg",
+   "width": 300,
+   "height": 400,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "food"
+   ]
+  },
+  {
+   "id": 546717,
+   "url": "http://images.cocodataset.org/val2017/000000546717.jpg",
+   "width": 471,
+   "height": 640,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 547144,
+   "url": "http://images.cocodataset.org/val2017/000000547144.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "small things"
+   ]
+  },
+  {
+   "id": 547336,
+   "url": "http://images.cocodataset.org/val2017/000000547336.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "small things"
+   ]
+  },
+  {
+   "id": 549674,
+   "url": "http://images.cocodataset.org/val2017/000000549674.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "small things"
+   ]
+  },
+  {
+   "id": 553664,
+   "url": "http://images.cocodataset.org/val2017/000000553664.jpg",
+   "width": 640,
+   "height": 414,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "small things"
+   ]
+  },
+  {
+   "id": 555009,
+   "url": "http://images.cocodataset.org/val2017/000000555009.jpg",
+   "width": 500,
+   "height": 375,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "small things"
+   ]
+  },
+  {
+   "id": 562843,
+   "url": "http://images.cocodataset.org/val2017/000000562843.jpg",
+   "width": 500,
+   "height": 375,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "there"
+   },
+   "scenes": [
+    "trash"
+   ]
+  },
+  {
+   "id": 564091,
+   "url": "http://images.cocodataset.org/val2017/000000564091.jpg",
+   "width": 427,
+   "height": 640,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "busy"
+   ]
+  },
+  {
+   "id": 564336,
+   "url": "http://images.cocodataset.org/val2017/000000564336.jpg",
+   "width": 640,
+   "height": 360,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 565877,
+   "url": "http://images.cocodataset.org/val2017/000000565877.jpg",
+   "width": 427,
+   "height": 640,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  },
+  {
+   "id": 569059,
+   "url": "http://images.cocodataset.org/val2017/000000569059.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "not there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "small things"
+   ]
+  },
+  {
+   "id": 570782,
+   "url": "http://images.cocodataset.org/val2017/000000570782.jpg",
+   "width": 640,
+   "height": 427,
+   "answers": {
+    "book": "not there",
+    "water bottle": "there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering",
+    "small things"
+   ]
+  },
+  {
+   "id": 574315,
+   "url": "http://images.cocodataset.org/val2017/000000574315.jpg",
+   "width": 640,
+   "height": 480,
+   "answers": {
+    "book": "not there",
+    "water bottle": "not there",
+    "mouse": "there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "covering"
+   ]
+  },
+  {
+   "id": 580410,
+   "url": "http://images.cocodataset.org/val2017/000000580410.jpg",
+   "width": 427,
+   "height": 640,
+   "answers": {
+    "book": "there",
+    "water bottle": "not there",
+    "mouse": "not there",
+    "laptop": "there",
+    "food": "not there",
+    "AirPods": "not there",
+    "phone": "not there",
+    "trash": "not there"
+   },
+   "scenes": [
+    "tidy"
+   ]
+  }
+ ]
+}
