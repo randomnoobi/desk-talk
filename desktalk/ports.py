@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, Protocol, runtime_checkable
 
-from desktalk.domain import AgentProfile, Detection, Event, Frame, Nudge, UploadInfo
+from desktalk.domain import AgentProfile, DeskSnapshot, Detection, Event, Frame, Nudge, StateChange, UploadInfo
 
 
 @runtime_checkable
@@ -303,6 +303,31 @@ class HabitsView(Protocol):
         ...
 
     def save(self, force: bool = False) -> None:
+        ...
+
+
+@runtime_checkable
+class ObjectStatesView(Protocol):
+    """Where each object on the desk is right now, and what changed lately (read by the rule engine)."""
+
+    def snapshot(self) -> DeskSnapshot:
+        """Every object we know of, with its state (PRESENT, ABSENT or UNKNOWN) and since when."""
+        ...
+
+    def changes(self, since: float) -> list[StateChange]:
+        """The changes after `since` (a change at exactly `since` is left out), oldest first."""
+        ...
+
+
+@runtime_checkable
+class RuleNudges(Protocol):
+    """The reminders the rule engine can send, with the memory of when each one last went out."""
+
+    def nudges(self, now: float) -> list[Nudge]:
+        """The reminders ready to send now, best first (ones sent too recently are left out)."""
+        ...
+
+    def note_fired(self, nudge: Nudge, now: float) -> None:
         ...
 
 

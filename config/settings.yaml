@@ -222,6 +222,12 @@ reminders:
   someone_here_sec: 600       # a person or movement seen this recently = someone is at the desk
                               # (reminders and small talk wait otherwise)
 
+# ── Rule engine (the rules themselves are in protocols.yaml → rules) ──
+rule_engine:
+  check_every_sec: 60         # how often the rules are checked (and whether earlier nudges worked)
+  grace_sec: 5                # a "did it work?" check this many seconds after its deadline still counts
+                              # as on time (the wait between rounds is never exact to the second)
+
 # ── AI (keys are in .env) ──────────────────────────────────────────
 llm:
   # Which AI answers: the first one with a key in .env wins:

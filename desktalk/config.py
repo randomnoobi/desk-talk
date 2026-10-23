@@ -24,16 +24,34 @@ from __future__ import annotations
 import difflib
 import json
 import os
+import re
 import types
 import typing
 from collections.abc import Mapping
+from datetime import UTC, timedelta, timezone, tzinfo
+from functools import cache
 from pathlib import Path
 from typing import Annotated, Any, ClassVar, Literal
+from zoneinfo import ZoneInfo
 
 import annotated_types
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Discriminator,
+    Field,
+    SecretStr,
+    Tag,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from pydantic.fields import FieldInfo
+
+from desktalk.util import parse_hhmm
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_FOLDER = 'config'           # under the project folder: settings.yaml, protocols.yaml, agents.yaml ...
@@ -59,6 +77,10 @@ class _Section(BaseModel):
         return self
 
 
+class _Said(ValueError):
+    """A problem whose message is already a whole sentence: the error shows it as it is, after the setting's name."""
+
+
 class _Says:
     """Plain words for a value type that its limits alone can't describe (used in error messages)."""
 
@@ -80,6 +102,7 @@ ClockTime = Annotated[str, Field(pattern=r'^\d{1,2}:\d{2}$'), _Says('a time like
 Latitude = Annotated[float, Field(ge=-90, le=90)]
 Longitude = Annotated[float, Field(ge=-180, le=180)]
 Words = tuple[str, ...]
+Habit = Literal['hydration', 'breaks', 'light', 'phone_free', 'screens', 'food', 'tasks']
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -284,6 +307,11 @@ class RemindersSettings(_Section):
     check_every_sec: PositiveNumber
     quiet_hours: QuietHours
     someone_here_sec: PositiveNumber
+
+
+class RuleEngineSettings(_Section):
+    check_every_sec: PositiveNumber
+    grace_sec: ZeroOrMore
 
 
 class AiReply(_Section):
@@ -619,6 +647,217 @@ class TasksRule(_Section):
     name_shown_chars: PositiveInt
 
 
+# ── The habit rules: protocols.yaml → rules ──
+_SECONDS_IN = {'s': 1, 'm': 60, 'h': 3600}
+_DURATION = re.compile(r'(\d+(?:\.\d+)?)([smh])')
+_OFFSET = re.compile(r'([+-])(\d{2}):(\d{2})')
+_MINUTES_IN_HOUR = 60
+
+
+def _seconds(value: Any) -> float:
+    """'30s', '5m' or '1.5h' → seconds. A bare number is refused: it doesn't say what the unit is."""
+    if isinstance(value, str):
+        found = _DURATION.fullmatch(value.strip())
+        if found:
+            return float(found[1]) * _SECONDS_IN[found[2]]
+    raise ValueError('must be a time like 30m')
+
+
+Duration = Annotated[float, BeforeValidator(_seconds), _Says('a time like 30m')]     # stored as seconds
+
+
+class _ComputerZone(tzinfo):
+    """The clock of this computer, including its daylight saving changes (the standard library has no such zone)."""
+
+    def utcoffset(self, dt):
+        return dt.replace(tzinfo=None).astimezone().utcoffset()
+
+    def dst(self, dt):
+        return None                     # not known; nothing here needs it
+
+    def tzname(self, dt):
+        return dt.replace(tzinfo=None).astimezone().tzname()
+
+    def fromutc(self, dt):
+        here = dt.replace(tzinfo=UTC).astimezone()
+        naive = here.replace(tzinfo=None)
+        second_time_round = naive.replace(fold=0).astimezone().utcoffset() != here.utcoffset()
+        return naive.replace(tzinfo=self, fold=int(second_time_round))
+
+
+_COMPUTER_ZONE = _ComputerZone()
+
+
+@cache                                  # the rules ask for their zone every round; work each name out once
+def rule_timezone(name: str) -> tzinfo:
+    """'local' is this computer's clock, a place name follows that place's daylight saving, '+08:00' never changes."""
+    if name == 'local':
+        return _COMPUTER_ZONE
+    offset = _OFFSET.fullmatch(name)
+    try:
+        if offset:
+            if int(offset[3]) >= _MINUTES_IN_HOUR:
+                raise ValueError('minutes')
+            gap = timedelta(hours=int(offset[2]), minutes=int(offset[3]))
+            return timezone(-gap if offset[1] == '-' else gap)
+        return ZoneInfo(name)
+    except (ValueError, OSError, KeyError):         # an unknown place name is a KeyError
+        raise ValueError(f'{name!r} is not a time zone') from None
+
+
+def _check_timezone(name: str) -> str:
+    rule_timezone(name)
+    return name
+
+
+Timezone = Annotated[str, AfterValidator(_check_timezone),
+                     _Says('local, a place name like America/Los_Angeles, or an offset like +08:00')]
+ObjectState = Literal['present', 'absent', 'unknown']
+ChangeKind = Literal['appeared', 'removed', 'moved']
+Changes = Annotated[tuple[ChangeKind, ...], Field(min_length=1)]
+
+
+class StateCheck(_Section):
+    object: str
+    is_: ObjectState = Field(alias='is')
+    for_: Duration | None = Field(None, alias='for')
+
+
+class EventCheck(_Section):
+    object: str
+    events: Changes
+
+
+class NoEventCheck(_Section):
+    object: str
+    events: Changes
+    for_: Duration = Field(alias='for')
+
+
+class StateCond(_Section):
+    state: StateCheck
+
+
+class NoEventCond(_Section):
+    no_event: NoEventCheck
+
+
+class EventCond(_Section):
+    event: EventCheck
+
+
+class AllCond(_Section):
+    all: Annotated[tuple[Condition, ...], Field(min_length=1)]
+
+
+class AnyCond(_Section):
+    any: Annotated[tuple[Condition, ...], Field(min_length=1)]
+
+
+class NotCond(_Section):
+    not_: Condition = Field(alias='not')
+
+
+_CONDITION_KINDS = {'state': StateCond, 'no_event': NoEventCond, 'event': EventCond,
+                    'all': AllCond, 'any': AnyCond, 'not': NotCond}
+
+
+def _condition_kind(value: Any) -> str | None:
+    """Which of the six kinds a condition is (the tag pydantic picks the right section by)."""
+    if isinstance(value, dict):
+        return next(iter(value), None)
+    return next((kind for kind, cls in _CONDITION_KINDS.items() if isinstance(value, cls)), None)
+
+
+def _one_kind_only(value: Any) -> Any:
+    """A condition is a group with exactly one key. Anything else gets one plain sentence, not six union errors."""
+    if isinstance(value, _Section) or (isinstance(value, dict) and len(value) == 1
+                                       and next(iter(value)) in _CONDITION_KINDS):
+        return value
+    said = f'a condition needs exactly one of {", ".join(_CONDITION_KINDS)}'
+    if not isinstance(value, dict):
+        raise _Said(f'{said} (got {_got(value)})')
+    unknown = [key for key in value if key not in _CONDITION_KINDS]
+    if unknown:
+        close = difflib.get_close_matches(str(unknown[0]), list(_CONDITION_KINDS), n=1)
+        raise _Said(f'{said} (found {unknown[0]}{f", did you mean {close[0]}?" if close else ""})')
+    raise _Said(f'{said} (found {" and ".join(map(str, value)) or "nothing"})')
+
+
+# One of the six one-key sections, picked by its key (the checks above give the plain messages).
+Condition = Annotated[
+    Annotated[StateCond, Tag('state')] | Annotated[NoEventCond, Tag('no_event')] | Annotated[EventCond, Tag('event')]
+    | Annotated[AllCond, Tag('all')] | Annotated[AnyCond, Tag('any')] | Annotated[NotCond, Tag('not')],
+    Discriminator(_condition_kind),
+    BeforeValidator(_one_kind_only),
+]
+for _cls in (AllCond, AnyCond, NotCond):
+    _cls.model_rebuild()
+
+
+def _has_event(condition: Any) -> bool:
+    if isinstance(condition, EventCond):
+        return True
+    if isinstance(condition, NotCond):
+        return _has_event(condition.not_)
+    return any(_has_event(inner) for inner in getattr(condition, 'all', None) or getattr(condition, 'any', ()))
+
+
+def _event_under_not(condition: Any, negated: bool = False) -> bool:
+    if isinstance(condition, EventCond):
+        return negated
+    if isinstance(condition, NotCond):
+        return _event_under_not(condition.not_, True)
+    inner = getattr(condition, 'all', None) or getattr(condition, 'any', ())
+    return any(_event_under_not(each, negated) for each in inner)
+
+
+class QuietWindow(_Section):
+    start: ClockTime
+    end: ClockTime
+
+    @model_validator(mode='after')
+    def _check_times(self):
+        if parse_hhmm(self.start) == parse_hhmm(self.end):
+            raise ValueError(f'start and end are both {self.start}; they must differ (use enabled: false to switch '
+                             f'the rule off, or remove quiet_hours)')
+        return self
+
+
+class Success(_Section):
+    within: Duration
+    when: Condition
+
+    @field_validator('when')
+    @classmethod
+    def _no_event_under_not(cls, condition):
+        if _event_under_not(condition):
+            raise _Said('event can\'t go inside not (it would count as done before anything happened); to say '
+                        '"this didn\'t happen", use no_event')
+        return condition
+
+
+class RuleConfig(_Section):
+    id: str
+    enabled: bool
+    habit: Habit
+    timezone: Timezone
+    gate: Condition
+    when: Condition
+    cooldown: Duration
+    max_nudges_per_hour: PositiveInt
+    quiet_hours: QuietWindow | None = None
+    message: str
+    success: Success | None = None
+
+    @field_validator('gate', 'when')
+    @classmethod
+    def _no_event_before_the_nudge(cls, condition):
+        if _has_event(condition):
+            raise _Said('event only works inside success (it asks what happened after the nudge)')
+        return condition
+
+
 class Protocols(_Section):
     schedule: Schedule
     hydration: HydrationRule
@@ -627,13 +866,23 @@ class Protocols(_Section):
     phone_free: PhoneFreeRule
     food: FoodRule
     tasks: TasksRule
+    rules: tuple[RuleConfig, ...]
+
+    @field_validator('rules')
+    @classmethod
+    def _ids_are_different(cls, rules):
+        seen = set()
+        for rule in rules:
+            if rule.id in seen:
+                raise _Said(f'two rules have the id "{rule.id}"; each rule needs its own id')
+            seen.add(rule.id)
+        return rules
 
 
 # ════════════════════════════════════════════════════════════════════
 #  config/agents.yaml
 # ════════════════════════════════════════════════════════════════════
 Color = Literal['cobalt', 'teal', 'tang', 'mustard', 'coral', 'plum', 'moss', 'slate']
-Habit = Literal['hydration', 'breaks', 'light', 'phone_free', 'screens', 'food', 'tasks']
 Tracker = Literal['hydration', 'breaks', 'food', 'todo', 'phone_free', 'light']
 
 
@@ -722,6 +971,7 @@ class AppConfig(_Section):
     alerts: AlertsSettings
     safety: SafetySettings
     reminders: RemindersSettings
+    rule_engine: RuleEngineSettings
     llm: LlmSettings
     chat: ChatSettings
     idle_chat: IdleChatSettings
@@ -826,6 +1076,14 @@ def _merge(base: dict, extra: dict) -> None:
 
 
 # ── turning pydantic's errors into one plain sentence each ──
+_UNIONS = (typing.Union, types.UnionType)
+
+
+def _field_named(model: type[BaseModel], key: str | int) -> FieldInfo | None:
+    """The field written as `key` in the file (a field may be written under another name: is_ is "is")."""
+    return next((f for name, f in model.model_fields.items() if (f.alias or name) == key), None)
+
+
 def _unwrap(annotation: Any, metadata: list) -> tuple[Any, list]:
     """Look through `X | None` and Annotated[X, limits] to X and its limits."""
     while True:
@@ -834,8 +1092,11 @@ def _unwrap(annotation: Any, metadata: list) -> tuple[Any, list]:
             annotation, *extra = typing.get_args(annotation)
             for item in extra:      # Field(...) keeps its limits in .metadata
                 metadata = metadata + (list(item.metadata) if isinstance(item, FieldInfo) else [item])
-        elif origin in (typing.Union, types.UnionType):
-            annotation = next(a for a in typing.get_args(annotation) if a is not type(None))
+        elif origin in _UNIONS:
+            options = [a for a in typing.get_args(annotation) if a is not type(None)]
+            if len(options) > 1:        # a real choice (a rule's condition): _field_at picks by the key
+                return annotation, metadata
+            annotation = options[0]
         else:
             return annotation, metadata
 
@@ -846,8 +1107,10 @@ def _field_at(loc: Loc) -> tuple[Any, list]:
     for part in loc:
         annotation, metadata = _unwrap(annotation, metadata)
         origin, args = typing.get_origin(annotation), typing.get_args(annotation)
+        if origin in _UNIONS:       # one of several sections: the one that has this key
+            annotation, metadata = _unwrap(next(a for a in args if _field_named(_unwrap(a, [])[0], part)), [])
         if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-            field = annotation.model_fields[part]
+            field = _field_named(annotation, part)
             annotation, metadata = field.annotation, list(field.metadata)
         elif origin is dict:
             annotation, metadata = args[1], []
@@ -872,6 +1135,8 @@ def _describe(annotation: Any, metadata: list) -> str:
     if annotation is str:
         return 'text'
     if typing.get_origin(annotation) is tuple:
+        if any(isinstance(m, annotated_types.MinLen) and m.min_length > 0 for m in metadata):
+            return 'a list with at least one item, like [a, b]'
         return 'a list, like [a, b]'
     if typing.get_origin(annotation) is dict or (isinstance(annotation, type) and issubclass(annotation, BaseModel)):
         return 'a group of settings'
@@ -915,21 +1180,40 @@ def _unknown(file: str, loc: Loc, shown: Loc) -> str:
     """Message for a key nobody reads: most likely a typo, or an API key in the wrong place."""
     if str(loc[-1]).lower() in _SECRET_NAMES:
         return f'{file}: {_dotted(shown)} is not a known setting (API keys go in .env, see .env.example)'
-    known = [k for k in _field_at(loc[:-1])[0].model_fields if loc[:-1] or k not in _NOT_FROM_SETTINGS]
+    known = [f.alias or k for k, f in _field_at(loc[:-1])[0].model_fields.items()
+             if loc[:-1] or k not in _NOT_FROM_SETTINGS]
     close = difflib.get_close_matches(str(loc[-1]), known, n=1)
     hint = f' (did you mean {_dotted(shown[:-1] + (close[0],))}?)' if close else ''
     return f'{file}: {_dotted(shown)} is not a known setting{hint}'
 
 
+def _without_tags(loc: Loc) -> Loc:
+    """Pydantic names the kind of condition in the path, then its key again: when.state.state.is → when.state.is."""
+    if loc[:2] != ('protocols', 'rules'):
+        return loc
+    out, skipped = [], False
+    for part in loc:
+        skipped = bool(out) and part == out[-1] and not skipped and isinstance(part, str)
+        if not skipped:
+            out.append(part)
+    return tuple(out)
+
+
+def _length_after_a_bad_item(err: dict) -> bool:
+    """Pydantic also says "too short" for a list whose items were all bad; the bad items already explain it."""
+    return err['type'] == 'too_short' and err['ctx']['actual_length'] == 0 and bool(err['input'])
+
+
 def _problem(err: dict, sources: _Sources) -> str:
-    loc = tuple(err['loc'])
+    loc = _without_tags(tuple(err['loc']))
     file = sources.last(loc)
     shown = loc[1:] if loc[0] in _OTHER_FILES else loc     # as written in that file
     if err['type'] == 'extra_forbidden':
         return _unknown(file, loc, shown)
     if err['type'] == 'missing':
         return f'{sources.first(loc)}: {_dotted(shown)} is missing'
-    if err['type'] == 'value_error' and isinstance(err['input'], dict):     # a check across two settings
+    if err['type'] == 'value_error' and (isinstance(err['input'], dict) or isinstance(err['ctx']['error'], _Said)):
+        # a check across two settings, or a sentence that says it all
         return f'{file}: {_dotted(shown)}: {err["ctx"]["error"]}'
     return f'{file}: {_dotted(shown)} must be {_describe(*_field_at(loc))} (got {_got(err["input"])})'
 
@@ -972,7 +1256,7 @@ def load_config(root: Path | None = None, environ: Mapping[str, str] | None = No
     try:
         config = AppConfig.model_validate(data)
     except ValidationError as exc:
-        problems += [_problem(e, sources) for e in exc.errors()]
+        problems += [_problem(e, sources) for e in exc.errors() if not _length_after_a_bad_item(e)]
     if problems:
         raise ConfigError('\n'.join(problems))
     return config
