@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from desktalk.web.app import create_phone_app
-from desktalk.web.routers.phone import parse_gravity
+from desktalk.web.routers.phone import parse_gravity, parse_rotation
 from tests.integration.app_kit import PAIR_KEY, DeskRig, changed, desk_config
 from tests.integration.web_kit import web_client
 
@@ -31,6 +31,25 @@ def phone(rig):
 ])
 def test_the_tilt_header_is_read_as_three_numbers(header, gravity):
     assert parse_gravity(header) == gravity
+
+
+@pytest.mark.parametrize('header, rotation', [
+    ('90', 90),
+    ('-90', 270),                          # a quarter turn back is three quarters forward
+    ('', None),                            # the phone didn't say
+    ('--90', None),                        # not a number
+    ('\u00b2', None),                      # a digit to Python's isdigit(), but not a number int() reads
+])
+def test_the_turn_header_is_read_as_a_whole_number_of_degrees(header, rotation):
+    assert parse_rotation(header) == rotation
+
+
+def test_a_picture_with_a_turn_that_is_not_a_number_still_arrives(rig, phone):
+    for bad in ('--90', '\u00b2'):
+        headers = {'X-Desk-Key': PAIR_KEY, 'Content-Type': 'image/jpeg', 'X-Desk-Rotation': bad.encode('latin-1')}
+        reply = phone.post('/api/phone/frame', content=rig.jpeg, headers=headers)
+        assert reply.status_code == 200, bad
+    assert rig.app.phone_source.pictures_received == 2
 
 
 def test_a_picture_from_the_phone_reaches_the_camera_with_its_tilt_and_turn(rig, phone):
@@ -59,6 +78,15 @@ def test_stop_on_the_phone_disconnects_the_camera(rig, phone):
     assert phone.post('/api/phone/stop', headers={'X-Desk-Key': 'nope'}).status_code == 403
     assert phone.post('/api/phone/stop', headers={'X-Desk-Key': PAIR_KEY}).json() == {'ok': True}
     assert not rig.app.desk_status.camera_connected()
+
+
+def test_only_the_pairing_key_lets_the_phone_in(phone):
+    assert phone.post('/api/phone/stop', headers={'X-Desk-Key': PAIR_KEY}).status_code == 200
+    wrong = phone.post('/api/phone/stop', headers={'X-Desk-Key': PAIR_KEY + 'x'})
+    missing = phone.post('/api/phone/stop')
+    not_plain_letters = phone.post('/api/phone/stop', headers={'X-Desk-Key': 'cl\u00e9 \u2603'.encode()})
+    for reply in (wrong, missing, not_plain_letters):
+        assert (reply.status_code, reply.json()) == (403, {'error': 'Pairing key does not match.'})
 
 
 def test_the_phone_page_and_its_files_are_served_and_nothing_else(rig, phone):

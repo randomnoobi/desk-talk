@@ -4,26 +4,38 @@ Desk Talk: start everything on this computer.
     uv run python server.py
 
 Then open http://localhost:5000. Settings are in config/settings.yaml (yours in config/settings.local.yaml).
-With the Raspberry Pi as the camera, this prints the command to run on the Pi (python3 -m raspberry_pi.camera);
+With the Raspberry Pi as the camera, this shows the command to run on the Pi (python3 -m raspberry_pi.camera);
 with the phone, the link (and a QR code) to open on the phone. Ctrl+C stops it.
 """
 
 from __future__ import annotations
 
 import contextlib
+import logging
 import sys
+from pathlib import Path
 
 from desktalk.bootstrap import build
 from desktalk.config import AppConfig, ConfigError, load_config
+from desktalk.runtime.log_setup import STARTUP_LOGGER, setup_logging
 from desktalk.web.pairing import Links, ensure_cert, lan_ip, qr_for_terminal
 from desktalk.web.serve import run
 
 RULE = '═' * 60
 
+startup = logging.getLogger(STARTUP_LOGGER)
+
+
+def start_logging(config: AppConfig) -> Path:
+    """Log to the terminal and the log file (settings → logging) before the first start-up line, so those
+    lines land in the file too. build() sets the same up again, which changes nothing. Returns the file."""
+    logs = config.logging
+    return setup_logging(config.resolve(logs.folder), logs.level, logs.file_size_mb, logs.files_kept)
+
 
 def say(line: str = '') -> None:
-    """A start-up line for the person who started the server (log messages go through logging)."""
-    print(line, flush=True)  # noqa: T201
+    """A start-up line for the person who started the server: in the terminal as it is, and in the log file."""
+    startup.info(line)
 
 
 def settings_lines(config: AppConfig) -> None:
@@ -45,8 +57,10 @@ def main() -> int:
     try:
         config = load_config()
     except ConfigError as exc:
-        say(f'Desk Talk could not start, a setting needs fixing:\n{exc}')
+        # Logging isn't set up yet (its settings are what failed): Python still shows an error in the terminal.
+        startup.error('Desk Talk could not start, a setting needs fixing:\n%s', exc)
         return 2
+    start_logging(config)
     settings_lines(config)
     say('  Loading YOLO model (the first run downloads it)...')
     desktalk = build(config)

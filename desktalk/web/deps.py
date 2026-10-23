@@ -11,6 +11,7 @@ What the routes share:
 
 from __future__ import annotations
 
+import secrets
 from collections.abc import Callable
 from typing import Annotated
 
@@ -51,7 +52,10 @@ FromHere = Annotated[bool, Depends(_from_here)]
 def key_check(problem: str) -> Callable[[Request, DeskTalk], None]:
     """A dependency: 403 {"error": problem} unless X-Desk-Key is the pairing key."""
     def check(request: Request, desk: Desk) -> None:
-        if request.headers.get('X-Desk-Key') != desk.pair_key:
+        given = request.headers.get('X-Desk-Key')
+        # Compared in a way that takes as long for a near miss as for a wild guess, so the key can't be
+        # worked out bit by bit from how fast the replies come. As bytes, so any letters in the header work.
+        if given is None or not secrets.compare_digest(given.encode(), desk.pair_key.encode()):
             raise HTTPException(403, problem)
     return check
 

@@ -15,6 +15,7 @@ On the phone page's own HTTPS server (create_phone_app):
 from __future__ import annotations
 
 import math
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -28,6 +29,7 @@ from desktalk.web.schemas import Ok, PhoneFrameReply
 NOT_A_PICTURE = 'not a JPEG image'
 GRAVITY_MAX = 50          # m/s²: a tilt reading above this on any axis isn't a real one (gravity is 9.8)
 FULL_TURN = 360
+WHOLE_NUMBER = re.compile(r'-?[0-9]+')      # plain 0-9 digits only: int() can't read every digit isdigit() allows
 
 router = APIRouter()
 phone_router = APIRouter()
@@ -47,8 +49,9 @@ def parse_gravity(header: str | None) -> tuple[float, float, float] | None:
 
 
 def parse_rotation(header: str) -> int | None:
-    """'-90' → 270: how far the phone turned the picture, or None when it didn't say."""
-    return int(header) % FULL_TURN if header.lstrip('-').isdigit() else None
+    """'-90' → 270: how far the phone turned the picture, or None when it didn't say (or didn't send a
+    whole number, e.g. '--90')."""
+    return int(header) % FULL_TURN if WHOLE_NUMBER.fullmatch(header) else None
 
 
 @router.get('/api/phone/info')
