@@ -49,7 +49,7 @@ from desktalk.core.chat.workers import (
 from desktalk.core.events import EventStream
 from desktalk.core.habits.desk_status import DeskStatus
 from desktalk.core.habits.preferences import Preferences
-from desktalk.core.habits.reminders import HabitReminders
+from desktalk.core.habits.reminders import HabitReminders, NoRules
 from desktalk.core.habits.tracker import HabitTracker
 from desktalk.core.vision import desk_edges
 from desktalk.core.vision.analyzer import DeskAnalyzer
@@ -323,7 +323,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     generator.subscribe_to(bus)
 
     # ── the background jobs ──
-    reminders = HabitReminders(habits, desk_status, roster, profiles, generator, hub, bus, config.reminders)
+    reminders = HabitReminders(habits, NoRules(), desk_status, roster, profiles, generator, hub, bus, config.reminders)
     lens = Lens(camera_health, source, safety_rules, preferences, hub, bus, photos, config.lens, config.pi,
                 phone=source if isinstance(source, PhoneCamera) else None,
                 pi_uploads=source if isinstance(source, PiUploads) else None)
