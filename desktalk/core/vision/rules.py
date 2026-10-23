@@ -7,7 +7,7 @@ config/safety_rules.json always was:
 
     rules = SafetyRules(store, config.safety, liquids=profiles.labels_for_habit('hydration'),
                         foods=profiles.labels_for_habit('food'))
-    rules.current.zones['laptop']          # Zone(expand=134, label='Spill / pressure zone')
+    rules.current.zones['laptop']          # Zone(expand=134, label='Spill / pressure zone', base_share=0.5)
     rules.save({'desk_outline': [[0.1, 0.2], [0.9, 0.2], [0.9, 0.95]]})
 
 `current` is a read-only DeskRules; a save swaps in a new one, so readers never see half a change.
@@ -31,10 +31,12 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Zone:
-    """A danger zone around an object: `expand` pixels wider on every side."""
+    """A danger zone around an object: the part of it that sits on the desk (the bottom `base_share` of its
+    box; 1.0 = the whole box), `expand` pixels wider on every side."""
 
     expand: float
     label: str
+    base_share: float = 1.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -90,14 +92,37 @@ def _number(section: Mapping, name: str, key: str, built_in, kind=float):
     return built_in
 
 
+def _base_share(name: str, z: Mapping, built_in: float) -> float:
+    """A saved zone's base_share if it's a number above 0 and at most 1, otherwise `built_in` (a bad one
+    is logged; a missing one isn't, since zones saved before base_share existed don't have it)."""
+    if 'base_share' not in z:
+        return built_in
+    raw = z['base_share']
+    try:
+        value = float(raw)
+        ok = 0 < value <= 1         # also False for nan
+    except (TypeError, ValueError, OverflowError):
+        ok = False
+    if ok:
+        return value
+    log.warning('Saved safety rules: danger_zones.%s.base_share should be a number above 0 and at most 1 '
+                '(got %r), using %s', name, raw, built_in)
+    return built_in
+
+
 def _zones(safety: SafetySettings, saved: Mapping) -> dict[str, Zone]:
-    zones = {name: Zone(z.expand, z.label) for name, z in safety.danger_zones.items()}
+    built_in = {name: Zone(z.expand, z.label, z.base_share) for name, z in safety.danger_zones.items()}
+    zones = dict(built_in)
     for name, z in _section(saved, 'danger_zones').items():
         try:
-            zones[name] = Zone(float(z['expand']), str(z['label']))
+            expand, label = float(z['expand']), str(z['label'])
         except (KeyError, TypeError, ValueError):
             log.warning('Saved safety rules: the %s danger zone needs an expand number and a label (got %r), '
                         'so it is skipped', name, z)
+            continue
+        same_name = built_in.get(name)
+        fallback = same_name.base_share if same_name else Zone.base_share       # Zone.base_share: the whole box
+        zones[name] = Zone(expand, label, _base_share(name, z, fallback))
     return zones
 
 
@@ -225,7 +250,8 @@ class SafetyRules:
         return {
             'loaded': self.loaded,
             'desk_outline': saved.get('desk_outline', []),
-            'danger_zones': saved.get('danger_zones', {name: {'expand': z.expand, 'label': z.label}
+            'danger_zones': saved.get('danger_zones', {name: {'expand': z.expand, 'label': z.label,
+                                                              'base_share': z.base_share}
                                                        for name, z in rules.zones.items()}),
             'edge_proximity': saved.get('edge_proximity', {'danger_px': rules.edge_danger_px,
                                                            'warn_px': rules.edge_warn_px,

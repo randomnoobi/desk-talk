@@ -202,9 +202,13 @@ class EventLogSettings(_Section):
 
 
 class AlertsSettings(_Section):
+    _in_order = (('pet_min_pictures', 'pet_window_pictures'),)
     cooldown_sec: ZeroOrMore
     reset_after_sec: ZeroOrMore
     pet_cooldown_sec: ZeroOrMore
+    pet_min_confidence: Fraction
+    pet_min_pictures: PositiveInt
+    pet_window_pictures: PositiveInt
     clutter_threshold: PositiveInt
     clutter_cooldown_sec: ZeroOrMore
     plant_water_every_sec: PositiveNumber
@@ -224,6 +228,7 @@ class EdgeProximity(_Section):
 
 class DangerZone(_Section):
     expand: ZeroOrMore
+    base_share: Annotated[float, Field(gt=0, le=1)]
     label: str
 
 

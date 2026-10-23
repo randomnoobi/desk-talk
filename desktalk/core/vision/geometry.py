@@ -32,12 +32,12 @@ def overlap(a: Box, b: Box) -> Box | None:
     return None
 
 
-def intrusion_depth(intruder: Box, zone: Box) -> float:
-    """How far a box reaches into a zone, in pixels (0 = not at all)."""
-    shared = overlap(intruder, zone)
-    if shared is None:
-        return 0.0
-    return min(shared[2] - shared[0], shared[3] - shared[1])
+def box_gap(a: Box, b: Box) -> float:
+    """How far apart two boxes are, in pixels: the larger of the side-to-side gap and the up-and-down
+    gap (0 when they touch or overlap)."""
+    across = max(0.0, a[0] - b[2], b[0] - a[2])
+    up_down = max(0.0, a[1] - b[3], b[1] - a[3])
+    return max(across, up_down)
 
 
 def point_segment_distance(p: Point, a: Point, b: Point) -> float:

@@ -143,6 +143,12 @@ alerts:
   cooldown_sec: 25            # first wait between alerts about the same pair (doubles each repeat, up to 8x)
   reset_after_sec: 300        # a pair quiet this long starts over at the short wait
   pet_cooldown_sec: 120
+  # An arm close to the lens can look like a cat for a moment, so a pet only counts when the
+  # detector is at least pet_min_confidence sure (0-1) in pet_min_pictures of the last
+  # pet_window_pictures analysed pictures (a few blurry ones in between are fine).
+  pet_min_confidence: 0.8
+  pet_min_pictures: 5
+  pet_window_pictures: 7
   clutter_threshold: 6        # this many things on the desk = "maybe tidy up?"
   clutter_cooldown_sec: 1800
   plant_water_every_sec: 86400
@@ -160,11 +166,15 @@ safety:
     danger_px: 35             # closer than this = danger
     warn_px: 75               # closer than this = warning
     objects: [cup, bottle, cell phone, laptop, remote, mouse]
-  danger_zones:               # a zone around each of these, `expand` pixels wider on every side
-    laptop:     {expand: 80, label: Spill / pressure zone}
-    keyboard:   {expand: 60, label: Crumb / debris zone}
-    book:       {expand: 45, label: Stacking zone}
-    cell phone: {expand: 35, label: Screen scratch zone}
+  # A zone around each of these: the part that sits on the desk (base_share of its box, from the
+  # bottom up), `expand` pixels wider on every side. A drink counts when the bottom of its box (where it
+  # stands) is inside. The camera looks at the desk at an angle, so the top of a laptop's box is its open
+  # screen, and a bottle far behind the screen would look close if the whole box counted.
+  danger_zones:
+    laptop:     {expand: 80, base_share: 0.5, label: Spill / pressure zone}
+    keyboard:   {expand: 60, base_share: 1.0, label: Crumb / debris zone}
+    book:       {expand: 45, base_share: 1.0, label: Stacking zone}
+    cell phone: {expand: 35, base_share: 1.0, label: Screen scratch zone}
   zone_dangers:               # which kinds of things (below) are a danger inside each zone
     laptop:     [liquids, foods]
     keyboard:   [liquids, foods]

@@ -12,9 +12,10 @@ from typing import Any
 
 import cv2
 
+from desktalk.core.vision.danger_zones import standing_strip, zone_area
 from desktalk.core.vision.desk_edges import desk_edges
 from desktalk.core.vision.findings import Thing
-from desktalk.core.vision.geometry import footprint, grow, overlap
+from desktalk.core.vision.geometry import footprint, overlap
 from desktalk.core.vision.rules import DeskRules
 from desktalk.domain import Detection
 
@@ -136,7 +137,7 @@ def _draw_zones(img, things, result, rules: DeskRules):
         zone = rules.zones.get(thing.label)
         if zone is None:
             continue
-        area = grow(thing.box, zone.expand)
+        area = zone_area(thing.box, zone, rules)    # around the part that sits on the desk
         _dashed_rect(img, int(area[0]), int(area[1]), int(area[2]), int(area[3]), ZONE_OK, 1, 8, 6)
         _label(img, zone.label, int(area[0]) + 4, int(area[1]) + 14, (60, 60, 60), (180, 180, 180), 0.35)
     for rel in result['relationships']:          # zones with something risky in them
@@ -146,8 +147,8 @@ def _draw_zones(img, things, result, rules: DeskRules):
         zone = rules.zones.get(target.label)
         if zone is None:
             continue
-        area = grow(target.box, zone.expand)
-        shared = overlap(intruder.box, area)
+        area = zone_area(target.box, zone, rules)
+        shared = overlap(standing_strip(intruder.box, rules), area)    # where the risky thing stands
         if shared:
             _see_through_rect(img, *shared, ZONE_HIT, 0.30)
         cv2.rectangle(img, _point(area[:2]), _point(area[2:]), DANGER, 2, AA)

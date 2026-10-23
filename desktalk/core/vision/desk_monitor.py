@@ -4,7 +4,8 @@ The desk monitor: safety alerts from each analysed picture.
 It listens for DetectionEvents. For the agents in the chat (DeskState.objects, kept by the roster) it runs
 the desk analyzer (danger zones, desk edges, things in between, crowds, things moving closer) and publishes
 an Alert for each danger, with a proof photo. It also notices a pet near the desk, a cluttered desk and a
-plant that may need water. Timings are in settings → alerts.
+plant that may need water. A pet only counts when the detector was sure about it in enough of the last few
+pictures, because an arm close to the camera can look like a cat for a moment. Timings are in settings → alerts.
 
 What the app and the AI read about the desk's safety is kept in DeskState: safety_state, safety_dangers,
 rel_result, danger_active_since and recent_events.
@@ -12,6 +13,7 @@ rel_result, danger_active_since and recent_events.
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -22,7 +24,7 @@ from desktalk.core.vision.findings import Thing
 from desktalk.core.vision.geometry import Box
 from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.desk_state import DeskState
-from desktalk.domain import Alert, DetectionEvent
+from desktalk.domain import Alert, Detection, DetectionEvent
 from desktalk.ports import DeskStatus, EventBus, HabitsView, Profiles
 
 PHOTO_LABEL = 'Proximity alert'
@@ -43,6 +45,9 @@ class DeskMonitor:
         self._last_alert: dict[str, float] = {}
         self._alerts_in_a_row: dict[str, int] = {}
         self._pet_alerted: dict[str, float] = {}
+        # For each pet, whether it was clearly seen in each of the last few pictures
+        self._pet_seen: dict[str, deque[bool]] = {pet: deque(maxlen=alerts.pet_window_pictures)
+                                                  for pet in alerts.pet_labels}
         self._last_clutter = 0.0
         self._last_plant = 0.0
         bus.subscribe('desk-monitor', self.on_detection, types=[DetectionEvent])
@@ -58,7 +63,7 @@ class DeskMonitor:
         self._keep_safety_state(result, dangers, now)
         labels = {d.label for d in event.detections}
         warm = self._status.warm(now)
-        self._pets(labels, things, now, risk_on)
+        self._pets(event.detections, things, now, risk_on)
         self._clutter(labels, things, now, warm)
         self._plants(labels, things, now, warm)
 
@@ -130,9 +135,18 @@ class DeskMonitor:
     def _scenario_alert(self, now: float, scenario: str, feature: str, agent: str, text: str) -> None:
         self._bus.publish(Alert(ts=now, kind='scenario', scenario=scenario, feature=feature, agent=agent, text=text))
 
-    def _pets(self, labels: set[str], things: Mapping[str, Thing], now: float, risk_on: bool) -> None:
-        for pet in (p for p in self._settings.pet_labels if p in labels):
-            due = now - self._pet_alerted.get(pet, 0) > self._settings.pet_cooldown_sec
+    def _pets(self, detections: Sequence[Detection], things: Mapping[str, Thing], now: float, risk_on: bool) -> None:
+        """A pet counts once it was seen at alerts.pet_min_confidence or more in alerts.pet_min_pictures of the
+        last alerts.pet_window_pictures pictures. Then an alert goes out, at most every alerts.pet_cooldown_sec
+        for each pet; while risk_detection is off the alert is skipped but the wait still starts."""
+        s = self._settings
+        sure = {d.label for d in detections if d.confidence >= s.pet_min_confidence}
+        for pet in s.pet_labels:
+            seen = self._pet_seen[pet]
+            seen.append(pet in sure)
+            if sum(seen) < s.pet_min_pictures:
+                continue
+            due = now - self._pet_alerted.get(pet, 0) > s.pet_cooldown_sec
             if due:
                 self._pet_alerted[pet] = now
             if not (due and risk_on):
