@@ -9,6 +9,9 @@ The two replies that never end:
 LiveStreams keeps track of the open ones, so close_all() can end them all when the server stops: an open
 page never holds the server up. A page's stream also ends when the hub drops it for not keeping up (CLOSED);
 the browser then connects again by itself.
+
+Neither one holds a thread while it waits: the server runs plain `def` routes and the picture decoding in a
+small shared set of threads, and a page that stays open for hours must not keep one of them busy.
 """
 
 from __future__ import annotations
@@ -19,9 +22,7 @@ import json
 import queue
 import threading
 from collections.abc import AsyncIterator, Callable
-from functools import partial
 
-import anyio
 from starlette.requests import Request
 
 from desktalk.core.chat.message_hub import CLOSED, MessageHub
@@ -76,17 +77,27 @@ class LiveStreams:
 
     async def chat_messages(self, hub: MessageHub, *, retry_ms: int, keepalive_sec: float) -> AsyncIterator[str]:
         """The SSE body for one open page."""
-        q = hub.subscribe()
+        loop = asyncio.get_running_loop()
+        arrived = asyncio.Event()
+
+        def wake() -> None:          # runs in whichever thread put something in the queue
+            with contextlib.suppress(RuntimeError):     # the server already stopped: nobody is waiting
+                loop.call_soon_threadsafe(arrived.set)
+
+        q = hub.subscribe(on_put=wake)
         with self._lock:
             self._open[q] = hub
         try:
             yield f'retry: {retry_ms}\n\n'
             while not self.closing:
+                arrived.clear()      # before looking, so a message put after the look still wakes the wait
                 try:
-                    # In a thread: queue.get blocks. Abandoned when the page hangs up; _let_go below wakes it.
-                    msg = await anyio.to_thread.run_sync(partial(q.get, timeout=keepalive_sec), abandon_on_cancel=True)
+                    msg = q.get_nowait()
                 except queue.Empty:
-                    yield KEEPALIVE
+                    try:
+                        await asyncio.wait_for(arrived.wait(), keepalive_sec)
+                    except TimeoutError:
+                        yield KEEPALIVE
                     continue
                 if msg is CLOSED or msg is STOP:
                     return

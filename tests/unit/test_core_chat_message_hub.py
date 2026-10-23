@@ -112,3 +112,15 @@ class TestMessageHubContract(NotifierContract):
     @pytest.fixture
     def notifier(self, clock):
         return hub(clock)
+
+
+def test_a_page_can_ask_to_be_woken_for_each_thing_put_in_its_queue():
+    h = hub(queue_size=1)
+    woken = []
+    q = h.subscribe(on_put=lambda: woken.append(1))
+    h.send({'type': 'group_message', 'text': 'hi'})
+    assert len(woken) == 1
+    h.send({'type': 'group_message', 'text': 'too many'})          # full: the hub drops the page with CLOSED
+    assert len(woken) == 2 and drain(q)[-1] is CLOSED
+    q.put_nowait('stop')                                           # anyone else's put wakes it too
+    assert len(woken) == 3

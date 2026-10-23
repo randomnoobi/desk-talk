@@ -13,6 +13,7 @@ from __future__ import annotations
 import threading
 import time
 
+import anyio
 import httpx
 import pytest
 
@@ -150,6 +151,49 @@ def test_open_pages_do_not_hold_up_the_server_when_it_stops(tmp_path):
         reader.join(WAIT_SEC)
     assert ended == {'/api/events': True, '/api/video_feed': True}
     assert took < app.config.web.stop_wait_sec
+
+
+class SmallThreadPool:
+    """Wraps a web app so its server runs plain `def` routes (and other blocking work) in only `size` threads
+    at once, instead of the usual 40."""
+
+    def __init__(self, app, size: int):
+        self.app, self.size = app, size
+
+    async def __call__(self, scope, receive, send):
+        anyio.to_thread.current_default_thread_limiter().total_tokens = self.size
+        await self.app(scope, receive, send)
+
+
+def test_open_chat_pages_do_not_use_up_the_threads_the_other_routes_need(tmp_path):
+    pool = 2
+    pages = pool + 2
+    app = real_desk(tmp_path)
+    web = create_app(app, links_for(app))
+    web.add_middleware(SmallThreadPool, size=pool)
+    opened = threading.Semaphore(0)
+
+    def chat_page(url: str) -> None:
+        with httpx.Client(timeout=WAIT_SEC) as client, client.stream('GET', url + '/api/events') as reply:
+            parts = reply.iter_raw()
+            next(parts)                              # "retry: ...": the page is listening now
+            opened.release()
+            try:
+                for _ in parts:
+                    pass
+            except httpx.HTTPError:
+                pass
+
+    with running(web) as url:
+        readers = [threading.Thread(target=chat_page, args=(url,), daemon=True) for _ in range(pages)]
+        for reader in readers:
+            reader.start()
+        assert all(opened.acquire(timeout=WAIT_SEC) for _ in range(pages)), 'not every chat page could open'
+        started = time.monotonic()
+        live = httpx.get(url + '/api/live', timeout=WAIT_SEC)
+        took = time.monotonic() - started
+    assert live.status_code == 200
+    assert took < 1, f'/api/live waited {took:.1f} s for a free thread'
 
 
 # ── the phone page's server ──────────────────────────────────────────

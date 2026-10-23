@@ -21,7 +21,7 @@ import queue
 import threading
 import uuid
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from desktalk.core.chat.tracker_actions import strip_action_tags
@@ -38,6 +38,19 @@ class _Closed:
 
 
 CLOSED = _Closed()      # the last thing in a dropped page's queue (see the top of this file)
+
+
+class WakingQueue(queue.Queue):
+    """A page's queue that calls on_put() after each thing put in it, from whichever thread put it. An async
+    page can then wait for an event instead of keeping a thread blocked in get()."""
+
+    def __init__(self, maxsize: int, on_put: Callable[[], None]):
+        super().__init__(maxsize)
+        self._on_put = on_put
+
+    def _put(self, item: Any) -> None:      # queue.Queue's own hook for subclasses; runs inside every put
+        super()._put(item)
+        self._on_put()
 
 
 class MessageHub:
@@ -76,9 +89,11 @@ class MessageHub:
                      len(stuck))
         return msg
 
-    def subscribe(self) -> queue.Queue:
-        """A queue that gets every message from now on (one per open page), and CLOSED if the page is dropped."""
-        q: queue.Queue = queue.Queue(maxsize=self._queue_size + 1)      # + 1: room for CLOSED
+    def subscribe(self, on_put: Callable[[], None] | None = None) -> queue.Queue:
+        """A queue that gets every message from now on (one per open page), and CLOSED if the page is dropped.
+        on_put: called after each thing put in the queue (keep it quick: it runs while the queue is locked)."""
+        size = self._queue_size + 1      # + 1: room for CLOSED
+        q: queue.Queue = queue.Queue(maxsize=size) if on_put is None else WakingQueue(size, on_put)
         with self._lock:
             self._queues.append(q)
         return q
