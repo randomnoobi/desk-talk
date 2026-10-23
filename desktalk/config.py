@@ -209,6 +209,7 @@ class AlertsSettings(_Section):
     pet_min_confidence: Fraction
     pet_min_pictures: PositiveInt
     pet_window_pictures: PositiveInt
+    pet_forget_after_sec: PositiveNumber
     clutter_threshold: PositiveInt
     clutter_cooldown_sec: ZeroOrMore
     plant_water_every_sec: PositiveNumber
@@ -228,7 +229,7 @@ class EdgeProximity(_Section):
 
 class DangerZone(_Section):
     expand: ZeroOrMore
-    base_share: Annotated[float, Field(gt=0, le=1)]
+    base_share: Annotated[float, Field(gt=0, le=1)] = 1.0     # left out = the whole box (as before it existed)
     label: str
 
 
@@ -890,6 +891,8 @@ def _describe(annotation: Any, metadata: list) -> str:
                 limits[name] = _number(getattr(m, name))
     if 'ge' in limits and 'le' in limits:
         return f"{words} from {limits['ge']} to {limits['le']}"
+    if 'gt' in limits and 'le' in limits:
+        return f"{words} above {limits['gt']} and at most {limits['le']}"
     if 'gt' in limits:
         return f"{words} above {limits['gt']}"
     if 'ge' in limits:

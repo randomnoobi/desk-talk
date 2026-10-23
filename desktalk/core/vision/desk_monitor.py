@@ -48,6 +48,7 @@ class DeskMonitor:
         # For each pet, whether it was clearly seen in each of the last few pictures
         self._pet_seen: dict[str, deque[bool]] = {pet: deque(maxlen=alerts.pet_window_pictures)
                                                   for pet in alerts.pet_labels}
+        self._last_picture_ts: float | None = None
         self._last_clutter = 0.0
         self._last_plant = 0.0
         bus.subscribe('desk-monitor', self.on_detection, types=[DetectionEvent])
@@ -138,8 +139,14 @@ class DeskMonitor:
     def _pets(self, detections: Sequence[Detection], things: Mapping[str, Thing], now: float, risk_on: bool) -> None:
         """A pet counts once it was seen at alerts.pet_min_confidence or more in alerts.pet_min_pictures of the
         last alerts.pet_window_pictures pictures. Then an alert goes out, at most every alerts.pet_cooldown_sec
-        for each pet; while risk_detection is off the alert is skipped but the wait still starts."""
+        for each pet; while risk_detection is off the alert is skipped but the wait still starts. After more than
+        alerts.pet_forget_after_sec without an analysed picture every pet's memory starts over, so a cat that left
+        before the gap isn't counted again."""
         s = self._settings
+        if self._last_picture_ts is not None and now - self._last_picture_ts > s.pet_forget_after_sec:
+            for seen in self._pet_seen.values():
+                seen.clear()
+        self._last_picture_ts = now
         sure = {d.label for d in detections if d.confidence >= s.pet_min_confidence}
         for pet in s.pet_labels:
             seen = self._pet_seen[pet]

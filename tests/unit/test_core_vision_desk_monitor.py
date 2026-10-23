@@ -237,6 +237,29 @@ def test_a_cat_seen_clearly_in_too_few_of_the_last_pictures_does_not_count():
     assert rig.alerts() == []
 
 
+def test_a_cat_that_left_before_a_long_gap_is_not_counted_again():
+    """The cat is seen, an alert goes out and the cat leaves. Then no pictures are analysed for a few
+    minutes (the Pi was busy, say). The first picture after the gap has no cat, so no alert, even though
+    most of the last few pictures had one and the wait between alerts is over."""
+    rig = Rig()
+    s = rig.settings
+    look_at_cat(rig, ['good'] * s.pet_window_pictures)
+    assert len(rig.alerts()) == 1
+    after_gap = T + 1000 + s.pet_window_pictures + s.pet_cooldown_sec + s.pet_forget_after_sec
+    assert rig.look(after_gap) == []
+    assert len(rig.alerts()) == 1
+
+
+def test_pictures_with_a_short_gap_between_still_count_towards_a_pet():
+    rig = Rig()
+    s = rig.settings
+    gap = s.pet_forget_after_sec            # at the limit, not over it
+    for k in range(s.pet_min_pictures - 1):
+        assert rig.look(T + 1000 + k * gap, labels=['cat']) == []
+    [alert] = rig.look(T + 1000 + (s.pet_min_pictures - 1) * gap, labels=['cat'])
+    assert alert.feature == 'pet_risk'
+
+
 def test_pet_alerts_wait_between():
     rig = Rig()
     assert rig.show_pet(T + 1000)

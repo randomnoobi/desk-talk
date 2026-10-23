@@ -38,6 +38,12 @@ def test_every_built_in_rule_keeps_the_value_the_old_code_had():
     assert rules.edge_objects == {'cup', 'bottle', 'cell phone', 'laptop', 'remote', 'mouse'}
 
 
+def test_where_a_thing_stands_is_the_bottom_strip_of_its_box():
+    rules = make_rules(SAFETY)                      # footprint_share 0.2, at least footprint_min_px 4
+    assert rules.standing_strip((0, 0, 10, 100)) == (0, 80, 10, 100)
+    assert rules.standing_strip((0, 0, 10, 10)) == (0, 6, 10, 10)
+
+
 def test_saved_zone_wins_over_the_built_in_one():
     rules = make_rules(SAFETY, SAVED_FILE)
     assert rules.zones['laptop'] == Zone(expand=134, label='Spill / pressure zone', base_share=0.5)
@@ -204,7 +210,9 @@ def test_settings_page_sees_the_saved_rules():
 def test_settings_page_sees_the_built_in_rules_when_nothing_was_saved():
     page = SafetyRules(InMemoryKeyValueStore(), SAFETY).for_settings_page()
     assert page['loaded'] is False
-    assert page['danger_zones']['laptop'] == {'expand': 80, 'label': 'Spill / pressure zone', 'base_share': 0.5}
+    # No base_share: the page doesn't show it but sends zones back as they are, so it would be saved
+    # and a later change to it in settings.yaml would do nothing.
+    assert page['danger_zones']['laptop'] == {'expand': 80, 'label': 'Spill / pressure zone'}
     assert page['edge_proximity'] == {'danger_px': 35, 'warn_px': 75,
                                       'objects': ['bottle', 'cell phone', 'cup', 'laptop', 'mouse', 'remote']}
     assert page['chain_reaction'] == {} and page['temporal'] == {}

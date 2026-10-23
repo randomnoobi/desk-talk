@@ -149,6 +149,7 @@ alerts:
   pet_min_confidence: 0.8
   pet_min_pictures: 5
   pet_window_pictures: 7
+  pet_forget_after_sec: 10    # no picture analysed for longer than this = forget which pets were seen before
   clutter_threshold: 6        # this many things on the desk = "maybe tidy up?"
   clutter_cooldown_sec: 1800
   plant_water_every_sec: 86400

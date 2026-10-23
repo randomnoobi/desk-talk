@@ -85,7 +85,7 @@ def test_a_tall_bottle_standing_far_from_the_keyboard_is_fine_even_when_its_box_
 
 def test_the_zone_is_drawn_from_the_base_and_the_strip_from_where_a_thing_stands():
     assert dz.zone_area(LAPTOP, RULES.zones['laptop'], RULES) == (120, 195, 480, 430)
-    assert dz.standing_strip(NEAR, RULES) == (410, 306, 450, 320)
+    assert RULES.standing_strip(NEAR) == (410, 306, 450, 320)
 
 
 # Ported from test_new_drink_words_count_as_liquids

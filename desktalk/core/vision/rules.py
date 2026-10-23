@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from desktalk.config import SafetySettings
-from desktalk.core.vision.geometry import Point
+from desktalk.core.vision.geometry import Box, Point, footprint
 from desktalk.ports import KeyValueStore
 
 log = logging.getLogger(__name__)
@@ -63,6 +63,11 @@ class DeskRules:
     desk_border_share: float
     footprint_share: float
     footprint_min_px: float
+
+    def standing_strip(self, box: Box) -> Box:
+        """About where a thing stands on the desk: the bottom footprint_share of its box, at least
+        footprint_min_px tall (the danger zones, the desk edges and the drawings all use this strip)."""
+        return footprint(box, self.footprint_share, self.footprint_min_px)
 
 
 def _lower(words: Iterable[Any]) -> frozenset[str]:
@@ -245,13 +250,14 @@ class SafetyRules:
         return corners[:self._safety.max_desk_corners]
 
     def for_settings_page(self) -> dict[str, Any]:
-        """What the Settings page shows: the saved rules, or the built-in ones where nothing was saved."""
+        """What the Settings page shows: the saved rules, or the built-in ones where nothing was saved.
+        Built-in zones leave out base_share: the page doesn't show it but sends zones back as they are, so it
+        would be saved and a later change to it in settings.yaml would do nothing."""
         saved, rules = self._saved or {}, self._current
         return {
             'loaded': self.loaded,
             'desk_outline': saved.get('desk_outline', []),
-            'danger_zones': saved.get('danger_zones', {name: {'expand': z.expand, 'label': z.label,
-                                                              'base_share': z.base_share}
+            'danger_zones': saved.get('danger_zones', {name: {'expand': z.expand, 'label': z.label}
                                                        for name, z in rules.zones.items()}),
             'edge_proximity': saved.get('edge_proximity', {'danger_px': rules.edge_danger_px,
                                                            'warn_px': rules.edge_warn_px,

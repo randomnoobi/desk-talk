@@ -12,10 +12,10 @@ from typing import Any
 
 import cv2
 
-from desktalk.core.vision.danger_zones import standing_strip, zone_area
+from desktalk.core.vision.danger_zones import zone_area
 from desktalk.core.vision.desk_edges import desk_edges
 from desktalk.core.vision.findings import Thing
-from desktalk.core.vision.geometry import footprint, overlap
+from desktalk.core.vision.geometry import overlap
 from desktalk.core.vision.rules import DeskRules
 from desktalk.domain import Detection
 
@@ -120,7 +120,7 @@ def _draw_edges(img, things, result, rules: DeskRules):
         cv2.rectangle(img, _point(box[:2]), _point(box[2:]), color, 2, AA)
         seg = rel.get('segment')
         if seg:
-            f = footprint(box, rules.footprint_share, rules.footprint_min_px)
+            f = rules.standing_strip(box)
             c = ((f[0] + f[2]) / 2, (f[1] + f[3]) / 2)
             (ax, ay), (bx, by) = seg
             dx, dy = bx - ax, by - ay       # the closest point on the edge, for the arrow
@@ -148,7 +148,7 @@ def _draw_zones(img, things, result, rules: DeskRules):
         if zone is None:
             continue
         area = zone_area(target.box, zone, rules)
-        shared = overlap(standing_strip(intruder.box, rules), area)    # where the risky thing stands
+        shared = overlap(rules.standing_strip(intruder.box), area)    # where the risky thing stands
         if shared:
             _see_through_rect(img, *shared, ZONE_HIT, 0.30)
         cv2.rectangle(img, _point(area[:2]), _point(area[2:]), DANGER, 2, AA)

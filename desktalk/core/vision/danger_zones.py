@@ -32,12 +32,6 @@ def zone_area(box: Box, zone: Zone, rules: DeskRules) -> Box:
     return grow(base(box, zone, rules), zone.expand)
 
 
-def standing_strip(box: Box, rules: DeskRules) -> Box:
-    """About where a thing stands on the desk: the bottom strip of its box (the same strip the desk edge
-    check uses)."""
-    return footprint(box, rules.footprint_share, rules.footprint_min_px)
-
-
 def counts_as_danger(rules: DeskRules, zone_label: str, intruder_label: str) -> bool:
     """A thing with this word is a danger inside this zone (a cup near the laptop, not a book)."""
     if zone_label not in rules.zones or not intruder_label:
@@ -73,11 +67,12 @@ def zone_risks(things: Mapping[str, Thing], rules: DeskRules, visits: ZoneVisits
         zone = rules.zones.get(target.label)
         if zone is None:
             continue
-        target_base, area = base(target.box, zone, rules), zone_area(target.box, zone, rules)
+        target_base = base(target.box, zone, rules)
+        area = grow(target_base, zone.expand)       # as zone_area(); the base is needed again below
         for intruder in things.values():
             if intruder.id == target.id:
                 continue
-            strip = standing_strip(intruder.box, rules)
+            strip = rules.standing_strip(intruder.box)
             danger = overlap(strip, area) is not None and counts_as_danger(rules, target.label, intruder.label)
             visits.note((intruder.id, target.id), danger, now)
             if not danger:
