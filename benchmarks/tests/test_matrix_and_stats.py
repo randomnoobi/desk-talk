@@ -2,21 +2,20 @@ from pathlib import Path
 
 import pytest
 
-from deskbench.matrix import Combo, build_combos
+from deskbench.matrix import Combo, build_combos, kind_of
 from deskbench.stats import percentile, summarize
 
-CFG = {
-    'models': ['yolo11n', 'yolo11s'],
-    'image_sizes': [320, 640],
-    'formats': {'pt': ['fp32'], 'ncnn': ['fp32', 'fp16'], 'onnx': ['fp32', 'int8']},
-}
+CFG = {'image_sizes': [320, 640], 'model_kinds': {
+    'a': {'models': ['yolo11n', 'yolo11s'], 'names': 'coco',
+          'formats': {'pt': ['fp32'], 'ncnn': ['fp32', 'fp16'], 'onnx': ['fp32', 'int8']}},
+    'b': {'models': ['yoloe-26n-seg'], 'names': 'words', 'task': 'segment', 'formats': {'ncnn': ['fp16']}}}}
 
 
 def test_every_combination_is_listed_once_in_order():
     combos = build_combos(CFG)
-    assert len(combos) == 2 * 2 * 5
+    assert len(combos) == 2 * 2 * 5 + 1 * 2 * 1
     assert combos[0] == Combo('yolo11n', 320, 'pt', 'fp32')
-    assert combos[-1] == Combo('yolo11s', 640, 'onnx', 'int8')
+    assert combos[-1] == Combo('yoloe-26n-seg', 640, 'ncnn', 'fp16')
     assert len({c.key for c in combos}) == len(combos)
 
 
@@ -25,10 +24,27 @@ def test_only_some_models():
     assert {c.model for c in combos} == {'yolo11s'}
 
 
+def test_each_kind_gets_only_its_own_formats():
+    assert {c.fmt for c in build_combos(CFG, only_kinds=['b'])} == {'ncnn'}
+
+
+def test_kind_of_a_model():
+    assert kind_of(CFG, 'yoloe-26n-seg')[0] == 'b'
+    with pytest.raises(KeyError):
+        kind_of(CFG, 'yolo99x')
+
+
 @pytest.mark.parametrize('formats', [{'pt': ['fp16']}, {'onnx': ['fp16']}, {'ncnn': ['int8']}, {'tflite': ['fp32']}])
 def test_precision_that_a_format_cannot_do_is_refused(formats):
+    kinds = {'a': {**CFG['model_kinds']['a'], 'formats': formats}}
     with pytest.raises(ValueError):
-        build_combos({**CFG, 'formats': formats})
+        build_combos({**CFG, 'model_kinds': kinds})
+
+
+def test_unknown_names_are_refused():
+    kinds = {'a': {**CFG['model_kinds']['a'], 'names': 'imagenet'}}
+    with pytest.raises(ValueError):
+        build_combos({**CFG, 'model_kinds': kinds})
 
 
 def test_model_file_names_say_size_and_precision():

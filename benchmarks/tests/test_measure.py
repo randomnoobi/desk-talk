@@ -2,7 +2,7 @@ import itertools
 
 import pytest
 
-from deskbench.measure import TempSampler, time_detections, wait_until_cool
+from deskbench.measure import SpeedSampler, TempSampler, time_detections, wait_until_cool
 
 
 class FakeClock:
@@ -61,6 +61,20 @@ def test_temp_sampler_without_a_sensor():
     s = TempSampler(lambda: None, every_sec=0.001)
     s.start()
     assert s.stop() == {'temp_start_c': None, 'temp_max_c': None, 'temp_end_c': None}
+
+
+def test_speed_sampler_keeps_the_lowest():
+    speeds = iter([2400.0, 1500.0, 2400.0])
+    s = SpeedSampler(lambda: next(speeds, 2400.0), every_sec=0.001)
+    s.start()
+    s.wait_for_samples(3)
+    assert s.stop() == {'cpu_mhz_min': 1500.0}
+
+
+def test_speed_sampler_without_a_reading():
+    s = SpeedSampler(lambda: None, every_sec=0.001)
+    s.start()
+    assert s.stop() == {'cpu_mhz_min': None}
 
 
 def test_cooldown_waits_until_cool():

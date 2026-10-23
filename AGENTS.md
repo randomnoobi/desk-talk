@@ -3,6 +3,13 @@
 What the app does and how it fits together: [README.md](README.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 The refactor in progress: [docs/plans/2026-10-21-refactor-plan.md](docs/plans/2026-10-21-refactor-plan.md).
 
+## How to work
+- **Before making a plan:** read the code the change will touch and find where the new pieces should plug in. Name those files and functions in the plan.
+- **When carrying out a plan:** split the work into pieces that don't depend on each other and give each piece to its own subagent, all started at once. Use as many subagents as the plan allows, but never let two of them edit the same file.
+- **Test first:** write a failing unit test, then the code that makes it pass. While working, run only the tests for the code you changed (e.g. `python -m pytest tests/test_<name>.py`). Run the full fast suite, plus the `slow` tests if you changed detection, once at the very end before opening the PR.
+- **When the code is done:** open a PR, then start a subagent to review it with `/code-review high <PR number>`.
+- **After the review:** start another subagent to fix what the review found, and give it the review comments. Then re-run the tests and push the fixes to the same PR.
+
 ## Check your work before saying it's done
 - Packages come from uv (`uv sync --all-packages`; never pip). Run things with `uv run ...`.
 - Fast tests: `uv run pytest -m "not slow"`. The `slow` tests run the real YOLO model; run them only when you change detection. `docker` tests build the Pi's detector image; run them only when you change it.
