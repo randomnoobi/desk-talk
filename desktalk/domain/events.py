@@ -175,6 +175,17 @@ class NudgeSent(Event):
 
 
 @dataclass(frozen=True, kw_only=True)
+class RuleOutcome(Event):
+    """Whether a nudge worked: did the user change the habit soon after?"""
+
+    TYPE: ClassVar[str] = 'rule_outcome'
+    rule: str
+    habit: str
+    result: str              # worked | missed
+    after_sec: float         # how long after the nudge this was decided
+
+
+@dataclass(frozen=True, kw_only=True)
 class CameraNotice(Event):
     """Lens noticed a camera problem, or that it's fixed."""
 
@@ -197,7 +208,7 @@ class Compaction(Event):
 
 
 EVENT_TYPES: dict[str, type[Event]] = {cls.TYPE: cls for cls in (
-    DetectionEvent, AgentJoined, AgentLeft, Alert, HabitEvent, NudgeSent, CameraNotice, Compaction)}
+    DetectionEvent, AgentJoined, AgentLeft, Alert, HabitEvent, NudgeSent, RuleOutcome, CameraNotice, Compaction)}
 
 
 def event_from_dict(data: Mapping[str, Any]) -> Event:
