@@ -146,6 +146,7 @@ def test_start_runs_every_background_job_after_its_first_wait(tmp_path):
     jobs = {job.name: start_after for job, start_after in build_quietly(config, tmp_path).background_jobs()}
     assert jobs == {
         'detection': 0, 'scheduler': 0,
+        'rule engine': config.rule_engine.check_every_sec,
         'habit reminders': config.reminders.check_every_sec,
         'idle chat': config.idle_chat.start_delay_sec,
         'lost items': config.lost_items.start_delay_sec,

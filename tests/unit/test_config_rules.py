@@ -73,7 +73,7 @@ def load_rule(project, **change):
 def test_hydration_rule_loads_as_written(project):
     rule = load_config(root=project, environ={}).protocols.rules[0]
     assert rule.id == 'hydration' and rule.habit == 'hydration'
-    assert rule.enabled is False                       # nothing runs the rules yet
+    assert rule.enabled is True                        # it took over from the old hydration nudges
     assert rule.cooldown == 1800 and rule.max_nudges_per_hour == 4
     assert rule.quiet_hours.start == '22:00' and rule.quiet_hours.end == '07:00'
     assert rule.gate.state.object == 'person' and rule.gate.state.is_ == 'present'

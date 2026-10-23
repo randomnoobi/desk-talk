@@ -16,8 +16,9 @@ gets only the interfaces it asks for (desktalk/ports.py) and its own section of 
                                                    ├─► LostItems         (where your keys were)
                                                    └─► MessageGenerator ──► MessageHub ──► open app pages
     Background jobs (Supervisor): the producer, the scheduler (compact and prune the event log, save the
-    habits and the object states), habit reminders, Lens, small talk, lost items, the daily recap, vision habits,
-    and the Ollama keep-alive when the chat runs on Ollama.
+    habits and the object states), the rule engine (the habit rules in protocols.yaml → rules), habit reminders,
+    Lens, small talk, lost items, the daily recap, vision habits, and the Ollama keep-alive when the chat runs
+    on Ollama.
 
 Tests build the same app with fakes through build()'s keyword arguments (see tests/integration/app_kit.py).
 """
@@ -51,7 +52,8 @@ from desktalk.core.chat.workers import (
 from desktalk.core.events import EventStream
 from desktalk.core.habits.desk_status import DeskStatus
 from desktalk.core.habits.preferences import Preferences
-from desktalk.core.habits.reminders import HabitReminders, NoRules
+from desktalk.core.habits.reminders import HabitReminders
+from desktalk.core.habits.rule_runner import RuleRunner
 from desktalk.core.habits.tracker import HabitTracker
 from desktalk.core.object_states.tracker import ObjectStateTracker
 from desktalk.core.vision import desk_edges
@@ -104,6 +106,8 @@ class DeskTalk:
     model           the AI as the parts use it (time limits, retries, a breaker): ready, label, problem()
     hub             chat messages for open app pages: subscribe() / unsubscribe() (SSE), recent(), send()
     generator       the chat: answer(), live_context(), save_widget(), note_panel_event() (/api/chat ...)
+    rule_runner     the habit rules in protocols.yaml → rules, checked against the object states (a background
+                    job); the reminders ask it for nudges
     reminders       habit reminders (a background job)
     lens            the camera's own character (a background job)
     idle_chat       small talk between agents (a background job)
@@ -149,6 +153,7 @@ class DeskTalk:
     model: ResilientChatModel
     hub: MessageHub
     generator: MessageGenerator
+    rule_runner: RuleRunner
     reminders: HabitReminders
     lens: Lens
     idle_chat: IdleChat
@@ -180,6 +185,7 @@ class DeskTalk:
         jobs: list[tuple[PeriodicWorker, float]] = [
             (self.producer, 0.0),
             (self.scheduler, 0.0),
+            (self.rule_runner, c.rule_engine.check_every_sec),
             (self.reminders, c.reminders.check_every_sec),
             (self.idle_chat, c.idle_chat.start_delay_sec),
             (self.lost_items, c.lost_items.start_delay_sec),
@@ -338,7 +344,9 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     generator.subscribe_to(bus)
 
     # ── the background jobs ──
-    reminders = HabitReminders(habits, NoRules(), desk_status, roster, profiles, generator, hub, bus, config.reminders)
+    rule_runner = RuleRunner(config.protocols.rules, object_states, bus, config.rule_engine)
+    reminders = HabitReminders(habits, rule_runner, desk_status, roster, profiles, generator, hub, bus,
+                               config.reminders)
     lens = Lens(camera_health, source, safety_rules, preferences, hub, bus, photos, config.lens, config.pi,
                 phone=source if isinstance(source, PhoneCamera) else None,
                 pi_uploads=source if isinstance(source, PiUploads) else None)
@@ -366,6 +374,6 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         analyzer=analyzer, painter=painter, camera_health=camera_health, photos=photos, detector=detector,
         producer=producer, object_states=object_states, state_store=state_store, roster=roster,
         desk_status=desk_status, habits=habits, monitor=monitor, ai=ai, model=model, hub=hub, generator=generator,
-        reminders=reminders, lens=lens, idle_chat=idle_chat, lost_items=lost_items, vision_habits=vision_habits,
-        daily_summary=daily_summary, scheduler=scheduler, supervisor=supervisor, started_at=clock.now(),
-        keepalive=ai.keepalive_worker(), log_file=log_file)
+        rule_runner=rule_runner, reminders=reminders, lens=lens, idle_chat=idle_chat, lost_items=lost_items,
+        vision_habits=vision_habits, daily_summary=daily_summary, scheduler=scheduler, supervisor=supervisor,
+        started_at=clock.now(), keepalive=ai.keepalive_worker(), log_file=log_file)

@@ -78,6 +78,26 @@ def test_the_ai_puts_the_nudge_in_the_computers_words(tmp_path):
     assert 'You are Computer' in system and 'Protocols' in system
 
 
+BOTTLE = Detection('bottle', 0.9, BBox(450, 300, 490, 380))
+
+
+def test_hydration_rule_nudges_in_the_running_app(tmp_path):
+    config = desk_config(tmp_path)
+    for rule in ('breaks', 'light', 'phone_free', 'food', 'tasks'):
+        config = changed(config, f'protocols.{rule}', enabled=False)
+    rig = DeskRig(tmp_path, config=config)
+    rig.watch(61 * 60, LAPTOP, BOTTLE, step=1)           # you and a bottle that never moves, for an hour
+    rig.tick(rig.app.rule_runner)
+    rig.tick(rig.app.reminders)
+    day = rig.app.event_log.days()[0]
+    [nudge] = rig.app.event_log.events(day, {'nudge'}, 10)
+    assert nudge['rule'] == 'rule.hydration'
+    rig.watch(3 * 60, LAPTOP, step=1)                    # the bottle is picked up
+    rig.tick(rig.app.rule_runner)
+    [outcome] = rig.app.event_log.events(day, {'rule_outcome'}, 10)
+    assert outcome['result'] == 'worked'
+
+
 # ── Lens ─────────────────────────────────────────────────────────────
 def test_lens_speaks_up_when_the_pi_goes_quiet(tmp_path):
     rig = DeskRig(tmp_path)

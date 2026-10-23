@@ -18,20 +18,10 @@ import logging
 
 from desktalk.config import RemindersSettings
 from desktalk.core.agents.speakers import LENS, speaker_for
-from desktalk.domain import Nudge, NudgeSent
+from desktalk.domain import NudgeSent
 from desktalk.ports import ChatVoice, DeskStatus, EventBus, HabitsView, Notifier, Profiles, RosterView, RuleNudges
 
 log = logging.getLogger(__name__)
-
-
-class NoRules:
-    """A rule engine with no rules: it never has a nudge."""
-
-    def nudges(self, now: float) -> list[Nudge]:
-        return []
-
-    def note_fired(self, nudge: Nudge, now: float) -> None:
-        pass
 
 
 class HabitReminders:

@@ -23,7 +23,10 @@ schedule:
 
 # ── 1. Hydration ── Nutrition Protocol 2: "Stay Hydrated" ──────────
 hydration:
-  enabled: true
+  # Off: the hydration rule (under "rules:" at the end of this file) took over these nudges, so you don't
+  # get two water nudges. This only stops the nudges below ("no sip in 45 minutes" and "water on waking").
+  # Sip counting and the Habits page keep working.
+  enabled: false
   on_waking_ml: 600           # "18 to 24 ounces of water upon waking", before coffee (~530-710 ml)
   daily_goal_ml: 2400         # "about 80 ounces ... across the first ten hours of the day"
   goal_window_hours: 10       # the first ten hours after waking
@@ -127,7 +130,7 @@ tasks:
 # ("local", a place like "America/Los_Angeles", or a fixed offset like "+08:00").
 rules:
   - id: hydration
-    enabled: false
+    enabled: true
     habit: hydration            # which character speaks for it in the chat
     timezone: local
     gate:
