@@ -30,6 +30,21 @@
         "text": "str",
         "ts": "number",
         "type": "str"
+      },
+      {
+        "bbox": [
+          "number"
+        ],
+        "change": "str",
+        "conf_avg": "number",
+        "device_id": "str",
+        "dwell_sec": "null",
+        "id": "str",
+        "new_state": "str",
+        "object": "str",
+        "prev_state": "str",
+        "ts": "number",
+        "type": "str"
       }
     ]
   },
