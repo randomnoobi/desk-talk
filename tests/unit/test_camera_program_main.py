@@ -9,13 +9,14 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
 import yaml
 from test_camera_program_fakes import JPEG, KEY, FakeCamera, FakeClock, FakeComputer, FakeContainer, cup, pi_settings
 
-from desktalk_shared.wire import DetectorState
+from desktalk_shared.wire import DETECTOR_TURNED_OFF, DetectorState
 from raspberry_pi.camera.main import WorkerThread, build_program, load_settings, main, parse_args
 from raspberry_pi.camera.settings import from_layers
 from raspberry_pi.camera.watchdog import Watchdog
@@ -125,7 +126,7 @@ def test_no_detector_sends_every_picture_as_off(tmp_path, container, computer):
     program.step()
     workers.uploader.tick()
     assert states(computer) == [('pi-000001', DetectorState.OFF)]
-    assert 'turned off' in computer.uploads[0].info.detector_reason
+    assert computer.uploads[0].info.detector_reason == DETECTOR_TURNED_OFF
     assert workers.detector is None and container.requests == []
 
 
@@ -137,9 +138,12 @@ def test_offline_only_takes_and_saves_pictures(tmp_path, container, computer):
     assert computer.requests == [] and container.requests == []
 
 
-def test_disk_nearly_full_deletes_the_oldest_pictures(tmp_path, container, computer):
+def test_disk_nearly_full_deletes_the_oldest_pictures_in_the_cleanup_thread(tmp_path, container, computer):
     program, workers = make_program(tmp_path, container, computer, FakeClock(), min_free_mb=10 ** 12)
     program.step()
+    assert program.store.count() == 1                                    # the camera doesn't wait for it
+    assert workers.cleaner.wake.is_set()                                  # the cleanup thread is woken instead
+    workers.cleaner.tick()
     assert program.store.count() == 0
 
 
@@ -192,32 +196,86 @@ def test_pictures_are_deleted_on_schedule(tmp_path, container, computer):
     for _ in range(6):
         program.step()
     started = clock.now()
-    assert program.maybe_cleanup(started + 60) is None                    # not yet
-    assert program.maybe_cleanup(started + 601) == 6                      # 10 minutes later: all gone
+    cleaner = workers.cleaner
+    assert cleaner.maybe_cleanup(started + 60) is None                    # not yet
+    assert cleaner.maybe_cleanup(started + 601) == 6                      # 10 minutes later: all gone
     assert program.store.count() == 0
-    assert program.maybe_cleanup(started + 700) is None                   # the next one is 10 minutes after that
-    assert program.maybe_cleanup(started + 1202) == 0
+    assert cleaner.maybe_cleanup(started + 700) is None                   # the next one is 10 minutes after that
+    assert cleaner.maybe_cleanup(started + 1202) == 0
+
+
+def test_the_cleanup_thread_waits_until_the_next_cleanup_is_due(tmp_path, container, computer):
+    clock = FakeClock()
+    program, workers = make_program(tmp_path, container, computer, clock, delete_every_min=10)
+    assert workers.cleaner.tick() == pytest.approx(600)
+    clock.advance(200)
+    assert workers.cleaner.tick() == pytest.approx(400)
+    program.step()
+    clock.advance(400)
+    assert workers.cleaner.tick() == pytest.approx(600)                   # cleaned up; the next is 10 min away
+    assert program.store.count() == 0
 
 
 def test_delete_every_min_0_never_deletes(tmp_path, container, computer):
     clock = FakeClock()
     program, workers = make_program(tmp_path, container, computer, clock, delete_every_min=0)
     program.step()
-    assert program.maybe_cleanup(clock.now() + 10 ** 6) is None
+    assert workers.cleaner.maybe_cleanup(clock.now() + 10 ** 6) is None
+    assert workers.cleaner.tick() is None                                 # sleeps until the disk gets full
     assert program.store.count() == 1
 
 
-def test_a_cleanup_that_fails_does_not_stop_the_camera(tmp_path, container, computer, caplog):
+def test_a_cleanup_that_fails_is_logged_once_and_tried_again_later(tmp_path, container, computer, caplog):
     clock = FakeClock()
-    program, workers = make_program(tmp_path, container, computer, clock, fps=4, delete_every_min=0.001)
+    program, workers = make_program(tmp_path, container, computer, clock, fps=4, delete_every_min=1)
 
     def broken_cleanup(now):
         raise PermissionError(13, 'Permission denied', str(program.store.folder))
 
     program.store.cleanup = broken_cleanup
+    for _ in range(3):
+        clock.advance(60)
+        assert workers.cleaner.tick() == pytest.approx(60)
+    assert caplog.text.count('Permission denied') == 1
+
+
+def test_picture_taking_never_runs_a_cleanup(tmp_path, container, computer):
+    clock = FakeClock()
+    program, workers = make_program(tmp_path, container, computer, clock, fps=4, delete_every_min=0.001)
+    program.store.cleanup = lambda now: pytest.fail('the camera loop ran a cleanup')
     program.run(max_pictures=5)
     assert program.taken == 5
-    assert caplog.text.count('Permission denied') == 1
+
+
+def test_a_slow_cleanup_does_not_delay_the_next_picture(tmp_path, container, computer):
+    clock = FakeClock()
+    program, workers = make_program(tmp_path, container, computer, clock, fps=4, delete_every_min=1)
+    started, release = threading.Event(), threading.Event()
+
+    def slow_cleanup(now):
+        started.set()
+        release.wait(5)                                                   # a huge folder on a slow SD card
+        return 0
+
+    program.store.cleanup = slow_cleanup
+    clock.advance(60)                                                     # a cleanup is due
+    thread = WorkerThread('cleanup', workers.cleaner.tick, workers.cleaner.wake, pause_after_error_sec=0.01)
+    thread.start()
+    try:
+        assert started.wait(2)
+        began = time.monotonic()
+        program.run(max_pictures=5)
+        took = time.monotonic() - began
+    finally:
+        release.set()
+        thread.stop()
+        thread.join(2)
+    assert program.taken == 5 and took < 1
+
+
+def test_the_cleanup_runs_in_a_thread_of_its_own(tmp_path, container, computer):
+    program, workers = make_program(tmp_path, container, computer, FakeClock(), offline=True)
+    assert [t.name for t in workers.threads(0.5)] == ['watchdog', 'cleanup']
 
 
 def test_a_picture_that_cannot_be_saved_is_still_detected_and_sent(tmp_path, container, computer, caplog):

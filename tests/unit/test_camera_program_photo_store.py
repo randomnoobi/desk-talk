@@ -1,6 +1,7 @@
 """raspberry_pi/camera/photo_store.py: saving pictures on the Pi and deleting them again."""
 
 import logging
+import threading
 import time
 from pathlib import Path
 
@@ -101,3 +102,59 @@ def test_disk_nearly_full_skips_a_picture_that_cannot_be_deleted(tmp_path, monke
     with caplog.at_level(logging.WARNING):
         assert store.free_up_space() == 1
     assert 'Permission denied' in caplog.text
+
+
+# ── the count of stored pictures (sent with every picture, so it must be cheap) ──
+def test_the_count_starts_with_the_pictures_already_there(tmp_path):
+    old = PhotoStore(tmp_path / 'photos', keep_last_sec=0, min_free_mb=0)
+    for i in range(3):
+        old.save(b'x', TAKEN + i, f'pi-{i}')
+    assert PhotoStore(tmp_path / 'photos', keep_last_sec=0, min_free_mb=0).count() == 3
+
+
+def test_the_count_stays_right_through_saves_and_deletes_without_looking_in_the_folder(tmp_path, monkeypatch):
+    free = {'mb': 500}
+    store = PhotoStore(tmp_path / 'photos', keep_last_sec=120, min_free_mb=100, free_mb=lambda: free['mb'])
+    listed = []
+    real_photos = store.photos
+    monkeypatch.setattr(store, 'photos', lambda: listed.append(1) or real_photos())
+    for i in range(5):
+        store.save(b'x', TAKEN - 600 + i, f'old-{i}')
+    for i in range(3):
+        store.save(b'x', TAKEN - 60 + i, f'new-{i}')
+    assert store.count() == 8
+    store.save(b'x', TAKEN - 60, 'new-0')                    # the same picture again: still 8
+    assert store.count() == 8
+    assert listed == []                                       # counting never lists the folder
+    assert store.cleanup(TAKEN) == 5
+    assert store.count() == 3
+    free['mb'] = 50
+    assert store.free_up_space() == 3
+    assert store.count() == 0 == len(real_photos())
+
+
+def test_saving_does_not_wait_for_a_slow_cleanup(tmp_path, monkeypatch):
+    store = PhotoStore(tmp_path / 'photos', keep_last_sec=0, min_free_mb=0)
+    for i in range(3):
+        store.save(b'x', TAKEN + i, f'pi-{i}')
+    started, release = threading.Event(), threading.Event()
+    real_unlink = Path.unlink
+
+    def slow_unlink(self, missing_ok=False):
+        started.set()
+        release.wait(5)                                       # a huge folder on a slow SD card
+        return real_unlink(self, missing_ok)
+
+    monkeypatch.setattr(Path, 'unlink', slow_unlink)
+    cleanup = threading.Thread(target=store.cleanup, args=(TAKEN + 10,))
+    cleanup.start()
+    try:
+        assert started.wait(2)
+        began = time.monotonic()
+        store.save(b'x', TAKEN + 20, 'during')
+        took = time.monotonic() - began
+    finally:
+        release.set()
+        cleanup.join(5)
+    assert took < 1
+    assert store.count() == 1 == len(store.photos())

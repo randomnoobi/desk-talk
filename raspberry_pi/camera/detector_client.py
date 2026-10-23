@@ -15,7 +15,8 @@ detects it itself:
     PUT /model): off, with what to run to update it, until /health says the same version as this program.
   - Anything else (crashed, too slow, not running): after failures_before_pause failures in a row it
     stops asking for a while (pause_start_sec, doubling each time up to pause_max_sec), asks /health
-    every health_check_every_sec meanwhile, and comes back early when it's ready.
+    every health_check_every_sec meanwhile, and comes back early when it's ready (the count of failures
+    starts again then, but the pause only goes back to pause_start_sec after a picture is detected).
 
 Only one picture is at the detector at a time (DetectorWorker): pictures taken meanwhile go out as
 `busy`, just for the live view, so detection can be slower than the camera without a queue building up.
@@ -192,8 +193,11 @@ class DetectorClient:
         if health.state is ServiceState.STARTING:
             self._model_due = True
         if health.state is ServiceState.READY:
+            # Ready again: it takes failures_before_pause new failures to stop asking. The pause length stays,
+            # so a detector that keeps coming and going waits longer each time; only a real answer resets it.
             self._off_reason = ''
             self._resume_at = None
+            self._failures = 0
             log.info('The detector says it is ready')
         else:
             self._off_reason = health.message or f'the detector is {health.state.value}'

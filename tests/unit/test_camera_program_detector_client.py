@@ -153,8 +153,28 @@ def test_while_paused_it_checks_health_now_and_then_and_comes_back_when_ready(co
     clock.advance(HEALTH_EVERY)
     client.upkeep()
     assert client.off_now() == ''                       # ready long before the 60 s pause is over
+    fail(client, 2)
+    assert client.off_now() == ''                       # ready starts the count of failures again
     fail(client, 1)
-    assert client.off_now() == 'crashed'                # it has to prove itself: one more failure stops it again
+    assert client.off_now() == 'crashed'                # failures_before_pause new ones stop it again
+
+
+def test_one_slow_reply_after_health_says_ready_does_not_pause_it_again(container, clock):
+    client = make_client(container.url, clock, pause_max_sec=20)
+    container.routes[('POST', '/detect')] = lambda req: (500, {'detail': 'crashed'})
+    fail(client, 3)
+    for pause in (5, 10, 20):                           # keeps failing: the pause grows to the most
+        clock.advance(pause)
+        fail(client, 1)
+    container.state = ServiceState.READY
+    clock.advance(HEALTH_EVERY)
+    client.upkeep()                                     # /health: ready again
+    assert client.off_now() == ''
+    fail(client, 1)                                     # one slow reply right after it came back
+    assert client.off_now() == ''                       # still sending pictures to the detector
+    fail(client, 2)
+    clock.advance(20 - 0.1)
+    assert client.off_now() == 'crashed'                # it keeps flapping: the pause stays at the longest
 
 
 # ── the model is still loading (503) ─────────────────────────────────

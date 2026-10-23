@@ -2,9 +2,10 @@
 The camera program's loop: take a picture every 1/fps seconds, save it on the Pi, ask the detector
 container what's in it (one picture at a time), and send it to the computer.
 
-Three background threads keep the camera's pace steady: the detector worker, the uploader, and the
-settings watcher. Each one only waits on its own job, so a slow detector or Wi-Fi never holds up the camera.
-A fourth, the watchdog, ends the program when the camera stops giving pictures, so systemd starts it again.
+Four background threads keep the camera's pace steady: the detector worker, the uploader, the cleaner
+(deletes stored pictures) and the settings watcher. Each one only waits on its own job, so a slow detector,
+Wi-Fi or SD card never holds up the camera. Another, the watchdog, ends the program when the camera stops
+giving pictures, so systemd starts it again.
 
 A picture that can't be saved on the Pi is still detected and sent, and a cleanup that fails never stops
 the camera: each problem is logged once, until it goes away.
@@ -22,9 +23,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from desktalk_shared.wire import DetectorState, PiHealth, UploadInfo
+from desktalk_shared.wire import DETECTOR_TURNED_OFF, DetectorState, PiHealth, UploadInfo
 from raspberry_pi.camera import self_test
 from raspberry_pi.camera.cameras import CameraError, Picture, open_camera
+from raspberry_pi.camera.cleaner import Cleaner
 from raspberry_pi.camera.clock import Clock, SystemClock
 from raspberry_pi.camera.detector_client import DetectorClient, DetectorWorker, NoDetector, Verdict
 from raspberry_pi.camera.health import HealthReader
@@ -47,7 +49,7 @@ log = logging.getLogger(__name__)
 
 REPO_SETTINGS = Path(__file__).resolve().parents[2] / 'config' / 'settings.yaml'
 RUN_COMMAND = 'python3 -m raspberry_pi.camera --server http://192.168.1.20:5000 --key AbC123xY'
-NO_DETECTOR = 'detection on the Pi is turned off (--no-detector)'
+NO_DETECTOR = DETECTOR_TURNED_OFF
 OFFLINE = 'nothing is sent (--offline)'
 # Settings a flag can override (flag --jpeg-quality → pi.jpeg_quality)
 FLAG_SETTINGS = ('fps', 'width', 'height', 'jpeg_quality', 'photo_dir', 'delete_every_min', 'keep_last_min',
@@ -64,18 +66,17 @@ class CameraProgram:
         self.settings = settings
         self.clock = clock
         self.watchdog: Watchdog | None = None           # build_program sets it
+        self.cleaner: Cleaner | None = None             # build_program sets it
         self.detector: DetectorWorker | NoDetector = NoDetector(OFFLINE)    # build_program sets the real one
         self.taken = 0
         self.errors = 0
         self.verdicts: Counter[DetectorState] = Counter()
         self.health_now = PiHealth(camera=camera.name)
         self.running = True
-        self._last_cleanup_try = clock.now()
         self._next_health = clock.monotonic()
         self._next_status = clock.monotonic() + settings.status_every_sec
         self._problem = ''
         self._save_problem = ''
-        self._cleanup_problem = ''
         self._lock = threading.Lock()
 
     def run(self, max_pictures: int | None = None) -> None:
@@ -91,7 +92,6 @@ class CameraProgram:
             if next_shot <= now:
                 next_shot = now + interval       # after a hold-up, carry on from now: no burst to catch up
             self.step_safely()
-            self.cleanup_safely(self.clock.now())
             self.maybe_log_status()
             if max_pictures and self.taken >= max_pictures:
                 break
@@ -155,31 +155,6 @@ class CameraProgram:
                           model=reply.model if reply else '', health=self.health_now)
         self.uploader.offer(picture.jpeg, info)
 
-    def maybe_cleanup(self, now: float) -> int | None:
-        """Delete the stored pictures every pi.delete_every_min (0 = never). Returns how many, or None if it's
-        not time yet. A cleanup that fails waits for the next turn too."""
-        every = self.settings.delete_every_min * 60
-        if every <= 0 or now - self._last_cleanup_try < every:
-            return None
-        self._last_cleanup_try = now
-        removed = self.store.cleanup(now)
-        log.info('Cleanup: deleted %d pictures (every %g min). %d MB free.', removed, self.settings.delete_every_min,
-                 self.store.free_mb())
-        return removed
-
-    def cleanup_safely(self, now: float) -> None:
-        """maybe_cleanup(), but a problem is logged (once, until it goes away) and the camera carries on."""
-        try:
-            removed = self.maybe_cleanup(now)
-        except Exception as exc:
-            problem = str(exc) or type(exc).__name__
-            if problem != self._cleanup_problem:
-                log.warning('Problem deleting the stored pictures (the camera carries on): %s', problem)
-                self._cleanup_problem = problem
-            return
-        if removed is not None:
-            self._cleanup_problem = ''
-
     def maybe_log_status(self) -> None:
         now = self.clock.monotonic()
         if now < self._next_status:
@@ -202,11 +177,9 @@ class CameraProgram:
         if now < self._next_health:
             return
         self._next_health = now + self.settings.health_every_sec
-        self.health_now = self.health.read(self.camera.name, self.store)
-        if self.health_now.disk_free_mb < self.store.min_free_mb:
-            removed = self.store.free_up_space()
-            log.warning('Disk nearly full: deleted the %d oldest pictures', removed)
-            self.health_now = self.health.read(self.camera.name, self.store)
+        self.health_now = self.health.read(self.camera.name, self.store)    # cheap: the store keeps its count
+        if self.health_now.disk_free_mb < self.store.min_free_mb and self.cleaner is not None:
+            self.cleaner.need_space()                   # the cleaner's thread deletes; the camera carries on
 
 
 class WorkerThread(threading.Thread):
@@ -245,9 +218,11 @@ class Workers:
     uploader: Uploader | None
     settings: SettingsWatcher | None
     watchdog: Watchdog
+    cleaner: Cleaner
 
     def threads(self, pause_after_error_sec: float) -> list[WorkerThread]:
-        threads = [WorkerThread('watchdog', self.watchdog.tick, threading.Event(), pause_after_error_sec)]
+        threads = [WorkerThread('watchdog', self.watchdog.tick, threading.Event(), pause_after_error_sec),
+                   WorkerThread('cleanup', self.cleaner.tick, self.cleaner.wake, pause_after_error_sec)]
         if self.detector:
             threads.append(WorkerThread('detector', self.detector.tick, self.detector.wake, pause_after_error_sec))
         if self.uploader:
@@ -281,7 +256,8 @@ def build_program(settings: CameraSettings, camera: Any, *, server: str | None, 
     if reload is not None and not offline:
         watcher = SettingsWatcher(reload, settings, client, every_sec=settings.settings_check_every_sec, clock=clock)
     program.watchdog = Watchdog(settings.restart_after_missed_pictures / settings.fps, clock)
-    return program, Workers(worker, uploader, watcher, program.watchdog)
+    program.cleaner = Cleaner(store, settings.delete_every_min, clock)
+    return program, Workers(worker, uploader, watcher, program.watchdog, program.cleaner)
 
 
 # ── settings and flags ────────────────────────────────────────────────

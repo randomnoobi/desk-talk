@@ -13,6 +13,7 @@ from desktalk.core.chat.workers.lens import Lens
 from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.desk_state import DeskState
 from desktalk.domain import CameraNotice, DetectorState, PiHealth, UploadInfo
+from desktalk_shared.wire import DETECTOR_TURNED_OFF, info_from_v1_headers
 from tests.fakes import FakeCameraHealth, FakeClock, FakeFrameSource, FakePreferences, RecordingNotifier, SyncEventBus
 
 SETTINGS = LensSettings.model_construct(check_every_sec=2.0, repeat_after_min=20.0, fixed_after_sec=5.0,
@@ -361,3 +362,44 @@ def test_lens_says_thanks_when_the_pi_detects_again():
     rig.tick(after=5)
     assert [kind for kind, _ in rig.said()] == ['problem', 'fixed']
     assert rig.bus.of_type(CameraNotice)[-1].key == 'pi_detector'
+
+
+def test_lens_is_quiet_when_detection_on_the_pi_was_turned_off_on_purpose():
+    """The camera program was started with --no-detector: nothing to fix, so nothing to say."""
+    rig = Rig(pi=PiReports())
+    rig.pi.picture(rig.clock.now(), detector=DetectorState.OFF, reason=DETECTOR_TURNED_OFF)
+    for _ in range(3):
+        rig.tick(after=SETTINGS.repeat_after_min * 60)
+    assert rig.said() == []
+
+
+def test_lens_is_quiet_when_the_pi_runs_the_old_camera_program():
+    """The old camera program (upload format 1) has no detector at all."""
+    rig = Rig(pi=PiReports())
+    rig.pi.latest = (info_from_v1_headers({'X-Frame-Id': 'pi-000001'}), rig.clock.now())
+    for _ in range(3):
+        rig.tick(after=SETTINGS.repeat_after_min * 60)
+    assert rig.said() == []
+
+
+def test_lens_still_warns_when_the_pis_detector_is_off_because_it_failed():
+    rig = Rig(pi=PiReports())
+    rig.pi.picture(rig.clock.now(), detector=DetectorState.OFF, reason="the detector isn't answering: timed out")
+    rig.tick()
+    rig.tick(after=60)
+    [(kind, text)] = rig.said()
+    assert kind == 'problem' and "isn't answering" in text
+
+
+def test_no_thanks_when_a_failed_detector_is_then_turned_off_on_purpose():
+    """Lens warned, then the camera program was restarted with --no-detector: the Pi still isn't detecting,
+    so "finding the objects itself again" would be wrong. Lens just drops it."""
+    rig = Rig(pi=PiReports())
+    rig.pi.picture(rig.clock.now(), detector=DetectorState.OFF, reason=NO_CONTAINER)
+    rig.tick()
+    rig.tick(after=60)
+    rig.pi.picture(rig.clock.now(), detector=DetectorState.OFF, reason=DETECTOR_TURNED_OFF)
+    rig.tick(after=2)
+    rig.tick(after=5)
+    rig.tick(after=SETTINGS.repeat_after_min * 60)
+    assert [kind for kind, _ in rig.said()] == ['problem']

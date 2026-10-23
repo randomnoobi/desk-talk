@@ -4,7 +4,7 @@ Lens, the camera's own character, posting in the group chat.
 Every lens.check_every_sec this asks the camera check (CameraHealthView: brightness, blur, glare, the
 camera moving or going quiet) what needs fixing, and says it as Lens. With the Pi as the camera it
 also mentions a Pi that runs hot or slows itself down, a Pi clock that's off, and the Pi's own object
-detection being off (and why: this computer then detects instead). No AI is used, so Lens works even
+detection being off because it failed (and why: this computer then detects instead). No AI is used, so Lens works even
 without a key. Everything Lens says is also published as a CameraNotice for the log.
 Nothing is said during quiet hours.
 
@@ -26,6 +26,7 @@ from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.domain import CameraNotice, DetectorState, PiHealth, UploadInfo
 from desktalk.ports import CameraHealthView, EventBus, FrameSource, Notifier, Preferences
 from desktalk.util import in_hour_window
+from desktalk_shared.wire import OFF_ON_PURPOSE
 
 log = logging.getLogger(__name__)
 
@@ -81,6 +82,11 @@ class _PiWatch:
                 return {'key': self.key, 'kind': 'fixed', 'text': PI_FIXED[self.key]}
         return None
 
+    def forget(self) -> None:
+        """Drop it without a thank-you (it wasn't fixed, it just isn't a problem any more)."""
+        self._since = self._said_at = self._gone_since = None
+        self._open = False
+
 
 class Lens:
     """A PeriodicWorker. `phone` / `pi_uploads`: pass the camera source when it's the phone / the Pi."""
@@ -132,7 +138,13 @@ class Lens:
         info, _ = latest
         texts = {'pi_hot': self._hot_text(info.health), 'pi_power': self._power_text(info.health),
                  'pi_clock': self._clock_text(self._pi.clock_off_sec()), 'pi_detector': self._detector_text(info)}
-        said = [watch.update(now, texts[watch.key]) for watch in self._pi_watches]
+        off_on_purpose = info.detector is DetectorState.OFF and info.detector_reason in OFF_ON_PURPOSE
+        said = []
+        for watch in self._pi_watches:
+            if watch.key == 'pi_detector' and off_on_purpose:
+                watch.forget()
+            else:
+                said.append(watch.update(now, texts[watch.key]))
         return [message for message in said if message]
 
     def _hot_text(self, health: PiHealth) -> str:
@@ -163,7 +175,9 @@ class Lens:
 
     @staticmethod
     def _detector_text(info: UploadInfo) -> str:
-        if info.detector is not DetectorState.OFF:
+        """Only when the Pi's detector is off because something went wrong: not when it was turned off on
+        purpose (--no-detector) or the Pi runs the old camera program, which has none."""
+        if info.detector is not DetectorState.OFF or info.detector_reason in OFF_ON_PURPOSE:
             return ''
         why = f': {info.detector_reason}' if info.detector_reason else ''
         return (f"The Raspberry Pi isn't finding the objects itself right now{why}. "
