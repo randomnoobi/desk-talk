@@ -102,7 +102,7 @@ detector:
 # ── Agents joining and leaving the group chat ──────────────────────
 agents:
   join_after_sec: 3           # seen this long → "Cup joined the chat"
-  leave_after_sec: 45         # gone this long → "Cup left the chat"
+  leave_after_sec: 120        # gone this long → "Cup left the chat" (same as the longest sip, so a sip never leaves)
   min_confidence: 0.45        # weaker boxes don't count as "seen" (agents.yaml can raise it per object)
   only_on_desk: true          # once desk corners are marked, things off the desk can't join
   max_agents: 12              # most agents in the chat at once
