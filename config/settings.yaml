@@ -118,6 +118,26 @@ presence:
   disappear_after_sec: 2.5    # missing this long = gone (shorter than leaving the chat)
   user_active_window_sec: 90  # a person or movement seen this recently = someone is at the desk
 
+# ── Object states (steady present / absent per object, saved in SQLite) ──
+object_states:
+  on_confidence: 0.5          # a box at least this sure turns "seen" on
+  off_confidence: 0.4         # once on, "seen" stays on until the box drops below this
+  window_pictures: 5          # the last this many pictures vote on "seen"
+  vote_share: 0.5             # more than this share of the votes must say yes
+  appear_sec: 3               # seen longer than this → appeared
+  gone_sec: 3                 # missing longer than this → removed
+  move_fraction: 0.2          # center moved more than this share of the picture → moved
+  no_move_labels: [person]    # things that move all the time: no "moved" events for them
+  # You (the person) are the on/off switch for reminders, idle chat and vision checks.
+  person_label: person        # the detector's word for you
+  person_appear_sec: 3        # seen longer than this → you're at the desk, reminders on
+  person_gone_sec: 90         # missing longer than this → you're away, reminders pause
+  person_counts_movement: true  # movement in the picture counts as you (the camera often only sees hands)
+  # Saving
+  snapshot_every_sec: 60      # save every object's state this often (restart + heartbeat)
+  restore_max_age_sec: 300    # after a restart, saved states older than this start over as UNKNOWN
+  database: data/object_states.sqlite
+
 # ── Keeping background jobs running ────────────────────────────────
 supervisor:
   restart_start_sec: 1        # a background job that crashed starts again after this long...

@@ -11,6 +11,7 @@ from tests.fakes.parts import (
     FakeFrameSource,
     InMemoryEventStore,
     InMemoryKeyValueStore,
+    InMemoryStateStore,
     RecordingNotifier,
     SyncEventBus,
 )
@@ -31,6 +32,7 @@ from tests.fakes.views import (
 __all__ = [
     'FakeCameraHealth', 'FakeChatModel', 'FakeChatVoice', 'FakeClock', 'FakeDeskStatus', 'FakeDetector',
     'FakeFrameSource', 'FakeHabits', 'FakeObjectStates', 'FakePainter', 'FakePictureCheck', 'FakePreferences',
-    'FakeProfiles', 'FakeRuleNudges', 'InMemoryEventStore', 'InMemoryKeyValueStore', 'RecordingNotifier',
+    'FakeProfiles', 'FakeRuleNudges', 'InMemoryEventStore', 'InMemoryKeyValueStore', 'InMemoryStateStore',
+    'RecordingNotifier',
     'StaticRoster', 'SyncEventBus',
 ]

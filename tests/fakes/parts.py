@@ -11,7 +11,16 @@ from typing import Any
 import cv2
 import numpy as np
 
-from desktalk.domain import AIUnavailable, Detection, DetectorUnavailable, Event, Frame, UploadInfo
+from desktalk.domain import (
+    CHANGE_TYPES,
+    AIUnavailable,
+    Detection,
+    DetectorUnavailable,
+    Event,
+    Frame,
+    StateRecord,
+    UploadInfo,
+)
 
 
 class FakeDetector:
@@ -171,6 +180,32 @@ class InMemoryKeyValueStore:
 
     def keys(self, prefix: str = '') -> list[str]:
         return sorted(k for k in self.data if k.startswith(prefix))
+
+
+class InMemoryStateStore:
+    """The object state history in a list: the same answers as the SQLite store, nothing written to disk."""
+
+    def __init__(self):
+        self.records: list[StateRecord] = []
+        self.closed = False
+
+    def append(self, records: Sequence[StateRecord]) -> None:
+        self.records.extend(records)
+
+    def latest_states(self, since: float) -> dict[str, StateRecord]:
+        latest: dict[str, StateRecord] = {}
+        for record in self.records:
+            if record.type == 'moved' or record.ts < since:
+                continue
+            if record.label not in latest or record.ts >= latest[record.label].ts:
+                latest[record.label] = record
+        return latest
+
+    def changes(self, since: float) -> list[StateRecord]:
+        return sorted((r for r in self.records if r.type in CHANGE_TYPES and r.ts > since), key=lambda r: r.ts)
+
+    def close(self) -> None:
+        self.closed = True
 
 
 class FakeChatModel:

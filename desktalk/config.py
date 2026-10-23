@@ -203,6 +203,25 @@ class PresenceSettings(_Section):
     user_active_window_sec: PositiveNumber
 
 
+class ObjectStatesSettings(_Section):
+    _in_order = (('off_confidence', 'on_confidence'),)
+    on_confidence: Fraction
+    off_confidence: Fraction
+    window_pictures: PositiveInt
+    vote_share: Fraction
+    appear_sec: ZeroOrMore
+    gone_sec: ZeroOrMore
+    move_fraction: Fraction
+    no_move_labels: Words
+    person_label: str
+    person_appear_sec: ZeroOrMore
+    person_gone_sec: ZeroOrMore
+    person_counts_movement: bool
+    snapshot_every_sec: PositiveNumber
+    restore_max_age_sec: PositiveNumber
+    database: Path
+
+
 class SupervisorSettings(_Section):
     _in_order = (('restart_start_sec', 'restart_max_sec'),)
     restart_start_sec: PositiveNumber
@@ -965,6 +984,7 @@ class AppConfig(_Section):
     detector: DetectorSettings
     agents: AgentsSettings
     presence: PresenceSettings
+    object_states: ObjectStatesSettings
     supervisor: SupervisorSettings
     event_stream: EventStreamSettings
     event_log: EventLogSettings
