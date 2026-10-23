@@ -163,7 +163,9 @@ The person goes through the same machine, with three differences:
 
 **Append only.** The database refuses any change or delete to this table (two small SQLite triggers), so the history can't be rewritten by mistake. WAL mode is on, so reading and writing don't block each other.
 
-**A snapshot every 60 seconds.** It's one `snapshot` row per object that isn't UNKNOWN. It does three jobs:
+**A snapshot every 60 seconds.** It's one `snapshot` row per object that is PRESENT. ABSENT objects are left out:
+their `removed` row already says so, and writing them every minute would only grow the table with every label ever
+seen. It does three jobs:
 
 - **Restart.** On start, the app reads each object's newest row. If that row is less than 5 minutes old, the object starts in that state instead of UNKNOWN, so a bottle that was already there doesn't get a second `appeared`.
 - **Faster questions.** "What was on the desk at 3 pm?" means taking the last snapshot before 3 pm plus a few events, not replaying the whole day.
@@ -171,7 +173,8 @@ The person goes through the same machine, with three differences:
 
 Snapshots go only to SQLite, not to the event bus, so the event log stays readable.
 
-**`changes(since)` reads SQLite.** The rule engine asks for the last hour or so of changes once a minute. Reading them from the table (with an index on `ts`) means they survive a restart, and the tracker keeps no second copy in memory.
+**`changes(since)` reads SQLite.** The rule engine asks for the last hour or so of changes once a minute. Reading them from the table (with an index on `ts`) means they survive a restart. The tracker only keeps in memory the changes the store couldn't save (a full disk,
+a locked file); they're saved with the next change and `changes(since)` lists them meanwhile.
 
 **When the camera started watching.** `DeskSnapshot.watched_since` (the rule engine's `no_event` needs it) is the time of the first picture of the current run. A gap between two pictures of `protocols.breaks.break_min` minutes or more starts a new run, the same rule the producer uses for `DeskState.session_start` (and so for the reminder warm-up). After a restart it starts again with the first picture: the states come back, the watching time doesn't.
 
@@ -507,9 +510,11 @@ Pure code: no settings section, no clock, no I/O. Can run beside Task 1.
       traceback only the first time in a row, like `EventStream._deliver`) and never stops the tracker.
   - `snapshot() -> DeskSnapshot`: every tracked label (UNKNOWN included) as `ObjectSnapshot(label, phase.value, since)`,
     and `watched_since`. Labels never seen aren't in it.
-  - `changes(since: float) -> list[StateChange]`: `store.changes(since)` as `StateChange(ts, label, change=type)`.
-  - `save_snapshot(now: float) -> int`: one `snapshot` record per object that isn't UNKNOWN, with
-    `prev_state = new_state` and `dwell_sec = now - since`. Returns how many.
+  - `changes(since: float) -> list[StateChange]`: `store.changes(since)` as `StateChange(ts, label, change=type)`,
+    plus the changes the store couldn't save yet (each listed once), oldest first.
+  - `save_snapshot(now: float) -> int`: one `snapshot` record per object that is PRESENT (an ABSENT one already
+    has its `removed` row, so it isn't written again every minute), with `prev_state = new_state` and
+    `dwell_sec = now - since`. Returns how many.
   - `restore(now: float) -> int`: `store.latest_states(now - settings.restore_max_age_sec)`. Each PRESENT / ABSENT
     record becomes `ObjectState(label, phase, since=...)` with no anchor: `since = ts - dwell_sec` for a snapshot
     row, `ts` for appeared / removed. The smoothing windows start empty. Returns how many.
@@ -543,7 +548,7 @@ def test_bottle_timeline_from_the_whiteboard():
     `device_id == 'pi'`, and `store.changes(0)` has one row with `new_state == Phase.PRESENT` and a `timezone` like `+08:00`.
   - `test_a_failing_store_does_not_hide_the_event`: a store whose `append` raises `sqlite3.OperationalError` → the
     event is still on the bus, the error is in `caplog`, and the next pictures still change states.
-  - `test_snapshot_writes_one_row_per_known_object`: bottle PRESENT, cup ABSENT, book UNKNOWN → `save_snapshot(now) == 2`.
+  - `test_snapshot_writes_one_row_per_known_object`: bottle PRESENT, cup ABSENT, book UNKNOWN → `save_snapshot(now) == 1`.
   - `test_snapshot_lists_unknown_while_deciding`: one bottle picture → `snapshot().objects['bottle'].state == 'UNKNOWN'`; no person in it.
   - `test_restart_restores_states_without_new_events`: bottle PRESENT, `save_snapshot`. A new tracker on the same
     store gets `restore(now) == 1`, `since` equals the first tracker's, and 15 more bottle pictures → no new events.

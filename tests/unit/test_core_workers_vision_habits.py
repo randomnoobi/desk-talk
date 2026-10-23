@@ -138,6 +138,20 @@ def test_a_short_slouch_is_not_logged():
     assert rig.habits.events() == []
 
 
+def test_going_away_ends_an_open_slouch():
+    rig = Rig()
+    rig.look(SLOUCH)
+    rig.clock.advance(100)
+    rig.status.active = False                                # the person leaves while slouching
+    rig.habits.tick(rig.clock.now())
+    assert rig.habits._slouch_since is None
+    [entry] = rig.habits.events()
+    assert (entry['category'], entry['duration_sec']) == ('posture_bad', 100)
+    rig.clock.advance(3600)                                  # an hour away doesn't count as slouching
+    assert rig.habits.summary()['ongoing_slouch_seconds'] == 0
+    assert rig.habits.summary()['posture_bad_seconds_today'] == 100
+
+
 def test_the_summary_counts_todays_slouching_including_right_now():
     rig = Rig()
     rig.look(SLOUCH)

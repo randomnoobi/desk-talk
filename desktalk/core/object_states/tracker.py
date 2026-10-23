@@ -4,13 +4,15 @@ The tracker: detection events in, a steady state for each kind of object out.
 It listens to DetectionEvents (about 3 a second). For each kind of object it picks one box per picture,
 smooths the answer (Hysteresis, then MajorityWindow) and runs `step()`. When something really changes
 (`appeared`, `removed`, `moved`) it publishes an ObjectStateChanged on the event bus first, then writes the
-change to the ObjectStateStore, so a database problem can't hide the event from the app.
+change to the ObjectStateStore, so a database problem can't hide the event from the app. Changes the store
+couldn't take are kept in memory and saved with the next ones, so the rule engine still sees them.
 
 The person goes through the same machine with its own waits, and movement in the picture can count as
 "seen" (the camera often only sees your hands). That makes the person's state the on/off switch.
 
 It also answers the rule engine (ObjectStatesView): `snapshot()` is the state of every object seen so far,
-and `changes(since)` reads the store, so changes from before a restart are still there.
+and `changes(since)` reads the store (plus any changes not saved yet), so changes from before a restart are still
+there.
 `save_snapshot(now)` and `restore(now)` let a restart pick up where the last run left off.
 """
 
@@ -66,6 +68,7 @@ class ObjectStateTracker:
         self._restore_max_age_sec = settings.restore_max_age_sec
         self._object_rules = (settings.appear_sec, settings.gone_sec, settings.move_fraction)
         self._person_rules = (settings.person_appear_sec, settings.person_gone_sec, settings.move_fraction)
+        self._rules_by_label: dict[str, Rules] = {}     # built once per kind of object, on first use
 
         # One lock for the states, the smoothing and watched_since: pictures come in on the event bus
         # thread, snapshot() and changes() are read from the rule engine's and reminders' threads, and
@@ -77,12 +80,15 @@ class ObjectStateTracker:
         self._watched_since: float | None = None
         self._last_picture: float | None = None
         self._store_errors_in_row = 0
+        self._unsaved: list[StateRecord] = []           # changes the store couldn't take yet, oldest first
         bus.subscribe('object-states', self.on_detection, types={DetectionEvent})
 
     # ── helpers ──
     def _rules(self, label: str) -> Rules:
-        appear, gone, move = self._person_rules if label == self._person_label else self._object_rules
-        return Rules(appear, gone, move, track_moves=label not in self._no_move_labels)
+        if label not in self._rules_by_label:
+            appear, gone, move = self._person_rules if label == self._person_label else self._object_rules
+            self._rules_by_label[label] = Rules(appear, gone, move, track_moves=label not in self._no_move_labels)
+        return self._rules_by_label[label]
 
     def _smoothing(self, label: str) -> tuple[Hysteresis, MajorityWindow]:
         if label not in self._hysteresis:
@@ -99,11 +105,14 @@ class ObjectStateTracker:
         return cx / width, cy / height
 
     def _pick(self, boxes: list[Detection], anchor: Center | None, width: int, height: int) -> Detection | None:
-        """One box per kind of object: the one nearest where it was, else the most confident."""
+        """One box per kind of object: the one nearest where it was, else the most confident.
+
+        Only boxes at least `off_confidence` sure count for "nearest", so a faint leftover box at the old spot
+        can't hide the real object somewhere else."""
         if not boxes:
             return None
         if anchor is not None:
-            placed = [(det, self._share(det, width, height)) for det in boxes]
+            placed = [(det, self._share(det, width, height)) for det in boxes if det.confidence >= self._off_conf]
             placed = [(det, c) for det, c in placed if c is not None]
             if placed:
                 return min(placed, key=lambda p: math.dist(anchor, p[1]))[0]
@@ -159,15 +168,21 @@ class ObjectStateTracker:
         # The bus first, so a database problem can't hide the change from the app.
         for t in transitions:
             self._bus.publish(self._event(t))
+        # Changes the store couldn't take before go first, so the rows stay oldest first.
+        with self._lock:
+            self._unsaved.extend(self._record(t) for t in transitions)
+            records = list(self._unsaved)
         try:
-            self._store.append([self._record(t) for t in transitions])
+            self._store.append(records)
         except Exception as exc:  # a full disk or a locked file must never stop the tracker
             self._store_errors_in_row += 1
             # The full traceback only when it starts failing, so a broken database doesn't flood the log.
-            log.error('could not save %d object state change(s): %s', len(transitions), plain_error(exc),
+            log.error('could not save %d object state change(s): %s', len(records), plain_error(exc),
                       exc_info=self._store_errors_in_row == 1)
         else:
             self._store_errors_in_row = 0
+            with self._lock:
+                del self._unsaved[:len(records)]
 
     # ── ObjectStatesView ──
     def snapshot(self) -> DeskSnapshot:
@@ -176,17 +191,27 @@ class ObjectStateTracker:
             return DeskSnapshot(objects=objects, watched_since=self._watched_since)
 
     def changes(self, since: float) -> list[StateChange]:
-        return [StateChange(r.ts, r.label, change=r.type) for r in self._store.changes(since)]
+        """The store's changes after `since`, plus the ones it couldn't save yet, oldest first."""
+        with self._lock:
+            unsaved = [r for r in self._unsaved if r.ts > since]
+        saved = [StateChange(r.ts, r.label, change=r.type) for r in self._store.changes(since)]
+        # A change saved between the two reads is in both lists: count it once.
+        known = set(saved)
+        extra = [c for c in (StateChange(r.ts, r.label, change=r.type) for r in unsaved) if c not in known]
+        return sorted(saved + extra, key=lambda c: c.ts)
 
     # ── saving and restarting ──
     def save_snapshot(self, now: float) -> int:
-        """Write one `snapshot` row per object that isn't UNKNOWN. Returns how many."""
+        """Write one `snapshot` row per object that is PRESENT. Returns how many.
+
+        ABSENT objects are left out: their `removed` row already says so, and writing them every minute would
+        only grow the table with every label ever seen."""
         with self._lock:
             records = [
                 StateRecord(ts=now, timezone=_timezone(now), device_id=self._device_id, type='snapshot',
                             label=label, prev_state=s.phase, new_state=s.phase,
                             dwell_sec=now - s.since if s.since is not None else None)
-                for label, s in self._states.items() if s.phase != Phase.UNKNOWN
+                for label, s in self._states.items() if s.phase == Phase.PRESENT
             ]
         if records:
             self._store.append(records)

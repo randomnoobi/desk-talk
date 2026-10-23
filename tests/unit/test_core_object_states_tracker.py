@@ -102,6 +102,20 @@ class BrokenStore(InMemoryStateStore):
         raise sqlite3.OperationalError('database or disk is full')
 
 
+class FlakyStore(InMemoryStateStore):
+    """A store whose database file is locked the first `fails` times, then works."""
+
+    def __init__(self, fails=1):
+        super().__init__()
+        self.fails = fails
+
+    def append(self, records):
+        if self.fails:
+            self.fails -= 1
+            raise sqlite3.OperationalError('database is locked')
+        super().append(records)
+
+
 # ── the whiteboard and smoothing ──
 
 def test_bottle_timeline_from_the_whiteboard():
@@ -174,6 +188,21 @@ def test_the_store_working_again_brings_back_the_traceback(caplog):
     assert [bool(r.exc_info) for r in errors] == [True, True]
 
 
+def test_changes_include_ones_the_store_could_not_save():
+    store = FlakyStore(fails=1)
+    tracker, bus, _ = make_tracker(store)
+    t = feed(tracker, 1000, [[o('bottle', 0.6)]] * SETTLE)          # appeared, but the store fails
+    [appeared] = bus.of_type(ObjectStateChanged)
+    assert store.records == []
+    assert tracker.changes(0) == [StateChange(appeared.ts, 'bottle', 'appeared')]
+    assert tracker.changes(appeared.ts) == []
+    feed(tracker, t, [[]] * 16)                                      # removed: the store works again
+    removed = bus.of_type(ObjectStateChanged)[-1]
+    assert [(r.type, r.ts) for r in store.records] == [('appeared', appeared.ts), ('removed', removed.ts)]
+    assert tracker.changes(0) == [StateChange(appeared.ts, 'bottle', 'appeared'),
+                                  StateChange(removed.ts, 'bottle', 'removed')]
+
+
 # ── snapshots and restarts ──
 
 def test_snapshot_writes_one_row_per_known_object():
@@ -184,9 +213,9 @@ def test_snapshot_writes_one_row_per_known_object():
     snap = tracker.snapshot().objects
     assert {k: v.state for k, v in snap.items()} == {'bottle': 'PRESENT', 'cup': 'ABSENT', 'book': 'UNKNOWN'}
     now = t + 10
-    assert tracker.save_snapshot(now) == 2
+    assert tracker.save_snapshot(now) == 1                 # only PRESENT: the cup's `removed` row already says it
     rows = {r.label: r for r in store.records if r.type == 'snapshot'}
-    assert set(rows) == {'bottle', 'cup'}
+    assert set(rows) == {'bottle'}
     for label, row in rows.items():
         assert row.ts == now
         assert row.prev_state == row.new_state == Phase(snap[label].state)
@@ -299,6 +328,13 @@ def test_bottle_moved_across_the_desk():
     assert changes(bus) == [('appeared', 'bottle'), ('moved', 'bottle')]
     moved = bus.of_type(ObjectStateChanged)[-1]
     assert (moved.prev_state, moved.new_state) == ('PRESENT', 'PRESENT')
+
+
+def test_a_faint_box_near_the_old_spot_does_not_hide_the_moved_bottle():
+    tracker, bus, _ = make_tracker()
+    t = feed(tracker, 1000, [[o('bottle', 0.6, x=128)]] * SETTLE)               # at 0.2 across
+    feed(tracker, t, [[o('bottle', 0.9, x=512), o('bottle', 0.25, x=141)]] * 30)  # moved to 0.8; a faint box at 0.22
+    assert changes(bus) == [('appeared', 'bottle'), ('moved', 'bottle')]
 
 
 def test_the_most_confident_box_counts_before_there_is_a_spot():
