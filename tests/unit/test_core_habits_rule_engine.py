@@ -1,0 +1,334 @@
+"""The rule engine (desktalk/core/habits/rule_engine.py): rules + what's on the desk -> nudges."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+import pytest
+from pydantic import TypeAdapter
+
+from desktalk.config import Condition, QuietWindow, RuleConfig, Success
+from desktalk.core.habits.rule_engine import check_success, evaluate, holds, in_quiet_hours, lookback_sec
+from desktalk.domain.rules import DeskSnapshot, ObjectSnapshot, RuleHistory, StateChange
+
+T0 = 1_780_000_000.0        # 13:26 in Los Angeles (a summer afternoon, outside the quiet hours)
+LA = 'America/Los_Angeles'
+
+# The agreed hydration rule from the plan, with a fixed place so the test hour never lands in quiet hours.
+HYDRATION = RuleConfig.model_validate({
+    'id': 'hydration',
+    'enabled': True,
+    'habit': 'hydration',
+    'timezone': LA,
+    'gate': {'state': {'object': 'person', 'is': 'present'}},
+    'when': {'all': [
+        {'state': {'object': 'person', 'is': 'present', 'for': '60m'}},
+        {'no_event': {'object': 'bottle', 'events': ['moved', 'removed'], 'for': '60m'}},
+    ]},
+    'cooldown': '30m',
+    'max_nudges_per_hour': 4,
+    'quiet_hours': {'start': '22:00', 'end': '07:00'},
+    'message': "You've been at the desk for an hour and your bottle hasn't moved. Time for some water?",
+    'success': {'within': '5m', 'when': {'event': {'object': 'bottle', 'events': ['moved', 'removed']}}},
+})
+
+
+def cond(data: dict):
+    return TypeAdapter(Condition).validate_python(data)
+
+
+def rule(**changes) -> RuleConfig:
+    """The hydration rule with some parts swapped (a plain dict for `success` is read like the YAML)."""
+    if isinstance(changes.get('success'), dict):
+        changes['success'] = Success.model_validate(changes['success'])
+    return HYDRATION.model_copy(update=changes)
+
+
+def desk(watched_since: float | None = T0, **objects: tuple[str, float | None]) -> DeskSnapshot:
+    return DeskSnapshot({label: ObjectSnapshot(label, state, since) for label, (state, since) in objects.items()},
+                        watched_since)
+
+
+def history(changes=(), fired=None) -> RuleHistory:
+    return RuleHistory(tuple(changes), fired or {})
+
+
+def change(ts: float, label: str, kind: str) -> StateChange:
+    return StateChange(ts, label, kind)
+
+
+def ts(text: str, zone: str, fold: int = 0) -> float:
+    return datetime.strptime(text, '%Y-%m-%d %H:%M').replace(tzinfo=ZoneInfo(zone), fold=fold).timestamp()
+
+
+def state(who: str, is_: str, for_: str | None = None) -> dict:
+    return {'state': {'object': who, 'is': is_, **({'for': for_} if for_ else {})}}
+
+
+def no_event(who: str, for_: str, events=('moved', 'removed')) -> dict:
+    return {'no_event': {'object': who, 'events': list(events), 'for': for_}}
+
+
+# ── the hydration rule end to end ───────────────────────────────────────────────────────────────────────────────────
+def test_hydration_nudges_after_an_hour_with_an_untouched_bottle():
+    snap = desk(person=('PRESENT', T0), bottle=('PRESENT', T0), watched_since=T0)
+    [n] = evaluate([HYDRATION], snap, history(), T0 + 3600)
+    assert n.key == 'rule.hydration' and n.habit == 'hydration' and n.repeat_after_sec == 1800
+    assert n.text == HYDRATION.message
+    assert n.evidence == ('the person has been present for 60 minutes; '
+                          "the bottle hasn't been moved or removed in 60 minutes")
+
+
+def test_not_yet_at_59_minutes():
+    snap = desk(person=('PRESENT', T0), bottle=('PRESENT', T0), watched_since=T0)
+    assert evaluate([HYDRATION], snap, history(), T0 + 3599) == []
+
+
+def test_a_sip_resets_the_hour():
+    snap = desk(person=('PRESENT', T0), bottle=('PRESENT', T0 + 1800), watched_since=T0)
+    sip = [change(T0 + 1800, 'bottle', 'removed')]
+    assert evaluate([HYDRATION], snap, history(sip), T0 + 3600) == []
+    [n] = evaluate([HYDRATION], snap, history(sip), T0 + 5400)
+    assert n.evidence == ('the person has been present for 90 minutes; '
+                          "the bottle hasn't been moved or removed in 60 minutes")
+
+
+def test_a_change_to_another_object_or_kind_does_not_reset_the_hour():
+    snap = desk(person=('PRESENT', T0), bottle=('PRESENT', T0), watched_since=T0)
+    other = [change(T0 + 1800, 'phone', 'removed'), change(T0 + 1900, 'bottle', 'appeared')]
+    assert len(evaluate([HYDRATION], snap, history(other), T0 + 3600)) == 1
+
+
+def test_gate_closed_when_you_are_away():
+    snap = desk(person=('ABSENT', T0), bottle=('PRESENT', T0), watched_since=T0)
+    assert evaluate([HYDRATION], snap, history(), T0 + 7200) == []
+
+
+def test_no_event_needs_enough_watching():
+    now = T0 + 7200
+    snap = desk(person=('PRESENT', T0), bottle=('PRESENT', T0), watched_since=now - 300)
+    assert evaluate([HYDRATION], snap, history(), now) == []
+
+
+def test_never_seen_bottle_counts_as_absent_since_watching():
+    snap = desk(person=('PRESENT', T0), watched_since=T0)
+    [n] = evaluate([HYDRATION], snap, history(), T0 + 3600)
+    assert "the bottle hasn't been moved or removed in 60 minutes" in n.evidence
+
+
+def test_state_for_needs_the_whole_time():
+    snap = desk(person=('PRESENT', T0 + 3600 - 1800), bottle=('PRESENT', T0), watched_since=T0)
+    assert evaluate([HYDRATION], snap, history(), T0 + 3600) == []
+
+
+def test_no_pictures_yet_means_no_for_check_and_no_no_event_check_is_true():
+    snap = desk(watched_since=None, person=('PRESENT', None))
+    assert not holds(cond(state('person', 'present', '1m')), snap, [], T0)
+    assert not holds(cond(no_event('bottle', '1m')), snap, [], T0)
+    assert not holds(cond(state('bottle', 'absent', '1m')), snap, [], T0)
+    assert holds(cond(state('person', 'present')), snap, [], T0)
+
+
+def test_a_state_that_is_not_known_does_not_pass_a_for_check():
+    snap = desk(person=('PRESENT', None))
+    assert not holds(cond(state('person', 'present', '1m')), snap, [], T0 + 600)
+
+
+def test_disabled_rule_is_skipped():
+    snap = desk(person=('PRESENT', T0), bottle=('PRESENT', T0))
+    assert evaluate([rule(enabled=False)], snap, history(), T0 + 3600) == []
+
+
+def test_rules_come_out_in_the_order_they_are_written():
+    snap = desk(person=('PRESENT', T0), bottle=('PRESENT', T0))
+    second = rule(id='second', message='second one')
+    third = rule(id='third', message='third one')
+    assert [n.key for n in evaluate([second, HYDRATION, third], snap, history(), T0 + 3600)] == [
+        'rule.second', 'rule.hydration', 'rule.third']
+
+
+def test_a_rule_without_quiet_hours_is_fine():
+    snap = desk(person=('PRESENT', T0), bottle=('PRESENT', T0))
+    assert len(evaluate([rule(quiet_hours=None)], snap, history(), T0 + 3600)) == 1
+
+
+# ── conditions ──────────────────────────────────────────────────────────────────────────────────────────────────────
+def test_any_all_not():
+    snap = desk(person=('PRESENT', T0), phone=('ABSENT', T0))
+    yes, no = state('person', 'present'), state('phone', 'present')
+    assert holds(cond({'all': [yes, yes]}), snap, [], T0)
+    assert not holds(cond({'all': [yes, no]}), snap, [], T0)
+    assert holds(cond({'any': [no, yes]}), snap, [], T0)
+    assert not holds(cond({'any': [no, no]}), snap, [], T0)
+    assert holds(cond({'not': no}), snap, [], T0)
+    assert not holds(cond({'not': yes}), snap, [], T0)
+
+
+def test_state_matches_the_state_machine_words_in_any_case():
+    snap = desk(person=('UNKNOWN', T0), bottle=('PRESENT', T0))
+    assert holds(cond(state('person', 'unknown')), snap, [], T0)
+    assert holds(cond(state('bottle', 'present')), snap, [], T0)
+    assert not holds(cond(state('bottle', 'absent')), snap, [], T0)
+
+
+def test_an_object_missing_from_the_snapshot_is_absent_since_watching():
+    snap = desk(watched_since=T0)
+    assert holds(cond(state('bottle', 'absent')), snap, [], T0)
+    assert holds(cond(state('bottle', 'absent', '30m')), snap, [], T0 + 1800)
+    assert not holds(cond(state('bottle', 'absent', '30m')), snap, [], T0 + 1799)
+    assert not holds(cond(state('bottle', 'present')), snap, [], T0)
+
+
+def test_no_event_looks_only_at_the_last_for_seconds():
+    snap = desk(watched_since=T0)
+    old = [change(T0 + 100, 'bottle', 'moved')]
+    assert not holds(cond(no_event('bottle', '10m')), snap, old, T0 + 600)
+    assert holds(cond(no_event('bottle', '10m')), snap, old, T0 + 700)
+    assert holds(cond(no_event('bottle', '10m', events=('removed',))), snap, old, T0 + 600)
+
+
+def test_event_counts_only_after_events_after():
+    snap = desk()
+    seen = [change(T0 + 50, 'bottle', 'moved')]
+    sip = cond({'event': {'object': 'bottle', 'events': ['moved']}})
+    assert holds(sip, snap, seen, T0 + 100, events_after=T0)
+    assert not holds(sip, snap, seen, T0 + 100, events_after=T0 + 60)
+    assert not holds(sip, snap, [change(T0 + 50, 'bottle', 'removed')], T0 + 100, events_after=T0)
+    assert not holds(sip, snap, [change(T0 + 50, 'phone', 'moved')], T0 + 100, events_after=T0)
+
+
+def test_event_works_inside_all_any_and_not():
+    snap = desk(person=('PRESENT', T0))
+    seen = [change(T0 + 50, 'bottle', 'moved')]
+    sip = {'event': {'object': 'bottle', 'events': ['moved']}}
+    here = state('person', 'present')
+    assert holds(cond({'all': [here, sip]}), snap, seen, T0 + 100, events_after=T0)
+    assert holds(cond({'any': [state('person', 'absent'), sip]}), snap, seen, T0 + 100, events_after=T0)
+    assert not holds(cond({'not': sip}), snap, seen, T0 + 100, events_after=T0)
+    assert holds(cond({'not': sip}), snap, [], T0 + 100, events_after=T0)
+
+
+def test_event_without_events_after_is_never_true():
+    sip = cond({'event': {'object': 'bottle', 'events': ['moved']}})
+    assert not holds(sip, desk(), [change(T0 + 50, 'bottle', 'moved')], T0 + 100)
+
+
+# ── evidence ────────────────────────────────────────────────────────────────────────────────────────────────────────
+def test_evidence_for_a_state_without_for_and_a_missing_object():
+    snap = desk(person=('PRESENT', T0), watched_since=T0)
+    r = rule(when=cond({'all': [state('person', 'present'), state('bottle', 'absent', '10m'),
+                                {'not': state('phone', 'present')}]}))
+    [n] = evaluate([r], snap, history(), T0 + 659)
+    assert n.evidence == 'the person is present; the bottle has been absent for 10 minutes'
+
+
+def test_evidence_for_any_names_only_what_held_and_not_is_left_out():
+    snap = desk(person=('PRESENT', T0), watched_since=T0)
+    r = rule(when=cond({'any': [state('person', 'absent'), state('person', 'present', '5m'),
+                                {'not': state('phone', 'present')}]}))
+    [n] = evaluate([r], snap, history(), T0 + 330)
+    assert n.evidence == 'the person has been present for 5 minutes'
+
+
+# ── cooldown and the hourly cap ─────────────────────────────────────────────────────────────────────────────────────
+def test_cooldown_and_hourly_cap():
+    now = T0 + 7200
+    ready = desk(person=('PRESENT', T0), bottle=('PRESENT', T0), watched_since=T0)
+    r = HYDRATION.model_copy(update={'cooldown': 600, 'max_nudges_per_hour': 2})
+    assert evaluate([r], ready, history(fired={'hydration': [now - 599]}), now) == []
+    assert len(evaluate([r], ready, history(fired={'hydration': [now - 600]}), now)) == 1
+    assert evaluate([r], ready, history(fired={'hydration': [now - 3000, now - 1200]}), now) == []
+    assert len(evaluate([r], ready, history(fired={'hydration': [now - 3601, now - 1200]}), now)) == 1
+
+
+def test_another_rules_nudges_do_not_count():
+    now = T0 + 7200
+    ready = desk(person=('PRESENT', T0), bottle=('PRESENT', T0), watched_since=T0)
+    assert len(evaluate([HYDRATION], ready, history(fired={'breaks': [now - 10]}), now)) == 1
+
+
+# ── quiet hours ─────────────────────────────────────────────────────────────────────────────────────────────────────
+@pytest.mark.parametrize('local, quiet', [('21:59', False), ('22:00', True), ('02:00', True),
+                                          ('06:59', True), ('07:00', False), ('13:00', False)])
+def test_quiet_hours_wrap_past_midnight(local, quiet):
+    window = QuietWindow(start='22:00', end='07:00')
+    assert in_quiet_hours(window, LA, ts(f'2026-07-01 {local}', LA)) is quiet
+
+
+def test_quiet_hours_that_do_not_wrap():
+    window = QuietWindow(start='13:00', end='14:30')
+    assert not in_quiet_hours(window, LA, ts('2026-07-01 12:59', LA))
+    assert in_quiet_hours(window, LA, ts('2026-07-01 13:00', LA))
+    assert in_quiet_hours(window, LA, ts('2026-07-01 14:29', LA))
+    assert not in_quiet_hours(window, LA, ts('2026-07-01 14:30', LA))
+
+
+def test_quiet_hours_stop_a_rule():
+    snap = desk(person=('PRESENT', T0), bottle=('PRESENT', T0))
+    now = T0 + 3600                                                 # 14:26 in Los Angeles
+    assert evaluate([rule(quiet_hours=QuietWindow(start='14:00', end='15:00'))], snap, history(), now) == []
+    assert len(evaluate([rule(quiet_hours=QuietWindow(start='15:00', end='16:00'))], snap, history(), now)) == 1
+
+
+def test_quiet_hours_follow_daylight_saving():
+    w = QuietWindow(start='22:00', end='07:00')
+    assert in_quiet_hours(w, LA, ts('2026-07-01 22:30', LA))        # summer (PDT)
+    assert in_quiet_hours(w, LA, ts('2026-01-15 22:30', LA))        # winter (PST)
+    assert in_quiet_hours(w, LA, ts('2026-11-01 01:30', LA, fold=0))    # fall back: the first 01:30
+    assert in_quiet_hours(w, LA, ts('2026-11-01 01:30', LA, fold=1))    # and the second one
+    early = QuietWindow(start='02:30', end='05:00')
+    assert not in_quiet_hours(early, LA, ts('2026-03-08 01:59', LA))
+    assert in_quiet_hours(early, LA, ts('2026-03-08 03:00', LA))    # spring forward: begins at 03:00
+
+
+def test_fixed_offset_ignores_daylight_saving():
+    w = QuietWindow(start='22:00', end='07:00')
+    assert in_quiet_hours(w, '+08:00', ts('2026-07-01 14:30', 'UTC'))       # 22:30 there
+    assert in_quiet_hours(w, '+08:00', ts('2026-01-15 14:30', 'UTC'))       # still 22:30 there
+    assert not in_quiet_hours(w, '+08:00', ts('2026-07-01 13:30', 'UTC'))   # 21:30 there
+
+
+def test_a_one_digit_hour_is_read():
+    assert in_quiet_hours(QuietWindow(start='7:30', end='8:00'), 'UTC', ts('2026-07-01 07:45', 'UTC'))
+
+
+# ── success ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+def test_success_worked_missed_and_waiting():
+    fired = T0
+    snap = desk(person=('PRESENT', T0), bottle=('PRESENT', T0))
+    assert check_success(HYDRATION, fired, snap, [], fired + 60) is None
+    assert check_success(HYDRATION, fired, snap, [change(fired + 120, 'bottle', 'removed')], fired + 130) == 'worked'
+    assert check_success(HYDRATION, fired, snap, [change(fired - 5, 'bottle', 'removed')], fired + 300) == 'missed'
+
+
+def test_a_sip_between_two_rounds_still_counts_at_the_next_round():
+    snap = desk(person=('PRESENT', T0))
+    assert check_success(HYDRATION, T0, snap, [change(T0 + 61, 'bottle', 'moved')], T0 + 119) == 'worked'
+
+
+def test_a_sip_on_the_last_second_still_counts_but_a_late_one_does_not():
+    snap = desk(person=('PRESENT', T0))
+    assert check_success(HYDRATION, T0, snap, [change(T0 + 300, 'bottle', 'moved')], T0 + 300) == 'worked'
+    assert check_success(HYDRATION, T0, snap, [change(T0 + 301, 'bottle', 'moved')], T0 + 360) == 'missed'
+
+
+def test_break_style_success_on_state():
+    r = rule(success={'within': '2m', 'when': state('person', 'absent')})
+    assert check_success(r, T0, desk(person=('ABSENT', T0 + 90)), [], T0 + 100) == 'worked'
+    assert check_success(r, T0, desk(person=('PRESENT', T0)), [], T0 + 100) is None
+    assert check_success(r, T0, desk(person=('PRESENT', T0)), [], T0 + 120) == 'missed'
+
+
+def test_a_rule_without_success_has_nothing_to_wait_for():
+    assert check_success(rule(success=None), T0, desk(), [], T0 + 1) is None
+
+
+# ── how far back the runner must look ───────────────────────────────────────────────────────────────────────────────
+def test_lookback_is_the_longest_for_or_within():
+    assert lookback_sec([HYDRATION]) == 3600
+    long_success = rule(success={'within': '3h', 'when': state('person', 'absent')})
+    assert lookback_sec([HYDRATION, long_success]) == 3 * 3600
+    inside_not = rule(gate=cond({'not': {'all': [state('person', 'present', '90m')]}}))
+    assert lookback_sec([inside_not]) == 5400
+    assert lookback_sec([]) == 0
