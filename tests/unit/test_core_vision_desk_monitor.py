@@ -29,7 +29,8 @@ AGENTS = [
 
 class Rig:
     """A desk monitor wired to fakes. look() is one analysed picture: the agents' objects on the desk
-    (as the roster leaves them in DeskState) and every detector word in the picture."""
+    (as the roster leaves them in DeskState) and every detector word in the picture. show_pet() shows
+    pets for just enough pictures for them to count."""
 
     def __init__(self, agents=AGENTS, warm=True, saved=None):
         self.bus = SyncEventBus()
@@ -38,19 +39,28 @@ class Rig:
         self.habits = FakeHabits()
         self.status = FakeDeskStatus(warm=warm)
         self.profiles = FakeProfiles(agents, ignored=['person', 'chair'])
+        self.settings = app_config().alerts
         rules = SafetyRules(InMemoryKeyValueStore({'safety_rules': saved} if saved else {}), app_config().safety)
         self.monitor = DeskMonitor(self.bus, self.desk, DeskAnalyzer(rules), self.profiles, self.habits, self.status,
                                    ProofPhotos(self.desk, FakeClock(), app_config().snapshots), app_config().alerts)
 
-    def look(self, ts, agents=None, labels=(), size=(640, 480)):
-        """Returns the alerts this picture caused."""
+    def look(self, ts, agents=None, labels=(), size=(640, 480), confidence=0.9, box=(0, 0, 10, 10)):
+        """Returns the alerts this picture caused. The words in `labels` are seen at `confidence`, in `box`."""
         agents = agents or {}
         self.desk.objects = {a: desk_object(label, box) for a, (label, box) in agents.items()}
         found = [Detection(label, 0.9, BBox(*box)) for label, box in agents.values()]
-        found += [Detection(label, 0.9, BBox(0, 0, 10, 10)) for label in labels]
+        found += [Detection(label, confidence, BBox(*box)) for label in labels]
         self.bus.publish(DetectionEvent(ts=ts, frame_id=f'pi-{int(ts)}', source='pi', size=size,
                                         detections=tuple(found), person=False, light=Light(brightness=120)))
         return [e for e in self.bus.published if isinstance(e, Alert) and e.ts == ts]
+
+    def show_pet(self, ts, agents=None, labels=('cat',)):
+        """The pets in `labels` are seen clearly in alerts.pet_min_pictures pictures in a row, a second
+        apart, the last one at `ts`. Returns the alerts the last picture caused."""
+        count = self.settings.pet_min_pictures
+        for k in range(count - 1, 0, -1):
+            self.look(ts - k, agents, labels)
+        return self.look(ts, agents, labels)
 
     def alerts(self):
         return self.bus.of_type(Alert)
@@ -67,7 +77,7 @@ def test_cup_in_the_laptop_zone_makes_the_fragile_laptop_speak_up():
     assert (alert.kind, alert.agent, alert.text) == ('proximity', 'computer', '')
     snap = alert.extra['snapshot']
     assert {k: v for k, v in alert.extra.items() if k != 'snapshot'} == {
-        'follow_up': 0, 'near': 'cup', 'severity': 'high', 'rule_label': 'Spill / pressure zone', 'depth_px': 40}
+        'follow_up': 0, 'near': 'cup', 'severity': 'high', 'rule_label': 'Spill / pressure zone', 'depth_px': 70}
     assert rig.desk.snapshots[snap] and rig.desk.snapshot_order[0]['label'] == 'Proximity alert'
     assert rig.habits.bumps == [('danger_count', 1)]
 
@@ -133,7 +143,7 @@ def test_safety_state_for_the_app_and_the_ai():
     rig.look(T + 1000, cup_near_laptop())
     assert rig.desk.safety_state == 'SAFE'           # one zone intrusion is risk level 1
     assert rig.desk.safety_dangers == [{'pair': ['cup', 'laptop'], 'label': 'Spill / pressure zone',
-                                        'depth_px': 40, 'type': 'zone_intrusion'}]
+                                        'depth_px': 70, 'type': 'zone_intrusion'}]
     assert rig.desk.rel_result['risk_level'] == 1
     assert rig.desk.danger_active_since == {frozenset({'cup', 'laptop'}): T + 1000}
 
@@ -158,42 +168,116 @@ def test_a_danger_keeps_its_start_time_until_it_is_gone():
 def test_no_safety_alerts_when_risk_detection_is_off():
     rig = Rig()
     rig.desk.active_scenarios['risk_detection'] = False
-    assert rig.look(T + 1000, cup_near_laptop(), labels=['cat']) == []
+    rig.show_pet(T + 1000, cup_near_laptop())
+    assert rig.alerts() == []
     assert rig.desk.safety_dangers == [] and rig.desk.rel_result['risk_events']
 
 
 # ── pets ──
+UNSURE = 0.5          # how sure the detector was about a blurry cat
+
+
 def test_a_pet_near_the_desk():
     rig = Rig()
-    [alert] = rig.look(T + 1000, {'computer': ('laptop', LAPTOP), 'cup': ('cup', CUP_FAR)}, labels=['cat'])
+    [alert] = rig.show_pet(T + 1000, {'computer': ('laptop', LAPTOP), 'cup': ('cup', CUP_FAR)})
     assert (alert.kind, alert.scenario, alert.feature, alert.agent) == ('scenario', 'risk_detection', 'pet_risk',
                                                                        'computer')
     assert alert.text == 'Cat detected near the desk! Cup could get knocked over! Careful!'
 
 
 def test_a_pet_with_nothing_to_knock_over_and_nobody_fragile():
-    [alert] = Rig().look(T + 1000, {'cup2': ('remote', (10, 10, 50, 50))}, labels=['dog'])
+    [alert] = Rig().show_pet(T + 1000, {'cup2': ('remote', (10, 10, 50, 50))}, labels=['dog'])
     assert (alert.agent, alert.text) == ('lens', 'Dog detected near the desk! Careful!')
+
+
+def test_an_arm_close_to_the_camera_that_looks_a_bit_like_a_cat_is_not_a_pet():
+    rig = Rig()
+    for k in range(10):
+        rig.look(T + 1000 + k, labels=['cat'], confidence=(0.55, 0.7)[k % 2], box=(0, 0, 640, 240))
+    assert rig.alerts() == []
+
+
+def test_a_real_cat_counts_once_it_is_seen_in_enough_pictures():
+    rig = Rig()
+    count = rig.settings.pet_min_pictures
+    for k in range(count - 1):
+        assert rig.look(T + 1000 + k, labels=['cat']) == []
+    [alert] = rig.look(T + 1000 + count - 1, labels=['cat'])
+    assert alert.text.startswith('Cat detected near the desk!')
+
+
+def look_at_cat(rig, pictures):
+    """One picture per entry, a second apart: 'good' = a clear cat, 'blurry' = no cat found,
+    'unsure' = a cat the detector isn't sure about. Returns the alerts each picture caused."""
+    seen = []
+    for k, kind in enumerate(pictures):
+        labels = [] if kind == 'blurry' else ['cat']
+        confidence = UNSURE if kind == 'unsure' else 0.9
+        seen.append(rig.look(T + 1000 + k, labels=labels, confidence=confidence))
+    return seen
+
+
+def test_a_cat_seen_clearly_in_enough_of_the_last_pictures_counts_with_misses_in_between():
+    rig = Rig()
+    s = rig.settings
+    misses = ['blurry', 'unsure'] * s.pet_window_pictures
+    pictures = ['good', *misses[:s.pet_window_pictures - s.pet_min_pictures], *['good'] * (s.pet_min_pictures - 1)]
+    *before, last = look_at_cat(rig, pictures)
+    assert before == [[]] * (len(pictures) - 1)
+    assert [a.feature for a in last] == ['pet_risk']
+
+
+def test_a_cat_seen_clearly_in_too_few_of_the_last_pictures_does_not_count():
+    rig = Rig()
+    s = rig.settings
+    misses = ['blurry', 'unsure'] * s.pet_window_pictures
+    # one more miss than allowed, so the first clear pictures drop out of the memory
+    pictures = [*['good'] * (s.pet_min_pictures - 1), *misses[:s.pet_window_pictures - s.pet_min_pictures + 1], 'good']
+    look_at_cat(rig, pictures)
+    assert rig.alerts() == []
+
+
+def test_a_cat_that_left_before_a_long_gap_is_not_counted_again():
+    """The cat is seen, an alert goes out and the cat leaves. Then no pictures are analysed for a few
+    minutes (the Pi was busy, say). The first picture after the gap has no cat, so no alert, even though
+    most of the last few pictures had one and the wait between alerts is over."""
+    rig = Rig()
+    s = rig.settings
+    look_at_cat(rig, ['good'] * s.pet_window_pictures)
+    assert len(rig.alerts()) == 1
+    after_gap = T + 1000 + s.pet_window_pictures + s.pet_cooldown_sec + s.pet_forget_after_sec
+    assert rig.look(after_gap) == []
+    assert len(rig.alerts()) == 1
+
+
+def test_pictures_with_a_short_gap_between_still_count_towards_a_pet():
+    rig = Rig()
+    s = rig.settings
+    gap = s.pet_forget_after_sec            # at the limit, not over it
+    for k in range(s.pet_min_pictures - 1):
+        assert rig.look(T + 1000 + k * gap, labels=['cat']) == []
+    [alert] = rig.look(T + 1000 + (s.pet_min_pictures - 1) * gap, labels=['cat'])
+    assert alert.feature == 'pet_risk'
 
 
 def test_pet_alerts_wait_between():
     rig = Rig()
-    assert rig.look(T + 1000, labels=['cat'])
-    assert rig.look(T + 1100, labels=['cat']) == []
-    assert rig.look(T + 1121, labels=['cat'])
+    assert rig.show_pet(T + 1000)
+    assert rig.show_pet(T + 1100) == []
+    assert rig.show_pet(T + 1121)
 
 
 def test_two_pets_in_the_order_of_the_settings():
-    alerts = Rig().look(T + 1000, labels=['dog', 'cat'])
+    alerts = Rig().show_pet(T + 1000, labels=['dog', 'cat'])
     assert [a.text.split()[0] for a in alerts] == ['Cat', 'Dog']
 
 
 def test_a_pet_seen_while_risk_detection_is_off_still_starts_the_wait():
     rig = Rig()
     rig.desk.active_scenarios['risk_detection'] = False
-    rig.look(T + 1000, labels=['cat'])
+    rig.show_pet(T + 1000)
     rig.desk.active_scenarios['risk_detection'] = True
-    assert rig.look(T + 1100, labels=['cat']) == []
+    assert rig.show_pet(T + 1100) == []
 
 
 # ── clutter ──

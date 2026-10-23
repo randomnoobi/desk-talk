@@ -73,7 +73,8 @@ def test_an_unknown_object_gets_a_personality_from_the_ai(tmp_path):
 def test_a_pet_near_the_desk_gets_a_warning(tmp_path):
     rig = DeskRig(tmp_path)
     rig.watch(4, LAPTOP, CUP_FAR)
-    rig.watch(1, LAPTOP, CUP_FAR, CAT)
+    step = 1 / 3
+    rig.watch(rig.config.alerts.pet_min_pictures * step, LAPTOP, CUP_FAR, CAT, step=step)   # just enough pictures
     pets = [m for m in rig.messages() if m.get('alert') == 'pet_risk']
     assert pets and pets[0]['text'].startswith('Cat detected near the desk!') and 'Cup' in pets[0]['text']
 
