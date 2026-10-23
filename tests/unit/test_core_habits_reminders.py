@@ -11,11 +11,12 @@ from desktalk.core.agents.profiles import ProfileBook
 from desktalk.core.agents.roster import Roster
 from desktalk.core.agents.speakers import LENS, speaker_for
 from desktalk.core.habits.desk_status import DeskStatus
-from desktalk.core.habits.reminders import HabitReminders
+from desktalk.core.habits.reminders import HabitReminders, NoRules
 from desktalk.core.habits.tracker import HabitTracker
 from desktalk.desk_state import DeskState
 from desktalk.domain import AgentProfile, BBox, Detection, DetectionEvent, Light, Nudge, NudgeSent
 from desktalk.ports import PeriodicWorker
+from tests.contracts.rule_nudges_contract import RuleNudgesContract
 from tests.fakes import (
     FakeChatVoice,
     FakeClock,
@@ -257,3 +258,9 @@ def test_no_reminders_while_warming_up_or_camera_off(config):
     d.camera.connected = True
     d.reminders.tick(d.clock.now())
     assert len(d.notifier.sent) == 1
+
+
+class TestNoRules(RuleNudgesContract):
+    @pytest.fixture
+    def rule_nudges(self):
+        return NoRules()

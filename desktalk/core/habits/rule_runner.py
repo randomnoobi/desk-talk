@@ -1,5 +1,6 @@
 """
-Runs the habit rules (config/protocols.yaml: rules) once every rule_engine.check_every_sec.
+Runs the habit rules (config/protocols.yaml: rules) once every rule_engine.check_every_sec, or sooner
+when a nudge's success deadline comes up first.
 
 Each round it reads the desk once, works out which nudges are due and keeps them. The reminder loop
 asks for them with nudges() and says which one it sent with note_fired(); neither of those reads the
@@ -18,7 +19,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from desktalk.config import RuleConfig, RuleEngineSettings
-from desktalk.core.habits.rule_engine import check_success, evaluate, lookback_sec
+from desktalk.core.habits.rule_engine import check_success, evaluate, in_quiet_hours, lookback_sec
 from desktalk.domain import Nudge, RuleOutcome
 from desktalk.domain.rules import RuleHistory
 from desktalk.ports import EventBus, ObjectStatesView
@@ -49,6 +50,7 @@ class RuleRunner:
         self._states = states
         self._bus = bus
         self._every = settings.check_every_sec
+        self._grace = settings.grace_sec
         self._lookback = lookback_sec(self._rules)
         self._lock = threading.Lock()                       # covers everything below
         self._due: list[Nudge] = []
@@ -57,8 +59,14 @@ class RuleRunner:
 
     # ── RuleNudges (the reminders thread) ──────────────────────────────────────────────────────────────────────────
     def nudges(self, now: float) -> list[Nudge]:
+        """The nudges due at the last round, less any whose quiet hours have started since."""
         with self._lock:
-            return list(self._due)
+            due = list(self._due)
+        return [n for n in due if not self._quiet(n, now)]
+
+    def _quiet(self, nudge: Nudge, now: float) -> bool:
+        rule = self._by_id.get(nudge.key.removeprefix(KEY_PREFIX))
+        return bool(rule and rule.quiet_hours and in_quiet_hours(rule.quiet_hours, rule.timezone, now))
 
     def note_fired(self, nudge: Nudge, now: float) -> None:
         if not nudge.key.startswith(KEY_PREFIX):
@@ -78,6 +86,8 @@ class RuleRunner:
 
     # ── PeriodicWorker (its own thread) ────────────────────────────────────────────────────────────────────────────
     def tick(self, now: float) -> float:
+        """One round. Waits check_every_sec, or less when a nudge's success deadline comes sooner, so a
+        success check runs on the deadline itself."""
         with self._lock:
             oldest_open = min((c.fired_at for c in self._open), default=now)
         snapshot = self._states.snapshot()
@@ -88,14 +98,15 @@ class RuleRunner:
             outcomes = []
             still_open = []
             for check in self._open:
-                result = check_success(check.rule, check.fired_at, snapshot, changes, now)
+                result = check_success(check.rule, check.fired_at, snapshot, changes, now, self._grace)
                 if result is None:
                     still_open.append(check)
                 else:
                     outcomes.append(RuleOutcome(ts=now, rule=check.rule.id, habit=check.rule.habit, result=result,
                                                 after_sec=now - check.fired_at))
             self._open = still_open
+            deadlines = [c.fired_at + c.rule.success.within for c in still_open]
         for outcome in outcomes:
             self._bus.publish(outcome)
             log.info('Rule %s %s, %.0f seconds after the nudge', outcome.rule, outcome.result, outcome.after_sec)
-        return self._every
+        return min([self._every, *(deadline - now for deadline in deadlines)])

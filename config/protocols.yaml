@@ -116,7 +116,8 @@ tasks:
 #                                                       none of these things happened to the object
 #                                                       for this long (appeared, removed or moved)
 #   event:    {object: bottle, events: [moved]}         one of these things happened after the nudge.
-#                                                       This only works inside "success".
+#                                                       This only works inside "success", and not
+#                                                       under "not" (for "this didn't happen", use no_event).
 #   all: [...]   every condition in the list is true
 #   any: [...]   at least one condition in the list is true
 #   not: ...     the condition is not true

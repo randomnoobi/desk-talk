@@ -3,9 +3,9 @@ Evidence-based habit reminders.
 
 Every reminders.check_every_sec this asks the rule engine, then the habit tracker, which nudges are
 ready (no sip in 45 minutes, sitting for 30, phone on the desk ...). The rule engine's nudges come
-first. If there is one, an agent in the
-chat that speaks for that habit says it in its own words, and the message says what the camera saw.
-With no such agent, Lens (the camera) says the nudge's ready-made text, without the AI.
+first. If there is one, an agent in the chat that speaks for that habit says it in its own words, and
+the message says what the camera saw. With no such agent, Lens (the camera) says the nudge's
+ready-made text, without the AI.
 
 Nothing is sent until the camera has watched for a while (reminders.warmup_min), during quiet
 hours, while the camera is off, when nobody is at the desk, or sooner than reminders.min_gap_sec

@@ -87,6 +87,10 @@ def test_the_rule_engine_check_time_is_a_setting(project):
     assert load_config(root=project, environ={}).rule_engine.check_every_sec == 60
 
 
+def test_the_grace_after_a_success_deadline_is_a_setting(project):
+    assert load_config(root=project, environ={}).rule_engine.grace_sec == 5
+
+
 def test_rules_can_be_built_from_the_yaml_keys():
     rule = RuleConfig.model_validate(HYDRATION)
     assert rule.when.all[0].state.for_ == 3600
@@ -198,6 +202,23 @@ def test_event_is_refused_deep_inside_gate_or_when_but_fine_inside_success(proje
     assert load_rule(project, success={'within': '5m', 'when': nested}).success.within == 300
 
 
+@pytest.mark.parametrize('when', [
+    {'not': {'event': {'object': 'cell phone', 'events': ['appeared']}}},
+    {'all': [{'state': {'object': 'person', 'is': 'present'}},
+             {'not': {'any': [{'event': {'object': 'cell phone', 'events': ['appeared']}}]}}]},
+])
+def test_event_under_not_in_success_is_refused_and_no_event_is_suggested(project, when):
+    with pytest.raises(ConfigError) as err:
+        load_rule(project, success={'within': '10m', 'when': when})
+    text = str(err.value)
+    assert 'rules[0].success.when' in text and 'not' in text and 'no_event' in text
+
+
+def test_not_around_a_state_in_success_is_fine(project):
+    when = {'not': {'state': {'object': 'person', 'is': 'present'}}}
+    assert load_rule(project, success={'within': '2m', 'when': when}).success.within == 120
+
+
 def test_two_rules_with_the_same_id_is_an_error(project):
     with pytest.raises(ConfigError) as err:
         load_rules(project, rule_with(), rule_with(cooldown='1h'))
@@ -262,6 +283,11 @@ def test_a_bad_timezone_is_refused(project, name):
     with pytest.raises(ConfigError) as err:
         load_rule(project, timezone=name)
     assert 'rules[0].timezone' in str(err.value)
+
+
+def test_a_rule_timezone_is_worked_out_once_per_name():
+    assert rule_timezone('+08:00') is rule_timezone('+08:00')
+    assert rule_timezone('local') is rule_timezone('local')
 
 
 def test_rule_timezone_refuses_a_bad_name():

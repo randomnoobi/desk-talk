@@ -16,11 +16,13 @@ from tests.contracts.key_value_contract import KeyValueContract
 from tests.contracts.notifier_contract import NotifierContract
 from tests.contracts.object_states_contract import ObjectStatesContract
 from tests.contracts.push_source_contract import PushSourceContract
+from tests.contracts.rule_nudges_contract import RuleNudgesContract, a_nudge
 from tests.fakes import (
     FakeChatModel,
     FakeDetector,
     FakeFrameSource,
     FakeObjectStates,
+    FakeRuleNudges,
     InMemoryEventStore,
     InMemoryKeyValueStore,
     RecordingNotifier,
@@ -127,3 +129,9 @@ class TestFakeObjectStates(ObjectStatesContract):
     @pytest.fixture
     def put_object(self):
         return lambda states, label, state, since: states.set(label, state, since)
+
+
+class TestFakeRuleNudges(RuleNudgesContract):
+    @pytest.fixture
+    def rule_nudges(self):
+        return FakeRuleNudges([a_nudge('rule.hydration')])

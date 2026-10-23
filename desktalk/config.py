@@ -29,6 +29,7 @@ import types
 import typing
 from collections.abc import Mapping
 from datetime import UTC, timedelta, timezone, tzinfo
+from functools import cache
 from pathlib import Path
 from typing import Annotated, Any, ClassVar, Literal
 from zoneinfo import ZoneInfo
@@ -49,6 +50,8 @@ from pydantic import (
     model_validator,
 )
 from pydantic.fields import FieldInfo
+
+from desktalk.util import parse_hhmm
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_FOLDER = 'config'           # under the project folder: settings.yaml, protocols.yaml, agents.yaml ...
@@ -308,6 +311,7 @@ class RemindersSettings(_Section):
 
 class RuleEngineSettings(_Section):
     check_every_sec: PositiveNumber
+    grace_sec: ZeroOrMore
 
 
 class AiReply(_Section):
@@ -647,6 +651,7 @@ class TasksRule(_Section):
 _SECONDS_IN = {'s': 1, 'm': 60, 'h': 3600}
 _DURATION = re.compile(r'(\d+(?:\.\d+)?)([smh])')
 _OFFSET = re.compile(r'([+-])(\d{2}):(\d{2})')
+_MINUTES_IN_HOUR = 60
 
 
 def _seconds(value: Any) -> float:
@@ -683,6 +688,7 @@ class _ComputerZone(tzinfo):
 _COMPUTER_ZONE = _ComputerZone()
 
 
+@cache                                  # the rules ask for their zone every round; work each name out once
 def rule_timezone(name: str) -> tzinfo:
     """'local' is this computer's clock, a place name follows that place's daylight saving, '+08:00' never changes."""
     if name == 'local':
@@ -690,7 +696,7 @@ def rule_timezone(name: str) -> tzinfo:
     offset = _OFFSET.fullmatch(name)
     try:
         if offset:
-            if int(offset[3]) >= _SECONDS_IN['h'] // _SECONDS_IN['m']:
+            if int(offset[3]) >= _MINUTES_IN_HOUR:
                 raise ValueError('minutes')
             gap = timedelta(hours=int(offset[2]), minutes=int(offset[3]))
             return timezone(-gap if offset[1] == '-' else gap)
@@ -797,11 +803,13 @@ def _has_event(condition: Any) -> bool:
     return any(_has_event(inner) for inner in getattr(condition, 'all', None) or getattr(condition, 'any', ()))
 
 
-def _clock_minutes(text: str) -> int:
-    hours, minutes = map(int, text.split(':'))
-    if hours > 23 or minutes > 59:
-        raise ValueError(f'{text} is not a time of day (use 00:00 to 23:59)')
-    return hours * 60 + minutes
+def _event_under_not(condition: Any, negated: bool = False) -> bool:
+    if isinstance(condition, EventCond):
+        return negated
+    if isinstance(condition, NotCond):
+        return _event_under_not(condition.not_, True)
+    inner = getattr(condition, 'all', None) or getattr(condition, 'any', ())
+    return any(_event_under_not(each, negated) for each in inner)
 
 
 class QuietWindow(_Section):
@@ -810,7 +818,7 @@ class QuietWindow(_Section):
 
     @model_validator(mode='after')
     def _check_times(self):
-        if _clock_minutes(self.start) == _clock_minutes(self.end):
+        if parse_hhmm(self.start) == parse_hhmm(self.end):
             raise ValueError(f'start and end are both {self.start}; they must differ (use enabled: false to switch '
                              f'the rule off, or remove quiet_hours)')
         return self
@@ -819,6 +827,14 @@ class QuietWindow(_Section):
 class Success(_Section):
     within: Duration
     when: Condition
+
+    @field_validator('when')
+    @classmethod
+    def _no_event_under_not(cls, condition):
+        if _event_under_not(condition):
+            raise _Said('event can\'t go inside not (it would count as done before anything happened); to say '
+                        '"this didn\'t happen", use no_event')
+        return condition
 
 
 class RuleConfig(_Section):

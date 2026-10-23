@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import pytest
+
 from desktalk.config import RuleConfig, RuleEngineSettings
 from desktalk.core.habits.rule_runner import RuleRunner
 from desktalk.domain import Nudge, RuleOutcome
 from desktalk.ports import PeriodicWorker, RuleNudges
+from tests.contracts.rule_nudges_contract import NOW, RuleNudgesContract
 from tests.fakes import FakeObjectStates, SyncEventBus
 
 T0 = 1_780_000_000.0        # 13:26 in Los Angeles (a summer afternoon, outside the quiet hours)
@@ -44,7 +47,7 @@ BREAK = RuleConfig.model_validate({
     'success': {'within': '2m', 'when': {'state': {'object': 'person', 'is': 'absent'}}},
 })
 
-SETTINGS = RuleEngineSettings(check_every_sec=60)
+SETTINGS = RuleEngineSettings(check_every_sec=60, grace_sec=5)
 
 
 def desk() -> FakeObjectStates:
@@ -174,3 +177,59 @@ def test_sip_between_rounds_counts_as_success():
     states.change(T0 + 40, 'bottle', 'appeared')
     runner.tick(T0 + 60)
     assert [o.result for o in outcomes(bus)] == ['worked']
+
+
+def test_tick_wakes_up_on_the_nearest_success_deadline():
+    runner, _ = make(desk(), HYDRATION, BREAK)
+    assert runner.tick(T0) == 60                      # nothing to check yet
+    due = {n.key: n for n in runner.nudges(T0)}
+    runner.note_fired(due['rule.hydration'], T0)      # deadline T0 + 300
+    runner.note_fired(due['rule.break'], T0 + 10)     # deadline T0 + 130
+    assert runner.tick(T0 + 60) == 60                 # the nearest deadline is 70 seconds away
+    assert runner.tick(T0 + 100) == 30
+    assert runner.tick(T0 + 130) == 60                # the break check is over; the next deadline is far off
+    assert runner.tick(T0 + 290) == 10
+
+
+def test_a_state_success_is_judged_at_the_deadline_not_at_a_later_round():
+    states = desk()
+    runner, bus = make(states, BREAK)
+    runner.tick(T0)
+    runner.note_fired(runner.nudges(T0)[0], T0)
+    wait = runner.tick(T0 + 100)
+    assert wait == 20
+    runner.tick(T0 + 100 + wait)                      # the round on the deadline: still at the desk
+    states.set('person', 'ABSENT', T0 + 130)          # gets up too late
+    runner.tick(T0 + 180)
+    assert [o.result for o in outcomes(bus)] == ['missed']
+
+
+def test_a_due_nudge_is_held_back_once_its_quiet_hours_start():
+    night = T0 + 8 * 3600 + 32 * 60 + 50             # 21:59:30 in Los Angeles; quiet hours start at 22:00
+    states = FakeObjectStates(watched_since=night - 7200)
+    states.set('person', 'PRESENT', night - 7200)
+    runner, _ = make(states)
+    runner.tick(night)
+    assert [n.key for n in runner.nudges(night)] == ['rule.hydration']
+    assert runner.nudges(night + 50) == []            # 22:00:20, before the next round
+
+
+def test_a_round_that_wakes_a_moment_after_the_deadline_still_judges_the_state():
+    states = desk()
+    runner, bus = make(states, BREAK)
+    runner.tick(T0)
+    runner.note_fired(runner.nudges(T0)[0], T0)
+    states.set('person', 'ABSENT', T0 + 100)
+    runner.tick(T0 + 120.01)                          # the wait between rounds is never exact
+    assert [o.result for o in outcomes(bus)] == ['worked']
+
+
+class TestRuleRunner(RuleNudgesContract):
+    @pytest.fixture
+    def rule_nudges(self):
+        states = FakeObjectStates(watched_since=NOW - 7200)
+        states.set('person', 'PRESENT', NOW - 7200)
+        runner, _ = make(states)
+        runner.tick(NOW)                                  # the hydration rule is due
+        assert runner.nudges(NOW)
+        return runner
