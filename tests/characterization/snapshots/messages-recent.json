@@ -1,0 +1,57 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "messages": [
+      {
+        "action": "str",
+        "agent": {
+          "about": "str",
+          "art": "null|str",
+          "auto": "bool",
+          "color": "str",
+          "fragile": "bool",
+          "habits": [
+            "str"
+          ],
+          "icon": "str",
+          "id": "str",
+          "labels": [
+            "str"
+          ],
+          "learned": "bool",
+          "name": "str",
+          "nickname": "str",
+          "object": "str",
+          "on_desk": "bool",
+          "tracker": "null|str"
+        },
+        "id": "str",
+        "quiet": "bool",
+        "text": "str",
+        "ts": "number",
+        "type": "str"
+      },
+      {
+        "alert": "str",
+        "character": "str",
+        "id": "str",
+        "snapshot": "str",
+        "text": "str",
+        "ts": "number",
+        "type": "str"
+      },
+      {
+        "character": "str",
+        "hello": "bool",
+        "id": "str",
+        "text": "str",
+        "ts": "number",
+        "type": "str"
+      }
+    ]
+  },
+  "request": "GET /api/messages/recent (main server, busy desk)"
+}

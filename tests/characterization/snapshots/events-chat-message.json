@@ -1,0 +1,9 @@
+{
+  "json": {
+    "character": "str",
+    "id": "str",
+    "text": "str",
+    "ts": "number",
+    "type": "str"
+  }
+}

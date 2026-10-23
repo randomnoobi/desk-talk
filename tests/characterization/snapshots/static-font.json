@@ -1,0 +1,8 @@
+{
+  "content_type": "font/woff2",
+  "headers": {
+    "access-control-allow-origin": "*",
+    "cache-control": "no-cache"
+  },
+  "request": "GET /fonts/bricolage-grotesque.woff2 (main server, fresh desk)"
+}

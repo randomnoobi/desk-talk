@@ -33,6 +33,9 @@ hydration:
   remind_after_min: 45        # no sip for this long...
   behind_by_ml: 300           # ...and this far behind pace → nudge
   stop_before_bed_hours: 2    # "best to avoid a lot of water in the hours before bedtime"
+  # (app timing, not from the book)
+  on_waking_window_min: 60    # the "water on waking" nudge only comes in the first hour after waking...
+  on_waking_done_share: 0.5   # ...and only while less than this share of on_waking_ml is logged
 
 # ── 2. Breaks ── Exercise Protocol 1 + Learning Protocol 5 ─────────
 breaks:
@@ -44,6 +47,9 @@ breaks:
   meal_min_on_desk_min: 3     # food that sat on the desk at least this long counts as a meal
   # Learning Protocol 5: "short breaks of five to ten minutes ... (meaning, no checking your phone!)"
   no_phone_on_breaks: true    # the nudge reminds you to leave the phone
+  # (app timing, not from the book)
+  walk_window_after_meal_min: 10   # the after-meal walk nudge comes only this soon after the food is gone
+  walk_repeat_after_hours: 6
 
 # ── 3. Light, day and night ── Sleep 1-3, Light 1-3, Sleep 14 ──────
 light:
@@ -63,6 +69,13 @@ light:
   day_dim_level: 50
   day_dim_min: 10             # dim for this long before saying anything
   repeat_after_min: 60
+  # (app timing, not from the book)
+  morning_grace_min: 30       # the morning sunlight nudge still comes this long after morning_window_min
+  evening_bright_min: 5       # bright for this long in the evening before saying anything
+  bed_soon_min: 120           # within this long of bedtime the nudge says "Bed is in ... minutes"
+  day_dim_margin_min: 60      # no "too dim" nudges in the first hour after waking or the last hour before sunset
+  sunset_guess_before_bed_hours: 4   # no sunset time known: guess it this long before bedtime
+  screens_until_after_bed_hours: 3   # the no-screens nudge stops this long after bedtime
 
 # ── 4. Phone-free time ── Learning Protocol 1 + Sleep Protocol 14 ──
 phone_free:
@@ -74,12 +87,17 @@ phone_free:
   goal_min_per_day: 120       # phone-free desk time to aim for
   celebrate_every_min: 45     # cheer after this much phone-free desk time in a row
   before_bed_min: 60          # phone away an hour before bed
+  # (app timing, not from the book)
+  before_bed_on_desk_min: 2   # phone on the desk this long in the last hour before bed → nudge...
+  before_bed_until_after_bed_hours: 3   # ...until this long after bedtime
 
 # ── Kept from the original Desk Talk reminders ─────────────────────
 food:
   enabled: true
   remind_after_min: 20        # food sitting on the desk this long → "eat it or move it"
+  repeat_after_hours: 6
 
 tasks:
   enabled: true
   remind_after_min: 40        # open to-dos → check-in this often
+  name_shown_chars: 60        # the check-in names your first to-do, cut to this many letters

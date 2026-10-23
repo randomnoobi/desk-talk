@@ -1,3 +1,0 @@
-# Tests:  pip install -r requirements-dev.txt  then  python -m pytest
--r requirements.txt
-pytest>=8.0

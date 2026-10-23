@@ -45,7 +45,8 @@ written down as `failed` with the reason, and the run goes on.
 `results/README.md` shows the three picks and the desk test, then each device's
 results (all its runs together, newest row of each combination), its **best pick**
 (the fastest combination that is fast enough for 3 pictures a second and within
-90% of the best COCO accuracy), and the history of all runs.
+90% of the best COCO accuracy, in a format the Pi's detector service runs: ncnn or
+pt, set by `report.pick_formats`), and the history of all runs.
 
 Note on the COCO accuracy: the 128 photos are from the set these models were
 trained on, so the numbers are higher than on new photos. They are good for

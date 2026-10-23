@@ -1,0 +1,9 @@
+{
+  "content_type": "text/event-stream; charset=utf-8",
+  "headers": {
+    "access-control-allow-origin": "*",
+    "cache-control": "no-cache",
+    "x-accel-buffering": "no"
+  },
+  "request": "GET /api/events (main server, busy desk)"
+}

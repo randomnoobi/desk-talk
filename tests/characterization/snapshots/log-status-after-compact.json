@@ -1,0 +1,58 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "camera": {
+      "connected": "bool",
+      "fps": "number",
+      "frames_received": "number",
+      "model": "str",
+      "pi": {
+        "camera": "str",
+        "disk_free_mb": "number",
+        "last_cleanup_ts": "number",
+        "last_frame_id": "str",
+        "photos_stored": "number"
+      },
+      "source": "str",
+      "yolo_ms": "number"
+    },
+    "folder": "str",
+    "last_compaction": {
+      "frames": "number",
+      "from": "number",
+      "intervals": "number",
+      "to": "number",
+      "ts": "number"
+    },
+    "scheduler": [
+      {
+        "every_sec": "number",
+        "last_error": "null",
+        "name": "str",
+        "next_in_sec": "number",
+        "runs": "number"
+      }
+    ],
+    "stream": [
+      {
+        "dropped": "number",
+        "errors": "number",
+        "handled": "number",
+        "name": "str",
+        "waiting": "number"
+      }
+    ],
+    "today": {
+      "events": {
+        "agent_joined": "number",
+        "alert": "number",
+        "compaction": "number"
+      },
+      "pictures_waiting": "number"
+    }
+  },
+  "request": "GET /api/log/status (main server, busy desk)"
+}

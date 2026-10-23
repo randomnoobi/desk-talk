@@ -1,0 +1,29 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "lost_items": {
+      "airpods": {
+        "name": "str"
+      },
+      "keys": {
+        "name": "str"
+      },
+      "phone": {
+        "name": "str"
+      },
+      "wallet": {
+        "name": "str"
+      }
+    },
+    "lost_objects": {},
+    "scenarios": {
+      "lost_object": "bool",
+      "reminders": "bool",
+      "risk_detection": "bool"
+    }
+  },
+  "request": "GET /api/scenarios (main server, fresh desk)"
+}

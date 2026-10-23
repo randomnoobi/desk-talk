@@ -1054,7 +1054,7 @@ function renderCamStage() {
         <li>Put the Pi on the same Wi-Fi as this computer.</li>
         <li>On the Pi, in the desk-talk folder, run:</li>
       </ol>
-      <pre class="json pi-cmd">${esc(state.piCommand || 'python3 raspberry_pi/camera_node.py --server … --key … (printed by server.py)')}</pre>
+      <pre class="json pi-cmd">${esc(state.piCommand || 'python3 -m raspberry_pi.camera --server … --key … (printed by server.py)')}</pre>
       ${state.piCommand ? '<button type="button" class="btn-quiet" id="copy-pi">Copy command</button>' : ''}
       <p class="pair-url">It takes 3 pictures a second, keeps them on the Pi, and deletes them every 10 minutes.</p></div>`;
     $('#copy-pi')?.addEventListener('click', () => {

@@ -1,6 +1,6 @@
 # Refactor plan: easier to change, harder to break
 
-Date: 2026-10-21. Status: **draft, waiting for your OK.** Nothing in the app code has changed yet.
+Date: 2026-10-21. Status: **code done** on the `refactor` branch (2026-10-21). Not pushed. Not yet run on the Pi or in Docker.
 
 Goal: make Desk Talk easy to change (maintainable), hard to break (reliable), and able to keep
 going when one part fails (fault-tolerant). As part of it, **object detection moves to the Raspberry Pi**:
@@ -65,9 +65,9 @@ Details:
   the one Ultralytics recommends for the Pi. The container does this export itself on first start and keeps the
   result in a Docker volume. The model and format are settings (`pi.detector.model`, `pi.detector.format: ncnn | pt`),
   so trying plain PyTorch for comparison is a settings change, not a code change.
-- **The image** is built from Ultralytics' official 64-bit ARM image (`ultralytics/ultralytics:<exact version>-arm64`,
-  pinned, never `latest`), plus our small detector service. uv installs the service's packages inside the image.
-  It needs 64-bit Raspberry Pi OS and a few GB of space on the SD card.
+- **The image** is Python 3.12 slim plus the packages from `uv.lock` (`uv sync --frozen --package desktalk-detector`),
+  so the Pi runs exactly the versions tested on this computer, with PyTorch's CPU-only build. The benchmark showed
+  this works on the Pi's 64-bit ARM. It needs 64-bit Raspberry Pi OS and a few GB of space on the SD card.
 - **One upload per picture**, as now, but it carries the detections too: a JPEG plus a small JSON part
   (`frame_id`, `taken_at`, `lux`, disk info, detector state, `detections`, and how many ms detection took).
   The format has a version number. The old header-only upload keeps working until the new Pi program is in place.
@@ -91,7 +91,7 @@ Details:
    | Package | Folder | What it is | Runs on |
    |---|---|---|---|
    | `desktalk` | `desktalk/` | the app: web server, agents, habits, chat, backup detection | this computer |
-   | `desktalk-shared` | `shared/` | the Pi ↔ computer upload format (standard library only), and Ultralytics result → `Detection` | both |
+   | `desktalk-shared` | `shared/` | `Detection`, the Pi ↔ computer upload format, the detector API, and Ultralytics result → `Detection` (all standard library only) | both |
    | `desktalk-detector` | `raspberry_pi/detector_service/` | the detector service that runs in Docker | the Pi (in Docker) |
 
    The camera program (`raspberry_pi/camera/`) is not installed with uv: it runs on the Pi's own Python 3 from apt
@@ -119,7 +119,15 @@ Details:
 7. **Threads stay.** The parts already run in threads. Rewriting everything to `async` would be a big risk for
    little gain. Only the web layers are async.
 8. **Phone and webcam cameras keep working**, detected on this computer with Ultralytics, as now.
-9. ❓ **`safety_pipeline/` and `run_safety_pipeline.py`.** A separate program that posts to `/api/safety`.
+9. ❓ **How YOLO26 runs on this computer, so it matches the Pi** (from [the ncnn check](2026-10-21-ncnn-check.md)).
+   ncnn can't run YOLO26's end-to-end head, so the exported model uses its second head plus the usual
+   overlap filter, and always pads pictures to a square. Against the `.pt` run the same way, ncnn matches
+   99.5% of boxes (fp32, 640); against the `.pt` as the app runs it today, about 91%.
+   Default in this plan: run the `.pt` on this computer the same way too (two new `detector` settings,
+   `end2end: false` and `rect: false`), so the Pi and this computer find the same objects.
+   The other choice, swapping the head's weights before export, stays closer to today's results but depends on
+   Ultralytics' internals. (yolo11 models have no end-to-end head; for them only the padding setting matters.)
+10. ❓ **`safety_pipeline/` and `run_safety_pipeline.py`.** A separate program that posts to `/api/safety`.
    Default in this plan: keep it working but leave it out of the refactor. Other choices: fold it into Desk Talk,
    or delete it.
 
@@ -130,7 +138,9 @@ pyproject.toml     the uv workspace + the desktalk app package
 uv.lock
 shared/desktalk_shared/
   wire.py          the upload format (dataclasses, version number, to/from JSON); standard library only
-  detections.py    Ultralytics results → list of Detection (used on the Pi and on this computer)
+  detection.py     Detection, BBox
+  detector_api.py  the detector service's request and reply shapes
+  ultralytics_results.py  Ultralytics results → list of Detection (used on the Pi and on this computer)
 raspberry_pi/
   camera/          the camera program (replaces camera_node.py), run with the Pi's own python3
     cameras.py       Picamera2 / USB / folder / video (as now)
@@ -140,10 +150,10 @@ raspberry_pi/
     health.py        CPU temperature, throttling, disk
     main.py          the loop, settings, command-line flags, --self-test
   detector_service/  runs in Docker
-    Dockerfile       FROM ultralytics/ultralytics:<pinned>-arm64, adds the service with uv
-    compose.yaml     restart policy, health check, memory limit, 127.0.0.1 port, models volume
-    app.py           FastAPI: POST /detect, GET /health, PUT /model (load or export a model)
-    benchmark.py     times each model size / picture size (Phase 0)
+    Dockerfile       Python 3.12 slim + uv.lock (CPU-only PyTorch)
+    compose.yaml     restart policy, health check, memory limit, 127.0.0.1 port, models volume; numbers in .env
+    desktalk_detector/  FastAPI: POST /detect, GET /health, PUT /model; model manager (convert, keep the last good one)
+  (timing models on the Pi: benchmarks/, which has its own Docker image)
 desktalk/
   domain/          plain data, no I/O: Detection, BBox, Event types (dataclasses), Agent, Habit
   ports.py         the interfaces (below)
@@ -249,12 +259,13 @@ each in its own git worktree and branch, each owning its own folders so no two t
 After each one finishes, a review agent checks the work against this plan before it's merged.
 
 ### Phase 0: tools, safety net, and the Pi speed test
-- [ ] uv workspace: root `pyproject.toml`, `shared/` and `raspberry_pi/detector_service/` packages, `uv.lock`;
+- [x] uv workspace: root `pyproject.toml`, `shared/` and `raspberry_pi/detector_service/` packages, `uv.lock`;
       `uv sync` works; remove `requirements*.txt`, `pytest.ini` (moved into `pyproject.toml`)
-- [ ] ruff settings in `pyproject.toml`; GitHub Actions job: `uv sync`, `uv run ruff check .`, `uv run pytest -m "not slow and not docker"`
-- [ ] Characterization tests for all 44 routes against the current Flask app
-- [ ] Check on this computer that Ultralytics exports `yolo26m-objv1-150` to ncnn and that it finds the same objects as the `.pt`
-- [ ] First Docker image (just Ultralytics + the benchmark script) and `compose.yaml`
+- [x] ruff settings in `pyproject.toml`; GitHub Actions job: `uv sync`, `uv run ruff check .`, `uv run pytest -m "not slow and not docker"`
+- [x] Characterization tests for every route (54 on both servers, 133 cases) against the current Flask app
+- [x] Check on this computer that Ultralytics exports `yolo26m-objv1-150` to ncnn and that it finds the same objects as the `.pt`
+      ([results](2026-10-21-ncnn-check.md); decision 9)
+- [x] First Docker image (just Ultralytics + the benchmark script) and `compose.yaml` (`benchmarks/`)
 - [x] Benchmark tool: `benchmarks/` (`deskbench`, settings in `config/benchmark.yaml`, results in
       `benchmarks/results/`). Tries yolo11 n / s / m at 320 / 480 / 640 as pt, ncnn (fp32, fp16) and onnx
       (fp32, int8), on this computer and on the Pi in Docker
@@ -262,38 +273,44 @@ After each one finishes, a review agent checks the work against this plan before
       We pick the model, picture size and detection rate from the results and write them into `config/settings.yaml`.
       yolo11 models only know the 80 COCO objects; if the pick has to find keys or earphones, add the
       Objects365 models to `config/benchmark.yaml` and run again
-- [ ] Update AGENTS.md (new Pi rule, `uv run ...` commands) and README
+- [x] Update AGENTS.md (new Pi rule, `uv run ...` commands) and README
 
 ### Phase 1: interfaces and fakes (one at a time; the contract every subagent builds against)
-- [ ] `desktalk_shared.wire` (upload format version 2, detector states `ok` / `busy` / `off`) and `Detection`
-- [ ] The detector service's HTTP API (request/reply models for `/detect`, `/health`, `/model`)
-- [ ] `domain/` data types and `ports.py`
-- [ ] `tests/fakes/` and `tests/contracts/`
-- [ ] Typed settings (pydantic) that load today's `config/*.yaml` unchanged; move hardcoded numbers into `settings.yaml`
-- [ ] `runtime/`: `Supervisor`, `Scheduler`, `SystemClock`, logging
+- [x] `desktalk_shared.wire` (upload format version 2, detector states `ok` / `busy` / `off`) and `Detection`
+- [x] The detector service's HTTP API (request/reply models for `/detect`, `/health`, `/model`)
+- [x] `domain/` data types and `ports.py`
+- [x] `tests/fakes/` and `tests/contracts/`
+- [x] Typed settings (pydantic) that load today's `config/*.yaml` unchanged; move hardcoded numbers into `settings.yaml`
+- [x] `runtime/`: `Supervisor`, `Scheduler`, `SystemClock`, logging
 
 ### Phase 2: parallel subagents (each test-first, each in its own worktree)
 
-| Agent | Owns | Done when |
+Full briefs, with the rules every agent follows: [2026-10-21-phase2-briefs.md](2026-10-21-phase2-briefs.md).
+**Done** (all 8 merged into `refactor`, 1540 fast tests). What Phase 3 must wire: [2026-10-21-phase3-notes.md](2026-10-21-phase3-notes.md).
+New code goes in new folders; the old modules keep the app running until Phase 3 switches over.
+
+| Agent | Owns | In short |
 |---|---|---|
-| A. Detector service | `raspberry_pi/detector_service/`, `shared/desktalk_shared/detections.py` | FastAPI service with `/detect`, `/health`, `/model`; exports to ncnn on first start; keeps the last good model; final Dockerfile and `compose.yaml`; passes the `Detector` contract in-process and in Docker |
-| B. Camera program | `raspberry_pi/camera/` | Camera, photo store, `DetectorClient` with timeout and back-off, uploader with back-off, `ok` / `busy` / `off`, health, `--self-test`; standard library + apt only; tested with a fake container |
-| C. Events and storage | `core/events/`, `adapters/storage/` | Event stream with bounded queues and drop counts; event log, habit days, preferences, rules behind `EventStore` / `KeyValueStore`, with failure tests |
-| D. AI | `adapters/llm/`, `core/chat/` | `ResilientChatModel` with breaker and fallbacks; `MessageGenerator`, idle chat, lost items, Lens, recap, vision habits take interfaces instead of `app` |
-| E. Vision rules + producer | `core/vision/`, `adapters/camera/`, `adapters/detector/` | No module globals; the 994-line `relationships.py` split by job; producer uses the Pi's detections on `ok`, skips on `busy`, detects locally on `off`; Pi, phone, webcam sources pass the `FrameSource` contract |
-| F. Habits and agents | `core/habits/`, `core/agents/` | Roster, habit tracker, reminders take interfaces and `FakeClock`; Protocols rules unchanged and tested |
+| A. Detector service | `raspberry_pi/detector_service/` | FastAPI `/detect`, `/health`, `/model`; ncnn export on first start; keeps the last good model; Dockerfile + `compose.yaml` |
+| B. Camera program | `raspberry_pi/camera/` | camera, photo store, detector client and uploader with back-off, `ok` / `busy` / `off`, health, `--self-test`; standard library + apt only |
+| C. Events and storage | `core/events/`, `adapters/storage/` | event stream with bounded queues and drop counts; event log, JSON files behind `EventStore` / `KeyValueStore` |
+| D1. AI and message generator | `adapters/llm/`, `core/chat/` | `ResilientChatModel` with breaker and fallbacks; message hub; `MessageGenerator` takes interfaces |
+| D2. Background chat jobs | `core/chat/workers/` | idle chat, lost items, Lens, recap, vision habits as `PeriodicWorker`s |
+| E1. Cameras, detector, producer | `adapters/camera/`, `adapters/detector/`, `core/vision/producer.py` | sources pass the `FrameSource` contract; producer uses the Pi's detections on `ok`, skips on `busy`, detects here on `off` |
+| E2. Desk rules and Lens checks | `core/vision/` | the 994-line `relationships.py` split by job, no module globals; camera health; desk monitor |
+| F. Agents and habits | `core/agents/`, `core/habits/` | roster, profiles, habit tracker, reminders, preferences, desk status; Protocols rules unchanged and tested |
 
 ### Phase 3: web layer (after Phase 2 is merged)
-- [ ] FastAPI app split into routers; pydantic request/reply models; SSE; phone HTTPS server
-- [ ] `/api/pi/frame` takes version 2 uploads (and still the old ones); `/api/pi/config` adds the detector settings
-- [ ] Characterization tests from Phase 0 pass against FastAPI
-- [ ] `bootstrap.py` builds the real app; `server.py` starts uvicorn; lifespan start/stop
+- [x] FastAPI app split into routers; pydantic request/reply models; SSE; phone HTTPS server
+- [x] `/api/pi/frame` takes version 2 uploads (and still the old ones); `/api/pi/config` adds the detector settings
+- [x] Characterization tests from Phase 0 pass against FastAPI
+- [x] `bootstrap.py` builds the real app; `server.py` starts uvicorn; lifespan start/stop
 
 ### Phase 4: finish
 - [ ] Integration, failure and Docker tests end to end (camera program → container → real local server → SSE)
-- [ ] Remove Flask, `raspberry_pi/camera_node.py`, old `app`-passing code
-- [ ] `ruff check .` clean, all tests pass, coverage report
-- [ ] Update README, `raspberry_pi/README.md` (Docker setup, systemd service for the camera program),
+- [x] Remove Flask, `raspberry_pi/camera_node.py`, old `app`-passing code
+- [x] `ruff check .` clean, all tests pass, coverage report
+- [x] Update README, `raspberry_pi/README.md` (Docker setup, systemd service for the camera program),
       ARCHITECTURE.md, AGENT_SYSTEM.md, AGENTS.md
 - [ ] Try it for real with you: on the Pi, `docker compose up -d` and the camera program's self-test; open the app,
       check chat, alerts, habits, event log; then break things on purpose (`docker compose stop`, stop the server,

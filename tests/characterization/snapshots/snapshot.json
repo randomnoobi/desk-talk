@@ -1,0 +1,8 @@
+{
+  "content_type": "image/jpeg",
+  "headers": {
+    "access-control-allow-origin": "*",
+    "cache-control": "public, max-age=3600"
+  },
+  "request": "GET /api/snapshot/{snapshot_id} (main server, busy desk)"
+}

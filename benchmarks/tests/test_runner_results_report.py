@@ -1,6 +1,7 @@
 import pytest
 
 from deskbench import report, results
+from deskbench.cli import DEFAULT_CONFIG, load_config
 from deskbench.matrix import Combo
 from deskbench.runner import run_all
 
@@ -57,9 +58,9 @@ def test_resume_skips_what_already_worked(tmp_path):
     assert ran == [B]
 
 
-def row(combo, fps, p95, acc, run='r2', device='pi', status='ok'):
+def row(combo, fps, p95, acc, run='r2', device='pi', status='ok', fmt='ncnn'):
     return {'run_id': run, 'device': device, 'combo': combo, 'model': combo.split('-')[0], 'status': status,
-            'fps': str(fps), 'total_ms_p95': str(p95), 'map50_95': str(acc)}
+            'format': fmt, 'fps': str(fps), 'total_ms_p95': str(p95), 'map50_95': str(acc)}
 
 
 def test_best_pick_is_the_fastest_that_is_fast_enough_and_nearly_as_accurate_as_the_best():
@@ -94,6 +95,29 @@ def test_report_merges_runs_of_a_device():
     assert '| `both` | 7.0 |' in pi_part and '| `both` | 1.0 |' not in pi_part   # the newer row wins
     assert '2026-10-01_pi' in md and '2026-10-21_pi' in md.split('## History')[1]
     assert 'failed' in pi_part
+
+
+def test_the_best_pick_is_only_a_format_the_pis_detector_runs():
+    rows = [row('s-480-onnx', 30.0, 40, 0.47, fmt='onnx'),        # fastest, but the Pi can't run onnx
+            row('s-480-ncnn', 20.0, 60, 0.47, fmt='ncnn'),
+            row('s-480-pt', 10.0, 120, 0.47, fmt='pt')]
+    assert report.pick_best(rows, camera_fps=3, min_accuracy_share=0.9)['combo'] == 's-480-onnx'
+    best = report.pick_best(rows, camera_fps=3, min_accuracy_share=0.9, pick_formats=('ncnn', 'pt'))
+    assert best['combo'] == 's-480-ncnn'
+
+
+def test_the_report_picks_only_from_the_formats_it_is_given_and_says_so():
+    rows = [row('s-480-onnx', 30.0, 40, 0.47, fmt='onnx', run='2026-10-21_laptop', device='laptop'),
+            row('s-480-ncnn', 20.0, 60, 0.47, fmt='ncnn', run='2026-10-21_laptop', device='laptop')]
+    md = report.render(rows, camera_fps=3, min_accuracy_share=0.9, pick_formats=('ncnn', 'pt'))
+    assert '**Best pick: `s-480-ncnn`**' in md
+    assert '| `2026-10-21_laptop` | laptop | ? | `?` | 2 / 0 | `s-480-ncnn` |' in md      # the history too
+    assert 'ncnn or pt' in md
+
+
+def test_the_formats_to_pick_from_are_in_the_settings():
+    cfg = load_config(DEFAULT_CONFIG)
+    assert cfg['report']['pick_formats'] == ['ncnn', 'pt']
 
 
 def test_merged_rows_keep_the_newest_row_per_combination():

@@ -160,8 +160,9 @@ def write_report(cfg: dict, results_dir: Path) -> Path:
     rows = results.all_rows(results_dir)
     desk_rows, desk_info = desk_report(cfg, results_dir)
     path = results_dir / 'README.md'
-    path.write_text(report.render(rows, cfg['report']['camera_fps'], cfg['report']['min_accuracy_share'],
-                                  desk_rows, desk_info), encoding='utf-8')
+    r = cfg['report']
+    path.write_text(report.render(rows, r['camera_fps'], r['min_accuracy_share'], desk_rows, desk_info,
+                                  pick_formats=r['pick_formats']), encoding='utf-8')
     return path
 
 

@@ -1,0 +1,10 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "ok": "bool"
+  },
+  "request": "POST /api/safety (main server, busy desk)"
+}
