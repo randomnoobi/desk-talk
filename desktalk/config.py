@@ -325,7 +325,6 @@ class RemindersSettings(_Section):
     min_gap_sec: ZeroOrMore
     check_every_sec: PositiveNumber
     quiet_hours: QuietHours
-    someone_here_sec: PositiveNumber
 
 
 class RuleEngineSettings(_Section):

@@ -108,6 +108,8 @@ class VisionHabits:
     def tick(self, now: float) -> float:
         if self._vision is None:
             return self._every
+        if not self._status.user_active(now):            # nobody at the desk: don't spend an AI call
+            return self._every
         with self._desk.lock:
             on = self._desk.active_scenarios.get('reminders', True)
             jpeg = self._desk.first_raw_frame() if on else None

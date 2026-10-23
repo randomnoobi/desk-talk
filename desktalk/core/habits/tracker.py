@@ -78,7 +78,7 @@ class HabitTracker:
         self._rules = protocols
         self._s = settings
         self._min_conf = agents.min_confidence
-        self._user_window = presence.user_active_window_sec      # shorter than reminders.someone_here_sec
+        self._user_window = presence.user_active_window_sec      # not the reminders' switch (the person's object state)
         self._phone_counts = phone_counts                         # off when the phone itself is the camera
         self._cats = {
             'drink': profiles.labels_for_habit('hydration'),

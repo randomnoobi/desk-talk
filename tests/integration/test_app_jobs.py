@@ -187,7 +187,7 @@ def test_with_ollama_the_vision_checks_look_at_the_desk_picture(tmp_path):
     rig = DeskRig(tmp_path, ai_reply=lambda request: (VISION_ANSWER.replace('good', 'slouch')
                                                       if isinstance(request['messages'][-1]['content'], list)
                                                       else 'Hey there!'), ollama=True)
-    rig.watch(2, LAPTOP)
+    rig.watch(rig.config.object_states.person_appear_sec + 2, LAPTOP)     # long enough for you to count as here
     rig.tick(rig.app.vision_habits)
     answer, when = rig.app.vision_habits.latest()
     assert answer['posture'] == 'slouch' and when == rig.clock.now()

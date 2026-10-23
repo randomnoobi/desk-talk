@@ -81,6 +81,13 @@ def test_no_question_while_reminders_are_switched_off():
     assert rig.ai.calls == []
 
 
+def test_no_question_while_you_are_away():
+    rig = Rig()
+    rig.status.active = False                                # nobody at the desk (FakeDeskStatus(active=False))
+    assert rig.habits.tick(rig.clock.now()) == 42
+    assert rig.ai.calls == []
+
+
 def test_the_question_is_about_the_newest_picture_and_waits_for_no_one():
     rig = Rig()
     rig.look(GOOD)

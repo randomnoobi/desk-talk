@@ -5,17 +5,19 @@ gets only the interfaces it asks for (desktalk/ports.py) and its own section of 
     desktalk = build(load_config())     # every part, from config/ and .env
     desktalk.start()                    # every background job, each in its own thread (the Supervisor)
     ...
-    desktalk.stop()                     # stop the jobs, finish the events, save the habits, compact the log
+    desktalk.stop()                     # stop the jobs, finish the events, save the states and habits, compact the log
 
     Camera ──► DetectionProducer ──► EventStream ──┬─► EventLog          (data/events/)
-    (Pi / phone /                                  ├─► Roster            (agents join / leave)
-     webcam)                                       ├─► HabitTracker      (water, breaks, light, phone)
+    (Pi / phone /                                  ├─► ObjectStateTracker (present / absent per object, saved in
+     webcam)                                       │     SQLite; your own state switches reminders on and off)
+                                                   ├─► Roster            (agents join / leave)
+                                                   ├─► HabitTracker      (water, breaks, light, phone)
                                                    ├─► DeskMonitor       (danger zones, desk edges, pets)
                                                    ├─► LostItems         (where your keys were)
                                                    └─► MessageGenerator ──► MessageHub ──► open app pages
     Background jobs (Supervisor): the producer, the scheduler (compact and prune the event log, save the
-    habits), habit reminders, Lens, small talk, lost items, the daily recap, vision habits, and the Ollama
-    keep-alive when the chat runs on Ollama.
+    habits and the object states), habit reminders, Lens, small talk, lost items, the daily recap, vision habits,
+    and the Ollama keep-alive when the chat runs on Ollama.
 
 Tests build the same app with fakes through build()'s keyword arguments (see tests/integration/app_kit.py).
 """
@@ -31,7 +33,7 @@ from typing import Any
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource, make_pair_key
 from desktalk.adapters.detector import UltralyticsDetector
 from desktalk.adapters.llm import OllamaKeepAlive, OpenAICompatibleChatModel, ResilientChatModel
-from desktalk.adapters.storage import EventLog, JsonFileStore
+from desktalk.adapters.storage import EventLog, JsonFileStore, SqliteStateStore
 from desktalk.config import AppConfig, ConfigError
 from desktalk.core.agents.profiles import ProfileBook
 from desktalk.core.agents.roster import Roster
@@ -51,6 +53,7 @@ from desktalk.core.habits.desk_status import DeskStatus
 from desktalk.core.habits.preferences import Preferences
 from desktalk.core.habits.reminders import HabitReminders, NoRules
 from desktalk.core.habits.tracker import HabitTracker
+from desktalk.core.object_states.tracker import ObjectStateTracker
 from desktalk.core.vision import desk_edges
 from desktalk.core.vision.analyzer import DeskAnalyzer
 from desktalk.core.vision.camera_health import CameraHealth
@@ -91,6 +94,8 @@ class DeskTalk:
     photos          proof photos: save() (a photo of the desk on request)
     detector        object detection on this computer: label (/api/live)
     producer        camera pictures → events: pictures_analysed, last_detect_ms (yolo_ms), problem (/api/health)
+    object_states   present / absent for each object on the desk: snapshot() and changes() (the person is the switch)
+    state_store     the SQLite file the object states are saved in (settings → object_states.database)
     roster          who's in the chat: snapshot() and member_ids() (/api/agents, /api/live)
     desk_status     camera_connected(), warm(), reminders_ready() ... (/api/live, /api/health)
     habits          today's habits: today(), log(), day_times() (/api/habits, the habit buttons)
@@ -134,6 +139,8 @@ class DeskTalk:
     photos: ProofPhotos
     detector: Detector
     producer: DetectionProducer
+    object_states: ObjectStateTracker
+    state_store: SqliteStateStore
     roster: Roster
     desk_status: DeskStatus
     habits: HabitTracker
@@ -192,8 +199,9 @@ class DeskTalk:
         log.info('Desk Talk started: %s', ', '.join(job.name for job, _ in self.background_jobs()))
 
     def stop(self, timeout: float | None = None) -> list[str]:
-        """Stop everything, in this order: the background jobs; the events still waiting are handled; today's
-        habits are saved; the event log is compacted; the event stream is closed (and a webcam let go).
+        """Stop everything, in this order: the background jobs; the events still waiting are handled; the object
+        states are saved; today's habits are saved; the event log is compacted; the event stream is closed (and
+        a webcam let go); the object states database is closed.
         A step that fails is logged and the rest still happen. `timeout`: how long to wait for each job
         (settings → supervisor.stop_wait_sec when not given). Returns the names of jobs and event consumers
         still busy after their wait (their threads don't keep the app from closing)."""
@@ -201,11 +209,13 @@ class DeskTalk:
         still_running = self.supervisor.stop(wait)
         if not self.bus.wait_idle(wait):
             log.warning('Some events were still waiting when Desk Talk stopped')
+        self._shutdown_step('save the object states', lambda: self.object_states.save_snapshot(self.clock.now()))
         self._shutdown_step('save the habits', lambda: self.habits.save(force=True))
         self._shutdown_step('compact the event log', lambda: self.event_log.compact(self.clock.now()))
         still_running += self.bus.close(wait)
         if isinstance(self.source, WebcamSource):
             self.source.release()
+        self._shutdown_step('close the object states database', self.state_store.close)
         if still_running:
             log.warning('Still busy when Desk Talk stopped: %s', ', '.join(still_running))
         return still_running
@@ -295,6 +305,10 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     detector = detector if detector is not None else make_detector(config)
     producer = DetectionProducer(source, detector, bus, desk, clock, camera_health, painter, config.camera,
                                  new_session_after_sec=config.protocols.breaks.break_min * MINUTE)
+    state_store = SqliteStateStore(data_path(config.object_states.database))
+    object_states = ObjectStateTracker(config.object_states, bus, state_store, device_id=source.kind,
+                                       new_session_after_sec=config.protocols.breaks.break_min * MINUTE)
+    object_states.restore(clock.now())
 
     # ── the consumers of detection events (each subscribes itself, in this order) ──
     def on_desk(x: float, y: float, width: int, height: int) -> bool:
@@ -302,7 +316,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
 
     phone_is_camera = source.kind == 'phone'
     roster = Roster(bus, profiles, desk, config.agents, config.presence, on_desk=on_desk)
-    desk_status = DeskStatus(desk, source, preferences, config.reminders)
+    desk_status = DeskStatus(desk, source, preferences, config.reminders, object_states,
+                             person_label=config.object_states.person_label)
     habits = HabitTracker(clock, bus, store, profiles, preferences, desk, config.protocols, config.habit_tracker,
                           config.presence, config.agents, phone_counts=not phone_is_camera)
     monitor = DeskMonitor(bus, desk, analyzer, profiles, habits, desk_status, photos, config.alerts)
@@ -340,6 +355,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     scheduler.every(config.event_log.prune_every_min * MINUTE, lambda: event_log.prune(clock.now()),
                     'delete old event-log days')
     scheduler.every(config.habit_tracker.save_check_every_sec, habits.save, 'save habit day')
+    scheduler.every(config.object_states.snapshot_every_sec, lambda: object_states.save_snapshot(clock.now()),
+                    'save object states')
     supervisor = Supervisor(clock, first_retry_sec=config.supervisor.restart_start_sec,
                             max_retry_sec=config.supervisor.restart_max_sec)
 
@@ -347,7 +364,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         config=config, clock=clock, desk=desk, bus=bus, event_log=event_log, store=store, config_store=config_store,
         profiles=profiles, preferences=preferences, source=source, pair_key=pair_key, safety_rules=safety_rules,
         analyzer=analyzer, painter=painter, camera_health=camera_health, photos=photos, detector=detector,
-        producer=producer, roster=roster, desk_status=desk_status, habits=habits, monitor=monitor, ai=ai,
-        model=model, hub=hub, generator=generator, reminders=reminders, lens=lens, idle_chat=idle_chat,
-        lost_items=lost_items, vision_habits=vision_habits, daily_summary=daily_summary, scheduler=scheduler,
-        supervisor=supervisor, started_at=clock.now(), keepalive=ai.keepalive_worker(), log_file=log_file)
+        producer=producer, object_states=object_states, state_store=state_store, roster=roster,
+        desk_status=desk_status, habits=habits, monitor=monitor, ai=ai, model=model, hub=hub, generator=generator,
+        reminders=reminders, lens=lens, idle_chat=idle_chat, lost_items=lost_items, vision_habits=vision_habits,
+        daily_summary=daily_summary, scheduler=scheduler, supervisor=supervisor, started_at=clock.now(),
+        keepalive=ai.keepalive_worker(), log_file=log_file)
