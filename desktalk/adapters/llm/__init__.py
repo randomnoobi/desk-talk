@@ -1,7 +1,7 @@
 """The AI behind the ChatModel interface: the OpenAI-compatible connection and the wrapper that keeps it safe.
 
     ai = OpenAICompatibleChatModel(config.llm, config.secrets, clock, replies=config.prompts.replies)
-    model = ResilientChatModel(ai, clock, config.llm, time_limit_sec=ai.time_limit_sec)
+    model = ResilientChatModel(ai, clock, config.llm, time_limit_sec=ai.time_limit_sec, replies=config.prompts.replies)
     keepalive = ai.keepalive_worker()       # Ollama only; supervisor.add(keepalive, start_after=...)
 """
 

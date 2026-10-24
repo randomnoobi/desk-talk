@@ -46,7 +46,8 @@ replies:
     # an error it doesn't know, shown as it came ({error}, cut to settings → llm.error_text_chars)
     other: 'The AI returned an error: {error}'
     no_pictures: 'The model "{model}" cannot look at pictures. Set llm.vision_model in config/settings.yaml to a vision model (for example `ollama pull llava`).'
-    # after a rate limit, background chatter waits (settings → llm.pause_on_limit_sec)
+    # after a rate limit, background chatter waits (settings → llm.pause_on_limit_sec). Here {who} is the AI's
+    # full name (Gemini gemini-2.5-flash)
     resting: '{who} hit its usage limit, so background chatter is resting for about {minutes} more minute(s).'
     # added to the problem while Desk Talk leaves a failing AI alone (settings → llm.breaker_*)
     left_alone: '{problem} (It failed {failures} times in a row, so Desk Talk is leaving it alone for {seconds} seconds.)'
