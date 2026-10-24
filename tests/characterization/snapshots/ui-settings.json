@@ -34,6 +34,7 @@
         "walk_repeat_after_hours": "number",
         "walk_window_after_meal_min": "number"
       },
+      "evening_dim_before_bed_min": "number",
       "food_label_max_chars": "number",
       "glass_ml": "number",
       "goal_window_hours": "number",
@@ -42,6 +43,8 @@
         "overcast": "number",
         "partly_cloudy": "number"
       },
+      "morning_window_min": "number",
+      "stop_before_bed_hours": "number",
       "sunlight_default_min": "number"
     },
     "lens_card": {
@@ -52,6 +55,8 @@
       "name": "str"
     },
     "phone": {
+      "capture_height": "number",
+      "capture_width": "number",
       "fps": "number",
       "jpeg_quality": "number",
       "max_side": "number",
@@ -69,8 +74,11 @@
     },
     "web": {
       "activity_ping_ms": "number",
+      "chat_kept": "number",
+      "chat_saved": "number",
       "first_check_timeout_ms": "number",
       "habit_log_shown": "number",
+      "left_chat_shown_min": "number",
       "live_timeout_ms": "number",
       "log_shown": "number",
       "palette": [

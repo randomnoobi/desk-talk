@@ -33,6 +33,8 @@ camera:
   phone_max_side: 960         # the phone shrinks each picture so its longest side is at most this many pixels
   phone_jpeg_quality: 70      # JPEG quality of the pictures the phone sends (1-100)
   phone_tilt_max: 50          # a phone tilt reading above this (m/s², on any axis) isn't a real one (gravity is 9.8)
+  phone_capture_width: 1280   # the picture size the phone page asks its camera for (the phone picks the nearest
+  phone_capture_height: 720   # size it has; each picture is then shrunk to phone_max_side)
   wait_for_picture_sec: 1.0   # analysis waits this long for a new picture, then checks again
   jpeg_quality: 78            # JPEG quality when this computer makes the picture itself (webcam)
   boxes_jpeg_quality: 70      # JPEG quality of the live view with boxes ("Boxes" in the app)
@@ -486,6 +488,8 @@ web:
     log_detections: {default: 30, max: 500}
     log: 150                  # events the Log page asks for
     photos: 6                 # proof photos shown under the live view
+    chat_kept: 200            # messages the page keeps in each chat (older ones drop off)...
+    chat_saved: 60            # ...and saves in the browser for each chat, so a refresh keeps them
   # The app page (web_app/), in thousandths of a second:
   refresh_ms:                 # how often the page asks for new...
     live: 1500                # ...camera status, agents and risks
@@ -498,6 +502,7 @@ web:
   first_check_timeout_ms: 4000  # ...on the first "is the server there?" check, then runs as a demo
   activity_ping_ms: 3000      # while you type, the page tells the server at most this often (small talk waits)
   toast_ms: 4000              # how long a pop-up note stays
+  left_chat_shown_min: 60     # a chat whose object left the desk stays in the chat list this long
   # The colors the page knows. Agents (agents.yaml) use the first eight; ink is the group chat's.
   palette: [cobalt, teal, tang, mustard, coral, plum, moss, slate, ink]
 

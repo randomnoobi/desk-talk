@@ -213,16 +213,20 @@ def test_ui_settings_reply(tmp_path):
     assert (ui['web']['request_timeout_ms'], ui['web']['toast_ms'], ui['web']['activity_ping_ms']) == (8000, 4000, 3000)
     assert (ui['web']['log_shown'], ui['web']['photos_shown'], ui['web']['habit_log_shown']) == (150, 6, 40)
     assert ui['web']['palette'][-1] == 'ink'
+    assert (ui['web']['chat_kept'], ui['web']['chat_saved'], ui['web']['left_chat_shown_min']) == (200, 60, 60)
     assert ui['chat'] == {'message_max_chars': 1200, 'history_from_app': 10, 'todo_max_items': 20,
                           'todo_max_chars': 200}
     assert ui['habits']['sunlight_default_min'] == 10
     assert ui['habits']['morning_minutes'] == {'clear': 10, 'partly_cloudy': 20, 'overcast': 30}
     assert ui['habits']['breaks']['sit_limit_min'] == c.protocols.breaks.sit_limit_min
+    assert (ui['habits']['morning_window_min'], ui['habits']['evening_dim_before_bed_min'],
+            ui['habits']['stop_before_bed_hours']) == (60, 60, 2)
     assert ui['desk']['edge_proximity']['danger_px'] == 35 and ui['desk']['max_desk_corners'] == 12
     assert ui['desk']['desk_border_share'] == 0.03
     assert ui['quiet_hours'] == {'enabled': False, 'start_hour': 22, 'end_hour': 7}
     assert ui['pi'] == {'fps': 3, 'delete_every_min': 10, 'compact_every_min': 10}
-    assert ui['phone'] == {'fps': 3, 'max_side': 960, 'jpeg_quality': 70, 'tilt_max': 50}
+    assert ui['phone'] == {'fps': 3, 'max_side': 960, 'jpeg_quality': 70, 'tilt_max': 50,
+                           'capture_width': 1280, 'capture_height': 720}
     assert ui['lens_card'] == {'id': 'lens', 'name': 'Lens', 'art': 'art/lens.svg', 'color': 'coral',
                                'about': 'The camera. Speaks up when the view needs fixing.'}
     assert ui['chat_reply_timeout_ms'] > ui['web']['request_timeout_ms']

@@ -108,4 +108,5 @@ def test_the_phone_gets_its_picture_settings(phone, rig):
     camera = rig.config.camera
     assert phone.get('/api/phone/config').json() == {
         'fps': camera.fps, 'max_side': camera.phone_max_side, 'jpeg_quality': camera.phone_jpeg_quality,
-        'tilt_max': camera.phone_tilt_max}
+        'tilt_max': camera.phone_tilt_max, 'capture_width': camera.phone_capture_width,
+        'capture_height': camera.phone_capture_height}

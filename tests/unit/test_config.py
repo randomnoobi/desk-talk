@@ -349,6 +349,8 @@ NEW_SETTINGS = {
         ('web', 'refresh_ms', 'live'), ('web', 'refresh_ms', 'log'), ('web', 'refresh_ms', 'habits'),
         ('web', 'request_timeout_ms'), ('web', 'activity_ping_ms'), ('web', 'toast_ms'),
         ('web', 'list_sizes', 'log'), ('web', 'list_sizes', 'photos'),
+        ('web', 'list_sizes', 'chat_kept'), ('web', 'list_sizes', 'chat_saved'), ('web', 'left_chat_shown_min'),
+        ('camera', 'phone_capture_width'), ('camera', 'phone_capture_height'),
         ('logging', 'file_name'), ('logging', 'preview_chars'), ('llm', 'error_text_chars'),
     ],
     'protocols.yaml': [('food', 'healthy')],
@@ -408,6 +410,8 @@ def test_new_settings_keep_the_values_the_code_has_today(project):
     assert web.refresh_ms.model_dump() == {'live': 1500, 'habits': 15000, 'photos': 10000, 'log': 20000}  # app.js
     assert (web.request_timeout_ms, web.activity_ping_ms, web.toast_ms) == (8000, 3000, 4000)
     assert (web.list_sizes.log, web.list_sizes.photos) == (150, 6)
+    assert (web.list_sizes.chat_kept, web.list_sizes.chat_saved, web.left_chat_shown_min) == (200, 60, 60)  # app.js
+    assert (camera.phone_capture_width, camera.phone_capture_height) == (1280, 720)                  # camera.js
     assert (cfg.logging.file_name, cfg.llm.error_text_chars) == ('desktalk.log', 160)
     assert 'banana' in cfg.protocols.food.healthy and len(cfg.protocols.food.healthy) == 20          # tracker.py
 

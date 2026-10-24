@@ -42,6 +42,8 @@ class CameraSettings(_Section):
     phone_max_side: PositiveInt
     phone_jpeg_quality: JpegQuality
     phone_tilt_max: PositiveNumber
+    phone_capture_width: PositiveInt
+    phone_capture_height: PositiveInt
     wait_for_picture_sec: PositiveNumber
     jpeg_quality: JpegQuality
     boxes_jpeg_quality: JpegQuality
@@ -540,6 +542,8 @@ class ListSizes(_Section):
     log_detections: ListSize
     log: PositiveInt              # these two: how many the app page asks for or shows
     photos: PositiveInt
+    chat_kept: PositiveInt        # messages the page keeps per chat...
+    chat_saved: PositiveInt       # ...and saves in the browser
 
 
 class PageRefresh(_Section):
@@ -572,6 +576,7 @@ class WebSettings(_Section):
     first_check_timeout_ms: PositiveInt
     activity_ping_ms: PositiveInt
     toast_ms: PositiveInt
+    left_chat_shown_min: ZeroOrMore
     palette: Words
 
 

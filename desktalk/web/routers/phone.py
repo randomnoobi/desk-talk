@@ -1,7 +1,8 @@
 """
 The phone as the camera, on the phone page's own HTTPS server (create_phone_app):
     GET  /, /phone, /phone/  the camera page (phone_camera/index.html); its files are under /phone/
-    GET  /api/phone/config   how many pictures a second to send, how big and how sharp, and the highest real tilt
+    GET  /api/phone/config   how many pictures a second to send, how big and how sharp, the highest real tilt, and
+                             the picture size to ask the phone's camera for
     POST /api/phone/frame    one picture, with how the phone is tilted (X-Desk-Gravity) and how far it turned
                              the picture (X-Desk-Rotation)
     POST /api/phone/stop     the user pressed Stop on the phone
@@ -58,7 +59,8 @@ def phone_page(desk: Desk) -> FileResponse:
 
 def phone_settings(camera: CameraSettings) -> PhoneSettings:
     return PhoneSettings(fps=camera.fps, max_side=camera.phone_max_side, jpeg_quality=camera.phone_jpeg_quality,
-                         tilt_max=camera.phone_tilt_max)
+                         tilt_max=camera.phone_tilt_max, capture_width=camera.phone_capture_width,
+                         capture_height=camera.phone_capture_height)
 
 
 @phone_router.get('/api/phone/config')

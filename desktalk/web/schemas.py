@@ -119,6 +119,8 @@ class PhoneSettings(BaseModel):
     max_side: int                        # longest side of each picture, in pixels
     jpeg_quality: int                    # 1-100
     tilt_max: float                      # a tilt reading above this (m/s², any axis) isn't a real one
+    capture_width: int                   # the picture size the phone page asks its camera for
+    capture_height: int
 
 
 # ── GET /api/ui_settings: what the app page (web_app/) used to keep its own copies of ──
@@ -134,6 +136,9 @@ class UiPage(BaseModel):
     log_shown: int                       # web.list_sizes.log
     photos_shown: int                    # web.list_sizes.photos
     habit_log_shown: int                 # web.list_sizes.habit_log.default
+    chat_kept: int                       # web.list_sizes.chat_kept: messages kept per chat...
+    chat_saved: int                      # ...and saved in the browser (web.list_sizes.chat_saved)
+    left_chat_shown_min: float           # a chat whose object left stays in the list this long
     palette: list[str]
 
 
@@ -153,7 +158,10 @@ class UiHabits(BaseModel):
     glass_ml: float
     food_label_max_chars: int
     goal_window_hours: float             # protocols.yaml → hydration
+    stop_before_bed_hours: float
     morning_minutes: MorningMinutes      # protocols.yaml → light
+    morning_window_min: float
+    evening_dim_before_bed_min: float
     breaks: BreaksRule                   # protocols.yaml → breaks
 
 
