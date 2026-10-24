@@ -91,13 +91,6 @@ class DeskState:
         self.snapshots: OrderedDict = OrderedDict()
         self.snapshot_order: list = []        # newest first: id, ts, label, tags
 
-    def first_raw_frame(self):
-        """Newest plain JPEG from any camera (call with the lock held)."""
-        for ci in sorted(self.raw_frames):
-            if self.raw_frames.get(ci):
-                return self.raw_frames[ci]
-        return None
-
     # ── LivePictures ──
     def put(self, cam: int, plain: bytes, boxed: bytes | None, size: Size) -> None:
         with self.lock:

@@ -31,6 +31,7 @@ from typing import Any
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource, make_pair_key
 from desktalk.adapters.detector import UltralyticsDetector
 from desktalk.adapters.llm import OllamaKeepAlive, OpenAICompatibleChatModel, ResilientChatModel
+from desktalk.adapters.picture import OpenCvPictureTools
 from desktalk.adapters.storage import EventLog, JsonFileStore
 from desktalk.config import AppConfig, ConfigError
 from desktalk.core.agents.profiles import ProfileBook
@@ -306,32 +307,40 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     monitor = DeskMonitor(bus, desk, analyzer, profiles, habits, desk_status, photos, config.alerts)
 
     # ── the AI and the chat ──
-    ai = OpenAICompatibleChatModel(config.llm, config.secrets, clock, client_factory=client_factory)
+    ai = OpenAICompatibleChatModel(config.llm, config.secrets, clock, client_factory=client_factory,
+                                   replies=config.prompts.replies)
     model = ResilientChatModel(ai, clock, config.llm, time_limit_sec=ai.time_limit_sec)
     vision = model if model.local_vision else None       # pictures only go to an AI on this computer (no quota)
     hub = MessageHub(clock, recent_kept=config.chat.recent_kept, queue_size=config.web.live_queue_size)
     default_temperature = config.agents_file.default.temperature
     lost_items = LostItems(clock, bus, desk, roster, profiles, habits, model, vision, config.lost_items,
                            config.llm.replies, photos=photos, default_temperature=default_temperature,
-                           phone_is_camera=phone_is_camera)
+                           pictures=OpenCvPictureTools(), prompts=config.prompts.lost_items,
+                           photos_kept=config.snapshots.max_kept, phone_is_camera=phone_is_camera)
     generator = MessageGenerator(model, hub, roster, profiles, habits, desk, clock, status=desk_status,
                                  habit_log=habits, llm=config.llm, chat=config.chat, agents=config.agents,
                                  sunlight_default_min=config.habit_tracker.sunlight_default_min,
-                                 reply_max_chars=config.chat.reply_max_chars, local_model=ai.is_local)
+                                 reply_max_chars=config.chat.reply_max_chars, prompts=config.prompts,
+                                 drink_labels=config.safety.liquids, preview_chars=config.logging.preview_chars,
+                                 local_model=ai.is_local)
     generator.subscribe_to(bus)
 
     # ── the background jobs ──
     reminders = HabitReminders(habits, desk_status, roster, profiles, generator, hub, bus, config.reminders)
     lens = Lens(camera_health, source, safety_rules, preferences, hub, bus, photos, config.lens, config.pi,
+                prompts=config.prompts.lens, preview_chars=config.logging.preview_chars,
                 phone=source if isinstance(source, PhoneCamera) else None,
                 pi_uploads=source if isinstance(source, PiUploads) else None)
     idle_chat = IdleChat(model, hub, desk_status, roster, profiles, desk, lambda: generator.live_context()['summary'],
                          config.idle_chat, config.llm.replies, memory_kept=config.llm.memory_per_agent,
                          memory_chars=config.chat.memory_reply_chars, default_temperature=default_temperature,
-                         reply_max_chars=config.chat.reply_max_chars)
-    vision_habits = VisionHabits(vision, bus, desk, roster, profiles, desk_status, config.vision_habits, clock, photos)
+                         reply_max_chars=config.chat.reply_max_chars, prompts=config.prompts.small_talk,
+                         preview_chars=config.logging.preview_chars)
+    vision_habits = VisionHabits(vision, bus, desk, roster, profiles, desk_status, config.vision_habits, clock, photos,
+                                 prompts=config.prompts.vision)
     daily_summary = DailySummary(model, hub, roster, habits, store, config.daily_summary, config.llm.replies,
-                                 default_temperature=default_temperature)
+                                 default_temperature=default_temperature, clock=clock,
+                                 prompts=config.prompts.daily_recap, preview_chars=config.logging.preview_chars)
     scheduler = Scheduler(clock, longest_wait_sec=config.supervisor.scheduler_longest_wait_sec)
     scheduler.every(config.event_log.compact_every_min * MINUTE, lambda: event_log.compact(clock.now()),
                     'compact event log')

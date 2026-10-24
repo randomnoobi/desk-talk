@@ -92,7 +92,8 @@ class DeskRig:
                  ai_reply: str | Callable[[Mapping[str, Any]], str] | None = None, ollama: bool = False,
                  **build_kw: Any):
         self.tmp_path = tmp_path
-        self.clock = FakeClock(start)
+        # The clock keeps this computer's own time zone, so its local hours match the times written above.
+        self.clock = FakeClock(start, utc_offset_hours=time.localtime(start).tm_gmtoff / 3600)
         self.config = config or desk_config(tmp_path, ai=ai_reply is not None, ollama=ollama)
         self.detector = FakeDetector()
         self.ai_clients: list[FakeAI] = []
