@@ -121,6 +121,15 @@ tasks:
 #   event:    {object: bottle, events: [moved]}         one of these things happened after the nudge.
 #                                                       This only works inside "success", and not
 #                                                       under "not" (for "this didn't happen", use no_event).
+#             no_event and event can also name a list of objects, like object: [cup, mug, bottle];
+#             then a change to any one of them counts.
+#   no_habit: {habit: hydration, action: sip, for: 60m}
+#                                                       this wasn't logged for this long (with the app's
+#                                                       buttons, in chat, or by the camera). The actions
+#                                                       are sip, break, sunlight, logged (food) and
+#                                                       streak (phone-free time).
+#   habit:    {habit: hydration, action: sip}           this was logged after the nudge. Like event, it
+#                                                       only works inside "success", and not under "not".
 #   all: [...]   every condition in the list is true
 #   any: [...]   at least one condition in the list is true
 #   not: ...     the condition is not true
@@ -138,12 +147,15 @@ rules:
     when:
       all:
         - state:    {object: person, is: present, for: 60m}
-        - no_event: {object: bottle, events: [moved, removed], for: 60m}
+        - no_event: {object: [cup, mug, bottle, water bottle, wine glass], events: [moved, removed], for: 60m}
+        - no_habit: {habit: hydration, action: sip, for: 60m}     # a sip logged in the app or in chat counts
     cooldown: 30m
     max_nudges_per_hour: 4
     quiet_hours: {start: "22:00", end: "07:00"}
-    message: "You've been at the desk for an hour and your bottle hasn't moved. Time for some water?"
+    message: "You've been at the desk for an hour without a drink. Time for some water?"
     success:                    # did the nudge work? (looked at after the nudge)
       within: 5m
       when:
-        event: {object: bottle, events: [moved, removed]}
+        any:
+          - event: {object: [cup, mug, bottle, water bottle, wine glass], events: [moved, removed]}
+          - habit: {habit: hydration, action: sip}

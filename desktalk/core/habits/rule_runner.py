@@ -7,8 +7,12 @@ asks for them with nudges() and says which one it sent with note_fired(); neithe
 desk or runs a rule. For every nudge that went out, later rounds also check whether it worked (the
 rule's `success`) and publish a RuleOutcome.
 
-Fire times are kept in memory, so a restart forgets them. The reminder warm-up (reminders.warmup_min)
-covers that.
+It also listens for logged habits (HabitEvent: a sip with the app's buttons, in chat or seen by the camera,
+a break ...), so `habit` and `no_habit` conditions can count them.
+
+Fire times and logged habits are kept in memory, so a restart forgets them. The reminder warm-up
+(reminders.warmup_min) and no_habit's watching rule (the camera must have watched for its whole `for`)
+cover that.
 """
 
 from __future__ import annotations
@@ -20,8 +24,8 @@ from dataclasses import dataclass
 
 from desktalk.config import RuleConfig, RuleEngineSettings
 from desktalk.core.habits.rule_engine import check_success, evaluate, in_quiet_hours, lookback_sec
-from desktalk.domain import Nudge, RuleOutcome
-from desktalk.domain.rules import RuleHistory
+from desktalk.domain import HabitEvent, Nudge, RuleOutcome
+from desktalk.domain.rules import HabitDone, RuleHistory
 from desktalk.ports import EventBus, ObjectStatesView
 
 log = logging.getLogger(__name__)
@@ -56,6 +60,12 @@ class RuleRunner:
         self._due: list[Nudge] = []
         self._fired: dict[str, list[float]] = {}            # rule id -> when it nudged, oldest first
         self._open: list[_OpenCheck] = []
+        self._habits: list[HabitDone] = []                 # logged habits, oldest first
+        bus.subscribe('rule-engine-habits', self._on_habit, types={HabitEvent})
+
+    def _on_habit(self, event: HabitEvent) -> None:
+        with self._lock:
+            self._habits.append(HabitDone(event.ts, event.habit, event.action))
 
     # ── RuleNudges (the reminders thread) ──────────────────────────────────────────────────────────────────────────
     def nudges(self, now: float) -> list[Nudge]:
@@ -91,14 +101,18 @@ class RuleRunner:
         with self._lock:
             oldest_open = min((c.fired_at for c in self._open), default=now)
         snapshot = self._states.snapshot()
-        changes = self._states.changes(min(now - self._lookback, oldest_open))
+        since = min(now - self._lookback, oldest_open)
+        changes = self._states.changes(since)
         with self._lock:
+            self._habits = sorted((h for h in self._habits if h.ts > since), key=lambda h: h.ts)
+            habits = tuple(self._habits)
             fired = {rule_id: tuple(times) for rule_id, times in self._fired.items()}
-            self._due = evaluate(self._rules, snapshot, RuleHistory(changes, fired), now)
+            self._due = evaluate(self._rules, snapshot, RuleHistory(changes, fired, habits), now)
             outcomes = []
             still_open = []
             for check in self._open:
-                result = check_success(check.rule, check.fired_at, snapshot, changes, now, self._grace)
+                result = check_success(check.rule, check.fired_at, snapshot, changes, now, self._grace,
+                                       habits=habits)
                 if result is None:
                     still_open.append(check)
                 else:

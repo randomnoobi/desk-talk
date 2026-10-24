@@ -98,6 +98,20 @@ def test_hydration_rule_nudges_in_the_running_app(tmp_path):
     assert outcome['result'] == 'worked'
 
 
+def test_a_sip_logged_in_the_app_stops_the_hydration_nudge(tmp_path):
+    config = desk_config(tmp_path)
+    for rule in ('breaks', 'light', 'phone_free', 'food', 'tasks'):
+        config = changed(config, f'protocols.{rule}', enabled=False)
+    rig = DeskRig(tmp_path, config=config)
+    rig.watch(40 * 60, LAPTOP, BOTTLE, step=1)
+    rig.app.habits.log('hydration', 'sip')                # the water button in the app
+    rig.watch(21 * 60, LAPTOP, BOTTLE, step=1)           # 61 minutes with a bottle that never moves
+    rig.tick(rig.app.rule_runner)
+    rig.tick(rig.app.reminders)
+    day = rig.app.event_log.days()[0]
+    assert 'rule.hydration' not in [n.get('rule') for n in rig.app.event_log.events(day, {'nudge'}, 10)]
+
+
 # ── Lens ─────────────────────────────────────────────────────────────
 def test_lens_speaks_up_when_the_pi_goes_quiet(tmp_path):
     rig = DeskRig(tmp_path)

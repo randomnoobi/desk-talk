@@ -733,6 +733,16 @@ Timezone = Annotated[str, AfterValidator(_check_timezone),
 ObjectState = Literal['present', 'absent', 'unknown']
 ChangeKind = Literal['appeared', 'removed', 'moved']
 Changes = Annotated[tuple[ChangeKind, ...], Field(min_length=1)]
+# What HabitTracker.log() and the camera's sip check say happened (HabitEvent.action)
+HabitAction = Literal['sip', 'break', 'sunlight', 'logged', 'streak']
+
+
+def _one_or_more(value: Any) -> Any:
+    """object: bottle is the same as object: [bottle]."""
+    return (value,) if isinstance(value, str) else value
+
+
+Objects = Annotated[tuple[str, ...], BeforeValidator(_one_or_more), Field(min_length=1)]
 
 
 class StateCheck(_Section):
@@ -742,13 +752,24 @@ class StateCheck(_Section):
 
 
 class EventCheck(_Section):
-    object: str
+    object: Objects
     events: Changes
 
 
 class NoEventCheck(_Section):
-    object: str
+    object: Objects
     events: Changes
+    for_: Duration = Field(alias='for')
+
+
+class HabitCheck(_Section):
+    habit: Habit
+    action: HabitAction
+
+
+class NoHabitCheck(_Section):
+    habit: Habit
+    action: HabitAction
     for_: Duration = Field(alias='for')
 
 
@@ -764,6 +785,14 @@ class EventCond(_Section):
     event: EventCheck
 
 
+class NoHabitCond(_Section):
+    no_habit: NoHabitCheck
+
+
+class HabitCond(_Section):
+    habit: HabitCheck
+
+
 class AllCond(_Section):
     all: Annotated[tuple[Condition, ...], Field(min_length=1)]
 
@@ -777,18 +806,21 @@ class NotCond(_Section):
 
 
 _CONDITION_KINDS = {'state': StateCond, 'no_event': NoEventCond, 'event': EventCond,
-                    'all': AllCond, 'any': AnyCond, 'not': NotCond}
+                    'no_habit': NoHabitCond, 'habit': HabitCond, 'all': AllCond, 'any': AnyCond, 'not': NotCond}
+# The kinds that ask what happened after the nudge, so they only work inside success
+_AFTER_THE_NUDGE = (EventCond, HabitCond)
 
 
 def _condition_kind(value: Any) -> str | None:
-    """Which of the six kinds a condition is (the tag pydantic picks the right section by)."""
+    """Which kind a condition is (the tag pydantic picks the right section by)."""
     if isinstance(value, dict):
         return next(iter(value), None)
     return next((kind for kind, cls in _CONDITION_KINDS.items() if isinstance(value, cls)), None)
 
 
 def _one_kind_only(value: Any) -> Any:
-    """A condition is a group with exactly one key. Anything else gets one plain sentence, not six union errors."""
+    """A condition is a group with exactly one key. Anything else gets one plain sentence, not a pile of union
+    errors."""
     if isinstance(value, _Section) or (isinstance(value, dict) and len(value) == 1
                                        and next(iter(value)) in _CONDITION_KINDS):
         return value
@@ -802,9 +834,10 @@ def _one_kind_only(value: Any) -> Any:
     raise _Said(f'{said} (found {" and ".join(map(str, value)) or "nothing"})')
 
 
-# One of the six one-key sections, picked by its key (the checks above give the plain messages).
+# One of the one-key sections, picked by its key (the checks above give the plain messages).
 Condition = Annotated[
     Annotated[StateCond, Tag('state')] | Annotated[NoEventCond, Tag('no_event')] | Annotated[EventCond, Tag('event')]
+    | Annotated[NoHabitCond, Tag('no_habit')] | Annotated[HabitCond, Tag('habit')]
     | Annotated[AllCond, Tag('all')] | Annotated[AnyCond, Tag('any')] | Annotated[NotCond, Tag('not')],
     Discriminator(_condition_kind),
     BeforeValidator(_one_kind_only),
@@ -813,21 +846,24 @@ for _cls in (AllCond, AnyCond, NotCond):
     _cls.model_rebuild()
 
 
-def _has_event(condition: Any) -> bool:
-    if isinstance(condition, EventCond):
-        return True
+def _after_the_nudge(condition: Any) -> str | None:
+    """The first event or habit in the condition (None when there is none)."""
+    if isinstance(condition, _AFTER_THE_NUDGE):
+        return _condition_kind(condition)
     if isinstance(condition, NotCond):
-        return _has_event(condition.not_)
-    return any(_has_event(inner) for inner in getattr(condition, 'all', None) or getattr(condition, 'any', ()))
-
-
-def _event_under_not(condition: Any, negated: bool = False) -> bool:
-    if isinstance(condition, EventCond):
-        return negated
-    if isinstance(condition, NotCond):
-        return _event_under_not(condition.not_, True)
+        return _after_the_nudge(condition.not_)
     inner = getattr(condition, 'all', None) or getattr(condition, 'any', ())
-    return any(_event_under_not(each, negated) for each in inner)
+    return next(filter(None, map(_after_the_nudge, inner)), None)
+
+
+def _after_the_nudge_under_not(condition: Any, negated: bool = False) -> str | None:
+    """The first event or habit under a not (None when there is none)."""
+    if isinstance(condition, _AFTER_THE_NUDGE):
+        return _condition_kind(condition) if negated else None
+    if isinstance(condition, NotCond):
+        return _after_the_nudge_under_not(condition.not_, True)
+    inner = getattr(condition, 'all', None) or getattr(condition, 'any', ())
+    return next((kind for each in inner if (kind := _after_the_nudge_under_not(each, negated))), None)
 
 
 class QuietWindow(_Section):
@@ -849,9 +885,10 @@ class Success(_Section):
     @field_validator('when')
     @classmethod
     def _no_event_under_not(cls, condition):
-        if _event_under_not(condition):
-            raise _Said('event can\'t go inside not (it would count as done before anything happened); to say '
-                        '"this didn\'t happen", use no_event')
+        kind = _after_the_nudge_under_not(condition)
+        if kind:
+            raise _Said(f'{kind} can\'t go inside not (it would count as done before anything happened); to say '
+                        f'"this didn\'t happen", use no_{kind}')
         return condition
 
 
@@ -871,8 +908,9 @@ class RuleConfig(_Section):
     @field_validator('gate', 'when')
     @classmethod
     def _no_event_before_the_nudge(cls, condition):
-        if _has_event(condition):
-            raise _Said('event only works inside success (it asks what happened after the nudge)')
+        kind = _after_the_nudge(condition)
+        if kind:
+            raise _Said(f'{kind} only works inside success (it asks what happened after the nudge)')
         return condition
 
 

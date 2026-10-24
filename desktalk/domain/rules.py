@@ -1,4 +1,5 @@
-"""What the rule engine reads: where each object on the desk is, what changed lately, what already nudged."""
+"""What the rule engine reads: where each object on the desk is, what changed lately, what was logged, what already
+nudged."""
 
 from __future__ import annotations
 
@@ -33,8 +34,18 @@ class StateChange:
 
 
 @dataclass(frozen=True)
+class HabitDone:
+    """A habit was logged (a sip from the app's buttons, the chat or the camera; a break ...)."""
+
+    ts: float
+    habit: str                  # hydration | breaks | ... (as in HabitEvent)
+    action: str                 # sip | break | ... (as in HabitEvent)
+
+
+@dataclass(frozen=True)
 class RuleHistory:
     """What a rule may look back on."""
 
     changes: Sequence[StateChange] = ()                                   # oldest first
     fired: Mapping[str, Sequence[float]] = field(default_factory=dict)    # rule id → when it nudged, oldest first
+    habits: Sequence[HabitDone] = ()                                      # oldest first

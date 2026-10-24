@@ -10,10 +10,12 @@ from pydantic import TypeAdapter
 
 from desktalk.config import Condition, QuietWindow, RuleConfig, Success
 from desktalk.core.habits.rule_engine import check_success, evaluate, holds, in_quiet_hours, lookback_sec
-from desktalk.domain.rules import DeskSnapshot, ObjectSnapshot, RuleHistory, StateChange
+from desktalk.domain.rules import DeskSnapshot, HabitDone, ObjectSnapshot, RuleHistory, StateChange
 
 T0 = 1_780_000_000.0        # 13:26 in Los Angeles (a summer afternoon, outside the quiet hours)
 LA = 'America/Los_Angeles'
+DRINKS = ['cup', 'mug', 'bottle', 'water bottle', 'wine glass']
+UNTOUCHED = "the cup, mug, bottle, water bottle or wine glass hasn't been moved or removed in"
 
 # The agreed hydration rule from the plan, with a fixed place so the test hour never lands in quiet hours.
 HYDRATION = RuleConfig.model_validate({
@@ -24,13 +26,17 @@ HYDRATION = RuleConfig.model_validate({
     'gate': {'state': {'object': 'person', 'is': 'present'}},
     'when': {'all': [
         {'state': {'object': 'person', 'is': 'present', 'for': '60m'}},
-        {'no_event': {'object': 'bottle', 'events': ['moved', 'removed'], 'for': '60m'}},
+        {'no_event': {'object': DRINKS, 'events': ['moved', 'removed'], 'for': '60m'}},
+        {'no_habit': {'habit': 'hydration', 'action': 'sip', 'for': '60m'}},
     ]},
     'cooldown': '30m',
     'max_nudges_per_hour': 4,
     'quiet_hours': {'start': '22:00', 'end': '07:00'},
-    'message': "You've been at the desk for an hour and your bottle hasn't moved. Time for some water?",
-    'success': {'within': '5m', 'when': {'event': {'object': 'bottle', 'events': ['moved', 'removed']}}},
+    'message': "You've been at the desk for an hour without a drink. Time for some water?",
+    'success': {'within': '5m', 'when': {'any': [
+        {'event': {'object': DRINKS, 'events': ['moved', 'removed']}},
+        {'habit': {'habit': 'hydration', 'action': 'sip'}},
+    ]}},
 })
 
 
@@ -50,8 +56,8 @@ def desk(watched_since: float | None = T0, **objects: tuple[str, float | None]) 
                         watched_since)
 
 
-def history(changes=(), fired=None) -> RuleHistory:
-    return RuleHistory(tuple(changes), fired or {})
+def history(changes=(), fired=None, habits=()) -> RuleHistory:
+    return RuleHistory(tuple(changes), fired or {}, tuple(habits))
 
 
 def change(ts: float, label: str, kind: str) -> StateChange:
@@ -76,8 +82,8 @@ def test_hydration_nudges_after_an_hour_with_an_untouched_bottle():
     [n] = evaluate([HYDRATION], snap, history(), T0 + 3600)
     assert n.key == 'rule.hydration' and n.habit == 'hydration' and n.repeat_after_sec == 1800
     assert n.text == HYDRATION.message
-    assert n.evidence == ('the person has been present for 60 minutes; '
-                          "the bottle hasn't been moved or removed in 60 minutes")
+    assert n.evidence == (f'the person has been present for 60 minutes; {UNTOUCHED} 60 minutes; '
+                          'no sip has been logged in 60 minutes')
 
 
 def test_not_yet_at_59_minutes():
@@ -90,8 +96,37 @@ def test_a_sip_resets_the_hour():
     sip = [change(T0 + 1800, 'bottle', 'removed')]
     assert evaluate([HYDRATION], snap, history(sip), T0 + 3600) == []
     [n] = evaluate([HYDRATION], snap, history(sip), T0 + 5400)
+    assert n.evidence == (f'the person has been present for 90 minutes; {UNTOUCHED} 60 minutes; '
+                          'no sip has been logged in over 60 minutes')
+
+
+def test_a_cup_moving_resets_the_hour():
+    snap = desk(person=('PRESENT', T0), cup=('ABSENT', T0 + 1800), watched_since=T0)
+    sip = [change(T0 + 1800, 'cup', 'removed')]
+    assert evaluate([HYDRATION], snap, history(sip), T0 + 3600) == []
+
+
+def test_a_logged_sip_resets_the_hour():
+    snap = desk(person=('PRESENT', T0), watched_since=T0)
+    logged = [HabitDone(T0 + 1800, 'hydration', 'sip')]
+    assert evaluate([HYDRATION], snap, history(habits=logged), T0 + 3600) == []
+    [n] = evaluate([HYDRATION], snap, history(habits=logged), T0 + 5400)
+    assert n.key == 'rule.hydration'
+
+
+def test_another_habit_does_not_count():
+    snap = desk(person=('PRESENT', T0), watched_since=T0)
+    logged = [HabitDone(T0 + 1800, 'breaks', 'break')]
+    assert len(evaluate([HYDRATION], snap, history(habits=logged), T0 + 3600)) == 1
+
+
+def test_evidence_names_every_drink_and_the_sip():
+    snap = desk(person=('PRESENT', T0), watched_since=T0)
+    logged = [HabitDone(T0 + 1800, 'hydration', 'sip')]
+    [n] = evaluate([HYDRATION], snap, history(habits=logged), T0 + 5400)
     assert n.evidence == ('the person has been present for 90 minutes; '
-                          "the bottle hasn't been moved or removed in 60 minutes")
+                          "the cup, mug, bottle, water bottle or wine glass hasn't been moved or removed in over "
+                          '60 minutes; no sip has been logged in 60 minutes')
 
 
 def test_a_change_to_another_object_or_kind_does_not_reset_the_hour():
@@ -114,7 +149,7 @@ def test_no_event_needs_enough_watching():
 def test_never_seen_bottle_counts_as_absent_since_watching():
     snap = desk(person=('PRESENT', T0), watched_since=T0)
     [n] = evaluate([HYDRATION], snap, history(), T0 + 3600)
-    assert "the bottle hasn't been moved or removed in 60 minutes" in n.evidence
+    assert f'{UNTOUCHED} 60 minutes' in n.evidence
 
 
 def test_state_for_needs_the_whole_time():
@@ -209,6 +244,33 @@ def test_event_works_inside_all_any_and_not():
     assert holds(cond({'not': sip}), snap, [], T0 + 100, events_after=T0)
 
 
+def test_no_habit_needs_enough_watching_and_no_log_of_that_habit_and_action():
+    sips = cond({'no_habit': {'habit': 'hydration', 'action': 'sip', 'for': '10m'}})
+    snap = desk(watched_since=T0)
+    sip = [HabitDone(T0 + 100, 'hydration', 'sip')]
+    assert not holds(sips, snap, [], T0 + 599)                       # not watched for 10 minutes yet
+    assert holds(sips, snap, [], T0 + 600)
+    assert not holds(sips, snap, [], T0 + 650, habits=sip)
+    assert holds(sips, snap, [], T0 + 700, habits=sip)
+    assert holds(sips, snap, [], T0 + 650, habits=[HabitDone(T0 + 100, 'hydration', 'glass')])
+    assert not holds(sips, desk(watched_since=None), [], T0 + 700)
+
+
+def test_habit_counts_only_after_events_after():
+    sip = cond({'habit': {'habit': 'hydration', 'action': 'sip'}})
+    logged = [HabitDone(T0 + 50, 'hydration', 'sip')]
+    assert holds(sip, desk(), [], T0 + 100, events_after=T0, habits=logged)
+    assert not holds(sip, desk(), [], T0 + 100, events_after=T0 + 60, habits=logged)
+    assert not holds(sip, desk(), [], T0 + 100, habits=logged)
+    assert not holds(sip, desk(), [], T0 + 100, events_after=T0, habits=[HabitDone(T0 + 50, 'breaks', 'break')])
+
+
+def test_event_matches_any_of_its_objects():
+    drink = cond({'event': {'object': ['cup', 'mug'], 'events': ['moved']}})
+    assert holds(drink, desk(), [change(T0 + 50, 'mug', 'moved')], T0 + 100, events_after=T0)
+    assert not holds(drink, desk(), [change(T0 + 50, 'bottle', 'moved')], T0 + 100, events_after=T0)
+
+
 def test_event_without_events_after_is_never_true():
     sip = cond({'event': {'object': 'bottle', 'events': ['moved']}})
     assert not holds(sip, desk(), [change(T0 + 50, 'bottle', 'moved')], T0 + 100)
@@ -259,8 +321,8 @@ def test_evidence_does_not_claim_an_exact_time_older_than_the_history():
     now = T0 + 5 * 3600
     snap = desk(person=('PRESENT', T0), bottle=('PRESENT', now - 5400), watched_since=T0)
     [n] = evaluate([HYDRATION], snap, history(), now)
-    assert n.evidence == ('the person has been present for 300 minutes; '
-                          "the bottle hasn't been moved or removed in over 60 minutes")
+    assert n.evidence == (f'the person has been present for 300 minutes; {UNTOUCHED} over 60 minutes; '
+                          'no sip has been logged in over 60 minutes')
 
 
 def test_evidence_says_over_once_watching_is_longer_than_the_history():
@@ -268,8 +330,10 @@ def test_evidence_says_over_once_watching_is_longer_than_the_history():
     snap = desk(person=('PRESENT', T0), watched_since=T0)
     [n] = evaluate([HYDRATION], snap, history(), now)
     assert "hasn't been moved or removed in over 60 minutes" in n.evidence
+    assert 'no sip has been logged in over 60 minutes' in n.evidence
     [n] = evaluate([HYDRATION], snap, history(), T0 + 3600)        # exactly the lookback: the history covers it all
     assert "hasn't been moved or removed in 60 minutes" in n.evidence
+    assert 'no sip has been logged in 60 minutes' in n.evidence
 
 
 # ── cooldown and the hourly cap ─────────────────────────────────────────────────────────────────────────────────────
@@ -396,6 +460,22 @@ def test_past_the_deadline_only_events_by_the_deadline_count():
     assert result(moved, [change(T0 + 301, 'bottle', 'moved')]) == 'missed'
 
 
+def test_success_by_a_logged_sip():
+    snap = desk(person=('PRESENT', T0))
+    sip = [HabitDone(T0 + 120, 'hydration', 'sip')]
+    assert check_success(HYDRATION, T0, snap, [], T0 + 130, habits=sip) == 'worked'
+    assert check_success(HYDRATION, T0, snap, [], T0 + 360, habits=sip) == 'worked'           # a late round
+    late_sip = [HabitDone(T0 + 301, 'hydration', 'sip')]
+    assert check_success(HYDRATION, T0, snap, [], T0 + 360, habits=late_sip) == 'missed'
+    early_sip = [HabitDone(T0 - 5, 'hydration', 'sip')]
+    assert check_success(HYDRATION, T0, snap, [], T0 + 300, habits=early_sip) == 'missed'
+
+
+def test_success_by_a_mug():
+    snap = desk(person=('PRESENT', T0))
+    assert check_success(HYDRATION, T0, snap, [change(T0 + 90, 'mug', 'moved')], T0 + 120) == 'worked'
+
+
 def test_a_rule_without_success_has_nothing_to_wait_for():
     assert check_success(rule(success=None), T0, desk(), [], T0 + 1) is None
 
@@ -407,4 +487,7 @@ def test_lookback_is_the_longest_for_or_within():
     assert lookback_sec([HYDRATION, long_success]) == 3 * 3600
     inside_not = rule(gate=cond({'not': {'all': [state('person', 'present', '90m')]}}))
     assert lookback_sec([inside_not]) == 5400
+    long_habit = rule(when=cond({'all': [state('person', 'present', '60m'),
+                                         {'no_habit': {'habit': 'hydration', 'action': 'sip', 'for': '2h'}}]}))
+    assert lookback_sec([HYDRATION, long_habit]) == 2 * 3600
     assert lookback_sec([]) == 0
