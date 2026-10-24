@@ -79,9 +79,11 @@ class LostItemAnswers:
             facts.append(fact)
             plain.append(words)
         profile = self._profiles.get(speaker)
-        system = fill.lost_answer_system(self._words, profile.name if profile else 'Lens',
-                                         profile.object if profile else 'camera')
-        user = f'User wrote:\n{user_message[:self._settings.message_max_chars]}\n\nFACTS:\n' + '\n'.join(facts)
+        lens = self._words.answer_as
+        system = fill.lost_answer_system(self._words, profile.name if profile else lens.name,
+                                         profile.object if profile else lens.object)
+        user = self._words.answer_user.format(message=user_message[:self._settings.message_max_chars],
+                                              facts='\n'.join(facts))
         text = ask(self._chat, [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
                    self._replies.lost_answer, background=False, what='a lost-item answer',
                    own_temperature=profile.temperature if profile else self._default_temperature)
@@ -90,27 +92,26 @@ class LostItemAnswers:
     def _what_we_know(self, item_id: str, record: dict[str, Any] | None, note: str | None, scan_words: list[str],
                       now: float) -> tuple[str, str]:
         """(a fact for the AI, the same in words for you) about one item."""
+        w = self._words
         name = self._items.items[item_id]['name']
         last_seen = (record or {}).get('last_seen')
         if record is None or last_seen is None:
             if note:
-                extra = f' Vision: {note}'
+                extra = w.vision_extra.format(note=note)
             else:
-                extra = f' Last wide scan labels: {", ".join(scan_words)}.' if scan_words else ''
-            words = (f"I'm not seeing a saved sighting of your {name} on the desk since we started."
-                     + (f' A quick look at the live picture: {note}' if note else
-                        ' Captures (in the sidebar, or the button below) has every desk photo with its time.'))
-            return f'- your {name}: no desk sighting in this tracking window.{extra}', words
+                extra = w.scan_extra.format(labels=', '.join(scan_words)) if scan_words else ''
+            more = w.live_look.format(note=note) if note else w.see_captures
+            return w.never_seen_fact.format(name=name, extra=extra), w.never_seen.format(name=name, more=more)
         ago = int(now - last_seen)
         when = format_local_ts(last_seen)
         shown = record['last_near'][:self._settings.nearby_mentioned]
-        near = f' near {", ".join(shown)}' if shown else ''
+        near = w.near.format(names=', '.join(shown)) if shown else ''
         if ago < self._settings.just_seen_sec:
-            return (f'- your {name}: seen on the desk within ~{ago}s ({when}){near}.',
-                    f"I've got your {name} on the desk within the last minute or so ({when}){near}.")
+            return (w.just_seen_fact.format(name=name, seconds=ago, when=when, near=near),
+                    w.just_seen.format(name=name, when=when, near=near))
         minutes = max(1, ago // 60)
-        return (f'- your {name}: last seen on the desk ~{minutes} min ago ({when}){near}.',
-                f'I last noted your {name} on the desk around {when}, about {minutes} minute(s) ago{near}.')
+        return (w.seen_fact.format(name=name, minutes=minutes, when=when, near=near),
+                w.seen.format(name=name, when=when, minutes=minutes, near=near))
 
     def _photo_with(self, item_id: str) -> Photo | None:
         """The newest saved photo tagged with the item (by the detector or the vision scan)."""
@@ -126,8 +127,8 @@ class LostItemAnswers:
         name = self._items.items[item_id]['name']
         photo = self._photo_with(item_id)
         if photo:
-            about = f'Saved desk photo from {format_local_ts(photo.ts)}' + (
-                f' — {photo.label}' if photo.label else '') + '.'
+            label = self._words.saved_photo_label.format(label=photo.label) if photo.label else ''
+            about = self._words.saved_photo.format(when=format_local_ts(photo.ts), label=label)
             note = look(self._vision, photo.jpeg, fill.lost_in_saved_photo(self._words, about, name),
                         background=False, what='a lost-item photo')
             if note and len(note.split()) >= self._settings.answer_min_words:
