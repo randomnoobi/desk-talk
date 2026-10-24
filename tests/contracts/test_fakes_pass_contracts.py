@@ -7,28 +7,38 @@ import numpy as np
 import pytest
 
 from desktalk.domain import BBox, Detection
+from tests.contracts.character_memory_contract import CharacterMemoryContract
 from tests.contracts.chat_model_contract import ChatModelContract
 from tests.contracts.desk_rules_contract import DeskRulesContract
+from tests.contracts.desk_scene_contract import DeskSceneContract
 from tests.contracts.detector_contract import DetectorContract
 from tests.contracts.event_bus_contract import EventBusContract
 from tests.contracts.event_store_contract import EventStoreContract
 from tests.contracts.frame_source_contract import FrameSourceContract
 from tests.contracts.key_value_contract import KeyValueContract
+from tests.contracts.live_pictures_contract import LivePicturesContract
 from tests.contracts.notifier_contract import NotifierContract
 from tests.contracts.phone_camera_contract import PhoneCameraContract
+from tests.contracts.photo_album_contract import PhotoAlbumContract
 from tests.contracts.photo_taker_contract import PhotoTakerContract
 from tests.contracts.pi_status_contract import PiStatusContract
 from tests.contracts.picture_tools_contract import PictureToolsContract
 from tests.contracts.push_source_contract import PushSourceContract
+from tests.contracts.safety_board_contract import SafetyBoardContract
 from tests.fakes import (
+    FakeCharacterMemory,
     FakeChatModel,
     FakeDeskRules,
+    FakeDeskScene,
     FakeDetector,
     FakeFrameSource,
+    FakeLivePictures,
     FakePhone,
+    FakePhotoAlbum,
     FakePhotoTaker,
     FakePi,
     FakePictureTools,
+    FakeSafetyBoard,
     InMemoryEventStore,
     InMemoryKeyValueStore,
     RecordingNotifier,
@@ -101,7 +111,8 @@ class TestFakeChatModel(ChatModelContract):
     ('FakeDeskStatus', 'DeskStatus'), ('FakePictureCheck', 'PictureCheck'), ('FakePainter', 'LiveViewPainter'),
     ('FakePictureTools', 'PictureTools'), ('FakePhotoTaker', 'PhotoTaker'), ('FakeDeskRules', 'DeskRulesView'),
     ('FakeDeskRules', 'DeskLayout'), ('FakePi', 'PiStatus'), ('FakePi', 'PiUploads'), ('FakePhone', 'PhoneCamera'),
-    ('FakePhone', 'PhoneControls'),
+    ('FakePhone', 'PhoneControls'), ('FakeLivePictures', 'LivePictures'), ('FakeDeskScene', 'DeskScene'),
+    ('FakeSafetyBoard', 'SafetyBoard'), ('FakeCharacterMemory', 'CharacterMemory'), ('FakePhotoAlbum', 'PhotoAlbum'),
 ])
 def test_every_fake_has_all_of_its_interface(fake, port):
     import desktalk.ports as ports
@@ -172,3 +183,33 @@ class TestFakePassesPhoneCameraContract(PhoneCameraContract):
     @pytest.fixture
     def phone(self):
         return FakePhone()
+
+
+class TestFakePassesLivePicturesContract(LivePicturesContract):
+    @pytest.fixture
+    def pictures(self):
+        return FakeLivePictures()
+
+
+class TestFakePassesDeskSceneContract(DeskSceneContract):
+    @pytest.fixture
+    def scene(self):
+        return FakeDeskScene()
+
+
+class TestFakePassesSafetyBoardContract(SafetyBoardContract):
+    @pytest.fixture
+    def board(self):
+        return FakeSafetyBoard()
+
+
+class TestFakePassesCharacterMemoryContract(CharacterMemoryContract):
+    @pytest.fixture
+    def memory(self):
+        return FakeCharacterMemory()
+
+
+class TestFakePassesPhotoAlbumContract(PhotoAlbumContract):
+    @pytest.fixture
+    def album(self):
+        return FakePhotoAlbum(keep=3)

@@ -6,6 +6,7 @@ tests/contracts/) but needs no network, camera, Pi, AI key or real time.
 
 from tests.fakes.cameras import FakePhone, FakePi
 from tests.fakes.clock import FakeClock
+from tests.fakes.desk import FakeCharacterMemory, FakeDeskScene, FakeLivePictures, FakePhotoAlbum, FakeSafetyBoard
 from tests.fakes.parts import (
     FakeChatModel,
     FakeDetector,
@@ -29,8 +30,9 @@ from tests.fakes.views import (
 from tests.fakes.vision import FakeDeskRules, FakePhotoTaker, FakePictureTools, plain_desk_rules
 
 __all__ = [
-    'FakeCameraHealth', 'FakeChatModel', 'FakeChatVoice', 'FakeClock', 'FakeDeskRules', 'FakeDeskStatus',
-    'FakeDetector', 'FakeFrameSource', 'FakeHabits', 'FakePainter', 'FakePhone', 'FakePhotoTaker', 'FakePi',
-    'FakePictureCheck', 'FakePictureTools', 'FakePreferences', 'FakeProfiles', 'InMemoryEventStore',
-    'InMemoryKeyValueStore', 'RecordingNotifier', 'StaticRoster', 'SyncEventBus', 'plain_desk_rules',
+    'FakeCameraHealth', 'FakeCharacterMemory', 'FakeChatModel', 'FakeChatVoice', 'FakeClock', 'FakeDeskRules',
+    'FakeDeskScene', 'FakeDeskStatus', 'FakeDetector', 'FakeFrameSource', 'FakeHabits', 'FakeLivePictures',
+    'FakePainter', 'FakePhone', 'FakePhotoAlbum', 'FakePhotoTaker', 'FakePi', 'FakePictureCheck', 'FakePictureTools',
+    'FakePreferences', 'FakeProfiles', 'FakeSafetyBoard', 'InMemoryEventStore', 'InMemoryKeyValueStore',
+    'RecordingNotifier', 'StaticRoster', 'SyncEventBus', 'plain_desk_rules',
 ]

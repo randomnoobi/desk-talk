@@ -39,16 +39,22 @@ from desktalk.config.prompts import (
     TrackerPrompts,
     VisionPrompts,
 )
+from desktalk.domain import SeenObject
 from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent, NudgeSent
 from desktalk.ports import (
+    CharacterMemory,
     Clock,
     DeskRulesView,
+    DeskScene,
     EventStore,
+    LivePictures,
     PhoneControls,
+    PhotoAlbum,
     PhotoTaker,
     PictureInbox,
     PictureTools,
     PiStatus,
+    SafetyBoard,
 )
 from desktalk.runtime import SystemClock
 from desktalk.web.schemas import PhoneSettings, PreferenceChanges, UiPage, UiSettings
@@ -131,6 +137,14 @@ _ = (
     PictureTools.difference, PictureTools.sharpness, PhotoTaker, DeskRulesView,
     # Task 10 (the web routes and bootstrap take these instead of the Pi's and the phone's classes):
     PiStatus, PhoneControls,
+    # Tasks 5, 6, 7 and 10 (the five desk interfaces that replace DeskState; DeskState has the same methods):
+    LivePictures, LivePictures.camera_numbers, LivePictures.set_light, LivePictures.newest_light,
+    DeskScene, DeskScene.set_members, DeskScene.note_picture, DeskScene.person_seen_at, DeskScene.last_motion,
+    DeskScene.session_started_at, DeskScene.set_scan_labels, DeskScene.scan_labels, SeenObject.from_detection,
+    SafetyBoard, SafetyBoard.report, SafetyBoard.note_alert, SafetyBoard.recent_alerts,
+    CharacterMemory, CharacterMemory.set_widget, CharacterMemory.widgets, CharacterMemory.note_widget_view,
+    CharacterMemory.widget_views_of, CharacterMemory.note_user_activity, CharacterMemory.user_active_at,
+    CharacterMemory.set_vision_brief, CharacterMemory.vision_brief, PhotoAlbum, PhotoAlbum.newest,
     # Pydantic's own settings attribute, and the flag uvicorn's thread reads to stop.
     PreferenceChanges.model_config, Server(config=None).should_exit,  # type: ignore[arg-type]
 )

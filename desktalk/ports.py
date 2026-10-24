@@ -8,8 +8,9 @@ that the real version and the fake both pass.
 
 Change this file only on purpose: every part depends on it.
 
-DeskState (desktalk/desk_state.py, "the desk right now") is still shared directly for now:
-parts get it passed in, never through an `app` object.
+The desk right now is five small interfaces at the end of this file: LivePictures, DeskScene, SafetyBoard,
+CharacterMemory and PhotoAlbum. Until Task 10 of the cleanup plan, DeskState (desktalk/desk_state.py)
+implements all five at once, and older code still reads its attributes under `desk.lock`.
 """
 
 from __future__ import annotations
@@ -20,13 +21,18 @@ from typing import Any, Protocol, runtime_checkable
 from desktalk.domain import (
     AgentProfile,
     Box,
+    Danger,
     DeskRules,
     Detection,
     Event,
     Frame,
     Gravity,
+    Light,
     Nudge,
+    Photo,
     Picture,
+    SafetyNow,
+    SeenObject,
     Size,
     UploadInfo,
 )
@@ -553,4 +559,180 @@ class DeskRulesView(DeskLayout, Protocol):
 
     def for_settings_page(self) -> dict[str, Any]:
         """What the Settings page shows: the saved rules, or the built-in ones where nothing was saved."""
+        ...
+
+
+# ── The desk right now ────────────────────────────────────────────────
+# Five small interfaces instead of one shared DeskState. Each method does its own locking, so a caller never
+# holds a lock; a change that has to happen all at once is one method. (A few names differ from DeskState's old
+# attributes on purpose, e.g. seen() for seen_labels, so DeskState can have both until Task 10.)
+@runtime_checkable
+class LivePictures(Protocol):
+    """The newest pictures for the live view, per camera (0 = the first camera)."""
+
+    def put(self, cam: int, plain: bytes, boxed: bytes | None, size: Size) -> None:
+        """A camera's newest picture as JPEGs: plain, and with the boxes drawn on (None = no boxed one)."""
+        ...
+
+    def plain(self, cam: int | None = None) -> bytes | None:
+        """The newest plain JPEG of `cam`; with no camera given, of the lowest-numbered camera that has one."""
+        ...
+
+    def boxed(self, cam: int | None = None) -> bytes | None:
+        """The newest JPEG with boxes of `cam`; with no camera given, of the lowest-numbered camera that has one."""
+        ...
+
+    def camera_numbers(self) -> list[int]:
+        """The cameras that have sent a picture, lowest first."""
+        ...
+
+    def size(self) -> Size:
+        """How big the newest picture is."""
+        ...
+
+    def set_light(self, brightness: float, lux: float | None) -> None:
+        ...
+
+    def newest_light(self) -> Light | None:
+        """The light in the newest analysed picture (None before the first)."""
+        ...
+
+
+@runtime_checkable
+class DeskScene(Protocol):
+    """What the camera sees on the desk right now. Everything that comes back is a copy."""
+
+    def set_members(self, members: Mapping[str, SeenObject], now: float) -> None:
+        """The agents in the chat that are in the picture just now (the roster), by agent id. Each one's first
+        sighting this session is kept, and its last sighting becomes `now`."""
+        ...
+
+    def note_picture(self, seen: Mapping[str, SeenObject], now: float, *, person: bool, moved: bool,
+                     new_session: bool) -> None:
+        """One analysed picture: the best box for each detector word in it, whether a person was in it and
+        whether things moved. new_session = the camera was off a while, so a new session starts now (one
+        also starts with the very first picture)."""
+        ...
+
+    def members(self) -> dict[str, SeenObject]:
+        """Agent id → its box, for the agents on the desk right now."""
+        ...
+
+    def seen(self) -> dict[str, SeenObject]:
+        """Every detector word in the newest analysed picture → its best box."""
+        ...
+
+    def first_seen(self, agent_id: str) -> float | None:
+        """When the agent was first on the desk this session."""
+        ...
+
+    def last_seen(self, agent_id: str) -> float | None:
+        ...
+
+    def person_seen_at(self) -> float | None:
+        ...
+
+    def last_motion(self) -> float | None:
+        """When things last moved in the picture."""
+        ...
+
+    def session_started_at(self) -> float | None:
+        """When the camera started watching this session (None before the first picture)."""
+        ...
+
+    def set_scan_labels(self, labels: Iterable[str]) -> None:
+        """What the last vision scan (lost items) saw; it also tags the proof photos."""
+        ...
+
+    def scan_labels(self) -> set[str]:
+        ...
+
+
+@runtime_checkable
+class SafetyBoard(Protocol):
+    """The dangers on the desk right now (written by the desk monitor), and the latest alerts."""
+
+    def report(self, state: str, dangers: Sequence[Danger], result: Mapping[str, Any] | None, now: float) -> None:
+        """The desk monitor's newest findings: SAFE or DANGEROUS, the dangers, and the analyzer's full result.
+        A danger counts from the first report it is in until a report without it."""
+        ...
+
+    def now(self) -> SafetyNow:
+        """The newest report (SafetyNow() before the first)."""
+        ...
+
+    def danger_since(self, pair: frozenset[str]) -> float | None:
+        """When the danger between these two words started (None if it isn't active)."""
+        ...
+
+    def note_alert(self, event: Mapping[str, Any], keep: int) -> None:
+        """An alert that went out, for the AI's context; only the newest `keep` are kept."""
+        ...
+
+    def recent_alerts(self, limit: int) -> list[dict[str, Any]]:
+        """The newest `limit` alerts, oldest first (none when limit is 0)."""
+        ...
+
+
+@runtime_checkable
+class CharacterMemory(Protocol):
+    """What the characters remember, and what the app told us about you (typing, tracker panels)."""
+
+    def remember(self, agent_id: str, text: str, keep: int) -> None:
+        """Something the agent said; only its newest `keep` lines are kept (none when keep is 0)."""
+        ...
+
+    def recent(self, agent_id: str) -> list[str]:
+        """What the agent said lately, oldest first."""
+        ...
+
+    def set_widget(self, agent_id: str, data: Mapping[str, Any]) -> None:
+        """The tracker panel data the app sent for an agent (the to-do list ...)."""
+        ...
+
+    def widget(self, agent_id: str) -> dict[str, Any] | None:
+        ...
+
+    def widgets(self) -> dict[str, dict[str, Any]]:
+        """Agent id → its tracker panel data, for every agent the app sent one for."""
+        ...
+
+    def note_widget_view(self, agent_id: str, action: str, now: float, keep: int) -> None:
+        """You opened (or used) an agent's tracker panel; only the newest `keep` are kept."""
+        ...
+
+    def widget_views_of(self, agent_id: str) -> list[dict[str, Any]]:
+        """The agent's panel views, oldest first: [{'ts', 'action'}]."""
+        ...
+
+    def note_user_activity(self, now: float) -> None:
+        """You typed or sent something (small talk waits)."""
+        ...
+
+    def user_active_at(self) -> float:
+        """When you last typed or sent something (0 before the first time)."""
+        ...
+
+    def set_vision_brief(self, text: str) -> None:
+        """The last posture check in a few words, for the AI's reminders."""
+        ...
+
+    def vision_brief(self) -> str:
+        ...
+
+
+@runtime_checkable
+class PhotoAlbum(Protocol):
+    """The proof photos, newest first. When it is full, the oldest photo goes."""
+
+    def add(self, jpeg: bytes, label: str, ts: float, *, char_ids: Sequence[str] = (), labels: Sequence[str] = (),
+            vlm_labels: Sequence[str] = ()) -> str:
+        """Keep a photo with its tags (see domain.Photo). Returns its new id."""
+        ...
+
+    def get(self, photo_id: str) -> Photo | None:
+        ...
+
+    def newest(self, limit: int) -> list[Photo]:
+        """The newest `limit` photos, newest first."""
         ...
