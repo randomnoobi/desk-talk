@@ -10,7 +10,7 @@ from desktalk.config import load_config
 from desktalk.core.agents.profiles import ProfileBook
 from desktalk.core.agents.roster import Roster
 from desktalk.core.agents.speakers import LENS, speaker_for
-from desktalk.core.habits.desk_status import DeskStatus
+from desktalk.core.habits.desk_status import DeskStatusService
 from desktalk.core.habits.reminders import HabitReminders
 from desktalk.core.habits.tracker import HabitTracker
 from desktalk.desk_state import DeskState
@@ -178,7 +178,7 @@ class Desk:
         self.habits = HabitTracker(self.clock, self.bus, InMemoryKeyValueStore(), self.profiles, prefs, self.desk,
                                    config.protocols, config.habit_tracker, config.presence, config.agents,
                                    phone_counts=True)
-        self.status = DeskStatus(self.desk, self.camera, prefs, config.reminders)
+        self.status = DeskStatusService(self.desk, self.camera, prefs, config.reminders)
         self.voice = FakeChatVoice('35 minutes of sitting! Walk five minutes, leave your phone.')
         self.notifier = RecordingNotifier(self.clock)
         self.reminders = HabitReminders(self.habits, self.status, self.roster, self.profiles, self.voice,

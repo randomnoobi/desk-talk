@@ -1,5 +1,5 @@
 """
-DeskStatus: the questions the background jobs ask before speaking up.
+DeskStatusService: the questions the background jobs ask before speaking up.
 
     status.reminders_ready(now)   # the camera has watched a while, it's on, and it's not quiet hours
     status.user_active(now)       # a person or movement was seen lately (reminders.someone_here_sec)
@@ -18,7 +18,7 @@ from desktalk.ports import FrameSource, Preferences
 MIN = 60
 
 
-class DeskStatus:
+class DeskStatusService:
     """Implements the DeskStatus interface (desktalk/ports.py) from DeskState, the camera and the preferences."""
 
     def __init__(self, desk: DeskState, camera: FrameSource, prefs: Preferences, reminders: RemindersSettings):

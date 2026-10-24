@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from desktalk.config import load_config
-from desktalk.core.habits.desk_status import DeskStatus
+from desktalk.core.habits.desk_status import DeskStatusService
 from desktalk.desk_state import DeskState
 from desktalk.ports import DeskStatus as DeskStatusPort
 from tests.fakes import FakeFrameSource, FakePreferences
@@ -32,7 +32,8 @@ class Rig:
         self.camera = FakeFrameSource()
         self.camera.connected = True
         self.prefs = FakePreferences({'quiet_enabled': quiet, 'quiet_start_hour': 11, 'quiet_end_hour': 13})
-        self.status = DeskStatus(self.desk, self.camera, self.prefs, config.reminders.model_copy(update=reminders))
+        self.status = DeskStatusService(self.desk, self.camera, self.prefs,
+                                        config.reminders.model_copy(update=reminders))
 
 
 def test_it_is_a_desk_status(config):

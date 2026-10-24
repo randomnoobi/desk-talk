@@ -60,7 +60,7 @@ OLD_PREFERENCE_NAMES = {'dnd_enabled': 'quiet_enabled', 'dnd_start_hour': 'quiet
 
 
 class PreferenceChanges(BaseModel):
-    """PUT /api/preferences. Left out or null = unchanged. Preferences checks the values."""
+    """PUT /api/preferences. Left out or null = unchanged. PreferencesFile checks the values."""
 
     wake_time: Any = None
     bed_time: Any = None

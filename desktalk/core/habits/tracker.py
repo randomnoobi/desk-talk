@@ -24,7 +24,7 @@ from typing import Any
 
 from desktalk.config import AgentsSettings, HabitTrackerSettings, PresenceSettings, Protocols
 from desktalk.core.agents.presence import PresenceTracker
-from desktalk.core.habits import protocols as P
+from desktalk.core.habits import habit_rules as P
 from desktalk.core.habits.sun_times import sun_times
 from desktalk.desk_state import DeskState
 from desktalk.domain import DetectionEvent, HabitEvent, Nudge

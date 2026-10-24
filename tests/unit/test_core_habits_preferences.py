@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from desktalk.config import load_config
-from desktalk.core.habits.preferences import Preferences, quiet_hours_now
+from desktalk.core.habits.preferences import PreferencesFile, quiet_hours_now
 from desktalk.ports import Preferences as PreferencesPort
 from tests.fakes import FakePreferences, InMemoryKeyValueStore
 
@@ -32,7 +32,7 @@ def store():
 
 
 def prefs_from(config, store):
-    return Preferences(store, config.protocols.schedule, config.reminders.quiet_hours)
+    return PreferencesFile(store, config.protocols.schedule, config.reminders.quiet_hours)
 
 
 def test_it_is_a_preferences_view(config, store):
@@ -48,7 +48,7 @@ def test_defaults_come_from_protocols_and_settings(config, store):
 def test_defaults_follow_the_config_files(config, store):
     schedule = config.protocols.schedule.model_copy(update={'wake_time': '06:15'})
     quiet = config.reminders.quiet_hours.model_copy(update={'enabled': True, 'start_hour': 21})
-    p = Preferences(store, schedule, quiet)
+    p = PreferencesFile(store, schedule, quiet)
     assert p.get('wake_time') == '06:15' and p.get('quiet_enabled') is True and p.get('quiet_start_hour') == 21
 
 

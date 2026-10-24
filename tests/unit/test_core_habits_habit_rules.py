@@ -1,4 +1,4 @@
-"""The Protocols habit rules (desktalk/core/habits/protocols.py): pure functions, made-up numbers.
+"""The Protocols habit rules (desktalk/core/habits/habit_rules.py): pure functions, made-up numbers.
 
 Times are on a fixed day (15 June 2026, local time) so the tests don't depend on today's date.
 Wake 07:00, bed 22:30, sunset 18:30 unless a test says otherwise.
@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from desktalk.config import load_config
-from desktalk.core.habits import protocols as P
+from desktalk.core.habits import habit_rules as P
 from desktalk.domain import Nudge
 from desktalk.util import at_time_today
 

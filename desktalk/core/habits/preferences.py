@@ -1,5 +1,5 @@
 """
-Preferences: wake time, bedtime and quiet hours chosen in the app's Settings page.
+PreferencesFile: wake time, bedtime and quiet hours chosen in the app's Settings page.
 
 They win over config/protocols.yaml (schedule) and config/settings.yaml (reminders.quiet_hours),
 which give the starting values. Saved in the store under "preferences"
@@ -38,7 +38,7 @@ def _clean(key: str, value: Any) -> Any:
         raise ValueError(f'{key} must be an hour from 0 to 23 (got {value!r})') from None
 
 
-class Preferences:
+class PreferencesFile:
     """Implements the Preferences interface (desktalk/ports.py)."""
 
     def __init__(self, store: KeyValueStore, schedule: Schedule, quiet_hours: QuietHours):

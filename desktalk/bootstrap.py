@@ -47,8 +47,8 @@ from desktalk.core.chat.workers import (
     VisionHabits,
 )
 from desktalk.core.events import EventStream
-from desktalk.core.habits.desk_status import DeskStatus
-from desktalk.core.habits.preferences import Preferences
+from desktalk.core.habits.desk_status import DeskStatusService
+from desktalk.core.habits.preferences import PreferencesFile
 from desktalk.core.habits.reminders import HabitReminders
 from desktalk.core.habits.tracker import HabitTracker
 from desktalk.core.vision import desk_edges
@@ -124,7 +124,7 @@ class DeskTalk:
     store: KeyValueStore
     config_store: KeyValueStore
     profiles: ProfileBook
-    preferences: Preferences
+    preferences: PreferencesFile
     source: FrameSource
     pair_key: str
     safety_rules: SafetyRules
@@ -135,7 +135,7 @@ class DeskTalk:
     detector: Detector
     producer: DetectionProducer
     roster: Roster
-    desk_status: DeskStatus
+    desk_status: DeskStatusService
     habits: HabitTracker
     monitor: DeskMonitor
     ai: OpenAICompatibleChatModel
@@ -279,7 +279,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     event_log = EventLog(data_path(config.event_log.folder), config.event_log)
     bus.subscribe('event-log', event_log.write)          # first, so it logs events in the order they happen
     profiles = ProfileBook(config.agents_file, store, personality_max_chars=config.agents.personality_max_chars)
-    preferences = Preferences(store, config.protocols.schedule, config.reminders.quiet_hours)
+    preferences = PreferencesFile(store, config.protocols.schedule, config.reminders.quiet_hours)
 
     # ── the camera, the desk rules and detection ──
     source = source if source is not None else make_source(config, clock)
@@ -302,7 +302,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
 
     phone_is_camera = source.kind == 'phone'
     roster = Roster(bus, profiles, desk, config.agents, config.presence, on_desk=on_desk)
-    desk_status = DeskStatus(desk, source, preferences, config.reminders)
+    desk_status = DeskStatusService(desk, source, preferences, config.reminders)
     habits = HabitTracker(clock, bus, store, profiles, preferences, desk, config.protocols, config.habit_tracker,
                           config.presence, config.agents, phone_counts=not phone_is_camera)
     monitor = DeskMonitor(bus, desk, analyzer, profiles, habits, desk_status, photos, config.alerts)
