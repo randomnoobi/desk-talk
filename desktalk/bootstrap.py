@@ -290,6 +290,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     pictures = OpenCvPictureTools()
     photos = ProofPhotos(desk, clock, config.snapshots, pictures=pictures)
     camera_health = CameraHealth(config.lens, source_kind=source.kind, moved_within_sec=config.camera.moved_within_sec,
+                                 pictures=pictures, words=config.prompts.camera,
                                  ignore_labels=config.agents_file.ignore)
     detector = detector if detector is not None else make_detector(config)
     producer = DetectionProducer(source, detector, bus, desk, clock, camera_health, painter, config.camera,
