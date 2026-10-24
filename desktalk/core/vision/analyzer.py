@@ -7,7 +7,7 @@ The desk analyzer: runs every desk check on the agents' objects in each picture.
 
 The checks, in order: desk edges, danger zones, things in between a danger pair, crowds, things moving
 toward each other, things that keep going back into a zone. The result has the shape the app and the AI
-have always read (DeskState.rel_result):
+have always read (SafetyNow.result):
 
     {"timestamp": ..., "objects": [...], "relationships": [...], "risk_events": [...],
      "explanations": [...], "risk_level": 2}
@@ -27,8 +27,8 @@ from desktalk.core.vision.danger_zones import ZoneVisits, repeated_entries, zone
 from desktalk.core.vision.desk_edges import Size, edge_risks
 from desktalk.core.vision.findings import Findings, Thing
 from desktalk.core.vision.risky_pairs import approaching, crowds, things_in_between
-from desktalk.core.vision.rules import SafetyRules
 from desktalk.domain import DeskRules
+from desktalk.ports import DeskRulesView
 
 
 def risk_level(events: Sequence[Mapping[str, Any]], weights: Mapping[str, int], steps: Sequence[int]) -> int:
@@ -40,7 +40,7 @@ def risk_level(events: Sequence[Mapping[str, Any]], weights: Mapping[str, int], 
 
 
 class DeskAnalyzer:
-    def __init__(self, rules: SafetyRules):
+    def __init__(self, rules: DeskRulesView):
         self._rules = rules
         self._visits = ZoneVisits()
         self._lock = threading.Lock()

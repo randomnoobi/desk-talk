@@ -7,7 +7,7 @@ import pytest
 from desktalk.core.vision import desk_edges as de
 from desktalk.core.vision.findings import Thing
 from desktalk.core.vision.rules import make_rules
-from tests.unit.test_core_vision_kit import app_config, desk_object
+from tests.unit.test_core_vision_kit import app_config, seen_object
 
 SIZE = (960, 720)
 # The desk runs off the left, top and right of the picture; its front edge is at 80% of the height.
@@ -16,7 +16,7 @@ RULES = dataclasses.replace(make_rules(app_config().safety), outline=DESK)
 
 
 def cup(box, label='cup'):
-    return {'cup': Thing.from_desk('cup', desk_object(label, box))}
+    return {'cup': Thing.from_seen('cup', seen_object(label, box))}
 
 
 def test_sides_along_the_picture_border_are_not_desk_edges():
