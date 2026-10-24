@@ -17,6 +17,8 @@ The background jobs run (lifespan on), on the real clock, so the page sees the a
 from __future__ import annotations
 
 import contextlib
+import functools
+import http.server
 import logging
 import threading
 import time
@@ -192,3 +194,22 @@ def running_app(tmp_path: Path, *, pictures: list[Path]) -> Iterator[str]:
     with app_server(tmp_path, pictures=pictures) as server:
         server.show(1)
         yield server.url
+
+
+@contextlib.contextmanager
+def static_site(folder: Path) -> Iterator[str]:
+    """The files in `folder` on a plain web server on 127.0.0.1 (like GitHub Pages: no Desk Talk behind them).
+    Yields its address."""
+    class QuietFiles(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, format: str, *args: Any) -> None:     # noqa: A002  (the name the base class uses)
+            log.debug(format, *args)
+
+    site = http.server.ThreadingHTTPServer((THIS_COMPUTER, 0), functools.partial(QuietFiles, directory=str(folder)))
+    serving = threading.Thread(target=site.serve_forever, name='static site', daemon=True)
+    serving.start()
+    try:
+        yield f'http://{THIS_COMPUTER}:{site.server_address[1]}/'
+    finally:
+        site.shutdown()
+        site.server_close()
+        serving.join()

@@ -14,7 +14,8 @@ from typing import Any
 
 import pytest
 
-from tests.e2e_kit.server import BOTTLE_CHAT, CANNED_REPLY, app_server, desk_pictures, running_app
+from tests.e2e_kit.server import BOTTLE_CHAT, CANNED_REPLY, app_server, desk_pictures, running_app, static_site
+from tests.integration.app_kit import ROOT, changed
 
 pytest.importorskip('playwright.sync_api')
 from playwright.sync_api import expect  # noqa: E402  (only when Playwright is installed)
@@ -27,6 +28,11 @@ OFFLINE_WITHIN_MS = 10_000
 LIVE = re.compile(r'^(live|waiting)$')          # #conn's state once the page talks to the server (not the demo)
 CAMERA_ON = 'Pi camera on'
 OFFLINE_NOTE = re.compile(r"can.t reach Desk Talk", re.IGNORECASE)
+APP_FOLDER = ROOT / 'web_app'
+DEMO_CHAT = 'Cup'                                # one of the demo's made-up desk objects
+FIRST_CHECK_404 = re.compile(r'Failed to load resource.*404')   # the demo's one "is there a server?" check
+# From file:// Chromium won't load the font (index.html preloads it), so the page shows a fallback font.
+FONT_FROM_FILE = re.compile(r"Access to font at 'file:|Failed to load resource: net::ERR_FAILED")
 
 
 def open_app(page: Any, url: str) -> None:
@@ -101,8 +107,6 @@ def test_habit_log_click_updates_today(page, tmp_path, pictures):
         expect(water).to_contain_text(f'{after / 1000:.1f} L')
 
 
-@pytest.mark.xfail(strict=True, reason="Today's page shows nothing when the server goes away: no offline note "
-                                       '(Review Focus 3; the plan has Task 9 rely on one)')
 def test_page_recovers_after_server_restart(page, tmp_path, pictures):
     with app_server(tmp_path, pictures=pictures) as server:
         server.show(1)
@@ -130,3 +134,80 @@ def test_page_keeps_working_after_server_restart(page, tmp_path, pictures):
         page.locator('#input').press('Enter')
         expect(page.locator('#messages .msg:not(.mine) .bubble').last).to_have_text(CANNED_REPLY,
                                                                                     timeout=REPLY_WITHIN_MS)
+
+
+def test_page_shows_the_servers_numbers(page, tmp_path, pictures):
+    """The page takes its numbers from GET /api/ui_settings, not from copies of its own."""
+    def change(config):
+        config = changed(config, 'pi', delete_every_min=7)
+        return changed(config, 'event_log', compact_every_min=9)
+
+    with app_server(tmp_path, pictures=pictures, change=change) as server:
+        server.show(1)
+        open_app(page, server.url)
+        page.locator('.page-link[data-view="log"]').click()
+        intro = page.locator('#view-log .page-intro')
+        expect(intro).to_contain_text('every 9 minutes')
+        expect(intro).to_contain_text('deleted every 7 minutes')
+
+
+def watch_for_errors(page: Any) -> list[str]:
+    errors: list[str] = []
+    page.on('pageerror', lambda exc: errors.append(f'page error: {exc}'))
+    page.on('console', lambda msg: errors.append(msg.text) if msg.type == 'error' else None)
+    return errors
+
+
+PAGES = {'habits': 'Habits', 'log': 'Event log', 'captures': 'Captures', 'settings': 'Settings'}
+DEMO_CHATS = ('Computer', 'Cup', 'Snack', 'Paper')     # each has its own panel (breaks, water, food, to-do)
+
+
+def visit_every_page(page: Any) -> None:
+    for view, title in PAGES.items():
+        page.locator(f'.page-link[data-view="{view}"]').click()
+        expect(page.locator(f'#view-{view} .page-title')).to_have_text(title)
+
+
+def expect_the_demo(page: Any) -> None:
+    expect(page.locator('#conn')).to_have_attribute('data-state', 'demo')
+    expect(page.locator('#conn-text')).to_have_text('Demo mode')
+    expect(chat_link(page, DEMO_CHAT)).to_be_visible()
+    expect(page.locator('#messages')).to_contain_text(f'{DEMO_CHAT} joined the chat')
+    for name in DEMO_CHATS:
+        chat_link(page, name).click()
+        expect(page.locator('#tracker')).to_be_visible()
+    page.locator('#input').fill('hi')
+    page.locator('#input').press('Enter')
+    expect(page.locator('#messages .msg:not(.mine) .bubble').last).to_contain_text('only a demo')
+    visit_every_page(page)
+    page.locator('.page-link[data-view="habits"]').click()
+    expect(water_today(page)).to_be_visible()
+
+
+def test_every_page_opens_on_the_real_app(page, tmp_path, pictures):
+    errors = watch_for_errors(page)
+    with app_server(tmp_path, pictures=pictures) as server:
+        server.show(2)
+        open_app(page, server.url)
+        chat_link(page, BOTTLE_CHAT).click()
+        expect(page.locator('#tracker')).to_contain_text('Protocols')
+        visit_every_page(page)
+        expect(page.locator('#view-settings')).to_contain_text('Desk edges')
+    assert errors == []
+
+
+def test_page_runs_as_a_demo_from_a_file(page):
+    """Opened straight from the folder (file://), the page runs as a demo without asking for a server."""
+    errors = watch_for_errors(page)
+    page.goto((APP_FOLDER / 'index.html').as_uri(), wait_until='domcontentloaded')
+    expect_the_demo(page)
+    assert [e for e in errors if not FONT_FROM_FILE.search(e)] == []
+
+
+def test_page_runs_as_a_demo_without_a_server(page):
+    """Like on GitHub Pages: the page's files on a plain web server, with no Desk Talk behind them."""
+    errors = watch_for_errors(page)
+    with static_site(APP_FOLDER) as url:
+        page.goto(url, wait_until='domcontentloaded')
+        expect_the_demo(page)
+    assert [e for e in errors if not FIRST_CHECK_404.search(e)] == []

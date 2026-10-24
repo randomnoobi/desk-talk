@@ -577,6 +577,19 @@ h1, h2, h3 { font-variation-settings: 'opsz' 96; line-height: 1.1; }
   line-height: 1.4;
 }
 
+/* ---------- note at the top while the server can't be reached ---------- */
+.offline-note {
+  margin: 14px 28px 0;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--coral-tint);
+  color: var(--coral-ink);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+@media (max-width: 760px) { .offline-note { margin-left: 16px; margin-right: 16px; } }
+
 /* ---------- desk edge editor (Settings) ---------- */
 .edge-editor { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; max-width: 640px; }
 .edge-pic { position: relative; border-radius: 16px; overflow: hidden; background: var(--mist); cursor: crosshair; line-height: 0; }
