@@ -300,9 +300,10 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
 
     phone_is_camera = source.kind == 'phone'
     roster = Roster(bus, profiles, desk, config.agents, config.presence, on_desk=on_desk)
-    desk_status = DeskStatusService(desk, source, preferences, config.reminders)
+    desk_status = DeskStatusService(desk, source, preferences, config.reminders, clock=clock)
     habits = HabitTracker(clock, bus, store, profiles, preferences, desk, config.protocols, config.habit_tracker,
-                          config.presence, config.agents, phone_counts=not phone_is_camera)
+                          config.presence, config.agents, phone_counts=not phone_is_camera,
+                          words=config.prompts.habits)
     monitor = DeskMonitor(bus, desk, analyzer, profiles, habits, desk_status, photos, config.alerts)
 
     # ── the AI and the chat ──

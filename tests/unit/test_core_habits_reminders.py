@@ -165,10 +165,10 @@ class Desk:
     """Pictures → roster and habit tracker → reminders, with a fake camera, AI voice and chat."""
 
     def __init__(self, config, start):
-        self.clock = FakeClock(start=start)
+        self.clock = FakeClock(start=start, utc_offset_hours=time.localtime(start).tm_gmtoff / 3600)   # local noon
         self.bus = SyncEventBus()
-        self.desk = DeskState()
-        self.desk.session_start = start
+        self.desk = DeskState()          # the roster still needs the whole desk; the others take its interfaces
+        self.desk.note_picture({}, start, person=False, moved=False, new_session=True)
         self.camera = FakeFrameSource()
         self.camera.connected = True
         prefs = FakePreferences({'wake_time': '07:00', 'bed_time': '22:30', 'quiet_enabled': False,
@@ -177,8 +177,8 @@ class Desk:
         self.roster = Roster(self.bus, self.profiles, self.desk, config.agents, config.presence)
         self.habits = HabitTracker(self.clock, self.bus, InMemoryKeyValueStore(), self.profiles, prefs, self.desk,
                                    config.protocols, config.habit_tracker, config.presence, config.agents,
-                                   phone_counts=True)
-        self.status = DeskStatusService(self.desk, self.camera, prefs, config.reminders)
+                                   phone_counts=True, words=config.prompts.habits)
+        self.status = DeskStatusService(self.desk, self.camera, prefs, config.reminders, clock=self.clock)
         self.voice = FakeChatVoice('35 minutes of sitting! Walk five minutes, leave your phone.')
         self.notifier = RecordingNotifier(self.clock)
         self.reminders = HabitReminders(self.habits, self.status, self.roster, self.profiles, self.voice,
@@ -189,7 +189,8 @@ class Desk:
         for _ in range(int(seconds)):
             now = self.clock.now()
             dets = tuple(Detection(label, 0.9, BBox(100, 100, 200, 200)) for label in labels)
-            self.desk.person_last_seen = now                  # the camera producer does this
+            # the camera producer does this
+            self.desk.note_picture({}, now, person=True, moved=False, new_session=False)
             self.bus.publish(DetectionEvent(ts=now, frame_id='f', source='pi', size=(640, 480), detections=dets,
                                             person=True, light=Light(brightness=120)))
             self.clock.advance(1)

@@ -27,7 +27,6 @@ from desktalk.config.prompts import (
     CameraPrompts,
     ChatPrompts,
     HabitAreas,
-    HabitNudges,
     HabitReminderPrompts,
     LensPrompts,
     LostItemsPrompts,
@@ -36,9 +35,11 @@ from desktalk.config.prompts import (
     Replies,
     SideHints,
     SmallTalkPrompts,
-    TrackerPrompts,
     VisionPrompts,
 )
+from desktalk.core.habits.habit_days import HabitDay
+from desktalk.core.habits.sun_times import SunTimes
+from desktalk.core.habits.tracker import DayTimes
 from desktalk.domain import SeenObject
 from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent, NudgeSent
 from desktalk.ports import (
@@ -47,6 +48,7 @@ from desktalk.ports import (
     DeskRulesView,
     DeskScene,
     EventStore,
+    HabitsLifecycle,
     LivePictures,
     PhoneControls,
     PhotoAlbum,
@@ -107,19 +109,15 @@ _ = (
     LensPrompts.photo_label, LensPrompts.pi_hot, LensPrompts.pi_slowed, LensPrompts.pi_power,
     LensPrompts.pi_clock, LensPrompts.pi_clock_behind, LensPrompts.pi_clock_ahead, LensPrompts.pi_detector_why,
     LensPrompts.pi_fixed, Prompts.habit_areas, Prompts.habit_reminder, Prompts.small_talk,
-    # Task 7 (habit nudges and trackers):
-    Prompts.trackers, TrackerPrompts.behavior, TrackerPrompts.todo_list, TrackerPrompts.breaks_none_yet,
-    TrackerPrompts.water_none_yet, TrackerPrompts.food_empty, TrackerPrompts.food_healthy,
-    TrackerPrompts.food_treats, TrackerPrompts.phone_not_counted, TrackerPrompts.phone_on_desk,
-    TrackerPrompts.phone_off_desk, TrackerPrompts.light_lux, TrackerPrompts.light_brightness,
-    TrackerPrompts.light_unknown, TrackerPrompts.sunlight_logged, TrackerPrompts.sunlight_not_logged,
-    HabitNudges.hydration_morning, HabitNudges.hydration_pace, HabitNudges.hydration_pace_cup,
-    HabitNudges.water_progress, HabitNudges.breaks_sit, HabitNudges.breaks_meal, HabitNudges.unknown_meal,
-    HabitNudges.light_morning, HabitNudges.light_afternoon, HabitNudges.light_evening, HabitNudges.bed_soon,
-    HabitNudges.sun_has_set, HabitNudges.light_daytime_dim, HabitNudges.light_lux, HabitNudges.light_brightness,
-    HabitNudges.light_bright, HabitNudges.screens_bedtime, HabitNudges.bed_at, HabitNudges.past_bedtime,
-    HabitNudges.phone_bedtime, HabitNudges.phone_focus, HabitNudges.food_sitting, HabitNudges.unknown_snack,
-    HabitNudges.tasks_open,
+    # The habit day file's fields: HabitDay.to_dict() writes them to data/habits/<day>.json, and today() reads
+    # them back by name for the Habits page (summary_sent is kept for day files written before the cleanup).
+    HabitDay.last_break_ts, HabitDay.desk_sec, HabitDay.phone_free_sec, HabitDay.phone_on_desk_sec,
+    HabitDay.sunlight_minutes, HabitDay.danger_count, HabitDay.lost_alerts, HabitDay.nudges_sent,
+    HabitDay.summary_sent,
+    # Keys of the sunrise / sunset and day-times dicts, read by name (tracker.day_times, today()['times']).
+    SunTimes.sunrise, SunTimes.estimated, DayTimes.sunrise_ts,
+    # Only bootstrap saves the habits (Task 10 types its habits field as HabitsLifecycle).
+    HabitsLifecycle,
     # Task 5 (Lens's camera checks):
     ByCamera.webcam, SideHints.right, SideHints.top, SideHints.bottom,
     CameraPrompts.fixed, CameraPrompts.side_hints, CameraPrompts.other_side_hint, CameraPrompts.unknown_object,

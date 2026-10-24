@@ -10,7 +10,7 @@ import pytest
 from desktalk.config import load_config
 from desktalk.core.habits.preferences import PreferencesFile, quiet_hours_now
 from desktalk.ports import Preferences as PreferencesPort
-from tests.fakes import FakePreferences, InMemoryKeyValueStore
+from tests.fakes import FakeClock, FakePreferences, InMemoryKeyValueStore
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULTS = {'wake_time': '07:00', 'bed_time': '22:30', 'quiet_enabled': False, 'quiet_start_hour': 22,
@@ -139,6 +139,13 @@ def test_quiet_hours_across_midnight():
     prefs = FakePreferences({'quiet_enabled': True, 'quiet_start_hour': 22, 'quiet_end_hour': 7})
     assert quiet_hours_now(prefs, local(23)) and quiet_hours_now(prefs, local(6))
     assert not quiet_hours_now(prefs, local(7)) and not quiet_hours_now(prefs, local(12))
+
+
+def test_quiet_hours_follow_the_clocks_time_zone():
+    prefs = FakePreferences({'quiet_enabled': True, 'quiet_start_hour': 22, 'quiet_end_hour': 7})
+    noon_utc = 1_781_524_800.0                                    # 15 June 2026, 12:00 UTC
+    assert not quiet_hours_now(prefs, noon_utc, FakeClock())
+    assert quiet_hours_now(prefs, noon_utc, FakeClock(utc_offset_hours=11))      # 23:00 there
 
 
 def test_quiet_hours_in_the_day_and_switched_off():

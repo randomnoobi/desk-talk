@@ -24,7 +24,6 @@
     "desktalk/core/chat/workers/idle_chat.py",
     "desktalk/core/chat/workers/lens.py",
     "desktalk/core/chat/workers/lost_items.py",
-    "desktalk/core/habits/tracker.py",
     "desktalk/core/vision/camera_health.py",
     "desktalk/core/vision/desk_monitor.py",
     "desktalk/core/vision/producer.py",
