@@ -81,6 +81,13 @@ def test_no_question_while_reminders_are_switched_off():
     assert rig.ai.calls == []
 
 
+def test_no_question_while_you_are_away():
+    rig = Rig()
+    rig.status.active = False                                # nobody at the desk (FakeDeskStatus(active=False))
+    assert rig.habits.tick(rig.clock.now()) == 42
+    assert rig.ai.calls == []
+
+
 def test_the_question_is_about_the_newest_picture_and_waits_for_no_one():
     rig = Rig()
     rig.look(GOOD)
@@ -129,6 +136,20 @@ def test_a_short_slouch_is_not_logged():
     rig.look(SLOUCH)
     rig.look(GOOD, after=89)
     assert rig.habits.events() == []
+
+
+def test_going_away_ends_an_open_slouch():
+    rig = Rig()
+    rig.look(SLOUCH)
+    rig.clock.advance(100)
+    rig.status.active = False                                # the person leaves while slouching
+    rig.habits.tick(rig.clock.now())
+    assert rig.habits._slouch_since is None
+    [entry] = rig.habits.events()
+    assert (entry['category'], entry['duration_sec']) == ('posture_bad', 100)
+    rig.clock.advance(3600)                                  # an hour away doesn't count as slouching
+    assert rig.habits.summary()['ongoing_slouch_seconds'] == 0
+    assert rig.habits.summary()['posture_bad_seconds_today'] == 100
 
 
 def test_the_summary_counts_todays_slouching_including_right_now():

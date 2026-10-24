@@ -6,7 +6,7 @@ import pytest
 
 from desktalk.config import RuleConfig, RuleEngineSettings
 from desktalk.core.habits.rule_runner import RuleRunner
-from desktalk.domain import Nudge, RuleOutcome
+from desktalk.domain import HabitEvent, Nudge, RuleOutcome
 from desktalk.ports import PeriodicWorker, RuleNudges
 from tests.contracts.rule_nudges_contract import NOW, RuleNudgesContract
 from tests.fakes import FakeObjectStates, SyncEventBus
@@ -14,6 +14,7 @@ from tests.fakes import FakeObjectStates, SyncEventBus
 T0 = 1_780_000_000.0        # 13:26 in Los Angeles (a summer afternoon, outside the quiet hours)
 LA = 'America/Los_Angeles'
 WATCHED = T0 - 7200         # the camera has been watching for two hours
+DRINKS = ['cup', 'mug', 'bottle', 'water bottle', 'wine glass']
 
 # The agreed hydration rule from the plan, with a fixed place so the test hour never lands in quiet hours.
 HYDRATION = RuleConfig.model_validate({
@@ -24,13 +25,17 @@ HYDRATION = RuleConfig.model_validate({
     'gate': {'state': {'object': 'person', 'is': 'present'}},
     'when': {'all': [
         {'state': {'object': 'person', 'is': 'present', 'for': '60m'}},
-        {'no_event': {'object': 'bottle', 'events': ['moved', 'removed'], 'for': '60m'}},
+        {'no_event': {'object': DRINKS, 'events': ['moved', 'removed'], 'for': '60m'}},
+        {'no_habit': {'habit': 'hydration', 'action': 'sip', 'for': '60m'}},
     ]},
     'cooldown': '30m',
     'max_nudges_per_hour': 4,
     'quiet_hours': {'start': '22:00', 'end': '07:00'},
-    'message': "You've been at the desk for an hour and your bottle hasn't moved. Time for some water?",
-    'success': {'within': '5m', 'when': {'event': {'object': 'bottle', 'events': ['moved', 'removed']}}},
+    'message': "You've been at the desk for an hour without a drink. Time for some water?",
+    'success': {'within': '5m', 'when': {'any': [
+        {'event': {'object': DRINKS, 'events': ['moved', 'removed']}},
+        {'habit': {'habit': 'hydration', 'action': 'sip'}},
+    ]}},
 })
 
 # A break-style rule: it worked if the person got up (went absent) within two minutes.
@@ -222,6 +227,42 @@ def test_a_round_that_wakes_a_moment_after_the_deadline_still_judges_the_state()
     states.set('person', 'ABSENT', T0 + 100)
     runner.tick(T0 + 120.01)                          # the wait between rounds is never exact
     assert [o.result for o in outcomes(bus)] == ['worked']
+
+
+def sip(ts: float, habit: str = 'hydration', action: str = 'sip') -> HabitEvent:
+    return HabitEvent(ts=ts, habit=habit, action=action)
+
+
+def test_runner_hears_logged_sips():
+    runner, bus = make(desk())
+    bus.publish(sip(T0 - 600))                        # logged in the app ten minutes ago
+    runner.tick(T0)
+    assert runner.nudges(T0) == []
+    runner.tick(T0 + 3000)                            # an hour after the sip
+    assert [n.key for n in runner.nudges(T0 + 3000)] == ['rule.hydration']
+
+
+def test_another_logged_habit_does_not_stop_the_nudge():
+    runner, bus = make(desk())
+    bus.publish(sip(T0 - 600, 'breaks', 'break'))
+    runner.tick(T0)
+    assert [n.key for n in runner.nudges(T0)] == ['rule.hydration']
+
+
+def test_a_sip_after_the_nudge_is_a_success():
+    runner, bus = make(desk())
+    runner.tick(T0)
+    runner.note_fired(runner.nudges(T0)[0], T0)
+    bus.publish(sip(T0 + 90))
+    runner.tick(T0 + 120)
+    assert [summary(o) for o in outcomes(bus)] == [(T0 + 120, 'hydration', 'hydration', 'worked', 120)]
+
+
+def test_old_logged_habits_are_let_go():
+    runner, bus = make(desk())
+    bus.publish(sip(T0 - 4000))                       # more than an hour before the round: no longer counts
+    runner.tick(T0)
+    assert [n.key for n in runner.nudges(T0)] == ['rule.hydration']
 
 
 class TestRuleRunner(RuleNudgesContract):

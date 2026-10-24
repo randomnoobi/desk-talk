@@ -146,6 +146,7 @@ def test_start_runs_every_background_job_after_its_first_wait(tmp_path):
     jobs = {job.name: start_after for job, start_after in build_quietly(config, tmp_path).background_jobs()}
     assert jobs == {
         'detection': 0, 'scheduler': 0,
+        'rule engine': config.rule_engine.check_every_sec,
         'habit reminders': config.reminders.check_every_sec,
         'idle chat': config.idle_chat.start_delay_sec,
         'lost items': config.lost_items.start_delay_sec,
@@ -167,7 +168,8 @@ def test_the_scheduler_compacts_the_log_and_saves_the_habits(tmp_path):
     every = {job['name']: job['every_sec'] for job in rig.app.scheduler.status()}
     assert every == {'compact event log': rig.config.event_log.compact_every_min * 60,
                      'delete old event-log days': rig.config.event_log.prune_every_min * 60,
-                     'save habit day': rig.config.habit_tracker.save_check_every_sec}
+                     'save habit day': rig.config.habit_tracker.save_check_every_sec,
+                     'save object states': rig.config.object_states.snapshot_every_sec}
     rig.tick(rig.app.scheduler, after=rig.config.event_log.compact_every_min * 60)
     day = rig.app.event_log.days()[0]
     assert rig.app.event_log.recent_detections(day, 10) == []

@@ -1,5 +1,5 @@
-"""What every RuleNudges must do (desktalk/ports.py). The fake FakeRuleNudges, NoRules and the real
-RuleRunner run these tests."""
+"""What every RuleNudges must do (desktalk/ports.py). The fake FakeRuleNudges and the real RuleRunner run
+these tests."""
 
 from __future__ import annotations
 

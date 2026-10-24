@@ -11,8 +11,8 @@ from desktalk.runtime import SystemClock
 from tests.fakes import FakeDetector
 from tests.integration.app_kit import LAPTOP, PAIR_KEY, PERSON, desk_config, desk_jpeg
 
-JOBS = {'detection', 'scheduler', 'habit reminders', 'idle chat', 'lost items', 'lens', 'daily recap',
-        'vision habits'}
+JOBS = {'detection', 'scheduler', 'rule engine', 'habit reminders', 'idle chat', 'lost items', 'lens',
+        'daily recap', 'vision habits'}
 
 
 def wait_until(check, seconds: float) -> bool:

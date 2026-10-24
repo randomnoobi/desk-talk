@@ -108,6 +108,9 @@ class VisionHabits:
     def tick(self, now: float) -> float:
         if self._vision is None:
             return self._every
+        if not self._status.user_active(now):            # nobody at the desk: don't spend an AI call
+            self._end_slouch(now, 'until you left the desk')   # a slouch doesn't go on while you're away
+            return self._every
         with self._desk.lock:
             on = self._desk.active_scenarios.get('reminders', True)
             jpeg = self._desk.first_raw_frame() if on else None
@@ -128,28 +131,33 @@ class VisionHabits:
         """Start or end a slouching stretch, and note nail biting when it starts."""
         posture = str(answer.get('posture') or '').lower()
         nails = bool(answer.get('nail_biting') or answer.get('nails_hand_to_mouth'))
-        slouched = None
+        if posture == 'good':
+            self._end_slouch(now, 'until your posture looked neutral again')
         with self._lock:
             if posture == 'slouch' and self._slouch_since is None:
                 self._slouch_since = now
-            elif posture == 'good' and self._slouch_since is not None:
-                start, self._slouch_since = self._slouch_since, None
-                if now - start >= self._settings.slouch_log_min_sec:
-                    slouched = int(now - start)
             nails_started = (nails and not self._nails_before and (
                 self._nails_logged_at is None or now - self._nails_logged_at >= self._settings.nail_log_cooldown_sec))
             if nails_started:
                 self._nails_logged_at = now
             self._nails_before = nails
-        if slouched is not None:
-            minutes = max(1, round(slouched / 60))
-            photo = self._photos.save(f'Posture: ~{minutes}m slouch')
-            self._add('posture_bad', f'Poor posture ~{minutes} min', now, duration_sec=slouched, snapshot_id=photo,
-                      detail='The desk camera saw a slouched stretch until your posture looked neutral again.')
         if nails_started:
             photo = self._photos.save('Habit: nail biting')
             self._add('nail_biting', 'Nail biting noticed', now, snapshot_id=photo,
                       detail='The vision check saw nail biting, or a hand at your mouth near your nails.')
+
+    def _end_slouch(self, now: float, until: str) -> None:
+        """End a slouching stretch that's going on, at `now`, and log it if it was long enough.
+        `until` says why it ended, for the log entry."""
+        with self._lock:
+            start, self._slouch_since = self._slouch_since, None
+        if start is None or now - start < self._settings.slouch_log_min_sec:
+            return
+        slouched = int(now - start)
+        minutes = max(1, round(slouched / 60))
+        photo = self._photos.save(f'Posture: ~{minutes}m slouch')
+        self._add('posture_bad', f'Poor posture ~{minutes} min', now, duration_sec=slouched, snapshot_id=photo,
+                  detail=f'The desk camera saw a slouched stretch {until}.')
 
     def _add(self, category: str, title: str, now: float, *, detail: str, duration_sec: int | None = None,
              snapshot_id: str | None = None) -> None:

@@ -51,7 +51,8 @@ the two plans at the same time.
 
 ## The YAML (agreed 2026-10-23)
 
-A new `rules:` list at the end of `config/protocols.yaml`:
+A new `rules:` list at the end of `config/protocols.yaml`. Widened on 2026-10-23 at Sam's request: the rule now
+counts every drink (cup, mug, bottle, water bottle, wine glass) and every sip logged in the app or in chat.
 
 ```yaml
 rules:
@@ -65,15 +66,18 @@ rules:
     when:
       all:
         - state:    {object: person, is: present, for: 60m}
-        - no_event: {object: bottle, events: [moved, removed], for: 60m}
+        - no_event: {object: [cup, mug, bottle, water bottle, wine glass], events: [moved, removed], for: 60m}
+        - no_habit: {habit: hydration, action: sip, for: 60m}     # a sip logged in the app or in chat counts
     cooldown: 30m
     max_nudges_per_hour: 4
     quiet_hours: {start: "22:00", end: "07:00"}
-    message: "You've been at the desk for an hour and your bottle hasn't moved. Time for some water?"
+    message: "You've been at the desk for an hour without a drink. Time for some water?"
     success:
       within: 5m
       when:
-        event: {object: bottle, events: [moved, removed]}
+        any:
+          - event: {object: [cup, mug, bottle, water bottle, wine glass], events: [moved, removed]}
+          - habit: {habit: hydration, action: sip}
 ```
 
 ## How a rule is checked
@@ -92,13 +96,15 @@ for the round plus up to 30 s for the reminder loop). That's fine for rules meas
 6. `when` isn't true → skip.
 7. Otherwise → one `Nudge`.
 
-**Conditions:**
+**Conditions** (`event` and `no_event` take one object or a list, like `object: [cup, mug]`; any of them counts):
 
 | Kind | True when |
 |---|---|
 | `state: {object, is, for}` | the object's state is `is`, and has been for at least `for` (no `for` = right now is enough) |
 | `no_event: {object, events, for}` | none of `events` happened to the object in the last `for`, **and** the camera has been watching for at least `for` |
 | `event: {object, events}` | one of `events` happened to the object after the nudge went out. Only allowed inside `success`. |
+| `no_habit: {habit, action, for}` | that habit and action (e.g. `hydration` / `sip`) wasn't logged in the last `for`, **and** the camera has been watching for at least `for` |
+| `habit: {habit, action}` | that habit and action was logged after the nudge went out. Only allowed inside `success`. |
 | `all: [...]` / `any: [...]` / `not: ...` | every one / at least one / not this one |
 
 **Objects the camera has never seen** count as `absent` since the camera started watching. With no bottle on the
@@ -498,7 +504,7 @@ running `ObjectStatesContract`.
   waking", light and screens rules. The `timezone` field is already there for them.
 - **Counts and amounts** ("fewer than 6 sips today", millilitres behind pace). The engine only sees states and
   events, not the habit tracker's daily totals.
-- **Several objects in one condition** (`object: [bottle, cup]`), or a word that stands for a group ("a drink").
+- **A word that stands for a group** ("a drink"). A list of objects works (`object: [bottle, cup]`).
 - **Using the outcomes**: showing "worked 7 of 10 times" on the Habits page, or nudging less when they keep missing.
 - **Messages that fill in numbers** ("{minutes}"). For now the AI adds them from the evidence. Lens says the fixed text.
 - **Moving the other habits** (breaks, phone-free, light, food, tasks) onto rules, one per PR, each turning its old

@@ -17,6 +17,7 @@ from tests.contracts.notifier_contract import NotifierContract
 from tests.contracts.object_states_contract import ObjectStatesContract
 from tests.contracts.push_source_contract import PushSourceContract
 from tests.contracts.rule_nudges_contract import RuleNudgesContract, a_nudge
+from tests.contracts.state_store_contract import StateStoreContract
 from tests.fakes import (
     FakeChatModel,
     FakeDetector,
@@ -25,6 +26,7 @@ from tests.fakes import (
     FakeRuleNudges,
     InMemoryEventStore,
     InMemoryKeyValueStore,
+    InMemoryStateStore,
     RecordingNotifier,
     SyncEventBus,
 )
@@ -70,6 +72,12 @@ class TestInMemoryEventStore(EventStoreContract):
         return InMemoryEventStore()
 
 
+class TestInMemoryStateStore(StateStoreContract):
+    @pytest.fixture
+    def store(self):
+        return InMemoryStateStore()
+
+
 class TestInMemoryKeyValueStore(KeyValueContract):
     @pytest.fixture
     def kv(self):
@@ -90,7 +98,8 @@ class TestFakeChatModel(ChatModelContract):
     ('FakeClock', 'Clock'), ('FakeDetector', 'Detector'), ('FakeFrameSource', 'FrameSource'),
     ('FakeObjectStates', 'ObjectStatesView'), ('FakeRuleNudges', 'RuleNudges'),
     ('FakeFrameSource', 'PictureInbox'), ('SyncEventBus', 'EventBus'), ('InMemoryEventStore', 'EventStore'),
-    ('InMemoryKeyValueStore', 'KeyValueStore'), ('FakeChatModel', 'ChatModel'), ('RecordingNotifier', 'Notifier'),
+    ('InMemoryKeyValueStore', 'KeyValueStore'), ('InMemoryStateStore', 'ObjectStateStore'),
+    ('FakeChatModel', 'ChatModel'), ('RecordingNotifier', 'Notifier'),
     ('FakeChatVoice', 'ChatVoice'), ('StaticRoster', 'RosterView'), ('FakeProfiles', 'Profiles'),
     ('FakeHabits', 'HabitsView'), ('FakePreferences', 'Preferences'), ('FakeCameraHealth', 'CameraHealthView'),
     ('FakeDeskStatus', 'DeskStatus'), ('FakePictureCheck', 'PictureCheck'), ('FakePainter', 'LiveViewPainter'),

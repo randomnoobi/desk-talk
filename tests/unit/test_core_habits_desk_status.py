@@ -10,7 +10,7 @@ from desktalk.config import load_config
 from desktalk.core.habits.desk_status import DeskStatus
 from desktalk.desk_state import DeskState
 from desktalk.ports import DeskStatus as DeskStatusPort
-from tests.fakes import FakeFrameSource, FakePreferences
+from tests.fakes import FakeFrameSource, FakeObjectStates, FakePreferences
 
 ROOT = Path(__file__).resolve().parents[2]
 NOON = time.mktime((2026, 6, 15, 12, 0, 0, 0, 0, -1))
@@ -27,12 +27,14 @@ def config(tmp_path_factory):
 
 
 class Rig:
-    def __init__(self, config, quiet=False, **reminders):
+    def __init__(self, config, quiet=False, person_label='person', **reminders):
         self.desk = DeskState()
         self.camera = FakeFrameSource()
         self.camera.connected = True
         self.prefs = FakePreferences({'quiet_enabled': quiet, 'quiet_start_hour': 11, 'quiet_end_hour': 13})
-        self.status = DeskStatus(self.desk, self.camera, self.prefs, config.reminders.model_copy(update=reminders))
+        self.states = FakeObjectStates()
+        self.status = DeskStatus(self.desk, self.camera, self.prefs, config.reminders.model_copy(update=reminders),
+                                 self.states, person_label=person_label)
 
 
 def test_it_is_a_desk_status(config):
@@ -75,21 +77,23 @@ def test_reminders_ready_needs_warm_camera_on_and_not_quiet_hours(config):
     assert not r.status.reminders_ready(NOON)
 
 
-def test_user_active_when_a_person_or_movement_was_seen_lately(config):
+def test_user_active_follows_the_persons_state(config):
     r = Rig(config)
+    assert not r.status.user_active(NOON)                   # no person seen yet
+    r.states.set('person', 'UNKNOWN', None)
     assert not r.status.user_active(NOON)
-    r.desk.person_last_seen = NOON - 599                    # reminders.someone_here_sec is 600
+    r.states.set('person', 'PRESENT', NOON - 10)
     assert r.status.user_active(NOON)
-    r.desk.person_last_seen = NOON - 600
+    r.states.set('person', 'ABSENT', NOON - 5)
     assert not r.status.user_active(NOON)
-    r.desk.last_motion_ts = NOON - 10
-    assert r.status.user_active(NOON)
 
 
-def test_someone_here_window_comes_from_the_settings(config):
-    r = Rig(config, someone_here_sec=60)
-    r.desk.last_motion_ts = NOON - 90
+def test_the_persons_word_comes_from_the_settings(config):
+    r = Rig(config, person_label='human')
+    r.states.set('person', 'PRESENT', NOON - 10)
     assert not r.status.user_active(NOON)
+    r.states.set('human', 'PRESENT', NOON - 10)
+    assert r.status.user_active(NOON)
 
 
 def test_open_todos_come_from_the_to_do_tracker(config):

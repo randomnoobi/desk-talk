@@ -11,18 +11,18 @@ from desktalk.core.agents.profiles import ProfileBook
 from desktalk.core.agents.roster import Roster
 from desktalk.core.agents.speakers import LENS, speaker_for
 from desktalk.core.habits.desk_status import DeskStatus
-from desktalk.core.habits.reminders import HabitReminders, NoRules
+from desktalk.core.habits.reminders import HabitReminders
 from desktalk.core.habits.tracker import HabitTracker
 from desktalk.desk_state import DeskState
-from desktalk.domain import AgentProfile, BBox, Detection, DetectionEvent, Light, Nudge, NudgeSent
+from desktalk.domain import AgentProfile, BBox, Detection, DetectionEvent, Light, Nudge, NudgeSent, ObjectSnapshot
 from desktalk.ports import PeriodicWorker
-from tests.contracts.rule_nudges_contract import RuleNudgesContract
 from tests.fakes import (
     FakeChatVoice,
     FakeClock,
     FakeDeskStatus,
     FakeFrameSource,
     FakeHabits,
+    FakeObjectStates,
     FakePreferences,
     FakeProfiles,
     FakeRuleNudges,
@@ -212,7 +212,8 @@ class Desk:
         self.habits = HabitTracker(self.clock, self.bus, InMemoryKeyValueStore(), self.profiles, prefs, self.desk,
                                    config.protocols, config.habit_tracker, config.presence, config.agents,
                                    phone_counts=True)
-        self.status = DeskStatus(self.desk, self.camera, prefs, config.reminders)
+        states = FakeObjectStates([ObjectSnapshot('person', 'PRESENT', start)])     # someone at the desk
+        self.status = DeskStatus(self.desk, self.camera, prefs, config.reminders, states, person_label='person')
         self.voice = FakeChatVoice('35 minutes of sitting! Walk five minutes, leave your phone.')
         self.notifier = RecordingNotifier(self.clock)
         self.reminders = HabitReminders(self.habits, FakeRuleNudges(), self.status, self.roster, self.profiles,
@@ -223,7 +224,6 @@ class Desk:
         for _ in range(int(seconds)):
             now = self.clock.now()
             dets = tuple(Detection(label, 0.9, BBox(100, 100, 200, 200)) for label in labels)
-            self.desk.person_last_seen = now                  # the camera producer does this
             self.bus.publish(DetectionEvent(ts=now, frame_id='f', source='pi', size=(640, 480), detections=dets,
                                             person=True, light=Light(brightness=120)))
             self.clock.advance(1)
@@ -258,9 +258,3 @@ def test_no_reminders_while_warming_up_or_camera_off(config):
     d.camera.connected = True
     d.reminders.tick(d.clock.now())
     assert len(d.notifier.sent) == 1
-
-
-class TestNoRules(RuleNudgesContract):
-    @pytest.fixture
-    def rule_nudges(self):
-        return NoRules()

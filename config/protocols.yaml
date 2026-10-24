@@ -23,7 +23,10 @@ schedule:
 
 # ── 1. Hydration ── Nutrition Protocol 2: "Stay Hydrated" ──────────
 hydration:
-  enabled: true
+  # Off: the hydration rule (under "rules:" at the end of this file) took over these nudges, so you don't
+  # get two water nudges. This only stops the nudges below ("no sip in 45 minutes" and "water on waking").
+  # Sip counting and the Habits page keep working.
+  enabled: false
   on_waking_ml: 600           # "18 to 24 ounces of water upon waking", before coffee (~530-710 ml)
   daily_goal_ml: 2400         # "about 80 ounces ... across the first ten hours of the day"
   goal_window_hours: 10       # the first ten hours after waking
@@ -103,8 +106,8 @@ tasks:
   name_shown_chars: 60        # the check-in names your first to-do, cut to this many letters
 
 # ── Your own rules ─────────────────────────────────────────────────
-# A rule watches the desk and nudges when its conditions are true. Nothing runs these rules yet,
-# so the example below is switched off (enabled: false).
+# A rule watches the desk and nudges when its conditions are true. The hydration rule below is on
+# (enabled: true). Set enabled: false to switch a rule off.
 #
 # Times are written like 30s, 5m or 1.5h. A plain number such as 60 is an error, because it
 # doesn't say if it means seconds or minutes.
@@ -118,6 +121,16 @@ tasks:
 #   event:    {object: bottle, events: [moved]}         one of these things happened after the nudge.
 #                                                       This only works inside "success", and not
 #                                                       under "not" (for "this didn't happen", use no_event).
+#             no_event and event can also name a list of objects, like object: [cup, mug, bottle];
+#             then a change to any one of them counts.
+#   no_habit: {habit: hydration, action: sip, for: 60m}
+#                                                       this wasn't logged for this long (with the app's
+#                                                       buttons, in chat, or by the camera). Each habit
+#                                                       logs one thing: hydration sip, breaks break,
+#                                                       light sunlight, food logged, phone_free streak.
+#                                                       Any other pair is an error.
+#   habit:    {habit: hydration, action: sip}           this was logged after the nudge. Like event, it
+#                                                       only works inside "success", and not under "not".
 #   all: [...]   every condition in the list is true
 #   any: [...]   at least one condition in the list is true
 #   not: ...     the condition is not true
@@ -127,7 +140,7 @@ tasks:
 # ("local", a place like "America/Los_Angeles", or a fixed offset like "+08:00").
 rules:
   - id: hydration
-    enabled: false
+    enabled: true
     habit: hydration            # which character speaks for it in the chat
     timezone: local
     gate:
@@ -135,12 +148,15 @@ rules:
     when:
       all:
         - state:    {object: person, is: present, for: 60m}
-        - no_event: {object: bottle, events: [moved, removed], for: 60m}
+        - no_event: {object: &drinks [cup, mug, bottle, water bottle, wine glass], events: [moved, removed], for: 60m}
+        - no_habit: {habit: hydration, action: sip, for: 60m}     # a sip logged in the app or in chat counts
     cooldown: 30m
     max_nudges_per_hour: 4
     quiet_hours: {start: "22:00", end: "07:00"}
-    message: "You've been at the desk for an hour and your bottle hasn't moved. Time for some water?"
+    message: "You've been at the desk for an hour without a drink. Time for some water?"
     success:                    # did the nudge work? (looked at after the nudge)
       within: 5m
       when:
-        event: {object: bottle, events: [moved, removed]}
+        any:
+          - event: {object: *drinks, events: [moved, removed]}     # the same drinks as above
+          - habit: {habit: hydration, action: sip}

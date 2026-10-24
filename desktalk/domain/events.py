@@ -103,7 +103,7 @@ class DetectionEvent(Event):
     detections: tuple[Detection, ...]
     person: bool
     light: Light
-    moved: bool = False                 # Lens saw the camera move
+    moved: bool = False                 # the picture changed a lot lately (a hand, the camera, the light)
     taken_at: float | None = None       # the camera's own clock
     detected_on: str = 'computer'       # where YOLO ran: pi or computer
 
@@ -207,8 +207,31 @@ class Compaction(Event):
     to_ts: float | None = None
 
 
+@dataclass(frozen=True, kw_only=True)
+class ObjectStateChanged(Event):
+    """An object showed up, went away or changed place on the desk (steady, not picture by picture)."""
+
+    TYPE: ClassVar[str] = 'object_state'
+    KEYS: ClassVar[Mapping[str, str]] = {'label': 'object'}
+    change: str                         # appeared, removed or moved
+    label: str                          # the detector's word for it
+    prev_state: str                     # UNKNOWN, PRESENT or ABSENT
+    new_state: str
+    device_id: str                      # which camera saw it
+    conf_avg: float | None = None       # average confidence while it was seen
+    bbox: tuple[float, ...] | None = None   # where it was last seen: left, top, right, bottom
+    dwell_sec: float | None = None      # how long it stayed in the old state
+
+    @classmethod
+    def _decode(cls, name: str, value: Any) -> Any:
+        if name == 'bbox' and value is not None:
+            return tuple(value)
+        return value
+
+
 EVENT_TYPES: dict[str, type[Event]] = {cls.TYPE: cls for cls in (
-    DetectionEvent, AgentJoined, AgentLeft, Alert, HabitEvent, NudgeSent, RuleOutcome, CameraNotice, Compaction)}
+    DetectionEvent, AgentJoined, AgentLeft, Alert, HabitEvent, NudgeSent, RuleOutcome, CameraNotice, Compaction,
+    ObjectStateChanged)}
 
 
 def event_from_dict(data: Mapping[str, Any]) -> Event:

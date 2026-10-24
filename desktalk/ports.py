@@ -17,7 +17,17 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, Protocol, runtime_checkable
 
-from desktalk.domain import AgentProfile, DeskSnapshot, Detection, Event, Frame, Nudge, StateChange, UploadInfo
+from desktalk.domain import (
+    AgentProfile,
+    DeskSnapshot,
+    Detection,
+    Event,
+    Frame,
+    Nudge,
+    StateChange,
+    StateRecord,
+    UploadInfo,
+)
 
 
 @runtime_checkable
@@ -163,6 +173,28 @@ class EventStore(Protocol):
 
     def prune(self, now: float) -> list[str]:
         """Delete days older than settings → event_log.keep_days. Returns the days deleted."""
+        ...
+
+
+@runtime_checkable
+class ObjectStateStore(Protocol):
+    """The history of object states: one row each time an object appears, goes away or moves,
+    plus a snapshot of every state now and then (so a restart can pick up where it left off)."""
+
+    def append(self, records: Sequence[StateRecord]) -> None:
+        ...
+
+    def latest_states(self, since: float) -> dict[str, StateRecord]:
+        """Per object, its newest `appeared`, `removed` or `snapshot` row with `ts >= since`.
+        `moved` rows are skipped: they don't change the state, and their `dwell_sec` isn't the time in the state."""
+        ...
+
+    def changes(self, since: float) -> list[StateRecord]:
+        """The `appeared`, `removed` and `moved` rows with `ts > since`, oldest first
+        (rows with the same `ts` in the order they were added)."""
+        ...
+
+    def close(self) -> None:
         ...
 
 
@@ -372,7 +404,7 @@ class DeskStatus(Protocol):
         ...
 
     def user_active(self, now: float) -> bool:
-        """Someone seems to be at the desk (a person or movement seen lately)."""
+        """You're at the desk: the person's object state is PRESENT."""
         ...
 
     def open_todos(self) -> list[str]:
