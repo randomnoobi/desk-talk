@@ -81,13 +81,6 @@ _ = (
     # Interfaces with no user yet: the web layer starts using them in Task 10 of the cleanup plan.
     EventStore, PictureInbox,
     # Settings added in Task 4 of the cleanup plan for code that later tasks switch over (each says which).
-    # Task 5 (the live view drawing):
-    AppConfig.drawing, DrawingSettings.colors, DrawingSettings.line_px, DrawingSettings.thin_line_px,
-    DrawingSettings.bold_text_px, DrawingSettings.font_scale, DrawingSettings.fill_alpha, DrawingSettings.trail,
-    DrawingSettings.arrow_tip, DrawingSettings.badge,
-    DrawingColors.box_on, DrawingColors.box_off, DrawingColors.warn, DrawingColors.zone_hit, DrawingColors.moving,
-    DrawingColors.soft_text, DrawingColors.soft_back, DrawingColors.badge_back,
-    Trail.shade_from, Trail.shade_range, Radii.chain_ring, Radii.trail_dot, Radii.trail_dot_min,
     # Task 6 (the AI's errors) and Task 8 (logging):
     LlmSettings.error_text_chars, LoggingSettings.file_name, LoggingSettings.preview_chars,
     # Task 10 (the phone page's certificate, made in desktalk/web/pairing.py):
@@ -120,11 +113,8 @@ _ = (
     HabitNudges.light_bright, HabitNudges.screens_bedtime, HabitNudges.bed_at, HabitNudges.past_bedtime,
     HabitNudges.phone_bedtime, HabitNudges.phone_focus, HabitNudges.food_sitting, HabitNudges.unknown_snack,
     HabitNudges.tasks_open,
-    # Task 5 (Lens's camera checks):
-    ByCamera.webcam, SideHints.right, SideHints.top, SideHints.bottom,
-    CameraPrompts.fixed, CameraPrompts.side_hints, CameraPrompts.other_side_hint, CameraPrompts.unknown_object,
-    CameraPrompts.titles, CameraPrompts.lost_title, CameraPrompts.lost_fix, CameraPrompts.cutoff_title,
-    CameraPrompts.edge_tip,
+    # Lens's words for a lost webcam: read with model_dump().get(camera) in desktalk/core/vision/camera_health.py.
+    ByCamera.webcam,
     # Reply fields the phone page (phone_camera/camera.js) and the app page (web_app/app.js) read from the JSON
     # once Task 9 of the cleanup plan switches them over to GET /api/phone/config and GET /api/ui_settings.
     PhoneSettings.max_side, PhoneSettings.tilt_max, UiPage.log_shown, UiPage.photos_shown, UiPage.habit_log_shown,
@@ -132,9 +122,6 @@ _ = (
     # Interfaces and methods added in Task 4 of the cleanup plan, for the code later tasks switch over.
     # Task 6 (Lens, the daily summary) and Task 7 (the habits) ask the clock for the local hour:
     Clock.local_hour, SystemClock.local_hour,
-    # Task 5 (vision without cv2 in core; the real OpenCV PictureTools) and Task 6 (lost items):
-    PictureTools, PictureTools.decode_jpeg, PictureTools.encode_jpeg, PictureTools.shrink, PictureTools.to_gray,
-    PictureTools.difference, PictureTools.sharpness, PhotoTaker, DeskRulesView,
     # Task 10 (the web routes and bootstrap take these instead of the Pi's and the phone's classes):
     PiStatus, PhoneControls,
     # Tasks 5, 6, 7 and 10 (the five desk interfaces that replace DeskState; DeskState has the same methods):

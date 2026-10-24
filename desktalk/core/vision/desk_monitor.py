@@ -19,7 +19,7 @@ from desktalk.config import AlertsSettings
 from desktalk.core.agents.speakers import LENS
 from desktalk.core.vision.findings import Thing
 from desktalk.core.vision.geometry import Box
-from desktalk.domain import Alert, Danger, DetectionEvent
+from desktalk.domain import Alert, Danger, DetectionEvent, Event
 from desktalk.ports import DeskScene, DeskStatus, EventBus, HabitsView, PhotoTaker, Profiles, SafetyBoard
 
 PHOTO_LABEL = 'Proximity alert'
@@ -54,7 +54,11 @@ class DeskMonitor:
         self._pet_alerted: dict[str, float] = {}
         self._last_clutter = 0.0
         self._last_plant = 0.0
-        bus.subscribe('desk-monitor', self.on_detection, types=[DetectionEvent])
+        bus.subscribe('desk-monitor', self._on_event, types=[DetectionEvent])
+
+    def _on_event(self, event: Event) -> None:
+        if isinstance(event, DetectionEvent):
+            self.on_detection(event)
 
     def on_detection(self, event: DetectionEvent) -> None:
         now = event.ts

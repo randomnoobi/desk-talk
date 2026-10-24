@@ -23,8 +23,8 @@ def main():
     import cv2
 
     from desktalk.adapters.detector import UltralyticsDetector
+    from desktalk.adapters.picture.painter import Pen
     from desktalk.config import load_config
-    from desktalk.core.vision.drawing import draw_boxes
 
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--index', type=int, help='which webcam (default: the first in camera.webcam_indices)')
@@ -37,12 +37,13 @@ def main():
     cap = cv2.VideoCapture(index)
     if not cap.isOpened():
         sys.exit(f'Could not open webcam {index}. Try --index 1 or 2.')
+    pen = Pen(config.drawing)
     print('Press q to quit.')
     while True:
         ok, picture = cap.read()
         if not ok:
             break
-        cv2.imshow('Desk Talk detection', draw_boxes(picture, detector.detect(picture)))
+        cv2.imshow('Desk Talk detection', pen.boxes(picture, detector.detect(picture)))
         if (cv2.waitKey(1) & 0xFF) == ord('q'):
             break
     cap.release()

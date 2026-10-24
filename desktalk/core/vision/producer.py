@@ -151,10 +151,11 @@ class DetectionProducer:
 
     def _find(self, frame: Frame) -> tuple[list[Detection], str] | None:
         """What's in the picture and where it was worked out (pi or computer); None if detection failed."""
-        if frame.detector_state is DetectorState.OK:
+        pi = frame.pi
+        if frame.detector_state is DetectorState.OK and pi is not None:
             size = self._pictures.size(frame.picture)
-            if frame.pi.detect_ms is not None:
-                self._detect_ms = frame.pi.detect_ms
+            if pi.detect_ms is not None:
+                self._detect_ms = pi.detect_ms
             return keep_inside(frame.pi_detections, size.width, size.height), 'pi'
         started = self._clock.monotonic()
         try:
