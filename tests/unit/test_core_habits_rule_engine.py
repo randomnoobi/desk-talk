@@ -27,7 +27,7 @@ HYDRATION = RuleConfig.model_validate({
     'when': {'all': [
         {'state': {'object': 'person', 'is': 'present', 'for': '60m'}},
         {'no_event': {'object': DRINKS, 'events': ['moved', 'removed'], 'for': '60m'}},
-        {'no_habit': {'habit': 'hydration', 'action': 'sip', 'for': '60m'}},
+        {'no_habit': {'habit': 'hydration', 'for': '60m'}},
     ]},
     'cooldown': '30m',
     'max_nudges_per_hour': 4,
@@ -35,7 +35,7 @@ HYDRATION = RuleConfig.model_validate({
     'message': "You've been at the desk for an hour without a drink. Time for some water?",
     'success': {'within': '5m', 'when': {'any': [
         {'event': {'object': DRINKS, 'events': ['moved', 'removed']}},
-        {'habit': {'habit': 'hydration', 'action': 'sip'}},
+        {'habit': {'habit': 'hydration'}},
     ]}},
 })
 
@@ -112,6 +112,13 @@ def test_a_logged_sip_resets_the_hour():
     assert evaluate([HYDRATION], snap, history(habits=logged), T0 + 3600) == []
     [n] = evaluate([HYDRATION], snap, history(habits=logged), T0 + 5400)
     assert n.key == 'rule.hydration'
+
+
+def test_any_log_of_the_habit_resets_the_hour():
+    snap = desk(person=('PRESENT', T0), watched_since=T0)
+    logged = [HabitDone(T0 + 1800, 'hydration', 'glass')]
+    assert evaluate([HYDRATION], snap, history(habits=logged), T0 + 3600) == []
+    assert len(evaluate([HYDRATION], snap, history(habits=logged), T0 + 5400)) == 1
 
 
 def test_another_habit_does_not_count():
@@ -244,24 +251,27 @@ def test_event_works_inside_all_any_and_not():
     assert holds(cond({'not': sip}), snap, [], T0 + 100, events_after=T0)
 
 
-def test_no_habit_needs_enough_watching_and_no_log_of_that_habit_and_action():
-    sips = cond({'no_habit': {'habit': 'hydration', 'action': 'sip', 'for': '10m'}})
+def test_no_habit_needs_enough_watching_and_no_log_of_that_habit():
+    sips = cond({'no_habit': {'habit': 'hydration', 'for': '10m'}})
     snap = desk(watched_since=T0)
     sip = [HabitDone(T0 + 100, 'hydration', 'sip')]
     assert not holds(sips, snap, [], T0 + 599)                       # not watched for 10 minutes yet
     assert holds(sips, snap, [], T0 + 600)
     assert not holds(sips, snap, [], T0 + 650, habits=sip)
     assert holds(sips, snap, [], T0 + 700, habits=sip)
-    assert holds(sips, snap, [], T0 + 650, habits=[HabitDone(T0 + 100, 'hydration', 'glass')])
+    glass = [HabitDone(T0 + 100, 'hydration', 'glass')]
+    assert not holds(sips, snap, [], T0 + 650, habits=glass)         # any log of the habit counts
+    assert holds(sips, snap, [], T0 + 650, habits=[HabitDone(T0 + 100, 'breaks', 'break')])   # another habit doesn't
     assert not holds(sips, desk(watched_since=None), [], T0 + 700)
 
 
 def test_habit_counts_only_after_events_after():
-    sip = cond({'habit': {'habit': 'hydration', 'action': 'sip'}})
+    sip = cond({'habit': {'habit': 'hydration'}})
     logged = [HabitDone(T0 + 50, 'hydration', 'sip')]
     assert holds(sip, desk(), [], T0 + 100, events_after=T0, habits=logged)
     assert not holds(sip, desk(), [], T0 + 100, events_after=T0 + 60, habits=logged)
     assert not holds(sip, desk(), [], T0 + 100, habits=logged)
+    assert holds(sip, desk(), [], T0 + 100, events_after=T0, habits=[HabitDone(T0 + 50, 'hydration', 'glass')])
     assert not holds(sip, desk(), [], T0 + 100, events_after=T0, habits=[HabitDone(T0 + 50, 'breaks', 'break')])
 
 
@@ -343,10 +353,10 @@ def test_no_habit_evidence_never_counts_from_when_the_camera_started_watching():
     assert 'no sip has been logged in over 60 minutes' in n.evidence
 
 
-def test_no_habit_evidence_uses_the_plain_words_of_the_habit_action():
-    for habit, action, words in [('breaks', 'break', 'break'), ('food', 'logged', 'food'),
-                                 ('phone_free', 'streak', 'phone-free stretch'), ('light', 'sunlight', 'sunlight')]:
-        r = rule(habit=habit, when=cond({'no_habit': {'habit': habit, 'action': action, 'for': '3h'}}))
+def test_no_habit_evidence_uses_the_plain_words_of_the_habit():
+    for habit, words in [('breaks', 'break'), ('food', 'food'), ('phone_free', 'phone-free stretch'),
+                         ('light', 'sunlight'), ('hydration', 'sip')]:
+        r = rule(habit=habit, when=cond({'no_habit': {'habit': habit, 'for': '3h'}}))
         [n] = evaluate([r], desk(person=('PRESENT', T0), watched_since=T0), history(), T0 + 4 * 3600)
         assert n.evidence == f'no {words} has been logged in over 180 minutes'
 
@@ -503,6 +513,6 @@ def test_lookback_is_the_longest_for_or_within():
     inside_not = rule(gate=cond({'not': {'all': [state('person', 'present', '90m')]}}))
     assert lookback_sec([inside_not]) == 5400
     long_habit = rule(when=cond({'all': [state('person', 'present', '60m'),
-                                         {'no_habit': {'habit': 'hydration', 'action': 'sip', 'for': '2h'}}]}))
+                                         {'no_habit': {'habit': 'hydration', 'for': '2h'}}]}))
     assert lookback_sec([HYDRATION, long_habit]) == 2 * 3600
     assert lookback_sec([]) == 0

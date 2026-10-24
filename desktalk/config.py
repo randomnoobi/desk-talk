@@ -51,7 +51,6 @@ from pydantic import (
 )
 from pydantic.fields import FieldInfo
 
-from desktalk.domain.habits import HABIT_ACTIONS
 from desktalk.util import parse_hhmm
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -734,9 +733,6 @@ Timezone = Annotated[str, AfterValidator(_check_timezone),
 ObjectState = Literal['present', 'absent', 'unknown']
 ChangeKind = Literal['appeared', 'removed', 'moved']
 Changes = Annotated[tuple[ChangeKind, ...], Field(min_length=1)]
-# What HabitTracker.log() and the camera's sip check say happened (HabitEvent.action). The same words are the
-# keys under each habit in HABIT_ACTIONS (a test checks they agree).
-HabitAction = Literal['sip', 'break', 'sunlight', 'logged', 'streak']
 
 
 def _one_or_more(value: Any) -> Any:
@@ -766,15 +762,6 @@ class NoEventCheck(_Section):
 
 class HabitCheck(_Section):
     habit: Habit
-    action: HabitAction
-
-    @model_validator(mode='after')
-    def _the_habit_can_log_it(self):
-        if self.action not in HABIT_ACTIONS.get(self.habit, {}):
-            can = ', '.join(HABIT_ACTIONS.get(self.habit, {})) or 'nothing'
-            raise _Said(f'{self.habit} never logs {self.action}, so this can never happen '
-                        f'(what {self.habit} logs: {can})')
-        return self
 
 
 class NoHabitCheck(HabitCheck):

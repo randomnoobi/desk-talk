@@ -15,8 +15,8 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from desktalk.config import ConfigError, Habit, HabitAction, RuleConfig, load_config, rule_timezone
-from desktalk.domain.habits import HABIT_ACTIONS
+from desktalk.config import ConfigError, Habit, RuleConfig, load_config, rule_timezone
+from desktalk.domain.habits import HABIT_WORDS
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_FILES = ('settings.yaml', 'agents.yaml', 'protocols.yaml')
@@ -34,7 +34,7 @@ HYDRATION = {
     'when': {'all': [
         {'state': {'object': 'person', 'is': 'present', 'for': '60m'}},
         {'no_event': {'object': DRINKS, 'events': ['moved', 'removed'], 'for': '60m'}},
-        {'no_habit': {'habit': 'hydration', 'action': 'sip', 'for': '60m'}},
+        {'no_habit': {'habit': 'hydration', 'for': '60m'}},
     ]},
     'cooldown': '30m',
     'max_nudges_per_hour': 4,
@@ -42,7 +42,7 @@ HYDRATION = {
     'message': "You've been at the desk for an hour without a drink. Time for some water?",
     'success': {'within': '5m', 'when': {'any': [
         {'event': {'object': DRINKS, 'events': ['moved', 'removed']}},
-        {'habit': {'habit': 'hydration', 'action': 'sip'}},
+        {'habit': {'habit': 'hydration'}},
     ]}},
 }
 
@@ -90,11 +90,11 @@ def test_hydration_rule_loads_as_written(project):
     assert first.state.for_ == 3600
     assert second.no_event.object == ('cup', 'mug', 'bottle', 'water bottle', 'wine glass')
     assert second.no_event.events == ('moved', 'removed') and second.no_event.for_ == 3600
-    assert (third.no_habit.habit, third.no_habit.action, third.no_habit.for_) == ('hydration', 'sip', 3600)
+    assert (third.no_habit.habit, third.no_habit.for_) == ('hydration', 3600)
     assert rule.success.within == 300
     moved, sipped = rule.success.when.any
     assert moved.event.object == second.no_event.object and moved.event.events == ('moved', 'removed')
-    assert (sipped.habit.habit, sipped.habit.action) == ('hydration', 'sip')
+    assert sipped.habit.habit == 'hydration'
 
 
 def test_one_object_is_kept_as_a_list_of_one(project):
@@ -160,18 +160,16 @@ NO_EVENT = {'object': 'bottle', 'events': ['moved'], 'for': '60m'}
     ({'quiet_hours': {'start': '22:00', 'end': '22:00'}}, ['rules[0].quiet_hours']),
     ({'when': {'event': {'object': 'bottle', 'events': ['moved']}}},
      ['rules[0].when', 'only works inside success']),
-    ({'when': {'no_habit': {'habit': 'hydration', 'action': 'sipp', 'for': '60m'}}},
-     ['rules[0].when.no_habit.action', 'sipp']),
-    ({'success': {'within': '5m', 'when': {'habit': {'habit': 'hydration', 'action': 'sipp'}}}},
-     ['rules[0].success.when.habit.action', 'sipp']),
-    ({'when': {'habit': {'habit': 'hydration', 'action': 'sip'}}},
+    ({'when': {'no_habit': {'habit': 'hydration', 'action': 'sip', 'for': '60m'}}},
+     ['rules[0].when.no_habit.action', 'action']),
+    ({'success': {'within': '5m', 'when': {'habit': {'habit': 'hydration', 'action': 'sip'}}}},
+     ['rules[0].success.when.habit.action', 'action']),
+    ({'when': {'habit': {'habit': 'hydration'}}},
      ['rules[0].when', 'only works inside success']),
-    ({'when': {'no_habit': {'habit': 'breaks', 'action': 'sip', 'for': '60m'}}},
-     ['rules[0].when.no_habit', 'breaks', 'sip']),
-    ({'success': {'within': '5m', 'when': {'habit': {'habit': 'hydration', 'action': 'break'}}}},
-     ['rules[0].success.when.habit', 'hydration', 'break']),
-    ({'when': {'no_habit': {'habit': 'screens', 'action': 'logged', 'for': '60m'}}},
-     ['rules[0].when.no_habit', 'screens', 'logged']),
+    ({'when': {'no_habit': {'habit': 'hydrate', 'for': '60m'}}},
+     ['rules[0].when.no_habit.habit', 'hydrate']),
+    ({'success': {'within': '5m', 'when': {'habit': {'habit': 'sleep'}}}},
+     ['rules[0].success.when.habit.habit', 'sleep']),
     ({'when': {'no_event': {'object': [], 'events': ['moved'], 'for': '60m'}}},
      ['rules[0].when.no_event.object']),
     ({'success': {'within': '5m', 'when': {'event': {'object': [], 'events': ['moved']}}}},
@@ -184,7 +182,7 @@ def test_rule_typos_name_the_rule_and_the_word(project, change, words):
 
 
 def test_habit_is_refused_deep_inside_gate_and_under_not_in_success(project):
-    sip = {'habit': {'habit': 'hydration', 'action': 'sip'}}
+    sip = {'habit': {'habit': 'hydration'}}
     with pytest.raises(ConfigError) as err:
         load_rule(project, gate={'any': [sip]})
     assert 'rules[0].gate: habit only works inside success' in str(err.value)
@@ -193,20 +191,23 @@ def test_habit_is_refused_deep_inside_gate_and_under_not_in_success(project):
     assert 'rules[0].success.when' in str(err.value) and 'no_habit' in str(err.value)
 
 
-def test_every_action_the_habit_tracker_logs_is_known(project):
-    for habit, action in [('hydration', 'sip'), ('breaks', 'break'), ('light', 'sunlight'), ('food', 'logged'),
-                          ('phone_free', 'streak')]:
-        rule = load_rule(project, when={'no_habit': {'habit': habit, 'action': action, 'for': '5m'}})
-        assert (rule.when.no_habit.habit, rule.when.no_habit.action) == (habit, action)
+def test_a_rule_names_only_the_habit(project):
+    for habit in get_args(Habit):
+        rule = load_rule(project, when={'no_habit': {'habit': habit, 'for': '5m'}})
+        assert rule.when.no_habit.habit == habit
 
 
-def test_the_actions_in_the_config_are_the_ones_in_the_table():
-    in_the_table = {action for actions in HABIT_ACTIONS.values() for action in actions}
-    assert set(get_args(HabitAction)) == in_the_table
+def test_an_old_action_key_is_refused_and_names_the_rule(project):
+    with pytest.raises(ConfigError) as err:
+        load_rule(project, when={'no_habit': {'habit': 'hydration', 'action': 'sip', 'for': '60m'}})
+    assert 'rules[0].when.no_habit.action' in str(err.value) and 'action' in str(err.value)
+    with pytest.raises(ConfigError) as err:
+        load_rule(project, success={'within': '5m', 'when': {'habit': {'habit': 'hydration', 'action': 'sip'}}})
+    assert 'rules[0].success.when.habit.action' in str(err.value)
 
 
-def test_every_habit_in_the_table_is_a_habit_the_config_knows():
-    assert set(HABIT_ACTIONS) <= set(get_args(Habit))
+def test_every_habit_the_config_knows_has_plain_words_for_the_evidence():
+    assert set(HABIT_WORDS) == set(get_args(Habit))
 
 
 def test_the_drink_list_is_written_once_and_both_places_get_all_five(project):

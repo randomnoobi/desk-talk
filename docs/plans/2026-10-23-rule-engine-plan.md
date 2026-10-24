@@ -67,7 +67,7 @@ rules:
       all:
         - state:    {object: person, is: present, for: 60m}
         - no_event: {object: [cup, mug, bottle, water bottle, wine glass], events: [moved, removed], for: 60m}
-        - no_habit: {habit: hydration, action: sip, for: 60m}     # a sip logged in the app or in chat counts
+        - no_habit: {habit: hydration, for: 60m}     # a sip logged in the app or in chat counts
     cooldown: 30m
     max_nudges_per_hour: 4
     quiet_hours: {start: "22:00", end: "07:00"}
@@ -77,7 +77,7 @@ rules:
       when:
         any:
           - event: {object: [cup, mug, bottle, water bottle, wine glass], events: [moved, removed]}
-          - habit: {habit: hydration, action: sip}
+          - habit: {habit: hydration}
 ```
 
 ## How a rule is checked
@@ -103,8 +103,8 @@ for the round plus up to 30 s for the reminder loop). That's fine for rules meas
 | `state: {object, is, for}` | the object's state is `is`, and has been for at least `for` (no `for` = right now is enough) |
 | `no_event: {object, events, for}` | none of `events` happened to the object in the last `for`, **and** the camera has been watching for at least `for` |
 | `event: {object, events}` | one of `events` happened to the object after the nudge went out. Only allowed inside `success`. |
-| `no_habit: {habit, action, for}` | that habit and action (e.g. `hydration` / `sip`) wasn't logged in the last `for`, **and** the camera has been watching for at least `for` |
-| `habit: {habit, action}` | that habit and action was logged after the nudge went out. Only allowed inside `success`. |
+| `no_habit: {habit, for}` | nothing was logged for that habit (e.g. `hydration`) in the last `for`, **and** the camera has been watching for at least `for` |
+| `habit: {habit}` | something was logged for that habit after the nudge went out. Only allowed inside `success`. |
 | `all: [...]` / `any: [...]` / `not: ...` | every one / at least one / not this one |
 
 **Objects the camera has never seen** count as `absent` since the camera started watching. With no bottle on the

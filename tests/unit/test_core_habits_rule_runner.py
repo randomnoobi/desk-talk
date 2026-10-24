@@ -26,7 +26,7 @@ HYDRATION = RuleConfig.model_validate({
     'when': {'all': [
         {'state': {'object': 'person', 'is': 'present', 'for': '60m'}},
         {'no_event': {'object': DRINKS, 'events': ['moved', 'removed'], 'for': '60m'}},
-        {'no_habit': {'habit': 'hydration', 'action': 'sip', 'for': '60m'}},
+        {'no_habit': {'habit': 'hydration', 'for': '60m'}},
     ]},
     'cooldown': '30m',
     'max_nudges_per_hour': 4,
@@ -34,7 +34,7 @@ HYDRATION = RuleConfig.model_validate({
     'message': "You've been at the desk for an hour without a drink. Time for some water?",
     'success': {'within': '5m', 'when': {'any': [
         {'event': {'object': DRINKS, 'events': ['moved', 'removed']}},
-        {'habit': {'habit': 'hydration', 'action': 'sip'}},
+        {'habit': {'habit': 'hydration'}},
     ]}},
 })
 

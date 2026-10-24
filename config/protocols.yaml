@@ -123,14 +123,13 @@ tasks:
 #                                                       under "not" (for "this didn't happen", use no_event).
 #             no_event and event can also name a list of objects, like object: [cup, mug, bottle];
 #             then a change to any one of them counts.
-#   no_habit: {habit: hydration, action: sip, for: 60m}
-#                                                       this wasn't logged for this long (with the app's
-#                                                       buttons, in chat, or by the camera). Each habit
-#                                                       logs one thing: hydration sip, breaks break,
-#                                                       light sunlight, food logged, phone_free streak.
-#                                                       Any other pair is an error.
-#   habit:    {habit: hydration, action: sip}           this was logged after the nudge. Like event, it
-#                                                       only works inside "success", and not under "not".
+#   no_habit: {habit: hydration, for: 60m}
+#                                                       nothing was logged for this habit for this long
+#                                                       (with the app's buttons, in chat, or by the camera).
+#                                                       Any log of the habit counts.
+#   habit:    {habit: hydration}                        something was logged for this habit after the nudge.
+#                                                       Like event, it only works inside "success", and
+#                                                       not under "not".
 #   all: [...]   every condition in the list is true
 #   any: [...]   at least one condition in the list is true
 #   not: ...     the condition is not true
@@ -149,7 +148,7 @@ rules:
       all:
         - state:    {object: person, is: present, for: 60m}
         - no_event: {object: &drinks [cup, mug, bottle, water bottle, wine glass], events: [moved, removed], for: 60m}
-        - no_habit: {habit: hydration, action: sip, for: 60m}     # a sip logged in the app or in chat counts
+        - no_habit: {habit: hydration, for: 60m}     # a sip logged in the app or in chat counts
     cooldown: 30m
     max_nudges_per_hour: 4
     quiet_hours: {start: "22:00", end: "07:00"}
@@ -159,4 +158,4 @@ rules:
       when:
         any:
           - event: {object: *drinks, events: [moved, removed]}     # the same drinks as above
-          - habit: {habit: hydration, action: sip}
+          - habit: {habit: hydration}
