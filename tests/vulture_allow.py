@@ -20,7 +20,7 @@ from desktalk_shared.wire import PiHealth
 
 _ = (
     # Settings read by name with getattr (the risk score adds up each weight, Lens looks up each wait).
-    RiskWeights.edge_danger, RiskWeights.edge_warning, RiskWeights.zone_intrusion, RiskWeights.repeated_intrusion,
+    RiskWeights.edge_warning, RiskWeights.zone_intrusion, RiskWeights.repeated_intrusion,
     VisionNudgeRepeats.slouch,
     LensWaits.covered, LensWaits.dark, LensWaits.blurry,
     # Request fields read through model_dump().
