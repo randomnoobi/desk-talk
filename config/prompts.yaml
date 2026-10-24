@@ -311,6 +311,21 @@ habits:
     evidence: The user has {count} open task{plural} on their list, starting with "{first}".
     text: You still have {count} open task{plural}, like "{first}". Want to pick one for the next 30 minutes?
     tip: Pick one task and focus on it for a set block of time.
+  # What the habit tracker says when it logs something: seen by the camera, or a button / the chat
+  logged:
+    sip_seen: 'Sip detected! That''s {sips} today (about {liters} of {daily_goal_l} L). Keep it up!'
+    sip_button: Logged! About {liters} of {daily_goal_l} L today.
+    break_seen: Nice, you were away for {minutes} min. Break logged automatically!
+    break_button: Break logged. Roll your shoulders while you are at it.
+    # {a} is "a" or "an", to go with the food's name
+    food_seen_healthy: 🍎 Spotted {a} {food} on the desk, so I logged it!
+    food_seen_treat: 🍕 Spotted {a} {food} on the desk, so I logged it!
+    food_button: Logged {food}.
+    phone_streak: '{minutes} minutes at the desk with no phone in sight. That is real focus time!'
+    sunlight: 'Logged {minutes} minutes of {when} sunlight. Your body clock says thanks!'
+    # {when} in sunlight
+    sunlight_morning: morning
+    sunlight_afternoon: late-afternoon
 
 # ── Inventing a personality for an object without its own block in agents.yaml ───
 personality:

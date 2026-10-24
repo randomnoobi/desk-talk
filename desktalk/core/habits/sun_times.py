@@ -9,9 +9,11 @@ The math is the standard sunrise equation (accurate to a couple of minutes).
 from __future__ import annotations
 
 import calendar
+import datetime
 import math
-import time
+from typing import TypedDict
 
+from desktalk.ports import Clock
 from desktalk.util import at_time_today
 
 DAY_SEC = 86400
@@ -39,27 +41,32 @@ def _sun_event_utc_hours(day_of_year: int, lat: float, lon: float, rising: bool)
     return (local_mean - lng_hour) % 24
 
 
-def sun_times(now: float, lat: float | None, lon: float | None, sunset_fallback: str) -> dict:
-    """{'sunrise': ts | None, 'sunset': ts, 'estimated': bool} for the local day containing `now`.
-    `estimated` means the sunset is sunset_fallback ("18:30"), not worked out for your place."""
+class SunTimes(TypedDict):
+    sunrise: float | None
+    sunset: float
+    estimated: bool         # the sunset is sunset_fallback ("18:30"), not worked out for your place
+
+
+def sun_times(now: float, lat: float | None, lon: float | None, sunset_fallback: str, clock: Clock) -> SunTimes:
+    """Sunrise (None when the sun doesn't rise) and sunset for the local day containing `now` (the clock's)."""
     if lat is None or lon is None:
-        return {'sunrise': None, 'sunset': at_time_today(sunset_fallback, now), 'estimated': True}
-    lt = time.localtime(now)
-    local_midnight = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
-    utc_midnight = calendar.timegm((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0))   # 00:00 UTC on this date
+        return SunTimes(sunrise=None, sunset=at_time_today(sunset_fallback, now), estimated=True)
+    day = clock.local_day(now)
+    date = datetime.date.fromisoformat(day)
+    utc_midnight = calendar.timegm(date.timetuple())       # 00:00 UTC on this date
 
     def to_ts(rising: bool) -> float | None:
-        hours = _sun_event_utc_hours(lt.tm_yday, float(lat), float(lon), rising)
+        hours = _sun_event_utc_hours(date.timetuple().tm_yday, float(lat), float(lon), rising)
         if hours is None:
             return None
         ts = utc_midnight + hours * 3600
-        # keep it on the same local day
-        while ts < local_midnight:
+        # keep it on the same local day ('2026-10-18' < '2026-10-19', so the names compare as dates)
+        while clock.local_day(ts) < day:
             ts += DAY_SEC
-        while ts >= local_midnight + DAY_SEC:
+        while clock.local_day(ts) > day:
             ts -= DAY_SEC
         return ts
 
     sunset = to_ts(False)
-    return {'sunrise': to_ts(True), 'sunset': sunset if sunset else at_time_today(sunset_fallback, now),
-            'estimated': sunset is None}
+    return SunTimes(sunrise=to_ts(True), sunset=sunset if sunset else at_time_today(sunset_fallback, now),
+                    estimated=sunset is None)

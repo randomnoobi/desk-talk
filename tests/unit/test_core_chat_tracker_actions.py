@@ -1,5 +1,6 @@
 """Trackers: what the AI is told about a tracker panel, and the action tags it can answer with."""
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,18 @@ from desktalk.config import load_config
 from desktalk.core.chat import tracker_actions as ta
 
 NOW = 1_760_000_000.0
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def project(root, file, old, new):
+    """A project folder with copies of the real config files, with one line of `file` changed."""
+    (root / 'config').mkdir()
+    for name in ('settings.yaml', 'agents.yaml', 'protocols.yaml', 'prompts.yaml'):
+        shutil.copy(ROOT / 'config' / name, root / 'config' / name)
+    path = root / 'config' / file
+    assert path.read_text().count(old) == 1, old
+    path.write_text(path.read_text().replace(old, new))
+    return root
 
 
 @pytest.fixture(scope='module')
@@ -148,3 +161,36 @@ def test_old_or_few_panel_views_are_not_mentioned(chat):
     old = [{'ts': NOW - 4000, 'action': 'view'}, {'ts': NOW - 50, 'action': 'view'}]
     assert 'BEHAVIOR' not in ta.tracker_prompt('hydration', today(), None, old, NOW, chat)
     assert 'BEHAVIOR' not in ta.tracker_prompt('hydration', today(), None, old[1:], NOW, chat)
+
+
+# ── the words come from config/prompts.yaml ──────────────────────────
+def test_the_tracker_words_come_from_prompts_yaml(chat):
+    words = ta.shipped_words().model_copy(update={'water': 'Water: {water_ml}/{goal_ml} ml, last {last}.',
+                                                  'water_none_yet': 'never'})
+    text = ta.tracker_prompt('hydration', today(), None, [], NOW, chat, words=words)
+    assert text == 'Water: 240/2400 ml, last never.'
+
+
+def test_the_action_instructions_come_from_prompts_yaml():
+    words = ta.shipped_words()
+    mine = words.model_copy(update={'actions': words.actions.model_copy(update={'breaks': 'Say [LOG_BREAK].'})})
+    assert ta.action_instructions('breaks', words=mine) == 'Say [LOG_BREAK].'
+    assert ta.action_instructions('nothing', words=mine) == ''
+
+
+def test_the_settings_numbers_in_the_words_follow_the_settings(tmp_path):
+    config = load_config(project(tmp_path, 'protocols.yaml', 'break_min: 5', 'break_min: 7'), environ={})
+    text = ta.tracker_prompt('breaks', today(), None, [], NOW, config.chat, words=config.prompts.trackers)
+    assert 'a 7-minute walk' in text
+
+
+def test_the_sunlight_action_says_the_default_minutes_from_the_settings(tmp_path):
+    config = load_config(project(tmp_path, 'settings.yaml', 'sunlight_default_min: 10 ', 'sunlight_default_min: 12 '),
+                         environ={})
+    assert 'use 12 if unsure' in ta.action_instructions('light', words=config.prompts.trackers)
+
+
+def test_without_words_the_ones_in_prompts_yaml_are_used(chat):
+    shipped = load_config(environ={}, dotenv=Path('/nonexistent')).prompts.trackers
+    assert ta.shipped_words() == shipped
+    assert ta.tracker_prompt('food', today(), None, [], NOW, chat) == shipped.food_empty

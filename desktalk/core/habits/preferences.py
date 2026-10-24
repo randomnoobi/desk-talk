@@ -8,14 +8,14 @@ which give the starting values. Saved in the store under "preferences"
 
 from __future__ import annotations
 
+import datetime
 import logging
 import threading
-import time
 from collections.abc import Mapping
 from typing import Any
 
 from desktalk.config import QuietHours, Schedule
-from desktalk.ports import KeyValueStore
+from desktalk.ports import Clock, KeyValueStore
 from desktalk.ports import Preferences as PreferencesView
 from desktalk.util import in_hour_window, parse_hhmm
 
@@ -82,9 +82,10 @@ class PreferencesFile:
         return dict(out)
 
 
-def quiet_hours_now(prefs: PreferencesView, now: float) -> bool:
-    """Quiet hours are on and `now` (local time) is inside them; the window may wrap past midnight."""
+def quiet_hours_now(prefs: PreferencesView, now: float, clock: Clock | None = None) -> bool:
+    """Quiet hours are on and `now` (the clock's local time) is inside them; the window may wrap past midnight.
+    Without a clock (the web route, until it passes one) this computer's own time zone is used."""
     if not prefs.get('quiet_enabled'):
         return False
-    hour = time.localtime(now).tm_hour
+    hour = clock.local_hour(now) if clock is not None else datetime.datetime.fromtimestamp(now).hour
     return in_hour_window(hour, int(prefs.get('quiet_start_hour')), int(prefs.get('quiet_end_hour')))

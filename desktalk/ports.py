@@ -382,9 +382,15 @@ class HabitsView(Protocol):
     def note_fired(self, nudge: Nudge, now: float) -> None:
         ...
 
-    def save(self, force: bool = False) -> None:
-        ...
 
+@runtime_checkable
+class HabitsLifecycle(Protocol):
+    """Saving today's habit numbers: only bootstrap calls this (every habit_tracker.save_check_every_sec, and at
+    shutdown). The parts that read or count habits use HabitsView."""
+
+    def save(self, force: bool = False) -> None:
+        """Save today's numbers if they changed since the last save (always, with force)."""
+        ...
 
 
 @runtime_checkable
