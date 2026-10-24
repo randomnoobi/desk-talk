@@ -49,7 +49,7 @@ WORDS = load_config(environ={}, dotenv=Path('/nonexistent')).prompts
 
 
 class FakeDesk(FakeLivePictures, FakeDeskScene, FakeCharacterMemory, FakePhotoAlbum):
-    """The desk interfaces the background chat jobs use, in one object (as DeskState is until Task 10)."""
+    """The desk interfaces the background chat jobs use, in one object (as some of them ask for them)."""
 
     def __init__(self):
         FakeLivePictures.__init__(self)

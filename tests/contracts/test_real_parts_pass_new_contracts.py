@@ -8,9 +8,10 @@ import numpy as np
 import pytest
 
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource
+from desktalk.core.desk import Album, DangerBoard, LiveView, Memories, Scene, WholeDesk
 from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.core.vision.rules import SafetyRules
-from desktalk.desk_state import DeskState
+from desktalk.domain import Size
 from desktalk.ports import DeskRulesView, PhoneCamera, PhoneControls, PhotoTaker, PiStatus, PiUploads
 from tests.contracts.desk_rules_contract import DeskRulesContract
 from tests.contracts.phone_camera_contract import PhoneCameraContract
@@ -24,16 +25,20 @@ CONFIG = app_config()
 PICTURE = cv2.imencode('.jpg', np.full((120, 160, 3), 90, np.uint8))[1].tobytes()
 
 
+def desk() -> WholeDesk:
+    return WholeDesk(LiveView(), Scene(), DangerBoard(), Memories(), Album(keep=CONFIG.snapshots.max_kept))
+
+
 class TestProofPhotosPassesPhotoTakerContract(PhotoTakerContract):
     @pytest.fixture
     def taker(self):
-        desk = DeskState()
-        desk.frames[0] = PICTURE
-        return ProofPhotos(desk, FakeClock(), CONFIG.snapshots)
+        with_picture = desk()
+        with_picture.put(0, PICTURE, PICTURE, Size(160, 120))
+        return ProofPhotos(with_picture, FakeClock(), CONFIG.snapshots)
 
     @pytest.fixture
     def taker_without_picture(self):
-        return ProofPhotos(DeskState(), FakeClock(), CONFIG.snapshots)
+        return ProofPhotos(desk(), FakeClock(), CONFIG.snapshots)
 
 
 class TestSafetyRulesPassesDeskRulesContract(DeskRulesContract):
@@ -59,7 +64,7 @@ class TestPhoneFrameSourcePassesPhoneCameraContract(PhoneCameraContract):
 
 
 def test_the_real_parts_have_all_of_their_interface():
-    assert isinstance(ProofPhotos(DeskState(), FakeClock(), CONFIG.snapshots), PhotoTaker)
+    assert isinstance(ProofPhotos(desk(), FakeClock(), CONFIG.snapshots), PhotoTaker)
     assert isinstance(SafetyRules(InMemoryKeyValueStore(), CONFIG.safety), DeskRulesView)
     pi = PiFrameSource(FakeClock(), camera_settings())
     assert isinstance(pi, PiStatus) and isinstance(pi, PiUploads)

@@ -32,7 +32,7 @@ def seen_object(label: str, box, conf: float = 0.9) -> SeenObject:
 
 
 class FakeDesk(FakeLivePictures, FakeDeskScene, FakePhotoAlbum, FakeSafetyBoard):
-    """The fakes of the desk interfaces the vision parts use, in one object (the way DeskState is one today)."""
+    """The fakes of the desk interfaces the vision parts use, in one object (as some of them ask for them)."""
 
     def __init__(self, keep_photos: int = 150):
         FakeLivePictures.__init__(self)

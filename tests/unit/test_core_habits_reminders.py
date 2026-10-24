@@ -10,10 +10,10 @@ from desktalk.config import load_config
 from desktalk.core.agents.profiles import ProfileBook
 from desktalk.core.agents.roster import Roster
 from desktalk.core.agents.speakers import LENS, speaker_for
+from desktalk.core.desk import Album, DangerBoard, LiveView, Memories, Scene, WholeDesk
 from desktalk.core.habits.desk_status import DeskStatusService
 from desktalk.core.habits.reminders import HabitReminders
 from desktalk.core.habits.tracker import HabitTracker
-from desktalk.desk_state import DeskState
 from desktalk.domain import AgentProfile, BBox, Detection, DetectionEvent, Light, Nudge, NudgeSent
 from desktalk.ports import PeriodicWorker
 from tests.fakes import (
@@ -167,7 +167,7 @@ class Desk:
     def __init__(self, config, start):
         self.clock = FakeClock(start=start, utc_offset_hours=time.localtime(start).tm_gmtoff / 3600)   # local noon
         self.bus = SyncEventBus()
-        self.desk = DeskState()          # the roster still needs the whole desk; the others take its interfaces
+        self.desk = WholeDesk(LiveView(), Scene(), DangerBoard(), Memories(), Album(keep=1))   # the real desk parts
         self.desk.note_picture({}, start, person=False, moved=False, new_session=True)
         self.camera = FakeFrameSource()
         self.camera.connected = True

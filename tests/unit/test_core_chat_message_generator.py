@@ -59,7 +59,7 @@ def seen(label, x1, y1, x2, y2, conf=0.9):
 
 
 class FakeChatDesk(FakeCharacterMemory, FakeDeskScene, FakeSafetyBoard):
-    """The three desk interfaces the chat uses, in one object (as DeskState is until Task 10)."""
+    """The three desk interfaces the chat uses, in one object (as the message generator asks for them)."""
 
     def __init__(self):
         FakeCharacterMemory.__init__(self)
