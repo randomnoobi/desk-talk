@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import calendar
 import random
-import time
+from pathlib import Path
 
-from desktalk.config import AiReplies, AiReply, DailySummarySettings
+from desktalk.config import AiReplies, AiReply, DailySummarySettings, load_config
 from desktalk.core.chat.workers.daily_summary import DailySummary, recap_facts
-from tests.fakes import FakeChatModel, FakeHabits, InMemoryKeyValueStore, RecordingNotifier, StaticRoster
+from tests.fakes import FakeChatModel, FakeClock, FakeHabits, InMemoryKeyValueStore, RecordingNotifier, StaticRoster
 
 SETTINGS = DailySummarySettings(hour=21, start_delay_sec=120, check_every_sec=60, objects_listed=8)
 REPLIES = AiReplies.model_construct(daily_recap=AiReply(max_tokens=140, temperature=0.7))
+WORDS = load_config(environ={}, dotenv=Path('/nonexistent')).prompts.daily_recap
+HOURS_FROM_UTC = -7      # the clock's own time zone, so the test is the same on every computer
 
 STATS = {
     'day': '2026-10-21',
@@ -32,15 +35,16 @@ FACTS = ('Busiest period: between 9:00 and 11:00. Water: about 1.2 of 2.4 L (15 
 
 
 def local(hour: int, minute: int = 0, day: int = 21) -> float:
-    """hour:minute on October <day> 2026, in this computer's time zone."""
-    return time.mktime((2026, 10, day, hour, minute, 0, 0, 0, -1))
+    """hour:minute on October <day> 2026, in the clock's time zone."""
+    return calendar.timegm((2026, 10, day, hour, minute, 0, 0, 0, 0)) - HOURS_FROM_UTC * 3600
 
 
-def make(ai=None, members=('cup',), stats=None, store=None):
+def make(ai=None, members=('cup',), stats=None, store=None, words=WORDS):
     notifier = RecordingNotifier()
     recap = DailySummary(ai or FakeChatModel('What a day! Well done.'), notifier, StaticRoster(members),
                          FakeHabits(today=STATS if stats is None else stats), store or InMemoryKeyValueStore(),
-                         SETTINGS, REPLIES, default_temperature=0.8, rng=random.Random(1))
+                         SETTINGS, REPLIES, default_temperature=0.8, clock=FakeClock(utc_offset_hours=HOURS_FROM_UTC),
+                         prompts=words, preview_chars=120, rng=random.Random(1))
     return recap, notifier
 
 
@@ -77,6 +81,14 @@ def test_the_recap_goes_out_at_the_recap_hour_from_an_agent_in_the_chat():
     assert (call['max_tokens'], call['temperature'], call['background']) == (140, 0.7, True)
     assert call['messages'][0]['role'] == 'system' and 'Summarize' in call['messages'][0]['content']
     assert FACTS in call['messages'][1]['content']
+
+
+def test_the_recap_uses_prompt_settings():
+    ai = FakeChatModel('What a day! Well done.')
+    recap, _ = make(ai, words=WORDS.model_copy(update={'system': 'Sum up the day.', 'user': 'Facts: {facts}'}))
+    recap.tick(local(21, 30))
+    assert ai.calls[0]['messages'] == [{'role': 'system', 'content': 'Sum up the day.'},
+                                       {'role': 'user', 'content': f'Facts: {FACTS}'}]
 
 
 def test_no_recap_outside_the_recap_hour():

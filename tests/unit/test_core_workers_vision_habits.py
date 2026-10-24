@@ -2,23 +2,29 @@
 
 from __future__ import annotations
 
+import calendar
 import json
-import time
+from pathlib import Path
 
-import cv2
-import numpy as np
-
-from desktalk.config import SnapshotsSettings, VisionHabitsSettings, VisionNudgeRepeats
-from desktalk.core.chat.workers.vision_habits import VisionHabits
-from desktalk.core.vision.proof_photos import ProofPhotos
-from desktalk.desk_state import DeskState
-from desktalk.domain import AgentProfile, Alert
-from tests.fakes import FakeChatModel, FakeClock, FakeDeskStatus, FakeProfiles, StaticRoster, SyncEventBus
+from desktalk.config import VisionHabitsSettings, VisionNudgeRepeats, load_config
+from desktalk.core.chat.workers.vision_habits import VisionDesk, VisionHabits
+from desktalk.domain import AgentProfile, Alert, Size
+from tests.fakes import (
+    FakeCharacterMemory,
+    FakeChatModel,
+    FakeClock,
+    FakeDeskStatus,
+    FakeLivePictures,
+    FakePhotoTaker,
+    FakeProfiles,
+    StaticRoster,
+    SyncEventBus,
+)
 
 SETTINGS = VisionHabitsSettings(every_sec=42, slouch_log_min_sec=90, nail_log_cooldown_sec=50, max_log_events=120,
                                 start_delay_sec=12, min_every_sec=18,
                                 repeat_after_sec=VisionNudgeRepeats(too_close=1200, slouch=1500, phone=1500))
-SNAPSHOTS = SnapshotsSettings(max_kept=150, crop_padding=0.25, crop_min_px=40, jpeg_quality=85)
+WORDS = load_config(environ={}, dotenv=Path('/nonexistent')).prompts.vision
 GOOD = {'posture': 'good', 'face_screen_distance': 'ok', 'phone': 'none', 'attention': 'screen', 'nail_biting': False}
 SLOUCH = dict(GOOD, posture='slouch')
 NAILS = dict(GOOD, nail_biting=True)
@@ -28,21 +34,28 @@ PROFILES = FakeProfiles([AgentProfile(id='computer', name='Computer', habits=['s
                          AgentProfile(id='paper', name='Paper', habits=['tasks'])])
 
 
-def a_jpeg():
-    return cv2.imencode('.jpg', np.zeros((48, 64, 3), np.uint8))[1].tobytes()
+PICTURE = b'a desk picture'
+TWO_PM = calendar.timegm((2026, 10, 21, 14, 0, 0, 0, 0, 0))       # on the FakeClock (UTC)
+
+
+class FakeVisionDesk(FakeLivePictures, FakeCharacterMemory):
+    def __init__(self):
+        FakeLivePictures.__init__(self)
+        FakeCharacterMemory.__init__(self)
 
 
 class Rig:
-    def __init__(self, answers=(), vision='fake', members=('computer',), warm=True, settings=SETTINGS):
-        self.clock = FakeClock(time.mktime((2026, 10, 21, 14, 0, 0, 0, 0, -1)))
+    def __init__(self, answers=(), vision='fake', members=('computer',), warm=True, settings=SETTINGS, words=WORDS):
+        self.clock = FakeClock(TWO_PM)
         self.answers = list(answers)
         self.ai = FakeChatModel(lambda messages: self.answers.pop(0)) if vision == 'fake' else vision
-        self.desk = DeskState()
-        self.desk.raw_frames[0] = self.desk.frames[0] = a_jpeg()
+        self.desk = FakeVisionDesk()
+        self.desk.put(0, PICTURE, PICTURE, Size(64, 48))
         self.bus = SyncEventBus()
         self.status = FakeDeskStatus(warm=warm)
+        self.photos = FakePhotoTaker()
         self.habits = VisionHabits(self.ai, self.bus, self.desk, StaticRoster(members), PROFILES, self.status,
-                                   settings, self.clock, ProofPhotos(self.desk, self.clock, SNAPSHOTS))
+                                   settings, self.clock, self.photos, prompts=words)
 
     def look(self, answer, after=0.0):
         """One round where the vision AI answers `answer` (a dict, or raw text)."""
@@ -55,6 +68,10 @@ class Rig:
 
 
 # ── when it looks ──
+def test_the_fake_desk_has_what_the_vision_checks_need():
+    assert isinstance(FakeVisionDesk(), VisionDesk)
+
+
 def test_it_looks_every_few_seconds_but_never_more_often_than_the_minimum():
     assert Rig().look(GOOD) == 42
     fast = SETTINGS.model_copy(update={'every_sec': 5})
@@ -69,7 +86,7 @@ def test_nothing_happens_without_a_vision_ai():
 
 def test_no_question_without_a_picture():
     rig = Rig()
-    rig.desk.raw_frames.clear()
+    rig.desk.plain_pictures.clear()
     rig.habits.tick(rig.clock.now())
     assert rig.ai.calls == []
 
@@ -78,7 +95,7 @@ def test_the_question_is_about_the_newest_picture_and_waits_for_no_one():
     rig = Rig()
     rig.look(GOOD)
     call = rig.ai.calls[0]
-    assert call['kind'] == 'vision' and call['jpeg'] == rig.desk.raw_frames[0] and call['background']
+    assert call['kind'] == 'vision' and call['jpeg'] == PICTURE and call['background']
     assert '"posture"' in call['prompt']
 
 
@@ -95,13 +112,13 @@ def test_the_answer_is_kept_for_the_app_and_the_chat():
     state, ts = rig.habits.latest()
     assert state == {'posture': 'slouch', 'phone': 'on_desk', 'attention': 'screen', 'nail_biting': False}
     assert ts == rig.clock.now()
-    assert rig.desk.vision_habit_brief == 'posture=slouch, phone=on_desk, attention=screen'
+    assert rig.desk.vision_brief() == 'posture=slouch, phone=on_desk, attention=screen'
 
 
 def test_an_answer_that_is_not_json_is_ignored():
     rig = Rig()
     rig.look('I think the person is sitting fine.')
-    assert rig.habits.latest() == ({}, 0.0) and rig.desk.vision_habit_brief == ''
+    assert rig.habits.latest() == ({}, 0.0) and rig.desk.vision_brief() == ''
 
 
 def test_a_long_slouch_goes_in_the_habit_log_with_a_photo():
@@ -112,9 +129,7 @@ def test_a_long_slouch_goes_in_the_habit_log_with_a_photo():
     [entry] = rig.habits.events()
     assert (entry['category'], entry['title'], entry['duration_sec']) == ('posture_bad', 'Poor posture ~2 min', 100)
     assert entry['ts'] == rig.clock.now()
-    assert rig.desk.snapshot_order[0]['id'] == entry['snapshot_id']
-    assert rig.desk.snapshot_order[0]['label'] == 'Posture: ~2m slouch'
-    assert rig.desk.snapshot_order[0]['ts'] == rig.clock.now()
+    assert entry['snapshot_id'] == 'photo-1' and rig.photos.saved == [('Posture: ~2m slouch', ())]
 
 
 def test_a_short_slouch_is_not_logged():
@@ -184,7 +199,17 @@ def test_a_slouch_seen_twice_in_a_row_gets_a_nudge_from_the_screens_agent():
     [alert] = rig.bus.of_type(Alert)
     assert (alert.kind, alert.scenario, alert.feature, alert.agent) == ('scenario', 'reminders', 'vision_slouch',
                                                                          'computer')
-    assert alert.text and alert.ts == rig.clock.now()
+    assert alert.text == WORDS.nudges.slouch and alert.ts == rig.clock.now()
+
+
+def test_the_question_and_the_nudge_come_from_the_prompt_settings():
+    words = WORDS.model_copy(update={'habit_scene': 'How is the person sitting?',
+                                     'nudges': WORDS.nudges.model_copy(update={'slouch': 'Sit up, please.'})})
+    rig = Rig(words=words)
+    rig.look(SLOUCH)
+    rig.look(SLOUCH, after=42)
+    assert rig.ai.calls[0]['prompt'] == 'How is the person sitting?'
+    assert [a.text for a in rig.bus.of_type(Alert)] == ['Sit up, please.']
 
 
 def test_the_same_nudge_waits_its_repeat_time():
