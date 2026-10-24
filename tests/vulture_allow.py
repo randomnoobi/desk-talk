@@ -7,7 +7,20 @@ by name, a field the web page reads from the JSON, a flag another thread reads).
 
 from uvicorn import Server
 
-from desktalk.config import AiReplies, LensWaits, RiskWeights, VisionNudgeRepeats
+from desktalk.config import (
+    AiReplies,
+    AppConfig,
+    CameraSettings,
+    DrawingColors,
+    DrawingSettings,
+    LensWaits,
+    LlmSettings,
+    LoggingSettings,
+    Radii,
+    RiskWeights,
+    Trail,
+    VisionNudgeRepeats,
+)
 from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent, NudgeSent
 from desktalk.ports import EventStore, PictureInbox
 from desktalk.web.schemas import PreferenceChanges
@@ -33,6 +46,18 @@ _ = (
     NudgeSent.rule,
     # Interfaces with no user yet: the web layer starts using them in Task 10 of the cleanup plan.
     EventStore, PictureInbox,
+    # Settings added in Task 4 of the cleanup plan for code that later tasks switch over (each says which).
+    # Task 5 (the live view drawing):
+    AppConfig.drawing, DrawingSettings.colors, DrawingSettings.line_px, DrawingSettings.thin_line_px,
+    DrawingSettings.bold_text_px, DrawingSettings.font_scale, DrawingSettings.fill_alpha, DrawingSettings.trail,
+    DrawingSettings.arrow_tip, DrawingSettings.badge,
+    DrawingColors.box_on, DrawingColors.box_off, DrawingColors.warn, DrawingColors.zone_hit, DrawingColors.moving,
+    DrawingColors.soft_text, DrawingColors.soft_back, DrawingColors.badge_back,
+    Trail.shade_from, Trail.shade_range, Radii.chain_ring, Radii.trail_dot, Radii.trail_dot_min,
+    # Task 6 (the AI's errors) and Task 8 (logging):
+    LlmSettings.error_text_chars, LoggingSettings.file_name, LoggingSettings.preview_chars,
+    # Task 10 (the phone page's certificate, made in desktalk/web/pairing.py):
+    CameraSettings.phone_cert_file, CameraSettings.phone_key_file,
     # Pydantic's own settings attribute, and the flag uvicorn's thread reads to stop.
     PreferenceChanges.model_config, Server(config=None).should_exit,  # type: ignore[arg-type]
 )

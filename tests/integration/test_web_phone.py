@@ -30,7 +30,12 @@ def phone(rig):
     ('0,-60,0', None),                     # far more than gravity: not a real reading
 ])
 def test_the_tilt_header_is_read_as_three_numbers(header, gravity):
-    assert parse_gravity(header) == gravity
+    assert parse_gravity(header, most=50) == gravity
+
+
+def test_the_highest_real_tilt_reading_comes_from_the_settings(rig):
+    assert parse_gravity('0,-60,0', most=70) == (0.0, -60.0, 0.0)
+    assert rig.app.config.camera.phone_tilt_max == 50       # camera.phone_tilt_max
 
 
 @pytest.mark.parametrize('header, rotation', [

@@ -1,0 +1,440 @@
+# ════════════════════════════════════════════════════════════════════
+#  Desk Talk settings
+#
+#  Every number the app uses lives in this file, grouped by what it does.
+#  Change a value, save, and restart `uv run python server.py`.
+#
+#  Your own overrides: put just the lines you change in
+#  config/settings.local.yaml (same layout). That file is not uploaded
+#  to GitHub, so personal tweaks don't end up in the repo.
+#
+#  API keys go in .env (see .env.example), never in this file.
+#  Other config files:
+#    config/agents.yaml     who each detected object becomes in the chat
+#    config/protocols.yaml  the habit rules from the book "Protocols"
+#    config/safety_rules.json  danger zones + desk corners (the Settings page saves this one)
+# ════════════════════════════════════════════════════════════════════
+
+# ── Camera ──────────────────────────────────────────────────────────
+camera:
+  # pi     = Raspberry Pi camera (the camera program, raspberry_pi/camera/, runs on the Pi and sends pictures here)
+  # phone  = a phone streams over Wi-Fi (scan the QR code; the page is phone_camera/)
+  # webcam = a USB / built-in webcam on this computer
+  source: pi
+  fps: 3                      # pictures analysed per second (the Pi takes pictures at this rate too)
+  disconnect_after_sec: 3     # no picture for this long = camera is off, analysis pauses
+  webcam_indices: [0]         # which webcam(s) when source is webcam (0 = built-in on most Macs)
+  phone_port: 5443            # HTTPS port the phone page uses (phones only allow cameras on https)
+  phone_cert_folder: certs    # the phone page's own HTTPS certificate is made and kept here
+  phone_cert_days: 365        # a new certificate is good for this long (a new one is made when it runs out)
+  wait_for_picture_sec: 1.0   # analysis waits this long for a new picture, then checks again
+  jpeg_quality: 78            # JPEG quality when this computer makes the picture itself (webcam)
+  boxes_jpeg_quality: 70      # JPEG quality of the live view with boxes ("Boxes" in the app)
+  light_measure_width: 64     # pictures are shrunk to this width to measure how bright the room is
+  moved_within_sec: 1.5       # Lens saw movement this recently = "something moved" in this picture
+  fps_gap_max_sec: 3          # a gap longer than this between pictures doesn't count toward the speed shown
+  fps_smoothing: 0.2          # how much each new picture changes the speed shown (0-1, smaller = steadier)
+  phone_tilt_max_age_sec: 5   # the phone's tilt is only used if it was sent this recently
+  webcam_width: 1280          # picture size asked from a webcam
+  webcam_height: 720
+  webcam_warmup_reads: 10     # pictures tried before deciding a webcam doesn't work
+  webcam_max_index: 4         # if the chosen webcam doesn't work, webcams 0 up to (not including) this are tried
+  pair_key_bytes: 6           # random bytes in a new pairing key (6 makes an 8-letter key)
+  pair_key_file: certs/pair-key.txt  # the pairing key is kept here, so the Pi's command and the phone
+                              # link stay the same after a restart
+  keep_newer_picture_sec: 3   # a Pi picture can arrive after one taken later (the Pi sends it once its detector
+                              # is done): the live view keeps the later one, unless it hasn't changed for this long
+  pi_clock_pictures: 30       # the Pi's clock is judged by the quickest of its last this many pictures (the others
+                              # waited for its detector or a slow Wi-Fi)
+
+# ── Raspberry Pi (read by the camera program on the Pi, raspberry_pi/camera/) ─
+pi:
+  fps: 3                      # pictures per second
+  width: 1280                 # picture size
+  height: 720
+  jpeg_quality: 80
+  photo_dir: ~/desk-talk-photos     # where the Pi keeps its pictures
+  delete_every_min: 10        # delete the stored pictures this often (0 = never)
+  keep_last_min: 0            # minutes of pictures a cleanup leaves behind (0 = delete them all)
+  min_free_mb: 300            # if the Pi's disk gets this full, delete the oldest pictures right away
+  upload_timeout_sec: 5
+  upload_retry_start_sec: 1   # this computer didn't take a picture: wait this long before sending again...
+  upload_retry_max_sec: 10    # ...a little longer after each miss, up to this
+  hot_warning_c: 75           # Lens mentions it when the Pi's processor is this hot (°C); it slows down at about 80
+  clock_off_warning_sec: 5    # Lens mentions it when the Pi's clock is this far from this computer's
+  camera_warmup_sec: 1        # the Pi camera gets this long to settle its exposure when it starts
+  pause_after_error_sec: 0.5  # a picture (or a background job on the Pi) failed: wait this long before trying again
+  status_every_sec: 30        # how often the camera program writes a status line
+  health_every_sec: 3         # how often the Pi checks its disk, temperature and stored pictures
+  settings_check_every_sec: 60  # how often the Pi asks this computer for new settings (new detector settings go
+                              # to the container right away; others need the camera program restarted)
+  restart_after_missed_pictures: 30  # no new picture for this many picture times (30 at 3 a second = 10 s): the
+                              # camera seems stuck, so the camera program stops and systemd starts it again
+  detector:                   # object detection on the Pi itself, in Docker (raspberry_pi/detector_service/)
+    model: yolo26m-objv1-150.pt  # in the container's models folder; the Pi speed test (benchmarks/) picks the final one
+    format: ncnn              # ncnn = fastest on the Pi's processor; pt = plain PyTorch, to compare
+    image_size: 640           # pictures are shrunk to this many pixels before detection (smaller = faster)
+    confidence: 0.35          # lowest confidence a box needs to be kept at all
+    half: false               # true = smaller 16-bit numbers: a smaller model file, sometimes faster
+    url: http://127.0.0.1:8100  # the container, on the Pi itself only (other computers can't reach it)
+    wait_per_picture_sec: 2   # no answer within this long: the picture goes to this computer to detect instead
+    failures_before_pause: 3  # this many failures in a row: stop asking the container for a while...
+    pause_start_sec: 5        # ...this long at first...
+    pause_max_sec: 60         # ...doubling each time, up to this
+    health_check_every_sec: 10  # while paused, ask the container's /health this often
+
+# ── Object detection (runs on this computer) ───────────────────────
+detector:
+  # yolo26m-objv1-150.pt knows 365 kinds of objects (Objects365), including
+  # earphones, keys, pens, watches, glasses and notepaper. The old yolo26n.pt only knew 80.
+  # Other choices (scripts/download_models.py fetches any of them):
+  #   models/yolo26s-objv1-150.pt  faster, a bit less accurate (older laptops)
+  #   models/yolo26l-objv1-150.pt  slower, most accurate
+  #   models/yolo26m.pt            80 everyday COCO objects
+  model: models/yolo26m-objv1-150.pt
+  confidence: 0.35            # lowest confidence a box needs to be kept at all
+  image_size: 640
+  device: auto                # auto = Apple GPU (mps) or NVIDIA (cuda) when available, else cpu
+  end2end: false              # false = run YOLO26 the way the Pi's ncnn model runs (its second head plus the
+                              # overlap filter), so the Pi and this computer find the same objects
+  rect: false                 # false = always pad pictures to a square, like the Pi's ncnn model
+
+# ── Agents joining and leaving the group chat ──────────────────────
+agents:
+  join_after_sec: 3           # seen this long → "Cup joined the chat"
+  leave_after_sec: 45         # gone this long → "Cup left the chat"
+  min_confidence: 0.45        # weaker boxes don't count as "seen" (agents.yaml can raise it per object)
+  only_on_desk: true          # once desk corners are marked, things off the desk can't join
+  max_agents: 12              # most agents in the chat at once
+  announce: true              # post "joined / left the chat" notes
+  greet_on_join: true         # the agent says hi when it joins (no AI used)
+  greet_again_after_min: 30   # don't say hi again if it rejoins sooner than this
+  invent_personality: true    # ask the AI for a personality when an unknown object joins
+  personality_max_chars: 400  # longest personality the AI may write for an object
+
+# ── Short-term presence (used by the habit rules, not the chat) ────
+presence:
+  appear_after_sec: 1.0       # seen this long = on the desk
+  disappear_after_sec: 2.5    # missing this long = gone (shorter than leaving the chat)
+  user_active_window_sec: 90  # a person or movement seen this recently = someone is at the desk
+
+# ── Keeping background jobs running ────────────────────────────────
+supervisor:
+  restart_start_sec: 1        # a background job that crashed starts again after this long...
+  restart_max_sec: 60         # ...doubling each time it crashes again, up to this
+  scheduler_longest_wait_sec: 60  # the timed jobs (compacting the event log, saving habits) are checked
+                              # at least this often
+  stop_wait_sec: 5            # when Desk Talk stops, how long to wait for each background job to finish
+
+# ── Event stream and event log ─────────────────────────────────────
+event_stream:
+  queue_size: 2000            # events waiting per consumer; when full, the oldest picture events are dropped
+                              # (joins, alerts and habit events are never dropped)
+event_log:
+  folder: data/events         # one folder per day on this computer
+  compact_every_min: 10       # turn per-picture events into "on the desk from … to …" intervals
+  merge_gap_sec: 3            # gaps shorter than this don't split an interval
+  keep_days: 30               # older days are deleted
+  log_empty_frames: true      # also log pictures where nothing was detected
+  prune_every_min: 60         # how often days older than keep_days are deleted
+
+# ── Safety alerts (danger zones are in safety_rules.json) ─────────
+alerts:
+  cooldown_sec: 25            # first wait between alerts about the same pair (doubles each repeat, up to 8x)
+  reset_after_sec: 300        # a pair quiet this long starts over at the short wait
+  pet_cooldown_sec: 120
+  clutter_threshold: 6        # this many things on the desk = "maybe tidy up?"
+  clutter_cooldown_sec: 1800
+  plant_water_every_sec: 86400
+  cooldown_max_times: 8       # the wait between alerts about a pair stops doubling at this many times cooldown_sec
+  dangerous_from_risk: 2      # risk level (0-4) from which the desk shows as "dangerous"
+  recent_kept: 30             # recent alerts remembered (the AI in the chat is told about the newest)
+  pet_labels: [cat, dog]      # detector words for pets
+  plant_labels: [potted plant, flower, houseplant]
+
+# ── Danger rules (built in) ─────────────────────────────────────────
+# config/safety_rules.json (saved by the Settings page) wins over edge_proximity,
+# danger_zones, chain_reaction and temporal when it has the same setting.
+safety:
+  edge_proximity:             # things near a desk edge you marked, where they could fall off
+    danger_px: 35             # closer than this = danger
+    warn_px: 75               # closer than this = warning
+    objects: [cup, bottle, cell phone, laptop, remote, mouse]
+  danger_zones:               # a zone around each of these, `expand` pixels wider on every side
+    laptop:     {expand: 80, label: Spill / pressure zone}
+    keyboard:   {expand: 60, label: Crumb / debris zone}
+    book:       {expand: 45, label: Stacking zone}
+    cell phone: {expand: 35, label: Screen scratch zone}
+  zone_dangers:               # which kinds of things (below) are a danger inside each zone
+    laptop:     [liquids, foods]
+    keyboard:   [liquids, foods]
+    book:       [liquids, foods]
+    cell phone: [liquids, sharp]
+  # The kinds. The labels of the agents that speak for hydration (drinks) and food in agents.yaml count too.
+  liquids: [bottle, cup, wine glass]
+  foods: [banana, apple, sandwich, orange, broccoli, carrot, hot dog, pizza, donut, cake, bowl]
+  sharp: [scissors, knife]
+  harmless_pairs:             # things that often sit together: never "moving toward each other"
+    - [book, laptop]
+    - [book, keyboard]
+    - [book, cell phone]
+    - [book, mouse]
+    - [laptop, keyboard]
+    - [laptop, mouse]
+    - [laptop, cell phone]
+    - [keyboard, mouse]
+    - [keyboard, cell phone]
+    - [tv, remote]
+  chain_reaction:
+    path_ratio: 0.30          # this close to the line between two others (share of its length) = "in between"
+    crowd_radius_px: 140      # things this close together are crowded...
+    crowd_min_objects: 3      # ...when there are at least this many
+    harmless_crowd: [book, laptop, keyboard, mouse, cell phone, remote, tv]   # a crowd of only these is just a desk
+  temporal:
+    history_length: 30        # pictures remembered to see things moving
+    approach_min_frames: 8    # compare with the picture this many back...
+    approach_rate: 0.12       # ...this much closer (0.12 = 12%) = moving toward each other
+    repeated_intrusion_threshold: 3   # into the same zone this many times...
+    repeated_window_sec: 60   # ...within this long = "keeps coming back"
+  risk_weights:               # how much each kind of problem adds to the risk score
+    edge_danger: 2
+    edge_warning: 1
+    zone_intrusion: 2
+    chain_reaction: 3
+    crowd: 1
+    approaching: 2
+    repeated_intrusion: 2
+  risk_level_steps: [2, 5, 9] # score 0 = risk level 0; up to 2 = level 1, up to 5 = 2, up to 9 = 3, more = 4
+  desk_border_share: 0.03     # desk corners this close to the picture's edge (share of its size) are on the edge
+  footprint_share: 0.2        # the bottom part of a box (share of its height) is where it stands on the desk...
+  footprint_min_px: 4         # ...but at least this many pixels
+  max_desk_corners: 12        # most desk corners the Settings page keeps
+
+# ── Reminders (the habit rules are in protocols.yaml) ─────────────
+reminders:
+  warmup_min: 15              # no reminders until the camera has watched this long
+  min_gap_sec: 600            # at least this long between any two reminders
+  check_every_sec: 30
+  quiet_hours:                # habit reminders wait; safety alerts still come through
+    enabled: false
+    start_hour: 22            # 24-hour clock
+    end_hour: 7
+  someone_here_sec: 600       # a person or movement seen this recently = someone is at the desk
+                              # (reminders and small talk wait otherwise)
+
+# ── AI (keys are in .env) ──────────────────────────────────────────
+llm:
+  # Which AI answers: the first one with a key in .env wins:
+  # Gemini → OpenAI → Groq → Ollama (OLLAMA_URL, no key needed)
+  gemini_model: gemini-2.5-flash
+  openai_model: gpt-4o-mini
+  groq_model: llama-3.3-70b-versatile
+  ollama_model: llama3.2
+  vision_model: llava         # Ollama vision model for posture / lost items (ollama pull llava)
+  min_interval_sec: 6         # at least this long between two AI calls (protects free limits)
+  max_retries: 3
+  pause_on_limit_sec: 600     # after a rate limit, background chatter rests this long
+  chat_history_turns: 6       # recent messages sent word for word; older ones are summarized
+  memory_per_agent: 8         # things each agent remembers saying
+  timeout_sec: 30             # longest wait for one reply from a cloud AI
+  ollama_timeout_sec: 90      # Ollama runs on this computer and can be slow to load a model
+  retry_start_sec: 2          # a failed AI call is tried again after this long...
+  retry_max_sec: 30           # ...doubling each time, up to this (max_retries tries in all)
+  breaker_failures: 3         # this many failed calls in a row = the AI is down: stop calling it...
+  breaker_open_sec: 60        # ...for this long, then try one call to see if it's back
+  rate_limit_retry_sec: 5     # you're waiting on a reply and a per-minute limit was hit: one more try after this long
+  ollama_retry_sec: 2         # Ollama gave an error or an empty reply: try again after this long...
+  ollama_warmer_per_retry: 0.15  # ...a little more creative (temperature) each time
+  vision_retry_sec: 1         # a failed picture question is tried again after this long (times the try number)
+  ollama_keepalive_sec: 240   # ask Ollama something tiny this often, so the model stays loaded
+  ollama_keepalive_start_sec: 10
+  gemini_url: https://generativelanguage.googleapis.com/v1beta/openai/
+  groq_url: https://api.groq.com/openai/v1
+  gemini_thinking_budget: 0   # 0 = Gemini answers straight away, without "thinking" first (faster, cheaper)
+  # How long each kind of AI reply may be (max_tokens; a token is about 3/4 of a word) and how
+  # creative (temperature, 0-1). No temperature = the agent's own, from agents.yaml.
+  replies:
+    chat:          {max_tokens: 220}                     # answering you
+    alert:         {max_tokens: 120, temperature: 0.55}  # "the cup is getting close to me!"
+    nudge:         {max_tokens: 80}                      # a habit reminder in the agent's own words
+    personality:   {max_tokens: 90, temperature: 0.9}    # a personality for an object with no block in agents.yaml
+    idle_topic:    {max_tokens: 200, temperature: 0.9}   # small talk: picking a topic
+    idle_line:     {max_tokens: 200}                     # small talk: one agent's line
+    idle_director: {max_tokens: 200, temperature: 0.4}   # small talk: who speaks next, or stop
+    lost_alert:    {max_tokens: 60, temperature: 0.7}    # "nobody has seen your keys in 15 minutes"
+    lost_answer:   {max_tokens: 200, temperature: 0.35}  # answering "where are my keys?"
+    daily_recap:   {max_tokens: 140, temperature: 0.7}
+    vision:        {max_tokens: 400, temperature: 0.2}   # questions about a picture (posture, lost items)
+
+# ── What the AI is told in the chat ────────────────────────────────
+chat:
+  recent_kept: 150            # recent chat messages kept for a page that opens later
+  history_from_app: 10        # earlier messages the app may send along with yours
+  message_max_chars: 1200     # longer messages are cut to this many letters
+  name_max_chars: 64
+  ollama_history_turns: 4     # Ollama (smaller models) gets fewer messages word for word than llm.chat_history_turns
+  summary_turns: 8            # older messages squeezed into a one-line recap...
+  summary_chars: 70           # ...each cut to this many letters
+  memory_reply_chars: 120     # an agent remembers this much of what it said...
+  memory_user_chars: 80       # ...and of what you said
+  reply_max_chars: 500        # an AI reply is cut to this many letters
+  memory_match_chars: 40      # a memory that starts like a message already shown isn't repeated
+  ollama_memory_lines: 3      # Ollama gets only the newest memories
+  recent_events_kept: 10      # recent alerts the AI is told about...
+  recent_events_shown: 5      # ...and how many are listed one by one
+  other_objects_shown: 12     # things in the picture that aren't chatting (at most)
+  insights_shown: 6           # danger explanations (at most)
+  min_reply_words: 4          # shorter AI replies (or ones that stop mid-sentence) count as cut off
+  personality_min_words: 5    # an invented personality must be at least this many words
+  todo_max_items: 20          # to-do list items taken from the app
+  todo_max_chars: 200
+  panel_views_kept: 50        # times a tracker panel was opened, remembered per agent
+  panel_views_window_sec: 3600  # opened this often within this long...
+  panel_views_min: 2          # ...at least this many times = the agent mentions it
+  panel_action_max_chars: 40  # what the app says you did in a panel ("view", "close" ...) is cut to this many letters
+
+# ── Small talk between agents ──────────────────────────────────────
+idle_chat:
+  min_sec: 720                # 12 to 25 minutes between rounds
+  max_sec: 1500
+  start_delay_sec: 15
+  max_turns: 3                # replies after the opening line
+  quiet_after_typing_sec: 10  # wait this long after you type before chatting
+  pause_between_lines_sec: 3  # wait 3 to 6 seconds between two lines, like someone typing
+  pause_random_sec: 3
+  memory_per_agent: 2         # each agent's newest memories the topic writer sees...
+  memory_lines: 6             # ...at most this many in all
+  topic_min_words: 2          # shorter topics or lines from the AI are thrown away
+  line_min_words: 3
+
+# ── Lost items ("have you seen my keys?") ──────────────────────────
+lost_items:
+  check_every_sec: 60
+  scene_change: 8.0           # how different the picture must look to run a vision scan (0-255)
+  rescan_every_sec: 300       # vision scan at least this often even if nothing changed
+  snapshot_every_sec: 120     # "Desk scan" photo at most this often
+  spotted_photo_cooldown_sec: 75
+  start_delay_sec: 5
+  compare_size: 64            # pictures are shrunk to 64×64 to tell if the desk changed
+  min_confidence: 0.3         # weaker boxes don't count as "seen"
+  just_seen_sec: 90           # seen this recently = "on the desk within the last minute or so"
+  detector_fresh_sec: 5       # a detector sighting this fresh beats the vision scan's
+  nearby_kept: 5              # agents remembered as "near it"...
+  nearby_mentioned: 3         # ...and how many are mentioned
+  answer_min_words: 3         # shorter vision answers are thrown away
+  question_max_chars: 200     # how much of your question the vision AI is shown...
+  message_max_chars: 500      # ...and the chat AI
+  photo_note_max_chars: 450   # how much of the vision AI's answer about a saved photo is kept...
+  live_note_max_chars: 220    # ...and about the live picture
+  items:                      # labels = detector words for the item; words = what you might type
+    phone:   {name: Phone,   labels: [cell phone],          alert_after_min: 10, words: [phone, iphone, mobile, cell, cellphone, android]}
+    keys:    {name: Keys,    labels: [key, remote],         alert_after_min: 15, words: [key, keys, keychain, keyring, fob]}
+    wallet:  {name: Wallet,  labels: [wallet, handbag],     alert_after_min: 15, words: [wallet, purse, card, cards, bag, handbag]}
+    airpods: {name: AirPods, labels: [earphone, earbuds],   alert_after_min: 15, words: [airpod, airpods, earbud, earbuds, earphone, earphones]}
+
+# ── Vision checks with Ollama (only when OLLAMA_URL is set) ───────
+vision_habits:
+  every_sec: 42               # posture / screen distance / phone-in-hand check
+  slouch_log_min_sec: 90      # shortest slouch worth logging
+  nail_log_cooldown_sec: 50
+  max_log_events: 120
+  start_delay_sec: 12
+  min_every_sec: 18           # every_sec is never shorter than this
+  repeat_after_sec:           # the same nudge again only after this long
+    too_close: 1200           # leaning close to the screen
+    slouch: 1500
+    phone: 1500               # phone in your hand
+
+# ── Lens (the camera's own character) ──────────────────────────────
+lens:
+  sample_every_sec: 1.0
+  covered_below: 12           # average brightness 0-255
+  dark_below: 45
+  glare_above: 0.30           # share of pure-white pixels
+  blur_below: 25
+  motion_above: 6.0
+  bump_degrees: 12            # phone camera only
+  slow_fps_below: 1.5
+  speak_gap_sec: 20
+  repeat_after_min: 20
+  check_every_sec: 2          # how often Lens looks for problems
+  measure_width: 240          # pictures are shrunk to this width before measuring (faster)
+  white_level: 250            # a pixel this bright (0-255) counts as pure white, for glare
+  edge_touch_px: 3            # a box this close to the picture's edge counts as cut off
+  fills_picture: 0.9          # a box this wide or tall (share of the picture) is never "cut off"
+  fixed_after_sec: 5          # a problem must stay gone this long before Lens says thanks
+  edge_tip_after_sec: 120     # one-time tip about marking the desk corners, this long after the video starts
+  reading_fresh_sec: 10       # brightness and sharpness older than this are ignored
+  cutoff_forget_sec: 8        # an object that hasn't looked cut off for this long is forgotten
+  cutoff_repeat_times: 1.5    # the same cut-off object is mentioned again only after repeat_after_min times this
+  wait_before_saying_sec:     # how long each problem must last before Lens says something
+    lost: 15                  # no pictures
+    covered: 4
+    dark: 8
+    glare: 8
+    blurry: 12
+    bumped: 5                 # phone camera only
+    empty: 180                # nothing recognized on the desk
+    cutoff: 45                # an object cut off at the side of the picture
+    slow: 30
+    pi: 10                    # the Pi is too hot, its power supply is weak, or its clock is off
+    pi_detector: 60           # the Pi's own object detection is off (this computer detects instead)
+
+# ── Daily recap ─────────────────────────────────────────────────────
+daily_summary:
+  hour: 21                    # local time
+  start_delay_sec: 120
+  check_every_sec: 60
+  objects_listed: 8           # most objects named in the recap
+
+# ── Proof photos ────────────────────────────────────────────────────
+snapshots:
+  max_kept: 150               # photos kept in memory for chat proof / Captures
+  crop_padding: 0.25          # proof photos of an alert show this much more around the objects (share of their size)
+  crop_min_px: 40             # a crop smaller than this keeps the whole picture
+  jpeg_quality: 85            # JPEG quality of cropped proof photos
+
+# ── Habit tracker (the numbers behind the Habits page) ─────────────
+habit_tracker:
+  save_every_sec: 30          # save today's habit numbers this often while pictures come in...
+  save_check_every_sec: 60    # ...and check for unsaved numbers this often anyway
+  gap_counted_max_sec: 2      # a gap between pictures counts as desk time only up to this
+  breaks_kept: 50             # breaks remembered per day...
+  breaks_shown: 10            # ...and how many the app shows
+  drinks_kept: 100
+  glass_ml: 240               # the "glass of water" button
+  button_break_min: 5         # the "I took a break" button
+  sunlight_default_min: 10    # "I went outside" without saying how long
+  afternoon_light_hours: 4    # sunlight logged this close to sunset counts as afternoon light
+  food_label_max_chars: 60
+
+# ── Web server ──────────────────────────────────────────────────────
+web:
+  host: 0.0.0.0               # listen on every network this computer is on, so the Pi and the phone can connect
+  port: 5000
+  app_folder: web_app         # the app's page and files (what you open at http://localhost:5000)
+  phone_folder: phone_camera  # the page a phone opens to be the camera
+  stop_wait_sec: 3            # when the server stops, requests still running get this long to finish
+  max_request_mb: 8           # biggest request the app and the phone page may send
+  pi_upload_max_mb: 4         # biggest picture upload the Pi may send to /api/pi/frame
+  live_retry_ms: 2000         # the app reconnects to live updates after this long if cut off
+  live_keepalive_sec: 25      # a "still here" note on live updates when nothing else was sent
+  live_queue_size: 500        # messages waiting per open app page; a page that falls this far behind is dropped
+  video_resend_sec: 2         # the live video resends the last picture this often (so closed tabs get noticed)
+  video_check_every_sec: 0.03 # how often the live video looks for a new picture
+  photo_cache_sec: 3600       # how long the browser may keep a proof photo
+  list_sizes:                 # how many entries the app's lists return: normally, and at most
+    habit_log:      {default: 40, max: 100}
+    log_events:     {default: 200, max: 2000}
+    log_detections: {default: 30, max: 500}
+
+# ── Logs ────────────────────────────────────────────────────────────
+logging:
+  folder: data/logs           # on this computer (on the Pi: journalctl and docker compose logs)
+  level: INFO                 # DEBUG (everything), INFO, WARNING or ERROR (problems only)
+  file_size_mb: 5             # start a new log file at this size...
+  files_kept: 5               # ...and keep this many old ones
+
+# ── Your data on this computer ──────────────────────────────────────
+storage:
+  folder: data                # preferences.json, habits/<day>.json and learned_personalities.json live here

@@ -36,6 +36,11 @@ class CameraSettings(_Section):
     phone_port: Port
     phone_cert_folder: Path
     phone_cert_days: PositiveInt
+    phone_cert_file: str              # file names in phone_cert_folder
+    phone_key_file: str
+    phone_max_side: PositiveInt
+    phone_jpeg_quality: JpegQuality
+    phone_tilt_max: PositiveNumber
     wait_for_picture_sec: PositiveNumber
     jpeg_quality: JpegQuality
     boxes_jpeg_quality: JpegQuality
@@ -275,6 +280,7 @@ class LlmSettings(_Section):
     gemini_url: str
     groq_url: str
     gemini_thinking_budget: Count
+    error_text_chars: PositiveInt
     replies: AiReplies
 
 
@@ -422,6 +428,82 @@ class SnapshotsSettings(_Section):
     jpeg_quality: JpegQuality
 
 
+ColorPart = Annotated[int, Field(ge=0, le=255)]
+Bgr = tuple[ColorPart, ColorPart, ColorPart]       # [blue, green, red], OpenCV's order
+Thickness = Annotated[int, Field(ge=1)]
+Dash = tuple[PositiveInt, PositiveInt]             # [dash, gap] in pixels
+
+
+class DrawingColors(_Section):
+    box_on: Bgr
+    box_off: Bgr
+    danger: Bgr
+    warn: Bgr
+    zone: Bgr
+    zone_hit: Bgr
+    chain: Bgr
+    moving: Bgr
+    text: Bgr
+    soft_text: Bgr
+    soft_back: Bgr
+    badge_back: Bgr
+    risk: tuple[Bgr, Bgr, Bgr, Bgr, Bgr]          # risk level 0-4
+
+
+class FontScales(_Section):
+    box: PositiveNumber
+    label: PositiveNumber
+    zone: PositiveNumber
+    chain: PositiveNumber
+    crowd: PositiveNumber
+    moving: PositiveNumber
+    count: PositiveNumber
+    risk: PositiveNumber
+    risk_events: PositiveNumber
+
+
+class FillAlpha(_Section):
+    zone: Fraction
+    crowd: Fraction
+
+
+class Trail(_Section):
+    start_after: PositiveInt
+    keep: PositiveInt
+    shade_from: ColorPart
+    shade_range: ColorPart
+
+
+class Dashes(_Section):
+    zone: Dash
+    chain: Dash
+
+
+class Radii(_Section):
+    _in_order = (('chain', 'chain_ring'), ('trail_dot_min', 'trail_dot'))
+    chain: PositiveInt
+    chain_ring: PositiveInt
+    count: PositiveInt
+    trail_dot: PositiveInt
+    trail_dot_min: PositiveInt
+
+
+class DrawingSettings(_Section):
+    """How the live view with boxes is drawn (read from Task 5 of the cleanup plan on)."""
+
+    colors: DrawingColors
+    line_px: Thickness
+    thin_line_px: Thickness
+    bold_text_px: Thickness
+    font_scale: FontScales
+    fill_alpha: FillAlpha
+    trail: Trail
+    dash: Dashes
+    arrow_tip: Fraction
+    radius: Radii
+    badge: tuple[Count, Count, Count, Count]
+
+
 class HabitTrackerSettings(_Section):
     save_every_sec: ZeroOrMore
     save_check_every_sec: PositiveNumber
@@ -446,6 +528,17 @@ class ListSizes(_Section):
     habit_log: ListSize
     log_events: ListSize
     log_detections: ListSize
+    log: PositiveInt              # these two: how many the app page asks for or shows
+    photos: PositiveInt
+
+
+class PageRefresh(_Section):
+    """How often the app page asks for new numbers, in thousandths of a second."""
+
+    live: PositiveInt
+    habits: PositiveInt
+    photos: PositiveInt
+    log: PositiveInt
 
 
 class WebSettings(_Section):
@@ -463,6 +556,13 @@ class WebSettings(_Section):
     video_check_every_sec: PositiveNumber
     photo_cache_sec: Count
     list_sizes: ListSizes
+    refresh_ms: PageRefresh
+    request_timeout_ms: PositiveInt
+    live_timeout_ms: PositiveInt
+    first_check_timeout_ms: PositiveInt
+    activity_ping_ms: PositiveInt
+    toast_ms: PositiveInt
+    palette: Words
 
 
 class LoggingSettings(_Section):
@@ -470,6 +570,8 @@ class LoggingSettings(_Section):
     level: Literal['DEBUG', 'INFO', 'WARNING', 'ERROR']
     file_size_mb: PositiveNumber
     files_kept: Count
+    file_name: str
+    preview_chars: PositiveInt
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -508,6 +610,7 @@ class AppConfig(_Section):
     lens: LensSettings
     daily_summary: DailySummarySettings
     snapshots: SnapshotsSettings
+    drawing: DrawingSettings
     habit_tracker: HabitTrackerSettings
     web: WebSettings
     logging: LoggingSettings

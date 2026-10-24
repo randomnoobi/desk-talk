@@ -22,22 +22,22 @@ from desktalk.web.files import page
 from desktalk.web.schemas import Ok, PhoneFrameReply
 
 NOT_A_PICTURE = 'not a JPEG image'
-GRAVITY_MAX = 50          # m/s²: a tilt reading above this on any axis isn't a real one (gravity is 9.8)
 FULL_TURN = 360
 WHOLE_NUMBER = re.compile(r'-?[0-9]+')      # plain 0-9 digits only: int() can't read every digit isdigit() allows
 
 phone_router = APIRouter()
 
 
-def parse_gravity(header: str | None) -> tuple[float, float, float] | None:
-    """'x,y,z' from the X-Desk-Gravity header → (x, y, z), or None when it isn't three sensible numbers."""
+def parse_gravity(header: str | None, *, most: float) -> tuple[float, float, float] | None:
+    """'x,y,z' from the X-Desk-Gravity header → (x, y, z), or None when it isn't three sensible numbers
+    (`most`: camera.phone_tilt_max, in m/s²; a reading above it on any axis isn't a real one)."""
     if not header:
         return None
     try:
         values = [float(v) for v in header.split(',')[:3]]
     except ValueError:
         return None
-    if len(values) != 3 or not all(math.isfinite(v) and abs(v) < GRAVITY_MAX for v in values):
+    if len(values) != 3 or not all(math.isfinite(v) and abs(v) < most for v in values):
         return None
     return values[0], values[1], values[2]
 
@@ -71,7 +71,7 @@ async def phone_frame(request: Request, desk: Desk) -> PhoneFrameReply:
     body = await read_upload(request, desk.config.web.max_request_mb)
     if not await run_in_threadpool(source.push, body):      # decodes the JPEG: not on the event loop
         raise HTTPException(400, NOT_A_PICTURE)
-    source.set_motion(parse_gravity(request.headers.get('X-Desk-Gravity')),
+    source.set_motion(parse_gravity(request.headers.get('X-Desk-Gravity'), most=desk.config.camera.phone_tilt_max),
                       parse_rotation(request.headers.get('X-Desk-Rotation', '')))
     return PhoneFrameReply(fps=source.fps, tip=desk.camera_health.phone_tip())
 

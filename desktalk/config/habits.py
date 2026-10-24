@@ -10,6 +10,7 @@ from desktalk.config.base import (
     Longitude,
     PositiveInt,
     PositiveNumber,
+    Words,
     ZeroOrMore,
     _Section,
 )
@@ -94,6 +95,7 @@ class FoodRule(_Section):
     enabled: bool
     remind_after_min: ZeroOrMore
     repeat_after_hours: ZeroOrMore
+    healthy: Words
 
 
 class TasksRule(_Section):
