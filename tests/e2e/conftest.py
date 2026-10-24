@@ -15,8 +15,11 @@ import pytest
 WAIT_MS = 10_000          # longest a step waits for the page by default (a test may wait less)
 
 
-@pytest.fixture(scope='session')
+@pytest.fixture(scope='package')
 def browser() -> Iterator[Any]:
+    """One browser for the tests in this folder. It closes when they're done (not at the end of the whole run),
+    because Playwright keeps an event loop running while it's open, and the stream tests in tests/integration
+    start their own."""
     sync_api = pytest.importorskip('playwright.sync_api')
     with sync_api.sync_playwright() as playwright:
         try:
