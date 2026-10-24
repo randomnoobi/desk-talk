@@ -1,5 +1,5 @@
 """Real parts that already do what an interface added in Task 4 of the cleanup plan asks run its contract here.
-(The real PictureTools comes in Task 5 and runs PictureToolsContract next to its own tests.)"""
+(The real PictureTools, OpenCvPictureTools, runs PictureToolsContract in test_opencv_picture_tools.py.)"""
 
 from __future__ import annotations
 
