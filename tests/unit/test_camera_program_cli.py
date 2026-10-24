@@ -15,6 +15,7 @@ from test_camera_program_fakes import JPEG, KEY, FakeComputer, FakeContainer, pi
 
 from desktalk_shared.wire import DetectorState
 from raspberry_pi.camera.cli import load_settings, main, parse_args
+from raspberry_pi.camera.settings import ComputerProblem
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -44,6 +45,27 @@ def test_flags_beat_the_computer_which_beats_the_repo(tmp_path, computer):
     assert settings.fps == 4                   # flag wins
     assert settings.delete_every_min == 5      # from the computer's settings
     assert settings.jpeg_quality == 70         # from config/settings.yaml (pi:) in the repo
+
+
+def older_repo_file(tmp_path, *missing) -> Path:
+    """The Pi's config/settings.yaml from before some settings were added (the Pi wasn't git-pulled)."""
+    pi = {name: value for name, value in pi_settings().items() if name not in missing}
+    path = tmp_path / 'settings.yaml'
+    path.write_text(yaml.safe_dump({'pi': pi}))
+    return path
+
+
+def test_an_older_pi_settings_file_without_error_text_chars_still_asks_the_computer(tmp_path, computer):
+    computer.pi = pi_settings(error_text_chars=42)
+    args = parse_args(['--server', computer.url, '--key', KEY])
+    assert load_settings(args, older_repo_file(tmp_path, 'error_text_chars')).error_text_chars == 42
+
+
+def test_without_error_text_chars_the_computers_whole_reason_is_shown(tmp_path, computer, caplog):
+    computer.key = 'another key'
+    args = parse_args(['--server', computer.url, '--key', KEY])
+    with pytest.raises(ComputerProblem, match='Copy the command printed by server.py'):
+        load_settings(args, older_repo_file(tmp_path, 'error_text_chars'), need_computer=True)
 
 
 def test_computer_away_at_start_uses_the_repos_settings(tmp_path, computer, caplog):

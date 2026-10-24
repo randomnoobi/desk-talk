@@ -127,8 +127,11 @@ def upload_timeout(pi: Mapping[str, Any]) -> float:
     return _check(pi, {'upload_timeout_sec': POSITIVE}, 'pi.', ())['upload_timeout_sec']
 
 
-def error_text_chars(pi: Mapping[str, Any]) -> int:
-    """pi.error_text_chars on its own: needed to ask the computer for the rest."""
+def error_text_chars(pi: Mapping[str, Any]) -> int | None:
+    """pi.error_text_chars on its own, for asking the computer for the rest. None (show the whole reason) when the
+    Pi's settings are older than this setting: the computer's settings have it, and are used after that."""
+    if pi.get('error_text_chars') is None:
+        return None
     return _check(pi, {'error_text_chars': WHOLE}, 'pi.', ())['error_text_chars']
 
 
@@ -185,9 +188,9 @@ def read_repo_settings(path: str | Path) -> dict[str, Any]:
     return dict(pi) if isinstance(pi, Mapping) else {}
 
 
-def computer_config(server: str, key: str, timeout: float, error_text_chars: int) -> dict[str, Any]:
+def computer_config(server: str, key: str, timeout: float, error_text_chars: int | None) -> dict[str, Any]:
     """The computer's /api/pi/config reply: {"pi": {...}, "camera_source": ...}. Raises ComputerProblem.
-    error_text_chars: how much of a reply it can't read goes into the problem's text."""
+    error_text_chars: how much of a reply it can't read goes into the problem's text (None: all of it)."""
     server = server.rstrip('/')
     try:
         status, body = net.call('GET', server + '/api/pi/config', headers={'X-Desk-Key': key}, timeout=timeout)

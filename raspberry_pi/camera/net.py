@@ -29,9 +29,9 @@ def call(method: str, url: str, *, timeout: float, body: bytes | None = None,
         raise NoAnswer(_plain(exc, timeout)) from None
 
 
-def error_text(body: bytes, most_chars: int) -> str:
+def error_text(body: bytes, most_chars: int | None) -> str:
     """The reason in an error reply: FastAPI's {"detail": ...}, {"error": ...}, or the text itself
-    (its first `most_chars` letters: pi.error_text_chars)."""
+    (its first `most_chars` letters: pi.error_text_chars; None: all of it)."""
     try:
         data = json.loads(body)
     except ValueError:
@@ -47,7 +47,7 @@ def computer_away(server: str, why: NoAnswer) -> str:
     return f'Cannot reach the computer at {server} ({why}). Is server.py running, and on the same Wi-Fi?'
 
 
-def computer_said_no(status: int, body: bytes, most_chars: int) -> str:
+def computer_said_no(status: int, body: bytes, most_chars: int | None) -> str:
     return f'The computer said no ({status}): {error_text(body, most_chars) or "it gave no reason"}'
 
 
