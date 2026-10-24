@@ -350,6 +350,7 @@ NEW_SETTINGS = {
         ('web', 'request_timeout_ms'), ('web', 'activity_ping_ms'), ('web', 'toast_ms'),
         ('web', 'list_sizes', 'log'), ('web', 'list_sizes', 'photos'),
         ('logging', 'file_name'), ('logging', 'preview_chars'), ('llm', 'error_text_chars'),
+        ('pi', 'camera'), ('pi', 'error_text_chars'),
     ],
     'protocols.yaml': [('food', 'healthy')],
 }

@@ -41,7 +41,8 @@ def computer():
 
 
 def client_for(container):
-    return DetectorClient(from_layers(pi_settings(detector={'url': container.url})).detector, FakeClock())
+    return DetectorClient(from_layers(pi_settings(detector={'url': container.url})).detector, FakeClock(),
+                          error_text_chars=200)
 
 
 # ── camera ────────────────────────────────────────────────────────────
@@ -125,29 +126,29 @@ def test_no_temperature_is_a_problem(tmp_path):
 
 # ── computer ──────────────────────────────────────────────────────────
 def test_computer_that_answers_is_fine(computer):
-    check = self_test.check_computer(computer.url, KEY, timeout=2)
+    check = self_test.check_computer(computer.url, KEY, timeout=2, error_text_chars=200)
     assert check.ok and computer.url in check.message
 
 
 def test_wrong_key_is_a_problem(computer):
-    check = self_test.check_computer(computer.url, 'WRONG', timeout=2)
+    check = self_test.check_computer(computer.url, 'WRONG', timeout=2, error_text_chars=200)
     assert not check.ok and 'Pairing key does not match' in check.message
 
 
 def test_computer_away_is_a_problem(computer):
     computer.away = True
-    check = self_test.check_computer(computer.url, KEY, timeout=2)
+    check = self_test.check_computer(computer.url, KEY, timeout=2, error_text_chars=200)
     assert not check.ok and 'Cannot reach the computer' in check.message
 
 
 def test_computer_set_to_another_camera_is_a_problem(computer):
     computer.camera_source = 'phone'
-    check = self_test.check_computer(computer.url, KEY, timeout=2)
+    check = self_test.check_computer(computer.url, KEY, timeout=2, error_text_chars=200)
     assert not check.ok and 'camera.source: phone' in check.message
 
 
 def test_no_server_given_is_a_problem():
-    check = self_test.check_computer(None, None, timeout=2)
+    check = self_test.check_computer(None, None, timeout=2, error_text_chars=200)
     assert not check.ok and '--server' in check.message
 
 

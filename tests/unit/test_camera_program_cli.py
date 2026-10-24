@@ -116,3 +116,21 @@ def test_help_shows_the_run_command_with_only_the_standard_library():
     assert done.returncode == 0, done.stderr
     assert 'python3 -m raspberry_pi.camera --server http://' in done.stdout
     assert '--self-test' in done.stdout
+
+
+def test_the_camera_comes_from_the_pi_settings_unless_a_flag_says(tmp_path, caplog):
+    empty = tmp_path / 'empty'
+    empty.mkdir()
+    repo = repo_file(tmp_path, camera=f'folder:{empty}')
+    assert main(['--offline', '--photo-dir', str(tmp_path / 'p')], repo_settings=repo) == 1
+    assert f'no .jpg files in {empty}' in caplog.text
+    caplog.clear()
+    other = tmp_path / 'other'
+    other.mkdir()
+    assert main(['--offline', '--camera', f'folder:{other}', '--photo-dir', str(tmp_path / 'p')],
+                repo_settings=repo) == 1
+    assert f'no .jpg files in {other}' in caplog.text
+
+
+def test_the_camera_flag_says_where_its_default_comes_from():
+    assert parse_args([]).camera is None

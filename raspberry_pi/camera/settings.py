@@ -58,6 +58,8 @@ class CameraSettings:
     health_every_sec: float
     settings_check_every_sec: float
     restart_after_missed_pictures: int
+    camera: str
+    error_text_chars: int
     detector: DetectorConfig
 
 
@@ -85,7 +87,7 @@ FIELDS = {
     'upload_timeout_sec': POSITIVE, 'upload_retry_start_sec': POSITIVE, 'upload_retry_max_sec': POSITIVE,
     'hot_warning_c': POSITIVE, 'camera_warmup_sec': ZERO_OR_MORE, 'pause_after_error_sec': ZERO_OR_MORE,
     'status_every_sec': POSITIVE, 'health_every_sec': POSITIVE, 'settings_check_every_sec': POSITIVE,
-    'restart_after_missed_pictures': WHOLE,
+    'restart_after_missed_pictures': WHOLE, 'camera': TEXT, 'error_text_chars': WHOLE,
 }
 DETECTOR_FIELDS = {
     'url': TEXT, 'wait_per_picture_sec': POSITIVE, 'failures_before_pause': WHOLE, 'pause_start_sec': POSITIVE,
@@ -123,6 +125,11 @@ def from_layers(*layers: Mapping[str, Any] | None) -> CameraSettings:
 def upload_timeout(pi: Mapping[str, Any]) -> float:
     """pi.upload_timeout_sec on its own: needed to ask the computer for the rest."""
     return _check(pi, {'upload_timeout_sec': POSITIVE}, 'pi.', ())['upload_timeout_sec']
+
+
+def error_text_chars(pi: Mapping[str, Any]) -> int:
+    """pi.error_text_chars on its own: needed to ask the computer for the rest."""
+    return _check(pi, {'error_text_chars': WHOLE}, 'pi.', ())['error_text_chars']
 
 
 _WHERE = ': it belongs in config/settings.yaml on the computer (git pull gets the newest one, on the Pi too)'
@@ -178,15 +185,16 @@ def read_repo_settings(path: str | Path) -> dict[str, Any]:
     return dict(pi) if isinstance(pi, Mapping) else {}
 
 
-def computer_config(server: str, key: str, timeout: float) -> dict[str, Any]:
-    """The computer's /api/pi/config reply: {"pi": {...}, "camera_source": ...}. Raises ComputerProblem."""
+def computer_config(server: str, key: str, timeout: float, error_text_chars: int) -> dict[str, Any]:
+    """The computer's /api/pi/config reply: {"pi": {...}, "camera_source": ...}. Raises ComputerProblem.
+    error_text_chars: how much of a reply it can't read goes into the problem's text."""
     server = server.rstrip('/')
     try:
         status, body = net.call('GET', server + '/api/pi/config', headers={'X-Desk-Key': key}, timeout=timeout)
     except net.NoAnswer as exc:
         raise ComputerProblem(net.computer_away(server, exc)) from None
     if status != 200:
-        raise ComputerProblem(net.computer_said_no(status, body))
+        raise ComputerProblem(net.computer_said_no(status, body, error_text_chars))
     try:
         data = json.loads(body)
     except ValueError:

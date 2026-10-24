@@ -25,7 +25,7 @@ def clock():
 
 def make_uploader(computer, clock, key=KEY):
     return Uploader(computer.url, key, timeout_sec=2, retry_start_sec=RETRY_START, retry_max_sec=RETRY_MAX,
-                    clock=clock)
+                    error_text_chars=200, clock=clock)
 
 
 @pytest.fixture

@@ -75,9 +75,10 @@ class Verdict:
 class DetectorClient:
     """Talks to the container. Only the DetectorWorker's thread calls detect() and upkeep()."""
 
-    def __init__(self, config: DetectorConfig, clock: Clock):
+    def __init__(self, config: DetectorConfig, clock: Clock, *, error_text_chars: int):
         self.config = config
         self.clock = clock
+        self.error_text_chars = error_text_chars     # how much of a reply it can't read goes into a reason
         self._model = config.model
         self._model_due = True               # PUT /model at the next chance
         self._off_reason = ''                # why it's off ('' = send it pictures)
@@ -108,11 +109,11 @@ class DetectorClient:
         except net.NoAnswer as exc:
             return self._failed(f"the detector isn't answering: {exc}")
         if status == 503:
-            return self._no_model_yet(net.error_text(body) or 'the detector has no model yet')
+            return self._no_model_yet(self._error_text(body) or 'the detector has no model yet')
         if status == 429:
             return Verdict(DetectorState.BUSY)          # still on a picture the camera gave up waiting for
         if status != 200:
-            return self._failed(net.error_text(body) or f'the detector replied {status}')
+            return self._failed(self._error_text(body) or f'the detector replied {status}')
         try:
             reply = DetectReply.from_dict(json.loads(body))
         except ValueError as exc:
@@ -139,7 +140,7 @@ class DetectorClient:
         except net.NoAnswer as exc:
             raise DetectorUnavailable(f"the detector isn't answering at {self.config.url}: {exc}") from None
         if status != 200:
-            raise DetectorUnavailable(net.error_text(body) or f'the detector replied {status}')
+            raise DetectorUnavailable(self._error_text(body) or f'the detector replied {status}')
         try:
             health = DetectorHealth.from_dict(json.loads(body))
         except ValueError as exc:
@@ -150,6 +151,9 @@ class DetectorClient:
         return health
 
     # ── inside ──
+    def _error_text(self, body: bytes) -> str:
+        return net.error_text(body, self.error_text_chars)
+
     def _url(self, path: str) -> str:
         return self.config.url.rstrip('/') + path
 
@@ -219,7 +223,7 @@ class DetectorClient:
             self._check_version(body)
         else:
             log.warning("The detector won't use these model settings (%s). Check pi.detector in config/settings.yaml "
-                        'on your computer.', net.error_text(body) or status)
+                        'on your computer.', self._error_text(body) or status)
 
 
     def _check_version(self, body: bytes) -> None:

@@ -51,7 +51,8 @@ def real_desk(tmp_path, **changes):
 
 
 def uploader(url: str, key: str = PAIR_KEY) -> Uploader:
-    return Uploader(url, key, timeout_sec=5, retry_start_sec=1, retry_max_sec=10, clock=PiClock())
+    return Uploader(url, key, timeout_sec=5, retry_start_sec=1, retry_max_sec=10, error_text_chars=200,
+                    clock=PiClock())
 
 
 def from_pi(state: DetectorState, number: int, *found) -> UploadInfo:

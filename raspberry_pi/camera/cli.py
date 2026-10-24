@@ -22,6 +22,7 @@ from raspberry_pi.camera.settings import (
     ComputerProblem,
     SettingsError,
     computer_config,
+    error_text_chars,
     from_layers,
     merge,
     read_repo_settings,
@@ -49,8 +50,10 @@ def load_settings(args: argparse.Namespace, repo_settings: Path, *, need_compute
     flags = flag_settings(args)
     computer: dict[str, Any] = {}
     if not args.offline and args.server and args.key:
+        local = merge(repo, flags)
         try:
-            reply = computer_config(args.server, args.key, timeout=upload_timeout(merge(repo, flags)))
+            reply = computer_config(args.server, args.key, timeout=upload_timeout(local),
+                                    error_text_chars=error_text_chars(local))
             computer = reply.get('pi') or {}
         except ComputerProblem as exc:
             if need_computer:
@@ -68,7 +71,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     f'Settings come from config/settings.yaml (pi:) on your computer; these flags override them.')
     p.add_argument('--server', help='your computer, e.g. http://192.168.1.20:5000 (printed by server.py)')
     p.add_argument('--key', help='pairing key (printed by server.py)')
-    p.add_argument('--camera', default='auto', help='auto | picamera2 | usb[:index] | folder:<dir> | video:<file>')
+    p.add_argument('--camera', help='auto | picamera2 | usb[:index] | folder:<dir> | video:<file> '
+                                    '(if not given: pi.camera in config/settings.yaml)')
     p.add_argument('--fps', type=float, help='pictures per second')
     p.add_argument('--width', type=int, help='picture width')
     p.add_argument('--height', type=int, help='picture height')
@@ -105,11 +109,12 @@ def main(argv: list[str] | None = None, *, repo_settings: Path = REPO_SETTINGS, 
         return 2
 
     def camera():
-        return open_camera(args.camera, width=settings.width, height=settings.height, quality=settings.jpeg_quality,
-                           warmup_sec=settings.camera_warmup_sec, clock=clock)
+        return open_camera(args.camera or settings.camera, width=settings.width, height=settings.height,
+                           quality=settings.jpeg_quality, warmup_sec=settings.camera_warmup_sec, clock=clock)
 
     if args.self_test:
-        client = None if args.no_detector else DetectorClient(settings.detector, clock)
+        client = None if args.no_detector else DetectorClient(settings.detector, clock,
+                                                              error_text_chars=settings.error_text_chars)
         return self_test.run(camera, client, HealthReader(sys_root), settings, server=args.server, key=args.key)
     try:
         cam = camera()

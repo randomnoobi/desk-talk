@@ -111,21 +111,21 @@ def test_a_broken_settings_file_says_so(tmp_path):
 # ── asking the computer ───────────────────────────────────────────────
 def test_asks_the_computer_for_its_settings_with_the_key():
     with FakeComputer(pi=pi_settings(fps=2)) as computer:
-        reply = computer_config(computer.url, KEY, timeout=2)
+        reply = computer_config(computer.url, KEY, timeout=2, error_text_chars=200)
         assert reply['pi']['fps'] == 2 and reply['camera_source'] == 'pi'
         assert computer.requests[0].headers['x-desk-key'] == KEY
 
 
 def test_a_wrong_key_is_a_plain_problem():
     with FakeComputer() as computer, pytest.raises(ComputerProblem, match='Pairing key does not match'):
-        computer_config(computer.url, 'WRONG', timeout=2)
+        computer_config(computer.url, 'WRONG', timeout=2, error_text_chars=200)
 
 
 def test_a_computer_that_is_away_is_a_plain_problem():
     with FakeComputer() as computer:
         computer.away = True
         with pytest.raises(ComputerProblem, match='Cannot reach the computer'):
-            computer_config(computer.url, KEY, timeout=2)
+            computer_config(computer.url, KEY, timeout=2, error_text_chars=200)
 
 
 # ── settings that change on the computer ──────────────────────────────
@@ -138,11 +138,11 @@ def parts():
         computer.pi = pi_settings(detector={'url': container.url})
         clock = FakeClock()
         current = from_layers(computer.pi)
-        client = DetectorClient(current.detector, clock)
+        client = DetectorClient(current.detector, clock, error_text_chars=current.error_text_chars)
         client.upkeep()                                     # the model is sent on start
 
         def load():
-            return from_layers(computer_config(computer.url, KEY, timeout=2)['pi'])
+            return from_layers(computer_config(computer.url, KEY, timeout=2, error_text_chars=200)['pi'])
 
         watcher = SettingsWatcher(load, current, client, every_sec=EVERY, clock=clock)
         yield container, computer, clock, client, watcher
@@ -213,3 +213,16 @@ def test_pi_settings_match_the_server_model():
     assert nested == ['detector']                     # a new section needs its own check on the Pi
     assert PiSettings._in_order == pi_check.IN_ORDER
     assert detector._in_order == pi_check.DETECTOR_IN_ORDER    # type: ignore[attr-defined]
+
+
+def test_the_repo_settings_have_the_camera_and_error_text_values_the_code_had():
+    pi = read_repo_settings(Path(__file__).resolve().parents[2] / 'config' / 'settings.yaml')
+    assert (pi['camera'], pi['error_text_chars']) == ('auto', 200)
+
+
+def test_a_cut_error_text_from_the_computer_follows_the_setting():
+    with FakeComputer() as computer:
+        computer.routes[('GET', '/api/pi/config')] = lambda req: (502, b'x' * 50)    # not JSON: a proxy's page
+        with pytest.raises(ComputerProblem) as problem:
+            computer_config(computer.url, KEY, timeout=2, error_text_chars=7)
+    assert str(problem.value).endswith(': xxxxxxx')

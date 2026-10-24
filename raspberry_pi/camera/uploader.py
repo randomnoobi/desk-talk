@@ -25,11 +25,12 @@ class Uploader:
     """The camera's and the detector's threads call offer(); a thread of its own calls tick() over and over."""
 
     def __init__(self, server: str, key: str, *, timeout_sec: float, retry_start_sec: float, retry_max_sec: float,
-                 clock: Clock):
+                 error_text_chars: int, clock: Clock):
         self.server = server.rstrip('/')
         self.url = self.server + '/api/pi/frame'
         self.key = key
         self.timeout_sec = timeout_sec
+        self.error_text_chars = error_text_chars     # how much of a reply it can't read goes into the log
         self.clock = clock
         self.wake = threading.Event()        # set when there's a picture: the thread stops waiting
         self.sent = 0
@@ -85,7 +86,7 @@ class Uploader:
             return net.computer_away(self.server, exc)
         if status == 200:
             return None
-        return net.computer_said_no(status, reply)
+        return net.computer_said_no(status, reply, self.error_text_chars)
 
     def _say(self, message: str, level: int) -> None:
         if message != self._said:
