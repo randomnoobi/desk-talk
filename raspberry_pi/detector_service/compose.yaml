@@ -1,5 +1,6 @@
 # The detector service on the Pi: YOLO in Docker, asked for detections by the camera program.
-# The numbers you may want to change (port, memory limit ...) are in .env next to this file.
+# The numbers you may want to change (port, memory limit, health checks, log sizes ...) are in .env next to this
+# file; docker compose reads it from there by itself.
 #
 # On the Pi, in desk-talk/raspberry_pi/detector_service:
 #   docker compose up -d --build      build (the first time takes a while) and start it; it starts again on boot
@@ -28,15 +29,15 @@ services:
     healthcheck:                                        # "healthy" = it answers /health, with or without a model
       test: ["CMD", "python", "-c",
              "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ['DETECTOR_PORT'] + '/health')"]
-      interval: 30s
-      timeout: 5s
-      start_period: 60s                                 # loading PyTorch takes a while on the Pi
-      retries: 3
-    logging:                                            # at most 3 log files of 10 MB, so logs can't fill the SD card
+      interval: ${DETECTOR_HEALTH_INTERVAL}
+      timeout: ${DETECTOR_HEALTH_TIMEOUT}
+      start_period: ${DETECTOR_HEALTH_START_PERIOD}
+      retries: ${DETECTOR_HEALTH_RETRIES}
+    logging:                                            # a few small log files, so logs can't fill the SD card
       driver: json-file
       options:
-        max-size: 10m
-        max-file: "3"
+        max-size: ${DETECTOR_LOG_FILE_SIZE}
+        max-file: ${DETECTOR_LOG_FILES}
 
 volumes:
   models:

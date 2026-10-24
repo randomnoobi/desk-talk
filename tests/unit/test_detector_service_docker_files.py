@@ -51,3 +51,14 @@ def test_the_container_gets_settings_the_service_accepts(detector):
 
 def test_the_models_volume_is_where_the_service_keeps_its_models(detector):
     assert f'models:{dockerfile_env()["DETECTOR_MODELS_DIR"]}' in detector['volumes']
+
+
+def test_healthcheck_timings_and_log_sizes_come_from_the_env_file(detector):
+    values = env_file()
+    health, logs = detector['healthcheck'], detector['logging']['options']
+    for raw in (health['interval'], health['timeout'], health['start_period'], health['retries'],
+                logs['max-size'], logs['max-file']):
+        assert NAME.fullmatch(str(raw)), f'{raw!r} is written into compose.yaml: put it in .env'
+    filled = {key: fill(health[key], values) for key in ('interval', 'timeout', 'start_period', 'retries')}
+    assert filled == {'interval': '30s', 'timeout': '5s', 'start_period': '60s', 'retries': '3'}    # as before
+    assert (fill(logs['max-size'], values), fill(logs['max-file'], values)) == ('10m', '3')
