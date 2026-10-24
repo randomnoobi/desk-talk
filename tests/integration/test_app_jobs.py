@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import json
 import time
+from typing import cast
 
 from desktalk.core.chat.tracker_actions import tracker_prompt
+from desktalk.core.chat.workers import LostItems
 from desktalk.domain import BBox, Detection, DetectorState, UploadInfo
 from tests.integration.app_kit import (
     CUP_FAR,
@@ -155,11 +157,11 @@ def test_keys_gone_a_while_get_a_message_and_an_answer_when_asked(tmp_path):
     rig.tick(rig.app.lost_items, after=alert_after)
     [said] = [m for m in rig.messages() if m.get('alert') == 'keys']
     assert said['character'] == 'lens' and "Keys: hasn't been seen for 15 min." in said['text']
-    assert rig.app.habits.today()['lost_alerts'] == 1
+    assert rig.app.habits.today(rig.clock.now())['lost_alerts'] == 1
     assert rig.app.lost_items.is_lost_query('have you seen my keys?')
     answer = rig.app.lost_items.answer('have you seen my keys?')
     assert 'Keys' in answer['text'] and 'minute' in answer['text'] and answer['cta']['action'] == 'captures'
-    assert rig.app.lost_items.sightings()['keys']['alerted'] is True
+    assert cast(LostItems, rig.app.lost_items).sightings()['keys']['alerted'] is True     # not in its interface
 
 
 # ── the daily recap ──────────────────────────────────────────────────
@@ -217,7 +219,7 @@ def test_a_reply_that_logs_a_sip_counts_it_on_the_habits_page(tmp_path):
     rig.watch(4, LAPTOP, CUP_FAR)
     reply = rig.app.generator.answer('cup', 'I just drank some water')
     assert reply['messages'] == [{'character': 'cup', 'text': 'Splash, nice one!'}]
-    assert rig.app.habits.today()['hydration']['sips'] == 1
+    assert rig.app.habits.today(rig.clock.now())['hydration']['sips'] == 1
     assert json.loads(json.dumps(rig.app.generator.live_context()))['summary']
 
 

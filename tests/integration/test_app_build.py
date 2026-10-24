@@ -72,7 +72,7 @@ def test_every_part_has_the_interface_its_field_names(tmp_path, kind):
 def test_the_phone_as_camera_never_counts_as_a_phone_on_the_desk(tmp_path):
     rig = DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'camera', source='phone'))
     rig.watch(4, LAPTOP)
-    assert rig.app.habits.today()['phone_free']['counted'] is False
+    assert rig.app.habits.today(rig.clock.now())['phone_free']['counted'] is False
 
 
 def test_the_pair_key_is_kept_in_the_pair_key_file(tmp_path):
@@ -103,7 +103,7 @@ def test_preferences_and_habits_saved_before_are_read_back(tmp_path):
     rig.app.habits.save(force=True)
     again = DeskRig(tmp_path)
     assert again.app.preferences.get('bed_time') == '22:15'
-    assert again.app.habits.today()['hydration']['water_ml'] == rig.config.habit_tracker.glass_ml
+    assert again.app.habits.today(again.clock.now())['hydration']['water_ml'] == rig.config.habit_tracker.glass_ml
 
 
 def test_the_danger_rules_come_from_the_config_store(tmp_path):
@@ -154,7 +154,7 @@ def test_log_messages_go_to_the_log_folder(tmp_path):
         app = build_quietly(changed(desk_config(tmp_path), 'logging', level='INFO'), tmp_path,
                             set_up_logging=True)
         logging.getLogger('desktalk.test').info('hello from the test')
-        assert app.log_file == tmp_path / 'run' / 'data' / 'logs' / 'desktalk.log'
+        assert app.log_file is not None and app.log_file == tmp_path / 'run' / 'data' / 'logs' / 'desktalk.log'
         assert 'hello from the test' in app.log_file.read_text()
     finally:
         restore_logging(level)

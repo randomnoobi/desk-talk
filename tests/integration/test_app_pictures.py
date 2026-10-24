@@ -31,14 +31,14 @@ def test_objects_join_the_chat_warn_log_a_sip_and_leave(tmp_path):
     alerts = [m for m in rig.messages() if m.get('alert') == 'proximity']
     assert alerts and alerts[0]['character'] == 'computer'
     assert 'Cup' in alerts[0]['text'] and app.photo_album.get(alerts[0]['snapshot'])
-    assert app.habits.today()['danger_count'] >= 1
+    assert app.habits.today(rig.clock.now())['danger_count'] >= 1
 
     # 3. The cup is picked up for 8 seconds and put back: a sip.
     rig.watch(8, LAPTOP)
     rig.watch(3, LAPTOP, CUP_FAR)
     sips = [m for m in rig.messages() if m.get('habit') == 'hydration' and m['type'] == 'group_message']
     assert sips and 'Sip detected' in sips[0]['text'] and sips[0]['character'] == 'cup'
-    assert app.habits.today()['hydration']['sips'] == 1
+    assert app.habits.today(rig.clock.now())['hydration']['sips'] == 1
 
     # 4. The cup goes away for good: "Cup left the chat".
     rig.watch(50, LAPTOP)

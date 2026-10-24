@@ -67,7 +67,7 @@ def test_a_one_on_one_reply_logs_the_habit_the_ai_asked_for(tmp_path):
     reply = web_client(rig.app).post('/api/chat', json={'chat': 'cup', 'message': 'I just drank some water'}).json()
     assert reply['messages'] == [{'character': 'cup', 'text': 'Splash, nice one!'}]
     assert reply['habits_changed'] is True
-    assert rig.app.habits.today()['hydration']['sips'] == 1
+    assert rig.app.habits.today(rig.clock.now())['hydration']['sips'] == 1
     system = rig.ai_clients[0].requests[-1]['messages'][0]['content']
     assert 'You are Cup' in system and 'LIVE DESK STATUS' in system
 

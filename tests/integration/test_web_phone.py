@@ -7,7 +7,6 @@ from typing import cast
 import pytest
 
 from desktalk.adapters.camera import PhoneFrameSource
-
 from desktalk.web.app import create_phone_app
 from desktalk.web.routers.phone import parse_gravity, parse_rotation
 from tests.integration.app_kit import PAIR_KEY, DeskRig, changed, desk_config

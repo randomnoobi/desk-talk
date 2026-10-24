@@ -16,7 +16,6 @@
   // Files that had type errors when pyright was switched on (2026-10-24). Fix a file, then take it off this
   // list, so the count only goes down. Don't add new files here.
   "ignore": [
-    "desktalk/bootstrap.py",
     "desktalk/core/agents/roster.py",
     "desktalk/core/vision/rules.py",
     "desktalk/domain/events.py",
@@ -30,7 +29,6 @@
     "tests/characterization/client.py",
     "tests/characterization/conftest.py",
     "tests/integration/app_kit.py",
-    "tests/integration/test_app_build.py",
     "tests/integration/test_app_pictures.py",
     "tests/integration/test_app_threads.py",
     "tests/integration/test_real_yolo.py",
