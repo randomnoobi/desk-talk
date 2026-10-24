@@ -1,4 +1,4 @@
-"""DetectionProducer: camera pictures → detection events, the live view and the desk state.
+"""DetectionProducer: camera pictures → detection events, the live view and the desk scene.
 Driven by calling tick() with a FakeClock, a FakeFrameSource and a FakeDetector: no threads, no waiting."""
 
 from __future__ import annotations
@@ -12,13 +12,24 @@ import pytest
 import yaml
 
 from desktalk.adapters.camera import PiFrameSource
+from desktalk.adapters.picture import OpenCvPictureTools
 from desktalk.config import CameraSettings
 from desktalk.core.vision.producer import DetectionProducer
-from desktalk.desk_state import DeskState
-from desktalk.domain import BBox, Detection, DetectionEvent, DetectorState, Light, UploadInfo
-from tests.fakes import FakeClock, FakeDetector, FakeFrameSource, FakePainter, FakePictureCheck, SyncEventBus
+from desktalk.domain import BBox, Detection, DetectionEvent, DetectorState, Light, SeenObject, Size, UploadInfo
+from tests.fakes import (
+    FakeClock,
+    FakeDetector,
+    FakeFrameSource,
+    FakePainter,
+    FakePictureCheck,
+    FakePictureTools,
+    SyncEventBus,
+)
+from tests.fakes.vision import FAKE_JPEG
+from tests.unit.test_core_vision_kit import FakeDesk
 
 ROOT = Path(__file__).resolve().parents[2]
+TOOLS = OpenCvPictureTools()
 
 LAPTOP = Detection('laptop', 0.9, BBox(200, 200, 400, 350))
 CUP = Detection('cup', 0.8, BBox(560, 380, 600, 450))
@@ -61,17 +72,17 @@ class RecordingSource(FakeFrameSource):
 class Rig:
     """A producer with fakes all around it."""
 
-    def __init__(self, kind='pi', detector=None, painter=None, new_session_after_sec=300.0, **camera):
+    def __init__(self, kind='pi', detector=None, painter=None, new_session_after_sec=300.0, tools=TOOLS, **camera):
         self.clock = FakeClock()
         self.source = RecordingSource(kind, self.clock)
         self.detector = detector if detector is not None else FakeDetector([LAPTOP, CUP])
         self.bus = SyncEventBus()
-        self.desk = DeskState()
+        self.desk = FakeDesk()
         self.lens = FakePictureCheck()
         self.painter = painter if painter is not None else FakePainter()
         self.producer = DetectionProducer(self.source, self.detector, self.bus, self.desk, self.clock, self.lens,
                                           self.painter, camera_settings(**camera),
-                                          new_session_after_sec=new_session_after_sec)
+                                          new_session_after_sec=new_session_after_sec, pictures=tools)
 
     def picture(self, picture=None, info=None, jpeg=None):
         """A picture arrives from the camera; returns the wait tick() asks for."""
@@ -136,9 +147,8 @@ def test_busy_is_for_the_live_view_only():
     rig.picture(info=from_pi(DetectorState.BUSY))
     assert rig.events() == [] and rig.detector.calls == 0
     assert rig.lens.samples == []
-    with rig.desk.lock:
-        assert rig.desk.raw_frames.get(0) and rig.desk.frames.get(0)
-        assert rig.desk.cameras == {0: True}                 # the app shows this camera's live view
+    assert rig.desk.plain(0) and rig.desk.boxed(0)
+    assert rig.desk.camera_numbers() == [0]                  # the app shows this camera's live view
 
 
 def test_off_is_detected_on_this_computer():
@@ -218,14 +228,14 @@ def test_the_event_time_is_when_the_picture_was_picked_up_not_after_detecting():
     assert rig.events()[0].ts == 1_760_000_000.0
 
 
-# ── the desk right now (DeskState) ───────────────────────────────────
+# ── the desk right now (DeskScene, LivePictures) ─────────────────────
 def test_the_session_starts_with_the_first_analysed_picture():
     rig = Rig()
     rig.picture(info=from_pi(DetectorState.BUSY))
-    assert rig.desk.session_start is None                     # live view only
+    assert rig.desk.session_started_at() is None              # live view only
     rig.clock.advance(1)
     rig.picture(info=from_pi(DetectorState.OK))
-    assert rig.desk.session_start == 1_760_000_001.0
+    assert rig.desk.session_started_at() == 1_760_000_001.0
 
 
 @pytest.mark.parametrize('gap, new_session', [(299.0, False), (300.0, True)])
@@ -234,22 +244,21 @@ def test_a_long_gap_between_pictures_starts_a_new_session(gap, new_session):
     rig.picture()
     rig.clock.advance(gap)
     rig.picture()
-    assert rig.desk.session_start == (1_760_000_000.0 + gap if new_session else 1_760_000_000.0)
+    assert rig.desk.session_started_at() == (1_760_000_000.0 + gap if new_session else 1_760_000_000.0)
 
 
 def test_the_desk_knows_the_picture_size_the_light_and_that_the_camera_works():
     rig = Rig()
     rig.picture(np.full((240, 320, 3), 90, np.uint8), info=from_pi(DetectorState.OK, lux=312.5))
-    with rig.desk.lock:
-        assert (rig.desk.frame_w, rig.desk.frame_h) == (320, 240)
-        assert rig.desk.light == {'brightness': 90.0, 'lux': 312.5}
-        assert rig.desk.cameras == {0: True}
+    assert rig.desk.size() == Size(320, 240)
+    assert rig.desk.newest_light() == Light(brightness=90.0, lux=312.5)
+    assert rig.desk.camera_numbers() == [0]
 
 
 def test_the_desk_remembers_when_a_person_or_movement_was_last_seen():
     rig = Rig(detector=FakeDetector([LAPTOP]))
     rig.picture()
-    assert rig.desk.person_last_seen is None and rig.desk.last_motion_ts is None
+    assert rig.desk.person_seen_at() is None and rig.desk.last_motion() is None
     rig.clock.advance(10)
     rig.detector.detections = [LAPTOP, PERSON]
     rig.picture()
@@ -257,19 +266,19 @@ def test_the_desk_remembers_when_a_person_or_movement_was_last_seen():
     rig.detector.detections = [LAPTOP]
     rig.lens.moved = True
     rig.picture()
-    assert rig.desk.person_last_seen == 1_760_000_010.0
-    assert rig.desk.last_motion_ts == 1_760_000_020.0
+    assert rig.desk.person_seen_at() == 1_760_000_010.0
+    assert rig.desk.last_motion() == 1_760_000_020.0
 
 
-def test_seen_labels_has_the_best_box_of_each_label_as_the_app_reads_it():
+def test_the_desk_sees_the_best_box_of_each_label():
     weak_cup = Detection('cup', 0.6, BBox(0, 0, 10, 10))
     rig = Rig(detector=FakeDetector([weak_cup, CUP, LAPTOP]))
     rig.picture()
-    with rig.desk.lock:
-        assert rig.desk.seen_labels == {
-            'cup': {'label': 'cup', 'conf': 0.8, 'bbox': [560.0, 380.0, 600.0, 450.0], 'center': [580.0, 415.0]},
-            'laptop': {'label': 'laptop', 'conf': 0.9, 'bbox': [200.0, 200.0, 400.0, 350.0], 'center': [300.0, 275.0]},
-        }
+    assert rig.desk.seen() == {
+        'cup': SeenObject(label='cup', confidence=0.8, box=(560.0, 380.0, 600.0, 450.0), center=(580.0, 415.0)),
+        'laptop': SeenObject(label='laptop', confidence=0.9, box=(200.0, 200.0, 400.0, 350.0),
+                             center=(300.0, 275.0)),
+    }
 
 
 # ── the live view ────────────────────────────────────────────────────
@@ -284,24 +293,18 @@ class MarkingPainter:
         return np.full_like(picture, 255)
 
 
-def decoded(jpeg):
-    return cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
-
-
 def test_the_plain_live_view_is_the_pis_own_jpeg():
     rig = Rig()
     sent = jpeg_of(desk_picture(), quality=55)
     rig.picture(desk_picture(), info=from_pi(DetectorState.OK), jpeg=sent)
-    with rig.desk.lock:
-        assert rig.desk.raw_frames[0] == sent
+    assert rig.desk.plain(0) == sent
 
 
 def test_pictures_without_a_jpeg_are_saved_at_the_jpeg_quality_setting():
     rig = Rig(kind='webcam', jpeg_quality=40)
     picture = desk_picture()
     rig.picture(picture)
-    with rig.desk.lock:
-        assert rig.desk.raw_frames[0] == jpeg_of(picture, quality=40)
+    assert rig.desk.plain(0) == jpeg_of(picture, quality=40)
 
 
 def test_the_boxes_live_view_is_what_the_painter_drew():
@@ -309,17 +312,17 @@ def test_the_boxes_live_view_is_what_the_painter_drew():
     rig = Rig(kind='webcam', painter=painter, boxes_jpeg_quality=60)
     rig.picture()
     assert painter.given == [[LAPTOP, CUP]]
-    with rig.desk.lock:
-        assert rig.desk.frames[0] == jpeg_of(np.full((480, 640, 3), 255, np.uint8), quality=60)
+    assert rig.desk.boxed(0) == jpeg_of(np.full((480, 640, 3), 255, np.uint8), quality=60)
 
 
 def test_another_camera_number_keeps_its_own_live_view():
-    clock, source, desk = FakeClock(), FakeFrameSource('webcam'), DeskState()
+    clock, source, desk = FakeClock(), FakeFrameSource('webcam'), FakeDesk()
     producer = DetectionProducer(source, FakeDetector([CUP]), SyncEventBus(), desk, clock, FakePictureCheck(),
-                                 FakePainter(), camera_settings(), new_session_after_sec=300, camera_index=2)
+                                 FakePainter(), camera_settings(), new_session_after_sec=300, camera_index=2,
+                                 pictures=TOOLS)
     source.add(desk_picture())
     producer.tick(clock.now())
-    assert set(desk.raw_frames) == set(desk.frames) == set(desk.cameras) == {2}
+    assert desk.camera_numbers() == [2] and desk.boxed(2) and desk.boxed(0) is None
 
 
 def test_busy_pictures_are_painted_with_the_newest_boxes_so_they_dont_flicker():
@@ -330,9 +333,8 @@ def test_busy_pictures_are_painted_with_the_newest_boxes_so_they_dont_flicker():
     assert painter.given == [[CUP], [CUP]]
 
 
-def shown(rig) -> bytes:
-    with rig.desk.lock:
-        return rig.desk.raw_frames[0]
+def shown(rig) -> bytes | None:
+    return rig.desk.plain(0)
 
 
 def test_a_pi_picture_taken_before_the_one_shown_is_analysed_but_not_shown():
@@ -374,8 +376,7 @@ def test_when_detection_here_fails_the_live_view_goes_on_without_boxes_or_events
     rig.picture(info=from_pi(DetectorState.OFF))
     assert rig.events() == [] and rig.lens.samples == []
     assert painter.given == [[]]
-    with rig.desk.lock:
-        assert rig.desk.raw_frames.get(0) and rig.desk.frames.get(0)
+    assert rig.desk.plain(0) and rig.desk.boxed(0)
     assert 'the model file is missing' in caplog.text
     assert rig.producer.problem == 'the model file is missing'
 
@@ -402,8 +403,7 @@ def test_when_the_painter_fails_the_event_still_goes_out_and_the_boxes_view_show
     picture = desk_picture()
     rig.picture(picture)
     assert len(rig.events()) == 1
-    with rig.desk.lock:
-        assert rig.desk.frames[0] == jpeg_of(picture, quality=60)
+    assert rig.desk.boxed(0) == jpeg_of(picture, quality=60)
     assert 'bad desk outline' in caplog.text
 
 
@@ -431,11 +431,11 @@ def test_detection_time_is_measured_here_or_taken_from_the_pi():
 
 # ── with the real Pi camera source ───────────────────────────────────
 def test_a_pi_upload_goes_from_the_pi_source_through_the_producer():
-    clock, bus, desk = FakeClock(), SyncEventBus(), DeskState()
+    clock, bus, desk = FakeClock(), SyncEventBus(), FakeDesk()
     source = PiFrameSource(clock, camera_settings())
     detector = FakeDetector([LAPTOP])
     producer = DetectionProducer(source, detector, bus, desk, clock, FakePictureCheck(), FakePainter(),
-                                 camera_settings(), new_session_after_sec=300)
+                                 camera_settings(), new_session_after_sec=300, pictures=TOOLS)
     sent = jpeg_of(desk_picture())
     assert source.push(sent, from_pi(DetectorState.OK, [CUP], frame_id='pi-000042', lux=200.0))
     producer.tick(clock.now())
@@ -444,5 +444,23 @@ def test_a_pi_upload_goes_from_the_pi_source_through_the_producer():
     first, second = bus.of_type(DetectionEvent)
     assert (first.frame_id, first.detections, first.detected_on, first.light.lux) == ('pi-000042', (CUP,), 'pi', 200.0)
     assert (second.frame_id, second.detections, second.detected_on) == ('pi-000043', (LAPTOP,), 'computer')
-    with desk.lock:
-        assert desk.raw_frames[0] == sent
+    assert desk.plain(0) == sent
+
+
+# ── pictures go through the picture tools ───────────────────────────
+def test_pictures_are_made_into_jpegs_and_measured_by_the_picture_tools():
+    rig = Rig(kind='webcam', tools=FakePictureTools())
+    rig.picture(np.full((48, 64, 3), 100, np.uint8))
+    assert (rig.desk.plain(0) or b'').startswith(FAKE_JPEG) and (rig.desk.boxed(0) or b'').startswith(FAKE_JPEG)
+    [event] = rig.events()
+    assert event.size == (64, 48) and event.light.brightness == 100.0
+
+
+def test_a_picture_that_cannot_be_made_into_a_jpeg_is_not_shown():
+    class NoJpegs(FakePictureTools):
+        def encode_jpeg(self, picture, quality):
+            return None
+
+    rig = Rig(kind='webcam', tools=NoJpegs())
+    rig.picture()
+    assert len(rig.events()) == 1 and rig.desk.plain(0) is None and rig.desk.camera_numbers() == []

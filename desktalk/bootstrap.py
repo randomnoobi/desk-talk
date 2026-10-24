@@ -293,7 +293,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                                  ignore_labels=config.agents_file.ignore)
     detector = detector if detector is not None else make_detector(config)
     producer = DetectionProducer(source, detector, bus, desk, clock, camera_health, painter, config.camera,
-                                 new_session_after_sec=config.protocols.breaks.break_min * MINUTE)
+                                 new_session_after_sec=config.protocols.breaks.break_min * MINUTE, pictures=pictures)
 
     # ── the consumers of detection events (each subscribes itself, in this order) ──
     def on_desk(x: float, y: float, width: int, height: int) -> bool:

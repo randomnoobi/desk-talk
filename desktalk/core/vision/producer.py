@@ -18,25 +18,43 @@ still for camera.keep_newer_picture_sec (so a Pi clock that jumps back can't fre
 from __future__ import annotations
 
 import logging
-from typing import Any
-
-import cv2
+from typing import Protocol
 
 from desktalk.config import CameraSettings
-from desktalk.desk_state import DeskState
-from desktalk.domain import Detection, DetectionEvent, DetectorState, DetectorUnavailable, Frame, Light, keep_inside
+from desktalk.domain import (
+    Detection,
+    DetectionEvent,
+    DetectorState,
+    DetectorUnavailable,
+    Frame,
+    Light,
+    Picture,
+    SeenObject,
+    keep_inside,
+)
 from desktalk.domain.errors import plain_error
-from desktalk.ports import Clock, Detector, EventBus, FrameSource, LiveViewPainter, PictureCheck
+from desktalk.ports import (
+    Clock,
+    DeskScene,
+    Detector,
+    EventBus,
+    FrameSource,
+    LivePictures,
+    LiveViewPainter,
+    PictureCheck,
+    PictureTools,
+)
 
 log = logging.getLogger(__name__)
 
 
-def measure_light(picture: Any, width: int) -> float:
+class ProducerDesk(LivePictures, DeskScene, Protocol):
+    """The parts of the desk the producer writes: the live view pictures and what the camera sees."""
+
+
+def measure_light(pictures: PictureTools, picture: Picture, width: int) -> float:
     """Average brightness 0-255 of a small grey copy of the picture (`width` pixels wide)."""
-    h, w = picture.shape[:2]
-    small = cv2.resize(picture, (width, max(1, round(width * h / max(1, w)))), interpolation=cv2.INTER_AREA)
-    grey = small if small.ndim == 2 else cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-    return round(float(grey.mean()), 1)
+    return round(pictures.brightness(pictures.to_gray(pictures.shrink(picture, width))), 1)
 
 
 class _Trouble:
@@ -63,9 +81,9 @@ class DetectionProducer:
 
     name = 'detection'
 
-    def __init__(self, source: FrameSource, detector: Detector, bus: EventBus, desk: DeskState, clock: Clock,
+    def __init__(self, source: FrameSource, detector: Detector, bus: EventBus, desk: ProducerDesk, clock: Clock,
                  lens: PictureCheck, painter: LiveViewPainter, camera: CameraSettings, *,
-                 new_session_after_sec: float, camera_index: int = 0):
+                 new_session_after_sec: float, pictures: PictureTools, camera_index: int = 0):
         self._source = source
         self._detector = detector
         self._bus = bus
@@ -74,6 +92,7 @@ class DetectionProducer:
         self._lens = lens
         self._painter = painter
         self._camera = camera
+        self._pictures = pictures
         self._new_session_after = new_session_after_sec
         self._cam = camera_index
         self._interval = 1.0 / camera.fps
@@ -113,7 +132,7 @@ class DetectionProducer:
     def _handle(self, frame: Frame) -> None:
         now = self._clock.now()
         picture = frame.picture
-        jpeg = frame.jpeg if frame.jpeg is not None else self._encode(picture, self._camera.jpeg_quality)
+        jpeg = frame.jpeg if frame.jpeg is not None else self._pictures.encode_jpeg(picture, self._camera.jpeg_quality)
         if frame.detector_state is DetectorState.BUSY:
             self._show(frame, jpeg, self._newest)       # live view only, with the newest boxes
             return
@@ -133,10 +152,10 @@ class DetectionProducer:
     def _find(self, frame: Frame) -> tuple[list[Detection], str] | None:
         """What's in the picture and where it was worked out (pi or computer); None if detection failed."""
         if frame.detector_state is DetectorState.OK:
-            h, w = frame.picture.shape[:2]
+            size = self._pictures.size(frame.picture)
             if frame.pi.detect_ms is not None:
                 self._detect_ms = frame.pi.detect_ms
-            return keep_inside(frame.pi_detections, w, h), 'pi'
+            return keep_inside(frame.pi_detections, size.width, size.height), 'pi'
         started = self._clock.monotonic()
         try:
             detections = self._detector.detect(frame.picture)
@@ -148,10 +167,10 @@ class DetectionProducer:
         return detections, 'computer'
 
     def _event(self, frame: Frame, detections: list[Detection], where: str, now: float) -> DetectionEvent:
-        h, w = frame.picture.shape[:2]
-        light = Light(brightness=measure_light(frame.picture, self._camera.light_measure_width),
+        size = self._pictures.size(frame.picture)
+        light = Light(brightness=measure_light(self._pictures, frame.picture, self._camera.light_measure_width),
                       lux=frame.pi.lux if frame.pi else None)
-        return DetectionEvent(ts=now, frame_id=frame.frame_id, source=frame.source, size=(w, h),
+        return DetectionEvent(ts=now, frame_id=frame.frame_id, source=frame.source, size=(size.width, size.height),
                               detections=tuple(detections), person=any(d.label == 'person' for d in detections),
                               light=light, moved=self._lens.moved_recently(now),
                               taken_at=frame.pi.taken_at if frame.pi else None, detected_on=where)
@@ -162,17 +181,11 @@ class DetectionProducer:
         for d in event.detections:
             if d.label not in best or d.confidence > best[d.label].confidence:
                 best[d.label] = d
-        with self._desk.lock:
-            gap = now - self._last_analysed_at if self._last_analysed_at is not None else None
-            if self._desk.session_start is None or (gap is not None and gap >= self._new_session_after):
-                self._desk.session_start = now          # the first picture, or the camera was off a while
-            self._desk.frame_w, self._desk.frame_h = event.size
-            self._desk.light = event.light.to_dict()
-            if event.person:
-                self._desk.person_last_seen = now
-            if event.moved:
-                self._desk.last_motion_ts = now
-            self._desk.seen_labels = {label: d.to_dict() for label, d in best.items()}
+        gap = now - self._last_analysed_at if self._last_analysed_at is not None else None
+        self._desk.set_light(event.light.brightness, event.light.lux)
+        self._desk.note_picture({label: SeenObject.from_detection(d) for label, d in best.items()}, now,
+                                person=event.person, moved=event.moved,
+                                new_session=gap is not None and gap >= self._new_session_after)
         self._last_analysed_at = now
 
     def _older_than_shown(self, taken_at: float | None) -> bool:
@@ -181,10 +194,10 @@ class DetectionProducer:
             return False
         return self._clock.monotonic() - self._shown_at < self._camera.keep_newer_picture_sec
 
-    def _show(self, frame: Frame, jpeg: bytes, detections: list[Detection]) -> None:
+    def _show(self, frame: Frame, jpeg: bytes | None, detections: list[Detection]) -> None:
         """The live view: the plain picture and the one with boxes."""
         taken_at = frame.pi.taken_at if frame.pi else None
-        if self._older_than_shown(taken_at):
+        if jpeg is None or self._older_than_shown(taken_at):
             return
         self._shown_taken_at, self._shown_at = taken_at, self._clock.monotonic()
         picture = frame.picture
@@ -194,12 +207,5 @@ class DetectionProducer:
         except Exception as exc:                      # a drawing problem must not stop detection
             self._drawing.failed(plain_error(exc), exc)
             painted = picture
-        boxes = self._encode(painted, self._camera.boxes_jpeg_quality)
-        with self._desk.lock:
-            self._desk.raw_frames[self._cam] = jpeg
-            self._desk.frames[self._cam] = boxes
-            self._desk.cameras[self._cam] = True
-
-    @staticmethod
-    def _encode(picture: Any, quality: int) -> bytes:
-        return cv2.imencode('.jpg', picture, [cv2.IMWRITE_JPEG_QUALITY, quality])[1].tobytes()
+        boxes = self._pictures.encode_jpeg(painted, self._camera.boxes_jpeg_quality)
+        self._desk.put(self._cam, jpeg, boxes, self._pictures.size(picture))
