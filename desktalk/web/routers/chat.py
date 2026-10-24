@@ -25,8 +25,6 @@ from desktalk.web.deps import Desk, Streams
 from desktalk.web.schemas import ChatMessage, Ok, PanelEvent, PanelList, PanelLists
 from desktalk.web.streams import SSE_HEADERS, SSE_TYPE
 
-LENS_CARD = {'id': LENS, 'name': 'Lens', 'art': 'art/lens.svg', 'color': 'coral',
-             'about': 'The camera. Speaks up when the view needs fixing.'}
 UNKNOWN_CHAT = 'unknown chat'
 MESSAGE_ID_LENGTH = 12          # as the MessageHub makes them
 
@@ -35,7 +33,7 @@ router = APIRouter()
 
 @router.get('/api/agents')
 def agents(desk: Desk) -> dict[str, Any]:
-    return {'agents': desk.roster.snapshot(), 'lens': LENS_CARD}
+    return {'agents': desk.roster.snapshot(), 'lens': {'id': LENS, **desk.config.prompts.lens.card.model_dump()}}
 
 
 @router.get('/api/events')

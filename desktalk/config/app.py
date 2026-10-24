@@ -282,6 +282,7 @@ class LlmSettings(_Section):
     groq_url: str
     gemini_thinking_budget: Count
     error_text_chars: PositiveInt
+    error_log_chars: PositiveInt
     replies: AiReplies
 
     def longest_reply_sec(self) -> float:

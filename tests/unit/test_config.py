@@ -350,6 +350,7 @@ NEW_SETTINGS = {
         ('web', 'request_timeout_ms'), ('web', 'activity_ping_ms'), ('web', 'toast_ms'),
         ('web', 'list_sizes', 'log'), ('web', 'list_sizes', 'photos'),
         ('logging', 'file_name'), ('logging', 'preview_chars'), ('llm', 'error_text_chars'),
+        ('llm', 'error_log_chars'),
     ],
     'protocols.yaml': [('food', 'healthy')],
 }
@@ -408,7 +409,7 @@ def test_new_settings_keep_the_values_the_code_has_today(project):
     assert web.refresh_ms.model_dump() == {'live': 1500, 'habits': 15000, 'photos': 10000, 'log': 20000}  # app.js
     assert (web.request_timeout_ms, web.activity_ping_ms, web.toast_ms) == (8000, 3000, 4000)
     assert (web.list_sizes.log, web.list_sizes.photos) == (150, 6)
-    assert (cfg.logging.file_name, cfg.llm.error_text_chars) == ('desktalk.log', 160)
+    assert (cfg.logging.file_name, cfg.llm.error_text_chars, cfg.llm.error_log_chars) == ('desktalk.log', 160, 200)
     assert 'banana' in cfg.protocols.food.healthy and len(cfg.protocols.food.healthy) == 20          # tracker.py
 
 

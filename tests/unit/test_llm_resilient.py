@@ -248,6 +248,13 @@ def test_an_unexpected_error_is_still_ai_unavailable_and_never_jams_the_breaker(
     assert chat(model) == 'Fine now.'
 
 
+def test_an_unexpected_error_is_cut_to_the_setting(llm):
+    clock = FakeClock()
+    inner = Scripted(clock, ValueError('bug in the AI library'))
+    model = ResilientChatModel(inner, clock, llm.model_copy(update={'max_retries': 1, 'error_text_chars': 6}))
+    assert fails(model).reason == 'The AI returned an error: bug in'
+
+
 # ── not too often ────────────────────────────────────────────────────
 def test_calls_are_spaced_out(llm):
     clock = FakeClock()

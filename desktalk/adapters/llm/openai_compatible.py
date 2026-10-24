@@ -21,17 +21,12 @@ from typing import Any
 
 from desktalk.adapters.llm.errors import AIRefused, error_from, is_rate_limit
 from desktalk.config import LlmSettings, Secrets
+from desktalk.config.prompts import Replies
 from desktalk.domain import AIUnavailable
 from desktalk.ports import Clock
 
 log = logging.getLogger(__name__)
 
-NO_AI_LABEL = 'No AI (add a key to .env)'
-NO_AI_REASON = ('The characters need an AI to chat. Add a key to .env (GEMINI_API_KEY is free; '
-                'or set OLLAMA_URL) and restart the server.')
-EMPTY_REPLY_REASON = 'The AI sent back an empty reply. Try saying it again.'
-NO_PICTURE_REASON = 'There is no picture to look at yet.'
-ASK_FOR_A_SENTENCE = '\n(Please respond with at least one sentence.)'
 _NOT_FOR_PICTURES = ('multimodal', 'does not support')
 
 
@@ -44,16 +39,18 @@ def openai_client(*, api_key: str, base_url: str | None = None) -> Any:
 class OpenAICompatibleChatModel:
     """The ChatModel (desktalk/ports.py) for Gemini, OpenAI, Groq and Ollama.
 
-    client_factory(api_key=..., base_url=...) makes a client like openai.OpenAI; tests pass a fake."""
+    client_factory(api_key=..., base_url=...) makes a client like openai.OpenAI; tests pass a fake.
+    `replies`: config/prompts.yaml → replies (what it says when there is no AI, an empty reply or no picture)."""
 
     def __init__(self, settings: LlmSettings, secrets: Secrets, clock: Clock,
-                 client_factory: Callable[..., Any] | None = None):
+                 client_factory: Callable[..., Any] | None = None, *, replies: Replies):
         self._settings = settings
         self._clock = clock
+        self._words = replies
         self._client: Any = None
         self._vision_client: Any = None
         self._model_name = ''
-        self._label = NO_AI_LABEL
+        self._label = replies.no_ai_label
         self._is_gemini = False
         self.is_local = False            # the chat runs on Ollama, on this computer
         self._problem: str | None = None
@@ -63,7 +60,7 @@ class OpenAICompatibleChatModel:
         except ImportError:
             log.warning('The openai package is not installed, so the characters cannot chat.')
             self._client = self._vision_client = None
-            self._label = NO_AI_LABEL
+            self._label = self._words.no_ai_label
 
     def _connect(self, secrets: Secrets, factory: Callable[..., Any]) -> None:
         s = self._settings
@@ -113,7 +110,7 @@ class OpenAICompatibleChatModel:
     def chat(self, messages: Sequence[Mapping[str, Any]], *, max_tokens: int, temperature: float,
              background: bool = False) -> str:
         if self._client is None:
-            raise AIUnavailable(NO_AI_REASON)
+            raise AIUnavailable(self._words.needs_an_ai)
         s = self._settings
         request: dict[str, Any] = {'model': self._model_name, 'max_tokens': max_tokens,
                                    'temperature': temperature, 'timeout': self.time_limit_sec}
@@ -130,24 +127,25 @@ class OpenAICompatibleChatModel:
                 self._clock.sleep(s.ollama_retry_sec)
                 request['temperature'] = min(temperature + s.ollama_warmer_per_retry * attempt, 1.0)
                 if asked and asked[-1].get('role') == 'user':
-                    asked[-1]['content'] = f'{asked[-1]["content"]}{ASK_FOR_A_SENTENCE}'
+                    asked[-1]['content'] = f'{asked[-1]["content"]}{self._words.ask_for_a_sentence}'
                 log.info('%s sent back an empty reply, asking again (try %d)', self._label, attempt + 1)
             text = self._ask(self._client, {**request, 'messages': asked})
             if text:
                 self._problem = None      # a call worked, so any earlier problem is over
                 return text
-        self._problem = EMPTY_REPLY_REASON
+        empty = self._words.empty_reply
+        self._problem = empty
         if tries > 1:
             # Already asked again here: AIRefused so ResilientChatModel doesn't ask max_retries times more.
-            raise AIRefused(EMPTY_REPLY_REASON)
-        raise AIUnavailable(EMPTY_REPLY_REASON)
+            raise AIRefused(empty)
+        raise AIUnavailable(empty)
 
     def vision(self, jpeg: bytes, prompt: str, *, background: bool = True) -> str:
         client = self._vision_client or self._client
         if client is None:
-            raise AIUnavailable(NO_AI_REASON)
+            raise AIUnavailable(self._words.needs_an_ai)
         if not jpeg:
-            raise AIUnavailable(NO_PICTURE_REASON)
+            raise AIUnavailable(self._words.no_picture)
         if self._vision_refused:
             raise AIRefused(self._vision_refused)
         s = self._settings
@@ -184,8 +182,10 @@ class OpenAICompatibleChatModel:
                                         f'(for example `ollama pull llava`).')
                 log.warning('Questions about pictures are off: %s', self._vision_refused)
                 raise AIRefused(self._vision_refused) from exc
-            err = error_from(exc, self._label)
-            log.warning('%s failed: %s', 'Picture question' if picture_question else self._label, str(exc)[:200])
+            s = self._settings
+            err = error_from(exc, self._label, max_chars=s.error_text_chars)
+            log.warning('%s failed: %s', 'Picture question' if picture_question else self._label,
+                        str(exc)[:s.error_log_chars])
             if not picture_question:
                 self._problem = err.reason
             raise err from exc
