@@ -88,8 +88,8 @@ _ = (
     DrawingColors.box_on, DrawingColors.box_off, DrawingColors.warn, DrawingColors.zone_hit, DrawingColors.moving,
     DrawingColors.soft_text, DrawingColors.soft_back, DrawingColors.badge_back,
     Trail.shade_from, Trail.shade_range, Radii.chain_ring, Radii.trail_dot, Radii.trail_dot_min,
-    # Task 6 (the AI's errors) and Task 8 (logging):
-    LlmSettings.error_text_chars, LoggingSettings.file_name, LoggingSettings.preview_chars,
+    # Task 6 (the AI's errors, and the log line quoting an AI reply in core/chat/message_generator.py):
+    LlmSettings.error_text_chars, LoggingSettings.preview_chars,
     # Task 10 (the phone page's certificate, made in desktalk/web/pairing.py):
     CameraSettings.phone_cert_file, CameraSettings.phone_key_file,
     # The wording in config/prompts.yaml. Every text is already read by name when the config loads

@@ -30,7 +30,7 @@ def start_logging(config: AppConfig) -> Path:
     """Log to the terminal and the log file (settings → logging) before the first start-up line, so those
     lines land in the file too. build() sets the same up again, which changes nothing. Returns the file."""
     logs = config.logging
-    return setup_logging(config.resolve(logs.folder), logs.level, logs.file_size_mb, logs.files_kept)
+    return setup_logging(config.resolve(logs.folder), logs.level, logs.file_size_mb, logs.files_kept, logs.file_name)
 
 
 def say(line: str = '') -> None:
