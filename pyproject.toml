@@ -7,6 +7,8 @@
 #   uv run python server.py       start Desk Talk
 #   uv run pytest -m "not slow"   fast tests
 #   uv run ruff check <files>     lint
+#   uv run pyright                type check
+#   uv run vulture                dead code check
 [project]
 name = "desktalk"
 version = "4.0.0"
@@ -37,6 +39,9 @@ dev = [
     "pytest-cov>=5",
     "httpx>=0.27",             # FastAPI's TestClient
     "ruff",
+    "pyright>=1.1.414",
+    "vulture>=2.16",
+    "playwright>=1.64.1",
 ]
 
 [tool.uv.workspace]
@@ -67,11 +72,23 @@ addopts = "-q"
 markers = [
     "slow: runs the real YOLO model (skipped if the model file isn't in models/)",
     "docker: builds and starts the detector's Docker image (needs Docker and the internet)",
+    "e2e: drives the real page in a browser; needs `uv run playwright install chromium` once",
 ]
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.coverage.run]
 source = ["desktalk", "shared/desktalk_shared", "raspberry_pi"]
+branch = true                  # also count each side of every if, not just each line
+
+[tool.coverage.report]
+fail_under = 97                # the share of code the fast tests run (measured 2026-10-24); it may only go up
+
+[tool.vulture]
+# The dead code check: uv run vulture. tests/vulture_allow.py lists names it can't see being used.
+paths = ["desktalk", "shared", "raspberry_pi", "scripts", "server.py", "tests/vulture_allow.py"]
+min_confidence = 60
+# Web routes and pydantic checks are called by FastAPI and pydantic, not by our code.
+ignore_decorators = ["@router.*", "@phone_router.*", "@app.*", "@model_validator", "@field_validator"]
 
 [tool.ruff]
 line-length = 120
