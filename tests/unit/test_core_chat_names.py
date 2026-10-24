@@ -46,6 +46,8 @@ def test_group_speaker_order(words):
         ['cup']
     assert names.group_speaker_order('hello everyone', words, members, known, rng)[0] in members
     assert names.group_speaker_order('hello everyone', words, [], known, rng) == []
+    assert names.group_speaker_order('@cup @monty @paper hi', words, members, known, rng, most=2) == \
+        ['cup', 'computer']
 
 
 def test_named_agents_without_an_at(words):

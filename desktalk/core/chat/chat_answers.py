@@ -31,13 +31,14 @@ class ChatAnswers:
     """`live_context(user_message)`: the desk right now for the AI. `desk`: the tracker panels are read from it.
     Settings: llm (chat_history_turns), chat, sunlight_default_min (habit_tracker), preview_chars (logging:
     the longest reply quoted in the log). `local`: the AI is a small model on this computer (Ollama), which
-    gets shorter prompts and fewer earlier messages."""
+    gets shorter prompts and fewer earlier messages. `most_speakers`: the most agents that answer one group
+    message (agents.max_agents), one AI call each, one after another."""
 
     def __init__(self, ai: AgentAI, model: ChatModel, notifier: Notifier, roster: RosterView, profiles: Profiles,
                  habits: HabitsView, desk: CharacterMemory, memory: ChatMemory, panels: TrackerPanels, clock: Clock,
                  live_context: Callable[[str], Mapping[str, Any]], *, habit_log: HabitLog, words: Prompts,
                  llm: LlmSettings, chat: ChatSettings, sunlight_default_min: float, preview_chars: int, local: bool,
-                 rng: random.Random):
+                 most_speakers: int, rng: random.Random):
         self._ai = ai
         self._model = model
         self._notifier = notifier
@@ -56,6 +57,7 @@ class ChatAnswers:
         self._sunlight_default_min = sunlight_default_min
         self._preview_chars = preview_chars
         self._local = local
+        self._most_speakers = most_speakers
         self._rng = rng
 
     def answer(self, chat_id: str, message: str, history: Any = None, widget: Any = None) -> dict[str, Any]:
@@ -86,7 +88,7 @@ class ChatAnswers:
 
     def _answer_group(self, message: str, turns: list[dict]) -> dict[str, Any]:
         speakers = group_speaker_order(message, self._profiles.mention_words(), self._roster.member_ids(),
-                                       [p.id for p in self._profiles.all()], self._rng)
+                                       [p.id for p in self._profiles.all()], self._rng, most=self._most_speakers)
         if not speakers:
             return {'messages': [], 'error': self._words.replies.nobody_here}
         rolling: list[dict] = list(turns)

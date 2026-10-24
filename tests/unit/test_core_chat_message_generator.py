@@ -531,6 +531,14 @@ def test_in_the_group_each_mentioned_agent_answers_in_turn():
     assert {'role': 'assistant', 'content': '[Cup said]: Cup here, all good.'} in asked(r)
 
 
+def test_in_the_group_no_more_agents_answer_than_can_be_in_the_chat():
+    """agents.max_agents caps the @mentions answered too, so the page knows how long one group message can take."""
+    r = Rig(reply=['Cup here, all good.', 'Monty here, fans spinning.'],
+            agents=CONFIG.agents.model_copy(update={'max_agents': 1}))
+    out = r.gen.answer('group', '@cup @monty how are you?')
+    assert [m['character'] for m in out['messages']] == ['cup']
+
+
 def test_in_the_group_someone_on_the_desk_answers_a_message_for_nobody_in_particular():
     r = Rig()
     out = r.gen.answer('group', 'hello?')

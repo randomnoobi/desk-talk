@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from desktalk.config import AppConfig
+from desktalk.core.chat.workers.lost_items_answers import LostItemAnswers
 from desktalk.domain import LENS
 from desktalk.web.deps import App
 from desktalk.web.routers.phone import phone_settings
@@ -89,5 +90,12 @@ def ui_settings_from(c: AppConfig) -> UiSettings:
         pi=UiPi(fps=c.pi.fps, delete_every_min=c.pi.delete_every_min, compact_every_min=c.event_log.compact_every_min),
         phone=phone_settings(c.camera),
         lens_card=UiLensCard(id=LENS, **c.prompts.lens.card.model_dump()),
-        chat_reply_timeout_ms=round(c.llm.longest_reply_sec() * MS) + web.request_timeout_ms,
+        chat_reply_timeout_ms=most_ai_calls_per_message(c) * round(c.llm.longest_reply_sec() * MS)
+        + web.request_timeout_ms,
     )
+
+
+def most_ai_calls_per_message(c: AppConfig) -> int:
+    """The most AI calls one POST /api/chat can make, one after another: a group message (one per agent that
+    answers, at most agents.max_agents) or a lost-item question (looks at pictures, then the answer)."""
+    return max(c.agents.max_agents, LostItemAnswers.most_ai_calls(len(c.lost_items.items)))

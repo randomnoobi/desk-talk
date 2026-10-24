@@ -89,7 +89,8 @@ class MessageGenerator:
         self._answers = ChatAnswers(self._ai, model, notifier, roster, profiles, habits, desk, memory,
                                     TrackerPanels(desk, chat), clock, self.live_context, habit_log=habit_log,
                                     words=prompts, llm=llm, chat=chat, sunlight_default_min=sunlight_default_min,
-                                    preview_chars=preview_chars, local=local_model, rng=rng or random.Random())
+                                    preview_chars=preview_chars, local=local_model,
+                                    most_speakers=agents.max_agents, rng=rng or random.Random())
 
     def subscribe_to(self, bus: EventBus) -> None:
         bus.subscribe('chat:roster', self.on_roster, types=(AgentJoined, AgentLeft))

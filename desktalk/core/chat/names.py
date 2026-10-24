@@ -65,15 +65,15 @@ def addressed_agent(message: str, candidates: list[str], words: Mapping[str, str
 
 
 def group_speaker_order(message: str, words: Mapping[str, str], members: Sequence[str], known: Sequence[str],
-                        rng: random.Random) -> list[str]:
+                        rng: random.Random, *, most: int | None = None) -> list[str]:
     """Who answers a message in the group chat.
 
-    @mentions are honored as they are (all of them). Otherwise, if the text names one object it
-    answers; if it names several, only the one being spoken to replies (the others are the topic).
-    With no name, a random agent that is on the desk answers."""
+    @mentions are honored as they are (the first `most` of them, or all with None). Otherwise, if the text
+    names one object it answers; if it names several, only the one being spoken to replies (the others are
+    the topic). With no name, a random agent that is on the desk answers."""
     speakers = [p for p in parse_mentions(message, words) if p in known]
     if speakers:
-        return speakers
+        return speakers[:most]
     named = [p for p in detect_named(message, words) if p in known]
     if len(named) == 1:
         return named

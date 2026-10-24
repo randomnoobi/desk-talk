@@ -196,6 +196,7 @@ class UiSettings(BaseModel):
     pi: UiPi
     phone: PhoneSettings
     lens_card: UiLensCard
-    # How long the page waits for a chat reply: as long as the server may keep trying the AI
-    # (llm.longest_reply_sec), plus an ordinary request's wait for the trip there and back.
+    # How long the page waits for a chat reply: as long as the server may keep trying the AI (llm.longest_reply_sec)
+    # for each AI call one message can make (routers/settings.py: most_ai_calls_per_message), plus an ordinary
+    # request's wait for the trip there and back.
     chat_reply_timeout_ms: int

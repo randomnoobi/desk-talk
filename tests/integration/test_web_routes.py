@@ -243,6 +243,26 @@ def test_ui_chat_timeout_covers_the_slowest_server_reply(tmp_path):
         'chat_reply_timeout_ms'] > ui['chat_reply_timeout_ms']
 
 
+def test_ui_chat_timeout_covers_every_ai_call_one_message_can_make(tmp_path):
+    """One chat message can make several AI calls in a row: a group message asks each agent it names in turn
+    (at most agents.max_agents), and a lost-item question can look twice for each item and then ask the chat AI.
+    The page waits for the most of those."""
+    config = changed(desk_config(tmp_path), 'agents', max_agents=3)
+    config = changed(config, 'lost_items', items={})
+    one_call_ms = round(config.llm.longest_reply_sec() * 1000)
+    request_ms = config.web.request_timeout_ms
+
+    def wait(c, folder):
+        return web_client(DeskRig(tmp_path / folder, config=c).app).get('/api/ui_settings').json()[
+            'chat_reply_timeout_ms']
+
+    assert wait(config, 'a') == 3 * one_call_ms + request_ms                     # three agents, one after another
+    four_items = desk_config(tmp_path / 'full').lost_items.items
+    assert len(four_items) == 4
+    more_items = changed(config, 'lost_items', items=four_items)
+    assert wait(more_items, 'b') == (2 * 4 + 1) * one_call_ms + request_ms       # two looks per item, then the answer
+
+
 # ── what every reply has in common ───────────────────────────────────
 # Routes nothing called, taken out in the 2026-10 cleanup. They answer like any path the server doesn't know:
 # 404 to a GET, and 405 to anything else (only the page's files are left at that path, and they only GET).
