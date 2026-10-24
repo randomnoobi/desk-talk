@@ -78,6 +78,14 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'habits.food_sitting.text': ('food', 'minutes'),
     'habits.tasks_open.evidence': ('count', 'plural', 'first'),
     'habits.tasks_open.text': ('count', 'plural', 'first'),
+    'habits.logged.sip_seen': ('sips', 'liters'),
+    'habits.logged.sip_button': ('liters',),
+    'habits.logged.break_seen': ('minutes',),
+    'habits.logged.food_seen_healthy': ('a', 'food'),
+    'habits.logged.food_seen_treat': ('a', 'food'),
+    'habits.logged.food_button': ('food',),
+    'habits.logged.phone_streak': ('minutes',),
+    'habits.logged.sunlight': ('minutes', 'when'),
     'personality.user': ('object',),
     'small_talk.line_system': (*_AGENT, 'desk_summary'),
     'lost_items.answer_system': ('name', 'object'),
@@ -180,6 +188,22 @@ class NudgeWords(SaidWords):
     tip: str                  # the book's advice, for the AI to put in the agent's own words
 
 
+class HabitLogged(_Section):
+    """What the habit tracker says when it logs something."""
+
+    sip_seen: str
+    sip_button: str
+    break_seen: str
+    break_button: str
+    food_seen_healthy: str
+    food_seen_treat: str
+    food_button: str
+    phone_streak: str
+    sunlight: str
+    sunlight_morning: str
+    sunlight_afternoon: str
+
+
 class HabitNudges(_Section):
     hydration_morning: NudgeWords
     hydration_pace: NudgeWords
@@ -206,6 +230,7 @@ class HabitNudges(_Section):
     food_sitting: NudgeWords
     unknown_snack: str
     tasks_open: NudgeWords
+    logged: HabitLogged
 
 
 class PersonalityPrompts(_Section):
