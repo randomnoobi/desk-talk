@@ -30,6 +30,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from desktalk_shared.backoff import Backoff
 from desktalk_shared.detection import DetectorUnavailable
 from desktalk_shared.detector_api import API_VERSION, DetectorHealth, DetectReply, ModelSettings, ServiceState
 from desktalk_shared.wire import DetectorState
@@ -83,7 +84,7 @@ class DetectorClient:
         self._resume_at: float | None = None  # when a pause ends (None: only /health brings it back)
         self._next_health = 0.0
         self._failures = 0                   # failures in a row
-        self._pause = 0.0                    # how long the last pause was (0 = no pause since the last success)
+        self._pause = Backoff(config.pause_start_sec, config.pause_max_sec)   # reset only by a detected picture
 
     # ── asked from the camera's thread ──
     def off_now(self) -> str:
@@ -160,11 +161,10 @@ class DetectorClient:
     def _failed(self, reason: str) -> Verdict:
         self._failures += 1
         if self._failures >= self.config.failures_before_pause:
-            start, most = self.config.pause_start_sec, self.config.pause_max_sec
-            self._pause = min(self._pause * 2, most) if self._pause else start
-            self._off(reason, resume_at=self.clock.monotonic() + self._pause)
+            pause = self._pause.next()
+            self._off(reason, resume_at=self.clock.monotonic() + pause)
             log.warning('Stopped asking the detector for %g s (%s). Pictures go to the computer to detect.',
-                        self._pause, reason)
+                        pause, reason)
         return Verdict(DetectorState.OFF, reason)
 
     def _no_model_yet(self, reason: str) -> Verdict:
@@ -178,7 +178,7 @@ class DetectorClient:
         if self._off_reason:
             log.info('The detector is answering again')
         self._failures = 0
-        self._pause = 0.0
+        self._pause.reset()
         self._off_reason = ''
         self._resume_at = None
 

@@ -23,6 +23,7 @@ import threading
 
 from desktalk.ports import Clock, PeriodicWorker
 from desktalk.runtime.errors import plain_error
+from desktalk_shared.backoff import Backoff
 
 log = logging.getLogger(__name__)
 
@@ -39,10 +40,8 @@ class GuardedWorker:
         self.worker = worker
         self.name = worker.name
         self._clock = clock
-        self._first_retry = float(first_retry_sec)
-        self._max_retry = float(max_retry_sec)
         self._lock = threading.Lock()          # status() is read from the web server's thread
-        self._retry_wait = 0.0
+        self._backoff = Backoff(first_retry_sec, max_retry_sec)
         self._failures_in_row = 0
         self._total_failures = 0
         self._last_error: str | None = None
@@ -60,19 +59,14 @@ class GuardedWorker:
                 self._failures_in_row += 1
                 self._total_failures += 1
                 self._last_error = plain_error(exc)
-                # Doubled step by step (not 2 ** failures), so it never overflows however long it keeps failing.
-                if self._retry_wait:
-                    self._retry_wait = min(self._retry_wait * 2, self._max_retry)
-                else:
-                    self._retry_wait = min(self._first_retry, self._max_retry)
-                in_row, retry = self._failures_in_row, self._retry_wait
+                in_row, retry = self._failures_in_row, self._backoff.next()
             # The full traceback only when it starts failing, so a long outage doesn't flood the log.
             log.error('%s failed (%d in a row): %s. Trying again in %g s', self.name, in_row, plain_error(exc),
                       retry, exc_info=in_row == 1)
             return retry
         with self._lock:
             failed_before = self._failures_in_row
-            self._retry_wait = 0.0
+            self._backoff.reset()
             self._failures_in_row = 0
             self._last_ok_at = now
         if failed_before:

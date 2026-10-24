@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import threading
 
+from desktalk_shared.backoff import Backoff
 from desktalk_shared.wire import DetectorState, UploadInfo, encode_upload
 from raspberry_pi.camera import net
 from raspberry_pi.camera.clock import Clock
@@ -29,8 +30,6 @@ class Uploader:
         self.url = self.server + '/api/pi/frame'
         self.key = key
         self.timeout_sec = timeout_sec
-        self.retry_start_sec = retry_start_sec
-        self.retry_max_sec = retry_max_sec
         self.clock = clock
         self.wake = threading.Event()        # set when there's a picture: the thread stops waiting
         self.sent = 0
@@ -40,7 +39,7 @@ class Uploader:
         self._lock = threading.Lock()
         self._waiting: tuple[bytes, UploadInfo] | None = None
         self._retry_at = 0.0
-        self._wait = 0.0                     # the last wait after a miss (0 = the last one got through)
+        self._backoff = Backoff(retry_start_sec, retry_max_sec)     # the wait after each miss in a row
         self._said = ''                      # the last thing logged, so a problem is logged once, not every picture
 
     def offer(self, jpeg: bytes, info: UploadInfo) -> None:
@@ -66,15 +65,15 @@ class Uploader:
         problem = self._send(*waiting)
         if problem is None:
             self.sent += 1
-            self._wait = 0.0
+            self._backoff.reset()
             self._say(f'Connected: pictures are reaching {self.server}', logging.INFO)
             return 0.0
         self.failed += 1
         self.last_error = problem
         self._say(problem, logging.WARNING)
-        self._wait = min(self._wait * 2, self.retry_max_sec) if self._wait else self.retry_start_sec
-        self._retry_at = self.clock.monotonic() + self._wait
-        return self._wait
+        wait = self._backoff.next()
+        self._retry_at = self.clock.monotonic() + wait
+        return wait
 
     def _send(self, jpeg: bytes, info: UploadInfo) -> str | None:
         """None if the computer took the picture, else what went wrong in plain words."""
