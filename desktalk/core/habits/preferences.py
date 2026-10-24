@@ -8,7 +8,6 @@ which give the starting values. Saved in the store under "preferences"
 
 from __future__ import annotations
 
-import datetime
 import logging
 import threading
 from collections.abc import Mapping
@@ -82,10 +81,9 @@ class PreferencesFile:
         return dict(out)
 
 
-def quiet_hours_now(prefs: PreferencesView, now: float, clock: Clock | None = None) -> bool:
-    """Quiet hours are on and `now` (the clock's local time) is inside them; the window may wrap past midnight.
-    Without a clock (the web route, until it passes one) this computer's own time zone is used."""
+def quiet_hours_now(prefs: PreferencesView, now: float, clock: Clock) -> bool:
+    """Quiet hours are on and `now` (the clock's local time) is inside them; the window may wrap past midnight."""
     if not prefs.get('quiet_enabled'):
         return False
-    hour = clock.local_hour(now) if clock is not None else datetime.datetime.fromtimestamp(now).hour
+    hour = clock.local_hour(now)
     return in_hour_window(hour, int(prefs.get('quiet_start_hour')), int(prefs.get('quiet_end_hour')))

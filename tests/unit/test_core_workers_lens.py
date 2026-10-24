@@ -3,7 +3,7 @@ or its own object detection is off."""
 
 from __future__ import annotations
 
-import time
+import calendar
 from pathlib import Path
 
 from desktalk.config import LensSettings, LensWaits, PiSettings, load_config
@@ -70,8 +70,11 @@ class PiReports:
 
 
 class Rig:
-    def __init__(self, messages=(), kind='pi', phone=None, layout=None, prefs=None, pi=None, words=WORDS):
-        self.clock = FakeClock(time.mktime((2026, 10, 21, 14, 0, 0, 0, 0, -1)))
+    def __init__(self, messages=(), kind='pi', phone=None, layout=None, prefs=None, pi=None, words=WORDS,
+                 hours_from_utc=0.0):
+        # 21 October 2026, 14:00 on the clock (its own time zone, so the test is the same on every computer)
+        self.clock = FakeClock(calendar.timegm((2026, 10, 21, 14, 0, 0, 0, 0, 0)) - hours_from_utc * 3600,
+                               utc_offset_hours=hours_from_utc)
         self.health = FakeCameraHealth(messages)
         self.source = FakeFrameSource(kind=kind, clock=self.clock)
         self.source.connected, self.source.fps = True, 3.0
@@ -80,8 +83,8 @@ class Rig:
         self.photos = FakePhotoTaker()
         self.pi = pi
         self.lens = Lens(self.health, self.source, layout or Layout(), prefs or FakePreferences(), self.notifier,
-                         self.bus, self.photos, SETTINGS, PI, prompts=words, preview_chars=120, phone=phone,
-                         pi_uploads=pi)
+                         self.bus, self.photos, SETTINGS, PI, clock=self.clock, prompts=words, preview_chars=120,
+                         phone=phone, pi_uploads=pi)
 
     def tick(self, after=0.0):
         self.clock.advance(after)
@@ -140,6 +143,13 @@ def test_quiet_hours_keep_lens_quiet():
     rig = Rig([LOST], prefs=prefs)
     rig.tick()
     assert rig.notifier.sent == [] and rig.bus.published == []
+
+
+def test_quiet_hours_go_by_the_clocks_time_zone():
+    prefs = FakePreferences({'quiet_enabled': True, 'quiet_start_hour': 13, 'quiet_end_hour': 15})
+    rig = Rig([LOST], prefs=prefs, hours_from_utc=5)      # 14:00 on the clock is 09:00 UTC
+    rig.tick()
+    assert rig.notifier.sent == []
 
 
 def test_quiet_hours_tell_the_camera_checks_to_stay_quiet_too():
