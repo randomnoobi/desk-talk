@@ -54,15 +54,8 @@ class LostItemAnswers:
         self._default_temperature = default_temperature
         self._photos_kept = photos_kept
 
-    @staticmethod
-    def most_ai_calls(item_count: int) -> int:
-        """The most AI calls one answer() can make, one after another, with `item_count` tracked items: for each
-        item never spotted, a look at a saved photo and one at the live picture (_vision_note), then the chat
-        AI's answer."""
-        return 2 * item_count + 1
-
     def answer(self, user_message: str) -> dict[str, Any]:
-        """The chat's reply: {'speaker', 'cta', 'text'}."""
+        """The chat's reply: {'speaker', 'cta', 'text'}. It makes at most settings.most_ai_calls() AI calls."""
         now = self._clock.now()
         wanted = self._items.in_text(user_message)
         records = self._sightings()

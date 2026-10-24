@@ -11,7 +11,7 @@ import numpy as np
 from desktalk.config import AiReplies, AiReply, LostItem, LostItemsSettings, load_config
 from desktalk.core.chat.workers.lost_item_words import TrackedItems
 from desktalk.core.chat.workers.lost_items import LostItems
-from desktalk.core.chat.workers.lost_items_answers import LostItemAnswers, LostItemsDesk
+from desktalk.core.chat.workers.lost_items_answers import LostItemsDesk
 from desktalk.domain import AgentProfile, Alert, BBox, Box, Detection, DetectionEvent, Light, SeenObject, Size
 from desktalk.util import format_local_ts
 from tests.fakes import (
@@ -438,14 +438,14 @@ def test_a_never_seen_item_gets_a_look_at_the_live_picture():
 
 def test_one_answer_makes_no_more_ai_calls_than_the_page_waits_for():
     """Every item named and never spotted, each in a saved photo the vision AI says too little about: two looks
-    per item, then the chat AI's answer (routers/settings.py sizes the page's wait with most_ai_calls)."""
+    per item, then the chat AI's answer (the page's wait is sized with lost_items.most_ai_calls)."""
     vision, chat = FakeChatModel('Not sure.'), FakeChatModel('Not on the desk, sorry.')
     rig = Rig(chat=chat, vision=vision)
     rig.tag('cell phone', 'key', 'wallet', 'earphone')
     rig.proof_photos.save('Desk scan')
     rig.tag()
     rig.lost.answer('have you seen my phone, keys, wallet or airpods?')
-    assert len(vision.calls) + len(chat.calls) == LostItemAnswers.most_ai_calls(len(SETTINGS.items)) == 9
+    assert len(vision.calls) + len(chat.calls) == SETTINGS.most_ai_calls() == 9
 
 
 def test_how_much_of_the_vision_ais_answers_is_kept_comes_from_the_settings():

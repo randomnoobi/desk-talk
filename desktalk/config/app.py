@@ -369,6 +369,12 @@ class LostItemsSettings(_Section):
     live_note_max_chars: PositiveInt
     items: dict[str, LostItem]
 
+    def most_ai_calls(self) -> int:
+        """The most AI calls one answer to "have you seen my ...?" can make, one after another
+        (core/chat/workers/lost_items_answers.py): for each item never spotted, a look at a saved photo and one at
+        the live picture, then the chat AI's answer."""
+        return 2 * len(self.items) + 1
+
 
 class VisionNudgeRepeats(_Section):
     too_close: ZeroOrMore

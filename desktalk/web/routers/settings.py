@@ -14,7 +14,6 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from desktalk.config import AppConfig
-from desktalk.core.chat.workers.lost_items_answers import LostItemAnswers
 from desktalk.domain import LENS
 from desktalk.web.deps import App
 from desktalk.web.routers.phone import phone_settings
@@ -98,4 +97,4 @@ def ui_settings_from(c: AppConfig) -> UiSettings:
 def most_ai_calls_per_message(c: AppConfig) -> int:
     """The most AI calls one POST /api/chat can make, one after another: a group message (one per agent that
     answers, at most agents.max_agents) or a lost-item question (looks at pictures, then the answer)."""
-    return max(c.agents.max_agents, LostItemAnswers.most_ai_calls(len(c.lost_items.items)))
+    return max(c.agents.max_agents, c.lost_items.most_ai_calls())
