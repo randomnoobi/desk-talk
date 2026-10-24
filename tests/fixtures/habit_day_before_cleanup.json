@@ -1,0 +1,82 @@
+{
+  "day": "2026-06-15",
+  "sips": 2,
+  "water_ml": 320,
+  "last_sip_ts": 1781539607.9999027,
+  "drinks": [
+    {
+      "ts": 1781539219.3333287,
+      "ml": 80,
+      "how": "camera"
+    },
+    {
+      "ts": 1781539607.9999027,
+      "ml": 240,
+      "how": "button"
+    }
+  ],
+  "breaks": 1,
+  "last_break_ts": 1781539602.999904,
+  "break_log": [
+    {
+      "ts": 1781539602.999904,
+      "minutes": 6,
+      "how": "left the desk"
+    }
+  ],
+  "longest_sit_sec": 133,
+  "desk_sec": 137.6666338443756,
+  "phone_free_sec": 116.66663885116577,
+  "phone_on_desk_sec": 20.99999499320984,
+  "best_phone_free_sec": 93,
+  "food": [
+    {
+      "label": "apple",
+      "healthy": true,
+      "ts": 1781539219.3333287,
+      "how": "camera"
+    },
+    {
+      "label": "almonds",
+      "healthy": true,
+      "ts": 1781539607.9999027,
+      "how": "button"
+    }
+  ],
+  "sunlight_ts": 1781539607.9999027,
+  "sunlight_minutes": 15,
+  "afternoon_light_ts": null,
+  "hourly_activity": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    137.6666338443756,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "objects_seen": [
+    "Cup"
+  ],
+  "danger_count": 1,
+  "lost_alerts": 2,
+  "nudges_sent": 0,
+  "summary_sent": false
+}
