@@ -14,14 +14,11 @@ The AI sees the tracker's numbers, and can change them with action tags like
 
 from __future__ import annotations
 
-import functools
-import os
 import re
 from collections.abc import Mapping, Sequence
-from pathlib import Path
 from typing import Any
 
-from desktalk.config import ChatSettings, load_config
+from desktalk.config import ChatSettings
 from desktalk.config.prompts import TrackerPrompts
 from desktalk.ports import HabitLog
 from desktalk.util import clock_text
@@ -40,34 +37,23 @@ def normalize_todo(raw: Any, chat: ChatSettings) -> dict | None:
     return {'type': 'todo', 'items': items}
 
 
-def _words(words: TrackerPrompts | None) -> TrackerPrompts:
-    return words if words is not None else shipped_words()
-
-
-@functools.cache
-def shipped_words() -> TrackerPrompts:
-    """config.prompts.trackers as the app loads it (no .env needed: no keys are read). For the callers that don't
-    pass `words` yet (the chat, until it has config.prompts); read once."""
-    return load_config(environ={}, dotenv=Path(os.devnull)).prompts.trackers
-
-
 def behavior_summary(views: Sequence[Mapping[str, Any]], now: float, chat: ChatSettings, *,
-                     words: TrackerPrompts | None = None) -> str:
+                     words: TrackerPrompts) -> str:
     """A note when the user keeps opening the tracker panel."""
     recent = [e for e in views if e['ts'] > now - chat.panel_views_window_sec]
     count = sum(1 for e in recent if e.get('action') == 'view')
     if count < chat.panel_views_min:
         return ''
-    return _words(words).behavior.format(count=count)
+    return words.behavior.format(count=count)
 
 
 def tracker_prompt(tracker: str | None, habits_today: Mapping[str, Any], todo: Mapping[str, Any] | None,
                    views: Sequence[Mapping[str, Any]], now: float, chat: ChatSettings, *,
-                   words: TrackerPrompts | None = None) -> str:
+                   words: TrackerPrompts) -> str:
     """The tracker's data as a block for the AI. `words` is config.prompts.trackers."""
     if not tracker:
         return ''
-    t = _words(words)
+    t = words
     extra = behavior_summary(views, now, chat, words=t)
     if tracker == 'todo':
         items = (todo or {}).get('items') or []
@@ -114,9 +100,10 @@ def tracker_prompt(tracker: str | None, habits_today: Mapping[str, Any], todo: M
     return extra
 
 
-def action_instructions(tracker: str | None, *, words: TrackerPrompts | None = None) -> str:
-    """How the AI changes this tracker (its action tags); '' for an agent without one."""
-    return _words(words).actions.model_dump().get(tracker or '', '')
+def action_instructions(tracker: str | None, *, words: TrackerPrompts) -> str:
+    """How the AI changes this tracker (its action tags); '' for an agent without one. `words` is
+    config.prompts.trackers."""
+    return words.actions.model_dump().get(tracker or '', '')
 
 
 def parse_actions(text: str, tracker: str | None, *, sunlight_default_min: float) -> tuple[str, list[dict]]:

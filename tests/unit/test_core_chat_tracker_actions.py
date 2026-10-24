@@ -10,6 +10,7 @@ from desktalk.core.chat import tracker_actions as ta
 
 NOW = 1_760_000_000.0
 ROOT = Path(__file__).resolve().parents[2]
+WORDS = load_config(environ={}, dotenv=Path('/nonexistent')).prompts.trackers
 
 
 def project(root, file, old, new):
@@ -76,9 +77,9 @@ def test_leftover_tags_are_removed_but_other_brackets_stay():
 
 
 def test_each_tracker_has_its_own_action_instructions():
-    assert '[LOG_SIP]' in ta.action_instructions('hydration')
-    assert '[ADD_TODO:' in ta.action_instructions('todo')
-    assert ta.action_instructions(None) == ''
+    assert '[LOG_SIP]' in ta.action_instructions('hydration', words=WORDS)
+    assert '[ADD_TODO:' in ta.action_instructions('todo', words=WORDS)
+    assert ta.action_instructions(None, words=WORDS) == ''
 
 
 # ── doing the actions ────────────────────────────────────────────────
@@ -121,58 +122,59 @@ def test_anything_but_a_todo_list_is_ignored(chat, raw):
 
 # ── what the AI is told ──────────────────────────────────────────────
 def test_the_water_tracker_uses_the_habit_numbers(chat):
-    text = ta.tracker_prompt('hydration', today(), None, [], NOW, chat)
+    text = ta.tracker_prompt('hydration', today(), None, [], NOW, chat, words=WORDS)
     assert '240 ml of a 2400 ml goal (3 sips)' in text and 'pace for now 900 ml' in text
 
 
 def test_the_breaks_tracker_says_how_long_you_have_sat(chat):
-    text = ta.tracker_prompt('breaks', today(), None, [], NOW, chat)
+    text = ta.tracker_prompt('breaks', today(), None, [], NOW, chat, words=WORDS)
     assert '2 break(s) today' in text and 'Sitting for 21 min' in text and 'every 30 minutes' in text
 
 
 def test_the_todo_tracker_lists_open_and_done_items(chat):
     todo = {'items': [{'text': 'Essay', 'done': False}, {'text': 'Email', 'done': True}]}
-    text = ta.tracker_prompt('todo', today(), todo, [], NOW, chat)
+    text = ta.tracker_prompt('todo', today(), todo, [], NOW, chat, words=WORDS)
     assert 'TO-DO LIST' in text and '- [ ] Essay' in text and '- [x] Email' in text
 
 
 def test_food_phone_and_light_trackers(chat):
     food = ta.tracker_prompt('food', today(food={'entries': [{'label': 'apple', 'healthy': True},
                                                              {'label': 'chips', 'healthy': False}]}),
-                             None, [], NOW, chat)
+                             None, [], NOW, chat, words=WORDS)
     assert 'Healthy: apple' in food and 'Treats: chips' in food
-    assert 'Empty today' in ta.tracker_prompt('food', today(), None, [], NOW, chat)
-    assert '50 min of desk time' in ta.tracker_prompt('phone_free', today(), None, [], NOW, chat)
+    assert 'Empty today' in ta.tracker_prompt('food', today(), None, [], NOW, chat, words=WORDS)
+    assert '50 min of desk time' in ta.tracker_prompt('phone_free', today(), None, [], NOW, chat, words=WORDS)
     not_counted = today(phone_free={'counted': False})
-    assert 'not counted' in ta.tracker_prompt('phone_free', not_counted, None, [], NOW, chat)
-    assert 'brightness 128/255' in ta.tracker_prompt('light', today(), None, [], NOW, chat)
+    assert 'not counted' in ta.tracker_prompt('phone_free', not_counted, None, [], NOW, chat, words=WORDS)
+    assert 'brightness 128/255' in ta.tracker_prompt('light', today(), None, [], NOW, chat, words=WORDS)
 
 
 def test_no_tracker_no_block(chat):
-    assert ta.tracker_prompt(None, today(), None, [], NOW, chat) == ''
+    assert ta.tracker_prompt(None, today(), None, [], NOW, chat, words=WORDS) == ''
 
 
 def test_opening_the_panel_often_is_mentioned(chat):
     views = [{'ts': NOW - 100, 'action': 'view'}, {'ts': NOW - 50, 'action': 'view'}]
-    assert 'opened this panel 2 time(s)' in ta.tracker_prompt('hydration', today(), None, views, NOW, chat)
+    text = ta.tracker_prompt('hydration', today(), None, views, NOW, chat, words=WORDS)
+    assert 'opened this panel 2 time(s)' in text
 
 
 def test_old_or_few_panel_views_are_not_mentioned(chat):
     old = [{'ts': NOW - 4000, 'action': 'view'}, {'ts': NOW - 50, 'action': 'view'}]
-    assert 'BEHAVIOR' not in ta.tracker_prompt('hydration', today(), None, old, NOW, chat)
-    assert 'BEHAVIOR' not in ta.tracker_prompt('hydration', today(), None, old[1:], NOW, chat)
+    assert 'BEHAVIOR' not in ta.tracker_prompt('hydration', today(), None, old, NOW, chat, words=WORDS)
+    assert 'BEHAVIOR' not in ta.tracker_prompt('hydration', today(), None, old[1:], NOW, chat, words=WORDS)
 
 
 # ── the words come from config/prompts.yaml ──────────────────────────
 def test_the_tracker_words_come_from_prompts_yaml(chat):
-    words = ta.shipped_words().model_copy(update={'water': 'Water: {water_ml}/{goal_ml} ml, last {last}.',
+    words = WORDS.model_copy(update={'water': 'Water: {water_ml}/{goal_ml} ml, last {last}.',
                                                   'water_none_yet': 'never'})
     text = ta.tracker_prompt('hydration', today(), None, [], NOW, chat, words=words)
     assert text == 'Water: 240/2400 ml, last never.'
 
 
 def test_the_action_instructions_come_from_prompts_yaml():
-    words = ta.shipped_words()
+    words = WORDS
     mine = words.model_copy(update={'actions': words.actions.model_copy(update={'breaks': 'Say [LOG_BREAK].'})})
     assert ta.action_instructions('breaks', words=mine) == 'Say [LOG_BREAK].'
     assert ta.action_instructions('nothing', words=mine) == ''
@@ -190,7 +192,8 @@ def test_the_sunlight_action_says_the_default_minutes_from_the_settings(tmp_path
     assert 'use 12 if unsure' in ta.action_instructions('light', words=config.prompts.trackers)
 
 
-def test_without_words_the_ones_in_prompts_yaml_are_used(chat):
-    shipped = load_config(environ={}, dotenv=Path('/nonexistent')).prompts.trackers
-    assert ta.shipped_words() == shipped
-    assert ta.tracker_prompt('food', today(), None, [], NOW, chat) == shipped.food_empty
+def test_the_words_must_be_passed_in(chat):
+    with pytest.raises(TypeError):
+        ta.tracker_prompt('food', today(), None, [], NOW, chat)      # type: ignore[call-arg]
+    with pytest.raises(TypeError):
+        ta.action_instructions('food')                                # type: ignore[call-arg]
