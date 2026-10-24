@@ -94,7 +94,7 @@ def holds(cond: Condition, snapshot: DeskSnapshot, changes: Sequence[StateChange
         check = cond.no_habit
         if not _lasted(snapshot.watched_since, now, check.for_):
             return False
-        return not any(_logged(h, check.habit) and now - h.ts < check.for_ for h in habits)
+        return not any(h.habit == check.habit and now - h.ts < check.for_ for h in habits)
     if isinstance(cond, (EventCond, HabitCond)):
         if events_after is None:
             return False
@@ -159,7 +159,7 @@ def _told_by_history(cond: Condition, changes: Sequence[StateChange], habits: Se
     if isinstance(cond, EventCond):
         return any(_matches(c, cond.event.object, cond.event.events) and c.ts > after for c in changes)
     if isinstance(cond, HabitCond):
-        return any(_logged(h, cond.habit.habit) and h.ts > after for h in habits)
+        return any(h.habit == cond.habit.habit and h.ts > after for h in habits)
     if isinstance(cond, AllCond):
         found = [_told_by_history(inner, changes, habits, after) for inner in cond.all]
         if any(f is False for f in found):
@@ -190,10 +190,6 @@ def _lasted(since: float | None, now: float, at_least: float) -> bool:
 
 def _matches(change: StateChange, labels: Sequence[str], kinds: Sequence[str]) -> bool:
     return change.label in labels and change.change in kinds
-
-
-def _logged(done: HabitDone, habit: str) -> bool:
-    return done.habit == habit
 
 
 def _longest_for(cond: Condition) -> float:
@@ -233,7 +229,7 @@ def _evidence(cond: Condition, snapshot: DeskSnapshot, changes: Sequence[StateCh
         return [f'{said} {_since(last, check.for_, snapshot, now, lookback)}']
     if isinstance(cond, NoHabitCond):
         check = cond.no_habit
-        last = max((h.ts for h in habits if _logged(h, check.habit)), default=None)
+        last = max((h.ts for h in habits if h.habit == check.habit), default=None)
         words = HABIT_WORDS[check.habit]
         # With none in the history, the last one is older than that: a sip has nothing to do with the camera,
         # so this never counts from when the camera started watching.

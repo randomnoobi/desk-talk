@@ -192,7 +192,7 @@ def test_habit_is_refused_deep_inside_gate_and_under_not_in_success(project):
 
 
 def test_a_rule_names_only_the_habit(project):
-    for habit in get_args(Habit):
+    for habit in HABIT_WORDS:
         rule = load_rule(project, when={'no_habit': {'habit': habit, 'for': '5m'}})
         assert rule.when.no_habit.habit == habit
 
@@ -206,8 +206,27 @@ def test_an_old_action_key_is_refused_and_names_the_rule(project):
     assert 'rules[0].success.when.habit.action' in str(err.value)
 
 
-def test_every_habit_the_config_knows_has_plain_words_for_the_evidence():
-    assert set(HABIT_WORDS) == set(get_args(Habit))
+def test_a_habit_nothing_logs_is_refused_in_no_habit_and_names_the_rule_and_the_habit(project):
+    for habit in ('screens', 'tasks'):
+        assert habit in get_args(Habit)                                # a real habit, just never logged
+        with pytest.raises(ConfigError) as err:
+            load_rule(project, when={'no_habit': {'habit': habit, 'for': '60m'}})
+        words = str(err.value)
+        assert 'rules[0].when.no_habit' in words and habit in words, words
+        assert 'nothing logs it yet' in words and 'could never see one' in words, words
+
+
+def test_a_habit_nothing_logs_is_refused_in_a_success_check_too(project):
+    with pytest.raises(ConfigError) as err:
+        load_rule(project, success={'within': '5m', 'when': {'habit': {'habit': 'tasks'}}})
+    words = str(err.value)
+    assert 'rules[0].success.when.habit' in words and 'tasks' in words, words
+    assert 'nothing logs it yet' in words and 'could never see one' in words, words
+
+
+def test_the_evidence_has_plain_words_only_for_habits_a_rule_may_name():
+    assert set(HABIT_WORDS) <= set(get_args(Habit))
+    assert not {'screens', 'tasks'} & set(HABIT_WORDS)
 
 
 def test_the_drink_list_is_written_once_and_both_places_get_all_five(project):

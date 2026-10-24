@@ -65,7 +65,7 @@ class RuleRunner:
 
     def _on_habit(self, event: HabitEvent) -> None:
         with self._lock:
-            self._habits.append(HabitDone(event.ts, event.habit, event.action))
+            self._habits.append(HabitDone(event.ts, event.habit))
 
     # ── RuleNudges (the reminders thread) ──────────────────────────────────────────────────────────────────────────
     def nudges(self, now: float) -> list[Nudge]:

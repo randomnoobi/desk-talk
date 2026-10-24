@@ -108,28 +108,21 @@ def test_a_cup_moving_resets_the_hour():
 
 def test_a_logged_sip_resets_the_hour():
     snap = desk(person=('PRESENT', T0), watched_since=T0)
-    logged = [HabitDone(T0 + 1800, 'hydration', 'sip')]
+    logged = [HabitDone(T0 + 1800, 'hydration')]
     assert evaluate([HYDRATION], snap, history(habits=logged), T0 + 3600) == []
     [n] = evaluate([HYDRATION], snap, history(habits=logged), T0 + 5400)
     assert n.key == 'rule.hydration'
 
 
-def test_any_log_of_the_habit_resets_the_hour():
-    snap = desk(person=('PRESENT', T0), watched_since=T0)
-    logged = [HabitDone(T0 + 1800, 'hydration', 'glass')]
-    assert evaluate([HYDRATION], snap, history(habits=logged), T0 + 3600) == []
-    assert len(evaluate([HYDRATION], snap, history(habits=logged), T0 + 5400)) == 1
-
-
 def test_another_habit_does_not_count():
     snap = desk(person=('PRESENT', T0), watched_since=T0)
-    logged = [HabitDone(T0 + 1800, 'breaks', 'break')]
+    logged = [HabitDone(T0 + 1800, 'breaks')]
     assert len(evaluate([HYDRATION], snap, history(habits=logged), T0 + 3600)) == 1
 
 
 def test_evidence_names_every_drink_and_the_sip():
     snap = desk(person=('PRESENT', T0), watched_since=T0)
-    logged = [HabitDone(T0 + 1800, 'hydration', 'sip')]
+    logged = [HabitDone(T0 + 1800, 'hydration')]
     [n] = evaluate([HYDRATION], snap, history(habits=logged), T0 + 5400)
     assert n.evidence == ('the person has been present for 90 minutes; '
                           "the cup, mug, bottle, water bottle or wine glass hasn't been moved or removed in over "
@@ -254,25 +247,22 @@ def test_event_works_inside_all_any_and_not():
 def test_no_habit_needs_enough_watching_and_no_log_of_that_habit():
     sips = cond({'no_habit': {'habit': 'hydration', 'for': '10m'}})
     snap = desk(watched_since=T0)
-    sip = [HabitDone(T0 + 100, 'hydration', 'sip')]
+    sip = [HabitDone(T0 + 100, 'hydration')]
     assert not holds(sips, snap, [], T0 + 599)                       # not watched for 10 minutes yet
     assert holds(sips, snap, [], T0 + 600)
     assert not holds(sips, snap, [], T0 + 650, habits=sip)
     assert holds(sips, snap, [], T0 + 700, habits=sip)
-    glass = [HabitDone(T0 + 100, 'hydration', 'glass')]
-    assert not holds(sips, snap, [], T0 + 650, habits=glass)         # any log of the habit counts
-    assert holds(sips, snap, [], T0 + 650, habits=[HabitDone(T0 + 100, 'breaks', 'break')])   # another habit doesn't
+    assert holds(sips, snap, [], T0 + 650, habits=[HabitDone(T0 + 100, 'breaks')])   # another habit doesn't
     assert not holds(sips, desk(watched_since=None), [], T0 + 700)
 
 
 def test_habit_counts_only_after_events_after():
     sip = cond({'habit': {'habit': 'hydration'}})
-    logged = [HabitDone(T0 + 50, 'hydration', 'sip')]
+    logged = [HabitDone(T0 + 50, 'hydration')]
     assert holds(sip, desk(), [], T0 + 100, events_after=T0, habits=logged)
     assert not holds(sip, desk(), [], T0 + 100, events_after=T0 + 60, habits=logged)
     assert not holds(sip, desk(), [], T0 + 100, habits=logged)
-    assert holds(sip, desk(), [], T0 + 100, events_after=T0, habits=[HabitDone(T0 + 50, 'hydration', 'glass')])
-    assert not holds(sip, desk(), [], T0 + 100, events_after=T0, habits=[HabitDone(T0 + 50, 'breaks', 'break')])
+    assert not holds(sip, desk(), [], T0 + 100, events_after=T0, habits=[HabitDone(T0 + 50, 'breaks')])
 
 
 def test_event_matches_any_of_its_objects():
@@ -487,12 +477,12 @@ def test_past_the_deadline_only_events_by_the_deadline_count():
 
 def test_success_by_a_logged_sip():
     snap = desk(person=('PRESENT', T0))
-    sip = [HabitDone(T0 + 120, 'hydration', 'sip')]
+    sip = [HabitDone(T0 + 120, 'hydration')]
     assert check_success(HYDRATION, T0, snap, [], T0 + 130, habits=sip) == 'worked'
     assert check_success(HYDRATION, T0, snap, [], T0 + 360, habits=sip) == 'worked'           # a late round
-    late_sip = [HabitDone(T0 + 301, 'hydration', 'sip')]
+    late_sip = [HabitDone(T0 + 301, 'hydration')]
     assert check_success(HYDRATION, T0, snap, [], T0 + 360, habits=late_sip) == 'missed'
-    early_sip = [HabitDone(T0 - 5, 'hydration', 'sip')]
+    early_sip = [HabitDone(T0 - 5, 'hydration')]
     assert check_success(HYDRATION, T0, snap, [], T0 + 300, habits=early_sip) == 'missed'
 
 

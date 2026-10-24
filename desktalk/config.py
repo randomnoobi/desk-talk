@@ -51,6 +51,7 @@ from pydantic import (
 )
 from pydantic.fields import FieldInfo
 
+from desktalk.domain.habits import HABIT_WORDS
 from desktalk.util import parse_hhmm
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -762,6 +763,13 @@ class NoEventCheck(_Section):
 
 class HabitCheck(_Section):
     habit: Habit
+
+    @model_validator(mode='after')
+    def _the_habit_is_one_the_app_logs(self):
+        if self.habit not in HABIT_WORDS:
+            raise _Said(f'{self.habit}: nothing logs it yet, so this rule could never see one '
+                        f'(habits that are logged: {", ".join(HABIT_WORDS)})')
+        return self
 
 
 class NoHabitCheck(HabitCheck):

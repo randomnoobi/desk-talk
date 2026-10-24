@@ -4,17 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-# The plain words the evidence uses for each habit: "no sip has been logged in over 60 minutes". Any log of
-# the habit counts, whatever it was (the app's buttons, the chat or the camera). Screens and tasks have no
-# log of their own yet, so a rule that asks about them is true until one does.
+# The habits the app really logs, with the plain words the evidence uses for each: "no sip has been logged in
+# over 60 minutes". Any log of the habit counts, whatever it was (the app's buttons, the chat or the camera).
+# A rule may only name a habit in this list. Screens and tasks are left out because nothing logs them yet.
 HABIT_WORDS: dict[str, str] = {
     'hydration': 'sip',
     'breaks': 'break',
     'light': 'sunlight',
     'food': 'food',
     'phone_free': 'phone-free stretch',
-    'screens': 'screen break',
-    'tasks': 'task',
 }
 
 

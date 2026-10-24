@@ -39,7 +39,6 @@ class HabitDone:
 
     ts: float
     habit: str                  # hydration | breaks | ... (as in HabitEvent)
-    action: str                 # sip | break | ... (as in HabitEvent)
 
 
 @dataclass(frozen=True)
