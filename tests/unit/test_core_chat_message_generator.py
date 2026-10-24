@@ -7,16 +7,18 @@ from pathlib import Path
 import pytest
 
 from desktalk.config import load_config
-from desktalk.core.chat.message_generator import MessageGenerator, UnknownChat
-from desktalk.desk_state import DeskState
-from desktalk.domain import AgentJoined, AgentLeft, AgentProfile, Alert, HabitEvent, Nudge
+from desktalk.core.chat.message_generator import ChatDesk, MessageGenerator, UnknownChat
+from desktalk.domain import AgentJoined, AgentLeft, AgentProfile, Alert, HabitEvent, Nudge, SeenObject
 from desktalk.ports import ChatVoice
 from tests.fakes import (
+    FakeCharacterMemory,
     FakeChatModel,
     FakeClock,
+    FakeDeskScene,
     FakeDeskStatus,
     FakeHabits,
     FakeProfiles,
+    FakeSafetyBoard,
     RecordingNotifier,
     StaticRoster,
     SyncEventBus,
@@ -52,9 +54,17 @@ def today():
 
 
 def seen(label, x1, y1, x2, y2, conf=0.9):
-    """An entry of DeskState.objects, as the camera side writes it."""
-    return {'class_name': label, 'bbox': [x1, y1, x2, y2], 'center': [(x1 + x2) / 2, (y1 + y2) / 2], 'conf': conf,
-            'cam': 0}
+    """An agent's box on the desk, as the camera side writes it."""
+    return SeenObject(label=label, box=(x1, y1, x2, y2), center=((x1 + x2) / 2, (y1 + y2) / 2), confidence=conf)
+
+
+class FakeChatDesk(FakeCharacterMemory, FakeDeskScene, FakeSafetyBoard):
+    """The three desk interfaces the chat uses, in one object (as DeskState is until Task 10)."""
+
+    def __init__(self):
+        FakeCharacterMemory.__init__(self)
+        FakeDeskScene.__init__(self)
+        FakeSafetyBoard.__init__(self)
 
 
 class HabitLog:
@@ -69,21 +79,22 @@ class Rig:
     """A MessageGenerator built from fakes. `reply` / `fail` script the AI."""
 
     def __init__(self, reply='Hey! All good over here on the desk.', fail='', members=('computer', 'cup'),
-                 profiles=None, local_model=False, llm=None, chat=None, agents=None, camera_on=True):
+                 profiles=None, local_model=False, llm=None, chat=None, agents=None, camera_on=True, prompts=None):
         self.clock = FakeClock()
         self.ai = FakeChatModel(reply=reply, fail=fail)
         self.notifier = RecordingNotifier(self.clock)
         self.roster = StaticRoster(members)
         self.profiles = FakeProfiles(profiles or [computer(), cup(), stapler()], ignored=['person'])
         self.habits = FakeHabits(today())
-        self.desk = DeskState()
+        self.desk = FakeChatDesk()
         self.status = FakeDeskStatus(connected=camera_on)
         self.habit_log = HabitLog()
         self.gen = MessageGenerator(
             self.ai, self.notifier, self.roster, self.profiles, self.habits, self.desk, self.clock,
             status=self.status, habit_log=self.habit_log, llm=llm or CONFIG.llm, chat=chat or CONFIG.chat,
             agents=agents or CONFIG.agents, sunlight_default_min=10, reply_max_chars=500,
-            local_model=local_model, rng=random.Random(4))
+            prompts=prompts or CONFIG.prompts, drink_labels=CONFIG.safety.liquids,
+            preview_chars=CONFIG.logging.preview_chars, local_model=local_model, rng=random.Random(4))
 
     def sent(self, **match):
         return [m for m in self.notifier.sent if all(m.get(k) == v for k, v in match.items())]
@@ -91,6 +102,17 @@ class Rig:
 
 def test_it_is_a_chat_voice():
     assert isinstance(Rig().gen, ChatVoice)
+
+
+def test_the_fake_desk_has_what_the_chat_needs():
+    assert isinstance(FakeChatDesk(), ChatDesk)
+
+
+def test_chat_uses_prompt_settings():
+    chat = CONFIG.prompts.chat.model_copy(update={'identity': 'You are {name}, a talking {object}.'})
+    r = Rig(prompts=CONFIG.prompts.model_copy(update={'chat': chat}))
+    r.gen.answer('cup', 'hi', [])
+    assert r.ai.calls[0]['messages'][0]['content'].startswith('You are Cup, a talking cup.\n\n---\nLIVE DESK STATUS')
 
 
 # ── joining and leaving ──────────────────────────────────────────────
@@ -197,6 +219,14 @@ def test_the_generator_listens_to_the_bus():
     assert r.sent(type='roster') and r.sent(habit='hydration', type='group_message') and r.sent(alert='pet_risk')
 
 
+def test_an_event_of_another_kind_is_ignored():
+    r = Rig()
+    r.gen.on_roster(HabitEvent(ts=1.0, habit='hydration', action='sip', say='Sip!'))
+    r.gen.on_habit(joined())
+    r.gen.on_alert(joined())
+    assert r.notifier.sent == []
+
+
 # ── habits ───────────────────────────────────────────────────────────
 def test_a_habit_updates_the_app_and_its_agent_says_it():
     r = Rig()
@@ -250,7 +280,8 @@ def proximity(follow_up=0, near='cup', rule_label='Cup in the laptop spill zone'
 
 def test_a_proximity_alert_is_put_in_words_by_the_ai():
     r = Rig(reply='That cup is a little close to my keyboard, could you scoot it back?')
-    r.desk.objects = {'computer': seen('laptop', 200, 200, 400, 350), 'cup': seen('cup', 410, 250, 450, 320)}
+    r.desk.set_members({'computer': seen('laptop', 200, 200, 400, 350), 'cup': seen('cup', 410, 250, 450, 320)},
+                       r.clock.now())
     r.gen.on_alert(proximity())
     msg = r.notifier.sent[0]
     assert (msg['character'], msg['alert'], msg['snapshot']) == ('computer', 'proximity', 'snap9')
@@ -310,7 +341,7 @@ def nudge():
 
 def test_the_ai_phrases_a_nudge_in_character():
     r = Rig(reply='Hey, 35 minutes of sitting! Walk five minutes, leave your phone.')
-    r.desk.vision_habit_brief = 'posture=slouch'
+    r.desk.set_vision_brief('posture=slouch')
     assert r.gen.phrase_nudge('computer', nudge()) == 'Hey, 35 minutes of sitting! Walk five minutes, leave your phone.'
     call = r.ai.calls[0]
     assert call['background'] and call['max_tokens'] == CONFIG.llm.replies.nudge.max_tokens
@@ -318,7 +349,7 @@ def test_the_ai_phrases_a_nudge_in_character():
     system = call['messages'][0]['content']
     assert 'Protocols' in system and 'sitting for 35 minutes' in system and 'Walk 5 minutes every 30' in system
     assert "USER'S BREAKS" in system and 'vision note: posture=slouch' in system
-    assert '[User said "habit reminder"] → [You replied] Hey, 35 minutes' in r.desk.char_memory['computer'][0]
+    assert '[User said "habit reminder"] → [You replied] Hey, 35 minutes' in r.desk.recent('computer')[0]
 
 
 def test_a_local_ai_gets_the_short_nudge_prompt():
@@ -351,7 +382,7 @@ def asked(r, n=-1):
 
 def test_a_reply_is_grounded_in_the_desk_and_the_tracker():
     r = Rig(reply='Splash, nice one! [LOG_SIP]')
-    r.desk.objects = {'cup': seen('cup', 410, 250, 450, 320)}
+    r.desk.set_members({'cup': seen('cup', 410, 250, 450, 320)}, r.clock.now())
     reply = r.gen.answer('cup', 'I just drank some water', [])
     assert reply['messages'] == [{'character': 'cup', 'text': 'Splash, nice one!'}] and reply['habits_changed']
     call = r.ai.calls[0]
@@ -391,7 +422,7 @@ def test_older_messages_become_a_short_recap():
 
 def test_mentioned_objects_are_described_with_the_message():
     r = Rig()
-    r.desk.objects = {'computer': seen('laptop', 200, 200, 400, 350)}
+    r.desk.set_members({'computer': seen('laptop', 200, 200, 400, 350)}, r.clock.now())
     r.gen.answer('cup', 'is @monty ok?', [])
     assert '[Referenced objects — @Computer: On desk' in asked(r)[-1]['content']
 
@@ -399,24 +430,25 @@ def test_mentioned_objects_are_described_with_the_message():
 def test_a_reply_is_remembered_and_given_back_later():
     r = Rig()
     r.gen.answer('cup', 'hello cup', [])
-    assert r.desk.char_memory['cup'] == ['[User said "hello cup"] → [You replied] Hey! All good over here on the desk.']
+    assert r.desk.recent('cup') == ['[User said "hello cup"] → [You replied] Hey! All good over here on the desk.']
     r.gen.answer('cup', 'and now?', [])
     assert 'WHAT YOU REMEMBER' in asked(r)[0]['content'] and 'hello cup' in asked(r)[0]['content']
 
 
 def test_memory_is_kept_short():
-    r = Rig(llm=CONFIG.llm.model_copy(update={'memory_per_agent': 2}),
+    r = Rig(reply=['first reply', 'second reply', 'third reply'],
+            llm=CONFIG.llm.model_copy(update={'memory_per_agent': 2}),
             chat=CONFIG.chat.model_copy(update={'memory_reply_chars': 5, 'memory_user_chars': 3}))
     for word in ('first', 'second', 'third'):
-        r.gen.record_memory('cup', f'{word} reply', f'{word} message')
-    assert r.desk.char_memory['cup'] == ['[User said "sec"] → [You replied] secon',
-                                         '[User said "thi"] → [You replied] third']
+        r.gen.answer('cup', f'{word} message', [])
+    assert r.desk.recent('cup') == ['[User said "sec"] → [You replied] secon',
+                                    '[User said "thi"] → [You replied] third']
 
 
 def test_a_local_ai_only_gets_the_newest_memories():
     r = Rig(local_model=True, chat=CONFIG.chat.model_copy(update={'ollama_memory_lines': 1}))
-    r.gen.record_memory('cup', 'old memory line')
-    r.gen.record_memory('cup', 'new memory line')
+    r.desk.remember('cup', '[You said] old memory line', 10)
+    r.desk.remember('cup', '[You said] new memory line', 10)
     r.gen.answer('cup', 'hi', [])
     assert 'new memory line' in asked(r)[0]['content'] and 'old memory line' not in asked(r)[0]['content']
 
@@ -424,14 +456,13 @@ def test_a_local_ai_only_gets_the_newest_memories():
 def test_with_the_ai_down_there_is_no_reply_and_the_reason_is_plain():
     r = Rig(fail='Gemini hit its free usage limit.')
     assert r.gen.answer('cup', 'hi', []) == {'messages': [], 'error': 'Gemini hit its free usage limit.'}
-    assert r.gen.no_reply_reason() == 'Gemini hit its free usage limit.'
 
 
 def test_with_no_ai_set_up_the_reason_says_how_to_add_one():
     r = Rig()
     r.ai.ready = False
-    assert r.gen.answer('cup', 'hi', [])['messages'] == []
-    assert '.env' in r.gen.no_reply_reason() and r.ai.calls == []
+    reply = r.gen.answer('cup', 'hi', [])
+    assert reply['messages'] == [] and reply['error'] == CONFIG.prompts.replies.needs_an_ai and r.ai.calls == []
 
 
 def test_no_reply_for_a_line_for_someone_else():
@@ -466,7 +497,7 @@ def test_a_todo_action_goes_back_to_the_app():
 def test_the_todo_list_sent_with_a_message_is_kept_and_used():
     r = Rig(profiles=[computer(), cup(), paper()])
     r.gen.answer('paper', 'what is left?', widget={'type': 'todo', 'items': [{'text': 'Essay'}]})
-    assert r.desk.char_widgets['paper'] == {'type': 'todo', 'items': [{'text': 'Essay', 'done': False}]}
+    assert r.desk.widget('paper') == {'type': 'todo', 'items': [{'text': 'Essay', 'done': False}]}
     assert '- [ ] Essay' in asked(r)[0]['content']
 
 
@@ -522,10 +553,10 @@ def test_in_the_group_with_the_ai_down_nobody_answers_and_it_says_why():
 def test_a_todo_list_is_saved_for_a_known_agent_only():
     r = Rig(profiles=[computer(), cup(), paper()])
     assert r.gen.save_widget('paper', {'type': 'todo', 'items': [{'text': 'Essay', 'done': True}]})
-    assert r.desk.char_widgets['paper'] == {'type': 'todo', 'items': [{'text': 'Essay', 'done': True}]}
+    assert r.desk.widget('paper') == {'type': 'todo', 'items': [{'text': 'Essay', 'done': True}]}
     assert not r.gen.save_widget('ghost', {'type': 'todo', 'items': []})
     assert not r.gen.save_widget('paper', 'junk')
-    assert 'ghost' not in r.desk.char_widgets
+    assert r.desk.widget('ghost') is None
 
 
 def test_panel_views_are_remembered_up_to_the_limit():
@@ -534,20 +565,20 @@ def test_panel_views_are_remembered_up_to_the_limit():
         r.gen.note_panel_event('cup', action)
         r.clock.advance(1)
     start = FakeClock().now()
-    assert r.desk.widget_views['cup'] == [{'ts': start + 1, 'action': 'view'}, {'ts': start + 2, 'action': 'close'}]
+    assert r.desk.widget_views_of('cup') == [{'ts': start + 1, 'action': 'view'}, {'ts': start + 2, 'action': 'close'}]
 
 
 def test_a_panel_event_for_an_unknown_agent_is_refused():
     r = Rig()
     assert r.gen.note_panel_event('ghost', 'view') is False
-    assert 'ghost' not in r.desk.widget_views
+    assert r.desk.widget_views_of('ghost') == []
     assert r.gen.note_panel_event('cup', 'view') is True
 
 
 def test_a_long_panel_action_is_cut_short():
     r = Rig(chat=CONFIG.chat.model_copy(update={'panel_action_max_chars': 8}))
     r.gen.note_panel_event('cup', 'v' * 5000)
-    assert r.desk.widget_views['cup'][0]['action'] == 'v' * 8
+    assert r.desk.widget_views_of('cup')[0]['action'] == 'v' * 8
 
 
 def test_the_live_context_knows_when_the_camera_is_off():
