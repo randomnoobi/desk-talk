@@ -1,7 +1,7 @@
 # Desk Talk: notes for coding agents
 
 What the app does and how it fits together: [README.md](README.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-The refactor in progress: [docs/plans/2026-10-21-refactor-plan.md](docs/plans/2026-10-21-refactor-plan.md).
+How it got this way (history, finished): the refactor, [docs/plans/2026-10-21-refactor-plan.md](docs/plans/2026-10-21-refactor-plan.md), and the cleanup after it, [docs/plans/2026-10-23-codebase-cleanup-plan.md](docs/plans/2026-10-23-codebase-cleanup-plan.md).
 
 ## How to work
 - **Before making a plan:** read the code the change will touch and find where the new pieces should plug in. Name those files and functions in the plan.
@@ -12,26 +12,32 @@ The refactor in progress: [docs/plans/2026-10-21-refactor-plan.md](docs/plans/20
 
 ## Check your work before saying it's done
 - Packages come from uv (`uv sync --all-packages`; never pip). Run things with `uv run ...`.
-- Fast tests: `uv run pytest -m "not slow"`. The `slow` tests run the real YOLO model; run them only when you change detection. `docker` tests build the Pi's detector image; run them only when you change it.
+- Fast tests: `uv run pytest -m "not slow"`. The `slow` tests run the real YOLO model; run them only when you change detection. `docker` tests build the Pi's detector image; run them only when you change it. `uv run pytest -m e2e` drives the real page in a browser (`uv run playwright install chromium` once); run it when you change `web_app/`, `phone_camera/` or a route they use.
+- Coverage: `uv run pytest -m "not slow and not docker and not e2e" --cov` fails below `fail_under` in `pyproject.toml`. It may only go up.
 - Lint: `uv run ruff check <files you changed>`. Old files may still have ruff errors, so don't fix files you didn't touch. Just don't add new errors. Don't run `ruff format`.
-- Show the test and ruff output. Don't just say they passed.
+- Types: `uv run pyright` must show 0 errors. `pyrightconfig.json`'s `ignore` list only shrinks: fix a file and take it off; never add one.
+- Dead code: `uv run vulture` must print nothing. A name it can't see being used goes in `tests/vulture_allow.py`, with what uses it.
+- Show the test, ruff, pyright and vulture output. Don't just say they passed.
 
 ## Config, not code
-- IMPORTANT: Never hardcode a number, timing, threshold, path or model name. Add it to `config/settings.yaml`, with a plain-language comment, and a typed field in `desktalk/config.py`; parts get their typed section passed in (`config.camera.fps`, etc.). The Pi's numbers go in the `pi:` section (the camera program reads it from the computer); the detector container's in `raspberry_pi/detector_service/.env`.
+- IMPORTANT: Never hardcode a number, timing, threshold, path or model name. Add it to `config/settings.yaml`, with a plain-language comment, and a typed field in `desktalk/config/app.py`; parts get their typed section passed in (`config.camera.fps`, etc.). The Pi's numbers go in the `pi:` section (the camera program reads it from the computer); the detector container's in `raspberry_pi/detector_service/.env`.
+- User-facing wording goes in `config/prompts.yaml` (code only fills in the blanks). A new blank also goes in `BLANKS` in `desktalk/config/prompts.py`.
+- The web pages keep no copies of settings: `web_app/` reads `GET /api/ui_settings`, `phone_camera/` reads `GET /api/phone/config`.
 - Habit rules go in `config/protocols.yaml`, characters in `config/agents.yaml`, and API keys in `.env` (also add new keys to `.env.example`). Never put keys in YAML.
 - `config/settings.local.yaml` is the user's own file and isn't in git. Don't edit it.
 
 ## Interfaces first
 - Parts talk through the interfaces in `desktalk/ports.py` and pass the plain data in `desktalk/domain/`. A part asks for only the interfaces it uses in its constructor. Never pass the whole `app` object.
-- `desktalk/bootstrap.py` is the only place that knows the real classes: it builds every part and connects them. A new part gets built there; everything else only sees interfaces. (The camera program's `main.py` and the detector service's `bootstrap.py` do the same on the Pi.)
+- `desktalk/bootstrap.py` is the only place that knows the real classes: it builds every part and connects them. A new part gets built there; everything else only sees interfaces. (The camera program's `workers.py` (`build_program`) and the detector service's `bootstrap.py` do the same on the Pi.)
 - New routes go in `desktalk/web/routers/` (one module per area) and need a characterization case in `tests/characterization/cases.py`; `test_route_coverage.py` fails without one.
-- Ask a `Clock` for the time instead of calling `time.time()`, so tests can move time by hand.
+- Ask a `Clock` for the time instead of calling `time.time()` or `time.localtime()` (`clock.local_hour(now)`, `clock.local_day(now)`), so tests can move time by hand.
+- `desktalk/core/` and `desktalk/domain/` never import OpenCV, numpy, web or AI libraries: pictures go through `PictureTools`. `desktalk/web/` imports only interfaces, plain data, settings and the app. `tests/unit/test_layers.py` checks both.
 - Background jobs are `PeriodicWorker`s run by the Supervisor, so one failure never switches a feature off for good.
 - Use `logging`, never `print` (ruff rule T20). Scripts in `scripts/` may print.
 - Changing `ports.py`, `desktalk/domain/` or `shared/desktalk_shared/` changes the contract every part builds on. Do it on purpose, and update the fakes and contract tests with it.
 
 ## Tests
-- Tests must never need the network, an API key, a camera, a Pi or Docker. Use the fakes in `tests/fakes/` (`FakeClock`, `FakeDetector`, `FakeChatModel`, `SyncEventBus` ...).
+- Tests must never need the network, an API key, a camera, a Pi, Docker or a browser (the opt-in `slow`, `docker` and `e2e` tests aside). Use the fakes in `tests/fakes/` (`FakeClock`, `FakeDetector`, `FakeChatModel`, `SyncEventBus` ...).
 - Every interface has a contract suite in `tests/contracts/`. A new real version of an interface gets a test class that runs the same suite.
 - `tests/` is a package: import helpers as `from tests.fakes import ...` / `from tests.conftest import ...`. Test file names must be unique.
 - Write the failing test first, watch it fail, then write the code (superpowers test-driven-development skill).

@@ -320,10 +320,11 @@ demo where four characters join the chat.
 | `config/settings.yaml` | every number: camera source and rate, the Pi, detection, join/leave times, event log, AI limits, idle chat, Lens, the web server (areas below) |
 | `config/agents.yaml` | who each object becomes: name, personality, color, which habits it speaks for |
 | `config/protocols.yaml` | the habit rules from *Protocols* and your day (wake / bed) |
+| `config/prompts.yaml` | every word Desk Talk says or tells the AI: the prompts, Lens's lines, habit nudges and tips, desk alerts, the replies when the AI is down. The code only fills in the blanks (`{on_waking_ml}` ...) |
 | `config/safety_rules.json` | danger zones and desk corners (the Settings page writes this) |
 | `config/settings.local.yaml` | your own overrides (optional, not uploaded) |
 | `config/benchmark.yaml` | what the YOLO speed test in `benchmarks/` tries |
-| `raspberry_pi/detector_service/.env` | the Pi's detector container: its port and memory limit (no secrets) |
+| `raspberry_pi/detector_service/.env` | the Pi's detector container: its port, memory limit, retry waits, Docker's health check and log file sizes (no secrets) |
 | `.env` | AI keys / `OLLAMA_URL` (never uploaded) |
 
 Areas of `config/settings.yaml` that came with the new design:
@@ -335,11 +336,13 @@ Areas of `config/settings.yaml` that came with the new design:
 | `detector` | YOLO on your computer (phone, webcam, and the backup for the Pi) |
 | `supervisor` | how background jobs start again after a crash: 1 s, then doubling up to 60 s |
 | `event_stream` | how many events may wait per consumer before old picture events are dropped |
-| `web` | the web server: port, upload size limits, live updates |
+| `web` | the web server: port, upload size limits, live updates, and the app page's refresh times, waits and list sizes (the page asks for them at `GET /api/ui_settings`) |
+| `drawing` | the boxes and desk drawings on the live view: colors, line widths, writing sizes, how see-through |
 | `logging` | the log file in `data/logs/` |
 | `storage` | where preferences, habit days and learned personalities are kept (`data/`) |
 
-Every setting is checked when Desk Talk starts (`desktalk/config.py`).
+Every setting is checked when Desk Talk starts (`desktalk/config/`), and so is every blank in
+`config/prompts.yaml`.
 
 ---
 
@@ -348,15 +351,21 @@ Every setting is checked when Desk Talk starts (`desktalk/config.py`).
 **On your Mac**, in the `desk-talk` folder:
 
 ```bash
-uv run pytest -m "not slow"                # fast tests: no model, network, AI key, camera, Pi or Docker needed
+uv run pytest -m "not slow"                # fast tests: no model, network, AI key, camera, Pi, Docker or browser needed
 uv run pytest tests/characterization       # every web route still answers as before
 uv run pytest tests/contracts              # the fakes behave like the real parts
 uv run pytest -m slow                      # the real YOLO model, and ncnn against .pt (needs the models in models/)
-uv run pytest -m docker tests/docker       # build and start the Pi's detector image (needs Docker and the internet)
-uv run ruff check <files>                  # lint
+uv run playwright install chromium         # once, for the browser tests
+uv run pytest -m e2e                       # the real app page in a browser
+uv run pytest -m docker                    # build and start the Pi's detector image (needs Docker and the internet)
+uv run ruff check .                        # lint
+uv run pyright                             # type check: 0 errors
+uv run vulture                             # dead code check: prints nothing
 ```
 
-GitHub runs the lint and the fast tests on every push (`.github/workflows/tests.yml`).
+GitHub runs the lint, the type check, the dead code check and the fast tests on every push
+(`.github/workflows/tests.yml`). The fast tests run there with `--cov`, which fails when they cover less
+of the code than `fail_under` in `pyproject.toml`.
 
 | Folder | What it checks |
 |---|---|
@@ -366,6 +375,7 @@ GitHub runs the lint and the fast tests on every push (`.github/workflows/tests.
 | `tests/characterization/` | every route of both web servers: status code, headers and JSON shape, saved in `snapshots/`. A route without a case fails the tests |
 | `tests/slow/` | the real model: the ncnn model finds the same objects as the `.pt`, and the detector service with a real model (`-m slow`) |
 | `tests/docker/` | builds the detector's Docker image, starts it and asks it for detections (`-m docker`, opt-in) |
+| `tests/e2e/` | the real app page in a browser, against the whole app with a fake detector and a fake AI (`-m e2e`, opt-in); `test_full_stack.py` sends pictures from the camera program through the detector container to the page (`-m docker`) |
 | `tests/fakes/` | the fakes: `FakeClock`, `FakeDetector`, `FakeChatModel`, `SyncEventBus` ... |
 
 The benchmark tool has its own tests: see [benchmarks/README.md](benchmarks/README.md).
@@ -378,38 +388,39 @@ The benchmark tool has its own tests: see [benchmarks/README.md](benchmarks/READ
 desk-talk/
 ├── server.py                 # start Desk Talk on your computer: uv run python server.py
 ├── pyproject.toml, uv.lock   # the uv workspace: desktalk, desktalk-shared, desktalk-detector
-├── config/                   # every setting: settings.yaml, agents.yaml, protocols.yaml, safety_rules.json
+├── config/                   # every setting: settings.yaml, agents.yaml, protocols.yaml, prompts.yaml (the wording), safety_rules.json
 ├── desktalk/                 # the app that runs on your computer
 │   ├── bootstrap.py          #   builds every part and connects them (the only place that knows the real classes)
-│   ├── config.py             #   reads config/ and .env into typed settings; a bad value stops the start
+│   ├── config/               #   reads config/ and .env into typed settings, one file per config file; a bad value stops the start
 │   ├── ports.py              #   the interfaces between the parts
-│   ├── domain/               #   plain data: Detection, Frame, events, agent profiles, nudges
-│   ├── core/                 #   the logic, written only against ports.py
-│   │   ├── vision/           #     producer (pictures → events), desk rules, desk monitor, Lens's checks, live view
+│   ├── domain/               #   plain data: Detection, Frame, events, agent profiles, nudges, the desk right now
+│   ├── core/                 #   the logic, written only against ports.py (no OpenCV, web or AI libraries)
+│   │   ├── desk/             #     the desk right now: live view pictures, the scene, dangers, memories, proof photos
+│   │   ├── vision/           #     producer (pictures → events), desk rules, desk monitor, Lens's checks, proof photos
 │   │   ├── events/           #     the event stream
 │   │   ├── agents/           #     profiles + roster (join / leave)
-│   │   ├── habits/           #     Protocols rules, habit tracker, reminders, preferences, sun times
-│   │   └── chat/             #     message generator, message hub, prompts; workers/: idle chat, lost items, Lens, recap
+│   │   ├── habits/           #     Protocols rules, habit days, habit tracker, reminders, preferences, sun times
+│   │   └── chat/             #     message generator and its voices, message hub, chat context; workers/: idle chat, lost items, Lens, recap
 │   ├── adapters/             #   the real things behind the interfaces
 │   │   ├── camera/           #     the Pi, phone and webcam as picture sources
 │   │   ├── detector/         #     YOLO on this computer (Ultralytics)
 │   │   ├── llm/              #     the AI (Gemini / OpenAI / Groq / Ollama), with time limits, retries and a breaker
+│   │   ├── picture/          #     OpenCV: the picture tools, and the drawing on the live view
 │   │   └── storage/          #     the event log files and small JSON files (preferences, habit days)
 │   ├── runtime/              #   Supervisor (starts crashed background jobs again), Scheduler, clock, logging
 │   ├── web/                  #   FastAPI: app.py, routers/ (one file per area), schemas.py, serve.py (uvicorn)
-│   ├── desk_state.py         #   what's on the desk right now
 │   └── util.py               #   small helpers
-├── shared/desktalk_shared/   # used on the Pi and here: Detection, the upload format, the detector's API
+├── shared/desktalk_shared/   # used on the Pi and here: Detection, the upload format, the detector's API, backoff, clock, worker thread
 ├── raspberry_pi/             # what runs on the Pi (raspberry_pi/README.md)
-│   ├── camera/               #   the camera program, on the Pi's own python3 (no Docker)
+│   ├── camera/               #   the camera program, on the Pi's own python3 (no Docker): cli.py, main.py, workers.py ...
 │   └── detector_service/     #   YOLO in Docker: Dockerfile, compose.yaml, .env, desktalk_detector/
 ├── benchmarks/               # times YOLO models on your Mac and on the Pi, to pick the Pi's model
 ├── web_app/                  # the app you open at localhost:5000 (HTML / CSS / JS, art, fonts)
 ├── phone_camera/             # the page a phone opens to be the camera instead of the Pi
 ├── models/                   # YOLO model files (downloaded, not uploaded)
-├── tests/                    # unit, contracts, integration, characterization, slow, docker; fakes/
+├── tests/                    # unit, contracts, integration, characterization, slow, docker, e2e; fakes/, e2e_kit/
 ├── scripts/                  # download_models.py, camera_preview.py, yolo_webcam_detect.py, capture_app_screenshots.py
-├── docs/                     # ARCHITECTURE.md, AGENT_SYSTEM.md, plans/, images/
+├── docs/                     # ARCHITECTURE.md, AGENT_SYSTEM.md, plans/
 └── data/                     # event log, habit days, preferences, log files (made when it runs, not uploaded)
 ```
 
