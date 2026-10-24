@@ -17,7 +17,6 @@
   // list, so the count only goes down. Don't add new files here.
   "ignore": [
     "desktalk/bootstrap.py",
-    "desktalk/config.py",
     "desktalk/core/agents/roster.py",
     "desktalk/core/chat/context.py",
     "desktalk/core/chat/message_generator.py",

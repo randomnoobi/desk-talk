@@ -5,7 +5,7 @@ Package layout (each folder has one job):
 
     desktalk/
       bootstrap.py     builds every part from the settings and connects them (uv run python server.py)
-      config.py        reads config/*.yaml and .env into typed settings
+      config/          reads config/*.yaml and .env into typed settings (one file per config file)
       ports.py         the small interfaces the parts talk through
       domain/          the plain data they pass: detections, events, agents, habits
       desk_state.py    the shared desk state (what's on the desk, photos, trackers)

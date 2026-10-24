@@ -1,4 +1,4 @@
-"""Typed settings (desktalk/config.py): loading config/*.yaml and .env, and clear messages for bad values.
+"""Typed settings (desktalk/config/): loading config/*.yaml and .env, and clear messages for bad values.
 
 Every test works on copies of the real config files in a temp folder and passes environ={},
 so your own .env and config/settings.local.yaml never change the result.
