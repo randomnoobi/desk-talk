@@ -126,8 +126,9 @@ _ = (
     CameraPrompts.titles, CameraPrompts.lost_title, CameraPrompts.lost_fix, CameraPrompts.cutoff_title,
     CameraPrompts.edge_tip,
     # Reply fields the phone page (phone_camera/camera.js) and the app page (web_app/app.js) read from the JSON
-    # once Task 9 of the cleanup plan switches them over to GET /api/phone/config and GET /api/ui_settings.
-    PhoneSettings.max_side, PhoneSettings.tilt_max, UiPage.log_shown, UiPage.photos_shown, UiPage.habit_log_shown,
+    # of GET /api/phone/config and GET /api/ui_settings.
+    PhoneSettings.max_side, PhoneSettings.tilt_max, PhoneSettings.capture_width, PhoneSettings.capture_height,
+    UiPage.log_shown, UiPage.photos_shown, UiPage.habit_log_shown,
     UiSettings.lens_card, UiSettings.chat_reply_timeout_ms,
     # Interfaces and methods added in Task 4 of the cleanup plan, for the code later tasks switch over.
     # Task 6 (Lens, the daily summary) and Task 7 (the habits) ask the clock for the local hour:
