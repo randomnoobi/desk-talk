@@ -9,9 +9,9 @@ from test_camera_program_fakes import KEY, FakeCamera, FakeClock, FakeComputer, 
 from desktalk_shared.detector_api import ServiceState
 from raspberry_pi.camera import self_test
 from raspberry_pi.camera.cameras import CameraError
+from raspberry_pi.camera.cli import main
 from raspberry_pi.camera.detector_client import DetectorClient
 from raspberry_pi.camera.health import HealthReader
-from raspberry_pi.camera.main import main
 from raspberry_pi.camera.settings import from_layers
 
 

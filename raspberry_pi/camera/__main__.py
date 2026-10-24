@@ -2,6 +2,6 @@
 
 import sys
 
-from raspberry_pi.camera.main import main
+from raspberry_pi.camera.cli import main
 
 sys.exit(main())

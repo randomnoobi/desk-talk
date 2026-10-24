@@ -33,7 +33,6 @@
     "desktalk/web/app.py",
     "desktalk/web/serve.py",
     "raspberry_pi/camera/cameras.py",
-    "raspberry_pi/camera/main.py",
     "raspberry_pi/detector_service/desktalk_detector/manager.py",
     "shared/desktalk_shared/detection.py",
     "shared/desktalk_shared/detector_api.py",

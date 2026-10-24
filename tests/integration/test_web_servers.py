@@ -22,7 +22,7 @@ from desktalk.domain import DetectorState, UploadInfo
 from desktalk.runtime import SystemClock
 from desktalk.web.app import create_app, create_phone_app
 from desktalk.web.pairing import ensure_cert
-from raspberry_pi.camera import main as camera_program
+from raspberry_pi.camera import cli as camera_program
 from raspberry_pi.camera.clock import SystemClock as PiClock
 from raspberry_pi.camera.uploader import Uploader
 from tests.fakes import FakeDetector
