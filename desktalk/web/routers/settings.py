@@ -84,7 +84,7 @@ def ui_settings_from(c: AppConfig) -> UiSettings:
                         evening_dim_before_bed_min=c.protocols.light.evening_dim_before_bed_min,
                         breaks=c.protocols.breaks),
         desk=UiDesk(edge_proximity=safety.edge_proximity, desk_border_share=safety.desk_border_share,
-                    max_desk_corners=safety.max_desk_corners),
+                    min_desk_corners=safety.min_desk_corners, max_desk_corners=safety.max_desk_corners),
         quiet_hours=c.reminders.quiet_hours,
         pi=UiPi(fps=c.pi.fps, delete_every_min=c.pi.delete_every_min, compact_every_min=c.event_log.compact_every_min),
         phone=phone_settings(c.camera),

@@ -34,8 +34,9 @@ class Rig:
         self.habits = FakeHabits()
         self.status = FakeDeskStatus(warm=warm)
         self.profiles = FakeProfiles(agents, ignored=['person', 'chair'])
-        rules = SafetyRules(InMemoryKeyValueStore({'safety_rules': saved} if saved else {}), app_config().safety)
         prompts = app_config().prompts
+        rules = SafetyRules(InMemoryKeyValueStore({'safety_rules': saved} if saved else {}), app_config().safety,
+                            words=prompts.desk_rules)
         self.monitor = DeskMonitor(self.bus, self.desk, DeskAnalyzer(rules, words=prompts.desk_checks), self.profiles,
                                    self.habits, self.status, self.photos, app_config().alerts,
                                    words=words or prompts.desk_alerts)

@@ -330,12 +330,12 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     source = camera.source
     if pair_key is None:
         pair_key = make_pair_key(config.resolve(config.camera.pair_key_file), config.camera.pair_key_bytes)
-    safety_rules = SafetyRules(config_store, config.safety, liquids=profiles.labels_for_habit('hydration'),
-                               foods=profiles.labels_for_habit('food'))
+    safety_rules = SafetyRules(config_store, config.safety, words=config.prompts.desk_rules,
+                               liquids=profiles.labels_for_habit('hydration'), foods=profiles.labels_for_habit('food'))
     analyzer = DeskAnalyzer(safety_rules, words=config.prompts.desk_checks)
     painter = DeskPainter(scene, profiles, analyzer, config.drawing)
     pictures = OpenCvPictureTools()
-    photos = ProofPhotos(desk, clock, config.snapshots, pictures=pictures)
+    photos = ProofPhotos(desk, clock, config.snapshots, pictures=pictures, no_label=config.prompts.photos.no_label)
     camera_health = CameraHealth(config.lens, source_kind=source.kind, moved_within_sec=config.camera.moved_within_sec,
                                  pictures=pictures, words=config.prompts.camera,
                                  ignore_labels=config.agents_file.ignore)

@@ -20,7 +20,8 @@
         ],
         "warn_px": "number"
       },
-      "max_desk_corners": "number"
+      "max_desk_corners": "number",
+      "min_desk_corners": "number"
     },
     "habits": {
       "breaks": {

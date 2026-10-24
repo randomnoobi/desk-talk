@@ -740,6 +740,16 @@ desk_alerts:
   edge_reason: Near {edge} edge ({distance}px)
   edge_danger: '{object} near {edge} edge'
 
+# ── The desk rules on the Settings page ─────────────────────────────
+desk_rules:
+  # the reply when fewer desk corners were marked than safety.min_desk_corners
+  too_few_corners: Mark at least {corners} corners of the desk
+
+# ── Proof photos (the Captures page) ────────────────────────────────
+photos:
+  # the label of a photo saved without one
+  no_label: Capture
+
 # ── What the desk checks found, in words (RELATIONSHIP INSIGHTS for the chat's AI) ───
 # {a}, {b}, {object} ... are the detector's words for the things
 desk_checks:

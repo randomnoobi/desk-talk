@@ -34,17 +34,19 @@ class TestProofPhotosPassesPhotoTakerContract(PhotoTakerContract):
     def taker(self):
         with_picture = desk()
         with_picture.put(0, PICTURE, PICTURE, Size(160, 120))
-        return ProofPhotos(with_picture, FakeClock(), CONFIG.snapshots, pictures=FakePictureTools())
+        return ProofPhotos(with_picture, FakeClock(), CONFIG.snapshots, pictures=FakePictureTools(),
+                           no_label=CONFIG.prompts.photos.no_label)
 
     @pytest.fixture
     def taker_without_picture(self):
-        return ProofPhotos(desk(), FakeClock(), CONFIG.snapshots, pictures=FakePictureTools())
+        return ProofPhotos(desk(), FakeClock(), CONFIG.snapshots, pictures=FakePictureTools(),
+                           no_label=CONFIG.prompts.photos.no_label)
 
 
 class TestSafetyRulesPassesDeskRulesContract(DeskRulesContract):
     @pytest.fixture
     def rules(self):
-        return SafetyRules(InMemoryKeyValueStore(), CONFIG.safety)
+        return SafetyRules(InMemoryKeyValueStore(), CONFIG.safety, words=CONFIG.prompts.desk_rules)
 
 
 class TestPiFrameSourcePassesPiStatusContract(PiStatusContract):
@@ -64,8 +66,10 @@ class TestPhoneFrameSourcePassesPhoneCameraContract(PhoneCameraContract):
 
 
 def test_the_real_parts_have_all_of_their_interface():
-    assert isinstance(ProofPhotos(desk(), FakeClock(), CONFIG.snapshots, pictures=FakePictureTools()), PhotoTaker)
-    assert isinstance(SafetyRules(InMemoryKeyValueStore(), CONFIG.safety), DeskRulesView)
+    assert isinstance(ProofPhotos(desk(), FakeClock(), CONFIG.snapshots, pictures=FakePictureTools(),
+                                  no_label=CONFIG.prompts.photos.no_label), PhotoTaker)
+    rules = SafetyRules(InMemoryKeyValueStore(), CONFIG.safety, words=CONFIG.prompts.desk_rules)
+    assert isinstance(rules, DeskRulesView)
     pi = PiFrameSource(FakeClock(), camera_settings())
     assert isinstance(pi, PiStatus) and isinstance(pi, PiUploads)
     phone = PhoneFrameSource(FakeClock(), camera_settings())

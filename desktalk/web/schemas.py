@@ -169,6 +169,7 @@ class UiDesk(BaseModel):
 
     edge_proximity: EdgeProximity
     desk_border_share: float
+    min_desk_corners: int
     max_desk_corners: int
 
 

@@ -222,6 +222,7 @@ class SafetySettings(_Section):
     desk_border_share: Fraction
     footprint_share: Fraction
     footprint_min_px: ZeroOrMore
+    min_desk_corners: Annotated[int, Field(ge=3)]
     max_desk_corners: Annotated[int, Field(ge=3)]
 
 

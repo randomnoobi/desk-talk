@@ -222,7 +222,7 @@ def test_ui_settings_reply(tmp_path):
     assert (ui['habits']['morning_window_min'], ui['habits']['evening_dim_before_bed_min'],
             ui['habits']['stop_before_bed_hours']) == (60, 60, 2)
     assert ui['desk']['edge_proximity']['danger_px'] == 35 and ui['desk']['max_desk_corners'] == 12
-    assert ui['desk']['desk_border_share'] == 0.03
+    assert ui['desk']['desk_border_share'] == 0.03 and ui['desk']['min_desk_corners'] == 3
     assert ui['quiet_hours'] == {'enabled': False, 'start_hour': 22, 'end_hour': 7}
     assert ui['pi'] == {'fps': 3, 'delete_every_min': 10, 'compact_every_min': 10}
     assert ui['phone'] == {'fps': 3, 'max_side': 960, 'jpeg_quality': 70, 'tilt_max': 50,

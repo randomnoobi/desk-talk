@@ -902,7 +902,6 @@ async function renderCaptures() {
 // The sliders' ranges, in pixels, and where a new danger zone's slider starts.
 const SLIDERS = { zone: [10, 200], warn: [20, 200], alert: [10, 120] };
 const NEW_ZONE_PX = 60;
-const MIN_CORNERS = 3;                 // a desk outline needs at least 3 corners
 async function renderSettings() {
   const page = $('#view-settings');
   const head = `<header><h1 class="page-title">Settings</h1>
@@ -920,7 +919,7 @@ async function renderSettings() {
   const edge = { danger_px: builtIn.danger_px, warn_px: builtIn.warn_px, ...(rules.edge_proximity || {}) };
   let outline = (rules.desk_outline || []).map(([x, y]) => [x, y]);
   let outlineChanged = false;
-  let startOver = outline.length >= MIN_CORNERS;   // a saved outline: the first tap starts a new one
+  let startOver = outline.length >= ui.desk.min_desk_corners;   // a saved outline: the first tap starts a new one
   let picSize = null;
   const range = (name, value, [min, max]) => `<label class="range"><input type="range" name="${name}" min="${min}" max="${max}" value="${value}"><output>${value} px</output></label>`;
 
@@ -999,8 +998,8 @@ async function renderSettings() {
     $('#save-settings').addEventListener('click', async () => {
       const out = $('#saved');
       out.className = 'saved'; out.textContent = 'Saving…';
-      if (outline.length && outline.length < MIN_CORNERS) {
-        out.className = 'saved error'; out.textContent = `Tap at least ${MIN_CORNERS} corners of the desk, or press Clear.`;
+      if (outline.length && outline.length < ui.desk.min_desk_corners) {
+        out.className = 'saved error'; out.textContent = `Tap at least ${ui.desk.min_desk_corners} corners of the desk, or press Clear.`;
         return;
       }
       try {
@@ -1030,10 +1029,10 @@ async function renderSettings() {
   function drawOutline() {
     const svg = $('#edge-svg');
     const status = $('#edge-status');
-    const real = outline.length >= MIN_CORNERS ? outline.filter((p, i) => !sameBorder(p, outline[(i + 1) % outline.length])).length : 0;
+    const real = outline.length >= ui.desk.min_desk_corners ? outline.filter((p, i) => !sameBorder(p, outline[(i + 1) % outline.length])).length : 0;
     if (status) {
-      status.textContent = outline.length < MIN_CORNERS
-        ? `${outline.length} of at least ${MIN_CORNERS} corners`
+      status.textContent = outline.length < ui.desk.min_desk_corners
+        ? `${outline.length} of at least ${ui.desk.min_desk_corners} corners`
         : `${outline.length} corners, ${real} real desk edge${real === 1 ? '' : 's'}${outlineChanged ? '. Press Save settings.' : '. Tap the picture to start over.'}`;
     }
     if (!svg || !picSize) return;
@@ -1042,9 +1041,9 @@ async function renderSettings() {
     const P = (p) => `${(p[0] * w).toFixed(1)},${(p[1] * h).toFixed(1)}`;
     const sw = Math.max(2, w / 220);
     let out = '';
-    if (outline.length >= MIN_CORNERS) out += `<polygon points="${outline.map(P).join(' ')}" class="edge-fill"/>`;
+    if (outline.length >= ui.desk.min_desk_corners) out += `<polygon points="${outline.map(P).join(' ')}" class="edge-fill"/>`;
     outline.forEach((p, i) => {
-      if (i === outline.length - 1 && outline.length < MIN_CORNERS) return;
+      if (i === outline.length - 1 && outline.length < ui.desk.min_desk_corners) return;
       const q = outline[(i + 1) % outline.length];
       const ignored = sameBorder(p, q);
       out += `<line x1="${p[0] * w}" y1="${p[1] * h}" x2="${q[0] * w}" y2="${q[1] * h}" class="${ignored ? 'edge-ignored' : 'edge-real'}" stroke-width="${ignored ? sw * 0.7 : sw * 1.4}" ${ignored ? `stroke-dasharray="${sw * 3} ${sw * 3}"` : ''}/>`;

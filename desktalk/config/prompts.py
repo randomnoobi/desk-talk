@@ -37,6 +37,7 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'alert.self_is_drink': ('self_label',),
     'alert.same_area': ('self_label', 'other_label'),
     'alert.heads_up': ('rule',),
+    'desk_rules.too_few_corners': ('corners',),
     'replies.ai_errors.rate_limit': ('who',),
     'replies.ai_errors.bad_key': ('who',),
     'replies.ai_errors.no_model': ('who',),
@@ -519,6 +520,18 @@ class DeskCheckWords(_Section):
     approaching: str
 
 
+class DeskRuleWords(_Section):
+    """What the desk rules say on the Settings page."""
+
+    too_few_corners: str
+
+
+class PhotoWords(_Section):
+    """The proof photos' wording (the Captures page)."""
+
+    no_label: str
+
+
 class LensCard(_Section):
     name: str
     art: str
@@ -632,6 +645,8 @@ class Prompts(_Section):
     lens: LensPrompts
     camera: CameraPrompts
     desk_alerts: DeskAlertWords
+    desk_rules: DeskRuleWords
+    photos: PhotoWords
     desk_checks: DeskCheckWords
 
 

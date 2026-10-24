@@ -27,9 +27,12 @@ def shape(data, tools=TOOLS):
     return size.height, size.width
 
 
-def photos(desk=None, clock=None, settings=SNAPSHOTS, tools=TOOLS):
+NO_LABEL = app_config().prompts.photos.no_label
+
+
+def photos(desk=None, clock=None, settings=SNAPSHOTS, tools=TOOLS, no_label=NO_LABEL):
     desk = desk or FakeDesk()
-    return ProofPhotos(desk, clock or FakeClock(), settings, pictures=tools), desk
+    return ProofPhotos(desk, clock or FakeClock(), settings, pictures=tools, no_label=no_label), desk
 
 
 def show(desk, picture, cam=0):
@@ -131,6 +134,13 @@ def test_a_photo_without_a_label_is_a_capture():
     show(desk, jpeg())
     photo = desk.get(p.save('') or '')
     assert photo is not None and photo.label == 'Capture'
+
+
+def test_the_label_of_a_photo_without_one_comes_from_prompts_yaml():
+    p, desk = photos(no_label='Snapshot')
+    show(desk, jpeg())
+    photo = desk.get(p.save('') or '')
+    assert photo is not None and photo.label == 'Snapshot'
 
 
 def test_the_first_camera_with_a_picture_is_used():

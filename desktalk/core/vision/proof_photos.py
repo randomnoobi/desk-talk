@@ -12,18 +12,18 @@ from desktalk.config import SnapshotsSettings
 from desktalk.core.vision.geometry import Box
 from desktalk.ports import Clock, DeskScene, LivePictures, PhotoAlbum, PictureTools
 
-NO_LABEL = 'Capture'        # the label of a photo saved without one
-
 
 class PhotoDesk(LivePictures, DeskScene, PhotoAlbum, Protocol):
     """The parts of the desk proof photos use: the live view picture, what's on the desk, and the album."""
 
 
 class ProofPhotos:
-    """Implements PhotoTaker. `pictures` crops the photos."""
+    """Implements PhotoTaker. `pictures` crops the photos. `no_label`: the label of a photo saved without one."""
 
-    def __init__(self, desk: PhotoDesk, clock: Clock, snapshots: SnapshotsSettings, *, pictures: PictureTools):
+    def __init__(self, desk: PhotoDesk, clock: Clock, snapshots: SnapshotsSettings, *, pictures: PictureTools,
+                 no_label: str):
         self._desk = desk
+        self._no_label = no_label
         self._clock = clock
         self._settings = snapshots
         self._pictures = pictures
@@ -37,7 +37,7 @@ class ProofPhotos:
         if crop_boxes:
             jpeg = self._cropped(jpeg, crop_boxes)
         desk = self._desk
-        return desk.add(jpeg, label or NO_LABEL, self._clock.now(), char_ids=list(desk.members()),
+        return desk.add(jpeg, label or self._no_label, self._clock.now(), char_ids=list(desk.members()),
                         labels=sorted(str(k).lower() for k in desk.seen()),
                         vlm_labels=sorted(str(x).lower() for x in desk.scan_labels()))
 
