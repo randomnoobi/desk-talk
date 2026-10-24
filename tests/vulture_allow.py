@@ -9,55 +9,20 @@ from typing import Any, cast
 
 from uvicorn import Server
 
-from desktalk.config import (
-    AiReplies,
-    CameraSettings,
-    LensWaits,
-    LoggingSettings,
-    RiskWeights,
-    VisionNudgeRepeats,
-)
-from desktalk.config.prompts import (
-    ByCamera,
-    ChatPrompts,
-    HabitAreas,
-    HabitReminderPrompts,
-    LensPrompts,
-    LostItemsPrompts,
-    PiFixed,
-    Prompts,
-    Replies,
-    SmallTalkPrompts,
-    VisionPrompts,
-)
+from desktalk.config import LensWaits, RiskWeights, VisionNudgeRepeats
+from desktalk.config.prompts import ByCamera, HabitAreas
 from desktalk.core.habits.habit_days import HabitDay
 from desktalk.core.habits.sun_times import SunTimes
 from desktalk.core.habits.tracker import DayTimes
-from desktalk.domain import SeenObject
 from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent, NudgeSent
-from desktalk.ports import (
-    CharacterMemory,
-    Clock,
-    DeskScene,
-    EventStore,
-    HabitsLifecycle,
-    LivePictures,
-    PhoneControls,
-    PictureInbox,
-    PiStatus,
-    SafetyBoard,
-)
 from desktalk.web.schemas import PhoneSettings, PreferenceChanges, UiPage, UiSettings
 from desktalk_shared.wire import PiHealth
 
 _ = (
     # Settings read by name with getattr (the risk score adds up each weight, Lens looks up each wait).
-    RiskWeights.edge_danger, RiskWeights.edge_warning, RiskWeights.zone_intrusion, RiskWeights.crowd,
-    RiskWeights.repeated_intrusion,
-    AiReplies.alert,
+    RiskWeights.edge_danger, RiskWeights.edge_warning, RiskWeights.zone_intrusion, RiskWeights.repeated_intrusion,
     VisionNudgeRepeats.slouch,
-    LensWaits.lost, LensWaits.covered, LensWaits.dark, LensWaits.glare, LensWaits.blurry, LensWaits.bumped,
-    LensWaits.slow,
+    LensWaits.covered, LensWaits.dark, LensWaits.blurry,
     # Request fields read through model_dump().
     PreferenceChanges.quiet_enabled, PreferenceChanges.quiet_start_hour, PreferenceChanges.quiet_end_hour,
     PreferenceChanges.dnd_enabled, PreferenceChanges.dnd_start_hour, PreferenceChanges.dnd_end_hour,
@@ -68,28 +33,8 @@ _ = (
     DetectionEvent.detected_on,
     # Written with every habit reminder; the rule engine (PR #6) reads it.
     NudgeSent.rule,
-    # Interfaces with no user yet: the web layer starts using them in Task 10 of the cleanup plan.
-    EventStore, PictureInbox,
-    # Settings added in Task 4 of the cleanup plan for code that later tasks switch over (each says which).
-    # Task 6 (the AI's errors, and the log line quoting an AI reply in core/chat/message_generator.py):
-    LoggingSettings.preview_chars,
-    # Task 10 (the phone page's certificate, made in desktalk/web/pairing.py):
-    CameraSettings.phone_cert_file, CameraSettings.phone_key_file,
-    # The wording in config/prompts.yaml. Every text is already read by name when the config loads
-    # (desktalk/config/prompts.py: prompt_texts, fill_settings); the code starts using them in Tasks 5-7.
-    # Task 6 (chat, Lens and lost items):
-    Replies.needs_an_ai, Replies.empty_reply, Replies.nobody_here, Replies.no_ai_label, Replies.no_picture,
-    Replies.ask_for_a_sentence, ChatPrompts.identity_short,
-    HabitAreas.screens, HabitAreas.no_habits, HabitReminderPrompts.system_short, HabitReminderPrompts.no_evidence,
-    SmallTalkPrompts.topic_system, SmallTalkPrompts.director_system, SmallTalkPrompts.line_system,
-    LostItemsPrompts.answer_system, LostItemsPrompts.alert_system, LostItemsPrompts.alert_user,
-    LostItemsPrompts.scan, LostItemsPrompts.in_saved_photo, LostItemsPrompts.in_live_picture,
-    LostItemsPrompts.anything, LostItemsPrompts.triggers, LostItemsPrompts.not_spotted,
-    LostItemsPrompts.captures_button, VisionPrompts.habit_scene,
-    PiFixed.pi_hot, PiFixed.pi_power, PiFixed.pi_clock,
-    LensPrompts.photo_label, LensPrompts.pi_hot, LensPrompts.pi_slowed, LensPrompts.pi_power,
-    LensPrompts.pi_clock, LensPrompts.pi_clock_behind, LensPrompts.pi_clock_ahead, LensPrompts.pi_detector_why,
-    LensPrompts.pi_fixed, Prompts.habit_areas, Prompts.habit_reminder, Prompts.small_talk,
+    # Wording in config/prompts.yaml, read by name when the config loads (desktalk/config/prompts.py: prompt_texts).
+    HabitAreas.screens,
     # The habit day file's fields: HabitDay.to_dict() writes them to data/habits/<day>.json, and today() reads
     # them back by name for the Habits page (summary_sent is kept for day files written before the cleanup).
     HabitDay.last_break_ts, HabitDay.desk_sec, HabitDay.phone_free_sec, HabitDay.phone_on_desk_sec,
@@ -98,8 +43,6 @@ _ = (
     # Keys of the sunrise / sunset and day-times dicts, read by name (tracker.day_times, today()['times']).
     # (TypedDicts have no attributes, hence the casts.)
     cast(Any, SunTimes).sunrise, cast(Any, SunTimes).estimated, cast(Any, DayTimes).sunrise_ts,
-    # Only bootstrap saves the habits (Task 10 types its habits field as HabitsLifecycle).
-    HabitsLifecycle,
     # Lens's words for a lost webcam: read with model_dump().get(camera) in desktalk/core/vision/camera_health.py.
     ByCamera.webcam,
     # Reply fields the phone page (phone_camera/camera.js) and the app page (web_app/app.js) read from the JSON
@@ -107,16 +50,6 @@ _ = (
     PhoneSettings.max_side, PhoneSettings.tilt_max, PhoneSettings.capture_width, PhoneSettings.capture_height,
     UiPage.log_shown, UiPage.photos_shown, UiPage.habit_log_shown,
     UiSettings.lens_card, UiSettings.chat_reply_timeout_ms,
-    # Interfaces and methods added in Task 4 of the cleanup plan, for the code later tasks switch over.
-    # Task 6 (Lens, the daily summary) and Task 7 (the habits) ask the clock for the local hour:
-    Clock.local_hour,
-    # Task 10 (the web routes and bootstrap take these instead of the Pi's and the phone's classes):
-    PiStatus, PhoneControls,
-    # Tasks 5, 6, 7 and 10 (the five desk interfaces that replace DeskState; DeskState has the same methods):
-    LivePictures.camera_numbers, LivePictures.set_light, LivePictures.newest_light,
-    DeskScene.set_members, DeskScene.note_picture, DeskScene.person_seen_at, DeskScene.last_motion,
-    SeenObject.from_detection, SafetyBoard.report, SafetyBoard.note_alert,
-    CharacterMemory.widgets, CharacterMemory.note_user_activity,
     # Pydantic's own settings attribute, and the flag uvicorn's thread reads to stop.
     PreferenceChanges.model_config, Server(config=None).should_exit,  # type: ignore[arg-type]
 )
