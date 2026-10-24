@@ -8,7 +8,6 @@ Package layout (each folder has one job):
       config/          reads config/*.yaml and .env into typed settings (one file per config file)
       ports.py         the small interfaces the parts talk through
       domain/          the plain data they pass: detections, events, agents, habits
-      desk_state.py    the shared desk state (what's on the desk, photos, trackers)
       util.py          small helpers (times, durations, names)
       core/            what Desk Talk does, with no network, camera or files:
         vision/          the producer, the desk rules, Lens's camera checks, the live view
@@ -16,6 +15,8 @@ Package layout (each folder has one job):
         habits/          the Protocols habit rules, the habit tracker, reminders
         chat/            the AI's replies, alerts, small talk, lost items, the daily recap
         events/          the event stream (producer → stream → everyone who listens)
+        desk/            the desk right now: the live pictures, what's on it, the dangers, what the
+                         characters remember, the proof photos (one small part each)
       adapters/        the real outside things: cameras, the YOLO detector, the AI, files on disk
       runtime/         the clock, the scheduler, the Supervisor that keeps background jobs running, logging
       web/             the FastAPI servers: the app (web_app/), the Pi's uploads and the phone camera page
