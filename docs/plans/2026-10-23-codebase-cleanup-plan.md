@@ -79,6 +79,27 @@ no `time.time()` in core, only `bootstrap.py` builds adapters, and every key in 
 7. **The object state machine plan** ([2026-10-22](2026-10-22-object-state-machine-plan.md)) is being built in PR #6. This cleanup goes first; PR #6 and PR #5 are moved onto the cleaned `main` afterwards.
 8. **Order.** Cleanup first, then #6 and #5 are rebased onto it. Keep this PR focused; don't reach into code only those PRs add.
 
+## What was done (2026-10-24)
+
+Tasks 1-11 are done on the `cleanup` branch. Where the work differs from the steps below:
+
+- **Task 1:** pyright skips the files that had errors on a per-file list (not per folder), so every other file is
+  checked. Vulture's settings live in `pyproject.toml` (`uv run vulture`), and it ignores route and pydantic
+  decorators instead of listing every route. CI runs the fast tests with `--cov`, so the coverage floor is enforced.
+- **Task 2:** `NudgeSent.rule` stays (PR #6's rule engine reads it), and so do `DetectionEvent.detected_on` (the
+  Log tab and tests read it) and `GET /api/video_feed_raw` without a camera number (`benchmarks/README.md` tells
+  people to open it). Removed POST/PUT routes answer 405, not 404, because the page files are served at `/`.
+- **Task 3:** the page has no Lens chat in the chat list, so the Lens card is checked through `/api/agents`. The
+  offline note didn't exist; Task 9 added it. The Docker full-stack tests are written but haven't run (no Docker here).
+- **Tasks 4-10:** the interfaces' final names are in `desktalk/ports.py`; several differ from the list below
+  (for example `camera_numbers`, `newest_light`, `DeskScene.set_members` + `note_picture`). `OpenCvPictureTools` was
+  written before Tasks 5-9 because both vision and chat needed it. Tasks 5-9 and the Task 10 follow-ups ran in
+  their own worktrees and were merged, so each could make small edits to `bootstrap.py` and the settings.
+  `WholeDesk` (in `core/desk/`) passes calls on to the five desk parts for the seven constructors that still take
+  one object for several desk interfaces.
+- **Not done:** upload format 1 stays (Decision 3). The chat box's `maxlength="500"` in `web_app/index.html` is
+  shorter than `chat.message_max_chars` (1200); it was left alone because changing it changes what you can type.
+
 ## Order of work, and who owns which files
 
 ```
