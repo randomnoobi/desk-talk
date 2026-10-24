@@ -503,7 +503,6 @@ web:
   request_timeout_ms: 8000    # the page gives up on an ordinary request after this long (a chat reply waits
                               # longer: as long as the server may try the AI, see GET /api/ui_settings)
   live_timeout_ms: 5000       # ...on the live status request after this long
-  first_check_timeout_ms: 4000  # ...on the first "is the server there?" check, then runs as a demo
   activity_ping_ms: 3000      # while you type, the page tells the server at most this often (small talk waits)
   toast_ms: 4000              # how long a pop-up note stays
   left_chat_shown_min: 60     # a chat whose object left the desk stays in the chat list this long
