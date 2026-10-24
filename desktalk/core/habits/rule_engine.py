@@ -26,6 +26,7 @@ from desktalk.config import (
     rule_timezone,
 )
 from desktalk.domain import Nudge
+from desktalk.domain.habits import HABIT_ACTIONS
 from desktalk.domain.rules import DeskSnapshot, HabitDone, ObjectSnapshot, RuleHistory, StateChange
 from desktalk.util import in_hour_window, parse_hhmm
 
@@ -97,7 +98,7 @@ def holds(cond: Condition, snapshot: DeskSnapshot, changes: Sequence[StateChange
     if isinstance(cond, (EventCond, HabitCond)):
         if events_after is None:
             return False
-        return _told_by_changes(cond, changes, habits, events_after) is True
+        return _told_by_history(cond, changes, habits, events_after) is True
     if isinstance(cond, AllCond):
         return all(holds(inner, snapshot, changes, now, events_after, habits=habits) for inner in cond.all)
     if isinstance(cond, AnyCond):
@@ -122,7 +123,7 @@ def check_success(rule: RuleConfig, fired_at: float, snapshot: DeskSnapshot, cha
     in_time = [c for c in changes if c.ts <= deadline]         # a change after the deadline is too late
     logged_in_time = [h for h in habits if h.ts <= deadline]
     if now > deadline + grace_sec:
-        found = _told_by_changes(rule.success.when, in_time, logged_in_time, fired_at)
+        found = _told_by_history(rule.success.when, in_time, logged_in_time, fired_at)
         return 'worked' if found is True else 'missed'
     if holds(rule.success.when, snapshot, in_time, now, events_after=fired_at, habits=logged_in_time):
         return 'worked'
@@ -151,7 +152,7 @@ def _clock_minutes(text: str) -> int:
     return hours * MIN + minutes
 
 
-def _told_by_changes(cond: Condition, changes: Sequence[StateChange], habits: Sequence[HabitDone],
+def _told_by_history(cond: Condition, changes: Sequence[StateChange], habits: Sequence[HabitDone],
                      after: float) -> bool | None:
     """Is this condition true, going by the changes and logged habits alone? None when that can't be told
     (`state`, `no_event`, `no_habit`)."""
@@ -160,17 +161,17 @@ def _told_by_changes(cond: Condition, changes: Sequence[StateChange], habits: Se
     if isinstance(cond, HabitCond):
         return any(_logged(h, cond.habit.habit, cond.habit.action) and h.ts > after for h in habits)
     if isinstance(cond, AllCond):
-        found = [_told_by_changes(inner, changes, habits, after) for inner in cond.all]
+        found = [_told_by_history(inner, changes, habits, after) for inner in cond.all]
         if any(f is False for f in found):
             return False
         return None if None in found else True
     if isinstance(cond, AnyCond):
-        found = [_told_by_changes(inner, changes, habits, after) for inner in cond.any]
+        found = [_told_by_history(inner, changes, habits, after) for inner in cond.any]
         if any(f is True for f in found):
             return True
         return None if None in found else False
     if isinstance(cond, NotCond):
-        found = _told_by_changes(cond.not_, changes, habits, after)
+        found = _told_by_history(cond.not_, changes, habits, after)
         return None if found is None else not found
     return None
 
@@ -233,7 +234,11 @@ def _evidence(cond: Condition, snapshot: DeskSnapshot, changes: Sequence[StateCh
     if isinstance(cond, NoHabitCond):
         check = cond.no_habit
         last = max((h.ts for h in habits if _logged(h, check.habit, check.action)), default=None)
-        return [f'no {check.action} has been logged in {_since(last, check.for_, snapshot, now, lookback)}']
+        words = HABIT_ACTIONS[check.habit][check.action]
+        # With none in the history, the last one is older than that: a sip has nothing to do with the camera,
+        # so this never counts from when the camera started watching.
+        how_long = f'over {_minutes(check.for_)}' if last is None else _minutes(now - last)
+        return [f'no {words} has been logged in {how_long}']
     if isinstance(cond, AllCond):
         return [line for inner in cond.all for line in _evidence(inner, snapshot, changes, habits, now, lookback)]
     if isinstance(cond, AnyCond):

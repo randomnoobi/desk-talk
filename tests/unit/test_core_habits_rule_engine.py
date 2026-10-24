@@ -83,7 +83,7 @@ def test_hydration_nudges_after_an_hour_with_an_untouched_bottle():
     assert n.key == 'rule.hydration' and n.habit == 'hydration' and n.repeat_after_sec == 1800
     assert n.text == HYDRATION.message
     assert n.evidence == (f'the person has been present for 60 minutes; {UNTOUCHED} 60 minutes; '
-                          'no sip has been logged in 60 minutes')
+                          'no sip has been logged in over 60 minutes')
 
 
 def test_not_yet_at_59_minutes():
@@ -333,7 +333,22 @@ def test_evidence_says_over_once_watching_is_longer_than_the_history():
     assert 'no sip has been logged in over 60 minutes' in n.evidence
     [n] = evaluate([HYDRATION], snap, history(), T0 + 3600)        # exactly the lookback: the history covers it all
     assert "hasn't been moved or removed in 60 minutes" in n.evidence
-    assert 'no sip has been logged in 60 minutes' in n.evidence
+
+
+def test_no_habit_evidence_never_counts_from_when_the_camera_started_watching():
+    # No sip is in the history, so all that is known is "not within the last hour": never "70 minutes since the
+    # camera started", because a sip has nothing to do with the camera.
+    snap = desk(person=('PRESENT', T0), watched_since=T0)
+    [n] = evaluate([HYDRATION], snap, history(), T0 + 4200)
+    assert 'no sip has been logged in over 60 minutes' in n.evidence
+
+
+def test_no_habit_evidence_uses_the_plain_words_of_the_habit_action():
+    for habit, action, words in [('breaks', 'break', 'break'), ('food', 'logged', 'food'),
+                                 ('phone_free', 'streak', 'phone-free stretch'), ('light', 'sunlight', 'sunlight')]:
+        r = rule(habit=habit, when=cond({'no_habit': {'habit': habit, 'action': action, 'for': '3h'}}))
+        [n] = evaluate([r], desk(person=('PRESENT', T0), watched_since=T0), history(), T0 + 4 * 3600)
+        assert n.evidence == f'no {words} has been logged in over 180 minutes'
 
 
 # ── cooldown and the hourly cap ─────────────────────────────────────────────────────────────────────────────────────

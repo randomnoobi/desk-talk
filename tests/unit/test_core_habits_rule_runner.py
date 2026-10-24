@@ -260,9 +260,9 @@ def test_a_sip_after_the_nudge_is_a_success():
 
 def test_old_logged_habits_are_let_go():
     runner, bus = make(desk())
-    bus.publish(sip(T0 - 4000))                       # more than an hour before the round: no longer needed
+    bus.publish(sip(T0 - 4000))                       # more than an hour before the round: no longer counts
     runner.tick(T0)
-    assert runner._habits == []
+    assert [n.key for n in runner.nudges(T0)] == ['rule.hydration']
 
 
 class TestRuleRunner(RuleNudgesContract):

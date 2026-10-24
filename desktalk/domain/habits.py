@@ -4,6 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+# What each habit can log (the actions HabitTracker publishes as a HabitEvent), with the plain words the
+# evidence uses: "no sip has been logged in over 60 minutes". A rule can only ask about these pairs.
+HABIT_ACTIONS: dict[str, dict[str, str]] = {
+    'hydration': {'sip': 'sip'},
+    'breaks': {'break': 'break'},
+    'light': {'sunlight': 'sunlight'},
+    'food': {'logged': 'food'},
+    'phone_free': {'streak': 'phone-free stretch'},
+}
+
 
 @dataclass
 class Nudge:

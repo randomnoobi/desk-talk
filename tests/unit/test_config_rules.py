@@ -9,12 +9,14 @@ import copy
 import shutil
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import get_args
 
 import pytest
 import yaml
 from pydantic import ValidationError
 
-from desktalk.config import ConfigError, RuleConfig, load_config, rule_timezone
+from desktalk.config import ConfigError, Habit, HabitAction, RuleConfig, load_config, rule_timezone
+from desktalk.domain.habits import HABIT_ACTIONS
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_FILES = ('settings.yaml', 'agents.yaml', 'protocols.yaml')
@@ -164,6 +166,12 @@ NO_EVENT = {'object': 'bottle', 'events': ['moved'], 'for': '60m'}
      ['rules[0].success.when.habit.action', 'sipp']),
     ({'when': {'habit': {'habit': 'hydration', 'action': 'sip'}}},
      ['rules[0].when', 'only works inside success']),
+    ({'when': {'no_habit': {'habit': 'breaks', 'action': 'sip', 'for': '60m'}}},
+     ['rules[0].when.no_habit', 'breaks', 'sip']),
+    ({'success': {'within': '5m', 'when': {'habit': {'habit': 'hydration', 'action': 'break'}}}},
+     ['rules[0].success.when.habit', 'hydration', 'break']),
+    ({'when': {'no_habit': {'habit': 'screens', 'action': 'logged', 'for': '60m'}}},
+     ['rules[0].when.no_habit', 'screens', 'logged']),
     ({'when': {'no_event': {'object': [], 'events': ['moved'], 'for': '60m'}}},
      ['rules[0].when.no_event.object']),
     ({'success': {'within': '5m', 'when': {'event': {'object': [], 'events': ['moved']}}}},
@@ -190,6 +198,23 @@ def test_every_action_the_habit_tracker_logs_is_known(project):
                           ('phone_free', 'streak')]:
         rule = load_rule(project, when={'no_habit': {'habit': habit, 'action': action, 'for': '5m'}})
         assert (rule.when.no_habit.habit, rule.when.no_habit.action) == (habit, action)
+
+
+def test_the_actions_in_the_config_are_the_ones_in_the_table():
+    in_the_table = {action for actions in HABIT_ACTIONS.values() for action in actions}
+    assert set(get_args(HabitAction)) == in_the_table
+
+
+def test_every_habit_in_the_table_is_a_habit_the_config_knows():
+    assert set(HABIT_ACTIONS) <= set(get_args(Habit))
+
+
+def test_the_drink_list_is_written_once_and_both_places_get_all_five(project):
+    text = (project / 'config' / 'protocols.yaml').read_text()
+    assert text.count('wine glass') == 1                          # one anchor, one alias
+    rule = load_config(root=project, environ={}).protocols.rules[0]
+    assert rule.when.all[1].no_event.object == tuple(DRINKS)
+    assert rule.success.when.any[0].event.object == tuple(DRINKS)
 
 
 def test_a_misspelled_condition_says_what_was_meant(project):

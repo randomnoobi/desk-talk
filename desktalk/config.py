@@ -27,7 +27,7 @@ import os
 import re
 import types
 import typing
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from datetime import UTC, timedelta, timezone, tzinfo
 from functools import cache
 from pathlib import Path
@@ -51,6 +51,7 @@ from pydantic import (
 )
 from pydantic.fields import FieldInfo
 
+from desktalk.domain.habits import HABIT_ACTIONS
 from desktalk.util import parse_hhmm
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -733,7 +734,8 @@ Timezone = Annotated[str, AfterValidator(_check_timezone),
 ObjectState = Literal['present', 'absent', 'unknown']
 ChangeKind = Literal['appeared', 'removed', 'moved']
 Changes = Annotated[tuple[ChangeKind, ...], Field(min_length=1)]
-# What HabitTracker.log() and the camera's sip check say happened (HabitEvent.action)
+# What HabitTracker.log() and the camera's sip check say happened (HabitEvent.action). The same words are the
+# keys under each habit in HABIT_ACTIONS (a test checks they agree).
 HabitAction = Literal['sip', 'break', 'sunlight', 'logged', 'streak']
 
 
@@ -766,10 +768,16 @@ class HabitCheck(_Section):
     habit: Habit
     action: HabitAction
 
+    @model_validator(mode='after')
+    def _the_habit_can_log_it(self):
+        if self.action not in HABIT_ACTIONS.get(self.habit, {}):
+            can = ', '.join(HABIT_ACTIONS.get(self.habit, {})) or 'nothing'
+            raise _Said(f'{self.habit} never logs {self.action}, so this can never happen '
+                        f'(what {self.habit} logs: {can})')
+        return self
 
-class NoHabitCheck(_Section):
-    habit: Habit
-    action: HabitAction
+
+class NoHabitCheck(HabitCheck):
     for_: Duration = Field(alias='for')
 
 
@@ -846,24 +854,15 @@ for _cls in (AllCond, AnyCond, NotCond):
     _cls.model_rebuild()
 
 
-def _after_the_nudge(condition: Any) -> str | None:
-    """The first event or habit in the condition (None when there is none)."""
+def _after_the_nudge(condition: Any, negated: bool = False) -> Iterator[tuple[str, bool]]:
+    """Every event or habit in the condition, in order, as (its kind, whether it is under a not)."""
     if isinstance(condition, _AFTER_THE_NUDGE):
-        return _condition_kind(condition)
-    if isinstance(condition, NotCond):
-        return _after_the_nudge(condition.not_)
-    inner = getattr(condition, 'all', None) or getattr(condition, 'any', ())
-    return next(filter(None, map(_after_the_nudge, inner)), None)
-
-
-def _after_the_nudge_under_not(condition: Any, negated: bool = False) -> str | None:
-    """The first event or habit under a not (None when there is none)."""
-    if isinstance(condition, _AFTER_THE_NUDGE):
-        return _condition_kind(condition) if negated else None
-    if isinstance(condition, NotCond):
-        return _after_the_nudge_under_not(condition.not_, True)
-    inner = getattr(condition, 'all', None) or getattr(condition, 'any', ())
-    return next((kind for each in inner if (kind := _after_the_nudge_under_not(each, negated))), None)
+        yield _condition_kind(condition), negated
+    elif isinstance(condition, NotCond):
+        yield from _after_the_nudge(condition.not_, True)
+    else:
+        for inner in getattr(condition, 'all', None) or getattr(condition, 'any', ()):
+            yield from _after_the_nudge(inner, negated)
 
 
 class QuietWindow(_Section):
@@ -885,7 +884,7 @@ class Success(_Section):
     @field_validator('when')
     @classmethod
     def _no_event_under_not(cls, condition):
-        kind = _after_the_nudge_under_not(condition)
+        kind = next((kind for kind, negated in _after_the_nudge(condition) if negated), None)
         if kind:
             raise _Said(f'{kind} can\'t go inside not (it would count as done before anything happened); to say '
                         f'"this didn\'t happen", use no_{kind}')
@@ -908,7 +907,7 @@ class RuleConfig(_Section):
     @field_validator('gate', 'when')
     @classmethod
     def _no_event_before_the_nudge(cls, condition):
-        kind = _after_the_nudge(condition)
+        kind = next((kind for kind, _ in _after_the_nudge(condition)), None)
         if kind:
             raise _Said(f'{kind} only works inside success (it asks what happened after the nudge)')
         return condition
