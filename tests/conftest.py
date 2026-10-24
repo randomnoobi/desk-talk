@@ -11,6 +11,8 @@ temporary folder with the fakes in tests/fakes/ and, when needed, the FakeAI bel
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 
 
@@ -33,7 +35,7 @@ class FakeAI:
     """Stands in for the OpenAI client. `reply` is a string or a function of the request."""
     instances = []
 
-    def __init__(self, api_key=None, base_url=None, reply='Hi there, nice desk you have!'):
+    def __init__(self, api_key=None, base_url=None, reply: Any = 'Hi there, nice desk you have!'):
         self.api_key, self.base_url, self.reply = api_key, base_url, reply
         self.requests = []
         outer = self

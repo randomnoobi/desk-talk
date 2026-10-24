@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any, cast
 
 from desktalk_shared.detection import BBox, Detection
 from desktalk_shared.detector_api import API_VERSION, DetectorHealth, DetectReply, ModelSettings, ServiceState
@@ -87,7 +89,7 @@ class FakeServer:
 
     def __init__(self):
         self.requests: list[Request] = []
-        self.routes: dict[tuple[str, str], object] = {}
+        self.routes: dict[tuple[str, str], Callable[[Request], Any]] = {}
         self.hold = False
         self.away = False
         self._release = threading.Event()
@@ -108,7 +110,7 @@ class FakeServer:
                 if result is HANG_UP:
                     self.close_connection = True
                     return
-                status, payload = result
+                status, payload = cast(tuple[int, Any], result)
                 data = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
                 self.send_response(status)
                 self.send_header('Content-Type', 'application/json')

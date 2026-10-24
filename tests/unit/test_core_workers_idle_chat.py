@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 import time
 from pathlib import Path
 
@@ -38,7 +39,7 @@ GO_ON_COMPUTER = '{"continue": true, "next": "Computer"}'
 STOP = '{"continue": false}'
 
 
-class Dice:
+class Dice(random.Random):
     """Randomness the test can predict: the shortest wait, the middle of a pause, the first choice."""
 
     def randint(self, low, high):

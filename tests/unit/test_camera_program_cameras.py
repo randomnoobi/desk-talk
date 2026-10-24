@@ -30,14 +30,15 @@ def test_folder_without_jpegs_says_so(tmp_path):
 
 def test_video_camera_plays_the_clip_in_a_loop(tmp_path):
     clip = tmp_path / 'clip.avi'
-    out = cv2.VideoWriter(str(clip), cv2.VideoWriter_fourcc(*'MJPG'), 5, (160, 120))
+    out = cv2.VideoWriter(str(clip), cv2.VideoWriter.fourcc(*'MJPG'), 5, (160, 120))
     for shade in (40, 200):
         out.write(np.full((120, 160, 3), shade, np.uint8))
     out.release()
     camera = open_kind(f'video:{clip}')
     assert camera.name == 'video'
     shots = [camera.capture() for _ in range(3)]
-    brightness = [cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_GRAYSCALE).mean() for jpeg, _ in shots]
+    pictures = [cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_GRAYSCALE) for jpeg, _ in shots]
+    brightness = [p.mean() for p in pictures if p is not None]
     assert brightness[0] < 100 < brightness[1] and brightness[2] < 100     # back to the start after the end
     assert all(lux is None for _, lux in shots)
     camera.close()

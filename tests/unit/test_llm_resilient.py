@@ -44,6 +44,7 @@ class Scripted:
     The last entry repeats. Each call takes `takes` seconds on the clock."""
 
     label = 'Scripted AI'
+    is_local = False
 
     def __init__(self, clock, *script, takes=0.0, ready=True, local_vision=False):
         self.clock, self.script, self.takes, self.ready = clock, list(script), takes, ready

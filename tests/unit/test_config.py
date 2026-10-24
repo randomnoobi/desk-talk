@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 import pytest
@@ -95,7 +96,7 @@ def test_config_is_read_only(project):
     with pytest.raises(ValidationError, match='frozen'):
         cfg.camera.fps = 10
     with pytest.raises(AttributeError):
-        cfg.camera.webcam_indices.append(1)          # lists come back as tuples
+        cast(Any, cfg.camera.webcam_indices).append(1)          # lists come back as tuples
 
 
 def test_api_keys_come_from_dotenv_and_are_hidden_when_printed(project):

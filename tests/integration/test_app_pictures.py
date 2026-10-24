@@ -6,8 +6,10 @@ Ported from test_app_flow.py, plus Pi pictures in each detector state (ok, busy,
 
 from __future__ import annotations
 
+from typing import cast
+
 from desktalk.domain import BBox, Detection, DetectionEvent, DetectorState, UploadInfo
-from tests.integration.app_kit import CUP_FAR, CUP_NEAR, LAPTOP, PERSON, DeskRig, desk_jpeg
+from tests.integration.app_kit import CUP_FAR, CUP_NEAR, LAPTOP, PERSON, DeskRig, desk_jpeg, inbox, pi_camera
 
 STAPLER = Detection('stapler', 0.9, BBox(100, 100, 160, 140))
 CAT = Detection('cat', 0.9, BBox(0, 300, 150, 470))
@@ -138,7 +140,7 @@ def test_off_pictures_are_detected_on_this_computer_and_the_pi_says_why(tmp_path
     assert rig.detector.calls == 12
     assert {e['detected_on'] for e in detection_events(rig)} == {'computer'}
     assert rig.app.roster.member_ids() == []                  # only a person was seen
-    status = rig.app.pi.status()
+    status = pi_camera(rig.app).status()
     assert (status['detector'], status['detector_reason']) == ('off', 'the detector container is not answering')
 
 
@@ -156,9 +158,9 @@ def test_an_ok_picture_that_arrives_after_later_busy_ones_is_analysed_but_not_sh
 def test_a_busy_picture_never_pushes_out_an_ok_one_not_analysed_yet(tmp_path):
     rig = DeskRig(tmp_path)
     busy_jpeg = desk_jpeg(200)
-    assert rig.app.source.push(rig.jpeg, from_pi(rig, DetectorState.OK, LAPTOP, number=1))
+    assert inbox(rig.app).push(rig.jpeg, from_pi(rig, DetectorState.OK, LAPTOP, number=1))
     rig.clock.advance(0.3)
-    assert rig.app.source.push(busy_jpeg, from_pi(rig, DetectorState.BUSY, number=2))
+    assert inbox(rig.app).push(busy_jpeg, from_pi(rig, DetectorState.BUSY, number=2))
     rig.app.producer.tick(rig.clock.now())
     [event] = detection_events(rig)
     assert event['frame_id'] == 'pi-000001' and event['detected_obj'][0]['label'] == 'laptop'
@@ -170,6 +172,6 @@ def test_a_busy_picture_never_pushes_out_an_ok_one_not_analysed_yet(tmp_path):
 def test_each_analysed_picture_is_one_detection_event(tmp_path):
     rig = DeskRig(tmp_path)
     seen: list[DetectionEvent] = []
-    rig.app.bus.subscribe('test', seen.append, types=[DetectionEvent])
+    rig.app.bus.subscribe('test', lambda e: seen.append(cast(DetectionEvent, e)), types=[DetectionEvent])
     rig.watch(1, LAPTOP)
     assert [e.detections for e in seen] == [(LAPTOP, PERSON)] * 3

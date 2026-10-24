@@ -6,14 +6,15 @@ import pytest
 from desktalk.adapters.picture import OpenCvPictureTools
 from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.domain import Size
+from desktalk.ports import PictureTools
 from tests.fakes import FakeClock, FakePictureTools
 from tests.unit.test_core_vision_kit import FakeDesk, app_config, seen_object
 
 SNAPSHOTS = app_config().snapshots
-TOOLS = OpenCvPictureTools()
+TOOLS: PictureTools = OpenCvPictureTools()
 
 
-def jpeg(w=640, h=480, value=120, tools=TOOLS):
+def jpeg(w=640, h=480, value=120, tools: PictureTools = TOOLS):
     picture = np.random.default_rng(1).integers(0, 255, (h, w, 3), dtype=np.uint8)
     picture[:] = np.clip(picture.astype(int) // 4 + value, 0, 255).astype(np.uint8)
     data = tools.encode_jpeg(picture, 95)
@@ -21,7 +22,7 @@ def jpeg(w=640, h=480, value=120, tools=TOOLS):
     return data
 
 
-def shape(data, tools=TOOLS):
+def shape(data, tools: PictureTools = TOOLS):
     picture = tools.decode_jpeg(data)
     size = tools.size(picture)
     return size.height, size.width
@@ -30,7 +31,7 @@ def shape(data, tools=TOOLS):
 NO_LABEL = app_config().prompts.photos.no_label
 
 
-def photos(desk=None, clock=None, settings=SNAPSHOTS, tools=TOOLS, no_label=NO_LABEL):
+def photos(desk=None, clock=None, settings=SNAPSHOTS, tools: PictureTools = TOOLS, no_label=NO_LABEL):
     desk = desk or FakeDesk()
     return ProofPhotos(desk, clock or FakeClock(), settings, pictures=tools, no_label=no_label), desk
 

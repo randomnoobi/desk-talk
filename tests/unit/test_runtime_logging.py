@@ -61,7 +61,8 @@ def test_messages_below_the_level_are_left_out_and_the_level_can_be_lower_case(t
     part = logging.getLogger('desktalk.chat.lens')
     part.info('looking at the desk')
     part.warning('the picture is blurry')
-    assert [LINE.match(line).group('message') for line in path.read_text().splitlines()] == ['the picture is blurry']
+    lines = [LINE.match(line) for line in path.read_text().splitlines()]
+    assert [m.group('message') if m else None for m in lines] == ['the picture is blurry']
 
 
 def test_the_file_rolls_over_at_max_mb_and_keeps_only_keep_files_old_ones(tmp_path):

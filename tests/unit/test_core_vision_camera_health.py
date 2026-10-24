@@ -2,6 +2,7 @@
 
 import threading
 import time
+from typing import Any
 
 import numpy as np
 import pytest
@@ -233,7 +234,7 @@ def test_the_same_problem_is_mentioned_again_only_after_a_long_while():
 
 def test_one_thanks_when_several_problems_clear_at_once():
     h = health()
-    tilted = {'gravity': (0, 9.8, 0), 'reference_gravity': (0, 9.8, 4)}
+    tilted: dict[str, Any] = {'gravity': (0, 9.8, 0), 'reference_gravity': (0, 9.8, 4)}
     assert run(h, 60, DARK, **tilted) == ['bumped:problem', 'dark:problem']
     assert run(h, 10, bright(), start=1060) == ['dark:fixed']       # dark comes first in PRIORITY
 
@@ -390,6 +391,7 @@ def test_each_problem_is_said_in_the_same_words_after_the_same_wait(key, waited,
 def test_each_problem_that_clears_up_gets_its_own_thanks(key, thanks):
     h = health()
     waited, _ = first_words(h, key)
+    assert waited is not None
     start = 1000 + waited + 1
     said = []
     for t in range(start, start + 30):

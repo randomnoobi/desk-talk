@@ -80,6 +80,7 @@ def test_ncnn_finds_the_same_objects_as_pt(models, detector_settings, name):
     import cv2
     from ultralytics.utils import ASSETS
     picture = cv2.imread(str(ASSETS / name))
+    assert picture is not None
     pt, ncnn = models
     s = detector_settings
     from_pt = detect(pt, picture, s, end2end=False, rect=False)

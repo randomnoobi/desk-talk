@@ -90,6 +90,7 @@ def test_the_chosen_webcam_is_tried_first_then_the_others(clock):
     empty, good = FakeCapture(), FakeCapture(picture(5))
     source, opener = webcam(clock, {0: empty, 2: good}, index=1, webcam_max_index=4)
     frame = source.read(timeout=1)
+    assert frame is not None
     assert opener.tried == [1, 0, 2]          # 1 doesn't open, 0 gives no pictures, 2 works
     assert source.index == 2 and int(frame.picture[0, 0, 0]) == 5
     assert empty.released and not good.released

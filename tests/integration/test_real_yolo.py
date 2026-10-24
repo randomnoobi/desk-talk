@@ -18,7 +18,9 @@ pytestmark = pytest.mark.slow
 def sample_jpeg(name: str) -> bytes:
     import cv2
     from ultralytics.utils import ASSETS
-    return cv2.imencode('.jpg', cv2.imread(str(ASSETS / name)))[1].tobytes()   # comes with Ultralytics
+    picture = cv2.imread(str(ASSETS / name))          # comes with Ultralytics
+    assert picture is not None
+    return cv2.imencode('.jpg', picture)[1].tobytes()
 
 
 @pytest.fixture

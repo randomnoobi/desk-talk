@@ -28,7 +28,7 @@ from desktalk.domain import BBox, Detection
 from desktalk.web.pairing import Links
 from tests.conftest import FakeAI
 from tests.fakes import FakeClock, FakeDetector
-from tests.integration.app_kit import changed, desk_config
+from tests.integration.app_kit import changed, desk_config, inbox
 
 from .cases import PAIR_KEY, PHONE_HEADERS, PHONE_URL, PI_HEADERS, PICTURE
 from .client import WebClient
@@ -83,7 +83,7 @@ class Desk:
         step = 1 / self.app.config.camera.fps
         for _ in range(max(1, round(seconds / step))):
             self.detector.detections = [*objects, PERSON]
-            assert self.app.source.push(PICTURE)
+            assert inbox(self.app).push(PICTURE)
             self.app.producer.tick(self.clock.now())
             self.clock.advance(step)
 

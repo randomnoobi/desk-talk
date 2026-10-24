@@ -27,7 +27,17 @@ from raspberry_pi.camera import cli as camera_program
 from raspberry_pi.camera.clock import SystemClock as PiClock
 from raspberry_pi.camera.uploader import Uploader
 from tests.fakes import FakeDetector
-from tests.integration.app_kit import LAPTOP, PAIR_KEY, PERSON, DeskRig, changed, desk_config, desk_jpeg
+from tests.integration.app_kit import (
+    LAPTOP,
+    PAIR_KEY,
+    PERSON,
+    DeskRig,
+    changed,
+    desk_config,
+    desk_jpeg,
+    inbox,
+    pi_camera,
+)
 from tests.integration.web_kit import links_for, running
 
 WAIT_SEC = 10          # longest a test waits for something to happen
@@ -82,7 +92,7 @@ def test_the_camera_programs_uploads_reach_the_server_in_each_detector_state(tmp
     events = list(reversed(app.event_log.recent_detections(day, 10)))
     assert [(e['frame_id'], e['detected_on']) for e in events] == [('pi-000001', 'pi'), ('pi-000003', 'computer')]
     assert rig.detector.calls == 1                       # only the off picture was detected here
-    assert app.pi.status()['detector'] == 'off'
+    assert pi_camera(app).status()['detector'] == 'off'
 
 
 def test_the_camera_program_reports_a_wrong_key(tmp_path):
@@ -107,8 +117,10 @@ def test_the_camera_program_gets_its_settings_from_the_server_and_its_pictures_g
                                       '--photo-dir', str(tmp_path / 'pi-photos')])
         assert status == 0
         assert wait_until(lambda: app.producer.pictures_analysed >= 1)
-    assert app.source.pictures_received >= 1
-    upload, _ = app.source.latest_upload()
+    assert pi_camera(app).pictures_received >= 1
+    latest = pi_camera(app).latest_upload()
+    assert latest is not None
+    upload, _ = latest
     assert (upload.version, upload.detector) == (2, DetectorState.OFF)
     assert upload.detector_reason == 'detection on the Pi is turned off (--no-detector)'
     day = app.event_log.days()[0]
@@ -142,7 +154,7 @@ def test_open_pages_do_not_hold_up_the_server_when_it_stops(tmp_path):
     with running(create_app(app, links_for(app))) as url:
         readers = [threading.Thread(target=watch, args=(url, path), daemon=True)
                    for path in ('/api/events', '/api/video_feed/0')]
-        app.source.push(desk_jpeg())
+        inbox(app).push(desk_jpeg())
         app.producer.tick(app.clock.now())           # a picture, so the video starts
         for reader in readers:
             reader.start()

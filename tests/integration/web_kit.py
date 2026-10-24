@@ -21,7 +21,7 @@ from desktalk.bootstrap import DeskTalk
 from desktalk.domain import UploadInfo
 from desktalk.web.app import create_app
 from desktalk.web.pairing import Links
-from desktalk.web.serve import ServerThread, server_config
+from desktalk.web.serve import Lifespan, ServerThread, server_config
 from desktalk_shared.wire import encode_upload
 from tests.integration.app_kit import PAIR_KEY
 
@@ -50,7 +50,7 @@ def pi_upload(client: TestClient, jpeg: bytes, info: UploadInfo, key: str = PAIR
 
 
 @contextlib.contextmanager
-def running(app: FastAPI, *, lifespan: str = 'off', **kw: Any) -> Iterator[str]:
+def running(app: FastAPI, *, lifespan: Lifespan = 'off', **kw: Any) -> Iterator[str]:
     """A real uvicorn server for `app` on 127.0.0.1 and a free port, in a thread; stopped afterwards.
     Yields its address, e.g. http://127.0.0.1:53124. lifespan='on' starts and stops the background jobs."""
     server = ServerThread(server_config(app, host=THIS_COMPUTER, port=0, lifespan=lifespan, **kw), name='test')
