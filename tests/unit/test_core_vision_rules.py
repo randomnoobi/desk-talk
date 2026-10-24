@@ -217,5 +217,5 @@ def test_the_analyzer_starts_and_runs_with_a_saved_history_length_below_1():
     from desktalk.core.vision.analyzer import DeskAnalyzer
 
     rules = SafetyRules(InMemoryKeyValueStore({'safety_rules': {'temporal': {'history_length': -1}}}), SAFETY)
-    analyzer = DeskAnalyzer(rules)
+    analyzer = DeskAnalyzer(rules, words=app_config().prompts.desk_checks)
     assert analyzer.analyze({}, (640, 480), 1.0)['risk_level'] == 0

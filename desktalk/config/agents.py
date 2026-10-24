@@ -19,6 +19,7 @@ class AgentDefaults(_Section):
     icon: str
     too_close: str
     hello: str
+    about: str                # {object} is filled in
 
 
 class Agent(_Section):

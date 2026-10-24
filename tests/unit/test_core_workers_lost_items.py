@@ -135,7 +135,7 @@ def test_the_fake_desk_has_what_lost_items_need():
 def test_the_items_and_their_words_come_from_the_settings():
     lost = Rig().lost
     assert lost.items['keys']['name'] == 'Keys' and lost.items['keys']['labels'] == {'key', 'remote'}
-    items = TrackedItems(SETTINGS, WORDS.triggers)
+    items = TrackedItems(SETTINGS, WORDS)
     assert items.in_text('have you seen my keys?') == ['keys']
     assert items.in_text('Where is my iPhone and my wallet') == ['phone', 'wallet']
 
@@ -155,7 +155,7 @@ def test_the_question_words_come_from_the_prompt_settings():
 
 
 def test_detector_words_and_vision_words_find_the_item():
-    items = TrackedItems(SETTINGS, WORDS.triggers)
+    items = TrackedItems(SETTINGS, WORDS)
     assert items.in_labels({'earphone'}) == {'airpods'}
     assert items.in_labels({'car keys'}) == {'keys'}
     assert items.in_labels({'keyboard'}) == set()
@@ -467,3 +467,32 @@ def test_the_answer_words_come_from_the_prompt_settings():
     ai = FakeChatModel('Found them!')
     Rig(chat=ai, words=words).lost.answer('have you seen my keys?')
     assert ai.calls[0]['messages'][0]['content'] == 'Lens the camera looks for things.'
+
+
+def test_the_facts_plain_answers_photo_labels_and_alert_come_from_the_prompt_settings():
+    words = WORDS.model_copy(update={
+        'answer_as': WORDS.answer_as.model_copy(update={'name': 'Eye', 'object': 'webcam'}),
+        'answer_user': '{message} | {facts}', 'just_seen_fact': '{name} {seconds}s{near}',
+        'near': ' by {names}', 'seen': '{name} at {minutes} min{near}', 'never_seen': 'No {name}.{more}',
+        'see_captures': ' See photos.', 'spotted_photo': 'Found {name}', 'alert_plain': '{name} gone{hint}',
+        'last_seen_near': ' (near {names})', 'other_things': ('stapler',)})
+    ai = FakeChatModel('Found them!')
+    rig = Rig(chat=ai, words=words)
+    rig.see('key')
+    rig.see('key', after=1)
+    rig.see(after=1)
+    rig.see('key', after=1)
+    rig.clock.advance(30)
+    rig.lost.answer('have you seen my keys?')
+    assert ai.calls[0]['messages'][0]['content'].startswith('You are Eye, the webcam')
+    assert ai.calls[0]['messages'][1]['content'] == 'have you seen my keys? | Keys 30s by Computer'
+    assert rig.photos() == ['Found Keys']
+    rig = Rig(words=words)
+    assert rig.lost.answer('have you seen my keys?')['text'] == 'No Keys. See photos.'
+    rig.see('key')
+    rig.clock.advance(10 * 60 + 5)
+    assert rig.lost.answer('have you seen my keys?')['text'] == 'Keys at 10 min by Computer'
+    rig.see(after=5 * 60)
+    rig.tick()
+    assert rig.alerts() == [('keys', 'Keys gone (near Computer)')]
+    assert rig.lost.is_lost_query('have you seen my stapler?') and not rig.lost.is_lost_query('seen my laptop?')

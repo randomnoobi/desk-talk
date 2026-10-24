@@ -18,7 +18,8 @@ from tests.fakes import (
     StaticRoster,
 )
 
-WORDS = load_config(environ={}, dotenv=Path('/nonexistent')).prompts.small_talk
+CONFIG = load_config(environ={}, dotenv=Path('/nonexistent'))
+WORDS, MEMORY_WORDS = CONFIG.prompts.small_talk, CONFIG.prompts.memory
 
 SETTINGS = IdleChatSettings(min_sec=720, max_sec=1500, start_delay_sec=15, max_turns=3, quiet_after_typing_sec=10,
                             pause_between_lines_sec=3, pause_random_sec=3, memory_per_agent=2, memory_lines=6,
@@ -52,7 +53,7 @@ class Dice:
 
 class Rig:
     def __init__(self, replies=(), members=('cup', 'computer'), status=None, ai=None, settings=SETTINGS,
-                 reply_max_chars=500, words=WORDS):
+                 reply_max_chars=500, words=WORDS, memory_words=MEMORY_WORDS):
         self.clock = FakeClock(time.mktime((2026, 10, 21, 14, 0, 0, 0, 0, -1)))
         self.replies = list(replies)
         self.ai = ai or FakeChatModel(lambda messages: self.replies.pop(0))
@@ -62,7 +63,7 @@ class Rig:
         self.idle = IdleChat(self.ai, self.notifier, self.status, StaticRoster(members), PROFILES, self.desk,
                              lambda: SUMMARY, settings, REPLIES, memory_kept=8, memory_chars=120,
                              default_temperature=0.8, reply_max_chars=reply_max_chars, prompts=words,
-                             preview_chars=120, rng=Dice())
+                             memory_words=memory_words, preview_chars=120, rng=Dice())
         assert self.idle.tick(self.clock.now()) == 720     # the first round only sets the time of the next one
 
     def tick(self, after=0.0):
@@ -213,3 +214,19 @@ def test_the_chat_ends_after_the_most_replies():
     no_replies = Rig([TOPIC, OPENING], settings=SETTINGS.model_copy(update={'max_turns': 0}))
     assert no_replies.tick(after=720) == 720
     assert no_replies.lines() == [('cup', OPENING)]
+
+
+def test_what_the_ai_is_asked_and_what_is_remembered_come_from_prompts_yaml():
+    words = WORDS.model_copy(update={'topic_user': '{summary}|{names}|{memories}', 'no_memory': '-',
+                                     'line_open': 'OPEN {topic}', 'line_reply': 'REPLY {topic}: {transcript}',
+                                     'director_user': 'NEXT? {names} after {transcript}', 'said': '{name} > {text}'})
+    rig = Rig([TOPIC, OPENING, GO_ON_COMPUTER, ANSWER, STOP], words=words,
+              memory_words=MEMORY_WORDS.model_copy(update={'you_said': 'said: {said}'}))
+    rig.tick(after=720)
+    rig.tick(after=4.5)
+    topic, opening, director, answer = (call['messages'][1]['content'] for call in rig.ai.calls[:4])
+    assert topic == f'{SUMMARY}|Cup, Computer|-'
+    assert opening == f'OPEN {TOPIC}'
+    assert director == f'NEXT? Computer after Cup > {OPENING}'
+    assert answer == f'REPLY {TOPIC}: Cup > {OPENING}'
+    assert rig.desk.recent('computer') == [f'said: {ANSWER}']

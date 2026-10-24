@@ -21,7 +21,7 @@ def things(*items):
 def analyzer(saved=None, **rules_kw):
     store = InMemoryKeyValueStore({'safety_rules': saved} if saved else {})
     rules = SafetyRules(store, app_config().safety, **rules_kw)
-    return DeskAnalyzer(rules), rules
+    return DeskAnalyzer(rules, words=app_config().prompts.desk_checks), rules
 
 
 def kinds(result):

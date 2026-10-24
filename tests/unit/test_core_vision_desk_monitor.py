@@ -27,7 +27,7 @@ class Rig:
     """A desk monitor wired to fakes. look() is one analysed picture: the agents' objects on the desk
     (as the roster leaves them in the desk scene) and every detector word in the picture."""
 
-    def __init__(self, agents=AGENTS, warm=True, saved=None):
+    def __init__(self, agents=AGENTS, warm=True, saved=None, words=None):
         self.bus = SyncEventBus()
         self.desk = FakeDesk()
         self.photos = FakePhotoTaker()
@@ -35,8 +35,10 @@ class Rig:
         self.status = FakeDeskStatus(warm=warm)
         self.profiles = FakeProfiles(agents, ignored=['person', 'chair'])
         rules = SafetyRules(InMemoryKeyValueStore({'safety_rules': saved} if saved else {}), app_config().safety)
-        self.monitor = DeskMonitor(self.bus, self.desk, DeskAnalyzer(rules), self.profiles, self.habits, self.status,
-                                   self.photos, app_config().alerts)
+        prompts = app_config().prompts
+        self.monitor = DeskMonitor(self.bus, self.desk, DeskAnalyzer(rules, words=prompts.desk_checks), self.profiles,
+                                   self.habits, self.status, self.photos, app_config().alerts,
+                                   words=words or prompts.desk_alerts)
 
     def look(self, ts, agents=None, labels=(), size=(640, 480)):
         """Returns the alerts this picture caused."""
@@ -243,3 +245,21 @@ def test_no_photo_means_the_alert_still_goes_out_without_one():
     rig.photos.has_picture = False
     [alert] = rig.look(T + 1000, cup_near_laptop())
     assert alert.extra['snapshot'] is None
+
+
+def test_the_alert_words_come_from_prompts_yaml():
+    words = app_config().prompts.desk_alerts.model_copy(update={
+        'photo_label': 'Too close', 'pet': '{pet}!{knock}', 'pet_knock': ' Mind {names}.', 'clutter': '{count} things.',
+        'plant': 'Water me.', 'edge_reason': '{edge} side, {distance}px', 'edge_danger': '{object} at {edge}'})
+    rig = Rig(words=words)
+    rig.look(T + 1000, cup_near_laptop())
+    assert rig.photos.saved[0][0] == 'Too close'
+    [alert] = rig.look(T + 3000, {'computer': ('laptop', LAPTOP), 'cup': ('cup', CUP_FAR)}, labels=['cat'])
+    assert alert.text == 'Cat! Mind Cup.'
+    [alert] = rig.look(T + 5000, {'paper': ('book', (10, 10, 50, 50))}, labels=CLUTTER)
+    assert alert.text == '6 things.'
+    [alert] = rig.look(T + 7000, {'plant': ('potted plant', (10, 10, 50, 50))})
+    assert alert.text == 'Water me.'
+    rig = Rig(saved={'desk_outline': [[0, 0], [1, 0], [1, 0.8], [0, 0.8]]}, words=words)
+    [alert] = rig.look(T + 1000, {'cup': ('cup', (400, 480, 470, 570))}, size=(960, 720))
+    assert alert.extra['rule_label'] == 'front side, 6px' and rig.dangers()[0]['label'] == 'cup at front'

@@ -1,7 +1,7 @@
 """
 The desk analyzer: runs every desk check on the agents' objects in each picture.
 
-    an = DeskAnalyzer(rules)
+    an = DeskAnalyzer(rules, words=config.prompts.desk_checks)
     result = an.analyze(things, (width, height), now)
     result['risk_level']        # 0 (safe) to 4
 
@@ -13,7 +13,8 @@ have always read (SafetyNow.result):
      "explanations": [...], "risk_level": 2}
 
 It remembers the last rules.history_length pictures (to see things move) and the latest result (for the
-live view). analyze() is called from one thread; latest and history() may be read from another.
+live view). analyze() is called from one thread; latest and history() may be read from another. The
+explanations' wording is in config/prompts.yaml (desk_checks).
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from collections import deque
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from desktalk.config.prompts import DeskCheckWords
 from desktalk.core.vision.danger_zones import ZoneVisits, repeated_entries, zone_risks
 from desktalk.core.vision.desk_edges import Size, edge_risks
 from desktalk.core.vision.findings import Findings, Thing
@@ -40,8 +42,9 @@ def risk_level(events: Sequence[Mapping[str, Any]], weights: Mapping[str, int], 
 
 
 class DeskAnalyzer:
-    def __init__(self, rules: DeskRulesView):
+    def __init__(self, rules: DeskRulesView, *, words: DeskCheckWords):
         self._rules = rules
+        self._words = words
         self._visits = ZoneVisits()
         self._lock = threading.Lock()
         self._history: deque[dict[str, Thing]] = deque(maxlen=rules.current.history_length)
@@ -62,17 +65,17 @@ class DeskAnalyzer:
             return list(self._history)
 
     def analyze(self, things: Mapping[str, Thing], size: Size, now: float) -> dict[str, Any]:
-        rules = self._rules.current
+        rules, words = self._rules.current, self._words
         found = Findings()
-        found += edge_risks(things, rules, size)
-        found += zone_risks(things, rules, self._visits, now)
+        found += edge_risks(things, rules, size, words=words)
+        found += zone_risks(things, rules, self._visits, now, words=words)
         pairs = dict.fromkeys((e['intruder'], e['target']) for e in found.risk_events if e['type'] == 'zone_intrusion')
-        found += things_in_between(things, pairs, rules)
-        found += crowds(things, rules)
+        found += things_in_between(things, pairs, rules, words=words)
+        found += crowds(things, rules, words=words)
         history = self.history()
         if len(history) >= rules.approach_min_frames:
-            found += approaching(things, history[-rules.approach_min_frames], rules)
-        found += repeated_entries(things, rules, self._visits, now)
+            found += approaching(things, history[-rules.approach_min_frames], rules, words=words)
+        found += repeated_entries(things, rules, self._visits, now, words=words)
         result = {
             'timestamp': now,
             'objects': [{'id': t.id, 'class': t.label, 'center': [round(c, 1) for c in t.center],

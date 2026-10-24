@@ -132,6 +132,19 @@ def test_a_long_slouch_goes_in_the_habit_log_with_a_photo():
     assert entry['snapshot_id'] == 'photo-1' and rig.photos.saved == [('Posture: ~2m slouch', ())]
 
 
+def test_the_vision_log_words_come_from_the_prompt_settings():
+    log = WORDS.log.model_copy(update={'slouch_title': 'Slouched {minutes}m', 'slouch_photo': 'Slouch',
+                                       'slouch_detail': 'Sat badly.', 'nails_title': 'Nails',
+                                       'nails_detail': 'Bit them.', 'nails_photo': 'Nail photo'})
+    rig = Rig(words=WORDS.model_copy(update={'log': log}))
+    rig.look(SLOUCH)
+    rig.look(GOOD, after=100)
+    rig.look(NAILS, after=1)
+    assert [(e['title'], e['detail']) for e in rig.habits.events()] == [('Nails', 'Bit them.'),
+                                                                        ('Slouched 2m', 'Sat badly.')]
+    assert [label for label, _ in rig.photos.saved] == ['Slouch', 'Nail photo']
+
+
 def test_a_short_slouch_is_not_logged():
     rig = Rig()
     rig.look(SLOUCH)

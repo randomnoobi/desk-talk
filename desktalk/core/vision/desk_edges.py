@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
+from desktalk.config.prompts import DeskCheckWords
 from desktalk.core.vision.findings import Findings, Thing
 from desktalk.core.vision.geometry import Point, Segment, box_segment_distance, footprint
 from desktalk.domain import DeskRules
@@ -79,7 +80,7 @@ def on_desk(p: Point, outline: Sequence[Point], size: Size) -> bool:
     return not outline or inside_outline(p, outline, size)
 
 
-def edge_risks(things: Mapping[str, Thing], rules: DeskRules, size: Size) -> Findings:
+def edge_risks(things: Mapping[str, Thing], rules: DeskRules, size: Size, *, words: DeskCheckWords) -> Findings:
     """Edge objects close to a real desk edge: closer than edge_danger_px is a danger, closer than
     edge_warn_px a warning."""
     found = Findings()
@@ -99,7 +100,7 @@ def edge_risks(things: Mapping[str, Thing], rules: DeskRules, size: Size) -> Fin
         side = edge_name(seg, size)
         if gap < rules.edge_danger_px:
             severity, kind = 'danger', 'edge_danger'
-            explanation = f'{thing.label} is right at the {side} edge of the desk and could fall off.'
+            explanation = words.edge.format(object=thing.label, side=side)
         elif gap < rules.edge_warn_px:
             severity, kind, explanation = 'warning', 'edge_warning', None
         else:

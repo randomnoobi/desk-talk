@@ -73,7 +73,7 @@ class LostItems:
         self._replies = replies
         self._default_temperature = default_temperature
         self._phone_is_camera = phone_is_camera
-        self._tracked = TrackedItems(settings, prompts.triggers)
+        self._tracked = TrackedItems(settings, prompts)
         self.items = self._tracked.items
         self._answers = LostItemAnswers(clock, desk, roster, profiles, chat, vision, self._tracked, self.sightings,
                                         settings, replies, prompts, default_temperature=default_temperature,
@@ -132,7 +132,8 @@ class LostItems:
                 self._seen.setdefault(item_id, _new_record()).update(
                     last_seen=now, alerted=False, source='detector', last_near=near)
             if self._first_picture_done:
-                spotted = [f'Spotted: {self.items[i]["name"]}' for i in sorted(present - self._in_last_picture)
+                spotted = [self._words.spotted_photo.format(name=self.items[i]['name'])
+                           for i in sorted(present - self._in_last_picture)
                            if self._photo_due(f'detector:{i}', now)]
             self._first_picture_done = True          # the first picture is only the starting point
             self._in_last_picture = set(present)
@@ -196,14 +197,15 @@ class LostItems:
                 if not fresh_detector:
                     record.update(last_seen=now, alerted=False, source='vision', last_near=list(nearby))
             if self._first_scan_done:
-                spotted = [f'Spotted: {self.items[i]["name"]} (vision)' for i in sorted(found - seen_before)
+                spotted = [self._words.spotted_by_vision_photo.format(name=self.items[i]['name'])
+                           for i in sorted(found - seen_before)
                            if self._photo_due(f'vision:{i}', now)]
             self._first_scan_done = True
             desk_photo_due = (self._desk_photo_at is None
                               or now - self._desk_photo_at >= self._settings.snapshot_every_sec)
         for label in spotted:
             self._photos.save(label)
-        if desk_photo_due and self._photos.save('Desk scan'):
+        if desk_photo_due and self._photos.save(self._words.desk_scan_photo):
             with self._lock:
                 self._desk_photo_at = now
         return hits
@@ -227,10 +229,10 @@ class LostItems:
     def _alert(self, item_id: str, name: str, gone: float, near: list[str], now: float) -> None:
         minutes = int(gone / 60)
         shown = near[:self._settings.nearby_mentioned]
-        hint = f' Last seen near: {", ".join(shown)}.' if shown else ''
+        hint = self._words.last_seen_near.format(names=', '.join(shown)) if shown else ''
         text = ask(self._chat, fill.lost_alert(self._words, name, minutes, hint), self._replies.lost_alert,
                    own_temperature=self._default_temperature, background=True, what='a lost-item alert')
-        text = text or f"{name}: hasn't been seen for {minutes} min.{hint}"
+        text = text or self._words.alert_plain.format(name=name, minutes=minutes, hint=hint)
         self._habits.bump('lost_alerts')
         self._bus.publish(Alert(ts=now, kind='scenario', scenario='lost_object', feature=item_id, agent=LENS,
                                 text=text))

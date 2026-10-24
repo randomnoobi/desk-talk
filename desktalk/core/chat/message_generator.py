@@ -83,7 +83,7 @@ class MessageGenerator:
         self._greeted: dict[str, float] = {}                # agent id → last hello
         self._ai = AgentAI(model, profiles, llm, reply_max_chars)
         memory = ChatMemory(desk, keep=llm.memory_per_agent, reply_chars=chat.memory_reply_chars,
-                            user_chars=chat.memory_user_chars)
+                            user_chars=chat.memory_user_chars, words=prompts.memory)
         self._alerts = AlertVoice(self._ai, profiles, desk, self.live_context, prompts.alert, chat, drink_labels)
         self._nudges = NudgeVoice(self._ai, profiles, habits, desk, memory, clock, prompts, chat, local=local_model)
         self._answers = ChatAnswers(self._ai, model, notifier, roster, profiles, habits, desk, memory,
@@ -102,7 +102,7 @@ class MessageGenerator:
         return build_live_context(self._desk, self._desk, profiles=self._profiles, members=self._roster.member_ids(),
                                   habits_today=self._habits.today(now), now=now,
                                   camera_on=self._status.camera_connected(), chat=self._chat,
-                                  user_message=user_message)
+                                  words=self._words.live_context, user_message=user_message)
 
     # ════════════════════════════════════════════════════════════════
     #  Events

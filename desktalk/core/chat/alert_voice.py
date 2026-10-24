@@ -64,9 +64,9 @@ class AlertVoice:
             if other:
                 text = a.too_close_text(other.name)
             elif d.get('rule_label'):
-                text = f'Heads up: {d["rule_label"].rstrip(".")}. Could you move me back a bit?'
+                text = self._words.heads_up.format(rule=d['rule_label'].rstrip('.'))
             else:
-                text = 'Something is getting too close. Could you check the desk?'
+                text = self._words.too_close
         msg = {'type': 'group_message', 'character': pid, 'text': text, 'alert': 'proximity'}
         if snapshot:
             msg['snapshot'] = snapshot
@@ -77,27 +77,24 @@ class AlertVoice:
 
     def _describe(self, a: AgentProfile, d: Mapping[str, Any]) -> str:
         """The situation, in the detector's own words, so the AI doesn't invent spills or damage."""
+        w = self._words
         other_id = d.get('near') or ''
         objects = self._scene.members()
-        self_label = objects[a.id].label if a.id in objects else 'unknown'
+        self_label = objects[a.id].label if a.id in objects else w.unknown_label
         other = self._profiles.get(other_id)
-        other_label = objects[other_id].label if other_id in objects else 'unknown'
-        other_name = other.name if other else 'something'
+        other_label = objects[other_id].label if other_id in objects else w.unknown_label
+        other_name = other.name if other else w.unknown_other
         drinks = self._profiles.labels_for_habit('hydration') or self._drink_labels
         if other_label in drinks:
-            drink_note = f'The other object is a drink class ({other_label}) — spill risk is real. '
+            drink_note = w.other_is_drink.format(other_label=other_label)
         elif self_label in drinks:
-            drink_note = f'You are a drink class ({self_label}). '
+            drink_note = w.self_is_drink.format(self_label=self_label)
         else:
-            drink_note = ('NEITHER object is a cup/bottle/wine_glass in the detector — do NOT claim liquid or cup. '
-                          'Use the exact class names above (e.g. book, keyboard). ')
+            drink_note = w.no_drink
         risk = d.get('rule_label') or self._profiles.relationship_risk(a.id, other_id) or \
-            f'{self_label} and {other_label} are in the same area.'
-        return (f'VISION GROUNDING: this chat message was triggered by geometry rules; detector classes are '
-                f'"{self_label}" (you, {a.name}) and "{other_label}" (other: {other_name}). {drink_note}'
-                f'Rule / risk: {risk}. '
-                f'Reply using ONLY these class words for objects — not generic "cup" unless the other is a drink. '
-                f'Use normal language: "check spacing" or "move it back", not catastrophic damage.')
+            w.same_area.format(self_label=self_label, other_label=other_label)
+        return w.grounding.format(self_label=self_label, other_label=other_label, name=a.name, other_name=other_name,
+                                  drink_note=drink_note, risk=risk)
 
     def _ai_alert(self, a: AgentProfile, d: Mapping[str, Any], prev: Mapping[str, str] | None,
                   follow_up: int) -> str | None:

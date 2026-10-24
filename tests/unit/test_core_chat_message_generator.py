@@ -584,3 +584,55 @@ def test_a_long_panel_action_is_cut_short():
 def test_the_live_context_knows_when_the_camera_is_off():
     assert Rig(camera_on=False).gen.live_context()['summary'].startswith('THE CAMERA IS OFF RIGHT NOW')
     assert 'THE CAMERA IS OFF' not in Rig(camera_on=True).gen.live_context()['summary']
+
+
+# ── the wording comes from config/prompts.yaml ───────────────────────
+def with_words(**sections):
+    """CONFIG.prompts with some texts changed: with_words(alert={'too_close': 'Mind me.'})."""
+    changed = {name: getattr(CONFIG.prompts, name).model_copy(update=texts) for name, texts in sections.items()}
+    return CONFIG.prompts.model_copy(update=changed)
+
+
+def test_the_alert_grounding_and_fallbacks_come_from_prompts_yaml():
+    words = with_words(alert={'grounding': 'SEEN {self_label} by {other_label}. {drink_note}{risk}',
+                              'no_drink': 'Dry. ', 'too_close': 'Mind the gap.',
+                              'heads_up': 'Look: {rule}!'})
+    r = Rig(prompts=words, fail='down')
+    r.desk.set_members({'computer': seen('laptop', 200, 200, 400, 350), 'cup': seen('book', 410, 250, 450, 320)},
+                       r.clock.now())
+    r.gen.on_alert(proximity(near='', rule_label=''))
+    r.gen.on_alert(proximity(near='', rule_label='Book on the vents.', agent='cup'))
+    assert [m['text'] for m in r.notifier.sent] == ['Mind the gap.', 'Look: Book on the vents!']
+    r = Rig(prompts=words, reply='Could you move that book back a little bit, please?')
+    r.desk.set_members({'computer': seen('laptop', 200, 200, 400, 350), 'cup': seen('book', 410, 250, 450, 320)},
+                       r.clock.now())
+    r.gen.on_alert(proximity())
+    user = r.ai.calls[0]['messages'][1]['content']
+    assert 'SITUATION: SEEN laptop by book. Dry. Cup in the laptop spill zone\n' in user
+
+
+def test_the_nudge_question_and_memory_lines_come_from_prompts_yaml():
+    words = with_words(habit_reminder={'ask': 'Nudge now.', 'vision_note': ' (eyes: {note})'},
+                       memory={'you_replied': '{user} -> {said}'})
+    r = Rig(prompts=words, reply='Hey, 35 minutes of sitting! Walk five minutes, leave your phone.')
+    r.desk.set_vision_brief('posture=slouch')
+    r.gen.phrase_nudge('computer', nudge())
+    assert r.ai.calls[0]['messages'][1]['content'] == 'Nudge now.'
+    assert '(eyes: posture=slouch)' in r.ai.calls[0]['messages'][0]['content']
+    assert r.desk.recent('computer') == ['habit reminder -> Hey, 35 minutes of sitting! Walk five minutes, leave '
+                                         'your phone.']
+
+
+def test_the_chat_headings_come_from_prompts_yaml():
+    words = with_words(chat={'live_desk': '\n# DESK\n', 'other_said': '({name}) {text}',
+                             'referenced': ' [{objects}]', 'referenced_one': '{name}={status}',
+                             'remember': '\n# MEMORY\n{lines}\n', 'remember_line': '* {line}'},
+                       live_context={'camera_off': 'NO CAMERA.'})
+    r = Rig(prompts=words, camera_on=False)
+    r.desk.remember('cup', 'an old line', 10)
+    r.desk.set_members({'computer': seen('laptop', 200, 200, 400, 350)}, r.clock.now())
+    r.gen.answer('cup', 'is @monty ok?', [{'role': 'assistant', 'name': 'Computer', 'text': 'Hello!'}])
+    system = asked(r)[0]['content']
+    assert '\n# DESK\nNO CAMERA.\n' in system and '\n# MEMORY\n* an old line\n' in system
+    assert asked(r)[1]['content'] == '(Computer) Hello!'
+    assert asked(r)[-1]['content'].startswith('is @monty ok? [Computer=On desk')

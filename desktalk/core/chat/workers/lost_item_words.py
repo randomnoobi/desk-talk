@@ -1,17 +1,16 @@
 """
 The tracked lost items and the words for them (settings → lost_items.items), and spotting a
-"have you seen my keys?" question (config/prompts.yaml → lost_items.triggers).
+"have you seen my keys?" question (config/prompts.yaml → lost_items.triggers and other_things).
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from typing import Any
 
 from desktalk.config import LostItemsSettings
-
-OTHER_THINGS = {'laptop', 'cup', 'bottle', 'book', 'remote', 'card', 'scissors'}   # askable, though not tracked
+from desktalk.config.prompts import LostItemsPrompts
 
 
 def words_in(text: str) -> set[str]:
@@ -19,10 +18,12 @@ def words_in(text: str) -> set[str]:
 
 
 class TrackedItems:
-    """`items`: item id → name, labels (detector words), alert_after (seconds) and words (what you might type)."""
+    """`items`: item id → name, labels (detector words), alert_after (seconds) and words (what you might type).
+    `words`: config/prompts.yaml → lost_items (the question words, and the other things you can ask about)."""
 
-    def __init__(self, settings: LostItemsSettings, triggers: Sequence[str]):
-        self._triggers = tuple(triggers)
+    def __init__(self, settings: LostItemsSettings, words: LostItemsPrompts):
+        self._triggers = tuple(words.triggers)
+        self._other_things = {thing.lower() for thing in words.other_things}     # askable, though not tracked
         self.items: dict[str, dict[str, Any]] = {
             item_id: {'name': item.name, 'labels': {label.lower() for label in item.labels},
                       'alert_after': item.alert_after_min * 60,
@@ -57,4 +58,4 @@ class TrackedItems:
 
     def is_lost_query(self, text: str) -> bool:
         """A "have you seen my ...?" question about a tracked item or another everyday thing."""
-        return self.is_question(text) and (bool(self.in_text(text)) or bool(words_in(text) & OTHER_THINGS))
+        return self.is_question(text) and (bool(self.in_text(text)) or bool(words_in(text) & self._other_things))

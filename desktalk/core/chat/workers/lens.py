@@ -6,11 +6,12 @@ camera moving or going quiet) what needs fixing, and says it as Lens. With the P
 also mentions a Pi that runs hot or slows itself down, a Pi clock that's off, and the Pi's own object
 detection being off because it failed (and why: this computer then detects instead). No AI is used, so Lens works even
 without a key. Everything Lens says is also published as a CameraNotice for the log.
-Nothing is said during quiet hours.
+Nothing is said during quiet hours (by the clock's local hour).
 
     lens = Lens(camera_health, source, desk_layout, preferences, notifier, bus, proof_photos, config.lens, config.pi,
-                phone=<the phone source, if it's the camera>, pi_uploads=<the Pi source, if it's the camera>,
-                prompts=config.prompts.lens, preview_chars=config.logging.preview_chars)
+                clock=clock, phone=<the phone source, if it's the camera>,
+                pi_uploads=<the Pi source, if it's the camera>, prompts=config.prompts.lens,
+                preview_chars=config.logging.preview_chars)
     supervisor.add(lens, start_after=config.lens.check_every_sec)
 """
 
@@ -26,6 +27,7 @@ from desktalk.core.habits.preferences import quiet_hours_now
 from desktalk.domain import CameraNotice, DetectorState, PiHealth, UploadInfo
 from desktalk.ports import (
     CameraHealthView,
+    Clock,
     DeskLayout,
     EventBus,
     FrameSource,
@@ -99,12 +101,13 @@ class Lens:
 
     def __init__(self, health: CameraHealthView, source: FrameSource, layout: DeskLayout, prefs: Preferences,
                  notifier: Notifier, bus: EventBus, photos: PhotoTaker, settings: LensSettings,
-                 pi_settings: PiSettings, *, prompts: LensPrompts, preview_chars: int,
+                 pi_settings: PiSettings, *, clock: Clock, prompts: LensPrompts, preview_chars: int,
                  phone: PhoneCamera | None = None, pi_uploads: PiUploads | None = None):
         """How long the Pi must be hot (or its clock off) before Lens says so: lens.wait_before_saying_sec.pi;
         how long its own detection must be off: lens.wait_before_saying_sec.pi_detector. `prompts`:
         config/prompts.yaml → lens (what Lens says about the Pi, and its photos' label). `preview_chars`:
-        settings → logging.preview_chars, the longest line quoted in the log."""
+        settings → logging.preview_chars, the longest line quoted in the log. `clock` gives the local hour, for
+        quiet hours."""
         self._health = health
         self._source = source
         self._layout = layout
@@ -114,6 +117,7 @@ class Lens:
         self._photos = photos
         self._settings = settings
         self._pi_settings = pi_settings
+        self._clock = clock
         self._words = prompts
         self._preview_chars = preview_chars
         self._phone = phone
@@ -129,7 +133,7 @@ class Lens:
     def tick(self, now: float) -> float:
         source, phone = self._source, self._phone
         connected = source.connected
-        quiet = quiet_hours_now(self._prefs, now)
+        quiet = quiet_hours_now(self._prefs, now, self._clock)
         found = self._health.check(now, connected=connected, fps=source.fps if source.kind in FPS_KINDS else None,
                                    gravity=phone.recent_gravity() if phone else None,
                                    reference_gravity=self._layout.reference_gravity(),

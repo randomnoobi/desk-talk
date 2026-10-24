@@ -16,7 +16,7 @@ import random
 from typing import Any
 
 from desktalk.config import AiReplies, DailySummarySettings
-from desktalk.config.prompts import DailyRecapPrompts
+from desktalk.config.prompts import DailyRecapPrompts, RecapFacts
 from desktalk.core.agents.speakers import LENS
 from desktalk.core.chat import prompts as fill
 from desktalk.core.chat.workers.ai import ask
@@ -27,8 +27,10 @@ log = logging.getLogger(__name__)
 SENT_KEY = 'daily_summary'          # in the KeyValueStore: {"sent_day": "2026-10-21"}
 
 
-def recap_facts(stats: dict[str, Any], objects_listed: int) -> str:
-    """Today's numbers (HabitsView.today()) as short sentences for the AI, or for the built-in recap."""
+def recap_facts(stats: dict[str, Any], objects_listed: int, *, words: RecapFacts) -> str:
+    """Today's numbers (HabitsView.today()) as short sentences for the AI, or for the built-in recap.
+    `words`: config/prompts.yaml → daily_recap.facts."""
+    w = words
     facts = []
     stretches: list[tuple[int, int, float]] = []          # (from hour, to hour, activity) of busy hours in a row
     for hour, activity in enumerate(stats.get('hourly_activity') or []):
@@ -41,24 +43,22 @@ def recap_facts(stats: dict[str, Any], objects_listed: int) -> str:
             stretches.append((hour, hour + 1, activity))
     if stretches:
         start, end, _ = max(stretches, key=lambda s: s[2])
-        facts.append(f'Busiest period: between {start}:00 and {end}:00.')
+        facts.append(w.busiest.format(start=start, end=end))
     water, breaks, phone_free = stats['hydration'], stats['breaks'], stats['phone_free']
-    facts.append(f'Water: about {water["water_ml"] / 1000:.1f} of {water["goal_ml"] / 1000:.1f} L '
-                 f'({water["sips"]} sips).')
-    facts.append(f'Breaks taken: {breaks["count"]}. Longest stretch sitting: {int(breaks["longest_sit_sec"] // 60)} '
-                 f'minutes.')
+    facts.append(w.water.format(water_l=water['water_ml'] / 1000, goal_l=water['goal_ml'] / 1000, sips=water['sips']))
+    facts.append(w.breaks.format(count=breaks['count'], longest_min=int(breaks['longest_sit_sec'] // 60)))
     if phone_free.get('counted'):
-        facts.append(f'Phone-free desk time: {int(phone_free["phone_free_sec"] // 60)} minutes '
-                     f'(best streak {int(phone_free["best_sec"] // 60)}).')
-    facts.append('Morning sunlight: logged.' if stats['light'].get('sunlight_ts') else 'Morning sunlight: not logged.')
+        facts.append(w.phone_free.format(minutes=int(phone_free['phone_free_sec'] // 60),
+                                         best_min=int(phone_free['best_sec'] // 60)))
+    facts.append(w.sunlight_logged if stats['light'].get('sunlight_ts') else w.sunlight_not_logged)
     if stats.get('desk_sec'):
-        facts.append(f'Total time at desk: ~{int(stats["desk_sec"] // 60)} minutes.')
+        facts.append(w.desk_time.format(minutes=int(stats['desk_sec'] // 60)))
     if stats.get('danger_count'):
-        facts.append(f'Near-spill or danger alerts: {stats["danger_count"]}.')
+        facts.append(w.dangers.format(count=stats['danger_count']))
     if stats.get('lost_alerts'):
-        facts.append(f'Lost-object alerts: {stats["lost_alerts"]}.')
+        facts.append(w.lost.format(count=stats['lost_alerts']))
     if stats.get('objects_seen') and objects_listed:
-        facts.append(f'Objects seen today: {", ".join(stats["objects_seen"][:objects_listed])}.')
+        facts.append(w.objects.format(objects=', '.join(stats['objects_seen'][:objects_listed])))
     return ' '.join(facts)
 
 
@@ -100,12 +100,12 @@ class DailySummary:
         return self._sent_day == day or (self._store.load(SENT_KEY) or {}).get('sent_day') == day
 
     def _send(self, stats: dict[str, Any]) -> None:
-        facts = recap_facts(stats, self._settings.objects_listed)
+        facts = recap_facts(stats, self._settings.objects_listed, words=self._words.facts)
         messages = [{'role': 'system', 'content': self._words.system},
                     {'role': 'user', 'content': fill.daily_summary_user(self._words, facts)}]
         text = ask(self._chat, messages, self._reply, own_temperature=self._default_temperature, background=True,
                    what='the daily recap')
-        text = text or f"Today's desk recap: {facts}"
+        text = text or self._words.plain.format(facts=facts)
         members = self._roster.member_ids()
         speaker = self._rng.choice(members) if members else LENS
         self._notifier.send({'type': 'group_message', 'character': speaker, 'text': text, 'recap': True})

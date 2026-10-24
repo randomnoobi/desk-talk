@@ -429,3 +429,9 @@ def test_the_longest_chat_reply_follows_how_the_server_tries_the_ai(project):
     llm = load_config(root=project, environ={}).llm
     assert (llm.min_interval_sec, llm.ollama_timeout_sec, llm.max_retries, llm.ollama_retry_sec) == (6, 90, 3, 2)
     assert llm.longest_reply_sec() == 6 + 90 + 3 * 90 + 2 * 2
+
+
+def test_the_page_no_longer_has_a_first_check_wait():
+    """The page stopped using web.first_check_timeout_ms, so the setting is gone (it only lived on the cleanup
+    branch, so no settings.local.yaml has it)."""
+    assert 'first_check_timeout_ms' not in type(load_config(environ={}, dotenv=Path('/nonexistent')).web).model_fields

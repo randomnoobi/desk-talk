@@ -39,6 +39,8 @@ default:
   icon: "✨"
   too_close: "{other} is getting pretty close to me. Could you give us some room?"
   hello: "Oh hi, I'm the {object}. Mind if I hang out here?"
+  # the line under the name of an object that showed up on its own
+  about: "A {object} that showed up on your desk."
 
 # Never become agents: people, furniture, and the desk itself.
 ignore:

@@ -290,3 +290,17 @@ class TestOpenAICompatibleChatModel(ChatModelContract):
     @pytest.fixture
     def broken_model(self, llm):
         return make(llm, reply=ConnectionError('Connection refused'), gemini='g')[0]
+
+
+def test_the_error_words_come_from_the_prompt_settings(llm):
+    words = REPLIES.ai_errors.model_copy(update={'no_pictures': '{model} is blind.', 'no_connection': 'Offline.'})
+    replies = REPLIES.model_copy(update={'ai_errors': words})
+    model, _ = make(llm, reply=RuntimeError('model llava-test does not support multimodal input'),
+                    ollama='http://ollama.test/v1', replies=replies)
+    with pytest.raises(AIRefused) as err:
+        model.vision(b'\xff\xd8jpeg', 'What is on the desk?')
+    assert err.value.reason == f'{llm.vision_model} is blind.'
+    model, _ = make(llm, reply=ConnectionError('Connection refused'), gemini='g', replies=replies)
+    with pytest.raises(AIUnavailable) as err:
+        model.chat(HELLO, max_tokens=50, temperature=0.7)
+    assert err.value.reason == 'Offline.'

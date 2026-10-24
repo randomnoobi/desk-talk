@@ -20,10 +20,9 @@ class PhotoDesk(LivePictures, DeskScene, PhotoAlbum, Protocol):
 
 
 class ProofPhotos:
-    """Implements PhotoTaker. `pictures` crops the photos; without it (some tests) a photo is kept whole."""
+    """Implements PhotoTaker. `pictures` crops the photos."""
 
-    def __init__(self, desk: PhotoDesk, clock: Clock, snapshots: SnapshotsSettings,
-                 pictures: PictureTools | None = None):
+    def __init__(self, desk: PhotoDesk, clock: Clock, snapshots: SnapshotsSettings, *, pictures: PictureTools):
         self._desk = desk
         self._clock = clock
         self._settings = snapshots
@@ -46,8 +45,8 @@ class ProofPhotos:
         """The part of the picture around all the boxes, with snapshots.crop_padding more on each side.
         A crop no bigger than snapshots.crop_min_px keeps the whole picture."""
         tools = self._pictures
-        picture = tools.decode_jpeg(jpeg) if tools is not None else None
-        if tools is None or picture is None:
+        picture = tools.decode_jpeg(jpeg)
+        if picture is None:
             return jpeg
         size = tools.size(picture)
         x1, y1 = min(b[0] for b in boxes), min(b[1] for b in boxes)

@@ -150,15 +150,15 @@ class VisionHabits:
             if nails_started:
                 self._nails_logged_at = now
             self._nails_before = nails
+        w = self._words.log
         if slouched is not None:
             minutes = max(1, round(slouched / 60))
-            photo = self._photos.save(f'Posture: ~{minutes}m slouch')
-            self._add('posture_bad', f'Poor posture ~{minutes} min', now, duration_sec=slouched, snapshot_id=photo,
-                      detail='The desk camera saw a slouched stretch until your posture looked neutral again.')
+            photo = self._photos.save(w.slouch_photo.format(minutes=minutes))
+            self._add('posture_bad', w.slouch_title.format(minutes=minutes), now, duration_sec=slouched,
+                      snapshot_id=photo, detail=w.slouch_detail)
         if nails_started:
-            photo = self._photos.save('Habit: nail biting')
-            self._add('nail_biting', 'Nail biting noticed', now, snapshot_id=photo,
-                      detail='The vision check saw nail biting, or a hand at your mouth near your nails.')
+            photo = self._photos.save(w.nails_photo)
+            self._add('nail_biting', w.nails_title, now, snapshot_id=photo, detail=w.nails_detail)
 
     def _add(self, category: str, title: str, now: float, *, detail: str, duration_sec: int | None = None,
              snapshot_id: str | None = None) -> None:

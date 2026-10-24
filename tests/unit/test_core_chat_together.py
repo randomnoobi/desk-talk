@@ -42,7 +42,7 @@ def build(reply):
     llm = CONFIG.llm.model_copy(update={'min_interval_sec': 0})
     ai = OpenAICompatibleChatModel(llm, Secrets(gemini_api_key='g', openai_api_key='', groq_api_key='', ollama_url=''),
                                    clock, client_factory=factory, replies=CONFIG.prompts.replies)
-    model = ResilientChatModel(ai, clock, llm, time_limit_sec=ai.time_limit_sec)
+    model = ResilientChatModel(ai, clock, llm, time_limit_sec=ai.time_limit_sec, replies=CONFIG.prompts.replies)
     hub = MessageHub(clock, recent_kept=CONFIG.chat.recent_kept, queue_size=CONFIG.web.live_queue_size)
     habit_log = HabitLog()
     gen = MessageGenerator(model, hub, StaticRoster(['cup']), FakeProfiles([CUP]), FakeHabits(TODAY), FakeChatDesk(),
@@ -103,7 +103,7 @@ def test_an_ollama_that_keeps_answering_with_nothing_is_asked_at_most_max_retrie
     ai = OpenAICompatibleChatModel(llm, Secrets(gemini_api_key='', openai_api_key='', groq_api_key='',
                                                 ollama_url='http://ollama.test/v1'), clock, client_factory=factory,
                                    replies=CONFIG.prompts.replies)
-    model = ResilientChatModel(ai, clock, llm, time_limit_sec=ai.time_limit_sec)
+    model = ResilientChatModel(ai, clock, llm, time_limit_sec=ai.time_limit_sec, replies=CONFIG.prompts.replies)
     with pytest.raises(AIUnavailable) as err:
         model.chat([{'role': 'user', 'content': 'hi'}], max_tokens=50, temperature=0.5)
     assert 'empty reply' in err.value.reason

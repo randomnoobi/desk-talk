@@ -18,6 +18,13 @@ LIMIT = AIUnavailable('Gemini hit its free usage limit.', rate_limited=True)
 BAD_KEY = AIRefused('Gemini rejected the key in .env.')
 
 
+REPLIES = load_config(environ={}, dotenv=Path('/nonexistent')).prompts.replies
+
+
+def resilient(inner, clock, llm, **kw):
+    return ResilientChatModel(inner, clock, llm, replies=REPLIES, **kw)
+
+
 @pytest.fixture(scope='module')
 def base_llm():
     return load_config(environ={}, dotenv=Path('/nonexistent')).llm
@@ -74,14 +81,14 @@ def fails(model, background=False):
 # ── passing things through ───────────────────────────────────────────
 def test_label_and_ready_come_from_the_ai(llm):
     clock = FakeClock()
-    model = ResilientChatModel(Scripted(clock, 'Hi', ready=False), clock, llm)
+    model = resilient(Scripted(clock, 'Hi', ready=False), clock, llm)
     assert model.label == 'Scripted AI' and not model.ready
 
 
 def test_the_request_is_passed_on_as_it_is(llm):
     clock = FakeClock()
     inner = FakeChatModel('Hi!')
-    model = ResilientChatModel(inner, clock, llm)
+    model = resilient(inner, clock, llm)
     assert model.chat(HELLO, max_tokens=80, temperature=0.4, background=True) == 'Hi!'
     assert inner.calls[0] == {'kind': 'chat', 'messages': HELLO, 'max_tokens': 80, 'temperature': 0.4,
                               'background': True}
@@ -90,7 +97,7 @@ def test_the_request_is_passed_on_as_it_is(llm):
 def test_no_ai_set_up_is_said_plainly_and_never_trips_the_breaker(llm):
     clock = FakeClock()
     inner = FakeChatModel(fail='Add a key to .env.', ready=False)
-    model = ResilientChatModel(inner, clock, llm)
+    model = resilient(inner, clock, llm)
     for _ in range(5):
         assert fails(model).reason == 'Add a key to .env.'
     assert len(inner.calls) == 5 and clock.slept == []
@@ -100,14 +107,14 @@ def test_no_ai_set_up_is_said_plainly_and_never_trips_the_breaker(llm):
 def test_a_failed_call_is_tried_again_after_growing_waits(llm):
     clock = FakeClock()
     inner = Scripted(clock, DOWN, DOWN, 'Back!')
-    model = ResilientChatModel(inner, clock, llm)
+    model = resilient(inner, clock, llm)
     assert chat(model) == 'Back!'
     assert clock.slept == [2, 4] and model.problem() is None
 
 
 def test_the_waits_stop_growing_at_the_longest_wait(llm):
     clock = FakeClock()
-    model = ResilientChatModel(Scripted(clock, DOWN), clock,
+    model = resilient(Scripted(clock, DOWN), clock,
                                llm.model_copy(update={'max_retries': 5, 'retry_max_sec': 5}))
     fails(model)
     assert clock.slept == [2, 4, 5, 5]
@@ -116,7 +123,7 @@ def test_the_waits_stop_growing_at_the_longest_wait(llm):
 def test_after_the_last_try_the_problem_is_kept(llm):
     clock = FakeClock()
     inner = Scripted(clock, DOWN)
-    model = ResilientChatModel(inner, clock, llm)
+    model = resilient(inner, clock, llm)
     assert fails(model) is DOWN
     assert len(inner.calls) == 3 and model.problem() == DOWN.reason
 
@@ -124,7 +131,7 @@ def test_after_the_last_try_the_problem_is_kept(llm):
 def test_a_refusal_is_not_tried_again(llm):
     clock = FakeClock()
     inner = Scripted(clock, BAD_KEY)
-    model = ResilientChatModel(inner, clock, llm)
+    model = resilient(inner, clock, llm)
     assert fails(model) is BAD_KEY
     assert len(inner.calls) == 1 and clock.slept == []
 
@@ -132,7 +139,7 @@ def test_a_refusal_is_not_tried_again(llm):
 def test_no_new_try_starts_after_the_time_limit(llm):
     clock = FakeClock()
     inner = Scripted(clock, DOWN, takes=20)       # each try hangs for 20 s before failing
-    model = ResilientChatModel(inner, clock, llm, time_limit_sec=30)
+    model = resilient(inner, clock, llm, time_limit_sec=30)
     fails(model)
     # try 1: 0-20 s; wait 2 s; try 2: 22-42 s; a third would start after the 30 s limit
     assert len(inner.calls) == 2
@@ -141,7 +148,7 @@ def test_no_new_try_starts_after_the_time_limit(llm):
 def test_the_time_limit_defaults_to_the_settings(llm):
     clock = FakeClock()
     inner = Scripted(clock, DOWN, takes=29)
-    fails(ResilientChatModel(inner, clock, llm.model_copy(update={'timeout_sec': 30})))
+    fails(resilient(inner, clock, llm.model_copy(update={'timeout_sec': 30})))
     assert len(inner.calls) == 1
 
 
@@ -149,7 +156,7 @@ def test_the_time_limit_defaults_to_the_settings(llm):
 def test_when_you_are_waiting_a_rate_limit_gets_one_more_try(llm):
     clock = FakeClock()
     inner = Scripted(clock, LIMIT, 'Phew, here I am.')
-    model = ResilientChatModel(inner, clock, llm)
+    model = resilient(inner, clock, llm)
     assert chat(model) == 'Phew, here I am.'
     assert clock.slept == [5]
 
@@ -157,7 +164,7 @@ def test_when_you_are_waiting_a_rate_limit_gets_one_more_try(llm):
 def test_only_one_more_try_after_a_rate_limit(llm):
     clock = FakeClock()
     inner = Scripted(clock, LIMIT)
-    model = ResilientChatModel(inner, clock, llm)
+    model = resilient(inner, clock, llm)
     assert fails(model).rate_limited
     assert len(inner.calls) == 2
 
@@ -165,14 +172,14 @@ def test_only_one_more_try_after_a_rate_limit(llm):
 def test_background_calls_never_try_again_after_a_rate_limit(llm):
     clock = FakeClock()
     inner = Scripted(clock, LIMIT)
-    fails(ResilientChatModel(inner, clock, llm), background=True)
+    fails(resilient(inner, clock, llm), background=True)
     assert len(inner.calls) == 1 and clock.slept == []
 
 
 def test_after_a_rate_limit_background_calls_rest_but_yours_still_go(llm):
     clock = FakeClock()
     inner = Scripted(clock, LIMIT, 'For you, always.')
-    model = ResilientChatModel(inner, clock, llm)
+    model = resilient(inner, clock, llm)
     fails(model, background=True)
     resting = fails(model, background=True)
     assert resting.rate_limited and len(inner.calls) == 1          # not asked: saving the quota
@@ -188,7 +195,7 @@ def test_after_a_rate_limit_background_calls_rest_but_yours_still_go(llm):
 def test_after_repeated_failures_the_ai_is_left_alone_for_a_while(llm):
     clock = FakeClock()
     inner = Scripted(clock, DOWN)
-    model = ResilientChatModel(inner, clock, llm.model_copy(update={'max_retries': 1}))
+    model = resilient(inner, clock, llm.model_copy(update={'max_retries': 1}))
     for _ in range(3):
         fails(model)
     err = fails(model)
@@ -199,7 +206,7 @@ def test_after_repeated_failures_the_ai_is_left_alone_for_a_while(llm):
 def test_after_the_pause_one_call_checks_whether_the_ai_is_back(llm):
     clock = FakeClock()
     inner = Scripted(clock, DOWN, DOWN, DOWN, 'I am back!')
-    model = ResilientChatModel(inner, clock, llm.model_copy(update={'max_retries': 1}))
+    model = resilient(inner, clock, llm.model_copy(update={'max_retries': 1}))
     for _ in range(3):
         fails(model)
     clock.advance(59)
@@ -213,7 +220,7 @@ def test_after_the_pause_one_call_checks_whether_the_ai_is_back(llm):
 def test_a_failed_check_leaves_the_ai_alone_again_with_only_one_try(llm):
     clock = FakeClock()
     inner = Scripted(clock, DOWN)
-    model = ResilientChatModel(inner, clock, llm)
+    model = resilient(inner, clock, llm)
     for _ in range(3):
         fails(model)
     assert len(inner.calls) == 9
@@ -228,7 +235,7 @@ def test_a_failed_check_leaves_the_ai_alone_again_with_only_one_try(llm):
 def test_a_working_call_starts_the_count_again(llm):
     clock = FakeClock()
     inner = Scripted(clock, DOWN, DOWN, 'ok', DOWN, DOWN, 'ok again')
-    model = ResilientChatModel(inner, clock, llm.model_copy(update={'max_retries': 1}))
+    model = resilient(inner, clock, llm.model_copy(update={'max_retries': 1}))
     fails(model)
     fails(model)
     chat(model)
@@ -241,7 +248,7 @@ def test_an_unexpected_error_is_still_ai_unavailable_and_never_jams_the_breaker(
     clock = FakeClock()
     bug = ValueError('bug in the AI library')
     inner = Scripted(clock, bug, bug, bug, 'Fine now.')
-    model = ResilientChatModel(inner, clock, llm.model_copy(update={'max_retries': 1}))
+    model = resilient(inner, clock, llm.model_copy(update={'max_retries': 1}))
     for _ in range(3):
         assert 'bug in the AI library' in fails(model).reason
     clock.advance(60)
@@ -251,14 +258,14 @@ def test_an_unexpected_error_is_still_ai_unavailable_and_never_jams_the_breaker(
 def test_an_unexpected_error_is_cut_to_the_setting(llm):
     clock = FakeClock()
     inner = Scripted(clock, ValueError('bug in the AI library'))
-    model = ResilientChatModel(inner, clock, llm.model_copy(update={'max_retries': 1, 'error_text_chars': 6}))
+    model = resilient(inner, clock, llm.model_copy(update={'max_retries': 1, 'error_text_chars': 6}))
     assert fails(model).reason == 'The AI returned an error: bug in'
 
 
 # ── not too often ────────────────────────────────────────────────────
 def test_calls_are_spaced_out(llm):
     clock = FakeClock()
-    model = ResilientChatModel(Scripted(clock, 'Hi'), clock, llm.model_copy(update={'min_interval_sec': 6}))
+    model = resilient(Scripted(clock, 'Hi'), clock, llm.model_copy(update={'min_interval_sec': 6}))
     chat(model)
     clock.advance(2)
     chat(model)
@@ -275,7 +282,7 @@ def look(model, background=True):
 
 def test_a_failed_picture_question_is_tried_again_after_longer_waits(llm):
     clock = FakeClock()
-    model = ResilientChatModel(Scripted(clock, DOWN, DOWN, 'A cup.'), clock, llm)
+    model = resilient(Scripted(clock, DOWN, DOWN, 'A cup.'), clock, llm)
     assert look(model) == 'A cup.'
     assert clock.slept == [1, 2]
 
@@ -283,7 +290,7 @@ def test_a_failed_picture_question_is_tried_again_after_longer_waits(llm):
 def test_a_picture_question_never_tries_again_after_a_rate_limit(llm):
     clock = FakeClock()
     inner = Scripted(clock, LIMIT)
-    model = ResilientChatModel(inner, clock, llm)
+    model = resilient(inner, clock, llm)
     with pytest.raises(AIUnavailable):
         look(model, background=False)
     assert len(inner.calls) == 1 and model.problem() == LIMIT.reason
@@ -292,7 +299,7 @@ def test_a_picture_question_never_tries_again_after_a_rate_limit(llm):
 def test_cloud_picture_questions_rest_after_a_rate_limit(llm):
     clock = FakeClock()
     inner = Scripted(clock, LIMIT, 'A cup.')
-    model = ResilientChatModel(inner, clock, llm)
+    model = resilient(inner, clock, llm)
     fails(model, background=True)
     with pytest.raises(AIUnavailable):
         look(model)
@@ -302,7 +309,7 @@ def test_cloud_picture_questions_rest_after_a_rate_limit(llm):
 def test_picture_questions_on_this_computer_carry_on_after_a_rate_limit(llm):
     clock = FakeClock()
     inner = Scripted(clock, LIMIT, 'A cup.', local_vision=True)
-    model = ResilientChatModel(inner, clock, llm)
+    model = resilient(inner, clock, llm)
     assert model.local_vision
     fails(model, background=True)
     assert look(model) == 'A cup.'
@@ -312,7 +319,7 @@ def test_picture_questions_on_ollama_get_ollamas_longer_time_limit(llm):
     """The chat runs on a cloud AI (30 s), but Ollama on this computer may take up to 90 s on a picture."""
     clock = FakeClock()
     inner = Scripted(clock, DOWN, takes=40, local_vision=True)        # each try hangs 40 s, then fails
-    model = ResilientChatModel(inner, clock, llm.model_copy(update={'ollama_timeout_sec': 90}), time_limit_sec=30)
+    model = resilient(inner, clock, llm.model_copy(update={'ollama_timeout_sec': 90}), time_limit_sec=30)
     with pytest.raises(AIUnavailable):
         look(model)
     # try 1: 0-40 s; wait 1 s; try 2: 41-81 s; wait 2 s; try 3 starts at 83 s, inside 90 s
@@ -322,7 +329,7 @@ def test_picture_questions_on_ollama_get_ollamas_longer_time_limit(llm):
 def test_cloud_picture_questions_keep_the_cloud_time_limit(llm):
     clock = FakeClock()
     inner = Scripted(clock, DOWN, takes=40)
-    model = ResilientChatModel(inner, clock, llm.model_copy(update={'ollama_timeout_sec': 90}), time_limit_sec=30)
+    model = resilient(inner, clock, llm.model_copy(update={'ollama_timeout_sec': 90}), time_limit_sec=30)
     with pytest.raises(AIUnavailable):
         look(model)
     assert len(inner.calls) == 1
@@ -331,7 +338,7 @@ def test_cloud_picture_questions_keep_the_cloud_time_limit(llm):
 def test_failing_picture_questions_do_not_stop_the_chat(llm):
     clock = FakeClock()
     inner = Scripted(clock, DOWN, DOWN, DOWN, 'Chat still works.')
-    model = ResilientChatModel(inner, clock, llm.model_copy(update={'max_retries': 1}))
+    model = resilient(inner, clock, llm.model_copy(update={'max_retries': 1}))
     for _ in range(3):
         with pytest.raises(AIUnavailable):
             look(model)
@@ -347,9 +354,25 @@ class TestResilientChatModel(ChatModelContract):
     @pytest.fixture
     def model(self, llm):
         clock = FakeClock()
-        return ResilientChatModel(FakeChatModel('Hello there!'), clock, llm)
+        return resilient(FakeChatModel('Hello there!'), clock, llm)
 
     @pytest.fixture
     def broken_model(self, llm):
         clock = FakeClock()
-        return ResilientChatModel(FakeChatModel(fail='Could not reach the AI service.'), clock, llm)
+        return resilient(FakeChatModel(fail='Could not reach the AI service.'), clock, llm)
+
+
+def test_its_own_words_come_from_prompts_yaml(llm):
+    clock = FakeClock()
+    words = REPLIES.ai_errors.model_copy(update={'other': 'Broke: {error}', 'resting': '{who} rests {minutes} min.',
+                                                 'left_alone': '{problem} [{failures}x, {seconds}s]'})
+    replies = REPLIES.model_copy(update={'ai_errors': words})
+    model = ResilientChatModel(Scripted(clock, RuntimeError('bug')), clock, llm.model_copy(update={'max_retries': 1}),
+                               replies=replies)
+    assert fails(model).reason == 'Broke: bug'
+    fails(model)
+    fails(model)
+    assert model.problem() == 'Broke: bug [3x, 60s]'
+    model = ResilientChatModel(Scripted(clock, LIMIT), clock, llm, replies=replies)
+    fails(model)
+    assert fails(model, background=True).reason == 'Scripted AI rests 10 min.'

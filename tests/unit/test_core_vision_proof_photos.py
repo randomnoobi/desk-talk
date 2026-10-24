@@ -1,6 +1,7 @@
 """Proof photos: the live view picture (cropped around the objects) kept with an alert."""
 
 import numpy as np
+import pytest
 
 from desktalk.adapters.picture import OpenCvPictureTools
 from desktalk.core.vision.proof_photos import ProofPhotos
@@ -82,10 +83,9 @@ def test_a_picture_that_does_not_read_is_kept_as_it_is():
     assert kept(desk, p.save('Proximity alert', [(200, 200, 400, 350)])) == b'not a picture'
 
 
-def test_without_picture_tools_photos_are_kept_whole():
-    p = ProofPhotos(desk := FakeDesk(), FakeClock(), SNAPSHOTS)
-    show(desk, picture := jpeg())
-    assert kept(desk, p.save('Proximity alert', [(200, 200, 400, 350)])) == picture
+def test_the_picture_tools_must_be_passed_in():
+    with pytest.raises(TypeError):
+        ProofPhotos(FakeDesk(), FakeClock(), SNAPSHOTS)        # type: ignore[call-arg]
 
 
 def test_without_boxes_the_whole_picture_is_kept():

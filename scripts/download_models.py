@@ -24,6 +24,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+MB = 1024 * 1024        # bytes, as everywhere else in Desk Talk
 
 
 def model_path(config, name: str) -> Path:
@@ -50,7 +51,7 @@ def main():
         print(f'→ {m}')
         model = load_yolo(path)                      # downloads it the first time
         path = Path(getattr(model, 'ckpt_path', None) or path)
-        print(f'  ready: {path} ({path.stat().st_size / 1e6:.0f} MB)')
+        print(f'  ready: {path} ({path.stat().st_size / MB:.0f} MB)')
         if a.list:
             names = sorted(model.names.values())
             print(f'  {len(names)} objects: ' + ', '.join(names))

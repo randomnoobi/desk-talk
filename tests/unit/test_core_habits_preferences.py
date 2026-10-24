@@ -1,8 +1,8 @@
 """Choices made in the app: wake time, bedtime and quiet hours (desktalk/core/habits/preferences.py)."""
 
+import calendar
 import logging
 import shutil
-import time
 from pathlib import Path
 
 import pytest
@@ -131,14 +131,17 @@ def test_changing_the_copy_from_all_changes_nothing(config, store):
     assert p.get('wake_time') == '07:00'
 
 
+CLOCK = FakeClock()          # UTC, so the hours below are the same on every computer
+
+
 def local(hour):
-    return time.mktime((2026, 6, 15, hour, 30, 0, 0, 0, -1))
+    return calendar.timegm((2026, 6, 15, hour, 30, 0, 0, 0, 0))
 
 
 def test_quiet_hours_across_midnight():
     prefs = FakePreferences({'quiet_enabled': True, 'quiet_start_hour': 22, 'quiet_end_hour': 7})
-    assert quiet_hours_now(prefs, local(23)) and quiet_hours_now(prefs, local(6))
-    assert not quiet_hours_now(prefs, local(7)) and not quiet_hours_now(prefs, local(12))
+    assert quiet_hours_now(prefs, local(23), CLOCK) and quiet_hours_now(prefs, local(6), CLOCK)
+    assert not quiet_hours_now(prefs, local(7), CLOCK) and not quiet_hours_now(prefs, local(12), CLOCK)
 
 
 def test_quiet_hours_follow_the_clocks_time_zone():
@@ -150,6 +153,6 @@ def test_quiet_hours_follow_the_clocks_time_zone():
 
 def test_quiet_hours_in_the_day_and_switched_off():
     prefs = FakePreferences({'quiet_enabled': True, 'quiet_start_hour': 13, 'quiet_end_hour': 15})
-    assert quiet_hours_now(prefs, local(14)) and not quiet_hours_now(prefs, local(15))
+    assert quiet_hours_now(prefs, local(14), CLOCK) and not quiet_hours_now(prefs, local(15), CLOCK)
     prefs.values['quiet_enabled'] = False
-    assert not quiet_hours_now(prefs, local(14))
+    assert not quiet_hours_now(prefs, local(14), CLOCK)

@@ -13,6 +13,7 @@ SIZE = (960, 720)
 # The desk runs off the left, top and right of the picture; its front edge is at 80% of the height.
 DESK = ((0, 0), (1, 0), (1, 0.8), (0, 0.8))
 RULES = dataclasses.replace(make_rules(app_config().safety), outline=DESK)
+WORDS = app_config().prompts.desk_checks
 
 
 def cup(box, label='cup'):
@@ -55,12 +56,12 @@ def test_on_the_desk_is_inside_the_outline_or_anywhere_when_none_is_marked():
     (DESK, (400, 200, 470, 300), []),             # middle of the desk
 ])
 def test_only_real_desk_edges_count(outline, box, edges):
-    found = de.edge_risks(cup(box), dataclasses.replace(RULES, outline=outline), SIZE)
+    found = de.edge_risks(cup(box), dataclasses.replace(RULES, outline=outline), SIZE, words=WORDS)
     assert [e['edge'] for e in found.risk_events] == edges
 
 
 def test_right_at_the_edge_is_a_danger():
-    found = de.edge_risks(cup((400, 480, 470, 570)), RULES, SIZE)
+    found = de.edge_risks(cup((400, 480, 470, 570)), RULES, SIZE, words=WORDS)
     assert found.risk_events == [{'type': 'edge_danger', 'object': 'cup', 'class': 'cup', 'edge': 'front',
                                   'distance_px': 6.0}]
     assert found.explanations == ['cup is right at the front edge of the desk and could fall off.']
@@ -69,7 +70,7 @@ def test_right_at_the_edge_is_a_danger():
 
 
 def test_near_the_edge_is_a_warning_without_an_explanation():
-    found = de.edge_risks(cup((400, 430, 470, 520)), RULES, SIZE)
+    found = de.edge_risks(cup((400, 430, 470, 520)), RULES, SIZE, words=WORDS)
     assert found.risk_events == [{'type': 'edge_warning', 'object': 'cup', 'class': 'cup', 'edge': 'front',
                                   'distance_px': 56.0}]
     assert found.explanations == []
@@ -77,19 +78,25 @@ def test_near_the_edge_is_a_warning_without_an_explanation():
 
 
 def test_off_the_desk_and_not_close_is_ignored():
-    assert de.edge_risks(cup((400, 610, 470, 700)), RULES, SIZE).risk_events == []
+    assert de.edge_risks(cup((400, 610, 470, 700)), RULES, SIZE, words=WORDS).risk_events == []
 
 
 def test_off_the_desk_but_touching_the_edge_is_still_a_danger():
-    found = de.edge_risks(cup((400, 560, 470, 590)), RULES, SIZE)
+    found = de.edge_risks(cup((400, 560, 470, 590)), RULES, SIZE, words=WORDS)
     assert [e['type'] for e in found.risk_events] == ['edge_danger']
 
 
 def test_only_the_edge_objects_are_checked():
-    assert de.edge_risks(cup((400, 480, 470, 570), label='book'), RULES, SIZE).risk_events == []
+    assert de.edge_risks(cup((400, 480, 470, 570), label='book'), RULES, SIZE, words=WORDS).risk_events == []
 
 
 def test_saved_edge_distances_are_used():
     closer = dataclasses.replace(RULES, edge_danger_px=5, edge_warn_px=10)
-    found = de.edge_risks(cup((400, 480, 470, 570)), closer, SIZE)
+    found = de.edge_risks(cup((400, 480, 470, 570)), closer, SIZE, words=WORDS)
     assert [e['type'] for e in found.risk_events] == ['edge_warning']
+
+
+def test_the_explanation_comes_from_prompts_yaml():
+    words = WORDS.model_copy(update={'edge': '{object} close to the {side}!'})
+    found = de.edge_risks(cup((400, 480, 470, 570)), RULES, SIZE, words=words)
+    assert found.explanations == ['cup close to the front!']

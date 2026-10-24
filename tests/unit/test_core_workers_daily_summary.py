@@ -50,7 +50,7 @@ def make(ai=None, members=('cup',), stats=None, store=None, words=WORDS):
 
 # ── the facts ──
 def test_recap_facts_lists_the_days_numbers():
-    assert recap_facts(STATS, objects_listed=8) == FACTS
+    assert recap_facts(STATS, objects_listed=8, words=WORDS.facts) == FACTS
 
 
 def test_recap_facts_leaves_out_what_did_not_happen():
@@ -60,14 +60,22 @@ def test_recap_facts_leaves_out_what_did_not_happen():
                  'phone_free': {'counted': False, 'phone_free_sec': 0, 'best_sec': 0},
                  'light': {'sunlight_ts': None}, 'desk_sec': 0, 'danger_count': 0, 'lost_alerts': 0,
                  'objects_seen': []}
-    assert recap_facts(quiet_day, objects_listed=8) == (
+    assert recap_facts(quiet_day, objects_listed=8, words=WORDS.facts) == (
         'Water: about 0.0 of 2.4 L (0 sips). Breaks taken: 0. Longest stretch sitting: 0 minutes. '
         'Morning sunlight: not logged.')
 
 
 def test_recap_facts_names_only_the_first_few_objects():
     stats = dict(STATS, objects_seen=['Computer', 'Cup', 'Paper'])
-    assert recap_facts(stats, objects_listed=2).endswith('Objects seen today: Computer, Cup.')
+    assert recap_facts(stats, objects_listed=2, words=WORDS.facts).endswith('Objects seen today: Computer, Cup.')
+
+
+def test_the_facts_and_the_plain_recap_come_from_the_prompt_settings():
+    facts = WORDS.facts.model_copy(update={'water': 'H2O {water_l:.2f}/{goal_l:.2f} L, {sips} sips.'})
+    assert 'H2O 1.20/2.40 L, 15 sips.' in recap_facts(STATS, objects_listed=8, words=facts)
+    recap, notifier = make(ai=FakeChatModel(ready=False), words=WORDS.model_copy(update={'plain': 'Day: {facts}'}))
+    recap.tick(local(21))
+    assert notifier.sent[0]['text'] == f'Day: {FACTS}'
 
 
 # ── the job ──

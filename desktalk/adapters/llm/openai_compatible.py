@@ -177,13 +177,11 @@ class OpenAICompatibleChatModel:
         except Exception as exc:
             text = str(exc).lower()
             if picture_question and not is_rate_limit(text) and any(w in text for w in _NOT_FOR_PICTURES):
-                self._vision_refused = (f'The model "{request["model"]}" cannot look at pictures. Set '
-                                        f'llm.vision_model in config/settings.yaml to a vision model '
-                                        f'(for example `ollama pull llava`).')
+                self._vision_refused = self._words.ai_errors.no_pictures.format(model=request['model'])
                 log.warning('Questions about pictures are off: %s', self._vision_refused)
                 raise AIRefused(self._vision_refused) from exc
             s = self._settings
-            err = error_from(exc, self._label, max_chars=s.error_text_chars)
+            err = error_from(exc, self._label, max_chars=s.error_text_chars, words=self._words.ai_errors)
             log.warning('%s failed: %s', 'Picture question' if picture_question else self._label,
                         str(exc)[:s.error_log_chars])
             if not picture_question:

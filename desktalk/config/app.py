@@ -576,7 +576,6 @@ class WebSettings(_Section):
     refresh_ms: PageRefresh
     request_timeout_ms: PositiveInt
     live_timeout_ms: PositiveInt
-    first_check_timeout_ms: PositiveInt
     activity_ping_ms: PositiveInt
     toast_ms: PositiveInt
     left_chat_shown_min: ZeroOrMore

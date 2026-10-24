@@ -9,6 +9,7 @@ sent nothing), so ResilientChatModel doesn't retry it.
 
 from __future__ import annotations
 
+from desktalk.config.prompts import AiErrors
 from desktalk.domain import AIUnavailable
 
 _RATE_LIMIT_WORDS = ('429', 'quota', 'rate limit', 'resource_exhausted', 'exhausted')
@@ -27,35 +28,30 @@ def is_rate_limit(err: object) -> bool:
     return any(word in text for word in _RATE_LIMIT_WORDS)
 
 
-def friendly_ai_error(err: object, label: str = '', *, max_chars: int) -> str:
+def friendly_ai_error(err: object, label: str = '', *, max_chars: int, words: AiErrors) -> str:
     """Turn an AI error into one plain sentence the user can act on. An error it doesn't know is shown as it
-    came, cut to `max_chars` letters (settings → llm.error_text_chars)."""
+    came, cut to `max_chars` letters (settings → llm.error_text_chars). `label` is the AI's name ("Gemini
+    gemini-2.5-flash"); `words`: config/prompts.yaml → replies.ai_errors."""
     text = str(err).lower()
-    who = (label or 'the AI').split(' ')[0]
+    who = label.split(' ')[0] if label else words.the_ai
+    ollama = who.lower() == 'ollama'
     if is_rate_limit(text):
-        return (f'{who} hit its free usage limit. Free plans allow only a few messages per minute '
-                f'and a set number per day. Wait a minute and try again; if it keeps happening, '
-                f'the daily limit resets tomorrow.')
+        return words.rate_limit.format(who=who)
     if any(word in text for word in _KEY_WORDS):
-        return f'{who} rejected the key in .env. Copy the key again, paste it into .env, and restart the server.'
+        return words.bad_key.format(who=who)
     if any(word in text for word in _MODEL_WORDS):
-        return (f'{who} could not find the model named in the settings. Put a current model name in '
-                f'config/settings.yaml (llm:) and restart the server.')
+        return words.no_model.format(who=who)
     if any(word in text for word in _TIMEOUT_WORDS):
-        if who.lower() == 'ollama':
-            return 'Ollama took too long to answer (it may still be loading the model). Try again in a moment.'
-        return f'{who} took too long to answer. Try again in a moment.'
+        return words.ollama_too_slow if ollama else words.too_slow.format(who=who)
     if any(word in text for word in _CONNECT_WORDS):
-        if who.lower() == 'ollama':
-            return 'Could not reach Ollama. Open the Ollama app, then try again.'
-        return 'Could not reach the AI service. Check the internet connection and try again.'
-    return f'The AI returned an error: {str(err)[:max_chars]}'
+        return words.ollama_no_connection if ollama else words.no_connection
+    return words.other.format(error=str(err)[:max_chars])
 
 
-def error_from(err: object, label: str = '', *, max_chars: int) -> AIUnavailable:
-    """The AIUnavailable to raise for an error from the AI service (`max_chars`: see friendly_ai_error)."""
+def error_from(err: object, label: str = '', *, max_chars: int, words: AiErrors) -> AIUnavailable:
+    """The AIUnavailable to raise for an error from the AI service (`max_chars`, `words`: see friendly_ai_error)."""
     text = str(err).lower()
-    reason = friendly_ai_error(err, label, max_chars=max_chars)
+    reason = friendly_ai_error(err, label, max_chars=max_chars, words=words)
     if is_rate_limit(text):
         return AIUnavailable(reason, rate_limited=True)
     if any(word in text for word in _KEY_WORDS + _MODEL_WORDS):
