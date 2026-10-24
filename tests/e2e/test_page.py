@@ -247,7 +247,12 @@ def test_a_server_that_never_answers_the_first_check_gets_the_demo(page):
     connecting, clicks wait for the settings (no errors), and after its own time limit it runs the demo."""
     errors = watch_for_errors(page)
     with static_site(APP_FOLDER) as url:
-        page.route('**/api/**', lambda route: None)          # never answered
+        held: list[Any] = []
+
+        def hold(route: Any) -> None:                         # not answered (until the end of the test)
+            held.append(route)
+
+        page.route('**/api/**', hold)
         page.goto(url, wait_until='domcontentloaded')
         expect(page.locator('#conn')).to_have_attribute('data-state', 'checking')
         expect(page.locator('#conn-text')).to_have_text('Connecting…')
@@ -256,4 +261,6 @@ def test_a_server_that_never_answers_the_first_check_gets_the_demo(page):
         assert errors == []
         expect(page.locator('#conn')).to_have_attribute('data-state', 'demo', timeout=FIRST_CHECK_WITHIN_MS)
         expect_the_demo(page)
-    assert errors == []
+        for route in held:                                    # let go of them, so the browser can close cleanly
+            route.abort()
+    assert held and errors == []
