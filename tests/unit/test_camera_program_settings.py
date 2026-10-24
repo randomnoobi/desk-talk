@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel
 from test_camera_program_fakes import KEY, MODEL, FakeClock, FakeComputer, FakeContainer, pi_settings
 
 from desktalk_shared.detector_api import ModelSettings
@@ -190,3 +191,25 @@ def test_other_changed_settings_need_a_restart_and_say_so_once(parts, caplog):
     assert caplog.text.count('restart the camera program') == 1
     client.upkeep()
     assert container.models_put == [MODEL]
+
+
+# ── the Pi's settings check and the computer's agree ─────────────────
+# Settings in pi: that only the computer uses. The Pi gets them in /api/pi/config but doesn't check them.
+COMPUTER_ONLY = {'clock_off_warning_sec'}         # Lens compares the Pi's clock with this computer's
+
+
+def test_pi_settings_match_the_server_model():
+    """raspberry_pi/camera/settings.py checks the pi: section by hand (the Pi has no pydantic), and
+    desktalk/config checks it with PiSettings. A setting added to one must be added to the other."""
+    from desktalk.config import PiSettings
+    from raspberry_pi.camera import settings as pi_check
+
+    detector = PiSettings.model_fields['detector'].annotation
+    assert isinstance(detector, type) and issubclass(detector, BaseModel)
+    assert set(pi_check.FIELDS) | {'detector'} == set(PiSettings.model_fields) - COMPUTER_ONLY
+    assert set(pi_check.DETECTOR_FIELDS) | set(pi_check.MODEL_FIELDS) == set(detector.model_fields)
+    nested = [name for name, field in PiSettings.model_fields.items()
+              if isinstance(field.annotation, type) and issubclass(field.annotation, BaseModel)]
+    assert nested == ['detector']                     # a new section needs its own check on the Pi
+    assert PiSettings._in_order == pi_check.IN_ORDER
+    assert detector._in_order == pi_check.DETECTOR_IN_ORDER    # type: ignore[attr-defined]
