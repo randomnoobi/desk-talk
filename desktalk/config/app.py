@@ -504,7 +504,7 @@ class Radii(_Section):
 
 
 class DrawingSettings(_Section):
-    """How the live view with boxes is drawn (read from Task 5 of the cleanup plan on)."""
+    """How the live view with boxes is drawn (read by desktalk/adapters/picture/painter.py)."""
 
     colors: DrawingColors
     line_px: Thickness

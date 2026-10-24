@@ -1,4 +1,4 @@
-"""Real parts that already do what an interface added in Task 4 of the cleanup plan asks run its contract here.
+"""Real parts run the contracts of the newer interfaces they implement here (the photo taker, desk rules, Pi, phone).
 (The real PictureTools, OpenCvPictureTools, runs PictureToolsContract in test_opencv_picture_tools.py.)"""
 
 from __future__ import annotations

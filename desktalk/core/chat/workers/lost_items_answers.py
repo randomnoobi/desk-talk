@@ -28,7 +28,7 @@ CAPTURES = 'captures'           # what the app does when the button under the an
 @runtime_checkable
 class LostItemsDesk(LivePictures, DeskScene, PhotoAlbum, Protocol):
     """What lost items use of the desk: the newest picture, what is in it (and what the last vision scan saw),
-    and the proof photos. (DeskState is all three until Task 10 of the cleanup plan.)"""
+    and the proof photos. (bootstrap passes WholeDesk from desktalk/core/desk/, which is all three.)"""
 
 
 class LostItemAnswers:

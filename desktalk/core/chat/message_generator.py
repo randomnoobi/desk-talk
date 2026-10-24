@@ -52,7 +52,7 @@ __all__ = ['ChatDesk', 'MessageGenerator']
 @runtime_checkable
 class ChatDesk(CharacterMemory, DeskScene, SafetyBoard, Protocol):
     """What the chat reads and writes on the desk: what the agents remember, what the camera sees and the
-    dangers. (DeskState is all three until Task 10 of the cleanup plan.)"""
+    dangers. (bootstrap passes WholeDesk from desktalk/core/desk/, which is all three.)"""
 
 
 class MessageGenerator:

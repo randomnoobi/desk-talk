@@ -47,7 +47,7 @@ NUDGE_HABITS = {'too_close': 'screens', 'slouch': 'screens', 'phone': 'phone_fre
 @runtime_checkable
 class VisionDesk(LivePictures, CharacterMemory, Protocol):
     """What the vision checks use of the desk: the newest picture, and the last check in a few words for the
-    chat's AI. (DeskState is both until Task 10 of the cleanup plan.)"""
+    chat's AI. (bootstrap passes WholeDesk from desktalk/core/desk/, which is both.)"""
 
 
 def _seen(answer: dict[str, Any]) -> dict[str, bool]:

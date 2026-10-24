@@ -337,7 +337,7 @@ def test_environment_variables_win_and_moved_ones_are_listed(project):
     assert cfg.env_moved == ('CAMERA_SOURCE',)
 
 
-# ── settings added by the cleanup (docs/plans/2026-10-23-codebase-cleanup-plan.md, Task 4) ──
+# ── settings added by the 2026 cleanup (docs/plans/2026-10-23-codebase-cleanup-plan.md) ──
 BEFORE_CLEANUP = ROOT / 'tests' / 'fixtures' / 'settings_before_cleanup.yaml'   # config/settings.yaml before it
 NEW_SETTINGS = {
     'settings.yaml': [
