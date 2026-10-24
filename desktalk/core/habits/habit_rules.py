@@ -59,13 +59,14 @@ class RuleState:
     utc_offset_sec: float | None = None     # the local time's offset from UTC (the clock's); None = this computer's
 
 
-def day_frame(now: float, wake: str, bed: str, *, utc_offset_sec: float | None = None) -> tuple[float, float]:
-    """(wake_ts, bed_ts) of the waking day that contains `now` (bedtime may be after midnight). `utc_offset_sec`:
-    the local time's offset from UTC (None = this computer's)."""
-    wake_ts = at_time_today(wake, now, utc_offset_sec=utc_offset_sec)
+def day_frame(now: float, wake: str, bed: str, *,
+              utc_offset_at: Callable[[float], float] | None = None) -> tuple[float, float]:
+    """(wake_ts, bed_ts) of the waking day that contains `now` (bedtime may be after midnight). `utc_offset_at(ts)`:
+    the local time's offset from UTC at `ts` (the clock's utc_offset_sec; None = this computer's)."""
+    wake_ts = at_time_today(wake, now, utc_offset_at=utc_offset_at)
     if wake_ts > now:                     # past midnight but before waking: still "yesterday"
         wake_ts -= DAY_SEC
-    bed_ts = at_time_today(bed, wake_ts, utc_offset_sec=utc_offset_sec)
+    bed_ts = at_time_today(bed, wake_ts, utc_offset_at=utc_offset_at)
     if bed_ts <= wake_ts:
         bed_ts += DAY_SEC
     return wake_ts, bed_ts

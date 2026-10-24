@@ -49,7 +49,7 @@ class SunTimes(TypedDict):
 
 def sun_times(now: float, lat: float | None, lon: float | None, sunset_fallback: str, clock: Clock) -> SunTimes:
     """Sunrise (None when the sun doesn't rise) and sunset for the local day containing `now` (the clock's)."""
-    fallback = at_time_today(sunset_fallback, now, utc_offset_sec=clock.utc_offset_sec(now))
+    fallback = at_time_today(sunset_fallback, now, utc_offset_at=clock.utc_offset_sec)
     if lat is None or lon is None:
         return SunTimes(sunrise=None, sunset=fallback, estimated=True)
     day = clock.local_day(now)

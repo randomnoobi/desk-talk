@@ -5,6 +5,7 @@ from __future__ import annotations
 import calendar
 import re
 import time
+from collections.abc import Callable
 
 
 def a_or_an(word) -> str:
@@ -56,13 +57,20 @@ def parse_hhmm(text: str) -> tuple[int, int]:
     return h, mi
 
 
-def at_time_today(hhmm: str, now: float, *, utc_offset_sec: float | None = None) -> float:
-    """Timestamp of today's hh:mm (local time; see _local for the offset) for the day that contains `now`."""
+def at_time_today(hhmm: str, now: float, *, utc_offset_at: Callable[[float], float] | None = None) -> float:
+    """Timestamp of today's hh:mm (local time) for the day that contains `now`. `utc_offset_at(ts)`: how far the
+    local time is ahead of UTC at `ts` (a Clock's utc_offset_sec), or None for this computer's own time zone.
+
+    On the day the clocks change, `now` and hh:mm can be on different offsets (00:30 still summer time, 07:00
+    already winter time), so the offset is asked again at the time worked out, as time.mktime does."""
     h, m = parse_hhmm(hhmm)
-    lt = _local(now, utc_offset_sec)
-    if utc_offset_sec is None:
+    if utc_offset_at is None:
+        lt = time.localtime(now)
         return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, h, m, 0, 0, 0, -1))
-    return calendar.timegm((lt.tm_year, lt.tm_mon, lt.tm_mday, h, m, 0, 0, 0, 0)) - utc_offset_sec
+    lt = _local(now, utc_offset_at(now))
+    as_if_utc = calendar.timegm((lt.tm_year, lt.tm_mon, lt.tm_mday, h, m, 0, 0, 0, 0))
+    first_guess = as_if_utc - utc_offset_at(now)
+    return as_if_utc - utc_offset_at(first_guess)
 
 
 def slug(text: str) -> str:

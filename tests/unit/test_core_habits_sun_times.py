@@ -6,6 +6,7 @@ import time
 import pytest
 
 from desktalk.core.habits.sun_times import sun_times
+from desktalk_shared.clock import SystemClock
 from tests.fakes import FakeClock
 
 LOS_ANGELES = FakeClock(utc_offset_hours=-7)        # summer time there, in June and October
@@ -15,6 +16,18 @@ LOS_ANGELES = FakeClock(utc_offset_hours=-7)        # summer time there, in June
 def los_angeles(monkeypatch):
     """Run the test in Los Angeles time, then put the computer's time zone back."""
     monkeypatch.setenv('TZ', 'America/Los_Angeles')
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+@pytest.fixture
+def new_york(monkeypatch):
+    """Run the test in New York time, then put the computer's time zone back."""
+    if not hasattr(time, 'tzset'):
+        pytest.skip('this platform cannot change its time zone for a test (no time.tzset)')
+    monkeypatch.setenv('TZ', 'America/New_York')
     time.tzset()
     yield
     monkeypatch.undo()
@@ -69,3 +82,11 @@ def test_the_fallback_sunset_is_on_the_clocks_time():
     noon_there = calendar.timegm((2026, 10, 18, 3, 0, 0, 0, 0, 0))
     assert sun_times(noon_there, None, None, '19:15', tokyo)['sunset'] == \
         calendar.timegm((2026, 10, 18, 19, 15, 0, 0, 0, 0)) - 9 * 3600
+
+
+def test_the_fallback_sunset_on_the_day_the_clocks_go_back(new_york):
+    """At 00:30 on 1 November 2026 New York is still on summer time; by 18:30 it is on winter time."""
+    now = calendar.timegm((2026, 11, 1, 4, 30, 0, 0, 0, 0))          # 00:30 summer time
+    t = sun_times(now, None, None, '18:30', SystemClock())
+    assert t['sunset'] == local(2026, 11, 1, 18, 30)
+    assert time.localtime(t['sunset'])[3:5] == (18, 30)

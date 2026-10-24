@@ -4,6 +4,7 @@ Times are on a fixed day (15 June 2026, local time) so the tests don't depend on
 Wake 07:00, bed 22:30, sunset 18:30 unless a test says otherwise.
 """
 
+import calendar
 import re
 import shutil
 import time
@@ -89,6 +90,20 @@ def test_day_frame_handles_bedtime_after_midnight():
     wake, bed = P.day_frame(now, '08:00', '00:30')
     assert wake < now < bed                    # 00:20 still belongs to yesterday's waking day
     assert bed - wake == pytest.approx(16.5 * HOUR)
+
+
+def test_day_frame_on_the_day_the_clocks_go_back():
+    """At 00:30 the clock is still on summer time (an hour less behind UTC), but 07:00 and 22:30 are on winter
+    time: each is worked out with the offset at that time, not at `now`."""
+    go_back = calendar.timegm((2026, 11, 1, 6, 0, 0, 0, 0, 0))       # New York: 02:00 summer time → 01:00
+
+    def offset_at(ts):
+        return -4 * HOUR if ts < go_back else -5 * HOUR
+
+    now = calendar.timegm((2026, 11, 2, 4, 30, 0, 0, 0, 0))           # 23:30 winter time on 1 November
+    wake, bed = P.day_frame(now, '07:00', '22:30', utc_offset_at=offset_at)
+    assert wake == calendar.timegm((2026, 11, 1, 12, 0, 0, 0, 0, 0))  # 07:00 winter time
+    assert bed == calendar.timegm((2026, 11, 2, 3, 30, 0, 0, 0, 0))   # 22:30 winter time
 
 
 def test_day_frame_before_waking_is_still_yesterday():
@@ -485,7 +500,7 @@ def test_bright_and_dim_prefer_lux_over_picture_brightness(rules):
 def test_the_waking_day_and_the_times_in_the_words_follow_the_utc_offset(rules, words):
     offset = time.localtime(DAY).tm_gmtoff + HOUR          # an hour ahead of this computer
     now = at('17:30')
-    wake, bed = P.day_frame(now, '07:00', '22:30', utc_offset_sec=offset)
+    wake, bed = P.day_frame(now, '07:00', '22:30', utc_offset_at=lambda ts: offset)
     assert (wake, bed) == (at('07:00') - HOUR, at('22:30') - HOUR)
     s = day_state(now, utc_offset_sec=offset)
     n = P.light_nudges(s, rules.light, now, words)          # sunset at 18:30 here is 19:30 there

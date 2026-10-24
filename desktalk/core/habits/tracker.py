@@ -73,7 +73,7 @@ class HabitTracker:
     def day_times(self, now: float) -> DayTimes:
         """Wake time, bedtime, sunset and sunrise (if known) for the waking day containing `now`."""
         wake, bed = P.day_frame(now, self._prefs.get('wake_time'), self._prefs.get('bed_time'),
-                                utc_offset_sec=self._clock.utc_offset_sec(now))
+                                utc_offset_at=self._clock.utc_offset_sec)
         sched = self._rules.schedule
         sun = sun_times(now, sched.latitude, sched.longitude, sched.sunset_fallback, self._clock)
         return DayTimes(wake_ts=wake, bed_ts=bed, sunset_ts=sun['sunset'], sunrise_ts=sun['sunrise'])
