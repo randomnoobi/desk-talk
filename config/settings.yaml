@@ -12,6 +12,7 @@
 #  Other config files:
 #    config/agents.yaml     who each detected object becomes in the chat
 #    config/protocols.yaml  the habit rules from the book "Protocols"
+#    config/prompts.yaml    what Desk Talk says, and what it tells the AI
 #    config/safety_rules.json  danger zones + desk corners (the Settings page saves this one)
 # ════════════════════════════════════════════════════════════════════
 

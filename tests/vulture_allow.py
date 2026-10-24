@@ -21,6 +21,24 @@ from desktalk.config import (
     Trail,
     VisionNudgeRepeats,
 )
+from desktalk.config.prompts import (
+    AlertPrompts,
+    ByCamera,
+    CameraPrompts,
+    ChatPrompts,
+    HabitAreas,
+    HabitNudges,
+    HabitReminderPrompts,
+    LensPrompts,
+    LostItemsPrompts,
+    PiFixed,
+    Prompts,
+    Replies,
+    SideHints,
+    SmallTalkPrompts,
+    TrackerPrompts,
+    VisionPrompts,
+)
 from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent, NudgeSent
 from desktalk.ports import EventStore, PictureInbox
 from desktalk.web.schemas import PreferenceChanges
@@ -58,6 +76,39 @@ _ = (
     LlmSettings.error_text_chars, LoggingSettings.file_name, LoggingSettings.preview_chars,
     # Task 10 (the phone page's certificate, made in desktalk/web/pairing.py):
     CameraSettings.phone_cert_file, CameraSettings.phone_key_file,
+    # The wording in config/prompts.yaml. Every text is already read by name when the config loads
+    # (desktalk/config/prompts.py: prompt_texts, fill_settings); the code starts using them in Tasks 5-7.
+    # Task 6 (chat, Lens and lost items):
+    Replies.needs_an_ai, Replies.empty_reply, Replies.nobody_here, Replies.no_ai_label, Replies.no_picture,
+    Replies.ask_for_a_sentence, AlertPrompts.more_worried, AlertPrompts.most_worried, ChatPrompts.identity_short,
+    HabitAreas.screens, HabitAreas.no_habits, HabitReminderPrompts.system_short, HabitReminderPrompts.no_evidence,
+    SmallTalkPrompts.topic_system, SmallTalkPrompts.director_system, SmallTalkPrompts.line_system,
+    LostItemsPrompts.answer_system, LostItemsPrompts.alert_system, LostItemsPrompts.alert_user,
+    LostItemsPrompts.scan, LostItemsPrompts.in_saved_photo, LostItemsPrompts.in_live_picture,
+    LostItemsPrompts.anything, LostItemsPrompts.triggers, LostItemsPrompts.not_spotted,
+    LostItemsPrompts.captures_button, VisionPrompts.habit_scene,
+    PiFixed.pi_hot, PiFixed.pi_power, PiFixed.pi_clock,
+    LensPrompts.photo_label, LensPrompts.pi_hot, LensPrompts.pi_slowed, LensPrompts.pi_power,
+    LensPrompts.pi_clock, LensPrompts.pi_clock_behind, LensPrompts.pi_clock_ahead, LensPrompts.pi_detector_why,
+    LensPrompts.pi_fixed, Prompts.habit_areas, Prompts.habit_reminder, Prompts.small_talk,
+    # Task 7 (habit nudges and trackers):
+    Prompts.trackers, TrackerPrompts.behavior, TrackerPrompts.todo_list, TrackerPrompts.breaks_none_yet,
+    TrackerPrompts.water_none_yet, TrackerPrompts.food_empty, TrackerPrompts.food_healthy,
+    TrackerPrompts.food_treats, TrackerPrompts.phone_not_counted, TrackerPrompts.phone_on_desk,
+    TrackerPrompts.phone_off_desk, TrackerPrompts.light_lux, TrackerPrompts.light_brightness,
+    TrackerPrompts.light_unknown, TrackerPrompts.sunlight_logged, TrackerPrompts.sunlight_not_logged,
+    HabitNudges.hydration_morning, HabitNudges.hydration_pace, HabitNudges.hydration_pace_cup,
+    HabitNudges.water_progress, HabitNudges.breaks_sit, HabitNudges.breaks_meal, HabitNudges.unknown_meal,
+    HabitNudges.light_morning, HabitNudges.light_afternoon, HabitNudges.light_evening, HabitNudges.bed_soon,
+    HabitNudges.sun_has_set, HabitNudges.light_daytime_dim, HabitNudges.light_lux, HabitNudges.light_brightness,
+    HabitNudges.light_bright, HabitNudges.screens_bedtime, HabitNudges.bed_at, HabitNudges.past_bedtime,
+    HabitNudges.phone_bedtime, HabitNudges.phone_focus, HabitNudges.food_sitting, HabitNudges.unknown_snack,
+    HabitNudges.tasks_open,
+    # Task 5 (Lens's camera checks):
+    ByCamera.webcam, SideHints.right, SideHints.top, SideHints.bottom,
+    CameraPrompts.fixed, CameraPrompts.side_hints, CameraPrompts.other_side_hint, CameraPrompts.unknown_object,
+    CameraPrompts.titles, CameraPrompts.lost_title, CameraPrompts.lost_fix, CameraPrompts.cutoff_title,
+    CameraPrompts.edge_tip,
     # Pydantic's own settings attribute, and the flag uvicorn's thread reads to stop.
     PreferenceChanges.model_config, Server(config=None).should_exit,  # type: ignore[arg-type]
 )

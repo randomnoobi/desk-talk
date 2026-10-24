@@ -26,6 +26,7 @@ from desktalk.config.base import (
     _Section,
 )
 from desktalk.config.habits import Protocols
+from desktalk.config.prompts import Prompts
 
 
 class CameraSettings(_Section):
@@ -617,6 +618,7 @@ class AppConfig(_Section):
     storage: StorageSettings
     protocols: Protocols
     agents_file: AgentsFile
+    prompts: Prompts                  # config/prompts.yaml, with the settings blanks filled in
     secrets: Secrets
     env_applied: dict[str, str]       # .env name → the setting it changed, e.g. {'OLLAMA_MODEL': 'llm.ollama_model'}
     env_moved: tuple[str, ...]        # old .env names that are set but no longer used

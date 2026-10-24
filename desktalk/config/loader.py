@@ -21,6 +21,7 @@ from pydantic.fields import FieldInfo
 
 from desktalk.config.app import AppConfig
 from desktalk.config.base import CONFIG_FOLDER, ConfigError, _number, _Says
+from desktalk.config.prompts import blank_problems, fill_settings, prompt_values
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -185,9 +186,9 @@ def _dotted(loc: Loc) -> str:
     return out
 
 
-_OTHER_FILES = ('protocols', 'agents_file')
+_OTHER_FILES = ('protocols', 'agents_file', 'prompts')
 # Parts of AppConfig that don't come from settings.yaml, so settings.yaml may not set them.
-_NOT_FROM_SETTINGS = ('protocols', 'agents_file', 'secrets', 'env_applied', 'env_moved', 'root')
+_NOT_FROM_SETTINGS = ('protocols', 'agents_file', 'prompts', 'secrets', 'env_applied', 'env_moved', 'root')
 _SECRET_NAMES = {'secrets', *(k.lower() for k in SECRET_KEYS)}
 
 
@@ -238,6 +239,7 @@ def load_config(root: Path | None = None, environ: Mapping[str, str] | None = No
     problems = [_unknown(sources.last((key,)), (key,), (key,)) for key in data if key in _NOT_FROM_SETTINGS]
     data['protocols'] = read('protocols.yaml', ('protocols',))
     data['agents_file'] = read('agents.yaml', ('agents_file',))
+    data['prompts'] = read('prompts.yaml', ('prompts',))
     applied = {}
     for name, (section, key) in ENV_OVERRIDES.items():
         value = env.get(name, '').strip()
@@ -255,4 +257,13 @@ def load_config(root: Path | None = None, environ: Mapping[str, str] | None = No
         problems += [_problem(e, sources) for e in exc.errors()]
     if problems:
         raise ConfigError('\n'.join(problems))
-    return config
+    return _with_settings_in_prompts(config)
+
+
+def _with_settings_in_prompts(config: AppConfig) -> AppConfig:
+    """Check every text in prompts.yaml uses only blanks that get filled in, then fill in the settings ones."""
+    values = prompt_values(config)
+    problems = blank_problems(config.prompts, values)
+    if problems:
+        raise ConfigError('\n'.join(f'config/prompts.yaml: {p}' for p in problems))
+    return config.model_copy(update={'prompts': fill_settings(config.prompts, values)})

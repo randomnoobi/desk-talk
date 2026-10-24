@@ -22,6 +22,7 @@ The code is split by file:
     app.py      config/settings.yaml (and AppConfig, everything together)
     habits.py   config/protocols.yaml
     agents.py   config/agents.yaml
+    prompts.py  config/prompts.yaml (the wording) and the blanks each text may use
     base.py     what every section is made of (value types, ConfigError)
     loader.py   reading the files and .env, and the error wording
 Everything is imported here too, so `from desktalk.config import X` works for every name.
@@ -144,6 +145,12 @@ from desktalk.config.loader import (
     _unwrap,
     load_config,
 )
+from desktalk.config.prompts import (
+    BLANKS,
+    Prompts,
+    prompt_texts,
+    prompt_values,
+)
 
 __all__ = [
     'Agent',
@@ -155,6 +162,7 @@ __all__ = [
     'AlertsSettings',
     'AppConfig',
     'Bgr',
+    'BLANKS',
     'BreaksRule',
     'CameraSettings',
     'ChainReaction',
@@ -220,6 +228,9 @@ __all__ = [
     'PresenceSettings',
     '_problem',
     'PROJECT_ROOT',
+    'prompt_texts',
+    'prompt_values',
+    'Prompts',
     'Protocols',
     'QuietHours',
     'Radii',

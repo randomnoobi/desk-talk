@@ -47,7 +47,7 @@ SIP = Nudge('hydration', 'hydration.pace', evidence='No sip in 50 minutes.', tex
 def config(tmp_path_factory):
     root = tmp_path_factory.mktemp('project')
     (root / 'config').mkdir()
-    for name in ('settings.yaml', 'agents.yaml', 'protocols.yaml'):
+    for name in ('settings.yaml', 'agents.yaml', 'protocols.yaml', 'prompts.yaml'):
         shutil.copy(ROOT / 'config' / name, root / 'config' / name)
     return load_config(root, environ={})
 

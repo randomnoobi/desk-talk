@@ -18,7 +18,7 @@ def app_config() -> AppConfig:
     with tempfile.TemporaryDirectory() as folder:
         root = Path(folder)
         (root / 'config').mkdir()
-        for name in ('settings.yaml', 'agents.yaml', 'protocols.yaml'):
+        for name in ('settings.yaml', 'agents.yaml', 'protocols.yaml', 'prompts.yaml'):
             shutil.copy(ROOT / 'config' / name, root / 'config' / name)
         return load_config(root=root, environ={}, dotenv=root / '.env')
 

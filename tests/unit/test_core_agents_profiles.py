@@ -20,7 +20,7 @@ def agents_file(tmp_path_factory) -> AgentsFile:
     """config/agents.yaml as it is in the repo."""
     root = tmp_path_factory.mktemp('project')
     (root / 'config').mkdir()
-    for name in ('settings.yaml', 'agents.yaml', 'protocols.yaml'):
+    for name in ('settings.yaml', 'agents.yaml', 'protocols.yaml', 'prompts.yaml'):
         shutil.copy(ROOT / 'config' / name, root / 'config' / name)
     return load_config(root, environ={}).agents_file
 

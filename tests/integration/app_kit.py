@@ -32,7 +32,7 @@ from tests.conftest import FakeAI
 from tests.fakes import FakeClock, FakeDetector, InMemoryKeyValueStore
 
 ROOT = Path(__file__).resolve().parents[2]
-CONFIG_FILES_IN_GIT = ('settings.yaml', 'protocols.yaml', 'agents.yaml')
+CONFIG_FILES_IN_GIT = ('settings.yaml', 'protocols.yaml', 'agents.yaml', 'prompts.yaml')
 SAFETY_RULES = json.loads((ROOT / 'config' / 'safety_rules.json').read_text())     # as committed
 PAIR_KEY = 'test-pair-key'
 AFTERNOON = time.mktime((2026, 10, 21, 13, 0, 0, 0, 0, -1))     # 1 pm local time, so the day is the same everywhere

@@ -17,7 +17,7 @@ from pydantic import BaseModel, SecretStr, ValidationError
 from desktalk.config import ConfigError, load_config
 
 ROOT = Path(__file__).resolve().parents[2]
-CONFIG_FILES = ('settings.yaml', 'agents.yaml', 'protocols.yaml')
+CONFIG_FILES = ('settings.yaml', 'agents.yaml', 'protocols.yaml', 'prompts.yaml')
 
 
 @pytest.fixture
