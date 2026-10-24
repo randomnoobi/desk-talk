@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from desktalk_shared.detection import DetectorUnavailable
 
-__all__ = ['AIUnavailable', 'DetectorUnavailable']
+__all__ = ['AIUnavailable', 'DetectorUnavailable', 'plain_error']
 
 
 class AIUnavailable(RuntimeError):
@@ -14,3 +14,9 @@ class AIUnavailable(RuntimeError):
         super().__init__(reason)
         self.reason = reason
         self.rate_limited = rate_limited
+
+
+def plain_error(exc: BaseException) -> str:
+    """'ValueError: the camera is off', or just 'ValueError' when there's no message (for logs and /api/health)."""
+    text = str(exc)
+    return f'{type(exc).__name__}: {text}' if text else type(exc).__name__

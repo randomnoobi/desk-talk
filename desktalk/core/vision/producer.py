@@ -25,8 +25,8 @@ import cv2
 from desktalk.config import CameraSettings
 from desktalk.desk_state import DeskState
 from desktalk.domain import Detection, DetectionEvent, DetectorState, DetectorUnavailable, Frame, Light, keep_inside
+from desktalk.domain.errors import plain_error
 from desktalk.ports import Clock, Detector, EventBus, FrameSource, LiveViewPainter, PictureCheck
-from desktalk.runtime.errors import plain_error
 
 log = logging.getLogger(__name__)
 

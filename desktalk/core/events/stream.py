@@ -31,7 +31,7 @@ from typing import Any
 
 from desktalk.config import EventStreamSettings
 from desktalk.domain import DetectionEvent, Event
-from desktalk.runtime.errors import plain_error
+from desktalk.domain.errors import plain_error
 
 log = logging.getLogger(__name__)
 

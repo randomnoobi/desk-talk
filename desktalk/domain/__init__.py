@@ -9,7 +9,7 @@ Plain data, no I/O: what the parts of Desk Talk pass to each other.
 
 from desktalk.domain.agents import HABITS, AgentProfile
 from desktalk.domain.camera import Frame
-from desktalk.domain.errors import AIUnavailable, DetectorUnavailable
+from desktalk.domain.errors import AIUnavailable, DetectorUnavailable, plain_error
 from desktalk.domain.events import (
     EVENT_TYPES,
     AgentJoined,
@@ -33,5 +33,5 @@ __all__ = [
     'EVENT_TYPES', 'HABITS', 'AIUnavailable', 'AgentJoined', 'AgentLeft', 'AgentProfile', 'Alert', 'BBox',
     'CameraNotice', 'Compaction', 'Detection', 'DetectionEvent', 'DetectorState', 'DetectorUnavailable', 'Event',
     'Frame', 'HabitEvent', 'Light', 'Nudge', 'NudgeSent', 'PiHealth', 'UploadInfo', 'event_from_dict',
-    'keep_inside', 'new_event_id',
+    'keep_inside', 'new_event_id', 'plain_error',
 ]

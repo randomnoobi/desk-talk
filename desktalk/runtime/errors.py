@@ -1,9 +1,8 @@
-"""Errors in plain words, for logs and /api/health."""
+"""Errors in plain words, for logs and /api/health. plain_error lives in desktalk/domain/errors.py now;
+the runtime's own files still import it from here."""
 
 from __future__ import annotations
 
+from desktalk.domain.errors import plain_error
 
-def plain_error(exc: BaseException) -> str:
-    """'ValueError: the camera is off', or just 'ValueError' when there's no message."""
-    text = str(exc)
-    return f'{type(exc).__name__}: {text}' if text else type(exc).__name__
+__all__ = ['plain_error']
