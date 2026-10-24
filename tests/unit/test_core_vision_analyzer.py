@@ -6,7 +6,7 @@ from desktalk.core.vision.analyzer import DeskAnalyzer, risk_level
 from desktalk.core.vision.findings import Thing
 from desktalk.core.vision.rules import SafetyRules
 from tests.fakes import InMemoryKeyValueStore
-from tests.unit.test_core_vision_kit import app_config, desk_object
+from tests.unit.test_core_vision_kit import app_config, seen_object
 
 SIZE = (640, 480)
 LAPTOP = ('computer', 'laptop', (200, 200, 400, 350))
@@ -15,7 +15,7 @@ CUP_FAR = ('cup', 'cup', (560, 380, 600, 450))
 
 
 def things(*items):
-    return {agent: Thing.from_desk(agent, desk_object(label, box)) for agent, label, box in items}
+    return {agent: Thing.from_seen(agent, seen_object(label, box)) for agent, label, box in items}
 
 
 def analyzer(saved=None, **rules_kw):

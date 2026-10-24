@@ -31,6 +31,7 @@ from typing import Any
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource, make_pair_key
 from desktalk.adapters.detector import UltralyticsDetector
 from desktalk.adapters.llm import OllamaKeepAlive, OpenAICompatibleChatModel, ResilientChatModel
+from desktalk.adapters.picture import DeskPainter, OpenCvPictureTools
 from desktalk.adapters.storage import EventLog, JsonFileStore
 from desktalk.config import AppConfig, ConfigError
 from desktalk.core.agents.profiles import ProfileBook
@@ -53,7 +54,6 @@ from desktalk.core.vision import desk_edges
 from desktalk.core.vision.analyzer import DeskAnalyzer
 from desktalk.core.vision.camera_health import CameraHealth
 from desktalk.core.vision.desk_monitor import DeskMonitor
-from desktalk.core.vision.live_view import DeskPainter
 from desktalk.core.vision.producer import DetectionProducer
 from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.core.vision.rules import SafetyRules
@@ -287,13 +287,15 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     safety_rules = SafetyRules(config_store, config.safety, liquids=profiles.labels_for_habit('hydration'),
                                foods=profiles.labels_for_habit('food'))
     analyzer = DeskAnalyzer(safety_rules)
-    painter = DeskPainter(desk, profiles, analyzer)
-    photos = ProofPhotos(desk, clock, config.snapshots)
+    painter = DeskPainter(desk, profiles, analyzer, config.drawing)
+    pictures = OpenCvPictureTools()
+    photos = ProofPhotos(desk, clock, config.snapshots, pictures=pictures)
     camera_health = CameraHealth(config.lens, source_kind=source.kind, moved_within_sec=config.camera.moved_within_sec,
+                                 pictures=pictures, words=config.prompts.camera,
                                  ignore_labels=config.agents_file.ignore)
     detector = detector if detector is not None else make_detector(config)
     producer = DetectionProducer(source, detector, bus, desk, clock, camera_health, painter, config.camera,
-                                 new_session_after_sec=config.protocols.breaks.break_min * MINUTE)
+                                 new_session_after_sec=config.protocols.breaks.break_min * MINUTE, pictures=pictures)
 
     # ── the consumers of detection events (each subscribes itself, in this order) ──
     def on_desk(x: float, y: float, width: int, height: int) -> bool:

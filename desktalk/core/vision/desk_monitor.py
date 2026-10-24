@@ -1,36 +1,45 @@
 """
 The desk monitor: safety alerts from each analysed picture.
 
-It listens for DetectionEvents. For the agents in the chat (DeskState.objects, kept by the roster) it runs
+It listens for DetectionEvents. For the agents in the chat (DeskScene.members, kept by the roster) it runs
 the desk analyzer (danger zones, desk edges, things in between, crowds, things moving closer) and publishes
 an Alert for each danger, with a proof photo. It also notices a pet near the desk, a cluttered desk and a
 plant that may need water. Timings are in settings → alerts.
 
-What the app and the AI read about the desk's safety is kept in DeskState: safety_state, safety_dangers,
-rel_result, danger_active_since and recent_events.
+What the app and the AI read about the desk's safety goes to the SafetyBoard: each picture's report (SAFE or
+DANGEROUS, the dangers and the analyzer's full result) and the alerts that went out.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, Protocol
 
 from desktalk.config import AlertsSettings
 from desktalk.core.agents.speakers import LENS
-from desktalk.core.vision.analyzer import DeskAnalyzer
 from desktalk.core.vision.findings import Thing
 from desktalk.core.vision.geometry import Box
-from desktalk.core.vision.proof_photos import ProofPhotos
-from desktalk.desk_state import DeskState
-from desktalk.domain import Alert, DetectionEvent
-from desktalk.ports import DeskStatus, EventBus, HabitsView, Profiles
+from desktalk.domain import Alert, Danger, DetectionEvent, Event
+from desktalk.ports import DeskScene, DeskStatus, EventBus, HabitsView, PhotoTaker, Profiles, SafetyBoard
 
 PHOTO_LABEL = 'Proximity alert'
+SAFE, DANGEROUS = 'SAFE', 'DANGEROUS'
+
+
+class MonitorDesk(DeskScene, SafetyBoard, Protocol):
+    """The parts of the desk the monitor uses: who is on it (read) and its safety (written)."""
+
+
+class DeskChecks(Protocol):
+    """The desk analyzer (DeskAnalyzer): every desk check on the agents' objects in one picture."""
+
+    def analyze(self, things: Mapping[str, Thing], size: tuple[int, int], now: float) -> dict[str, Any]:
+        ...
 
 
 class DeskMonitor:
-    def __init__(self, bus: EventBus, desk: DeskState, analyzer: DeskAnalyzer, profiles: Profiles,
-                 habits: HabitsView, status: DeskStatus, photos: ProofPhotos, alerts: AlertsSettings):
+    def __init__(self, bus: EventBus, desk: MonitorDesk, analyzer: DeskChecks, profiles: Profiles,
+                 habits: HabitsView, status: DeskStatus, photos: PhotoTaker, alerts: AlertsSettings):
         self._bus = bus
         self._desk = desk
         self._analyzer = analyzer
@@ -45,13 +54,15 @@ class DeskMonitor:
         self._pet_alerted: dict[str, float] = {}
         self._last_clutter = 0.0
         self._last_plant = 0.0
-        bus.subscribe('desk-monitor', self.on_detection, types=[DetectionEvent])
+        bus.subscribe('desk-monitor', self._on_event, types=[DetectionEvent])
+
+    def _on_event(self, event: Event) -> None:
+        if isinstance(event, DetectionEvent):
+            self.on_detection(event)
 
     def on_detection(self, event: DetectionEvent) -> None:
         now = event.ts
-        with self._desk.lock:
-            objects = dict(self._desk.objects)
-        things = {agent: Thing.from_desk(agent, obj) for agent, obj in objects.items()}
+        things = {agent: Thing.from_seen(agent, obj) for agent, obj in self._desk.members().items()}
         result = self._analyzer.analyze(things, event.size, now)
         dangers = self._safety_alerts(result, things, now)
         self._keep_safety_state(result, dangers, now)
@@ -62,9 +73,10 @@ class DeskMonitor:
         self._plants(labels, things, now, warm)
 
     # ── danger zones and desk edges ──
-    def _safety_alerts(self, result: Mapping[str, Any], things: Mapping[str, Thing], now: float) -> list[dict]:
+    def _safety_alerts(self, result: Mapping[str, Any], things: Mapping[str, Thing], now: float) -> list[Danger]:
         """One alert per danger (backing off while it stays); returns the dangers for the app and the AI."""
-        dangers, checked = [], set()
+        dangers: list[Danger] = []
+        checked: set[frozenset[str]] = set()
         for ev in result['risk_events']:
             if ev['type'] == 'zone_intrusion':
                 intruder, target = ev['intruder'], ev['target']
@@ -76,14 +88,14 @@ class DeskMonitor:
                 other = target if speaker == intruder else intruder
                 self._proximity_alert(speaker, [things[intruder].box, things[target].box], now, near=other,
                                       severity='high', rule_label=ev['zone_label'], depth_px=ev['depth_px'])
-                dangers.append({'pair': [ev['intruder_class'], ev['target_class']], 'label': ev['zone_label'],
-                                'depth_px': ev['depth_px'], 'type': 'zone_intrusion'})
+                dangers.append(Danger(pair=(ev['intruder_class'], ev['target_class']), label=ev['zone_label'],
+                                      kind='zone_intrusion', depth_px=ev['depth_px']))
             elif ev['type'] == 'edge_danger':
                 agent = ev['object']
                 self._proximity_alert(agent, [things[agent].box], now, severity='medium',
                                       rule_label=f"Near {ev['edge']} edge ({int(ev['distance_px'])}px)")
-                dangers.append({'pair': [ev['class'], 'desk_edge'], 'label': f"{ev['class']} near {ev['edge']} edge",
-                                'type': 'edge_danger'})
+                dangers.append(Danger(pair=(ev['class'], 'desk_edge'), label=f"{ev['class']} near {ev['edge']} edge",
+                                      kind='edge_danger'))
         return dangers
 
     def _proximity_alert(self, speaker: str, crop_boxes: Sequence[Box], now: float, **details: Any) -> bool:
@@ -101,29 +113,18 @@ class DeskMonitor:
             return False
         self._last_alert[key] = now
         self._alerts_in_a_row[key] = in_a_row + 1
-        with self._desk.lock:
-            self._desk.recent_events.append({'time': now, 'type': 'proximity', 'character': speaker,
-                                             'near': details.get('near', ''), 'severity': details.get('severity', ''),
-                                             'rule_label': details.get('rule_label', '')})
-            self._desk.recent_events = self._desk.recent_events[-s.recent_kept:]
+        self._desk.note_alert({'time': now, 'type': 'proximity', 'character': speaker, 'near': details.get('near', ''),
+                               'severity': details.get('severity', ''), 'rule_label': details.get('rule_label', '')},
+                              keep=s.recent_kept)
         self._habits.bump('danger_count')
         photo = self._photos.save(PHOTO_LABEL, crop_boxes)
         self._bus.publish(Alert(ts=now, kind='proximity', agent=speaker,
                                 extra={'snapshot': photo, 'follow_up': in_a_row, **details}))
         return True
 
-    def _keep_safety_state(self, result: dict[str, Any], dangers: list[dict], now: float) -> None:
-        desk = self._desk
-        with desk.lock:
-            desk.safety_state = 'DANGEROUS' if result['risk_level'] >= self._settings.dangerous_from_risk else 'SAFE'
-            desk.safety_dangers = dangers
-            desk.rel_result = result
-            active = {frozenset(d['pair']) for d in dangers}
-            for pair in active:
-                desk.danger_active_since.setdefault(pair, now)
-            for pair in list(desk.danger_active_since):
-                if pair not in active:
-                    del desk.danger_active_since[pair]
+    def _keep_safety_state(self, result: dict[str, Any], dangers: list[Danger], now: float) -> None:
+        state = DANGEROUS if result['risk_level'] >= self._settings.dangerous_from_risk else SAFE
+        self._desk.report(state, dangers, result, now)
 
     # ── pets, clutter, plants ──
     def _scenario_alert(self, now: float, scenario: str, feature: str, agent: str, text: str) -> None:

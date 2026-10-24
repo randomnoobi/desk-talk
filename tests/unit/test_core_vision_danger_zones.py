@@ -8,7 +8,7 @@ from desktalk.core.vision import danger_zones as dz
 from desktalk.core.vision.findings import Thing
 from desktalk.core.vision.rules import make_rules
 from desktalk.domain import Zone
-from tests.unit.test_core_vision_kit import app_config, desk_object
+from tests.unit.test_core_vision_kit import app_config, seen_object
 
 RULES = make_rules(app_config().safety)
 LAPTOP = (200, 200, 400, 350)        # its zone (80 px wider) is 120, 120, 480, 430
@@ -17,7 +17,7 @@ FAR = (560, 380, 600, 450)
 
 
 def things(*items):
-    return {agent: Thing.from_desk(agent, desk_object(label, box)) for agent, label, box in items}
+    return {agent: Thing.from_seen(agent, seen_object(label, box)) for agent, label, box in items}
 
 
 def test_cup_in_the_laptop_zone_is_a_danger():

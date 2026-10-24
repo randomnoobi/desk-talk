@@ -5,14 +5,14 @@ import dataclasses
 from desktalk.core.vision import risky_pairs as rp
 from desktalk.core.vision.findings import Thing
 from desktalk.core.vision.rules import make_rules
-from tests.unit.test_core_vision_kit import app_config, desk_object
+from tests.unit.test_core_vision_kit import app_config, seen_object
 
 RULES = make_rules(app_config().safety)
 
 
 def at(label, cx, cy, agent=None):
     """A 20 x 20 box around (cx, cy)."""
-    return Thing.from_desk(agent or label, desk_object(label, (cx - 10, cy - 10, cx + 10, cy + 10)))
+    return Thing.from_seen(agent or label, seen_object(label, (cx - 10, cy - 10, cx + 10, cy + 10)))
 
 
 def desk(*things):
