@@ -91,7 +91,7 @@ class ProfileBook:
             prof = AgentProfile(
                 id=pid, name=title_label(word), labels=[word], object=obj,
                 icon=self._default.icon, color=color_for(pid),
-                about=f'A {obj} that showed up on your desk.',
+                about=self._default.about.format(object=obj),
                 personality=learned or self._default.personality.format(object=obj),
                 temperature=self._default.temperature,
                 too_close=self._default.too_close,
