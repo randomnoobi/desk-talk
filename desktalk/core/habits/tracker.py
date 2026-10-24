@@ -72,7 +72,8 @@ class HabitTracker:
     # ── helpers ──
     def day_times(self, now: float) -> DayTimes:
         """Wake time, bedtime, sunset and sunrise (if known) for the waking day containing `now`."""
-        wake, bed = P.day_frame(now, self._prefs.get('wake_time'), self._prefs.get('bed_time'))
+        wake, bed = P.day_frame(now, self._prefs.get('wake_time'), self._prefs.get('bed_time'),
+                                utc_offset_sec=self._clock.utc_offset_sec(now))
         sched = self._rules.schedule
         sun = sun_times(now, sched.latitude, sched.longitude, sched.sunset_fallback, self._clock)
         return DayTimes(wake_ts=wake, bed_ts=bed, sunset_ts=sun['sunset'], sunrise_ts=sun['sunrise'])
@@ -187,7 +188,7 @@ class HabitTracker:
                 lux=r.light.get('lux'), brightness=r.light.get('brightness'),
                 bright_since=r.bright_since, dim_since=r.dim_since,
                 screen_on_desk=r.screen_on_desk,
-                open_todos=tuple(open_todos),
+                open_todos=tuple(open_todos), utc_offset_sec=self._clock.utc_offset_sec(now),
             )
 
     def nudges(self, now: float, open_todos: Sequence[str]) -> list[Nudge]:

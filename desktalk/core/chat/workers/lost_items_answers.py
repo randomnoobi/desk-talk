@@ -103,7 +103,7 @@ class LostItemAnswers:
             more = w.live_look.format(note=note) if note else w.see_captures
             return w.never_seen_fact.format(name=name, extra=extra), w.never_seen.format(name=name, more=more)
         ago = int(now - last_seen)
-        when = format_local_ts(last_seen)
+        when = format_local_ts(last_seen, utc_offset_sec=self._clock.utc_offset_sec(last_seen))
         shown = record['last_near'][:self._settings.nearby_mentioned]
         near = w.near.format(names=', '.join(shown)) if shown else ''
         if ago < self._settings.just_seen_sec:
@@ -128,7 +128,8 @@ class LostItemAnswers:
         photo = self._photo_with(item_id)
         if photo:
             label = self._words.saved_photo_label.format(label=photo.label) if photo.label else ''
-            about = self._words.saved_photo.format(when=format_local_ts(photo.ts), label=label)
+            when = format_local_ts(photo.ts, utc_offset_sec=self._clock.utc_offset_sec(photo.ts))
+            about = self._words.saved_photo.format(when=when, label=label)
             note = look(self._vision, photo.jpeg, fill.lost_in_saved_photo(self._words, about, name),
                         background=False, what='a lost-item photo')
             if note and len(note.split()) >= self._settings.answer_min_words:

@@ -48,7 +48,8 @@ class NudgeVoice:
         todo = self._desk.widget(a.id)
         vision_note = (self._desk.vision_brief() or '').strip()
         w = self._words
-        block = tracker_prompt(a.tracker, self._habits.today(now), todo, [], now, self._chat, words=w.trackers)
+        block = tracker_prompt(a.tracker, self._habits.today(now), todo, [], now, self._chat, words=w.trackers,
+                               utc_offset_sec=self._clock.utc_offset_sec(now))
         signals = w.habit_reminder.vision_note.format(note=vision_note) if vision_note else w.habit_reminder.no_signals
         system = prompts.habit_system(w.habit_reminder, a, prompts.habit_area(w.habit_areas, a), block,
                                       signals, nudge.evidence, nudge.tip, short=self._local)

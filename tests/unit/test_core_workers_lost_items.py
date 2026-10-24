@@ -13,6 +13,7 @@ from desktalk.core.chat.workers.lost_item_words import TrackedItems
 from desktalk.core.chat.workers.lost_items import LostItems
 from desktalk.core.chat.workers.lost_items_answers import LostItemsDesk
 from desktalk.domain import AgentProfile, Alert, BBox, Box, Detection, DetectionEvent, Light, SeenObject, Size
+from desktalk.util import format_local_ts
 from tests.fakes import (
     FakeChatModel,
     FakeClock,
@@ -86,8 +87,8 @@ class AlbumPhotos:
 
 class Rig:
     def __init__(self, chat=NO_AI, vision=None, members=('computer',), phone_is_camera=False, settings=SETTINGS,
-                 words=WORDS):
-        self.clock = FakeClock(time.mktime((2026, 10, 21, 14, 0, 0, 0, 0, -1)))
+                 words=WORDS, utc_offset_hours=0.0):
+        self.clock = FakeClock(time.mktime((2026, 10, 21, 14, 0, 0, 0, 0, -1)), utc_offset_hours=utc_offset_hours)
         self.bus = SyncEventBus()
         self.desk = FakeLostItemsDesk()
         self.habits = FakeHabits()
@@ -387,6 +388,15 @@ def test_the_built_in_answer_for_an_older_sighting():
     rig.see('key')
     rig.clock.advance(10 * 60 + 5)
     assert 'about 10 minute(s) ago near Computer.' in rig.lost.answer('have you seen my keys?')['text']
+
+
+def test_the_answer_says_the_time_on_the_clocks_time_zone():
+    rig = Rig(utc_offset_hours=5.5)
+    rig.see('key')
+    seen_at = rig.clock.now()
+    rig.clock.advance(10 * 60 + 5)
+    text = rig.lost.answer('have you seen my keys?')['text']
+    assert f'around {format_local_ts(seen_at, utc_offset_sec=5.5 * 3600)},' in text
 
 
 def test_the_built_in_answer_when_the_item_was_never_seen():

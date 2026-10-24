@@ -49,8 +49,9 @@ def behavior_summary(views: Sequence[Mapping[str, Any]], now: float, chat: ChatS
 
 def tracker_prompt(tracker: str | None, habits_today: Mapping[str, Any], todo: Mapping[str, Any] | None,
                    views: Sequence[Mapping[str, Any]], now: float, chat: ChatSettings, *,
-                   words: TrackerPrompts) -> str:
-    """The tracker's data as a block for the AI. `words` is config.prompts.trackers."""
+                   words: TrackerPrompts, utc_offset_sec: float | None = None) -> str:
+    """The tracker's data as a block for the AI. `words` is config.prompts.trackers. `utc_offset_sec`: the local
+    time's offset from UTC for the times in it (the clock's; None = this computer's)."""
     if not tracker:
         return ''
     t = words
@@ -64,11 +65,12 @@ def tracker_prompt(tracker: str | None, habits_today: Mapping[str, Any], todo: M
     h = habits_today
     if tracker == 'breaks':
         b = h['breaks']
-        last = clock_text(b['last_break_ts']) if b['last_break_ts'] else t.breaks_none_yet
+        last = (clock_text(b['last_break_ts'], utc_offset_sec=utc_offset_sec) if b['last_break_ts']
+                else t.breaks_none_yet)
         return t.breaks.format(count=b['count'], last=last, sitting_min=b['sitting_sec'] // 60) + extra
     if tracker == 'hydration':
         w = h['hydration']
-        last = clock_text(w['last_sip_ts']) if w['last_sip_ts'] else t.water_none_yet
+        last = clock_text(w['last_sip_ts'], utc_offset_sec=utc_offset_sec) if w['last_sip_ts'] else t.water_none_yet
         return t.water.format(water_ml=w['water_ml'], goal_ml=w['goal_ml'], sips=w['sips'], pace_ml=w['pace_ml'],
                               last=last) + extra
     if tracker == 'food':

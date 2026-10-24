@@ -13,6 +13,12 @@ class TestFakeClock(ClockContract):
         return FakeClock()
 
 
+class TestFakeClockAwayFromUtc(ClockContract):
+    @pytest.fixture
+    def clock(self):
+        return FakeClock(utc_offset_hours=5.5)
+
+
 class TestSystemClock(ClockContract):
     @pytest.fixture
     def clock(self):
@@ -43,3 +49,14 @@ def test_system_clock_uses_this_computers_time_zone():
     ts = 1_760_000_000.0
     assert clock.local_hour(ts) == time.localtime(ts).tm_hour
     assert clock.local_day(ts) == time.strftime('%Y-%m-%d', time.localtime(ts))
+
+
+def test_fake_clock_tells_its_utc_offset():
+    assert FakeClock().utc_offset_sec(0) == 0
+    assert FakeClock(utc_offset_hours=-7).utc_offset_sec(1_760_000_000.0) == -7 * 3600
+
+
+def test_system_clock_tells_this_computers_utc_offset():
+    import time
+    ts = 1_760_000_000.0
+    assert SystemClock().utc_offset_sec(ts) == time.localtime(ts).tm_gmtoff

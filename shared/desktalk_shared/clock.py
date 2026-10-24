@@ -30,3 +30,7 @@ class SystemClock:
     def local_day(self, now: float) -> str:
         """The day at `now` on this machine's clock, e.g. '2026-10-24'."""
         return time.strftime(DAY_FORMAT, time.localtime(now))
+
+    def utc_offset_sec(self, now: float) -> float:
+        """How far this machine's clock is ahead of UTC at `now`, in seconds (summer time included)."""
+        return float(time.localtime(now).tm_gmtoff)

@@ -49,8 +49,9 @@ class SunTimes(TypedDict):
 
 def sun_times(now: float, lat: float | None, lon: float | None, sunset_fallback: str, clock: Clock) -> SunTimes:
     """Sunrise (None when the sun doesn't rise) and sunset for the local day containing `now` (the clock's)."""
+    fallback = at_time_today(sunset_fallback, now, utc_offset_sec=clock.utc_offset_sec(now))
     if lat is None or lon is None:
-        return SunTimes(sunrise=None, sunset=at_time_today(sunset_fallback, now), estimated=True)
+        return SunTimes(sunrise=None, sunset=fallback, estimated=True)
     day = clock.local_day(now)
     date = datetime.date.fromisoformat(day)
     utc_midnight = calendar.timegm(date.timetuple())       # 00:00 UTC on this date
@@ -68,5 +69,5 @@ def sun_times(now: float, lat: float | None, lon: float | None, sunset_fallback:
         return ts
 
     sunset = to_ts(False)
-    return SunTimes(sunrise=to_ts(True), sunset=sunset if sunset else at_time_today(sunset_fallback, now),
+    return SunTimes(sunrise=to_ts(True), sunset=sunset if sunset else fallback,
                     estimated=sunset is None)

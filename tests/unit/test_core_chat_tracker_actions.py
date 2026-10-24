@@ -197,3 +197,15 @@ def test_the_words_must_be_passed_in(chat):
         ta.tracker_prompt('food', today(), None, [], NOW, chat)      # type: ignore[call-arg]
     with pytest.raises(TypeError):
         ta.action_instructions('food')                                # type: ignore[call-arg]
+
+
+def test_the_last_break_and_sip_times_follow_the_utc_offset(chat):
+    three_pm_utc = 1_792_595_100.0                               # 21 Oct 2026, 15:05 UTC
+    breaks = today(breaks={'count': 1, 'last_break_ts': three_pm_utc, 'sitting_sec': 60, 'sit_limit_min': 30})
+    assert 'last one 3:05 PM.' in ta.tracker_prompt('breaks', breaks, None, [], NOW, chat, words=WORDS,
+                                                    utc_offset_sec=0)
+    assert 'last one 8:35 PM.' in ta.tracker_prompt('breaks', breaks, None, [], NOW, chat, words=WORDS,
+                                                    utc_offset_sec=5.5 * 3600)
+    water = today(hydration={'sips': 1, 'water_ml': 20, 'goal_ml': 2400, 'pace_ml': 900, 'last_sip_ts': three_pm_utc})
+    assert 'Last sip: 8:35 PM.' in ta.tracker_prompt('hydration', water, None, [], NOW, chat, words=WORDS,
+                                                     utc_offset_sec=5.5 * 3600)

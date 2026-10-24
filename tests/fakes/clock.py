@@ -36,3 +36,6 @@ class FakeClock:
 
     def local_day(self, now: float) -> str:
         return time.strftime(DAY_FORMAT, time.gmtime(now + self._offset_sec))
+
+    def utc_offset_sec(self, now: float) -> float:
+        return self._offset_sec

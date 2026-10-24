@@ -64,6 +64,11 @@ class Clock(Protocol):
         """The local day at `now`, e.g. '2026-10-24' (the same day names the event log uses)."""
         ...
 
+    def utc_offset_sec(self, now: float) -> float:
+        """How many seconds the local time at `now` is ahead of UTC (negative when behind): for the local time
+        helpers in desktalk/util.py (their utc_offset_sec)."""
+        ...
+
 
 @runtime_checkable
 class PeriodicWorker(Protocol):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 
 import pytest
 
@@ -44,3 +45,10 @@ class ClockContract:
             assert clock.local_day(ts + HOUR) == clock.local_day(ts)
             ts += HOUR
         assert clock.local_day(ts + HOUR) > clock.local_day(ts)
+
+    def test_the_utc_offset_gives_the_local_hour_and_day(self, clock):
+        for i in range(0, 48, 5):
+            ts = SOME_DAY + i * HOUR
+            local = time.gmtime(ts + clock.utc_offset_sec(ts))
+            assert local.tm_hour == clock.local_hour(ts)
+            assert time.strftime('%Y-%m-%d', local) == clock.local_day(ts)

@@ -56,17 +56,24 @@ class RuleState:
     dim_since: float | None = None
     screen_on_desk: bool = False
     open_todos: tuple[str, ...] = ()
+    utc_offset_sec: float | None = None     # the local time's offset from UTC (the clock's); None = this computer's
 
 
-def day_frame(now: float, wake: str, bed: str) -> tuple[float, float]:
-    """(wake_ts, bed_ts) of the waking day that contains `now` (bedtime may be after midnight)."""
-    wake_ts = at_time_today(wake, now)
+def day_frame(now: float, wake: str, bed: str, *, utc_offset_sec: float | None = None) -> tuple[float, float]:
+    """(wake_ts, bed_ts) of the waking day that contains `now` (bedtime may be after midnight). `utc_offset_sec`:
+    the local time's offset from UTC (None = this computer's)."""
+    wake_ts = at_time_today(wake, now, utc_offset_sec=utc_offset_sec)
     if wake_ts > now:                     # past midnight but before waking: still "yesterday"
         wake_ts -= DAY_SEC
-    bed_ts = at_time_today(bed, wake_ts)
+    bed_ts = at_time_today(bed, wake_ts, utc_offset_sec=utc_offset_sec)
     if bed_ts <= wake_ts:
         bed_ts += DAY_SEC
     return wake_ts, bed_ts
+
+
+def _time(ts: float, s: RuleState) -> str:
+    """'3:05 PM' for a time, in the state's local time."""
+    return clock_text(ts, utc_offset_sec=s.utc_offset_sec)
 
 
 def _mins(seconds: float) -> int:
@@ -188,8 +195,8 @@ def light_nudges(s: RuleState, cfg: LightRule, now: float, words: HabitNudges) -
             w = words.light_afternoon
             out.append(Nudge(
                 'light', 'light.afternoon',
-                evidence=w.evidence.format(sunset=clock_text(sunset), minutes=_mins(sunset - now)),
-                text=w.text.format(sunset=clock_text(sunset)), tip=w.tip,
+                evidence=w.evidence.format(sunset=_time(sunset, s), minutes=_mins(sunset - now)),
+                text=w.text.format(sunset=_time(sunset, s)), tip=w.tip,
                 repeat_after_sec=repeat, once_per_day=True, speakers=('light',)))
 
     # Evening: dim the lights after sunset / in the hour before bed.
@@ -225,7 +232,7 @@ def screen_nudges(s: RuleState, cfg: LightRule, now: float, words: HabitNudges) 
     before = cfg.screens_off_before_bed_min * MIN
     if bed - before <= now < bed + cfg.screens_until_after_bed_hours * HOUR:
         left = bed - now
-        lead = (words.bed_at.format(bed=clock_text(bed), minutes=_mins(left)) if left > 0
+        lead = (words.bed_at.format(bed=_time(bed, s), minutes=_mins(left)) if left > 0
                 else words.past_bedtime)
         w = words.screens_bedtime
         return [Nudge(
@@ -250,8 +257,8 @@ def phone_nudges(s: RuleState, cfg: PhoneFreeRule, now: float, words: HabitNudge
             and on_for >= cfg.before_bed_on_desk_min * MIN):
         w = words.phone_bedtime
         return [Nudge(
-            'phone_free', 'phone.bedtime', evidence=w.evidence.format(bed=clock_text(bed), minutes=_mins(on_for)),
-            text=w.text.format(bed=clock_text(bed)), tip=w.tip,
+            'phone_free', 'phone.bedtime', evidence=w.evidence.format(bed=_time(bed, s), minutes=_mins(on_for)),
+            text=w.text.format(bed=_time(bed, s)), tip=w.tip,
             repeat_after_sec=repeat, once_per_day=True, speakers=('phone_free',))]
     if on_for >= cfg.nudge_after_min * MIN:
         m = _mins(on_for)

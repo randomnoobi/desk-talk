@@ -1,5 +1,6 @@
 """Sunrise and sunset times for the light habits (desktalk/core/habits/sun_times.py)."""
 
+import calendar
 import time
 
 import pytest
@@ -61,3 +62,10 @@ def test_the_day_comes_from_the_clock():
     utc = sun_times(now, 33.88, -118.40, '18:30', FakeClock())
     assert LOS_ANGELES.local_day(la['sunset']) == '2026-10-18'
     assert FakeClock().local_day(utc['sunset']) == '2026-10-19'
+
+
+def test_the_fallback_sunset_is_on_the_clocks_time():
+    tokyo = FakeClock(utc_offset_hours=9)
+    noon_there = calendar.timegm((2026, 10, 18, 3, 0, 0, 0, 0, 0))
+    assert sun_times(noon_there, None, None, '19:15', tokyo)['sunset'] == \
+        calendar.timegm((2026, 10, 18, 19, 15, 0, 0, 0, 0)) - 9 * 3600

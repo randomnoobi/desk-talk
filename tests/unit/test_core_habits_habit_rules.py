@@ -480,3 +480,13 @@ def test_bright_and_dim_prefer_lux_over_picture_brightness(rules):
     assert P.is_dim(30, 250, light) and not P.is_dim(100, 10, light)
     assert P.is_dim(None, 30, light) and not P.is_dim(None, 100, light)
     assert not P.is_bright(None, None, light) and not P.is_dim(None, None, light)
+
+
+def test_the_waking_day_and_the_times_in_the_words_follow_the_utc_offset(rules, words):
+    offset = time.localtime(DAY).tm_gmtoff + HOUR          # an hour ahead of this computer
+    now = at('17:30')
+    wake, bed = P.day_frame(now, '07:00', '22:30', utc_offset_sec=offset)
+    assert (wake, bed) == (at('07:00') - HOUR, at('22:30') - HOUR)
+    s = day_state(now, utc_offset_sec=offset)
+    n = P.light_nudges(s, rules.light, now, words)          # sunset at 18:30 here is 19:30 there
+    assert keys(n) == ['light.afternoon'] and '7:30 PM' in n[0].text + n[0].evidence

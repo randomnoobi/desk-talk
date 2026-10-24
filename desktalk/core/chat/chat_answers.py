@@ -141,7 +141,7 @@ class ChatAnswers:
         views = self._desk.widget_views_of(a.id)
         memory_lines = self._memory.recent(a.id)
         block = tracker_prompt(a.tracker, self._habits.today(now), todo, views, now, self._chat,
-                               words=self._words.trackers)
+                               words=self._words.trackers, utc_offset_sec=self._clock.utc_offset_sec(now))
         recent_turns, older_recap = budget_history(history, self._llm.chat_history_turns, self._chat, self._local)
 
         # Long-term memory: only what isn't already in the turns sent word for word.
