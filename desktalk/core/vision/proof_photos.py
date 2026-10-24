@@ -37,6 +37,8 @@ class ProofPhotos:
         if crop_boxes:
             jpeg = self._cropped(jpeg, crop_boxes)
         desk = self._desk
+        # The picture, who is on the desk, what is seen and the scan's words are separate reads on purpose (the
+        # desk has no one call for all of them): if a new picture lands in between, the tags can be from it.
         return desk.add(jpeg, label or self._no_label, self._clock.now(), char_ids=list(desk.members()),
                         labels=sorted(str(k).lower() for k in desk.seen()),
                         vlm_labels=sorted(str(x).lower() for x in desk.scan_labels()))

@@ -28,6 +28,9 @@ def camera_info(app: DeskTalk) -> dict[str, Any]:
 
 
 def detections(app: DeskTalk) -> dict[str, Any]:
+    # Each part is its own read on purpose (the desk has no one call for all of them), so when a picture lands
+    # half-way through, one reply can mix it with the one before: the size, boxes, light and scan words may be
+    # one picture apart. The page asks again in a moment.
     size = app.live_pictures.size()
     on_desk = app.scene.members()
     seen = app.scene.seen()

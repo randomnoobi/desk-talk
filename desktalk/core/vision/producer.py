@@ -183,6 +183,8 @@ class DetectionProducer:
             if d.label not in best or d.confidence > best[d.label].confidence:
                 best[d.label] = d
         gap = now - self._last_analysed_at if self._last_analysed_at is not None else None
+        # Two separate calls on purpose (the desk has no one call for both): a reader in between can see this
+        # picture's light with the last picture's objects.
         self._desk.set_light(event.light.brightness, event.light.lux)
         self._desk.note_picture({label: SeenObject.from_detection(d) for label, d in best.items()}, now,
                                 person=event.person, moved=event.moved,
