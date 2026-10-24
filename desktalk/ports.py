@@ -178,9 +178,6 @@ class KeyValueStore(Protocol):
     def save(self, key: str, value: Any) -> None:
         ...
 
-    def delete(self, key: str) -> None:
-        ...
-
     def keys(self, prefix: str = '') -> list[str]:
         ...
 

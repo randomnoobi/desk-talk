@@ -118,10 +118,6 @@ class Roster:
         with self._lock:
             return list(self._members)
 
-    def is_member(self, agent_id: str) -> bool:
-        with self._lock:
-            return agent_id in self._members
-
     def snapshot(self) -> list[dict]:
         """Agents in the chat now, plus ones that were here earlier (for the chat list), newest first."""
         with self._lock:

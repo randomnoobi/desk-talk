@@ -11,9 +11,7 @@
     "**/.venv",
     "**/venv",
     "**/__pycache__",
-    "benchmarks",
-    "safety_pipeline",
-    "run_safety_pipeline.py"
+    "benchmarks"
   ],
   // Files that had type errors when pyright was switched on (2026-10-24). Fix a file, then take it off this
   // list, so the count only goes down. Don't add new files here.

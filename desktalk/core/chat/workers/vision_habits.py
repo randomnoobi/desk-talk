@@ -109,8 +109,7 @@ class VisionHabits:
         if self._vision is None:
             return self._every
         with self._desk.lock:
-            on = self._desk.active_scenarios.get('reminders', True)
-            jpeg = self._desk.first_raw_frame() if on else None
+            jpeg = self._desk.first_raw_frame()
         answer = json_in(look(self._vision, jpeg, prompts.HABIT_SCENE_VLM_PROMPT, background=True,
                               what='the posture check'))
         if answer is None:

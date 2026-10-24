@@ -352,8 +352,8 @@ def asked(r, n=-1):
 def test_a_reply_is_grounded_in_the_desk_and_the_tracker():
     r = Rig(reply='Splash, nice one! [LOG_SIP]')
     r.desk.objects = {'cup': seen('cup', 410, 250, 450, 320)}
-    assert r.gen.generate_chat_response('cup', 'I just drank some water', []) == \
-        ('Splash, nice one!', [{'action': 'log_sip'}])
+    reply = r.gen.answer('cup', 'I just drank some water', [])
+    assert reply['messages'] == [{'character': 'cup', 'text': 'Splash, nice one!'}] and reply['habits_changed']
     call = r.ai.calls[0]
     assert not call['background'] and call['temperature'] == 0.8
     assert call['max_tokens'] == CONFIG.llm.replies.chat.max_tokens
@@ -367,7 +367,7 @@ def test_a_reply_is_grounded_in_the_desk_and_the_tracker():
 
 def test_a_local_ai_gets_the_short_chat_prompt():
     r = Rig(local_model=True)
-    r.gen.generate_chat_response('cup', 'hi', [])
+    r.gen.answer('cup', 'hi', [])
     assert asked(r)[0]['content'].startswith("You are Cup, a cup on someone's desk. You text with the desk owner.")
 
 
@@ -375,7 +375,7 @@ def test_earlier_messages_are_turns_and_other_agents_speak_in_the_third_person()
     history = [{'role': 'user', 'text': 'hi all'}, {'role': 'assistant', 'name': 'Computer', 'text': 'Hello!'},
                {'role': 'assistant', 'name': 'Cup', 'text': 'Hey there!'}]
     r = Rig()
-    r.gen.generate_chat_response('cup', 'how are you?', history)
+    r.gen.answer('cup', 'how are you?', history)
     assert asked(r)[1:4] == [{'role': 'user', 'content': 'hi all'},
                              {'role': 'assistant', 'content': '[Computer said]: Hello!'},
                              {'role': 'assistant', 'content': 'Hey there!'}]
@@ -384,7 +384,7 @@ def test_earlier_messages_are_turns_and_other_agents_speak_in_the_third_person()
 def test_older_messages_become_a_short_recap():
     history = [{'role': 'user', 'text': w} for w in ('one', 'two', 'three')]
     r = Rig(llm=CONFIG.llm.model_copy(update={'chat_history_turns': 2}))
-    r.gen.generate_chat_response('cup', 'four', history)
+    r.gen.answer('cup', 'four', history)
     assert 'EARLIER IN THIS THREAD: User: "one"' in asked(r)[0]['content']
     assert [m['content'] for m in asked(r)[1:3]] == ['two', 'three']
 
@@ -392,15 +392,15 @@ def test_older_messages_become_a_short_recap():
 def test_mentioned_objects_are_described_with_the_message():
     r = Rig()
     r.desk.objects = {'computer': seen('laptop', 200, 200, 400, 350)}
-    r.gen.generate_chat_response('cup', 'is @monty ok?', [])
+    r.gen.answer('cup', 'is @monty ok?', [])
     assert '[Referenced objects — @Computer: On desk' in asked(r)[-1]['content']
 
 
 def test_a_reply_is_remembered_and_given_back_later():
     r = Rig()
-    r.gen.generate_chat_response('cup', 'hello cup', [])
+    r.gen.answer('cup', 'hello cup', [])
     assert r.desk.char_memory['cup'] == ['[User said "hello cup"] → [You replied] Hey! All good over here on the desk.']
-    r.gen.generate_chat_response('cup', 'and now?', [])
+    r.gen.answer('cup', 'and now?', [])
     assert 'WHAT YOU REMEMBER' in asked(r)[0]['content'] and 'hello cup' in asked(r)[0]['content']
 
 
@@ -417,27 +417,26 @@ def test_a_local_ai_only_gets_the_newest_memories():
     r = Rig(local_model=True, chat=CONFIG.chat.model_copy(update={'ollama_memory_lines': 1}))
     r.gen.record_memory('cup', 'old memory line')
     r.gen.record_memory('cup', 'new memory line')
-    r.gen.generate_chat_response('cup', 'hi', [])
+    r.gen.answer('cup', 'hi', [])
     assert 'new memory line' in asked(r)[0]['content'] and 'old memory line' not in asked(r)[0]['content']
 
 
 def test_with_the_ai_down_there_is_no_reply_and_the_reason_is_plain():
     r = Rig(fail='Gemini hit its free usage limit.')
-    assert r.gen.generate_chat_response('cup', 'hi', []) == (None, [])
+    assert r.gen.answer('cup', 'hi', []) == {'messages': [], 'error': 'Gemini hit its free usage limit.'}
     assert r.gen.no_reply_reason() == 'Gemini hit its free usage limit.'
 
 
 def test_with_no_ai_set_up_the_reason_says_how_to_add_one():
     r = Rig()
     r.ai.ready = False
-    assert r.gen.generate_chat_response('cup', 'hi', []) == (None, [])
+    assert r.gen.answer('cup', 'hi', [])['messages'] == []
     assert '.env' in r.gen.no_reply_reason() and r.ai.calls == []
 
 
-@pytest.mark.parametrize('pid, reply', [('cup', 'Computer: I am the laptop, not the cup.'), ('ghost', 'Hi!')])
-def test_no_reply_for_an_unknown_agent_or_a_line_for_someone_else(pid, reply):
-    r = Rig(reply=reply)
-    assert r.gen.generate_chat_response(pid, 'hi', []) == (None, [])
+def test_no_reply_for_a_line_for_someone_else():
+    r = Rig(reply='Computer: I am the laptop, not the cup.')
+    assert r.gen.answer('cup', 'hi', [])['messages'] == []
 
 
 # ── answer(): what /api/chat returns ─────────────────────────────────

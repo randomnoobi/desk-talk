@@ -35,7 +35,6 @@ class PhotoStore:
         self._free_mb = free_mb or (lambda: shutil.disk_usage(self.folder).free / MB)
         self._lock = threading.Lock()         # held only for a moment: saving never waits for a cleanup
         self.last_cleanup: float | None = None
-        self.deleted_total = 0
         self._count = len(self.photos())      # counted once; save() and the deletes keep it up to date
 
     def save(self, jpeg: bytes, taken_at: float, frame_id: str) -> Path:
@@ -87,7 +86,6 @@ class PhotoStore:
                     problems.append(exc)
         self.last_cleanup = now
         self._say_problems(problems)
-        self.deleted_total += removed
         return removed
 
     def free_up_space(self) -> int:
@@ -102,7 +100,6 @@ class PhotoStore:
             except OSError as exc:
                 problems.append(exc)
         self._say_problems(problems)
-        self.deleted_total += removed
         return removed
 
     def _delete(self, path: Path) -> int:

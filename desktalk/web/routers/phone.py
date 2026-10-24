@@ -1,10 +1,5 @@
 """
-The phone as the camera.
-
-On the main server:
-    GET  /api/phone/info     is the phone the camera, is it sending, and (on this computer only) its link + QR code
-
-On the phone page's own HTTPS server (create_phone_app):
+The phone as the camera, on the phone page's own HTTPS server (create_phone_app):
     GET  /, /phone, /phone/  the camera page (phone_camera/index.html); its files are under /phone/
     GET  /api/phone/config   how many pictures a second to send
     POST /api/phone/frame    one picture, with how the phone is tilted (X-Desk-Gravity) and how far it turned
@@ -22,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from starlette.concurrency import run_in_threadpool
 
-from desktalk.web.deps import Desk, FromHere, ShownLinks, key_check, other_camera, read_upload
+from desktalk.web.deps import Desk, key_check, other_camera, read_upload
 from desktalk.web.files import page
 from desktalk.web.schemas import Ok, PhoneFrameReply
 
@@ -31,7 +26,6 @@ GRAVITY_MAX = 50          # m/s²: a tilt reading above this on any axis isn't a
 FULL_TURN = 360
 WHOLE_NUMBER = re.compile(r'-?[0-9]+')      # plain 0-9 digits only: int() can't read every digit isdigit() allows
 
-router = APIRouter()
 phone_router = APIRouter()
 
 
@@ -52,13 +46,6 @@ def parse_rotation(header: str) -> int | None:
     """'-90' → 270: how far the phone turned the picture, or None when it didn't say (or didn't send a
     whole number, e.g. '--90')."""
     return int(header) % FULL_TURN if WHOLE_NUMBER.fullmatch(header) else None
-
-
-@router.get('/api/phone/info')
-def phone_info(desk: Desk, links: ShownLinks, from_here: FromHere) -> dict[str, Any]:
-    phone = desk.phone_source is not None
-    return {'phone_mode': phone, 'connected': phone and desk.desk_status.camera_connected(), 'fps': desk.source.fps,
-            'url': links.phone_url if from_here else '', 'qr_svg': links.phone_qr_svg if from_here else None}
 
 
 # ── the phone page's own server ──────────────────────────────────────

@@ -139,7 +139,7 @@ def test_open_pages_do_not_hold_up_the_server_when_it_stops(tmp_path):
 
     with running(create_app(app, links_for(app))) as url:
         readers = [threading.Thread(target=watch, args=(url, path), daemon=True)
-                   for path in ('/api/events', '/api/video_feed')]
+                   for path in ('/api/events', '/api/video_feed/0')]
         app.source.push(desk_jpeg())
         app.producer.tick(app.clock.now())           # a picture, so the video starts
         for reader in readers:
@@ -149,7 +149,7 @@ def test_open_pages_do_not_hold_up_the_server_when_it_stops(tmp_path):
     took = time.monotonic() - started
     for reader in readers:
         reader.join(WAIT_SEC)
-    assert ended == {'/api/events': True, '/api/video_feed': True}
+    assert ended == {'/api/events': True, '/api/video_feed/0': True}
     assert took < app.config.web.stop_wait_sec
 
 

@@ -3,9 +3,6 @@ What the desk looks like right now:
 
     GET  /api/live         everything the desk cam panel needs, in one request (the app asks every 1.5 s)
     GET  /api/status       a short summary
-    GET  /api/detections   what the camera sees: the agents' boxes and the other things
-    GET  /api/safety       the danger state and why
-    POST /api/safety       news from the standalone safety pipeline (run_safety_pipeline.py)
 """
 
 from __future__ import annotations
@@ -16,7 +13,6 @@ from fastapi import APIRouter, Request
 
 from desktalk.bootstrap import DeskTalk
 from desktalk.web.deps import Desk, FromHere, ShownLinks, camera_index, uptime_sec
-from desktalk.web.schemas import Ok, SafetyNews
 
 router = APIRouter()
 
@@ -107,22 +103,3 @@ def status(desk: Desk) -> dict[str, Any]:
             'safety_state': state, 'safety_rules': desk.safety_rules.loaded,
             'risk_level': result.get('risk_level', 0), 'uptime_sec': uptime_sec(desk)}
 
-
-@router.get('/api/detections')
-def get_detections(desk: Desk) -> dict[str, Any]:
-    return detections(desk)
-
-
-@router.get('/api/safety')
-def get_safety(desk: Desk) -> dict[str, Any]:
-    return safety(desk)
-
-
-@router.post('/api/safety')
-def safety_news(news: SafetyNews, desk: Desk) -> Ok:
-    with desk.desk.lock:
-        if news.type == 'danger_alert':
-            desk.desk.safety_state, desk.desk.safety_dangers = 'DANGEROUS', news.pairs
-        elif news.type == 'safe_status':
-            desk.desk.safety_state, desk.desk.safety_dangers = 'SAFE', []
-    return Ok()

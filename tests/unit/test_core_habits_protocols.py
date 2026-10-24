@@ -376,19 +376,19 @@ def test_a_switched_off_habit_never_nudges(rules, section, rule, extra):
 
 
 # ── choosing which one to send ────────────────────────────────────────
-def test_pick_respects_cooldowns_and_least_recent_habit():
+def test_ready_nudges_respect_cooldowns_and_least_recent_habit():
     now = at('13:00')
     a = Nudge('hydration', 'hydration.pace', 'e', 't', repeat_after_sec=45 * MIN)
     b = Nudge('breaks', 'breaks.sit', 'e', 't', repeat_after_sec=15 * MIN)
     c = Nudge('light', 'light.morning', 'e', 't', repeat_after_sec=60 * MIN, once_per_day=True)
-    assert P.pick_nudge([a, b], {}, now) is a                         # nothing said yet: the first one
+    assert P.ready_nudges([a, b], {}, now)[0] is a                         # nothing said yet: the first one
     last = {'breaks.sit': now - 5 * MIN, 'habit:breaks': now - 5 * MIN}
-    assert P.pick_nudge([a, b], last, now) is a                       # breaks said 5 min ago
+    assert P.ready_nudges([a, b], last, now)[0] is a                       # breaks said 5 min ago
     last = {'habit:hydration': now - 60 * MIN, 'habit:breaks': now - 90 * MIN}
-    assert P.pick_nudge([a, b], last, now) is b                       # least recently heard habit first
-    assert P.pick_nudge([c], {'light.morning': now - 3 * HOUR}, now) is None   # once a day
-    assert P.pick_nudge([c], {'light.morning': now - 24 * HOUR}, now) is c     # yesterday's doesn't count
-    assert P.pick_nudge([], {}, now) is None
+    assert P.ready_nudges([a, b], last, now)[0] is b                       # least recently heard habit first
+    assert P.ready_nudges([c], {'light.morning': now - 3 * HOUR}, now) == []   # once a day
+    assert P.ready_nudges([c], {'light.morning': now - 24 * HOUR}, now)[0] is c     # yesterday's doesn't count
+    assert P.ready_nudges([], {}, now) == []
 
 
 def test_ready_nudges_are_in_the_order_to_send_them():
@@ -404,8 +404,8 @@ def test_ready_nudges_are_in_the_order_to_send_them():
 def test_a_once_a_day_nudge_also_waits_its_repeat_time_after_midnight():
     c = Nudge('screens', 'screens.bedtime', 'e', 't', repeat_after_sec=60 * MIN, once_per_day=True)
     fired = at('23:50')
-    assert P.pick_nudge([c], {'screens.bedtime': fired}, at('00:20', days_later=1)) is None
-    assert P.pick_nudge([c], {'screens.bedtime': fired}, at('00:55', days_later=1)) is c
+    assert P.ready_nudges([c], {'screens.bedtime': fired}, at('00:20', days_later=1)) == []
+    assert P.ready_nudges([c], {'screens.bedtime': fired}, at('00:55', days_later=1))[0] is c
 
 
 def test_candidate_nudges_runs_every_rule(rules):

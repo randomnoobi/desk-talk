@@ -1,5 +1,5 @@
 """
-What the app, the Pi and the safety pipeline send in a request body, and the replies the web layer makes
+What the app, the Pi and the phone send in a request body, and the replies the web layer makes
 itself. Fields the routes don't read are ignored, as before. Values the parts check themselves (times,
 corners, to-do lists) are taken as they come, so their own plain-words errors reach the app.
 
@@ -91,13 +91,6 @@ class RuleChanges(BaseModel):
 
     def sent(self) -> set[str]:
         return set(self.model_fields_set)
-
-
-class SafetyNews(BaseModel):
-    """POST /api/safety, from the standalone safety pipeline (run_safety_pipeline.py)."""
-
-    type: str = ''                       # danger_alert or safe_status
-    pairs: list[Any] = []
 
 
 # ── replies ──

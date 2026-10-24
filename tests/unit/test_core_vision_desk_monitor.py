@@ -155,13 +155,6 @@ def test_a_danger_keeps_its_start_time_until_it_is_gone():
     assert rig.desk.danger_active_since == {} and rig.desk.safety_dangers == []
 
 
-def test_no_safety_alerts_when_risk_detection_is_off():
-    rig = Rig()
-    rig.desk.active_scenarios['risk_detection'] = False
-    assert rig.look(T + 1000, cup_near_laptop(), labels=['cat']) == []
-    assert rig.desk.safety_dangers == [] and rig.desk.rel_result['risk_events']
-
-
 # ── pets ──
 def test_a_pet_near_the_desk():
     rig = Rig()
@@ -186,14 +179,6 @@ def test_pet_alerts_wait_between():
 def test_two_pets_in_the_order_of_the_settings():
     alerts = Rig().look(T + 1000, labels=['dog', 'cat'])
     assert [a.text.split()[0] for a in alerts] == ['Cat', 'Dog']
-
-
-def test_a_pet_seen_while_risk_detection_is_off_still_starts_the_wait():
-    rig = Rig()
-    rig.desk.active_scenarios['risk_detection'] = False
-    rig.look(T + 1000, labels=['cat'])
-    rig.desk.active_scenarios['risk_detection'] = True
-    assert rig.look(T + 1100, labels=['cat']) == []
 
 
 # ── clutter ──

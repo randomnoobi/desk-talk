@@ -409,9 +409,7 @@ desk-talk/
 ├── models/                   # YOLO model files (downloaded, not uploaded)
 ├── tests/                    # unit, contracts, integration, characterization, slow, docker; fakes/
 ├── scripts/                  # download_models.py, camera_preview.py, yolo_webcam_detect.py, capture_app_screenshots.py
-├── docs/                     # ARCHITECTURE.md, AGENT_SYSTEM.md, SAFETY_*.md, plans/, images/
-├── run_safety_pipeline.py    # the older standalone safety checker (docs/SAFETY_PIPELINE.md)
-├── safety_pipeline/          #   its modules
+├── docs/                     # ARCHITECTURE.md, AGENT_SYSTEM.md, plans/, images/
 └── data/                     # event log, habit days, preferences, log files (made when it runs, not uploaded)
 ```
 

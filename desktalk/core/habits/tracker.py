@@ -404,9 +404,9 @@ class HabitTracker:
             return P.RuleState(
                 at_desk=self._at_desk(now), session_start=session_start,
                 wake_ts=t['wake_ts'], bed_ts=t['bed_ts'], sunset_ts=t['sunset_ts'],
-                water_ml=self._d['water_ml'], sips=self._d['sips'], last_sip_ts=self._d['last_sip_ts'],
+                water_ml=self._d['water_ml'], last_sip_ts=self._d['last_sip_ts'],
                 drink_on_desk=self._drink_on_desk,
-                sit_since=self._sit_since, last_break_ts=self._d['last_break_ts'],
+                sit_since=self._sit_since,
                 meal_done_ts=self._meal_done_ts, meal_name=self._meal_name,
                 food_since=self._food_since, food_name=self._food_name,
                 phone_on_desk_since=self._phone_on_desk_since if self._phone_counts else None,

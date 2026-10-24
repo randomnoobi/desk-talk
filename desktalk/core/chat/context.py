@@ -235,7 +235,7 @@ _PUSHBACK = ('nothing next', 'nothing nect', 'not next to you', 'not a cup', "is
 def build_live_context(desk: DeskState, *, profiles: Profiles, members: Sequence[str],
                        habits_today: Mapping[str, Any], now: float, camera_on: bool, chat: ChatSettings,
                        user_message: str = '') -> dict[str, Any]:
-    """Real-time desk facts for the AI (and /api/context): summary text, detected agents, dangers,
+    """Real-time desk facts for the AI: summary text, detected agents, dangers,
     safety state, and the status of objects @mentioned in `user_message`."""
     lines: list[str] = []
     detected_info: list[dict] = []

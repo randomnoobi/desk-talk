@@ -74,13 +74,6 @@ def test_no_question_without_a_picture():
     assert rig.ai.calls == []
 
 
-def test_no_question_while_reminders_are_switched_off():
-    rig = Rig()
-    rig.desk.active_scenarios['reminders'] = False
-    rig.habits.tick(rig.clock.now())
-    assert rig.ai.calls == []
-
-
 def test_the_question_is_about_the_newest_picture_and_waits_for_no_one():
     rig = Rig()
     rig.look(GOOD)

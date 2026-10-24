@@ -16,7 +16,7 @@ words for it and the words you might type.
                      default_temperature=config.agents_file.default.temperature,
                      phone_is_camera=config.camera.source == 'phone')
     supervisor.add(lost, start_after=config.lost_items.start_delay_sec)
-    lost.items, lost.is_lost_query(text), lost.answer(text), lost.sightings()     # for the web routes
+    lost.items, lost.is_lost_query(text), lost.answer(text)     # for the web routes
 """
 
 from __future__ import annotations
@@ -150,7 +150,7 @@ class LostItems:
         return self.is_query(text) and (bool(self.items_in_text(text)) or bool(_words(text) & OTHER_THINGS))
 
     def sightings(self) -> dict[str, dict[str, Any]]:
-        """Item id → last_seen, alerted, source (detector / vision), last_near. For /api/scenarios."""
+        """Item id → last_seen, alerted, source (detector / vision), last_near."""
         with self._lock:
             return {item_id: dict(record, last_near=list(record['last_near']))
                     for item_id, record in self._seen.items()}
@@ -167,13 +167,9 @@ class LostItems:
         self._spotted_photo_at[key] = now
         return True
 
-    def _switched_on(self) -> bool:
-        with self._desk.lock:
-            return self._desk.active_scenarios.get('lost_object', True)
-
     # ── 1. every picture ──
     def on_detection(self, event: Event) -> None:
-        if not isinstance(event, DetectionEvent) or not self._switched_on():
+        if not isinstance(event, DetectionEvent):
             return
         now = event.ts
         labels = {d.label for d in event.detections if d.confidence >= self._settings.min_confidence}
@@ -197,8 +193,7 @@ class LostItems:
     # ── 2 + 3. on a timer ──
     def tick(self, now: float) -> float:
         with self._desk.lock:
-            on = self._desk.active_scenarios.get('lost_object', True)
-            jpeg = self._desk.first_raw_frame() if on else None
+            jpeg = self._desk.first_raw_frame()
         if not jpeg:
             return self._settings.check_every_sec
         scan_hits: set[str] = set()

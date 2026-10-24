@@ -7,5 +7,5 @@
     "pragma": "no-cache",
     "x-accel-buffering": "no"
   },
-  "request": "GET /api/video_feed (main server, fresh desk)"
+  "request": "GET /api/video_feed/0 (main server, fresh desk)"
 }

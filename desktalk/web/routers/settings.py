@@ -3,7 +3,6 @@ The Settings page:
 
     GET /api/rules       the danger rules and the desk corners (config/safety_rules.json, or the built-in ones)
     PUT /api/rules       change some of them; marking the desk corners also notes how the phone was tilted
-    GET /api/scenarios   which checks are on, and the lost items seen lately
 """
 
 from __future__ import annotations
@@ -51,13 +50,3 @@ def change_rules(desk: Desk, sent: RuleChanges | None = None) -> Ok:
     desk.safety_rules.save(changes)
     return Ok()
 
-
-@router.get('/api/scenarios')
-def scenarios(desk: Desk) -> dict[str, Any]:
-    now = desk.clock.now()
-    lost = {item: {'last_seen_ago_sec': int(now - seen['last_seen']), 'alerted': seen['alerted']}
-            for item, seen in desk.lost_items.sightings().items() if seen.get('last_seen')}
-    with desk.desk.lock:
-        switched_on = dict(desk.desk.active_scenarios)
-    return {'scenarios': switched_on, 'lost_objects': lost,
-            'lost_items': {item: {'name': about['name']} for item, about in desk.lost_items.items.items()}}

@@ -166,9 +166,6 @@ class InMemoryKeyValueStore:
         self.saves += 1
         self.data[key] = copy.deepcopy(value)
 
-    def delete(self, key: str) -> None:
-        self.data.pop(key, None)
-
     def keys(self, prefix: str = '') -> list[str]:
         return sorted(k for k in self.data if k.startswith(prefix))
 

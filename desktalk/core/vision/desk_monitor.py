@@ -51,14 +51,13 @@ class DeskMonitor:
         now = event.ts
         with self._desk.lock:
             objects = dict(self._desk.objects)
-            risk_on = self._desk.active_scenarios.get('risk_detection', True)
         things = {agent: Thing.from_desk(agent, obj) for agent, obj in objects.items()}
         result = self._analyzer.analyze(things, event.size, now)
-        dangers = self._safety_alerts(result, things, now) if risk_on else []
+        dangers = self._safety_alerts(result, things, now)
         self._keep_safety_state(result, dangers, now)
         labels = {d.label for d in event.detections}
         warm = self._status.warm(now)
-        self._pets(labels, things, now, risk_on)
+        self._pets(labels, things, now)
         self._clutter(labels, things, now, warm)
         self._plants(labels, things, now, warm)
 
@@ -130,13 +129,12 @@ class DeskMonitor:
     def _scenario_alert(self, now: float, scenario: str, feature: str, agent: str, text: str) -> None:
         self._bus.publish(Alert(ts=now, kind='scenario', scenario=scenario, feature=feature, agent=agent, text=text))
 
-    def _pets(self, labels: set[str], things: Mapping[str, Thing], now: float, risk_on: bool) -> None:
+    def _pets(self, labels: set[str], things: Mapping[str, Thing], now: float) -> None:
         for pet in (p for p in self._settings.pet_labels if p in labels):
             due = now - self._pet_alerted.get(pet, 0) > self._settings.pet_cooldown_sec
-            if due:
-                self._pet_alerted[pet] = now
-            if not (due and risk_on):
+            if not due:
                 continue
+            self._pet_alerted[pet] = now
             can_spill = self._profiles.ids_for_habit('hydration') + self._profiles.ids_for_habit('food')
             names = ', '.join(p.name for p in (self._profiles.get(a) for a in things if a in can_spill) if p)
             fragile = next((a for a in things if (p := self._profiles.get(a)) and p.fragile), LENS)

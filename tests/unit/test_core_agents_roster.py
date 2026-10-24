@@ -66,7 +66,7 @@ def test_object_joins_and_leaves(config):
     t = r.run(1000.0, 4, d('laptop'), d('person'))           # 4 seconds at 3 pictures a second
     assert [(e.agent, e.name, e.label, e.conf) for e in r.joined()] == [('computer', 'Computer', 'laptop', 0.9)]
     assert r.joined()[0].ts == pytest.approx(1003.0)          # seen for 3 s (agents.join_after_sec)
-    assert r.roster.member_ids() == ['computer'] and r.roster.is_member('computer')
+    assert r.roster.member_ids() == ['computer']
     assert set(r.desk.objects) == {'computer'}                # person is ignored
     r.run(t, 50, d('person'))                                 # 50 s with no laptop
     assert [(e.agent, e.name, e.label) for e in r.left()] == [('computer', 'Computer', 'laptop')]

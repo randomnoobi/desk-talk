@@ -6,7 +6,6 @@ The agents and the chat:
     GET  /api/messages/recent   the last messages, for a page that just opened
     POST /api/activity          the app pings this while you type, so the small talk holds off (204)
     POST /api/chat              your message: a group chat or a 1-on-1 with an agent
-    GET  /api/context           what the chat knows about the desk right now (and who can be @mentioned)
     POST /api/chat_todos        an agent's to-do list, as the app shows it
     POST /api/chat_todos_sync   every agent's to-do list
     POST /api/widget_event      you opened (or used) an agent's panel
@@ -73,15 +72,6 @@ def chat(sent: ChatMessage, desk: Desk) -> dict[str, Any]:
         return desk.generator.answer(sent.chat, message, sent.recent_messages or sent.history, widget=sent.widget)
     except UnknownChat:
         raise HTTPException(400, UNKNOWN_CHAT) from None
-
-
-@router.get('/api/context')
-def context(desk: Desk) -> dict[str, Any]:
-    ctx = desk.generator.live_context()
-    members = set(desk.roster.member_ids())
-    return {'detected': ctx['detected'], 'dangers': ctx['dangers'], 'safety_state': ctx['safety_state'],
-            'mention_options': [{'id': a['id'], 'name': a['name'], 'icon': a['icon'], 'object': a['object'],
-                                 'detected': a['id'] in members} for a in desk.roster.snapshot()]}
 
 
 @router.post('/api/chat_todos')

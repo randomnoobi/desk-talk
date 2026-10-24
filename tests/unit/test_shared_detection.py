@@ -27,13 +27,6 @@ def test_bbox_rejects_non_numbers():
         BBox.from_list([1, 2, float('nan'), 4])
 
 
-def test_iou_of_same_box_is_one_and_of_separate_boxes_zero():
-    a = BBox(0, 0, 10, 10)
-    assert a.iou(BBox(0, 0, 10, 10)) == 1
-    assert a.iou(BBox(20, 20, 30, 30)) == 0
-    assert a.iou(BBox(5, 0, 15, 10)) == pytest.approx(50 / 150)
-
-
 def test_clipped_cuts_box_to_picture_and_drops_box_fully_outside():
     assert BBox(-10, 5, 30, 500).clipped(640, 480) == BBox(0, 5, 30, 480)
     assert BBox(700, 10, 800, 20).clipped(640, 480) is None

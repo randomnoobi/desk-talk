@@ -6,7 +6,7 @@ reason is true right now, each with the evidence and a ready-made message. Nothi
 to the camera or the AI, so every rule is easy to test with made-up numbers.
 
     nudges = candidate_nudges(state, config.protocols, now)
-    nudge = pick_nudge(nudges, last_fire, now)
+    ready = ready_nudges(nudges, last_fire, now)       # the ones that may go out now, best first
 
 Every number comes from config/protocols.yaml, including how long to wait before the same
 nudge may come again (Nudge.repeat_after_sec). Once-a-day nudges use their habit's own
@@ -37,11 +37,9 @@ class RuleState:
     at_desk: bool = False                   # someone is at the desk right now
     session_start: float | None = None      # when the camera started watching
     water_ml: float = 0
-    sips: int = 0
     last_sip_ts: float | None = None
     drink_on_desk: bool = False
     sit_since: float | None = None
-    last_break_ts: float | None = None
     meal_done_ts: float | None = None       # food that sat on the desk a while just went away
     meal_name: str = ''
     food_since: float | None = None         # food on the desk right now, since when
@@ -369,8 +367,3 @@ def ready_nudges(nudges: Sequence[Nudge], last_fire: Mapping[str, float], now: f
         ready.append(n)
     return sorted(ready, key=lambda n: last_fire.get(f'habit:{n.habit}', 0) or 0)
 
-
-def pick_nudge(nudges: Sequence[Nudge], last_fire: Mapping[str, float], now: float) -> Nudge | None:
-    """The one nudge to send now, or None."""
-    ready = ready_nudges(nudges, last_fire, now)
-    return ready[0] if ready else None

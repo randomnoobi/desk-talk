@@ -4,8 +4,7 @@ Habits and your preferences:
     GET  /api/habits/today        today's habits (water, breaks, light, phone, food) and the vision checks
     POST /api/habits/log          a habit button: a glass of water, a break, some sunlight, a snack
     GET  /api/habit_log           the vision habit timeline (posture, nail biting), ?category= and ?limit=
-    GET  /api/daily_stats         today's habits
-    GET  /api/preferences         wake time, bedtime, quiet hours (also at the old /api/habit_policy)
+    GET  /api/preferences         wake time, bedtime, quiet hours
     PUT  /api/preferences         change them
 """
 
@@ -50,13 +49,7 @@ def habit_log(desk: Desk, category: str | None = None, limit: str | None = None)
             'vlm_state': check, 'vlm_ts': checked_at}
 
 
-@router.get('/api/daily_stats')
-def daily_stats(desk: Desk) -> dict[str, Any]:
-    return desk.habits.today()
-
-
 @router.get('/api/preferences')
-@router.get('/api/habit_policy')
 def preferences(desk: Desk) -> dict[str, Any]:
     now = desk.clock.now()
     return {**desk.preferences.all(), 'quiet_now': quiet_hours_now(desk.preferences, now),
@@ -64,7 +57,6 @@ def preferences(desk: Desk) -> dict[str, Any]:
 
 
 @router.put('/api/preferences')
-@router.put('/api/habit_policy')
 def change_preferences(changes: PreferenceChanges, desk: Desk) -> dict[str, Any]:
     try:
         return {'ok': True, 'preferences': desk.preferences.update(changes.changes())}

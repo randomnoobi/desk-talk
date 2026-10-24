@@ -123,13 +123,6 @@ def test_a_weak_box_is_not_a_sighting():
     assert rig.lost.sightings() == {}
 
 
-def test_nothing_is_tracked_while_lost_items_are_switched_off():
-    rig = Rig()
-    rig.desk.active_scenarios['lost_object'] = False
-    rig.see('key')
-    assert rig.lost.sightings() == {}
-
-
 def test_an_item_that_turns_up_gets_a_spotted_photo_but_not_too_often():
     rig = Rig()
     rig.see('key')                     # the first picture is the starting point: no photo
@@ -216,15 +209,12 @@ def test_an_item_found_again_can_be_mentioned_again_later():
     assert [feature for feature, _ in rig.alerts()] == ['keys', 'keys']
 
 
-def test_no_alerts_without_a_picture_or_while_switched_off():
+def test_no_alerts_without_a_picture():
     rig = Rig()
     rig.see('key')
     rig.see()
     rig.desk.raw_frames.clear()
     rig.tick(after=20 * 60)
-    rig.show(DARK)
-    rig.desk.active_scenarios['lost_object'] = False
-    rig.tick(after=1)
     assert rig.alerts() == []
 
 

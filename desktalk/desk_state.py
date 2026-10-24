@@ -35,7 +35,6 @@ class DeskState:
         self.rel_result: dict | None = None
         self.danger_active_since: dict = {}   # frozenset pair → when the danger started
         self.recent_events: list = []         # last alerts, for the AI's context
-        self.active_scenarios = {'risk_detection': True, 'lost_object': True, 'reminders': True}
 
         # ── Agents and chat ──
         self.object_first_seen: dict = {}     # agent id → first time this session

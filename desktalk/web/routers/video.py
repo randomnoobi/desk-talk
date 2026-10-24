@@ -1,9 +1,9 @@
 """
 The live view and the proof photos:
 
-    GET /api/video_feed[/<camera>]        live video with the boxes drawn (MJPEG); nothing at all is sent, not even
+    GET /api/video_feed/<camera>          live video with the boxes drawn (MJPEG); nothing at all is sent, not even
     GET /api/video_feed_raw[/<camera>]    headers, until there's a first picture. _raw: the plain picture
-    GET /api/latest_frame[_raw]/<camera>  the newest picture, once (404 before the first)
+    GET /api/latest_frame_raw/<camera>    the newest plain picture, once (404 before the first)
     GET /api/snapshot/<id>                one proof photo (404 if it's gone)
     GET /api/snapshots                    the proof photos kept, newest first
 """
@@ -49,11 +49,6 @@ async def video(request: Request, desk: DeskTalk, streams: LiveStreams, latest: 
     return StreamingResponse(body, media_type=MJPEG_TYPE, headers=VIDEO_HEADERS)
 
 
-@router.get('/api/video_feed')
-async def video_feed(request: Request, desk: Desk, streams: Streams) -> Response:
-    return await video(request, desk, streams, with_boxes(desk, camera_index(desk)))
-
-
 @router.get('/api/video_feed/{camera:int}')
 async def video_feed_of(camera: int, request: Request, desk: Desk, streams: Streams) -> Response:
     return await video(request, desk, streams, with_boxes(desk, camera))
@@ -71,12 +66,6 @@ async def video_feed_raw_of(camera: int, request: Request, desk: Desk, streams: 
 
 def picture(jpeg: bytes | None) -> Response:
     return Response(bytes(jpeg), media_type=JPEG, headers=NO_CACHE) if jpeg else Response(status_code=404)
-
-
-@router.get('/api/latest_frame/{camera:int}')
-def latest_frame(camera: int, desk: Desk) -> Response:
-    with desk.desk.lock:
-        return picture(desk.desk.frames.get(camera) or desk.desk.raw_frames.get(camera))
 
 
 @router.get('/api/latest_frame_raw/{camera:int}')

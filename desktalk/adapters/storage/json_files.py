@@ -53,9 +53,6 @@ class JsonFileStore:
         path = self._path(key)
         write_atomically(path, json.dumps(value, indent=2))
 
-    def delete(self, key: str) -> None:
-        self._path(key).unlink(missing_ok=True)
-
     def keys(self, prefix: str = '') -> list[str]:
         """Saved keys starting with `prefix`, sorted."""
         if not self.root.is_dir():

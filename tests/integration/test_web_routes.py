@@ -60,16 +60,6 @@ def test_the_latest_picture_and_proof_photos_are_served(tmp_path):
     assert client.get('/api/snapshot/nope').status_code == 404
 
 
-def test_the_safety_pipeline_can_set_the_safety_state(tmp_path):
-    rig = DeskRig(tmp_path)
-    client = web_client(rig.app)
-    pairs = [{'objects': ['cup', 'laptop'], 'distance_px': 42.5}]
-    assert client.post('/api/safety', json={'type': 'danger_alert', 'pairs': pairs}).json() == {'ok': True}
-    assert client.get('/api/safety').json()['state'] == 'DANGEROUS'
-    client.post('/api/safety', json={'type': 'safe_status'})
-    assert client.get('/api/safety').json()['dangers'] == []
-
-
 # ── chat ─────────────────────────────────────────────────────────────
 def test_a_one_on_one_reply_logs_the_habit_the_ai_asked_for(tmp_path):
     rig = DeskRig(tmp_path, ai_reply=fake_ai)
@@ -150,7 +140,7 @@ def test_preferences_change_and_the_old_names_still_work(tmp_path):
     assert reply['preferences']['wake_time'] == '06:30' and reply['preferences']['quiet_enabled'] is True
     bad = client.put('/api/preferences', json={'wake_time': 'noon'})
     assert bad.status_code == 400 and 'noon' in bad.json()['error']
-    old = client.put('/api/habit_policy', json={'dnd_enabled': False, 'dnd_start_hour': 21}).json()
+    old = client.put('/api/preferences', json={'dnd_enabled': False, 'dnd_start_hour': 21}).json()
     assert (old['preferences']['quiet_enabled'], old['preferences']['quiet_start_hour']) == (False, 21)
     assert rig.app.store.load('preferences')['wake_time'] == '06:30'
     assert client.get('/api/preferences').json()['min_gap_sec'] == rig.config.reminders.min_gap_sec
@@ -213,16 +203,25 @@ def test_marking_the_desk_corners_saves_them_in_the_rules(tmp_path):
     assert client.get('/api/rules').json()['desk_outline'] == saved['desk_outline']
 
 
-def test_scenarios_list_the_lost_items_seen(tmp_path):
-    rig = DeskRig(tmp_path)
-    rig.watch(2, KEY)
-    rig.clock.advance(30)
-    scenarios = web_client(rig.app).get('/api/scenarios').json()
-    assert scenarios['lost_objects']['keys']['last_seen_ago_sec'] == 30
-    assert scenarios['lost_items']['keys'] == {'name': rig.config.lost_items.items['keys'].name}
-
-
 # ── what every reply has in common ───────────────────────────────────
+# Routes nothing called, taken out in the 2026-10 cleanup. They answer like any path the server doesn't know:
+# 404 to a GET, and 405 to anything else (only the page's files are left at that path, and they only GET).
+REMOVED_ROUTES = (
+    ('GET', '/api/context'), ('GET', '/api/daily_stats'), ('GET', '/api/habit_policy'), ('PUT', '/api/habit_policy'),
+    ('GET', '/api/detections'), ('GET', '/api/safety'), ('POST', '/api/safety'), ('GET', '/api/scenarios'),
+    ('GET', '/api/phone/info'), ('GET', '/api/video_feed'), ('GET', '/api/latest_frame/0'),
+)
+
+
+def test_removed_routes_answer_404(tmp_path):
+    rig = DeskRig(tmp_path)
+    rig.watch(1, LAPTOP)                        # a picture, so a video route that is still there would answer
+    client = web_client(rig.app)
+    for method, path in REMOVED_ROUTES:
+        reply = client.request(method, path, json={} if method != 'GET' else None)
+        assert reply.status_code == (404 if method == 'GET' else 405), f'{method} {path}'
+
+
 def test_errors_say_error_not_detail_and_every_reply_allows_any_page(tmp_path):
     client = web_client(DeskRig(tmp_path).app)
     missing = client.get('/api/nothing-here')
@@ -265,13 +264,13 @@ def test_the_browser_app_is_served_and_always_checked_again(tmp_path):
     assert client.get('/no-such-file.js').status_code == 404
 
 
-def test_the_phone_info_shows_the_link_only_on_this_computer(tmp_path):
+def test_the_phone_link_shows_only_on_this_computer(tmp_path):
     rig = DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'camera', source='phone'))
     web = create_app(rig.app, links_for(rig.app, phone_page=True))
-    here = web_client(web).get('/api/phone/info').json()
+    here = web_client(web).get('/api/live?qr=1').json()['phone']
     assert here['url'] == f'https://192.168.1.20:{rig.config.camera.phone_port}/phone?key={PAIR_KEY}'
     assert here['qr_svg'].startswith('<svg')
-    there = web_client(web, from_ip=ON_THE_WIFI).get('/api/phone/info').json()
+    there = web_client(web, from_ip=ON_THE_WIFI).get('/api/live?qr=1').json()['phone']
     assert (there['url'], there['qr_svg']) == ('', None)
 
 
@@ -281,6 +280,5 @@ def test_the_agents_lens_the_status_and_the_recent_messages_have_their_values(tm
     client = web_client(rig.app)
     assert client.get('/api/agents').json()['lens']['name'] == 'Lens'
     assert client.get('/api/status').json()['agents'] == ['computer']
-    assert client.get('/api/context').json()['mention_options']
     assert client.get('/api/messages/recent').json()['messages'][0]['text'] == 'Computer joined the chat'
     assert client.get('/api/habit_log').json()['summary']['breaks_today'] == 0

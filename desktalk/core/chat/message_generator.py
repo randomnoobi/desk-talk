@@ -135,7 +135,7 @@ class MessageGenerator:
             self._desk.char_memory[pid] = memory[-keep:] if keep else []
 
     def live_context(self, user_message: str = '') -> dict[str, Any]:
-        """Real-time desk facts for the AI and for /api/context."""
+        """Real-time desk facts for the AI."""
         now = self._clock.now()
         return build_live_context(self._desk, profiles=self._profiles, members=self._roster.member_ids(),
                                   habits_today=self._habits.today(now), now=now,
@@ -340,16 +340,10 @@ class MessageGenerator:
             out['error'] = reason or self.no_reply_reason()
         return out
 
-    def generate_chat_response(self, pid: str, user_message: str,
-                               history: Sequence[Mapping[str, Any]]) -> tuple[str | None, list[dict]]:
-        """Reply as agent `pid`, grounded in what the camera sees. `history` is already cleaned
-        (context.sanitize_chat_history). Returns (text, actions), or (None, []) when nobody answers."""
-        text, actions, _ = self._reply(pid, user_message, history)
-        return text, actions
-
     def _reply(self, pid: str, user_message: str,
                history: Sequence[Mapping[str, Any]]) -> tuple[str | None, list[dict], str]:
-        """(text, actions, why not) for one agent's reply."""
+        """(text, actions, why not) for agent `pid`'s reply, grounded in what the camera sees. `history` is
+        already cleaned (context.sanitize_chat_history)."""
         a = self._profiles.get(pid)
         if not a or not self._model.ready:
             return None, [], self.no_reply_reason()

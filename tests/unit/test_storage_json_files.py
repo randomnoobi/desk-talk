@@ -70,8 +70,6 @@ def test_keys_that_are_not_plain_names_are_refused(tmp_path, key):
         kv.save(key, {})
     with pytest.raises(ValueError):
         kv.load(key)
-    with pytest.raises(ValueError):
-        kv.delete(key)
     assert not (tmp_path / 'outside.json').exists()
 
 
