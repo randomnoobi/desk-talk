@@ -48,3 +48,12 @@ class EventBusContract:
         assert stats['broken']['errors'] == 2
         assert stats['fine']['handled'] == 2
         assert set(stats['fine']) >= {'name', 'handled', 'waiting', 'dropped', 'errors'}
+
+    def test_closing_when_idle_names_no_consumer_still_busy(self, bus):
+        got = []
+        bus.subscribe('log', got.append)
+        event = joined()
+        bus.publish(event)
+        assert bus.wait_idle(timeout=2)
+        assert bus.close(timeout=2) == []
+        assert got == [event]

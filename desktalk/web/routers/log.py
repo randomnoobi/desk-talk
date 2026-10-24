@@ -16,8 +16,8 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from desktalk.adapters.storage import is_day
 from desktalk.bootstrap import DeskTalk
+from desktalk.domain import is_day
 from desktalk.web.deps import Desk, list_size, today
 from desktalk.web.routers.live import camera_info
 

@@ -22,7 +22,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import shutil
 import threading
 import time
@@ -33,7 +32,7 @@ from typing import Any
 from desktalk.adapters.storage.files import write_atomically
 from desktalk.adapters.storage.intervals import build_intervals, merge_intervals
 from desktalk.config import EventLogSettings
-from desktalk.domain import Compaction, DetectionEvent, Event
+from desktalk.domain import Compaction, DetectionEvent, Event, is_day
 
 log = logging.getLogger(__name__)
 
@@ -41,15 +40,6 @@ RAW = 'detections.jsonl'
 PRESENCE = 'presence.jsonl'
 OTHER = 'events.jsonl'
 COMPACTING = 'detections-*.compacting.jsonl'
-_DAY = re.compile(r'\d{4}-\d{2}-\d{2}')          # a day folder's name, e.g. 2026-10-21
-
-
-def is_day(text: str) -> bool:
-    """A day's name like 2026-10-21: the only names the log reads, so a name sent to the app can't point
-    anywhere else."""
-    return bool(_DAY.fullmatch(text))
-
-
 def _day_of(ts: float) -> str:
     """'2026-10-21' for a timestamp, in local time."""
     return time.strftime('%Y-%m-%d', time.localtime(ts))

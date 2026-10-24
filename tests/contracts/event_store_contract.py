@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 from desktalk.domain import AgentJoined, Alert
 
@@ -31,3 +32,10 @@ class EventStoreContract:
     def test_unknown_day_is_empty(self, store):
         assert store.events('1999-01-01', None, 10) == []
         assert store.presence('1999-01-01') == []
+
+    def test_where_it_is_kept_and_the_last_compaction(self, store):
+        assert isinstance(store.folder, Path)
+        assert store.last_compaction is None
+        store.write(AgentJoined(ts=TS, agent='cup', name='Cup', label='cup', conf=0.9))
+        store.compact(TS + 60)
+        assert store.last_compaction is not None and store.last_compaction['ts'] == TS + 60

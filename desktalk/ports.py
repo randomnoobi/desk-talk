@@ -8,14 +8,16 @@ that the real version and the fake both pass.
 
 Change this file only on purpose: every part depends on it.
 
-The desk right now is five small interfaces at the end of this file: LivePictures, DeskScene, SafetyBoard,
-CharacterMemory and PhotoAlbum. Until Task 10 of the cleanup plan, DeskState (desktalk/desk_state.py)
-implements all five at once, and older code still reads its attributes under `desk.lock`.
+The desk right now is five small interfaces near the end of this file: LivePictures, DeskScene, SafetyBoard,
+CharacterMemory and PhotoAlbum (desktalk/core/desk/ has one class for each). The last section is what the
+web layer asks of the running app (desktalk/bootstrap.py → DeskTalk types its fields with these).
 """
 
 from __future__ import annotations
 
+import queue
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from desktalk.domain import (
@@ -178,8 +180,9 @@ class PhoneCamera(Protocol):
 
 
 @runtime_checkable
-class PhoneControls(Protocol):
-    """The phone as the camera: what the phone page's routes tell it (/api/phone/frame, /api/phone/stop)."""
+class PhoneControls(PhoneCamera, Protocol):
+    """The phone as the camera: what the phone page's routes tell it (/api/phone/frame, /api/phone/stop), and
+    its tilt when the desk corners are marked (/api/rules)."""
 
     def set_motion(self, gravity: Gravity | None = None, rotation: int | None = None) -> None:
         """How the phone was tilted and how far it turned the picture, sent with its newest picture.
@@ -214,10 +217,25 @@ class EventBus(Protocol):
         """Per consumer: name, handled, waiting, dropped, errors."""
         ...
 
+    def close(self, timeout: float) -> list[str]:
+        """Stop handing out events (bootstrap, when the app stops): each consumer finishes what it has, waiting
+        up to `timeout` seconds. Returns the names of consumers still busy after that."""
+        ...
+
 
 @runtime_checkable
 class EventStore(Protocol):
     """The event log: one folder per day in data/events/ (see docs/ARCHITECTURE.md)."""
+
+    @property
+    def folder(self) -> Path:
+        """Where the days are kept (the Log page shows it)."""
+        ...
+
+    @property
+    def last_compaction(self) -> dict[str, Any] | None:
+        """What the last compact() did, with when (ts); None before the first."""
+        ...
 
     def write(self, event: Event) -> None:
         ...
@@ -569,9 +587,8 @@ class DeskRulesView(DeskLayout, Protocol):
 
 
 # ── The desk right now ────────────────────────────────────────────────
-# Five small interfaces instead of one shared DeskState. Each method does its own locking, so a caller never
-# holds a lock; a change that has to happen all at once is one method. (A few names differ from DeskState's old
-# attributes on purpose, e.g. seen() for seen_labels, so DeskState can have both until Task 10.)
+# Five small interfaces, one per kind of thing the desk knows. Each method does its own locking, so a caller
+# never holds a lock; a change that has to happen all at once is one method.
 @runtime_checkable
 class LivePictures(Protocol):
     """The newest pictures for the live view, per camera (0 = the first camera)."""
@@ -741,4 +758,160 @@ class PhotoAlbum(Protocol):
 
     def newest(self, limit: int) -> list[Photo]:
         """The newest `limit` photos, newest first."""
+        ...
+
+
+# ── What the app's pages ask (the web layer) ──────────────────────────
+# desktalk/bootstrap.py → DeskTalk types its fields with these, so a route only sees what it may call.
+@runtime_checkable
+class ChatFeed(Protocol):
+    """The chat messages for open app pages (the MessageHub): /api/events and /api/messages/recent."""
+
+    def subscribe(self, on_put: Callable[[], None] | None = None) -> queue.Queue:
+        """A queue that gets every message from now on (one per open page), ending with the hub's CLOSED if the
+        page is dropped for not keeping up. on_put: called after each thing put in the queue."""
+        ...
+
+    def unsubscribe(self, q: queue.Queue) -> None:
+        ...
+
+    def recent(self) -> list[dict[str, Any]]:
+        """Recent chat lines and join / leave notes, oldest first."""
+        ...
+
+
+@runtime_checkable
+class ChatReplies(Protocol):
+    """The chat's answers to you (the message generator): /api/chat and the tracker panels."""
+
+    def answer(self, chat_id: str, message: str, history: Any = None, widget: Any = None) -> dict[str, Any]:
+        """The reply to your message in the group chat or a 1-on-1. Raises UnknownChat for an unknown agent."""
+        ...
+
+    def save_widget(self, pid: str, raw: Any) -> bool:
+        """Keep the to-do list the app sent for an agent's panel. False for an unknown agent or a bad list."""
+        ...
+
+    def note_panel_event(self, pid: str, action: Any) -> bool:
+        """You opened (or used) an agent's panel. False for an unknown agent."""
+        ...
+
+    def live_context(self, user_message: str = '') -> dict[str, Any]:
+        """The desk right now as the AI is told it (its 'summary' feeds the small talk)."""
+        ...
+
+
+@runtime_checkable
+class RosterList(RosterView, Protocol):
+    """Who's in the chat, for the app's agent list (/api/agents, /api/live)."""
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        """Agents in the chat now, plus ones that were here earlier, newest first."""
+        ...
+
+
+@runtime_checkable
+class CameraTips(Protocol):
+    """What Lens's camera checks tell the pages: the problems (/api/live) and a tip for the phone screen."""
+
+    def issues(self) -> list[dict[str, str]]:
+        """Current problems, most important first: [{key, title, fix}]."""
+        ...
+
+    def phone_tip(self) -> str | None:
+        """A few words to show on the phone screen itself, or None."""
+        ...
+
+    def forget(self, key: str) -> None:
+        """Drop a problem without a thank-you (e.g. the desk was just marked again)."""
+        ...
+
+
+@runtime_checkable
+class DetectionStats(PeriodicWorker, Protocol):
+    """The camera producer (a background job), and how detection on this computer is doing (/api/health)."""
+
+    @property
+    def pictures_analysed(self) -> int:
+        ...
+
+    @property
+    def last_detect_ms(self) -> float | None:
+        """How long the last detection took (None before the first)."""
+        ...
+
+    @property
+    def problem(self) -> str | None:
+        """What's wrong with detection right now, in plain words (None when it works)."""
+        ...
+
+
+@runtime_checkable
+class LostItemsView(PeriodicWorker, Protocol):
+    """"Have you seen my keys?" (a background job too): /api/chat asks it first, /api/live highlights the items."""
+
+    @property
+    def items(self) -> Mapping[str, Mapping[str, Any]]:
+        """Item id → its name, detector labels and words (settings → lost_items.items)."""
+        ...
+
+    def is_lost_query(self, text: str) -> bool:
+        ...
+
+    def answer(self, user_message: str) -> dict[str, Any]:
+        """The chat's reply: {'speaker', 'cta', 'text'}."""
+        ...
+
+
+@runtime_checkable
+class VisionHabitsView(PeriodicWorker, Protocol):
+    """The posture and nail biting checks (a background job too), for the Habits page."""
+
+    def summary(self) -> dict[str, int]:
+        """Today's slouching (seconds) and nail biting (times)."""
+        ...
+
+    def events(self) -> list[dict[str, Any]]:
+        """The habit log, newest first."""
+        ...
+
+    def latest(self) -> tuple[dict[str, Any], float]:
+        """The AI's last answer and when it came (({}, 0.0) before the first)."""
+        ...
+
+
+@runtime_checkable
+class HabitTracking(HabitsView, HabitLog, HabitsLifecycle, Protocol):
+    """The habit tracker as the app holds it: today's habits, the habit buttons (log), saving, and the day's
+    times (wake, bed, sunset ...) for /api/preferences."""
+
+    def day_times(self, now: float) -> Mapping[str, Any]:
+        ...
+
+
+@runtime_checkable
+class ScheduledJobs(PeriodicWorker, Protocol):
+    """The timed jobs (compacting and pruning the event log, saving habits), a background job itself."""
+
+    def status(self) -> list[dict[str, Any]]:
+        """One entry per job: name, every_sec, runs, last_run_at, last_error, next_run_at, next_in_sec."""
+        ...
+
+
+@runtime_checkable
+class Jobs(Protocol):
+    """Runs the background jobs, each in its own thread (the Supervisor)."""
+
+    def add(self, worker: PeriodicWorker, start_after: float = 0.0) -> None:
+        ...
+
+    def start(self) -> None:
+        ...
+
+    def stop(self, timeout: float) -> list[str]:
+        """Stop every job, waiting up to `timeout` seconds for each. Returns the names of jobs still busy."""
+        ...
+
+    def status(self) -> list[dict[str, Any]]:
+        """One entry per job: name, state, failures_in_row, total_failures, last_error, last_ok_at."""
         ...
