@@ -4,7 +4,7 @@ The desk monitor: safety alerts from each analysed picture.
 It listens for DetectionEvents. For the agents in the chat (DeskScene.members, kept by the roster) it runs
 the desk analyzer (danger zones, desk edges, things in between, crowds, things moving closer) and publishes
 an Alert for each danger, with a proof photo. It also notices a pet near the desk, a cluttered desk and a
-plant that may need water. Timings are in settings → alerts.
+plant that may need water. Timings are in settings → alerts, the wording in config/prompts.yaml → desk_alerts.
 
 What the app and the AI read about the desk's safety goes to the SafetyBoard: each picture's report (SAFE or
 DANGEROUS, the dangers and the analyzer's full result) and the alerts that went out.
@@ -16,13 +16,13 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
 
 from desktalk.config import AlertsSettings
+from desktalk.config.prompts import DeskAlertWords
 from desktalk.core.agents.speakers import LENS
 from desktalk.core.vision.findings import Thing
 from desktalk.core.vision.geometry import Box
 from desktalk.domain import Alert, Danger, DetectionEvent, Event
 from desktalk.ports import DeskScene, DeskStatus, EventBus, HabitsView, PhotoTaker, Profiles, SafetyBoard
 
-PHOTO_LABEL = 'Proximity alert'
 SAFE, DANGEROUS = 'SAFE', 'DANGEROUS'
 
 
@@ -39,8 +39,10 @@ class DeskChecks(Protocol):
 
 class DeskMonitor:
     def __init__(self, bus: EventBus, desk: MonitorDesk, analyzer: DeskChecks, profiles: Profiles,
-                 habits: HabitsView, status: DeskStatus, photos: PhotoTaker, alerts: AlertsSettings):
+                 habits: HabitsView, status: DeskStatus, photos: PhotoTaker, alerts: AlertsSettings, *,
+                 words: DeskAlertWords):
         self._bus = bus
+        self._words = words
         self._desk = desk
         self._analyzer = analyzer
         self._profiles = profiles
@@ -92,9 +94,10 @@ class DeskMonitor:
                                       kind='zone_intrusion', depth_px=ev['depth_px']))
             elif ev['type'] == 'edge_danger':
                 agent = ev['object']
-                self._proximity_alert(agent, [things[agent].box], now, severity='medium',
-                                      rule_label=f"Near {ev['edge']} edge ({int(ev['distance_px'])}px)")
-                dangers.append(Danger(pair=(ev['class'], 'desk_edge'), label=f"{ev['class']} near {ev['edge']} edge",
+                reason = self._words.edge_reason.format(edge=ev['edge'], distance=int(ev['distance_px']))
+                self._proximity_alert(agent, [things[agent].box], now, severity='medium', rule_label=reason)
+                dangers.append(Danger(pair=(ev['class'], 'desk_edge'),
+                                      label=self._words.edge_danger.format(object=ev['class'], edge=ev['edge']),
                                       kind='edge_danger'))
         return dangers
 
@@ -117,7 +120,7 @@ class DeskMonitor:
                                'severity': details.get('severity', ''), 'rule_label': details.get('rule_label', '')},
                               keep=s.recent_kept)
         self._habits.bump('danger_count')
-        photo = self._photos.save(PHOTO_LABEL, crop_boxes)
+        photo = self._photos.save(self._words.photo_label, crop_boxes)
         self._bus.publish(Alert(ts=now, kind='proximity', agent=speaker,
                                 extra={'snapshot': photo, 'follow_up': in_a_row, **details}))
         return True
@@ -139,9 +142,9 @@ class DeskMonitor:
             can_spill = self._profiles.ids_for_habit('hydration') + self._profiles.ids_for_habit('food')
             names = ', '.join(p.name for p in (self._profiles.get(a) for a in things if a in can_spill) if p)
             fragile = next((a for a in things if (p := self._profiles.get(a)) and p.fragile), LENS)
+            knock = self._words.pet_knock.format(names=names) if names else ''
             self._scenario_alert(now, 'risk_detection', 'pet_risk', fragile,
-                                 f'{pet.title()} detected near the desk!'
-                                 + (f' {names} could get knocked over!' if names else '') + ' Careful!')
+                                 self._words.pet.format(pet=pet.title(), knock=knock))
 
     def _clutter(self, labels: set[str], things: Mapping[str, Thing], now: float, warm: bool) -> None:
         countable = {label for label in labels if not self._profiles.is_ignored(label)}
@@ -151,7 +154,7 @@ class DeskMonitor:
         self._last_clutter = now
         speaker = next(iter(self._profiles.ids_for_habit('tasks')), LENS)
         self._scenario_alert(now, 'reminders', 'organization', speaker if speaker in things else LENS,
-                             f'I count {len(countable)} things on the desk right now. Maybe tidy up a bit?')
+                             self._words.clutter.format(count=len(countable)))
 
     def _plants(self, labels: set[str], things: Mapping[str, Thing], now: float, warm: bool) -> None:
         plants = set(self._settings.plant_labels)
@@ -159,5 +162,4 @@ class DeskMonitor:
             return
         self._last_plant = now
         plant = next((a for a in things if (p := self._profiles.get(a)) and set(p.labels) & plants), LENS)
-        self._scenario_alert(now, 'reminders', 'water_plants', plant,
-                             'I can see a plant on the desk. Has it had any water today?')
+        self._scenario_alert(now, 'reminders', 'water_plants', plant, self._words.plant)

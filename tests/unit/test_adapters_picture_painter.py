@@ -16,6 +16,7 @@ from tests.fakes import FakeDeskScene, FakeProfiles, InMemoryKeyValueStore
 from tests.unit.test_core_vision_kit import app_config, seen_object
 
 DRAWING = app_config().drawing
+CHECKS = app_config().prompts.desk_checks
 
 GREEN, GREY, RED = (60, 200, 90), (150, 150, 150), (0, 0, 255)
 LAPTOP, CUP_NEAR = (200, 200, 400, 350), (410, 250, 450, 320)
@@ -41,7 +42,7 @@ def things_on(desk):
 def rig(agents=None, drawing=DRAWING):
     """A painter, with the analyzer having looked at `agents` (agent → (label, box)) once."""
     desk = on_desk(agents or {})
-    analyzer = DeskAnalyzer(SafetyRules(InMemoryKeyValueStore(), app_config().safety))
+    analyzer = DeskAnalyzer(SafetyRules(InMemoryKeyValueStore(), app_config().safety), words=CHECKS)
     if agents:
         analyzer.analyze(things_on(desk), (640, 480), 1000)
     return DeskPainter(desk, PROFILES, analyzer, drawing), desk
@@ -91,7 +92,7 @@ def test_the_risk_badge_is_drawn_in_the_corner():
 
 def test_no_overlays_before_the_desk_was_analysed():
     desk = on_desk({'computer': ('laptop', LAPTOP)})
-    analyzer = DeskAnalyzer(SafetyRules(InMemoryKeyValueStore(), app_config().safety))
+    analyzer = DeskAnalyzer(SafetyRules(InMemoryKeyValueStore(), app_config().safety), words=CHECKS)
     painted = DeskPainter(desk, PROFILES, analyzer, DRAWING).paint(blank(), [])
     assert (painted == 100).all()
 
@@ -138,7 +139,7 @@ def painted(*pictures, saved=None):
     """The live view after the analyzer looked at each picture (agent → (label, box)), one second apart."""
     desk = FakeDeskScene()
     analyzer = DeskAnalyzer(SafetyRules(InMemoryKeyValueStore({'safety_rules': saved} if saved else {}),
-                                        app_config().safety))
+                                        app_config().safety), words=CHECKS)
     for k, agents in enumerate(pictures):
         desk.set_members({a: seen_object(label, box) for a, (label, box) in agents.items()}, 1000 + k)
         analyzer.analyze(things_on(desk), (640, 480), 1000 + k)

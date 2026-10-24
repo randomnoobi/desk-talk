@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from desktalk.config.prompts import DeskCheckWords
 from desktalk.core.vision.findings import Findings, Thing
 from desktalk.core.vision.geometry import distance, grow, intrusion_depth
 from desktalk.domain import DeskRules
@@ -47,7 +48,8 @@ class ZoneVisits:
         return out
 
 
-def zone_risks(things: Mapping[str, Thing], rules: DeskRules, visits: ZoneVisits, now: float) -> Findings:
+def zone_risks(things: Mapping[str, Thing], rules: DeskRules, visits: ZoneVisits, now: float, *,
+               words: DeskCheckWords) -> Findings:
     found = Findings()
     for target in things.values():
         zone = rules.zones.get(target.label)
@@ -69,11 +71,13 @@ def zone_risks(things: Mapping[str, Thing], rules: DeskRules, visits: ZoneVisits
                        'zone_expand': zone.expand},
                       {'type': 'danger_zone', 'severity': 'danger', 'intruder': intruder.id, 'target': target.id,
                        'depth_px': round(depth, 1), 'zone_label': zone.label},
-                      f"{intruder.label} (hazard) in {target.label}'s {zone.label} — {int(depth)}px")
+                      words.zone.format(intruder=intruder.label, target=target.label, zone=zone.label,
+                                        depth=int(depth)))
     return found
 
 
-def repeated_entries(things: Mapping[str, Thing], rules: DeskRules, visits: ZoneVisits, now: float) -> Findings:
+def repeated_entries(things: Mapping[str, Thing], rules: DeskRules, visits: ZoneVisits, now: float, *,
+                     words: DeskCheckWords) -> Findings:
     """Things that went into the same zone at least rules.repeated_times times lately."""
     found = Findings()
     for (intruder, target), count in visits.times_within(now, rules.repeated_window_sec):
@@ -82,6 +86,6 @@ def repeated_entries(things: Mapping[str, Thing], rules: DeskRules, visits: Zone
         found.add({'type': 'repeated_intrusion', 'intruder': intruder, 'target': target, 'count': count},
                   {'type': 'repeated_intrusion', 'severity': 'high', 'intruder': intruder, 'target': target,
                    'count': count},
-                  f"{things[intruder].label} entered {things[target].label}'s zone {count} times "
-                  f'in the last {rules.repeated_window_sec:g} s')
+                  words.repeated.format(intruder=things[intruder].label, target=things[target].label, count=count,
+                                        window=rules.repeated_window_sec))
     return found
