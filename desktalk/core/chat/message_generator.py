@@ -22,17 +22,10 @@ from typing import Any
 from desktalk.config import AgentsSettings, ChatSettings, LlmSettings
 from desktalk.core.agents.speakers import LENS, speaker_for
 from desktalk.core.chat import prompts
-from desktalk.core.chat.context import (
-    budget_history,
-    build_live_context,
-    group_speaker_order,
-    looks_cut_off,
-    mention_words,
-    response_violates_evidence,
-    sanitize_chat_history,
-    single_speaker_text,
-    speaker_names,
-)
+from desktalk.core.chat.history import budget_history, sanitize_chat_history
+from desktalk.core.chat.live_context import build_live_context
+from desktalk.core.chat.names import group_speaker_order, speaker_names
+from desktalk.core.chat.replies import looks_cut_off, response_violates_evidence, single_speaker_text
 from desktalk.core.chat.tracker_actions import (
     action_instructions,
     apply_habit_actions,
@@ -146,7 +139,7 @@ class MessageGenerator:
     def live_context(self, user_message: str = '') -> dict[str, Any]:
         """Real-time desk facts for the AI."""
         now = self._clock.now()
-        return build_live_context(self._desk, profiles=self._profiles, members=self._roster.member_ids(),
+        return build_live_context(self._desk, self._desk, profiles=self._profiles, members=self._roster.member_ids(),
                                   habits_today=self._habits.today(now), now=now,
                                   camera_on=self._status.camera_connected(), chat=self._chat,
                                   user_message=user_message)
@@ -325,7 +318,7 @@ class MessageGenerator:
 
     def _answer_group(self, message: str, turns: list[dict]) -> dict[str, Any]:
         profiles = self._profiles.all()
-        speakers = group_speaker_order(message, mention_words(profiles), self._roster.member_ids(),
+        speakers = group_speaker_order(message, self._profiles.mention_words(), self._roster.member_ids(),
                                        [p.id for p in profiles], self._rng)
         if not speakers:
             return {'messages': [], 'error': NOBODY_HERE}

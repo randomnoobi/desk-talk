@@ -32,8 +32,15 @@ class FakeProfiles:
         return next((p for p in self.by_id.values() if label in p.labels), None)
 
     def mention_words(self) -> dict[str, str]:
-        words = {p.name.lower(): p.id for p in self.by_id.values()}
-        words.update({label: p.id for p in self.by_id.values() for label in p.labels})
+        """The same words as the real ProfileBook: id, name, nickname, object and labels (and a label's first
+        part before a /), lower case, first agent wins."""
+        words: dict[str, str] = {}
+        for p in self.by_id.values():
+            for word in [p.id, p.name, p.nickname, p.object, *p.labels]:
+                word = str(word or '').lower().strip()
+                if word:
+                    words.setdefault(word, p.id)
+                    words.setdefault(word.split('/')[0].strip(), p.id)
         return words
 
     def all(self) -> list[AgentProfile]:

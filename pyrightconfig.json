@@ -18,7 +18,6 @@
   "ignore": [
     "desktalk/bootstrap.py",
     "desktalk/core/agents/roster.py",
-    "desktalk/core/chat/context.py",
     "desktalk/core/chat/message_generator.py",
     "desktalk/core/chat/prompts.py",
     "desktalk/core/chat/workers/idle_chat.py",

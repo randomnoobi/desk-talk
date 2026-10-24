@@ -29,7 +29,8 @@ from dataclasses import dataclass, field
 
 from desktalk.config import AiReplies, IdleChatSettings
 from desktalk.core.chat import prompts
-from desktalk.core.chat.context import single_speaker_text, speaker_names
+from desktalk.core.chat.names import speaker_names
+from desktalk.core.chat.replies import single_speaker_text
 from desktalk.core.chat.tracker_actions import strip_action_tags
 from desktalk.core.chat.workers.ai import ask
 from desktalk.core.chat.workers.text import json_in
