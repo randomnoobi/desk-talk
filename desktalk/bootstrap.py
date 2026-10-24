@@ -31,7 +31,7 @@ from typing import Any
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource, make_pair_key
 from desktalk.adapters.detector import UltralyticsDetector
 from desktalk.adapters.llm import OllamaKeepAlive, OpenAICompatibleChatModel, ResilientChatModel
-from desktalk.adapters.picture import DeskPainter
+from desktalk.adapters.picture import DeskPainter, OpenCvPictureTools
 from desktalk.adapters.storage import EventLog, JsonFileStore
 from desktalk.config import AppConfig, ConfigError
 from desktalk.core.agents.profiles import ProfileBook
@@ -287,7 +287,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                                foods=profiles.labels_for_habit('food'))
     analyzer = DeskAnalyzer(safety_rules)
     painter = DeskPainter(desk, profiles, analyzer, config.drawing)
-    photos = ProofPhotos(desk, clock, config.snapshots)
+    pictures = OpenCvPictureTools()
+    photos = ProofPhotos(desk, clock, config.snapshots, pictures=pictures)
     camera_health = CameraHealth(config.lens, source_kind=source.kind, moved_within_sec=config.camera.moved_within_sec,
                                  ignore_labels=config.agents_file.ignore)
     detector = detector if detector is not None else make_detector(config)

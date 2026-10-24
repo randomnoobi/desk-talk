@@ -1,29 +1,44 @@
 """Proof photos: the live view picture (cropped around the objects) kept with an alert."""
 
-import cv2
 import numpy as np
 
+from desktalk.adapters.picture import OpenCvPictureTools
 from desktalk.core.vision.proof_photos import ProofPhotos
-from desktalk.desk_state import DeskState
-from tests.fakes import FakeClock
-from tests.unit.test_core_vision_kit import app_config, desk_object
+from desktalk.domain import Size
+from tests.fakes import FakeClock, FakePictureTools
+from tests.unit.test_core_vision_kit import FakeDesk, app_config, seen_object
 
 SNAPSHOTS = app_config().snapshots
+TOOLS = OpenCvPictureTools()
 
 
-def jpeg(w=640, h=480, value=120):
+def jpeg(w=640, h=480, value=120, tools=TOOLS):
     picture = np.random.default_rng(1).integers(0, 255, (h, w, 3), dtype=np.uint8)
     picture[:] = np.clip(picture.astype(int) // 4 + value, 0, 255).astype(np.uint8)
-    return cv2.imencode('.jpg', picture)[1].tobytes()
+    data = tools.encode_jpeg(picture, 95)
+    assert data is not None
+    return data
 
 
-def shape(data):
-    return cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR).shape[:2]
+def shape(data, tools=TOOLS):
+    picture = tools.decode_jpeg(data)
+    size = tools.size(picture)
+    return size.height, size.width
 
 
-def photos(desk=None, clock=None, settings=SNAPSHOTS):
-    desk = desk or DeskState()
-    return ProofPhotos(desk, clock or FakeClock(), settings), desk
+def photos(desk=None, clock=None, settings=SNAPSHOTS, tools=TOOLS):
+    desk = desk or FakeDesk()
+    return ProofPhotos(desk, clock or FakeClock(), settings, pictures=tools), desk
+
+
+def show(desk, picture, cam=0):
+    desk.put(cam, picture, picture, Size(640, 480))
+
+
+def kept(desk, photo_id):
+    photo = desk.get(photo_id)
+    assert photo is not None
+    return photo.jpeg
 
 
 def test_no_photo_before_the_first_picture():
@@ -33,72 +48,93 @@ def test_no_photo_before_the_first_picture():
 
 def test_photo_is_cropped_around_the_objects_with_some_room():
     p, desk = photos()
-    desk.frames[0] = jpeg()
+    show(desk, jpeg())
     snap = p.save('Proximity alert', [(200, 200, 400, 350)])
     # 25% more on each side: 50 px left and right, 37.5 px above and below
-    assert shape(desk.snapshots[snap]) == (387 - 162, 450 - 150)
+    assert shape(kept(desk, snap)) == (387 - 162, 450 - 150)
+
+
+def test_cropping_goes_through_the_picture_tools():
+    fake = FakePictureTools()
+    p, desk = photos(tools=fake)
+    show(desk, jpeg(tools=fake))
+    snap = p.save('Proximity alert', [(200, 200, 400, 350)])
+    assert shape(kept(desk, snap), fake) == (387 - 162, 450 - 150)
 
 
 def test_several_boxes_are_cropped_together():
     p, desk = photos()
-    desk.frames[0] = jpeg()
+    show(desk, jpeg())
     snap = p.save('Proximity alert', [(200, 200, 300, 300), (300, 300, 400, 400)])
-    assert shape(desk.snapshots[snap]) == (450 - 150, 450 - 150)
+    assert shape(kept(desk, snap)) == (450 - 150, 450 - 150)
 
 
 def test_a_tiny_crop_keeps_the_whole_picture():
     p, desk = photos()
-    desk.frames[0] = jpeg()
+    show(desk, jpeg())
     snap = p.save('Proximity alert', [(10, 10, 20, 20)])
-    assert shape(desk.snapshots[snap]) == (480, 640)
+    assert shape(kept(desk, snap)) == (480, 640)
+
+
+def test_a_picture_that_does_not_read_is_kept_as_it_is():
+    p, desk = photos()
+    show(desk, b'not a picture')
+    assert kept(desk, p.save('Proximity alert', [(200, 200, 400, 350)])) == b'not a picture'
+
+
+def test_without_picture_tools_photos_are_kept_whole():
+    p = ProofPhotos(desk := FakeDesk(), FakeClock(), SNAPSHOTS)
+    show(desk, picture := jpeg())
+    assert kept(desk, p.save('Proximity alert', [(200, 200, 400, 350)])) == picture
 
 
 def test_without_boxes_the_whole_picture_is_kept():
     p, desk = photos()
-    desk.frames[0] = jpeg()
-    assert desk.snapshots[p.save('Lens: camera view')] == desk.frames[0]
+    show(desk, picture := jpeg())
+    assert kept(desk, p.save('Lens: camera view')) == picture
 
 
 def test_crop_room_comes_from_the_settings():
     p, desk = photos(settings=SNAPSHOTS.model_copy(update={'crop_padding': 0.5}))
-    desk.frames[0] = jpeg()
+    show(desk, jpeg())
     snap = p.save('Proximity alert', [(200, 200, 400, 300)])
-    assert shape(desk.snapshots[snap]) == (350 - 150, 500 - 100)
+    assert shape(kept(desk, snap)) == (350 - 150, 500 - 100)
 
 
 def test_jpeg_quality_comes_from_the_settings():
     sizes = []
     for quality in (20, 95):
         p, desk = photos(settings=SNAPSHOTS.model_copy(update={'jpeg_quality': quality}))
-        desk.frames[0] = jpeg()
-        sizes.append(len(desk.snapshots[p.save('x', [(100, 100, 400, 400)])]))
+        show(desk, jpeg())
+        sizes.append(len(kept(desk, p.save('x', [(100, 100, 400, 400)]))))
     assert sizes[0] < sizes[1]
 
 
 def test_photo_is_listed_newest_first_with_what_was_on_the_desk():
     clock = FakeClock(start=5000)
     p, desk = photos(clock=clock)
-    desk.frames[0] = jpeg()
-    desk.objects = {'cup': desk_object('cup', (10, 10, 50, 50))}
-    desk.seen_labels = {'Cup': {}, 'laptop': {}}
+    show(desk, jpeg())
+    desk.set_members({'cup': seen_object('cup', (10, 10, 50, 50))}, 5000)
+    desk.note_picture({'Cup': seen_object('cup', (10, 10, 50, 50)), 'laptop': seen_object('laptop', (0, 0, 9, 9))},
+                      5000, person=False, moved=False, new_session=False)
+    desk.set_scan_labels({'Keys'})
     first = p.save('First')
     clock.advance(3)
     second = p.save('Second')
-    assert [s['id'] for s in desk.snapshot_order] == [second, first]
-    assert desk.snapshot_order[0] == {'id': second, 'ts': 5003, 'label': 'Second', 'char_ids': ['cup'],
-                                      'labels': ['cup', 'laptop'], 'vlm_labels': []}
+    assert [x.id for x in desk.newest(5)] == [second, first]
+    assert desk.newest(1)[0].to_dict() == {'id': second, 'ts': 5003, 'label': 'Second', 'char_ids': ['cup'],
+                                           'labels': ['cup', 'laptop'], 'vlm_labels': ['keys']}
 
 
-def test_only_the_newest_photos_are_kept():
-    p, desk = photos(desk=DeskState(max_snapshots=2))
-    desk.frames[0] = jpeg()
-    ids = [p.save(f'photo {i}') for i in range(3)]
-    assert list(desk.snapshots) == ids[1:]
-    assert [s['id'] for s in desk.snapshot_order] == ids[:0:-1]
+def test_a_photo_without_a_label_is_a_capture():
+    p, desk = photos()
+    show(desk, jpeg())
+    photo = desk.get(p.save('') or '')
+    assert photo is not None and photo.label == 'Capture'
 
 
 def test_the_first_camera_with_a_picture_is_used():
     p, desk = photos()
-    desk.frames[2] = jpeg(320, 240)
-    desk.frames[1] = b''
-    assert shape(desk.snapshots[p.save('x')]) == (240, 320)
+    desk.put(2, jpeg(320, 240), jpeg(320, 240), Size(320, 240))
+    desk.put(1, b'', b'', Size(320, 240))
+    assert shape(kept(desk, p.save('x'))) == (240, 320)
