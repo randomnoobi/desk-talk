@@ -14,6 +14,10 @@
 // The demo fills in the few it needs itself (see "Demo" below). The page keeps no copies of its own.
 let ui = null;
 
+// How long the first check waits for the server (see firstCheck). It can't be a setting like the others: the
+// settings are what it asks the server for. With no answer by then, the page runs the demo.
+const FIRST_CHECK_MS = 4000;
+
 // Units, not settings.
 const MS = 1000;               // thousandths of a second in a second
 const MINUTE = 60;             // seconds
@@ -64,7 +68,7 @@ function duration(minutes) {
 }
 
 /** fetch → JSON, with a timeout (an ordinary request's, from the settings). Throws on network errors and non-2xx.
- * Only the very first request, which fetches the settings, has no timeout of its own. */
+ * The first check, which fetches the settings, passes its own (FIRST_CHECK_MS). */
 async function api(path, { method = 'GET', body, timeout = ui?.web.request_timeout_ms } = {}) {
   const ctl = new AbortController();
   const t = timeout ? setTimeout(() => ctl.abort(), timeout) : null;
@@ -1399,6 +1403,11 @@ async function demoReply(chatId, text) {
 
 // ————— Wiring —————
 function wire() {
+  // Until the first check is done (live or demo), clicks and the chat box do nothing: their handlers read the
+  // settings (ui). Meanwhile the corner says "Connecting…" (index.html).
+  for (const type of ['click', 'submit']) {
+    document.addEventListener(type, (e) => { if (!ui) { e.preventDefault(); e.stopPropagation(); } }, true);
+  }
   $('#chat-list').addEventListener('click', (e) => {
     const b = e.target.closest('[data-chat]');
     if (b) openChat(b.dataset.chat);
@@ -1472,7 +1481,8 @@ function wire() {
 async function firstCheck() {
   if (!location.protocol.startsWith('http')) return null;
   try {
-    const [settings, status] = await Promise.all([api('/api/ui_settings'), api('/api/status')]);
+    const wait = { timeout: FIRST_CHECK_MS };
+    const [settings, status] = await Promise.all([api('/api/ui_settings', wait), api('/api/status', wait)]);
     ui = settings;
     return status;
   } catch {

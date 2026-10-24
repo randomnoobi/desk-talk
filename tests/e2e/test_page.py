@@ -237,3 +237,23 @@ def test_the_demos_panels_have_every_number_they_show(page):
         if name == 'Lamp':
             assert (page.locator('#tracker [data-sun]').get_attribute('data-sun') or '').isdigit()
     assert [e for e in errors if not FONT_FROM_FILE.search(e)] == []
+
+
+FIRST_CHECK_WITHIN_MS = 10_000      # longer than the page's own wait for its first check (FIRST_CHECK_MS in app.js)
+
+
+def test_a_server_that_never_answers_the_first_check_gets_the_demo(page):
+    """The page asks the server for its settings when it opens. If nothing answers, it shows that it is still
+    connecting, clicks wait for the settings (no errors), and after its own time limit it runs the demo."""
+    errors = watch_for_errors(page)
+    with static_site(APP_FOLDER) as url:
+        page.route('**/api/**', lambda route: None)          # never answered
+        page.goto(url, wait_until='domcontentloaded')
+        expect(page.locator('#conn')).to_have_attribute('data-state', 'checking')
+        expect(page.locator('#conn-text')).to_have_text('Connecting…')
+        page.locator('.page-link[data-view="habits"]').click()
+        page.locator('#conn').click()
+        assert errors == []
+        expect(page.locator('#conn')).to_have_attribute('data-state', 'demo', timeout=FIRST_CHECK_WITHIN_MS)
+        expect_the_demo(page)
+    assert errors == []
