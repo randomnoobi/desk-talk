@@ -32,6 +32,26 @@ replies:
   ask_for_a_sentence: |2-
 
     (Please respond with at least one sentence.)
+  # what went wrong with the AI, in plain words. {who} is the AI's first name (Gemini, OpenAI, Groq, Ollama)
+  ai_errors:
+    # {who} when the AI has no name
+    the_ai: the AI
+    rate_limit: '{who} hit its free usage limit. Free plans allow only a few messages per minute and a set number per day. Wait a minute and try again; if it keeps happening, the daily limit resets tomorrow.'
+    bad_key: '{who} rejected the key in .env. Copy the key again, paste it into .env, and restart the server.'
+    no_model: '{who} could not find the model named in the settings. Put a current model name in config/settings.yaml (llm:) and restart the server.'
+    too_slow: '{who} took too long to answer. Try again in a moment.'
+    ollama_too_slow: Ollama took too long to answer (it may still be loading the model). Try again in a moment.
+    no_connection: Could not reach the AI service. Check the internet connection and try again.
+    ollama_no_connection: Could not reach Ollama. Open the Ollama app, then try again.
+    # an error it doesn't know, shown as it came ({error}, cut to settings → llm.error_text_chars)
+    other: 'The AI returned an error: {error}'
+    no_pictures: 'The model "{model}" cannot look at pictures. Set llm.vision_model in config/settings.yaml to a vision model (for example `ollama pull llava`).'
+    # after a rate limit, background chatter waits (settings → llm.pause_on_limit_sec)
+    resting: '{who} hit its usage limit, so background chatter is resting for about {minutes} more minute(s).'
+    # added to the problem while Desk Talk leaves a failing AI alone (settings → llm.breaker_*)
+    left_alone: '{problem} (It failed {failures} times in a row, so Desk Talk is leaving it alone for {seconds} seconds.)'
+    keeps_failing: The AI keeps failing, so Desk Talk is leaving it alone for a while.
+    pictures_failing: Questions about pictures keep failing.
 
 # ── An agent reacting to something the camera saw ("the cup is near me!") ───
 alert:
@@ -72,6 +92,19 @@ alert:
     Say ONE follow-up as {name} (max 20 words). Be {urgency}. Speak as yourself. Just the message.
   more_worried: a bit more worried
   most_worried: genuinely concerned
+  # {situation} above: what the camera saw, in the detector's own words, so the AI doesn't invent spills.
+  # {self_label} / {other_label} are the detector's words for the two objects, {drink_note} one of the three below
+  grounding: 'VISION GROUNDING: this chat message was triggered by geometry rules; detector classes are "{self_label}" (you, {name}) and "{other_label}" (other: {other_name}). {drink_note}Rule / risk: {risk}. Reply using ONLY these class words for objects — not generic "cup" unless the other is a drink. Use normal language: "check spacing" or "move it back", not catastrophic damage.'
+  other_is_drink: 'The other object is a drink class ({other_label}) — spill risk is real. '
+  self_is_drink: 'You are a drink class ({self_label}). '
+  no_drink: 'NEITHER object is a cup/bottle/wine_glass in the detector — do NOT claim liquid or cup. Use the exact class names above (e.g. book, keyboard). '
+  # {risk} when the rules gave no reason
+  same_area: '{self_label} and {other_label} are in the same area.'
+  unknown_label: unknown
+  unknown_other: something
+  # said when the AI can't help and the other object is not an agent
+  heads_up: 'Heads up: {rule}. Could you move me back a bit?'
+  too_close: Something is getting too close. Could you check the desk?
 
 # ── Chatting with you, in the group or 1-on-1 ───────────────────────
 chat:
@@ -114,6 +147,75 @@ chat:
 
 
     (Reply as {name} the {object}, in first person and your own voice only — never speak as another object.)
+  # the headings of the parts the chat's AI is told, after `identity` (\n starts a new line)
+  live_desk: "\n\n---\nLIVE DESK STATUS (cameras; noisy, can be wrong):\n"
+  remember: "\nWHAT YOU REMEMBER (older context, may not be shown above):\n{lines}\n"
+  remember_line: '- {line}'
+  earlier: "\nEARLIER IN THIS THREAD: {recap}\n"
+  # another object's line in the conversation, so the AI doesn't take on its voice
+  other_said: '[{name} said]: {text}'
+  # added to your message for each @mentioned object
+  referenced: "\n\n[Referenced objects — {objects}]"
+  referenced_one: '@{name}: {status}'
+
+# ── The desk right now, as the chat's AI is told it (LIVE DESK STATUS) ───
+# One line each; \n at the start leaves an empty line before it. {duration}, {here_for} and {ago} read like "5m 3s".
+live_context:
+  camera_off: 'THE CAMERA IS OFF RIGHT NOW: nothing below is live.'
+  members: 'OBJECTS IN THE CHAT / ON THE DESK (vision can be wrong or noisy):'
+  member: '  - {name} (you play this as: {object}): vision label "{label}", here ~{here_for}'
+  nobody: NOTHING IS IN THE CHAT YET (the camera has not confirmed any object on the desk).
+  also_seen: 'ALSO IN THE PICTURE (not chatting): {labels}'
+  dangers: "\nACTIVE DANGERS (risk level {risk}/4, state: {state}):"
+  zone_danger: '  - {label} — intrusion {depth}px deep, active for {duration}'
+  edge_danger: '  - {label} — object near desk edge, active for {duration}'
+  other_danger: '  - {label} — active for {duration}'
+  # {duration} of a danger that has only just started
+  just_now: just now
+  no_dangers: "\nNO ACTIVE DANGERS — desk is safe (risk {risk}/4)."
+  insights: "\nRELATIONSHIP INSIGHTS:"
+  insight: '  - {text}'
+  vision_pass: "\nLAST VISION PASS (Ollama lost-item scan) mentioned: {labels}. Use for small items (e.g. AirPods) that YOLO may miss; do not claim a cup if not listed."
+  recent: "\nRECENT EVENTS (last {count}):"
+  recent_event: '  - {age} ago: {who}{near} ({label})'
+  recent_near: ' near {name}'
+  # a name or time that isn't known
+  unknown: '?'
+  habits: "\nHABITS TODAY: water ~{water_l:.1f} of {goal_l:.1f} L ({sips} sips); {breaks} breaks; sitting now {sitting_min} min{phone_free}{sunlight}"
+  habits_phone_free: '; phone-free desk time {minutes} min'
+  habits_sunlight: '; morning sunlight logged'
+  session: Session active for {duration}.
+  # added when your message has any of pushback_words
+  pushback: "\nUSER IS PUSHING BACK ON THE SCENE: believe them about what is physically there. Do not repeat confidence numbers, \"risk level\", or argue with their eyes."
+  pushback_words:
+    - nothing next
+    - nothing nect
+    - not next to you
+    - not a cup
+    - isn't a cup
+    - isnt a cup
+    - that's not
+    - thats not
+    - that is not
+    - there is nothing
+    - there's nothing
+    - no cup
+    - wrong
+    - not there
+    - don't see
+    - dont see
+    - not next
+    - makes no sense
+  # how an @mentioned object is doing ({status} in chat.referenced_one)
+  on_desk: On desk ~{here_for}; vision label {label} (camera can be off)
+  on_desk_danger: '. DANGER: {dangers}'
+  off_desk: Not currently on desk (last seen {ago} ago)
+  not_seen: Not detected this session
+
+# ── What an agent remembers saying (fed back to the AI later) ───────
+memory:
+  you_said: '[You said] {said}'
+  you_replied: '[User said "{user}"] → [You replied] {said}'
 
 # ── The habits an agent speaks for, in words (agents.yaml → habits) ───
 habit_areas:
@@ -159,6 +261,11 @@ habit_reminder:
     RULES: ONE or two short sentences, max 30 words. Mention why you're speaking. Include the actionable tip. Stay in character.
   # said when the rule gave no reason
   no_evidence: routine check-in
+  # {signals} in system: the last posture check, or no_signals
+  vision_note: '; vision note: {note}'
+  no_signals: none
+  # the message the AI answers
+  ask: Send a quick habit reminder right now.
 
 # ── Trackers: the panel on top of a 1-on-1 chat (agents.yaml → tracker) ───
 trackers:
@@ -346,6 +453,40 @@ small_talk:
     RULES:
     - ONE short line, max 18 words. No speaker labels. Stay in character.
     - Keep it light, casual small talk. Never mention AI, YOLO, sensors, or confidence.
+  # what each AI is asked: {summary} is LIVE DESK STATUS, {names} the agents' names, {memories} and
+  # {transcript} one line each like "Cup: hi"
+  topic_user: |-
+    DESK STATUS:
+    {summary}
+
+    OBJECTS PRESENT: {names}
+    RECENT MEMORY:
+    {memories}
+
+    Topic:
+  # the first line of a chat
+  line_open: |-
+    You are starting a group chat about: {topic}
+
+    Open it by ASKING the other desk objects a short, specific question about this, so they can answer and discuss. One line, in character.
+  # every line after the first
+  line_reply: |-
+    The desk objects are chatting about: {topic}
+
+    RECENT MESSAGES:
+    {transcript}
+
+    Add one short line — answer or react to what was just said, tease, agree, or build on it.
+  director_user: |-
+    TOPIC: {topic}
+    OBJECTS THAT COULD SPEAK NEXT: {names}
+    RECENT MESSAGES:
+    {transcript}
+
+    JSON:
+  said: '{name}: {text}'
+  nothing_yet: (nothing yet)
+  no_memory: (no recent memory)
 
 # ── Lost items ("have you seen my keys?") ───────────────────────────
 lost_items:
@@ -398,6 +539,45 @@ lost_items:
   not_spotted: I checked the desk camera but couldn't confidently spot that. Try naming it directly (keys, phone, wallet, AirPods…), or browse saved desk photos below.
   # the button under the answer
   captures_button: 🖼 Desk captures
+  # other everyday things you can ask about, though they are not tracked (settings → lost_items.items)
+  other_things: [laptop, cup, bottle, book, remote, card, scissors]
+  # who answers when no agent speaks for tasks: Lens, the camera
+  answer_as:
+    name: Lens
+    object: camera
+  # what the answering AI is told: your message and one fact per item ({facts}, from the *_fact texts below)
+  answer_user: |-
+    User wrote:
+    {message}
+
+    FACTS:
+    {facts}
+  # {near} in the texts below: the agents it was last seen near, or nothing. {when} reads like "Oct 21, 2026 · 03:05 PM"
+  near: ' near {names}'
+  never_seen_fact: '- your {name}: no desk sighting in this tracking window.{extra}'
+  # {extra} in never_seen_fact: what the vision AI saw, or else the last scan's words, or nothing
+  vision_extra: ' Vision: {note}'
+  scan_extra: ' Last wide scan labels: {labels}.'
+  just_seen_fact: '- your {name}: seen on the desk within ~{seconds}s ({when}){near}.'
+  seen_fact: '- your {name}: last seen on the desk ~{minutes} min ago ({when}){near}.'
+  # the same facts in plain words, said when there is no AI
+  never_seen: "I'm not seeing a saved sighting of your {name} on the desk since we started.{more}"
+  # {more} in never_seen: what the vision AI saw in the live picture, or where the photos are
+  live_look: ' A quick look at the live picture: {note}'
+  see_captures: ' Captures (in the sidebar, or the button below) has every desk photo with its time.'
+  just_seen: "I've got your {name} on the desk within the last minute or so ({when}){near}."
+  seen: 'I last noted your {name} on the desk around {when}, about {minutes} minute(s) ago{near}.'
+  # {photo} in in_saved_photo. {label} is saved_photo_label, or nothing for a photo without a label
+  saved_photo: 'Saved desk photo from {when}{label}.'
+  saved_photo_label: ' — {label}'
+  # the labels of the photos the lost-items job saves
+  spotted_photo: 'Spotted: {name}'
+  spotted_by_vision_photo: 'Spotted: {name} (vision)'
+  desk_scan_photo: Desk scan
+  # {near_hint} in alert_user, when it was last seen near someone
+  last_seen_near: ' Last seen near: {names}.'
+  # the alert when there is no AI
+  alert_plain: "{name}: hasn't been seen for {minutes} min.{hint}"
 
 # ── End-of-day recap ────────────────────────────────────────────────
 daily_recap:
@@ -407,6 +587,20 @@ daily_recap:
     {facts}
 
     Write the daily summary.
+  # sent as it is when there is no AI
+  plain: "Today's desk recap: {facts}"
+  # {facts}: today's numbers, one sentence each
+  facts:
+    busiest: 'Busiest period: between {start}:00 and {end}:00.'
+    water: 'Water: about {water_l:.1f} of {goal_l:.1f} L ({sips} sips).'
+    breaks: 'Breaks taken: {count}. Longest stretch sitting: {longest_min} minutes.'
+    phone_free: 'Phone-free desk time: {minutes} minutes (best streak {best_min}).'
+    sunlight_logged: 'Morning sunlight: logged.'
+    sunlight_not_logged: 'Morning sunlight: not logged.'
+    desk_time: 'Total time at desk: ~{minutes} minutes.'
+    dangers: 'Near-spill or danger alerts: {count}.'
+    lost: 'Lost-object alerts: {count}.'
+    objects: 'Objects seen today: {objects}.'
 
 # ── Looking at a picture: posture, screen distance, phone in hand (Ollama) ───
 vision:
@@ -425,6 +619,14 @@ vision:
     too_close: You've been leaning really close to my screen for a bit. Could you sit back a little? Your eyes will thank you.
     slouch: The camera has seen you slouching for a couple of minutes. Quick reset? Shoulders back, chin level.
     phone: I keep seeing your phone in your hand. If you're trying to focus, maybe put it in another room for 20 minutes?
+  # the Habits page's vision log: a title, a line about it and the photo's label
+  log:
+    slouch_title: Poor posture ~{minutes} min
+    slouch_detail: The desk camera saw a slouched stretch until your posture looked neutral again.
+    slouch_photo: 'Posture: ~{minutes}m slouch'
+    nails_title: Nail biting noticed
+    nails_detail: The vision check saw nail biting, or a hand at your mouth near your nails.
+    nails_photo: 'Habit: nail biting'
 
 # ── Lens, the camera's own character ────────────────────────────────
 lens:
@@ -523,3 +725,26 @@ camera:
   cutoff_title: '{object} is cut off ({side})'
   # once, a while after the video starts, if the desk corners aren't marked
   edge_tip: 'Tip from me, Lens: open Settings and tap the corners of your desk on the picture. Then I know where the desk really ends, and everyone can warn you before something slides off the edge.'
+
+# ── The desk monitor's alerts (settings → alerts) ───────────────────
+desk_alerts:
+  # the label of the photo saved with a safety alert
+  photo_label: Proximity alert
+  # a pet near the desk (settings → alerts.pet_labels); {knock} is pet_knock when drinks or food are on the desk
+  pet: '{pet} detected near the desk!{knock} Careful!'
+  pet_knock: ' {names} could get knocked over!'
+  clutter: I count {count} things on the desk right now. Maybe tidy up a bit?
+  plant: I can see a plant on the desk. Has it had any water today?
+  # something close to an edge of the desk: the alert's reason, and the danger as the app lists it
+  edge_reason: Near {edge} edge ({distance}px)
+  edge_danger: '{object} near {edge} edge'
+
+# ── What the desk checks found, in words (RELATIONSHIP INSIGHTS for the chat's AI) ───
+# {a}, {b}, {object} ... are the detector's words for the things
+desk_checks:
+  edge: '{object} is right at the {side} edge of the desk and could fall off.'
+  zone: "{intruder} (hazard) in {target}'s {zone} — {depth}px"
+  repeated: "{intruder} entered {target}'s zone {count} times in the last {window:g} s"
+  in_between: '{middle} lies between {a} and {b} — chain reaction risk'
+  crowd: '{count} objects crowded together ({labels}) — instability risk'
+  approaching: '{a} moving toward {b} ({percent}% closer in {pictures} frames)'

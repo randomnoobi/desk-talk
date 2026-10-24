@@ -32,11 +32,51 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'alert.system': _AGENT,
     'alert.first': ('situation', 'name', 'object'),
     'alert.follow_up': ('situation', 'previous', 'name', 'urgency'),
+    'alert.grounding': ('self_label', 'other_label', 'name', 'other_name', 'drink_note', 'risk'),
+    'alert.other_is_drink': ('other_label',),
+    'alert.self_is_drink': ('self_label',),
+    'alert.same_area': ('self_label', 'other_label'),
+    'alert.heads_up': ('rule',),
+    'replies.ai_errors.rate_limit': ('who',),
+    'replies.ai_errors.bad_key': ('who',),
+    'replies.ai_errors.no_model': ('who',),
+    'replies.ai_errors.too_slow': ('who',),
+    'replies.ai_errors.other': ('error',),
+    'replies.ai_errors.no_pictures': ('model',),
+    'replies.ai_errors.resting': ('who', 'minutes'),
+    'replies.ai_errors.left_alone': ('problem', 'failures', 'seconds'),
     'chat.identity': (*_AGENT, 'habit_area', 'action_instructions'),
     'chat.identity_short': (*_AGENT, 'habit_area', 'action_instructions'),
     'chat.reanchor': ('name', 'object'),
+    'chat.remember': ('lines',),
+    'chat.remember_line': ('line',),
+    'chat.earlier': ('recap',),
+    'chat.other_said': ('name', 'text'),
+    'chat.referenced': ('objects',),
+    'chat.referenced_one': ('name', 'status'),
+    'live_context.member': ('name', 'object', 'label', 'here_for'),
+    'live_context.also_seen': ('labels',),
+    'live_context.dangers': ('risk', 'state'),
+    'live_context.zone_danger': ('label', 'depth', 'duration'),
+    'live_context.edge_danger': ('label', 'duration'),
+    'live_context.other_danger': ('label', 'duration'),
+    'live_context.no_dangers': ('risk',),
+    'live_context.insight': ('text',),
+    'live_context.vision_pass': ('labels',),
+    'live_context.recent': ('count',),
+    'live_context.recent_event': ('age', 'who', 'near', 'label'),
+    'live_context.recent_near': ('name',),
+    'live_context.habits': ('water_l', 'goal_l', 'sips', 'breaks', 'sitting_min', 'phone_free', 'sunlight'),
+    'live_context.habits_phone_free': ('minutes',),
+    'live_context.session': ('duration',),
+    'live_context.on_desk': ('here_for', 'label'),
+    'live_context.on_desk_danger': ('dangers',),
+    'live_context.off_desk': ('ago',),
+    'memory.you_said': ('said',),
+    'memory.you_replied': ('user', 'said'),
     'habit_reminder.system': (*_AGENT, 'habit_area', 'widget_block', 'signals', 'evidence', 'book_tip'),
     'habit_reminder.system_short': (*_AGENT, 'habit_area', 'widget_block', 'evidence', 'book_tip'),
+    'habit_reminder.vision_note': ('note',),
     'trackers.behavior': ('count',),
     'trackers.todo_list': ('items',),
     'trackers.breaks': ('count', 'last', 'sitting_min'),
@@ -88,13 +128,57 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'habits.logged.sunlight': ('minutes', 'when'),
     'personality.user': ('object',),
     'small_talk.line_system': (*_AGENT, 'desk_summary'),
+    'small_talk.topic_user': ('summary', 'names', 'memories'),
+    'small_talk.line_open': ('topic',),
+    'small_talk.line_reply': ('topic', 'transcript'),
+    'small_talk.director_user': ('topic', 'names', 'transcript'),
+    'small_talk.said': ('name', 'text'),
     'lost_items.answer_system': ('name', 'object'),
     'lost_items.alert_user': ('item', 'minutes', 'near_hint'),
     'lost_items.scan': ('item_names',),
     'lost_items.in_saved_photo': ('photo', 'item'),
     'lost_items.in_live_picture': ('item',),
     'lost_items.anything': ('question',),
+    'lost_items.answer_user': ('message', 'facts'),
+    'lost_items.near': ('names',),
+    'lost_items.never_seen_fact': ('name', 'extra'),
+    'lost_items.vision_extra': ('note',),
+    'lost_items.scan_extra': ('labels',),
+    'lost_items.just_seen_fact': ('name', 'seconds', 'when', 'near'),
+    'lost_items.seen_fact': ('name', 'minutes', 'when', 'near'),
+    'lost_items.never_seen': ('name', 'more'),
+    'lost_items.live_look': ('note',),
+    'lost_items.just_seen': ('name', 'when', 'near'),
+    'lost_items.seen': ('name', 'when', 'minutes', 'near'),
+    'lost_items.saved_photo': ('when', 'label'),
+    'lost_items.saved_photo_label': ('label',),
+    'lost_items.spotted_photo': ('name',),
+    'lost_items.spotted_by_vision_photo': ('name',),
+    'lost_items.last_seen_near': ('names',),
+    'lost_items.alert_plain': ('name', 'minutes', 'hint'),
     'daily_recap.user': ('facts',),
+    'daily_recap.plain': ('facts',),
+    'daily_recap.facts.busiest': ('start', 'end'),
+    'daily_recap.facts.water': ('water_l', 'goal_l', 'sips'),
+    'daily_recap.facts.breaks': ('count', 'longest_min'),
+    'daily_recap.facts.phone_free': ('minutes', 'best_min'),
+    'daily_recap.facts.desk_time': ('minutes',),
+    'daily_recap.facts.dangers': ('count',),
+    'daily_recap.facts.lost': ('count',),
+    'daily_recap.facts.objects': ('objects',),
+    'vision.log.slouch_title': ('minutes',),
+    'vision.log.slouch_photo': ('minutes',),
+    'desk_alerts.pet': ('pet', 'knock'),
+    'desk_alerts.pet_knock': ('names',),
+    'desk_alerts.clutter': ('count',),
+    'desk_alerts.edge_reason': ('edge', 'distance'),
+    'desk_alerts.edge_danger': ('object', 'edge'),
+    'desk_checks.edge': ('object', 'side'),
+    'desk_checks.zone': ('intruder', 'target', 'zone', 'depth'),
+    'desk_checks.repeated': ('intruder', 'target', 'count', 'window'),
+    'desk_checks.in_between': ('middle', 'a', 'b'),
+    'desk_checks.crowd': ('count', 'labels'),
+    'desk_checks.approaching': ('a', 'b', 'percent', 'pictures'),
     'lens.pi_hot': ('temp',),
     'lens.pi_clock': ('seconds', 'way'),
     'lens.pi_detector': ('why',),
@@ -107,6 +191,25 @@ BLANKS: dict[str, tuple[str, ...]] = {
 
 
 # ── the file's layout ────────────────────────────────────────────────
+class AiErrors(_Section):
+    """What went wrong with the AI, in plain words."""
+
+    the_ai: str
+    rate_limit: str
+    bad_key: str
+    no_model: str
+    too_slow: str
+    ollama_too_slow: str
+    no_connection: str
+    ollama_no_connection: str
+    other: str
+    no_pictures: str
+    resting: str
+    left_alone: str
+    keeps_failing: str
+    pictures_failing: str
+
+
 class Replies(_Section):
     needs_an_ai: str
     empty_reply: str
@@ -114,6 +217,7 @@ class Replies(_Section):
     no_ai_label: str
     no_picture: str
     ask_for_a_sentence: str
+    ai_errors: AiErrors
 
 
 class AlertPrompts(_Section):
@@ -122,12 +226,68 @@ class AlertPrompts(_Section):
     follow_up: str
     more_worried: str
     most_worried: str
+    grounding: str
+    other_is_drink: str
+    self_is_drink: str
+    no_drink: str
+    same_area: str
+    unknown_label: str
+    unknown_other: str
+    heads_up: str
+    too_close: str
 
 
 class ChatPrompts(_Section):
     identity: str
     identity_short: str
     reanchor: str
+    live_desk: str
+    remember: str
+    remember_line: str
+    earlier: str
+    other_said: str
+    referenced: str
+    referenced_one: str
+
+
+class LiveContextWords(_Section):
+    """The desk right now, as the chat's AI is told it."""
+
+    camera_off: str
+    members: str
+    member: str
+    nobody: str
+    also_seen: str
+    dangers: str
+    zone_danger: str
+    edge_danger: str
+    other_danger: str
+    just_now: str
+    no_dangers: str
+    insights: str
+    insight: str
+    vision_pass: str
+    recent: str
+    recent_event: str
+    recent_near: str
+    unknown: str
+    habits: str
+    habits_phone_free: str
+    habits_sunlight: str
+    session: str
+    pushback: str
+    pushback_words: Words
+    on_desk: str
+    on_desk_danger: str
+    off_desk: str
+    not_seen: str
+
+
+class MemoryWords(_Section):
+    """What an agent remembers saying."""
+
+    you_said: str
+    you_replied: str
 
 
 class HabitAreas(_Section):
@@ -145,6 +305,9 @@ class HabitReminderPrompts(_Section):
     system: str
     system_short: str
     no_evidence: str
+    vision_note: str
+    no_signals: str
+    ask: str
 
 
 class TrackerActions(_Section):
@@ -242,6 +405,18 @@ class SmallTalkPrompts(_Section):
     topic_system: str
     director_system: str
     line_system: str
+    topic_user: str
+    line_open: str
+    line_reply: str
+    director_user: str
+    said: str
+    nothing_yet: str
+    no_memory: str
+
+
+class AnswerAs(_Section):
+    name: str
+    object: str
 
 
 class LostItemsPrompts(_Section):
@@ -255,11 +430,47 @@ class LostItemsPrompts(_Section):
     triggers: Words
     not_spotted: str
     captures_button: str
+    other_things: Words
+    answer_as: AnswerAs
+    answer_user: str
+    near: str
+    never_seen_fact: str
+    vision_extra: str
+    scan_extra: str
+    just_seen_fact: str
+    seen_fact: str
+    never_seen: str
+    live_look: str
+    see_captures: str
+    just_seen: str
+    seen: str
+    saved_photo: str
+    saved_photo_label: str
+    spotted_photo: str
+    spotted_by_vision_photo: str
+    desk_scan_photo: str
+    last_seen_near: str
+    alert_plain: str
+
+
+class RecapFacts(_Section):
+    busiest: str
+    water: str
+    breaks: str
+    phone_free: str
+    sunlight_logged: str
+    sunlight_not_logged: str
+    desk_time: str
+    dangers: str
+    lost: str
+    objects: str
 
 
 class DailyRecapPrompts(_Section):
     system: str
     user: str
+    plain: str
+    facts: RecapFacts
 
 
 class VisionNudges(_Section):
@@ -268,9 +479,44 @@ class VisionNudges(_Section):
     phone: str
 
 
+class VisionLog(_Section):
+    """The Habits page's vision log."""
+
+    slouch_title: str
+    slouch_detail: str
+    slouch_photo: str
+    nails_title: str
+    nails_detail: str
+    nails_photo: str
+
+
 class VisionPrompts(_Section):
     habit_scene: str
     nudges: VisionNudges
+    log: VisionLog
+
+
+class DeskAlertWords(_Section):
+    """The desk monitor's alerts."""
+
+    photo_label: str
+    pet: str
+    pet_knock: str
+    clutter: str
+    plant: str
+    edge_reason: str
+    edge_danger: str
+
+
+class DeskCheckWords(_Section):
+    """What the desk checks found, in words."""
+
+    edge: str
+    zone: str
+    repeated: str
+    in_between: str
+    crowd: str
+    approaching: str
 
 
 class LensCard(_Section):
@@ -372,6 +618,8 @@ class Prompts(_Section):
     replies: Replies
     alert: AlertPrompts
     chat: ChatPrompts
+    live_context: LiveContextWords
+    memory: MemoryWords
     habit_areas: HabitAreas
     habit_reminder: HabitReminderPrompts
     trackers: TrackerPrompts
@@ -383,6 +631,8 @@ class Prompts(_Section):
     vision: VisionPrompts
     lens: LensPrompts
     camera: CameraPrompts
+    desk_alerts: DeskAlertWords
+    desk_checks: DeskCheckWords
 
 
 # ── the blanks that come from the settings ───────────────────────────

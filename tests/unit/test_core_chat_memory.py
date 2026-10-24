@@ -6,12 +6,13 @@ from desktalk.config import load_config
 from desktalk.core.chat.memory import ChatMemory, TrackerPanels
 from tests.fakes import FakeCharacterMemory
 
-CHAT = load_config(environ={}, dotenv=Path('/nonexistent')).chat
+CONFIG = load_config(environ={}, dotenv=Path('/nonexistent'))
+CHAT, WORDS = CONFIG.chat, CONFIG.prompts.memory
 
 
 def test_a_line_and_a_reply_are_remembered_cut_to_size():
     desk = FakeCharacterMemory()
-    memory = ChatMemory(desk, keep=2, reply_chars=5, user_chars=3)
+    memory = ChatMemory(desk, keep=2, reply_chars=5, user_chars=3, words=WORDS)
     memory.remember('cup', 'first reply')
     memory.remember('cup', 'second reply', 'second message')
     memory.remember('cup', 'third reply', 'third message')
@@ -19,8 +20,16 @@ def test_a_line_and_a_reply_are_remembered_cut_to_size():
                                                           '[User said "thi"] → [You replied] third']
 
 
+def test_the_lines_are_written_as_prompts_yaml_says():
+    memory = ChatMemory(FakeCharacterMemory(), keep=2, reply_chars=20, user_chars=20,
+                        words=WORDS.model_copy(update={'you_said': 'me: {said}', 'you_replied': '{user} / {said}'}))
+    memory.remember('cup', 'hello')
+    memory.remember('cup', 'fine', 'how are you')
+    assert memory.recent('cup') == ['me: hello', 'how are you / fine']
+
+
 def test_nothing_said_is_not_remembered():
-    memory = ChatMemory(FakeCharacterMemory(), keep=2, reply_chars=5)
+    memory = ChatMemory(FakeCharacterMemory(), keep=2, reply_chars=5, words=WORDS)
     memory.remember('cup', '   ')
     assert memory.recent('cup') == []
 

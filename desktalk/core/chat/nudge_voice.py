@@ -47,13 +47,13 @@ class NudgeVoice:
         now = self._clock.now()
         todo = self._desk.widget(a.id)
         vision_note = (self._desk.vision_brief() or '').strip()
-        block = tracker_prompt(a.tracker, self._habits.today(now), todo, [], now, self._chat)
-        signals = f'; vision note: {vision_note}' if vision_note else ''
         w = self._words
+        block = tracker_prompt(a.tracker, self._habits.today(now), todo, [], now, self._chat, words=w.trackers)
+        signals = w.habit_reminder.vision_note.format(note=vision_note) if vision_note else w.habit_reminder.no_signals
         system = prompts.habit_system(w.habit_reminder, a, prompts.habit_area(w.habit_areas, a), block,
-                                      signals or 'none', nudge.evidence, nudge.tip, short=self._local)
+                                      signals, nudge.evidence, nudge.tip, short=self._local)
         text = self._ai.ask([{'role': 'system', 'content': system},
-                             {'role': 'user', 'content': 'Send a quick habit reminder right now.'}],
+                             {'role': 'user', 'content': w.habit_reminder.ask}],
                             'nudge', a, background=True)
         if not text or looks_cut_off(text, self._chat.min_reply_words):
             return None

@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from desktalk.config import ChatSettings
+from desktalk.config.prompts import MemoryWords
 from desktalk.core.chat.tracker_actions import normalize_todo
 from desktalk.ports import CharacterMemory
 
@@ -18,10 +19,13 @@ from desktalk.ports import CharacterMemory
 class ChatMemory:
     """`keep`: lines kept per agent (settings → llm.memory_per_agent). `reply_chars` / `user_chars`: how much
     of what the agent said and of your message is kept (settings → chat.memory_reply_chars /
-    memory_user_chars; a part that never passes a message of yours can leave user_chars out)."""
+    memory_user_chars; a part that never passes a message of yours can leave user_chars out). `words`:
+    config/prompts.yaml → memory, how each line is written down."""
 
-    def __init__(self, memory: CharacterMemory, *, keep: int, reply_chars: int, user_chars: int = 0):
+    def __init__(self, memory: CharacterMemory, *, keep: int, reply_chars: int, words: MemoryWords,
+                 user_chars: int = 0):
         self._memory = memory
+        self._words = words
         self._keep = keep
         self._reply_chars = reply_chars
         self._user_chars = user_chars
@@ -31,9 +35,9 @@ class ChatMemory:
         snippet = (said or '')[:self._reply_chars].strip()
         if not snippet:
             return
-        entry = f'[You said] {snippet}'
+        entry = self._words.you_said.format(said=snippet)
         if user_message:
-            entry = f'[User said "{user_message[:self._user_chars].strip()}"] → [You replied] {snippet}'
+            entry = self._words.you_replied.format(user=user_message[:self._user_chars].strip(), said=snippet)
         self._memory.remember(agent_id, entry, self._keep)
 
     def recent(self, agent_id: str) -> list[str]:

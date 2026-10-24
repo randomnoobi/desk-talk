@@ -12,21 +12,20 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from desktalk.config import ChatSettings
+from desktalk.config.prompts import LiveContextWords
 from desktalk.core.chat.history import last
 from desktalk.core.chat.names import parse_mentions
 from desktalk.ports import DeskScene, Profiles, SafetyBoard
 from desktalk.util import format_duration
 
-_PUSHBACK = ('nothing next', 'nothing nect', 'not next to you', 'not a cup', "isn't a cup", 'isnt a cup',
-             "that's not", 'thats not', 'that is not', 'there is nothing', "there's nothing",
-             'no cup', 'wrong', 'not there', "don't see", 'dont see', 'not next', 'makes no sense')
-
 
 def build_live_context(scene: DeskScene, safety: SafetyBoard, *, profiles: Profiles, members: Sequence[str],
                        habits_today: Mapping[str, Any], now: float, camera_on: bool, chat: ChatSettings,
-                       user_message: str = '') -> dict[str, Any]:
+                       words: LiveContextWords, user_message: str = '') -> dict[str, Any]:
     """Real-time desk facts for the AI: summary text, detected agents, dangers,
-    safety state, and the status of objects @mentioned in `user_message`."""
+    safety state, and the status of objects @mentioned in `user_message`. `words`: config/prompts.yaml →
+    live_context."""
+    w = words
     lines: list[str] = []
     detected_info: list[dict] = []
     mentioned: list[dict] = []
@@ -41,12 +40,12 @@ def build_live_context(scene: DeskScene, safety: SafetyBoard, *, profiles: Profi
 
     def on_desk_for(pid: str) -> str:
         first = scene.first_seen(pid)
-        return format_duration(now - first) if first is not None else '?'
+        return format_duration(now - first) if first is not None else w.unknown
 
     if not camera_on:
-        lines.append('THE CAMERA IS OFF RIGHT NOW: nothing below is live.')
+        lines.append(w.camera_off)
     if objects or members:
-        lines.append('OBJECTS IN THE CHAT / ON THE DESK (vision can be wrong or noisy):')
+        lines.append(w.members)
         for pid in members:
             p = profiles.get(pid)
             det = objects.get(pid)
@@ -56,60 +55,60 @@ def build_live_context(scene: DeskScene, safety: SafetyBoard, *, profiles: Profi
             detected_info.append({'char_id': pid, 'name': p.name, 'object': p.object,
                                   'confidence': round(det.confidence, 2) if det else None, 'on_desk_for': here_for})
             label = det.label if det else p.labels[0] if p.labels else p.object
-            lines.append(f'  - {p.name} (you play this as: {p.object}): vision label "{label}", here ~{here_for}')
+            lines.append(w.member.format(name=p.name, object=p.object, label=label, here_for=here_for))
     else:
-        lines.append('NOTHING IS IN THE CHAT YET (the camera has not confirmed any object on the desk).')
+        lines.append(w.nobody)
     member_labels = {objects[m].label for m in members if m in objects}
     extra = [label for label in others if label not in member_labels]
     if extra:
-        lines.append(f'ALSO IN THE PICTURE (not chatting): {", ".join(sorted(extra)[:chat.other_objects_shown])}')
+        lines.append(w.also_seen.format(labels=', '.join(sorted(extra)[:chat.other_objects_shown])))
 
     risk_level = rel_result.get('risk_level', 0) if rel_result else 0
     if dangers:
-        lines.append(f'\nACTIVE DANGERS (risk level {risk_level}/4, state: {report.state}):')
+        lines.append(w.dangers.format(risk=risk_level, state=report.state))
         for d in dangers:
             since = safety.danger_since(frozenset(d['pair']))
-            duration = format_duration(now - since) if since is not None else 'just now'
+            duration = format_duration(now - since) if since is not None else w.just_now
             kind = d.get('type', '')
             if kind == 'zone_intrusion':
-                lines.append(f'  - {d["label"]} — intrusion {d.get("depth_px", 0)}px deep, active for {duration}')
+                lines.append(w.zone_danger.format(label=d['label'], depth=d.get('depth_px', 0), duration=duration))
             elif kind == 'edge_danger':
-                lines.append(f'  - {d["label"]} — object near desk edge, active for {duration}')
+                lines.append(w.edge_danger.format(label=d['label'], duration=duration))
             else:
-                lines.append(f'  - {d["label"]} — active for {duration}')
+                lines.append(w.other_danger.format(label=d['label'], duration=duration))
     else:
-        lines.append(f'\nNO ACTIVE DANGERS — desk is safe (risk {risk_level}/4).')
+        lines.append(w.no_dangers.format(risk=risk_level))
     if rel_result and rel_result.get('explanations'):
-        lines.append('\nRELATIONSHIP INSIGHTS:')
+        lines.append(w.insights)
         for exp in rel_result['explanations'][:chat.insights_shown]:
-            lines.append(f'  - {exp}')
+            lines.append(w.insight.format(text=exp))
     if vision_seen:
-        lines.append(f'\nLAST VISION PASS (Ollama lost-item scan) mentioned: {", ".join(vision_seen)}. '
-                     'Use for small items (e.g. AirPods) that YOLO may miss; do not claim a cup if not listed.')
+        lines.append(w.vision_pass.format(labels=', '.join(vision_seen)))
     if recent:
         # Says "last N" (kept) but lists fewer (shown), as the old app did.
-        lines.append(f'\nRECENT EVENTS (last {len(recent)}):')
+        lines.append(w.recent.format(count=len(recent)))
         for ev in last(recent, chat.recent_events_shown):
             age = format_duration(now - ev['time'])
             speaker = profiles.get(ev['character'])
-            who = speaker.name if speaker else '?'
             near = profiles.get(ev.get('near', ''))
-            label = ev.get('rule_label', '') or ev.get('severity', '')
-            lines.append(f'  - {age} ago: {who}{" near " + near.name if near else ""} ({label})')
+            lines.append(w.recent_event.format(
+                age=age, who=speaker.name if speaker else w.unknown,
+                near=w.recent_near.format(name=near.name) if near else '',
+                label=ev.get('rule_label', '') or ev.get('severity', '')))
 
     h, b, pf = habits_today['hydration'], habits_today['breaks'], habits_today['phone_free']
-    lines.append(f'\nHABITS TODAY: water ~{h["water_ml"] / 1000:.1f} of {h["goal_ml"] / 1000:.1f} L '
-                 f'({h["sips"]} sips); {b["count"]} breaks; sitting now {b["sitting_sec"] // 60} min'
-                 + (f'; phone-free desk time {pf["phone_free_sec"] // 60} min' if pf['counted'] else '')
-                 + ('; morning sunlight logged' if habits_today['light']['sunlight_ts'] else ''))
+    lines.append(w.habits.format(
+        water_l=h['water_ml'] / 1000, goal_l=h['goal_ml'] / 1000, sips=h['sips'], breaks=b['count'],
+        sitting_min=b['sitting_sec'] // 60,
+        phone_free=w.habits_phone_free.format(minutes=pf['phone_free_sec'] // 60) if pf['counted'] else '',
+        sunlight=w.habits_sunlight if habits_today['light']['sunlight_ts'] else ''))
     if session_start:
-        lines.append(f'Session active for {format_duration(now - session_start)}.')
+        lines.append(w.session.format(duration=format_duration(now - session_start)))
 
     if user_message:
         um = user_message.lower()
-        if any(phrase in um for phrase in _PUSHBACK):
-            lines.append('\nUSER IS PUSHING BACK ON THE SCENE: believe them about what is physically there. '
-                         'Do not repeat confidence numbers, "risk level", or argue with their eyes.')
+        if any(phrase in um for phrase in w.pushback_words):
+            lines.append(w.pushback)
         for pid in parse_mentions(user_message, profiles.mention_words()):
             p = profiles.get(pid)
             if p is None:
@@ -117,14 +116,14 @@ def build_live_context(scene: DeskScene, safety: SafetyBoard, *, profiles: Profi
             det = objects.get(pid)
             last_seen = scene.last_seen(pid)
             if det:
-                status = f'On desk ~{on_desk_for(pid)}; vision label {det.label} (camera can be off)'
+                status = w.on_desk.format(here_for=on_desk_for(pid), label=det.label)
                 ds = [d for d in dangers if det.label in d['pair']]
                 if ds:
-                    status += '. DANGER: ' + '; '.join(d['label'] for d in ds)
+                    status += w.on_desk_danger.format(dangers='; '.join(d['label'] for d in ds))
             elif last_seen is not None:
-                status = f'Not currently on desk (last seen {format_duration(now - last_seen)} ago)'
+                status = w.off_desk.format(ago=format_duration(now - last_seen))
             else:
-                status = 'Not detected this session'
+                status = w.not_seen
             mentioned.append({'char_id': pid, 'name': p.name, 'object': p.object, 'status': status})
 
     return {'summary': '\n'.join(lines), 'detected': detected_info, 'dangers': dangers,

@@ -16,6 +16,7 @@ COMPUTER = AgentProfile(id='computer', name='Computer', nickname='Monty', object
                         habits=['breaks'], fragile=True)
 CUP = AgentProfile(id='cup', name='Cup', object='cup', labels=['cup', 'mug'], habits=['hydration'])
 PAPER = AgentProfile(id='paper', name='Paper', object='paper', labels=['paper/notebook'])
+WORDS = load_config(environ={}, dotenv=Path('/nonexistent')).prompts.live_context
 SPILL = Danger(pair=('cup', 'laptop'), label='Cup in the laptop spill zone', kind='zone_intrusion', depth_px=12.5)
 
 
@@ -57,10 +58,10 @@ def busy_desk():
     return scene, safety
 
 
-def live(desk, profiles, chat, members=('computer', 'cup'), camera_on=True, user_message=''):
+def live(desk, profiles, chat, members=('computer', 'cup'), camera_on=True, user_message='', words=WORDS):
     scene, safety = desk
     return build_live_context(scene, safety, profiles=profiles, members=list(members), habits_today=today(),
-                              now=NOW, camera_on=camera_on, chat=chat, user_message=user_message)
+                              now=NOW, camera_on=camera_on, chat=chat, words=words, user_message=user_message)
 
 
 def empty_desk():
@@ -110,3 +111,12 @@ def test_mentioned_objects_get_their_status(profiles, chat):
 def test_when_you_say_the_camera_is_wrong_the_ai_is_told_to_believe_you(profiles, chat):
     assert 'USER IS PUSHING BACK' in live(busy_desk(), profiles, chat, user_message="that's not a cup")['summary']
     assert 'USER IS PUSHING BACK' not in live(busy_desk(), profiles, chat, user_message='hello')['summary']
+
+
+def test_the_headings_and_lines_come_from_prompts_yaml(profiles, chat):
+    words = WORDS.model_copy(update={'members': 'ON THE DESK:', 'member': '* {name} ({label})',
+                                     'habits': 'WATER {water_l:.2f} L', 'pushback_words': ('nope',),
+                                     'pushback': 'BELIEVE THEM.'})
+    s = live(busy_desk(), profiles, chat, user_message='nope', words=words)['summary']
+    assert 'ON THE DESK:\n* Computer (laptop)\n* Cup (cup)' in s
+    assert 'WATER 1.20 L' in s and s.endswith('BELIEVE THEM.')

@@ -144,10 +144,12 @@ class ChatAnswers:
         todo = self._desk.widget(a.id)
         views = self._desk.widget_views_of(a.id)
         memory_lines = self._memory.recent(a.id)
-        block = tracker_prompt(a.tracker, self._habits.today(now), todo, views, now, self._chat)
+        block = tracker_prompt(a.tracker, self._habits.today(now), todo, views, now, self._chat,
+                               words=self._words.trackers)
         recent_turns, older_recap = budget_history(history, self._llm.chat_history_turns, self._chat, self._local)
 
         # Long-term memory: only what isn't already in the turns sent word for word.
+        w = self._words
         memory_block = ''
         if memory_lines:
             seen_blob = ' '.join(str(t.get('text', '')).lower() for t in recent_turns)
@@ -156,15 +158,13 @@ class ChatAnswers:
                 keep = self._chat.ollama_memory_lines
                 novel = novel[-keep:] if keep else []
             if novel:
-                memory_block = ('\nWHAT YOU REMEMBER (older context, may not be shown above):\n'
-                                + '\n'.join(f'- {m}' for m in novel) + '\n')
-        recap_block = f'\nEARLIER IN THIS THREAD: {older_recap}\n' if older_recap else ''
+                memory_block = w.chat.remember.format(
+                    lines='\n'.join(w.chat.remember_line.format(line=m) for m in novel))
+        recap_block = w.chat.earlier.format(recap=older_recap) if older_recap else ''
 
-        w = self._words
         identity = prompts.chat_identity(w.chat, a, prompts.habit_area(w.habit_areas, a),
-                                         action_instructions(a.tracker), self._local)
-        system = (identity + '\n\n---\nLIVE DESK STATUS (cameras; noisy, can be wrong):\n'
-                  + context['summary'] + '\n' + block + memory_block + recap_block)
+                                         action_instructions(a.tracker, words=w.trackers), self._local)
+        system = identity + w.chat.live_desk + context['summary'] + '\n' + block + memory_block + recap_block
         messages: list[dict[str, Any]] = [{'role': 'system', 'content': system}]
         for turn in recent_turns:
             if turn['role'] == 'user':
@@ -173,13 +173,13 @@ class ChatAnswers:
                 text, name = turn['text'], (turn.get('name') or '').strip()
                 if name and name != a.name:
                     # Other objects' lines in the third person, so the AI doesn't take on their voice.
-                    text = f'[{name} said]: {text}'
+                    text = w.chat.other_said.format(name=name, text=text)
                 messages.append({'role': 'assistant', 'content': text})
         user_prompt = user_message
         mentioned = context['mentioned_objects']
         if mentioned:
-            user_prompt += ('\n\n[Referenced objects — '
-                            + '; '.join(f'@{m["name"]}: {m["status"]}' for m in mentioned) + ']')
+            user_prompt += w.chat.referenced.format(objects='; '.join(
+                w.chat.referenced_one.format(name=m['name'], status=m['status']) for m in mentioned))
         user_prompt += prompts.reanchor(w.chat, a)
         messages.append({'role': 'user', 'content': user_prompt})
         return messages
