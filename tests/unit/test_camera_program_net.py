@@ -59,3 +59,13 @@ def test_an_error_reply_cut_off_half_way_is_no_answer():
     cut_off = b'HTTP/1.1 500 Oops\r\nContent-Length: 100\r\n\r\nshort'
     with OneReply(cut_off) as server, pytest.raises(net.NoAnswer, match='half-way'):
         net.call('POST', server.url, body=b'x', timeout=2)
+
+
+def test_error_text_cuts_a_reply_that_is_not_json_to_the_setting():
+    assert net.error_text(b'  Bad Gateway from the proxy  ', most_chars=11) == 'Bad Gateway'
+    reason = b'{"detail": "no model yet, still converting"}'
+    assert net.error_text(reason, most_chars=5) == 'no model yet, still converting'     # a reason is never cut
+
+
+def test_computer_said_no_uses_the_same_cut():
+    assert net.computer_said_no(502, b'Bad Gateway from the proxy', most_chars=3) == 'The computer said no (502): Bad'

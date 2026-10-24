@@ -267,7 +267,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     log_file = None
     if set_up_logging:
         logs = config.logging
-        log_file = setup_logging(data_path(logs.folder), logs.level, logs.file_size_mb, logs.files_kept)
+        log_file = setup_logging(data_path(logs.folder), logs.level, logs.file_size_mb, logs.files_kept,
+                                 logs.file_name)
 
     # ── storage and shared state ──
     store = JsonFileStore(data_path(config.storage.folder))

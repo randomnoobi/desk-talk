@@ -67,7 +67,7 @@ it uses the copy of `config/settings.yaml` on the Pi. Flags win over both:
 
 | Flag | What it does |
 |---|---|
-| `--camera` | `auto` (default), `picamera2` (camera module), `usb` / `usb:1` (USB webcam), `folder:<dir>` or `video:<file>` for testing |
+| `--camera` | `auto`, `picamera2` (camera module), `usb` / `usb:1` (USB webcam), `folder:<dir>` or `video:<file>` for testing. Without it: `pi.camera` in `config/settings.yaml` (`auto`) |
 | `--fps` | pictures per second |
 | `--photo-dir` | where the pictures are saved on the Pi |
 | `--delete-every-min` | delete the saved pictures this often (0 = never) |

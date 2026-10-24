@@ -352,6 +352,7 @@ NEW_SETTINGS = {
         ('web', 'list_sizes', 'chat_kept'), ('web', 'list_sizes', 'chat_saved'), ('web', 'left_chat_shown_min'),
         ('camera', 'phone_capture_width'), ('camera', 'phone_capture_height'),
         ('logging', 'file_name'), ('logging', 'preview_chars'), ('llm', 'error_text_chars'),
+        ('pi', 'camera'), ('pi', 'error_text_chars'),
     ],
     'protocols.yaml': [('food', 'healthy')],
 }

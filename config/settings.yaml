@@ -78,6 +78,9 @@ pi:
                               # to the container right away; others need the camera program restarted)
   restart_after_missed_pictures: 30  # no new picture for this many picture times (30 at 3 a second = 10 s): the
                               # camera seems stuck, so the camera program stops and systemd starts it again
+  camera: auto                # which camera: auto, picamera2, usb (usb:1 for the second one), folder:<dir> or
+                              # video:<file>; the camera program's --camera flag beats it
+  error_text_chars: 200       # a reply the Pi can't read (not JSON): at most this many letters of it go in its log
   detector:                   # object detection on the Pi itself, in Docker (raspberry_pi/detector_service/)
     model: yolo26m-objv1-150.pt  # in the container's models folder; the Pi speed test (benchmarks/) picks the final one
     format: ncnn              # ncnn = fastest on the Pi's processor; pt = plain PyTorch, to compare

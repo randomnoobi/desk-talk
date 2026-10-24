@@ -81,11 +81,11 @@ def check_temperature(reader: HealthReader, hot_warning_c: float) -> Check:
     return Check('temperature', True, f'{temp:g} °C{since}')
 
 
-def check_computer(server: str | None, key: str | None, timeout: float) -> Check:
+def check_computer(server: str | None, key: str | None, timeout: float, error_text_chars: int) -> Check:
     if not (server and key):
         return Check('computer', False, 'no --server and --key given (server.py on your computer prints them)')
     try:
-        reply = computer_config(server, key, timeout)
+        reply = computer_config(server, key, timeout, error_text_chars)
     except ComputerProblem as exc:
         return Check('computer', False, str(exc))
     source = reply.get('camera_source')
@@ -99,7 +99,7 @@ def run(open_camera: Callable[[], Any], client: DetectorClient | None, reader: H
         settings: CameraSettings, *, server: str | None, key: str | None) -> int:
     """All the checks, logged one per line. 0 when everything is fine, 1 when something isn't."""
     checks = [check_camera(open_camera), check_detector(client), check_temperature(reader, settings.hot_warning_c),
-              check_computer(server, key, settings.upload_timeout_sec)]
+              check_computer(server, key, settings.upload_timeout_sec, settings.error_text_chars)]
     for check in checks:
         log.log(logging.INFO if check.ok else logging.WARNING, '%-8s %-12s %s', 'OK' if check.ok else 'PROBLEM',
                 check.name, check.message)

@@ -24,7 +24,7 @@ def make_client(url, clock, **changes):
     settings = dict(url=url, model=MODEL, wait_per_picture_sec=2.0, failures_before_pause=3,
                     pause_start_sec=PAUSE, pause_max_sec=60, health_check_every_sec=HEALTH_EVERY)
     settings.update(changes)
-    return DetectorClient(DetectorConfig(**settings), clock)
+    return DetectorClient(DetectorConfig(**settings), clock, error_text_chars=200)
 
 
 @pytest.fixture

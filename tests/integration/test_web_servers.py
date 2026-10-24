@@ -22,7 +22,7 @@ from desktalk.domain import DetectorState, UploadInfo
 from desktalk.runtime import SystemClock
 from desktalk.web.app import create_app, create_phone_app
 from desktalk.web.pairing import ensure_cert
-from raspberry_pi.camera import main as camera_program
+from raspberry_pi.camera import cli as camera_program
 from raspberry_pi.camera.clock import SystemClock as PiClock
 from raspberry_pi.camera.uploader import Uploader
 from tests.fakes import FakeDetector
@@ -51,7 +51,8 @@ def real_desk(tmp_path, **changes):
 
 
 def uploader(url: str, key: str = PAIR_KEY) -> Uploader:
-    return Uploader(url, key, timeout_sec=5, retry_start_sec=1, retry_max_sec=10, clock=PiClock())
+    return Uploader(url, key, timeout_sec=5, retry_start_sec=1, retry_max_sec=10, error_text_chars=200,
+                    clock=PiClock())
 
 
 def from_pi(state: DetectorState, number: int, *found) -> UploadInfo:

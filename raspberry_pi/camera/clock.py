@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-import time
 from typing import Protocol
+
+from desktalk_shared.clock import SystemClock
+
+__all__ = ['Clock', 'SystemClock']
 
 
 class Clock(Protocol):
@@ -17,16 +20,3 @@ class Clock(Protocol):
 
     def sleep(self, seconds: float) -> None:
         ...
-
-
-class SystemClock:
-    """The Pi's own clock."""
-
-    def now(self) -> float:
-        return time.time()
-
-    def monotonic(self) -> float:
-        return time.monotonic()
-
-    def sleep(self, seconds: float) -> None:
-        time.sleep(seconds)

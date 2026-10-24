@@ -10,7 +10,6 @@ import pytest
 
 import server
 from desktalk.config import ConfigError
-from desktalk.runtime.log_setup import LOG_FILE_NAME
 from tests.integration.app_kit import changed, desk_config
 
 
@@ -32,7 +31,7 @@ def test_the_start_up_lines_reach_the_log_file_and_show_plainly_in_the_terminal(
     config = desk_config(tmp_path)
     log_file = server.start_logging(config)
     server.settings_lines(config)
-    assert log_file == config.resolve(config.logging.folder) / LOG_FILE_NAME
+    assert log_file == config.resolve(config.logging.folder) / config.logging.file_name
     assert '  Desk Talk' in log_file.read_text()
     shown = capsys.readouterr().err.splitlines()
     assert '  Desk Talk' in shown                       # the line as it is, no time or level in front
@@ -55,3 +54,9 @@ def test_a_setting_that_needs_fixing_is_said_as_an_error(monkeypatch, caplog):
         assert server.main() == 2
     [record] = caplog.records
     assert record.levelno == logging.ERROR and 'web.port: must be a number' in record.getMessage()
+
+
+def test_the_log_file_is_named_by_the_settings(tmp_path):
+    config = changed(desk_config(tmp_path), 'logging', file_name='my-desk.log')
+    log_file = server.start_logging(config)
+    assert log_file == config.resolve(config.logging.folder) / 'my-desk.log'

@@ -100,6 +100,8 @@ class PiSettings(_Section):
     health_every_sec: PositiveNumber
     settings_check_every_sec: PositiveNumber
     restart_after_missed_pictures: PositiveInt
+    camera: str                       # auto | picamera2 | usb[:index] | folder:<dir> | video:<file>, on the Pi
+    error_text_chars: PositiveInt
     detector: PiDetector
 
 
