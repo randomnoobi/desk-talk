@@ -5,6 +5,8 @@ Add a name here only when something really uses it in a way vulture can't follow
 by name, a field the web page reads from the JSON, a flag another thread reads). Say what uses it.
 """
 
+from typing import Any, cast
+
 from uvicorn import Server
 
 from desktalk.config import (
@@ -115,7 +117,8 @@ _ = (
     HabitDay.sunlight_minutes, HabitDay.danger_count, HabitDay.lost_alerts, HabitDay.nudges_sent,
     HabitDay.summary_sent,
     # Keys of the sunrise / sunset and day-times dicts, read by name (tracker.day_times, today()['times']).
-    SunTimes.sunrise, SunTimes.estimated, DayTimes.sunrise_ts,
+    # (TypedDicts have no attributes, hence the casts.)
+    cast(Any, SunTimes).sunrise, cast(Any, SunTimes).estimated, cast(Any, DayTimes).sunrise_ts,
     # Only bootstrap saves the habits (Task 10 types its habits field as HabitsLifecycle).
     HabitsLifecycle,
     # Task 5 (Lens's camera checks):
