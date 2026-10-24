@@ -366,12 +366,13 @@ def test_its_own_words_come_from_prompts_yaml(llm):
     clock = FakeClock()
     words = REPLIES.ai_errors.model_copy(update={'other': 'Broke: {error}', 'resting': '{who} rests {minutes} min.',
                                                  'left_alone': '{problem} [{failures}x, {seconds}s]'})
+    replies = REPLIES.model_copy(update={'ai_errors': words})
     model = ResilientChatModel(Scripted(clock, RuntimeError('bug')), clock, llm.model_copy(update={'max_retries': 1}),
-                               replies=REPLIES.model_copy(update={'ai_errors': words}))
+                               replies=replies)
     assert fails(model).reason == 'Broke: bug'
     fails(model)
     fails(model)
     assert model.problem() == 'Broke: bug [3x, 60s]'
-    model = ResilientChatModel(Scripted(clock, LIMIT), clock, llm, replies=REPLIES.model_copy(update={'ai_errors': words}))
+    model = ResilientChatModel(Scripted(clock, LIMIT), clock, llm, replies=replies)
     fails(model)
     assert fails(model, background=True).reason == 'Scripted AI rests 10 min.'
