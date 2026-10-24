@@ -332,7 +332,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         pair_key = make_pair_key(config.resolve(config.camera.pair_key_file), config.camera.pair_key_bytes)
     safety_rules = SafetyRules(config_store, config.safety, liquids=profiles.labels_for_habit('hydration'),
                                foods=profiles.labels_for_habit('food'))
-    analyzer = DeskAnalyzer(safety_rules)
+    analyzer = DeskAnalyzer(safety_rules, words=config.prompts.desk_checks)
     painter = DeskPainter(scene, profiles, analyzer, config.drawing)
     pictures = OpenCvPictureTools()
     photos = ProofPhotos(desk, clock, config.snapshots, pictures=pictures)
@@ -354,12 +354,13 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                           config.presence, config.agents, phone_counts=not phone_is_camera,
                           words=config.prompts.habits)
     # The desk monitor has nothing the web calls: it subscribes itself, and the event stream keeps it.
-    DeskMonitor(bus, desk, analyzer, profiles, habits, desk_status, photos, config.alerts)
+    DeskMonitor(bus, desk, analyzer, profiles, habits, desk_status, photos, config.alerts,
+                words=config.prompts.desk_alerts)
 
     # ── the AI and the chat ──
     ai = OpenAICompatibleChatModel(config.llm, config.secrets, clock, client_factory=client_factory,
                                    replies=config.prompts.replies)
-    model = ResilientChatModel(ai, clock, config.llm, time_limit_sec=ai.time_limit_sec)
+    model = ResilientChatModel(ai, clock, config.llm, time_limit_sec=ai.time_limit_sec, replies=config.prompts.replies)
     vision = model if model.local_vision else None       # pictures only go to an AI on this computer (no quota)
     hub = MessageHub(clock, recent_kept=config.chat.recent_kept, queue_size=config.web.live_queue_size)
     default_temperature = config.agents_file.default.temperature
@@ -378,13 +379,14 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     # ── the background jobs ──
     reminders = HabitReminders(habits, desk_status, roster, profiles, generator, hub, bus, config.reminders)
     lens = Lens(camera_health, source, safety_rules, preferences, hub, bus, photos, config.lens, config.pi,
-                prompts=config.prompts.lens, preview_chars=config.logging.preview_chars,
+                clock=clock, prompts=config.prompts.lens, preview_chars=config.logging.preview_chars,
                 phone=camera.phone, pi_uploads=camera.pi)
     idle_chat = IdleChat(model, hub, desk_status, roster, profiles, character_memory,
                          lambda: generator.live_context()['summary'], config.idle_chat, config.llm.replies,
                          memory_kept=config.llm.memory_per_agent, memory_chars=config.chat.memory_reply_chars,
                          default_temperature=default_temperature, reply_max_chars=config.chat.reply_max_chars,
-                         prompts=config.prompts.small_talk, preview_chars=config.logging.preview_chars)
+                         prompts=config.prompts.small_talk, memory_words=config.prompts.memory,
+                         preview_chars=config.logging.preview_chars)
     vision_habits = VisionHabits(vision, bus, desk, roster, profiles, desk_status, config.vision_habits, clock, photos,
                                  prompts=config.prompts.vision)
     daily_summary = DailySummary(model, hub, roster, habits, store, config.daily_summary, config.llm.replies,

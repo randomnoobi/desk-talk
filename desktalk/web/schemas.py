@@ -130,7 +130,6 @@ class UiPage(BaseModel):
     refresh_ms: PageRefresh
     request_timeout_ms: int
     live_timeout_ms: int
-    first_check_timeout_ms: int
     activity_ping_ms: int
     toast_ms: int
     log_shown: int                       # web.list_sizes.log

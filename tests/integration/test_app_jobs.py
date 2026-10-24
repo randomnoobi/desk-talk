@@ -227,5 +227,6 @@ def test_the_water_tracker_tells_the_ai_the_real_habit_numbers(tmp_path):
     rig = DeskRig(tmp_path)
     rig.app.habits.log('hydration', 'glass')
     now = rig.clock.now()
-    text = tracker_prompt('hydration', rig.app.habits.today(now), None, [], now, rig.config.chat)
+    text = tracker_prompt('hydration', rig.app.habits.today(now), None, [], now, rig.config.chat,
+                          words=rig.config.prompts.trackers)
     assert '240 ml of a 2400 ml goal' in text                # a glass, and the goal in config/protocols.yaml

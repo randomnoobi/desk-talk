@@ -76,7 +76,6 @@
       "activity_ping_ms": "number",
       "chat_kept": "number",
       "chat_saved": "number",
-      "first_check_timeout_ms": "number",
       "habit_log_shown": "number",
       "left_chat_shown_min": "number",
       "live_timeout_ms": "number",

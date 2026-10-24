@@ -67,7 +67,7 @@ def ui_settings_from(c: AppConfig) -> UiSettings:
     web, chat, habits, safety = c.web, c.chat, c.habit_tracker, c.safety
     return UiSettings(
         web=UiPage(refresh_ms=web.refresh_ms, request_timeout_ms=web.request_timeout_ms,
-                   live_timeout_ms=web.live_timeout_ms, first_check_timeout_ms=web.first_check_timeout_ms,
+                   live_timeout_ms=web.live_timeout_ms,
                    activity_ping_ms=web.activity_ping_ms, toast_ms=web.toast_ms, log_shown=web.list_sizes.log,
                    photos_shown=web.list_sizes.photos, habit_log_shown=web.list_sizes.habit_log.default,
                    chat_kept=web.list_sizes.chat_kept, chat_saved=web.list_sizes.chat_saved,
