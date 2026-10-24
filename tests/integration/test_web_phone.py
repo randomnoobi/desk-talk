@@ -118,3 +118,12 @@ def test_the_phone_gets_its_picture_settings(phone, rig):
         'fps': camera.fps, 'max_side': camera.phone_max_side, 'jpeg_quality': camera.phone_jpeg_quality,
         'tilt_max': camera.phone_tilt_max, 'capture_width': camera.phone_capture_width,
         'capture_height': camera.phone_capture_height}
+
+
+def test_phone_uploads_when_the_camera_is_the_pi_say_which_camera_is_set(tmp_path):
+    rig = DeskRig(tmp_path)              # the Pi is the camera
+    phone = web_client(create_phone_app(rig.app), from_ip='192.168.1.50')
+    headers = {'X-Desk-Key': PAIR_KEY, 'Content-Type': 'image/jpeg'}
+    for path in ('/api/phone/frame', '/api/phone/stop'):
+        reply = phone.post(path, content=rig.jpeg, headers=headers)
+        assert reply.status_code == 409 and 'camera.source: pi' in reply.json()['error'], path
