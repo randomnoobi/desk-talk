@@ -11,10 +11,10 @@ from desktalk.adapters.llm import OpenAICompatibleChatModel, ResilientChatModel
 from desktalk.config import Secrets, load_config
 from desktalk.core.chat.message_generator import MessageGenerator
 from desktalk.core.chat.message_hub import MessageHub
-from desktalk.desk_state import DeskState
 from desktalk.domain import AgentJoined, AgentProfile, AIUnavailable
 from tests.conftest import FakeAI
 from tests.fakes import FakeClock, FakeDeskStatus, FakeHabits, FakeProfiles, StaticRoster, SyncEventBus
+from tests.unit.test_core_chat_message_generator import FakeChatDesk
 
 CONFIG = load_config(environ={}, dotenv=Path('/nonexistent'))
 CUP = AgentProfile(id='cup', name='Cup', object='cup', labels=['cup'], habits=['hydration'], tracker='hydration',
@@ -41,14 +41,15 @@ def build(reply):
         return clients[-1]
     llm = CONFIG.llm.model_copy(update={'min_interval_sec': 0})
     ai = OpenAICompatibleChatModel(llm, Secrets(gemini_api_key='g', openai_api_key='', groq_api_key='', ollama_url=''),
-                                   clock, client_factory=factory)
+                                   clock, client_factory=factory, replies=CONFIG.prompts.replies)
     model = ResilientChatModel(ai, clock, llm, time_limit_sec=ai.time_limit_sec)
     hub = MessageHub(clock, recent_kept=CONFIG.chat.recent_kept, queue_size=CONFIG.web.live_queue_size)
     habit_log = HabitLog()
-    gen = MessageGenerator(model, hub, StaticRoster(['cup']), FakeProfiles([CUP]), FakeHabits(TODAY), DeskState(),
+    gen = MessageGenerator(model, hub, StaticRoster(['cup']), FakeProfiles([CUP]), FakeHabits(TODAY), FakeChatDesk(),
                            clock, status=FakeDeskStatus(), habit_log=habit_log, llm=llm, chat=CONFIG.chat,
                            agents=CONFIG.agents, sunlight_default_min=CONFIG.habit_tracker.sunlight_default_min,
-                           reply_max_chars=500, local_model=ai.is_local, rng=random.Random(0))
+                           reply_max_chars=500, prompts=CONFIG.prompts, drink_labels=CONFIG.safety.liquids,
+                           preview_chars=CONFIG.logging.preview_chars, local_model=ai.is_local, rng=random.Random(0))
     bus = SyncEventBus()
     gen.subscribe_to(bus)
     return clients, model, hub, gen, bus, habit_log
@@ -100,7 +101,8 @@ def test_an_ollama_that_keeps_answering_with_nothing_is_asked_at_most_max_retrie
         return clients[-1]
     llm = CONFIG.llm.model_copy(update={'min_interval_sec': 0, 'max_retries': 3})
     ai = OpenAICompatibleChatModel(llm, Secrets(gemini_api_key='', openai_api_key='', groq_api_key='',
-                                                ollama_url='http://ollama.test/v1'), clock, client_factory=factory)
+                                                ollama_url='http://ollama.test/v1'), clock, client_factory=factory,
+                                   replies=CONFIG.prompts.replies)
     model = ResilientChatModel(ai, clock, llm, time_limit_sec=ai.time_limit_sec)
     with pytest.raises(AIUnavailable) as err:
         model.chat([{'role': 'user', 'content': 'hi'}], max_tokens=50, temperature=0.5)

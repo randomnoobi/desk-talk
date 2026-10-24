@@ -3,16 +3,28 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
+from pathlib import Path
 
-import cv2
 import numpy as np
 
-from desktalk.config import AiReplies, AiReply, LostItem, LostItemsSettings, SnapshotsSettings
+from desktalk.config import AiReplies, AiReply, LostItem, LostItemsSettings, load_config
+from desktalk.core.chat.workers.lost_item_words import TrackedItems
 from desktalk.core.chat.workers.lost_items import LostItems
-from desktalk.core.vision.proof_photos import ProofPhotos
-from desktalk.desk_state import DeskState
-from desktalk.domain import AgentProfile, Alert, BBox, Detection, DetectionEvent, Light
-from tests.fakes import FakeChatModel, FakeClock, FakeHabits, FakeProfiles, StaticRoster, SyncEventBus
+from desktalk.core.chat.workers.lost_items_answers import LostItemsDesk
+from desktalk.domain import AgentProfile, Alert, BBox, Box, Detection, DetectionEvent, Light, SeenObject, Size
+from tests.fakes import (
+    FakeChatModel,
+    FakeClock,
+    FakeDeskScene,
+    FakeHabits,
+    FakeLivePictures,
+    FakePhotoAlbum,
+    FakePictureTools,
+    FakeProfiles,
+    StaticRoster,
+    SyncEventBus,
+)
 
 ITEMS = {
     'phone': LostItem(name='Phone', labels=('cell phone',), alert_after_min=10,
@@ -35,40 +47,72 @@ PROFILES = FakeProfiles([AgentProfile(id='computer', name='Computer', object='la
                          AgentProfile(id='keys', name='Keys', object='keys'),
                          AgentProfile(id='paper', name='Paper', object='notepad', habits=['tasks'], temperature=0.5),
                          AgentProfile(id='lamp', name='Lamp'), AgentProfile(id='pen', name='Pen')])
-SNAPSHOTS = SnapshotsSettings(max_kept=150, crop_padding=0.25, crop_min_px=40, jpeg_quality=85)
-CTA = {'label': '🖼 Desk captures', 'action': 'captures'}
+WORDS = load_config(environ={}, dotenv=Path('/nonexistent')).prompts.lost_items
+KEPT = 150
+CTA = {'label': WORDS.captures_button, 'action': 'captures'}
 NO_AI = FakeChatModel(ready=False)
+TOOLS = FakePictureTools()
 
 
 def picture(value: int) -> bytes:
-    return cv2.imencode('.jpg', np.full((48, 64, 3), value, np.uint8))[1].tobytes()
+    jpeg = TOOLS.encode_jpeg(np.full((48, 64, 3), value, np.uint8), quality=85)
+    assert jpeg is not None
+    return jpeg
 
 
 DARK, BRIGHT = picture(20), picture(230)
 
 
+class FakeLostItemsDesk(FakeLivePictures, FakeDeskScene, FakePhotoAlbum):
+    def __init__(self):
+        FakeLivePictures.__init__(self)
+        FakeDeskScene.__init__(self)
+        FakePhotoAlbum.__init__(self, KEPT)
+
+
+class AlbumPhotos:
+    """A PhotoTaker that keeps the live view picture in the desk's album, tagged like the real proof photos."""
+
+    def __init__(self, desk: FakeLostItemsDesk, clock: FakeClock):
+        self._desk, self._clock = desk, clock
+
+    def save(self, label: str, crop_boxes: Sequence[Box] = ()) -> str | None:
+        jpeg = self._desk.boxed()
+        if not jpeg:
+            return None
+        return self._desk.add(jpeg, label, self._clock.now(), labels=list(self._desk.seen()),
+                              vlm_labels=sorted(self._desk.scan_labels()))
+
+
 class Rig:
-    def __init__(self, chat=NO_AI, vision=None, members=('computer',), phone_is_camera=False, settings=SETTINGS):
+    def __init__(self, chat=NO_AI, vision=None, members=('computer',), phone_is_camera=False, settings=SETTINGS,
+                 words=WORDS):
         self.clock = FakeClock(time.mktime((2026, 10, 21, 14, 0, 0, 0, 0, -1)))
         self.bus = SyncEventBus()
-        self.desk = DeskState()
+        self.desk = FakeLostItemsDesk()
         self.habits = FakeHabits()
         self.chat, self.vision = chat, vision
-        self.proof_photos = ProofPhotos(self.desk, self.clock, SNAPSHOTS)
+        self.proof_photos = AlbumPhotos(self.desk, self.clock)
         self.lost = LostItems(self.clock, self.bus, self.desk, StaticRoster(members), PROFILES, self.habits, chat,
-                              vision, settings, REPLIES, photos=self.proof_photos,
-                              default_temperature=0.8, phone_is_camera=phone_is_camera)
+                              vision, settings, REPLIES, photos=self.proof_photos, default_temperature=0.8,
+                              pictures=TOOLS, prompts=words, photos_kept=KEPT, phone_is_camera=phone_is_camera)
         self.show(DARK)
 
     def show(self, jpeg):
         """The newest picture from the camera."""
-        self.desk.raw_frames[0] = self.desk.frames[0] = jpeg
+        self.desk.put(0, jpeg, jpeg, Size(64, 48))
+
+    def tag(self, *labels):
+        """What the desk scene says is in the newest picture (what the photos are tagged with)."""
+        boxes = {label: SeenObject(label=label, box=(50, 50, 80, 70), center=(65, 60), confidence=0.9)
+                 for label in labels}
+        self.desk.note_picture(boxes, self.clock.now(), person=False, moved=False, new_session=False)
 
     def see(self, *labels, conf=0.9, after=0.0):
         """One analysed picture with these things in it."""
         self.clock.advance(after)
         found = tuple(Detection(label, conf, BBox(50, 50, 80, 70)) for label in labels)
-        self.desk.seen_labels = {label: {'conf': conf} for label in labels}
+        self.tag(*labels)
         self.bus.publish(DetectionEvent(ts=self.clock.now(), frame_id='pi-000001', source='pi', size=(640, 480),
                                         detections=found, person=False, light=Light(brightness=120)))
 
@@ -80,15 +124,20 @@ class Rig:
         return [(a.feature, a.text) for a in self.bus.of_type(Alert)]
 
     def photos(self):
-        return [p['label'] for p in reversed(self.desk.snapshot_order)]
+        return [p.label for p in reversed(self.desk.newest(KEPT))]
+
+
+def test_the_fake_desk_has_what_lost_items_need():
+    assert isinstance(FakeLostItemsDesk(), LostItemsDesk)
 
 
 # ── words ──
 def test_the_items_and_their_words_come_from_the_settings():
     lost = Rig().lost
     assert lost.items['keys']['name'] == 'Keys' and lost.items['keys']['labels'] == {'key', 'remote'}
-    assert lost.items_in_text('have you seen my keys?') == ['keys']
-    assert lost.items_in_text('Where is my iPhone and my wallet') == ['phone', 'wallet']
+    items = TrackedItems(SETTINGS, WORDS.triggers)
+    assert items.in_text('have you seen my keys?') == ['keys']
+    assert items.in_text('Where is my iPhone and my wallet') == ['phone', 'wallet']
 
 
 def test_a_lost_question_needs_a_question_and_a_thing():
@@ -99,13 +148,19 @@ def test_a_lost_question_needs_a_question_and_a_thing():
     assert not lost.is_lost_query('my keys are great')
 
 
+def test_the_question_words_come_from_the_prompt_settings():
+    lost = Rig(words=WORDS.model_copy(update={'triggers': ('any sign of my',)})).lost
+    assert lost.is_lost_query('any sign of my keys?')
+    assert not lost.is_lost_query('have you seen my keys?')
+
+
 def test_detector_words_and_vision_words_find_the_item():
-    lost = Rig().lost
-    assert lost.items_in_labels({'earphone'}) == {'airpods'}
-    assert lost.items_in_labels({'car keys'}) == {'keys'}
-    assert lost.items_in_labels({'keyboard'}) == set()
-    assert lost.items_in_labels({'keyboard keys'}) == set()
-    assert lost.items_in_labels({'Cell Phone', 'cup'}) == {'phone'}
+    items = TrackedItems(SETTINGS, WORDS.triggers)
+    assert items.in_labels({'earphone'}) == {'airpods'}
+    assert items.in_labels({'car keys'}) == {'keys'}
+    assert items.in_labels({'keyboard'}) == set()
+    assert items.in_labels({'keyboard keys'}) == set()
+    assert items.in_labels({'Cell Phone', 'cup'}) == {'phone'}
 
 
 # ── sightings from the detector ──
@@ -136,7 +191,7 @@ def test_an_item_that_turns_up_gets_a_spotted_photo_but_not_too_often():
     rig.see(after=1)
     rig.see('key', after=15)
     assert rig.photos() == ['Spotted: Keys', 'Spotted: Keys']
-    assert rig.desk.snapshot_order[0]['ts'] == rig.clock.now()
+    assert rig.desk.newest(1)[0].ts == rig.clock.now()
 
 
 # ── alerts ──
@@ -213,7 +268,7 @@ def test_no_alerts_without_a_picture():
     rig = Rig()
     rig.see('key')
     rig.see()
-    rig.desk.raw_frames.clear()
+    rig.desk.plain_pictures.clear()
     rig.tick(after=20 * 60)
     assert rig.alerts() == []
 
@@ -227,7 +282,7 @@ def test_the_vision_scan_finds_small_things_the_detector_missed():
     assert 'Phone, Keys, Wallet, AirPods' in vision.calls[0]['prompt']
     assert rig.lost.sightings()['keys'] == {'last_seen': rig.clock.now(), 'alerted': False, 'source': 'vision',
                                             'last_near': ['Computer', 'keys', 'mug']}
-    assert rig.desk.lost_last_vlm_visible == {'keys', 'mug'}
+    assert rig.desk.scan_labels() == {'keys', 'mug'}
 
 
 def test_the_scan_runs_when_the_picture_changes_or_after_a_while():
@@ -266,15 +321,15 @@ def test_an_item_the_scan_still_sees_is_not_alerted():
 
 def test_a_scan_that_fails_changes_nothing():
     rig = Rig(vision=FakeChatModel(fail='Ollama is not running'))
-    rig.desk.lost_last_vlm_visible = {'mug'}
+    rig.desk.set_scan_labels({'mug'})
     assert rig.tick() == 60
-    assert rig.lost.sightings() == {} and rig.desk.lost_last_vlm_visible == {'mug'}
+    assert rig.lost.sightings() == {} and rig.desk.scan_labels() == {'mug'}
 
 
 def test_scan_photos_spotted_items_and_the_desk_now_and_then():
     answers = ['{"visible": []}', '{"visible": ["wallet"]}', '{"visible": ["wallet"]}']
     rig = Rig(vision=FakeChatModel(answers))
-    rig.desk.frames.clear()
+    rig.desk.boxed_pictures.clear()
     rig.tick()
     assert rig.photos() == []                        # no live view picture to take a photo of yet
     rig.show(BRIGHT)
@@ -342,22 +397,23 @@ def test_the_built_in_answer_when_the_item_was_never_seen():
 
 def test_a_never_seen_item_gets_a_look_at_a_saved_photo_tagged_with_it():
     rig = Rig(vision=FakeChatModel('Your keys are under the notebook on the left.'))
-    rig.desk.frames[0] = BRIGHT
-    rig.desk.seen_labels = {'remote': {}}
+    rig.desk.boxed_pictures[0] = BRIGHT
+    rig.tag('remote')
     photo = rig.proof_photos.save('Spotted: Keys')
-    rig.desk.seen_labels = {}
+    rig.tag()
     text = rig.lost.answer('have you seen my keys?')['text']
     assert text.endswith('A quick look at the live picture: Your keys are under the notebook on the left.')
     [call] = rig.vision.calls                      # the photo was enough: no look at the live picture
-    assert call['jpeg'] == rig.desk.snapshots[photo] and not call['background']
+    saved = rig.desk.get(photo) if photo else None
+    assert saved is not None and call['jpeg'] == saved.jpeg == BRIGHT and not call['background']
     assert 'Spotted: Keys' in call['prompt']
 
 
 def test_a_saved_photo_answer_that_says_too_little_falls_back_to_the_live_picture():
     rig = Rig(vision=FakeChatModel(['Not sure.', 'Visible: left of the laptop.']))
-    rig.desk.seen_labels = {'key': {}}
+    rig.tag('key')
     rig.proof_photos.save('Spotted: Keys')
-    rig.desk.seen_labels = {}
+    rig.tag()
     text = rig.lost.answer('have you seen my keys?')['text']
     assert text.endswith('A quick look at the live picture: Visible: left of the laptop.')
     assert rig.vision.calls[1]['jpeg'] == DARK
@@ -375,9 +431,9 @@ def test_how_much_of_the_vision_ais_answers_is_kept_comes_from_the_settings():
     rig = Rig(vision=FakeChatModel('Not visible: no keys on the desk.'), settings=short)
     assert rig.lost.answer('have you seen my keys?')['text'].endswith('A quick look at the live picture: Not visib')
     rig = Rig(vision=FakeChatModel('Your keys are under the notebook on the left.'), settings=short)
-    rig.desk.seen_labels = {'key': {}}
+    rig.tag('key')
     rig.proof_photos.save('Spotted: Keys')
-    rig.desk.seen_labels = {}
+    rig.tag()
     assert rig.lost.answer('have you seen my keys?')['text'].endswith('live picture: Your keys ar')
 
 
@@ -400,4 +456,14 @@ def test_a_question_about_something_else_gets_a_look_at_the_live_picture():
 
 def test_a_question_about_something_else_without_a_vision_ai():
     text = Rig().lost.answer('have you seen my laptop?')['text']
-    assert text.startswith("I checked the desk camera but couldn't confidently spot that.")
+    assert text == WORDS.not_spotted and text.startswith("I checked the desk camera but couldn't confidently spot")
+
+
+def test_the_answer_words_come_from_the_prompt_settings():
+    words = WORDS.model_copy(update={'not_spotted': 'No luck.', 'captures_button': 'Photos',
+                                     'answer_system': '{name} the {object} looks for things.'})
+    assert Rig(words=words).lost.answer('have you seen my laptop?') == {
+        'speaker': 'lens', 'cta': {'label': 'Photos', 'action': 'captures'}, 'text': 'No luck.'}
+    ai = FakeChatModel('Found them!')
+    Rig(chat=ai, words=words).lost.answer('have you seen my keys?')
+    assert ai.calls[0]['messages'][0]['content'] == 'Lens the camera looks for things.'

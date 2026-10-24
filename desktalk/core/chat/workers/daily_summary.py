@@ -4,7 +4,8 @@ sums up the day: water, breaks, phone-free time, sunlight, near-spills, lost ite
 if the camera saw something that day, and only once a day, even if the app restarts.
 
     recap = DailySummary(chat_model, notifier, roster, habits, store, config.daily_summary, config.llm.replies,
-                         default_temperature=config.agents_file.default.temperature)
+                         default_temperature=config.agents_file.default.temperature, clock=clock,
+                         prompts=config.prompts.daily_recap, preview_chars=config.logging.preview_chars)
     supervisor.add(recap, start_after=config.daily_summary.start_delay_sec)
 """
 
@@ -12,14 +13,14 @@ from __future__ import annotations
 
 import logging
 import random
-import time
 from typing import Any
 
 from desktalk.config import AiReplies, DailySummarySettings
+from desktalk.config.prompts import DailyRecapPrompts
 from desktalk.core.agents.speakers import LENS
-from desktalk.core.chat import prompts
+from desktalk.core.chat import prompts as fill
 from desktalk.core.chat.workers.ai import ask
-from desktalk.ports import ChatModel, HabitsView, KeyValueStore, Notifier, RosterView
+from desktalk.ports import ChatModel, Clock, HabitsView, KeyValueStore, Notifier, RosterView
 
 log = logging.getLogger(__name__)
 
@@ -68,9 +69,12 @@ class DailySummary:
 
     def __init__(self, chat: ChatModel, notifier: Notifier, roster: RosterView, habits: HabitsView,
                  store: KeyValueStore, settings: DailySummarySettings, replies: AiReplies, *,
-                 default_temperature: float, rng: random.Random | None = None):
+                 default_temperature: float, clock: Clock, prompts: DailyRecapPrompts, preview_chars: int,
+                 rng: random.Random | None = None):
         """`replies`: settings → llm.replies (this uses daily_recap). `default_temperature`: agents.yaml's default
-        temperature, used if daily_recap has none. `store` remembers the day of the last recap."""
+        temperature, used if daily_recap has none. `store` remembers the day of the last recap. `clock` gives the
+        local hour. `prompts`: config/prompts.yaml → daily_recap. `preview_chars`: settings →
+        logging.preview_chars, the longest recap quoted in the log."""
         self._chat = chat
         self._notifier = notifier
         self._roster = roster
@@ -79,11 +83,14 @@ class DailySummary:
         self._settings = settings
         self._reply = replies.daily_recap
         self._default_temperature = default_temperature
+        self._clock = clock
+        self._words = prompts
+        self._preview_chars = preview_chars
         self._rng = rng or random.Random()
         self._sent_day: str | None = None      # kept here too, in case saving it fails
 
     def tick(self, now: float) -> float:
-        if time.localtime(now).tm_hour == self._settings.hour:
+        if self._clock.local_hour(now) == self._settings.hour:
             stats = self._habits.today(now)
             if stats.get('objects_seen') and not self._sent_on(stats['day']):
                 self._send(stats)
@@ -94,8 +101,8 @@ class DailySummary:
 
     def _send(self, stats: dict[str, Any]) -> None:
         facts = recap_facts(stats, self._settings.objects_listed)
-        messages = [{'role': 'system', 'content': prompts.DAILY_SUMMARY_SYSTEM},
-                    {'role': 'user', 'content': prompts.daily_summary_user(facts)}]
+        messages = [{'role': 'system', 'content': self._words.system},
+                    {'role': 'user', 'content': fill.daily_summary_user(self._words, facts)}]
         text = ask(self._chat, messages, self._reply, own_temperature=self._default_temperature, background=True,
                    what='the daily recap')
         text = text or f"Today's desk recap: {facts}"
@@ -103,7 +110,7 @@ class DailySummary:
         speaker = self._rng.choice(members) if members else LENS
         self._notifier.send({'type': 'group_message', 'character': speaker, 'text': text, 'recap': True})
         self._sent_day = stats['day']
-        log.info('Daily recap from %s: %s', speaker, text[:100])
+        log.info('Daily recap from %s: %s', speaker, text[:self._preview_chars])
         try:
             self._store.save(SENT_KEY, {'sent_day': stats['day']})
         except OSError as exc:

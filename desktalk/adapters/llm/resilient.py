@@ -38,15 +38,16 @@ log = logging.getLogger(__name__)
 CHAT, VISION = 'chat', 'vision'
 
 
-def _plain_errors(ask: Callable[[], str]) -> str:
-    """Run one try. A ChatModel should only raise AIUnavailable; anything else is turned into one here."""
+def _plain_errors(ask: Callable[[], str], max_chars: int) -> str:
+    """Run one try. A ChatModel should only raise AIUnavailable; anything else is turned into one here, its text
+    cut to `max_chars` letters (settings → llm.error_text_chars)."""
     try:
         return ask()
     except AIUnavailable:
         raise
     except Exception as exc:
         log.exception('The AI connection raised an unexpected error')
-        raise AIUnavailable(f'The AI returned an error: {str(exc)[:160]}') from exc
+        raise AIUnavailable(f'The AI returned an error: {str(exc)[:max_chars]}') from exc
 
 
 class _Breaker:
@@ -155,7 +156,7 @@ class ResilientChatModel:
         rate_limit_retried = False
         for attempt in range(tries):
             try:
-                text = _plain_errors(ask)
+                text = _plain_errors(ask, self._s.error_text_chars)
             except AIUnavailable as err:
                 wait = self._wait_before_next_try(kind, err, attempt, background, rate_limit_retried)
                 elapsed = self._clock.monotonic() - started

@@ -27,8 +27,9 @@ def is_rate_limit(err: object) -> bool:
     return any(word in text for word in _RATE_LIMIT_WORDS)
 
 
-def friendly_ai_error(err: object, label: str = '') -> str:
-    """Turn an AI error into one plain sentence the user can act on."""
+def friendly_ai_error(err: object, label: str = '', *, max_chars: int) -> str:
+    """Turn an AI error into one plain sentence the user can act on. An error it doesn't know is shown as it
+    came, cut to `max_chars` letters (settings → llm.error_text_chars)."""
     text = str(err).lower()
     who = (label or 'the AI').split(' ')[0]
     if is_rate_limit(text):
@@ -48,13 +49,13 @@ def friendly_ai_error(err: object, label: str = '') -> str:
         if who.lower() == 'ollama':
             return 'Could not reach Ollama. Open the Ollama app, then try again.'
         return 'Could not reach the AI service. Check the internet connection and try again.'
-    return f'The AI returned an error: {str(err)[:160]}'
+    return f'The AI returned an error: {str(err)[:max_chars]}'
 
 
-def error_from(err: object, label: str = '') -> AIUnavailable:
-    """The AIUnavailable to raise for an error from the AI service."""
+def error_from(err: object, label: str = '', *, max_chars: int) -> AIUnavailable:
+    """The AIUnavailable to raise for an error from the AI service (`max_chars`: see friendly_ai_error)."""
     text = str(err).lower()
-    reason = friendly_ai_error(err, label)
+    reason = friendly_ai_error(err, label, max_chars=max_chars)
     if is_rate_limit(text):
         return AIUnavailable(reason, rate_limited=True)
     if any(word in text for word in _KEY_WORDS + _MODEL_WORDS):

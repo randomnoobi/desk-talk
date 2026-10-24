@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
-from desktalk.config import AiReplies, AiReply, IdleChatSettings
+from desktalk.config import AiReplies, AiReply, IdleChatSettings, load_config
 from desktalk.core.chat.workers.idle_chat import IdleChat
-from desktalk.desk_state import DeskState
 from desktalk.domain import AgentProfile
-from tests.fakes import FakeChatModel, FakeClock, FakeDeskStatus, FakeProfiles, RecordingNotifier, StaticRoster
+from tests.fakes import (
+    FakeCharacterMemory,
+    FakeChatModel,
+    FakeClock,
+    FakeDeskStatus,
+    FakeProfiles,
+    RecordingNotifier,
+    StaticRoster,
+)
+
+WORDS = load_config(environ={}, dotenv=Path('/nonexistent')).prompts.small_talk
 
 SETTINGS = IdleChatSettings(min_sec=720, max_sec=1500, start_delay_sec=15, max_turns=3, quiet_after_typing_sec=10,
                             pause_between_lines_sec=3, pause_random_sec=3, memory_per_agent=2, memory_lines=6,
@@ -42,16 +52,17 @@ class Dice:
 
 class Rig:
     def __init__(self, replies=(), members=('cup', 'computer'), status=None, ai=None, settings=SETTINGS,
-                 reply_max_chars=500):
+                 reply_max_chars=500, words=WORDS):
         self.clock = FakeClock(time.mktime((2026, 10, 21, 14, 0, 0, 0, 0, -1)))
         self.replies = list(replies)
         self.ai = ai or FakeChatModel(lambda messages: self.replies.pop(0))
         self.notifier = RecordingNotifier(self.clock)
         self.status = status or FakeDeskStatus()
-        self.desk = DeskState()
+        self.desk = FakeCharacterMemory()
         self.idle = IdleChat(self.ai, self.notifier, self.status, StaticRoster(members), PROFILES, self.desk,
                              lambda: SUMMARY, settings, REPLIES, memory_kept=8, memory_chars=120,
-                             default_temperature=0.8, reply_max_chars=reply_max_chars, rng=Dice())
+                             default_temperature=0.8, reply_max_chars=reply_max_chars, prompts=words,
+                             preview_chars=120, rng=Dice())
         assert self.idle.tick(self.clock.now()) == 720     # the first round only sets the time of the next one
 
     def tick(self, after=0.0):
@@ -82,7 +93,8 @@ def test_a_topic_an_opening_question_then_the_director_picks_who_answers():
 
 def test_what_the_ai_is_asked():
     rig = Rig([TOPIC, OPENING, GO_ON_COMPUTER, ANSWER, STOP])
-    rig.desk.char_memory['cup'] = ['[You said] one', '[You said] two', '[You said] three']
+    for line in ('one', 'two', 'three'):
+        rig.desk.remember('cup', f'[You said] {line}', 8)
     rig.tick(after=720)
     rig.tick(after=4.5)
     topic, opening, director, answer = rig.ai.calls[:4]
@@ -102,16 +114,17 @@ def test_what_the_ai_is_asked():
 
 def test_each_line_is_remembered_by_the_agent_who_said_it():
     rig = Rig([TOPIC, OPENING, GO_ON_COMPUTER, ANSWER, STOP])
-    rig.desk.char_memory['cup'] = [f'[You said] old {n}' for n in range(8)]
+    for n in range(8):
+        rig.desk.remember('cup', f'[You said] old {n}', 8)
     rig.tick(after=720)
     rig.tick(after=4.5)
-    assert rig.desk.char_memory['computer'] == [f'[You said] {ANSWER}']
-    assert len(rig.desk.char_memory['cup']) == 8 and rig.desk.char_memory['cup'][-1] == f'[You said] {OPENING}'
+    assert rig.desk.recent('computer') == [f'[You said] {ANSWER}']
+    assert len(rig.desk.recent('cup')) == 8 and rig.desk.recent('cup')[-1] == f'[You said] {OPENING}'
 
 
 def test_it_waits_while_you_type():
     rig = Rig([TOPIC, OPENING, STOP])
-    rig.desk.last_user_activity = rig.clock.now() + 716
+    rig.desk.note_user_activity(rig.clock.now() + 716)
     assert rig.tick(after=720) == 6
     assert rig.ai.calls == []
     assert rig.tick(after=6) == 4.5
@@ -121,7 +134,7 @@ def test_it_waits_while_you_type():
 def test_the_chat_stops_when_you_start_typing():
     rig = Rig([TOPIC, OPENING])
     rig.tick(after=720)
-    rig.desk.last_user_activity = rig.clock.now() + 2
+    rig.desk.note_user_activity(rig.clock.now() + 2)
     assert rig.tick(after=4.5) == 720
     assert len(rig.ai.calls) == 2 and rig.lines() == [('cup', OPENING)]
 
@@ -181,6 +194,15 @@ def test_the_director_can_end_the_chat_or_name_someone_unknown():
     other.tick(after=720)
     other.tick(after=4.5)
     assert other.lines()[1][0] == 'computer'          # someone else in the chat, not the one who just spoke
+
+
+def test_small_talk_uses_prompt_settings():
+    words = WORDS.model_copy(update={'topic_system': 'Pick a topic.', 'line_system': '{name} chats about it.'})
+    rig = Rig([TOPIC, OPENING, STOP], words=words)
+    rig.tick(after=720)
+    topic, opening = rig.ai.calls[:2]
+    assert topic['messages'][0]['content'] == 'Pick a topic.'
+    assert opening['messages'][0]['content'] == 'Cup chats about it.'
 
 
 def test_the_chat_ends_after_the_most_replies():

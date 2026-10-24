@@ -263,6 +263,7 @@ llm:
   groq_url: https://api.groq.com/openai/v1
   gemini_thinking_budget: 0   # 0 = Gemini answers straight away, without "thinking" first (faster, cheaper)
   error_text_chars: 160       # an error from the AI is cut to this many letters before it's shown
+  error_log_chars: 200        # ...and to this many in the log, when it's written there as it came
   # How long each kind of AI reply may be (max_tokens; a token is about 3/4 of a word) and how
   # creative (temperature, 0-1). No temperature = the agent's own, from agents.yaml.
   replies:

@@ -352,7 +352,7 @@ NEW_SETTINGS = {
         ('web', 'list_sizes', 'chat_kept'), ('web', 'list_sizes', 'chat_saved'), ('web', 'left_chat_shown_min'),
         ('camera', 'phone_capture_width'), ('camera', 'phone_capture_height'),
         ('logging', 'file_name'), ('logging', 'preview_chars'), ('llm', 'error_text_chars'),
-        ('pi', 'camera'), ('pi', 'error_text_chars'),
+        ('pi', 'camera'), ('pi', 'error_text_chars'), ('llm', 'error_log_chars'),
     ],
     'protocols.yaml': [('food', 'healthy')],
 }
@@ -413,7 +413,7 @@ def test_new_settings_keep_the_values_the_code_has_today(project):
     assert (web.list_sizes.log, web.list_sizes.photos) == (150, 6)
     assert (web.list_sizes.chat_kept, web.list_sizes.chat_saved, web.left_chat_shown_min) == (200, 60, 60)  # app.js
     assert (camera.phone_capture_width, camera.phone_capture_height) == (1280, 720)                  # camera.js
-    assert (cfg.logging.file_name, cfg.llm.error_text_chars) == ('desktalk.log', 160)
+    assert (cfg.logging.file_name, cfg.llm.error_text_chars, cfg.llm.error_log_chars) == ('desktalk.log', 160, 200)
     assert 'banana' in cfg.protocols.food.healthy and len(cfg.protocols.food.healthy) == 20          # tracker.py
 
 

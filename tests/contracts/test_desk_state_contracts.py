@@ -60,7 +60,7 @@ def test_pictures_written_the_old_way_are_read_the_new_way_and_back():
         b'plain', b'boxes', [0], Light(brightness=80.0))
     desk.put(1, b'plain 1', b'boxes 1', Size(320, 240))
     assert (desk.raw_frames[1], desk.frames[1], desk.cameras[1]) == (b'plain 1', b'boxes 1', True)
-    assert (desk.frame_w, desk.frame_h) == (320, 240) and desk.first_raw_frame() == b'plain'
+    assert (desk.frame_w, desk.frame_h) == (320, 240) and desk.plain() == b'plain'
     desk.set_light(30.0, 12.0)
     assert desk.light == {'brightness': 30.0, 'lux': 12.0}
 

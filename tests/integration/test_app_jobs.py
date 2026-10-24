@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import time
 
-from desktalk.core.chat import prompts
 from desktalk.core.chat.tracker_actions import tracker_prompt
 from desktalk.domain import BBox, Detection, DetectorState, UploadInfo
 from tests.integration.app_kit import (
@@ -110,16 +109,16 @@ def test_lens_says_why_the_pis_own_detection_is_off(tmp_path):
 
 
 # ── small talk ───────────────────────────────────────────────────────
-def small_talk_ai():
-    """The fake AI, answering by what it's asked: a topic, each agent's line, and the director (one more
-    line, then stop)."""
+def small_talk_ai(words):
+    """The fake AI, answering by what it's asked (`words`: the small-talk prompts): a topic, each agent's
+    line, and the director (one more line, then stop)."""
     directed = []
 
     def reply(request):
         system = request['messages'][0]['content']
-        if system == prompts.TOPIC_SYSTEM:
+        if system == words.topic_system:
             return 'Who has been on this desk the longest?'
-        if system == prompts.DIRECTOR_SYSTEM:
+        if system == words.director_system:
             directed.append(request)
             return '{"continue": true}' if len(directed) == 1 else '{"continue": false}'
         if system.startswith('You are Computer'):
@@ -133,7 +132,7 @@ def small_talk_ai():
 def test_the_agents_make_small_talk_while_someone_is_at_the_desk(tmp_path):
     config = changed(desk_config(tmp_path, ai=True), 'reminders', warmup_min=1)
     config = changed(config, 'idle_chat', min_sec=30, max_sec=30)
-    rig = DeskRig(tmp_path, config=config, ai_reply=small_talk_ai())
+    rig = DeskRig(tmp_path, config=config, ai_reply=small_talk_ai(config.prompts.small_talk))
     rig.watch(70, LAPTOP, CUP_FAR, step=1.0)
     rig.messages()
     wait = rig.tick(rig.app.idle_chat)                    # the first round only sets when the chat starts
