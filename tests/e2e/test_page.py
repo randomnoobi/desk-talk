@@ -211,3 +211,29 @@ def test_page_runs_as_a_demo_without_a_server(page):
         page.goto(url, wait_until='domcontentloaded')
         expect_the_demo(page)
     assert [e for e in errors if not FIRST_CHECK_404.search(e)] == []
+
+
+# The demo's agents have no light or phone-free panel, but an agent with one can join (as on the real desk).
+DEMO_EXTRA_PANELS = {'Lamp': 'light', 'Phone': 'phone_free'}
+
+
+def test_the_demos_panels_have_every_number_they_show(page):
+    """The demo's own settings (DEMO_UI in app.js) have every number its panels show, e.g. the minutes the
+    "I got sunlight" button logs."""
+    errors = watch_for_errors(page)
+    page.goto((APP_FOLDER / 'index.html').as_uri(), wait_until='domcontentloaded')
+    expect(chat_link(page, DEMO_CHAT)).to_be_visible()
+    page.evaluate('''(panels) => {
+        for (const [name, tracker] of Object.entries(panels)) {
+            const joinedAt = Date.now() / 1000;
+            upsertAgent({ id: name.toLowerCase(), name, color: 'moss', tracker, on_desk: true, joined_at: joinedAt });
+        }
+        renderChatList();
+    }''', DEMO_EXTRA_PANELS)
+    for name in (*DEMO_CHATS, *DEMO_EXTRA_PANELS):
+        chat_link(page, name).click()
+        expect(page.locator('#tracker')).to_be_visible()
+        expect(page.locator('#tracker')).not_to_contain_text(re.compile(r'undefined|NaN'))
+        if name == 'Lamp':
+            assert (page.locator('#tracker [data-sun]').get_attribute('data-sun') or '').isdigit()
+    assert [e for e in errors if not FONT_FROM_FILE.search(e)] == []

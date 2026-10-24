@@ -1311,10 +1311,13 @@ async function startLive(status) {
 const DEMO_HOW_TO_RUN = 'Run python server.py on this computer and open http://localhost:5000 to use your real desk.';
 // The settings the demo needs to tell its story (in the real app: config/settings.yaml and protocols.yaml).
 const DEMO_UI = {
-  web: { toast_ms: 4000, chat_kept: 200, palette: ['cobalt', 'teal', 'tang', 'mustard', 'coral', 'plum', 'moss', 'slate', 'ink'] },
+  web: {
+    toast_ms: 4000, chat_kept: 200, chat_saved: 60, left_chat_shown_min: 60,
+    palette: ['cobalt', 'teal', 'tang', 'mustard', 'coral', 'plum', 'moss', 'slate', 'ink'],
+  },
   chat: { todo_max_chars: 200 },
   habits: {
-    glass_ml: 240, food_label_max_chars: 60, goal_window_hours: 10, stop_before_bed_hours: 2,
+    sunlight_default_min: 10, glass_ml: 240, food_label_max_chars: 60, goal_window_hours: 10, stop_before_bed_hours: 2,
     morning_minutes: { clear: 10, partly_cloudy: 20, overcast: 30 }, morning_window_min: 60, evening_dim_before_bed_min: 60,
     breaks: { break_min: 5, walk_after_meal: true },
   },
