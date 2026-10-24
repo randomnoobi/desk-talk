@@ -27,3 +27,19 @@ def test_fake_clock_moves_only_when_told():
     clock.sleep(2)
     assert clock.now() == 1_700_000_007.0
     assert clock.slept == [2]
+
+
+def test_fake_clock_tells_the_hour_and_day_in_a_fixed_time_zone():
+    utc = FakeClock()
+    assert (utc.local_hour(0), utc.local_day(0)) == (0, '1970-01-01')
+    assert utc.local_hour(5 * 3600 + 59) == 5
+    los_angeles = FakeClock(utc_offset_hours=-7)
+    assert (los_angeles.local_hour(0), los_angeles.local_day(0)) == (17, '1969-12-31')
+
+
+def test_system_clock_uses_this_computers_time_zone():
+    import time
+    clock = SystemClock()
+    ts = 1_760_000_000.0
+    assert clock.local_hour(ts) == time.localtime(ts).tm_hour
+    assert clock.local_day(ts) == time.strftime('%Y-%m-%d', time.localtime(ts))

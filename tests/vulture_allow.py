@@ -40,7 +40,8 @@ from desktalk.config.prompts import (
     VisionPrompts,
 )
 from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent, NudgeSent
-from desktalk.ports import EventStore, PictureInbox
+from desktalk.ports import Clock, EventStore, PictureInbox
+from desktalk.runtime import SystemClock
 from desktalk.web.schemas import PhoneSettings, PreferenceChanges, UiPage, UiSettings
 from desktalk_shared.wire import PiHealth
 
@@ -113,6 +114,9 @@ _ = (
     # once Task 9 of the cleanup plan switches them over to GET /api/phone/config and GET /api/ui_settings.
     PhoneSettings.max_side, PhoneSettings.tilt_max, UiPage.log_shown, UiPage.photos_shown, UiPage.habit_log_shown,
     UiSettings.lens_card, UiSettings.chat_reply_timeout_ms,
+    # Interfaces and methods added in Task 4 of the cleanup plan, for the code later tasks switch over.
+    # Task 6 (Lens, the daily summary) and Task 7 (the habits) ask the clock for the local hour:
+    Clock.local_hour, SystemClock.local_hour,
     # Pydantic's own settings attribute, and the flag uvicorn's thread reads to stop.
     PreferenceChanges.model_config, Server(config=None).should_exit,  # type: ignore[arg-type]
 )

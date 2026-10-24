@@ -36,6 +36,14 @@ class Clock(Protocol):
         """Wait. (Background jobs don't call this: the Supervisor does their waiting, so stopping is instant.)"""
         ...
 
+    def local_hour(self, now: float) -> int:
+        """The hour (0-23) of the local time at `now` (seconds since 1970)."""
+        ...
+
+    def local_day(self, now: float) -> str:
+        """The local day at `now`, e.g. '2026-10-24' (the same day names the event log uses)."""
+        ...
+
 
 @runtime_checkable
 class PeriodicWorker(Protocol):
