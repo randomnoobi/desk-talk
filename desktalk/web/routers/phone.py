@@ -1,7 +1,7 @@
 """
 The phone as the camera, on the phone page's own HTTPS server (create_phone_app):
     GET  /, /phone, /phone/  the camera page (phone_camera/index.html); its files are under /phone/
-    GET  /api/phone/config   how many pictures a second to send
+    GET  /api/phone/config   how many pictures a second to send, how big and how sharp, and the highest real tilt
     POST /api/phone/frame    one picture, with how the phone is tilted (X-Desk-Gravity) and how far it turned
                              the picture (X-Desk-Rotation)
     POST /api/phone/stop     the user pressed Stop on the phone
@@ -11,15 +11,15 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from starlette.concurrency import run_in_threadpool
 
+from desktalk.config import CameraSettings
 from desktalk.web.deps import Desk, key_check, other_camera, read_upload
 from desktalk.web.files import page
-from desktalk.web.schemas import Ok, PhoneFrameReply
+from desktalk.web.schemas import Ok, PhoneFrameReply, PhoneSettings
 
 NOT_A_PICTURE = 'not a JPEG image'
 FULL_TURN = 360
@@ -56,9 +56,14 @@ def phone_page(desk: Desk) -> FileResponse:
     return page(desk.config.resolve(desk.config.web.phone_folder) / 'index.html')
 
 
+def phone_settings(camera: CameraSettings) -> PhoneSettings:
+    return PhoneSettings(fps=camera.fps, max_side=camera.phone_max_side, jpeg_quality=camera.phone_jpeg_quality,
+                         tilt_max=camera.phone_tilt_max)
+
+
 @phone_router.get('/api/phone/config')
-def phone_config(desk: Desk) -> dict[str, Any]:
-    return {'fps': desk.config.camera.fps}
+def phone_config(desk: Desk) -> PhoneSettings:
+    return phone_settings(desk.config.camera)
 
 
 @phone_router.post('/api/phone/frame', response_model=PhoneFrameReply, response_model_exclude_none=True,

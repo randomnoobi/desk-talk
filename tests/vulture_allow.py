@@ -41,7 +41,7 @@ from desktalk.config.prompts import (
 )
 from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent, NudgeSent
 from desktalk.ports import EventStore, PictureInbox
-from desktalk.web.schemas import PreferenceChanges
+from desktalk.web.schemas import PhoneSettings, PreferenceChanges, UiPage, UiSettings
 from desktalk_shared.wire import PiHealth
 
 _ = (
@@ -109,6 +109,10 @@ _ = (
     CameraPrompts.fixed, CameraPrompts.side_hints, CameraPrompts.other_side_hint, CameraPrompts.unknown_object,
     CameraPrompts.titles, CameraPrompts.lost_title, CameraPrompts.lost_fix, CameraPrompts.cutoff_title,
     CameraPrompts.edge_tip,
+    # Reply fields the phone page (phone_camera/camera.js) and the app page (web_app/app.js) read from the JSON
+    # once Task 9 of the cleanup plan switches them over to GET /api/phone/config and GET /api/ui_settings.
+    PhoneSettings.max_side, PhoneSettings.tilt_max, UiPage.log_shown, UiPage.photos_shown, UiPage.habit_log_shown,
+    UiSettings.lens_card, UiSettings.chat_reply_timeout_ms,
     # Pydantic's own settings attribute, and the flag uvicorn's thread reads to stop.
     PreferenceChanges.model_config, Server(config=None).should_exit,  # type: ignore[arg-type]
 )

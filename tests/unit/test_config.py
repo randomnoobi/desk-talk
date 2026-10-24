@@ -416,3 +416,11 @@ def test_every_agent_color_is_in_the_page_palette(project):
     cfg = load_config(root=project, environ={})
     colors = {a.color for a in cfg.agents_file.agents.values() if a.color}
     assert colors <= set(cfg.web.palette)
+
+
+def test_the_longest_chat_reply_follows_how_the_server_tries_the_ai(project):
+    """Wait its turn, keep trying until the time limit (the last try may start just before it), and on Ollama
+    ask that last try up to max_retries times for a reply that isn't empty (adapters/llm/)."""
+    llm = load_config(root=project, environ={}).llm
+    assert (llm.min_interval_sec, llm.ollama_timeout_sec, llm.max_retries, llm.ollama_retry_sec) == (6, 90, 3, 2)
+    assert llm.longest_reply_sec() == 6 + 90 + 3 * 90 + 2 * 2

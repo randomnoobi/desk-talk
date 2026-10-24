@@ -12,6 +12,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from desktalk.config import BreaksRule, EdgeProximity, MorningMinutes, PageRefresh, QuietHours
+
 
 class ChatMessage(BaseModel):
     """POST /api/chat"""
@@ -108,3 +110,84 @@ class PhoneFrameReply(BaseModel):
     ok: bool = True
     fps: float
     tip: str | None = None               # left out when there's nothing to say (shown on the phone, e.g. "Too dark")
+
+
+class PhoneSettings(BaseModel):
+    """GET /api/phone/config, and the phone part of GET /api/ui_settings (settings → camera)."""
+
+    fps: float                           # pictures a second to send
+    max_side: int                        # longest side of each picture, in pixels
+    jpeg_quality: int                    # 1-100
+    tilt_max: float                      # a tilt reading above this (m/s², any axis) isn't a real one
+
+
+# ── GET /api/ui_settings: what the app page (web_app/) used to keep its own copies of ──
+class UiPage(BaseModel):
+    """settings → web: how often the page refreshes, how long it waits, how long lists are, its colors."""
+
+    refresh_ms: PageRefresh
+    request_timeout_ms: int
+    live_timeout_ms: int
+    first_check_timeout_ms: int
+    activity_ping_ms: int
+    toast_ms: int
+    log_shown: int                       # web.list_sizes.log
+    photos_shown: int                    # web.list_sizes.photos
+    habit_log_shown: int                 # web.list_sizes.habit_log.default
+    palette: list[str]
+
+
+class UiChat(BaseModel):
+    """settings → chat: what the page sends along with your message."""
+
+    message_max_chars: int
+    history_from_app: int
+    todo_max_items: int
+    todo_max_chars: int
+
+
+class UiHabits(BaseModel):
+    """The habit buttons and the Protocols numbers the Habits page shows."""
+
+    sunlight_default_min: float          # settings → habit_tracker
+    glass_ml: float
+    food_label_max_chars: int
+    goal_window_hours: float             # protocols.yaml → hydration
+    morning_minutes: MorningMinutes      # protocols.yaml → light
+    breaks: BreaksRule                   # protocols.yaml → breaks
+
+
+class UiDesk(BaseModel):
+    """settings → safety: what the Settings page needs to mark the desk."""
+
+    edge_proximity: EdgeProximity
+    desk_border_share: float
+    max_desk_corners: int
+
+
+class UiPi(BaseModel):
+    fps: float
+    delete_every_min: float
+    compact_every_min: float             # settings → event_log: how often pictures become intervals
+
+
+class UiLensCard(BaseModel):
+    id: str
+    name: str
+    art: str
+    color: str
+    about: str
+
+
+class UiSettings(BaseModel):
+    web: UiPage
+    chat: UiChat
+    habits: UiHabits
+    desk: UiDesk
+    quiet_hours: QuietHours              # settings → reminders.quiet_hours (the app's own choice wins)
+    pi: UiPi
+    phone: PhoneSettings
+    lens_card: UiLensCard
+    # How long the page waits for a chat reply: as long as the server may keep trying the AI
+    # (llm.longest_reply_sec), plus an ordinary request's wait for the trip there and back.
+    chat_reply_timeout_ms: int

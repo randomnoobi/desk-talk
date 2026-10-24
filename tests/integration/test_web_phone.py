@@ -99,6 +99,13 @@ def test_the_phone_page_and_its_files_are_served_and_nothing_else(rig, phone):
         assert phone.get(path).text.startswith('<!DOCTYPE html>'), path
     assert phone.get('/phone/camera.js').headers['cache-control'] == 'no-cache'
     assert phone.get('/art/desk.svg').status_code == 200
-    assert phone.get('/api/phone/config').json() == {'fps': rig.config.camera.fps}
+    assert phone.get('/api/phone/config').json()['fps'] == rig.config.camera.fps
     for path in ('/static/style.css', '/phone/nope.js', '/api/live', '/phone/../config/settings.yaml'):
         assert phone.get(path).status_code == 404, path
+
+
+def test_the_phone_gets_its_picture_settings(phone, rig):
+    camera = rig.config.camera
+    assert phone.get('/api/phone/config').json() == {
+        'fps': camera.fps, 'max_side': camera.phone_max_side, 'jpeg_quality': camera.phone_jpeg_quality,
+        'tilt_max': camera.phone_tilt_max}

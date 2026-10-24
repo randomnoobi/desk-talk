@@ -203,6 +203,42 @@ def test_marking_the_desk_corners_saves_them_in_the_rules(tmp_path):
     assert client.get('/api/rules').json()['desk_outline'] == saved['desk_outline']
 
 
+
+def test_ui_settings_reply(tmp_path):
+    """GET /api/ui_settings: the numbers and words the app page used to keep its own copies of."""
+    rig = DeskRig(tmp_path)
+    c = rig.config
+    ui = web_client(rig.app).get('/api/ui_settings').json()
+    assert ui['web']['refresh_ms'] == {'live': 1500, 'habits': 15000, 'photos': 10000, 'log': 20000}
+    assert (ui['web']['request_timeout_ms'], ui['web']['toast_ms'], ui['web']['activity_ping_ms']) == (8000, 4000, 3000)
+    assert (ui['web']['log_shown'], ui['web']['photos_shown'], ui['web']['habit_log_shown']) == (150, 6, 40)
+    assert ui['web']['palette'][-1] == 'ink'
+    assert ui['chat'] == {'message_max_chars': 1200, 'history_from_app': 10, 'todo_max_items': 20,
+                          'todo_max_chars': 200}
+    assert ui['habits']['sunlight_default_min'] == 10
+    assert ui['habits']['morning_minutes'] == {'clear': 10, 'partly_cloudy': 20, 'overcast': 30}
+    assert ui['habits']['breaks']['sit_limit_min'] == c.protocols.breaks.sit_limit_min
+    assert ui['desk']['edge_proximity']['danger_px'] == 35 and ui['desk']['max_desk_corners'] == 12
+    assert ui['desk']['desk_border_share'] == 0.03
+    assert ui['quiet_hours'] == {'enabled': False, 'start_hour': 22, 'end_hour': 7}
+    assert ui['pi'] == {'fps': 3, 'delete_every_min': 10, 'compact_every_min': 10}
+    assert ui['phone'] == {'fps': 3, 'max_side': 960, 'jpeg_quality': 70, 'tilt_max': 50}
+    assert ui['lens_card'] == {'id': 'lens', 'name': 'Lens', 'art': 'art/lens.svg', 'color': 'coral',
+                               'about': 'The camera. Speaks up when the view needs fixing.'}
+    assert ui['chat_reply_timeout_ms'] > ui['web']['request_timeout_ms']
+
+
+def test_ui_chat_timeout_covers_the_slowest_server_reply(tmp_path):
+    """The page waits for a chat reply as long as the server may keep trying the AI (Ollama loading a model
+    can take its whole 90 s, three times), so it never gives up while the server is still on a try."""
+    config = changed(desk_config(tmp_path), 'llm', ollama_timeout_sec=90, max_retries=3, timeout_sec=30)
+    ui = web_client(DeskRig(tmp_path, config=config).app).get('/api/ui_settings').json()
+    assert ui['chat_reply_timeout_ms'] >= 270_000
+    slower = changed(config, 'llm', ollama_timeout_sec=120)
+    assert web_client(DeskRig(tmp_path / 'b', config=slower).app).get('/api/ui_settings').json()[
+        'chat_reply_timeout_ms'] > ui['chat_reply_timeout_ms']
+
+
 # ── what every reply has in common ───────────────────────────────────
 # Routes nothing called, taken out in the 2026-10 cleanup. They answer like any path the server doesn't know:
 # 404 to a GET, and 405 to anything else (only the page's files are left at that path, and they only GET).

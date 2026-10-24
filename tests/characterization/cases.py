@@ -242,6 +242,7 @@ CASES = [
     Case('rules-put-too-few-corners', 'PUT', '/api/rules', 400, json={'desk_outline': [[0, 0], [1, 0]]}),
     Case('rules-put-bad-outline', 'PUT', '/api/rules', 400, json={'desk_outline': 'the whole desk'}),
     Case('rules-put-empty', 'PUT', '/api/rules', 400, json={}),
+    Case('ui-settings', 'GET', '/api/ui_settings', 200, values={'web.refresh_ms.live': 1500, 'lens_card.id': 'lens'}),
 
     # ── The phone camera's own server (phone_camera/) ──
     Case('phone-page', 'GET', '/', 200, desk='phone', server='phone', reply=FILE, starts_with=HTML_START),

@@ -284,6 +284,15 @@ class LlmSettings(_Section):
     error_text_chars: PositiveInt
     replies: AiReplies
 
+    def longest_reply_sec(self) -> float:
+        """The longest the server may work on one chat reply before it gives up (adapters/llm/): it waits its turn
+        (min_interval_sec), then tries again after each failure until the time limit is used up, so the last try
+        can start just before the limit; on Ollama that try asks up to max_retries times, ollama_retry_sec apart,
+        for a reply that isn't empty. Each request may take the longest timeout."""
+        longest_request = max(self.timeout_sec, self.ollama_timeout_sec)
+        last_try = self.max_retries * longest_request + (self.max_retries - 1) * self.ollama_retry_sec
+        return self.min_interval_sec + longest_request + last_try
+
 
 class ChatSettings(_Section):
     recent_kept: PositiveInt
