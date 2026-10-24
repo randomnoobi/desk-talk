@@ -15,7 +15,9 @@ from tests.contracts.event_store_contract import EventStoreContract
 from tests.contracts.frame_source_contract import FrameSourceContract
 from tests.contracts.key_value_contract import KeyValueContract
 from tests.contracts.notifier_contract import NotifierContract
+from tests.contracts.phone_camera_contract import PhoneCameraContract
 from tests.contracts.photo_taker_contract import PhotoTakerContract
+from tests.contracts.pi_status_contract import PiStatusContract
 from tests.contracts.picture_tools_contract import PictureToolsContract
 from tests.contracts.push_source_contract import PushSourceContract
 from tests.fakes import (
@@ -23,7 +25,9 @@ from tests.fakes import (
     FakeDeskRules,
     FakeDetector,
     FakeFrameSource,
+    FakePhone,
     FakePhotoTaker,
+    FakePi,
     FakePictureTools,
     InMemoryEventStore,
     InMemoryKeyValueStore,
@@ -96,7 +100,8 @@ class TestFakeChatModel(ChatModelContract):
     ('FakeHabits', 'HabitsView'), ('FakePreferences', 'Preferences'), ('FakeCameraHealth', 'CameraHealthView'),
     ('FakeDeskStatus', 'DeskStatus'), ('FakePictureCheck', 'PictureCheck'), ('FakePainter', 'LiveViewPainter'),
     ('FakePictureTools', 'PictureTools'), ('FakePhotoTaker', 'PhotoTaker'), ('FakeDeskRules', 'DeskRulesView'),
-    ('FakeDeskRules', 'DeskLayout'),
+    ('FakeDeskRules', 'DeskLayout'), ('FakePi', 'PiStatus'), ('FakePi', 'PiUploads'), ('FakePhone', 'PhoneCamera'),
+    ('FakePhone', 'PhoneControls'),
 ])
 def test_every_fake_has_all_of_its_interface(fake, port):
     import desktalk.ports as ports
@@ -151,3 +156,19 @@ def test_fake_photo_taker_remembers_what_it_was_asked():
 def test_fake_picture_tools_need_no_opencv():
     import tests.fakes.vision as module
     assert 'cv2' not in module.__dict__
+
+
+class TestFakePassesPiStatusContract(PiStatusContract):
+    @pytest.fixture
+    def pi(self):
+        return FakePi()
+
+    @pytest.fixture
+    def upload(self):
+        return lambda pi, info: pi.receive(info, arrived_at=1_760_000_000.0)
+
+
+class TestFakePassesPhoneCameraContract(PhoneCameraContract):
+    @pytest.fixture
+    def phone(self):
+        return FakePhone()

@@ -34,7 +34,6 @@ from desktalk.core.chat.context import (
     speaker_names,
 )
 from desktalk.core.chat.tracker_actions import (
-    HabitLog,
     action_instructions,
     apply_habit_actions,
     normalize_todo,
@@ -43,7 +42,17 @@ from desktalk.core.chat.tracker_actions import (
 )
 from desktalk.desk_state import DeskState
 from desktalk.domain import AgentJoined, AgentLeft, AgentProfile, AIUnavailable, Alert, HabitEvent, Nudge
-from desktalk.ports import ChatModel, Clock, DeskStatus, EventBus, HabitsView, Notifier, Profiles, RosterView
+from desktalk.ports import (
+    ChatModel,
+    Clock,
+    DeskStatus,
+    EventBus,
+    HabitLog,
+    HabitsView,
+    Notifier,
+    Profiles,
+    RosterView,
+)
 
 log = logging.getLogger(__name__)
 

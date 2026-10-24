@@ -16,17 +16,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
-from typing import Any, Protocol
+from typing import Any
 
 from desktalk.config import ChatSettings
+from desktalk.ports import HabitLog
 from desktalk.util import clock_text
-
-
-class HabitLog(Protocol):
-    """The habit tracker's log(): what a chat action (a sip, a break ...) is written to."""
-
-    def log(self, habit: str, action: str, **details: Any) -> Any:
-        ...
 
 
 def normalize_todo(raw: Any, chat: ChatSettings) -> dict | None:

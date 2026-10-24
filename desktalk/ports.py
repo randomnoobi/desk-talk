@@ -17,7 +17,19 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, Protocol, runtime_checkable
 
-from desktalk.domain import AgentProfile, Box, DeskRules, Detection, Event, Frame, Nudge, Picture, Size, UploadInfo
+from desktalk.domain import (
+    AgentProfile,
+    Box,
+    DeskRules,
+    Detection,
+    Event,
+    Frame,
+    Gravity,
+    Nudge,
+    Picture,
+    Size,
+    UploadInfo,
+)
 
 
 @runtime_checkable
@@ -114,6 +126,63 @@ class PictureInbox(Protocol):
         """False if the bytes aren't a picture."""
         ...
 
+
+
+@runtime_checkable
+class PiUploads(Protocol):
+    """The Pi as the camera: what came with its pictures (Lens asks)."""
+
+    def latest_upload(self) -> tuple[UploadInfo, float] | None:
+        """What the Pi sent with its newest picture (health, its own clock time ...) and when that picture
+        arrived, on this computer's clock. None before the first picture."""
+        ...
+
+    def clock_off_sec(self) -> float | None:
+        """The Pi's clock minus this computer's (negative = behind), judged by its quickest recent picture
+        (detection time taken off). None before a picture that said when it was taken."""
+        ...
+
+
+@runtime_checkable
+class PiStatus(Protocol):
+    """The Pi as the camera: what the app's pages show about it (/api/live, /api/health)."""
+
+    def pi_info(self) -> dict[str, Any]:
+        """The newest picture's id (last_frame_id) and everything the Pi has said about itself."""
+        ...
+
+    def status(self) -> dict[str, Any]:
+        """pi_info() plus upload_format, detector (ok / busy / off), detector_reason, detect_ms, model and
+        clock_off_sec (seconds; negative = behind)."""
+        ...
+
+
+@runtime_checkable
+class PhoneCamera(Protocol):
+    """The phone as the camera: what Lens asks about it."""
+
+    def recent_gravity(self) -> Gravity | None:
+        """The phone's latest tilt reading, or None if it hasn't sent one lately."""
+        ...
+
+    @property
+    def stopped_by_user(self) -> bool:
+        """You pressed Stop on the phone (so the video stopping isn't a problem)."""
+        ...
+
+
+@runtime_checkable
+class PhoneControls(Protocol):
+    """The phone as the camera: what the phone page's routes tell it (/api/phone/frame, /api/phone/stop)."""
+
+    def set_motion(self, gravity: Gravity | None = None, rotation: int | None = None) -> None:
+        """How the phone was tilted and how far it turned the picture, sent with its newest picture.
+        None = it didn't say (the old value stays)."""
+        ...
+
+    def mark_stopped(self) -> None:
+        """You pressed Stop on the phone: not connected from now on (until the next picture)."""
+        ...
 
 # ── Events and storage ────────────────────────────────────────────────
 @runtime_checkable
@@ -310,6 +379,14 @@ class HabitsView(Protocol):
     def save(self, force: bool = False) -> None:
         ...
 
+
+
+@runtime_checkable
+class HabitLog(Protocol):
+    """The habit tracker's log(): what a chat action (a sip, a break ...) is written to."""
+
+    def log(self, habit: str, action: str, **details: Any) -> Any:
+        ...
 
 @runtime_checkable
 class Preferences(Protocol):

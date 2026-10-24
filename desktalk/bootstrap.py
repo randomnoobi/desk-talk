@@ -42,8 +42,6 @@ from desktalk.core.chat.workers import (
     IdleChat,
     Lens,
     LostItems,
-    PhoneCamera,
-    PiUploads,
     VisionHabits,
 )
 from desktalk.core.events import EventStream
@@ -60,7 +58,7 @@ from desktalk.core.vision.producer import DetectionProducer
 from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.core.vision.rules import SafetyRules
 from desktalk.desk_state import DeskState
-from desktalk.ports import Clock, Detector, FrameSource, KeyValueStore, PeriodicWorker
+from desktalk.ports import Clock, Detector, FrameSource, KeyValueStore, PeriodicWorker, PhoneCamera, PiUploads
 from desktalk.runtime import Scheduler, Supervisor, SystemClock, plain_error, setup_logging
 
 log = logging.getLogger(__name__)

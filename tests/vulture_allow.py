@@ -40,7 +40,16 @@ from desktalk.config.prompts import (
     VisionPrompts,
 )
 from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent, NudgeSent
-from desktalk.ports import Clock, DeskRulesView, EventStore, PhotoTaker, PictureInbox, PictureTools
+from desktalk.ports import (
+    Clock,
+    DeskRulesView,
+    EventStore,
+    PhoneControls,
+    PhotoTaker,
+    PictureInbox,
+    PictureTools,
+    PiStatus,
+)
 from desktalk.runtime import SystemClock
 from desktalk.web.schemas import PhoneSettings, PreferenceChanges, UiPage, UiSettings
 from desktalk_shared.wire import PiHealth
@@ -120,6 +129,8 @@ _ = (
     # Task 5 (vision without cv2 in core; the real OpenCV PictureTools) and Task 6 (lost items):
     PictureTools, PictureTools.decode_jpeg, PictureTools.encode_jpeg, PictureTools.shrink, PictureTools.to_gray,
     PictureTools.difference, PictureTools.sharpness, PhotoTaker, DeskRulesView,
+    # Task 10 (the web routes and bootstrap take these instead of the Pi's and the phone's classes):
+    PiStatus, PhoneControls,
     # Pydantic's own settings attribute, and the flag uvicorn's thread reads to stop.
     PreferenceChanges.model_config, Server(config=None).should_exit,  # type: ignore[arg-type]
 )
