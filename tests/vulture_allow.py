@@ -9,22 +9,16 @@ from uvicorn import Server
 
 from desktalk.config import (
     AiReplies,
-    AppConfig,
     CameraSettings,
-    DrawingColors,
-    DrawingSettings,
     LensWaits,
     LlmSettings,
     LoggingSettings,
-    Radii,
     RiskWeights,
-    Trail,
     VisionNudgeRepeats,
 )
 from desktalk.config.prompts import (
     AlertPrompts,
     ByCamera,
-    CameraPrompts,
     ChatPrompts,
     HabitAreas,
     HabitNudges,
@@ -34,7 +28,6 @@ from desktalk.config.prompts import (
     PiFixed,
     Prompts,
     Replies,
-    SideHints,
     SmallTalkPrompts,
     TrackerPrompts,
     VisionPrompts,
@@ -44,15 +37,12 @@ from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent, NudgeS
 from desktalk.ports import (
     CharacterMemory,
     Clock,
-    DeskRulesView,
     DeskScene,
     EventStore,
     LivePictures,
     PhoneControls,
     PhotoAlbum,
-    PhotoTaker,
     PictureInbox,
-    PictureTools,
     PiStatus,
     SafetyBoard,
 )
