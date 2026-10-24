@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from desktalk.core.vision.geometry import Box, Point
+from desktalk.domain import SeenObject
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,11 @@ class Thing:
     def from_desk(cls, agent_id: str, obj: Mapping[str, Any]) -> Thing:
         """From DeskState.objects: {class_name, bbox, center, ...}."""
         return cls(agent_id, obj['class_name'], tuple(obj['bbox']), tuple(obj['center']))
+
+    @classmethod
+    def from_seen(cls, agent_id: str, seen: SeenObject) -> Thing:
+        """From the desk scene (DeskScene.members)."""
+        return cls(agent_id, seen.label, seen.box, seen.center)
 
 
 @dataclass

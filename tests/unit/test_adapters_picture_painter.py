@@ -2,18 +2,20 @@
 
 import logging
 from types import SimpleNamespace
+from typing import Any
 
 import numpy as np
 
+from desktalk.adapters.picture.painter import DeskPainter
 from desktalk.core.vision.analyzer import DeskAnalyzer
 from desktalk.core.vision.findings import Thing
-from desktalk.core.vision.live_view import DeskPainter
 from desktalk.core.vision.rules import SafetyRules
-from desktalk.desk_state import DeskState
 from desktalk.domain import AgentProfile, BBox, Detection
 from desktalk.ports import LiveViewPainter
-from tests.fakes import FakeProfiles, InMemoryKeyValueStore
-from tests.unit.test_core_vision_kit import app_config, desk_object
+from tests.fakes import FakeDeskScene, FakeProfiles, InMemoryKeyValueStore
+from tests.unit.test_core_vision_kit import app_config, seen_object
+
+DRAWING = app_config().drawing
 
 GREEN, GREY, RED = (60, 200, 90), (150, 150, 150), (0, 0, 255)
 LAPTOP, CUP_NEAR = (200, 200, 400, 350), (410, 250, 450, 320)
@@ -25,14 +27,24 @@ def blank():
     return np.full((480, 640, 3), 100, np.uint8)
 
 
-def rig(agents=None):
+def on_desk(agents):
+    """A desk scene with `agents` (agent → (label, box)) in the chat."""
+    desk = FakeDeskScene()
+    desk.set_members({a: seen_object(label, box) for a, (label, box) in agents.items()}, 1000)
+    return desk
+
+
+def things_on(desk):
+    return {a: Thing.from_seen(a, o) for a, o in desk.members().items()}
+
+
+def rig(agents=None, drawing=DRAWING):
     """A painter, with the analyzer having looked at `agents` (agent → (label, box)) once."""
-    desk = DeskState()
-    desk.objects = {a: desk_object(label, box) for a, (label, box) in (agents or {}).items()}
+    desk = on_desk(agents or {})
     analyzer = DeskAnalyzer(SafetyRules(InMemoryKeyValueStore(), app_config().safety))
     if agents:
-        analyzer.analyze({a: Thing.from_desk(a, o) for a, o in desk.objects.items()}, (640, 480), 1000)
-    return DeskPainter(desk, PROFILES, analyzer), desk
+        analyzer.analyze(things_on(desk), (640, 480), 1000)
+    return DeskPainter(desk, PROFILES, analyzer, drawing), desk
 
 
 def det(label, box):
@@ -78,36 +90,33 @@ def test_the_risk_badge_is_drawn_in_the_corner():
 
 
 def test_no_overlays_before_the_desk_was_analysed():
-    desk = DeskState()
-    desk.objects = {'computer': desk_object('laptop', LAPTOP)}
+    desk = on_desk({'computer': ('laptop', LAPTOP)})
     analyzer = DeskAnalyzer(SafetyRules(InMemoryKeyValueStore(), app_config().safety))
-    painted = DeskPainter(desk, PROFILES, analyzer).paint(blank(), [])
+    painted = DeskPainter(desk, PROFILES, analyzer, DRAWING).paint(blank(), [])
     assert (painted == 100).all()
 
 
 def test_no_overlays_without_agents_in_the_chat():
     painter, desk = rig({'computer': ('laptop', LAPTOP), 'cup': ('cup', CUP_NEAR)})
-    desk.objects = {}
+    desk.set_members({}, 1001)
     painted = painter.paint(blank(), [])
     assert (painted == 100).all()
 
 
 def test_boxes_still_show_when_the_overlays_fail(caplog):
-    desk = DeskState()
-    desk.objects = {'computer': desk_object('laptop', LAPTOP)}
-    broken = SimpleNamespace(latest={'no': 'relationships'}, rules=None, history=lambda: [])
+    desk = on_desk({'computer': ('laptop', LAPTOP)})
+    broken: Any = SimpleNamespace(latest={'no': 'relationships'}, rules=None, history=lambda: [])
     with caplog.at_level(logging.ERROR):
-        painted = DeskPainter(desk, PROFILES, broken).paint(blank(), [det('laptop', LAPTOP)])
+        painted = DeskPainter(desk, PROFILES, broken, DRAWING).paint(blank(), [det('laptop', LAPTOP)])
     assert pixel(painted, 200, 300) == GREEN
     assert 'overlays' in caplog.text
 
 
 def test_overlays_that_keep_failing_the_same_way_are_logged_once(caplog):
     """The live view is painted about 3 times a second: the same full error each time would flood the log."""
-    desk = DeskState()
-    desk.objects = {'computer': desk_object('laptop', LAPTOP)}
-    broken = SimpleNamespace(latest={'no': 'relationships'}, rules=None, history=lambda: [])
-    painter = DeskPainter(desk, PROFILES, broken)
+    desk = on_desk({'computer': ('laptop', LAPTOP)})
+    broken: Any = SimpleNamespace(latest={'no': 'relationships'}, rules=None, history=lambda: [])
+    painter = DeskPainter(desk, PROFILES, broken, DRAWING)
     with caplog.at_level(logging.ERROR):
         for _ in range(5):
             painter.paint(blank(), [])
@@ -127,13 +136,13 @@ MORE_PROFILES = FakeProfiles([*PROFILES.all(), AgentProfile('mouse', 'Mouse', la
 
 def painted(*pictures, saved=None):
     """The live view after the analyzer looked at each picture (agent → (label, box)), one second apart."""
-    desk = DeskState()
+    desk = FakeDeskScene()
     analyzer = DeskAnalyzer(SafetyRules(InMemoryKeyValueStore({'safety_rules': saved} if saved else {}),
                                         app_config().safety))
     for k, agents in enumerate(pictures):
-        desk.objects = {a: desk_object(label, box) for a, (label, box) in agents.items()}
-        analyzer.analyze({a: Thing.from_desk(a, o) for a, o in desk.objects.items()}, (640, 480), 1000 + k)
-    return DeskPainter(desk, MORE_PROFILES, analyzer).paint(blank(), [])
+        desk.set_members({a: seen_object(label, box) for a, (label, box) in agents.items()}, 1000 + k)
+        analyzer.analyze(things_on(desk), (640, 480), 1000 + k)
+    return DeskPainter(desk, MORE_PROFILES, analyzer, DRAWING).paint(blank(), [])
 
 
 def near(color, want, most=12):
@@ -189,3 +198,34 @@ def test_going_back_into_a_zone_again_and_again_gets_a_red_dot_with_the_count():
 def test_things_that_move_leave_a_trail():
     picture = painted(*[{'cup': ('cup', (100 + 20 * k, 100, 140 + 20 * k, 140))} for k in range(4)])
     assert [pixel(picture, x, 120) for x in (120, 140, 160)] == [(80, 80, 80), (110, 110, 110), (140, 140, 140)]
+
+
+# ── how it is drawn comes from settings → drawing ──
+def drawing_with(**changes):
+    return DRAWING.model_copy(update=changes)
+
+
+def edge_width(line_px):
+    """How many pixels wide a box's left edge comes out (counted across it, halfway down)."""
+    painter, _ = rig(drawing=drawing_with(line_px=line_px))
+    picture = painter.paint(blank(), [det('cup', (100, 100, 200, 200))])
+    return [pixel(picture, x, 150) for x in range(90, 111)].count(GREEN)
+
+
+def test_painter_uses_drawing_settings():
+    # OpenCV draws a line of thickness n a little wider than n pixels (2 → 3, 5 → 7), so: at least 5, and wider
+    assert edge_width(5) >= 5 and edge_width(5) > edge_width(2) > edge_width(1) == 1
+
+
+def test_box_colors_come_from_the_settings():
+    pink = (200, 100, 250)
+    colors = DRAWING.colors.model_copy(update={'box_on': pink})
+    painter, _ = rig(drawing=drawing_with(colors=colors))
+    assert pixel(painter.paint(blank(), [det('cup', (100, 100, 200, 200))]), 100, 150) == pink
+
+
+def test_the_risk_badge_box_comes_from_the_settings():
+    painter, _ = rig({'computer': ('laptop', LAPTOP), 'cup': ('cup', CUP_NEAR)},
+                     drawing=drawing_with(badge=(20, 20, 200, 70)))
+    picture = painter.paint(blank(), [])
+    assert pixel(picture, 8, 30) == (100, 100, 100) and pixel(picture, 20, 40) == (0, 220, 220)

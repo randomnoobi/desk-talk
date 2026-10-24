@@ -31,6 +31,7 @@ from typing import Any
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource, make_pair_key
 from desktalk.adapters.detector import UltralyticsDetector
 from desktalk.adapters.llm import OllamaKeepAlive, OpenAICompatibleChatModel, ResilientChatModel
+from desktalk.adapters.picture import DeskPainter
 from desktalk.adapters.storage import EventLog, JsonFileStore
 from desktalk.config import AppConfig, ConfigError
 from desktalk.core.agents.profiles import ProfileBook
@@ -53,7 +54,6 @@ from desktalk.core.vision import desk_edges
 from desktalk.core.vision.analyzer import DeskAnalyzer
 from desktalk.core.vision.camera_health import CameraHealth
 from desktalk.core.vision.desk_monitor import DeskMonitor
-from desktalk.core.vision.live_view import DeskPainter
 from desktalk.core.vision.producer import DetectionProducer
 from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.core.vision.rules import SafetyRules
@@ -286,7 +286,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     safety_rules = SafetyRules(config_store, config.safety, liquids=profiles.labels_for_habit('hydration'),
                                foods=profiles.labels_for_habit('food'))
     analyzer = DeskAnalyzer(safety_rules)
-    painter = DeskPainter(desk, profiles, analyzer)
+    painter = DeskPainter(desk, profiles, analyzer, config.drawing)
     photos = ProofPhotos(desk, clock, config.snapshots)
     camera_health = CameraHealth(config.lens, source_kind=source.kind, moved_within_sec=config.camera.moved_within_sec,
                                  ignore_labels=config.agents_file.ignore)
