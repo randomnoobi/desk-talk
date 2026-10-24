@@ -5,6 +5,8 @@ Plain data, no I/O: what the parts of Desk Talk pass to each other.
     Frame                  a picture from a camera, with what came with it
     Event and subclasses   what happened (DetectionEvent, AgentJoined, Alert, HabitEvent ...)
     AgentProfile, Nudge    a character, a habit reminder
+    LENS                   Lens's id: the camera's own character
+    AIUnavailable ...      errors (and UnknownChat: a 1-on-1 chat with an agent that doesn't exist)
     Picture, Size, Box     a picture, how big it is, a box on it (Point, Gravity too)
     DeskRules, Zone        the danger rules in use
     SeenObject, Danger,    the desk right now: what the camera sees, the dangers, a proof photo
@@ -12,12 +14,12 @@ Plain data, no I/O: what the parts of Desk Talk pass to each other.
     is_day                 a day's name, like 2026-10-21 (the event log's folders)
 """
 
-from desktalk.domain.agents import HABITS, AgentProfile
+from desktalk.domain.agents import HABITS, LENS, AgentProfile
 from desktalk.domain.camera import Frame
 from desktalk.domain.days import is_day
 from desktalk.domain.desk import Danger, Photo, SafetyNow, SeenObject
 from desktalk.domain.desk_rules import DeskRules, Zone
-from desktalk.domain.errors import AIUnavailable, DetectorUnavailable, plain_error
+from desktalk.domain.errors import AIUnavailable, DetectorUnavailable, UnknownChat, plain_error
 from desktalk.domain.events import (
     EVENT_TYPES,
     AgentJoined,
@@ -39,9 +41,9 @@ from desktalk_shared.detection import BBox, Detection, keep_inside
 from desktalk_shared.wire import DetectorState, PiHealth, UploadInfo
 
 __all__ = [
-    'EVENT_TYPES', 'HABITS', 'AIUnavailable', 'AgentJoined', 'AgentLeft', 'AgentProfile', 'Alert', 'BBox', 'Box',
-    'CameraNotice', 'Compaction', 'Danger', 'DeskRules', 'Detection', 'DetectionEvent', 'DetectorState',
+    'EVENT_TYPES', 'HABITS', 'LENS', 'AIUnavailable', 'AgentJoined', 'AgentLeft', 'AgentProfile', 'Alert', 'BBox',
+    'Box', 'CameraNotice', 'Compaction', 'Danger', 'DeskRules', 'Detection', 'DetectionEvent', 'DetectorState',
     'DetectorUnavailable', 'Event', 'Frame', 'Gravity', 'HabitEvent', 'Light', 'Nudge', 'NudgeSent', 'Photo', 'Picture',
-    'PiHealth', 'Point', 'SafetyNow', 'SeenObject', 'Size', 'UploadInfo', 'Zone', 'event_from_dict', 'is_day',
-    'keep_inside', 'new_event_id', 'plain_error',
+    'PiHealth', 'Point', 'SafetyNow', 'SeenObject', 'Size', 'UnknownChat', 'UploadInfo', 'Zone', 'event_from_dict',
+    'is_day', 'keep_inside', 'new_event_id', 'plain_error',
 ]

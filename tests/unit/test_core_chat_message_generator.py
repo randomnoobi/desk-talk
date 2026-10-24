@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from desktalk.config import load_config
-from desktalk.core.chat.message_generator import ChatDesk, MessageGenerator, UnknownChat
-from desktalk.domain import AgentJoined, AgentLeft, AgentProfile, Alert, HabitEvent, Nudge, SeenObject
+from desktalk.core.chat.message_generator import ChatDesk, MessageGenerator
+from desktalk.domain import AgentJoined, AgentLeft, AgentProfile, Alert, HabitEvent, Nudge, SeenObject, UnknownChat
 from desktalk.ports import ChatVoice
 from tests.fakes import (
     FakeCharacterMemory,

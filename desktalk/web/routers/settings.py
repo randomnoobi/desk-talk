@@ -14,7 +14,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from desktalk.config import AppConfig
-from desktalk.core.agents.speakers import LENS
+from desktalk.domain import LENS
 from desktalk.web.deps import App
 from desktalk.web.routers.phone import phone_settings
 from desktalk.web.schemas import Ok, RuleChanges, UiChat, UiDesk, UiHabits, UiLensCard, UiPage, UiPi, UiSettings

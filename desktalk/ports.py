@@ -431,6 +431,10 @@ class Preferences(Protocol):
     def update(self, changes: Mapping[str, Any]) -> dict[str, Any]:
         ...
 
+    def quiet_now(self, now: float) -> bool:
+        """Quiet hours are on and `now` is inside them, by the local time."""
+        ...
+
 
 @runtime_checkable
 class CameraHealthView(Protocol):
@@ -763,12 +767,20 @@ class PhotoAlbum(Protocol):
 
 # ── What the app's pages ask (the web layer) ──────────────────────────
 # desktalk/bootstrap.py → DeskTalk types its fields with these, so a route only sees what it may call.
+class _Closed:
+    def __repr__(self) -> str:
+        return 'CLOSED'
+
+
+CLOSED = _Closed()      # the last thing in a dropped page's chat queue: compare with `is` (see ChatFeed.subscribe)
+
+
 @runtime_checkable
 class ChatFeed(Protocol):
     """The chat messages for open app pages (the MessageHub): /api/events and /api/messages/recent."""
 
     def subscribe(self, on_put: Callable[[], None] | None = None) -> queue.Queue:
-        """A queue that gets every message from now on (one per open page), ending with the hub's CLOSED if the
+        """A queue that gets every message from now on (one per open page), ending with CLOSED if the
         page is dropped for not keeping up. on_put: called after each thing put in the queue."""
         ...
 

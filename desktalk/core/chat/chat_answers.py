@@ -21,14 +21,10 @@ from desktalk.core.chat.history import budget_history, sanitize_chat_history
 from desktalk.core.chat.memory import ChatMemory, TrackerPanels
 from desktalk.core.chat.names import group_speaker_order
 from desktalk.core.chat.tracker_actions import action_instructions, apply_habit_actions, parse_actions, tracker_prompt
-from desktalk.domain import AgentProfile, AIUnavailable
+from desktalk.domain import AgentProfile, AIUnavailable, UnknownChat
 from desktalk.ports import CharacterMemory, ChatModel, Clock, HabitLog, HabitsView, Notifier, Profiles, RosterView
 
 log = logging.getLogger(__name__)
-
-
-class UnknownChat(ValueError):
-    """answer() was asked to reply in a 1-on-1 chat with an agent that doesn't exist."""
 
 
 class ChatAnswers:

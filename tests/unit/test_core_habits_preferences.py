@@ -31,8 +31,8 @@ def store():
     return InMemoryKeyValueStore()
 
 
-def prefs_from(config, store):
-    return PreferencesFile(store, config.protocols.schedule, config.reminders.quiet_hours)
+def prefs_from(config, store, clock=None):
+    return PreferencesFile(store, config.protocols.schedule, config.reminders.quiet_hours, clock=clock or FakeClock())
 
 
 def test_it_is_a_preferences_view(config, store):
@@ -48,7 +48,7 @@ def test_defaults_come_from_protocols_and_settings(config, store):
 def test_defaults_follow_the_config_files(config, store):
     schedule = config.protocols.schedule.model_copy(update={'wake_time': '06:15'})
     quiet = config.reminders.quiet_hours.model_copy(update={'enabled': True, 'start_hour': 21})
-    p = PreferencesFile(store, schedule, quiet)
+    p = PreferencesFile(store, schedule, quiet, clock=FakeClock())
     assert p.get('wake_time') == '06:15' and p.get('quiet_enabled') is True and p.get('quiet_start_hour') == 21
 
 
@@ -156,3 +156,20 @@ def test_quiet_hours_in_the_day_and_switched_off():
     assert quiet_hours_now(prefs, local(14), CLOCK) and not quiet_hours_now(prefs, local(15), CLOCK)
     prefs.values['quiet_enabled'] = False
     assert not quiet_hours_now(prefs, local(14), CLOCK)
+
+
+def test_preferences_say_if_quiet_hours_are_on_now(config, store):
+    """What GET /api/preferences shows as quiet_now: the same rule as quiet_hours_now, by the preferences' clock."""
+    p = prefs_from(config, store, FakeClock(utc_offset_hours=11))
+    p.update({'quiet_enabled': True, 'quiet_start_hour': 22, 'quiet_end_hour': 7})
+    noon_utc = 1_781_524_800.0                                    # 15 June 2026, 12:00 UTC: 23:00 there
+    assert p.quiet_now(noon_utc) and not p.quiet_now(noon_utc - 12 * 3600)
+    p.update({'quiet_enabled': False})
+    assert not p.quiet_now(noon_utc)
+
+
+def test_the_fake_preferences_follow_the_same_quiet_hours_rule():
+    prefs = FakePreferences({'quiet_enabled': True, 'quiet_start_hour': 22, 'quiet_end_hour': 7})
+    assert prefs.quiet_now(local(23)) and not prefs.quiet_now(local(12))
+    there = FakePreferences(prefs.values, clock=FakeClock(utc_offset_hours=11))
+    assert there.quiet_now(1_781_524_800.0)

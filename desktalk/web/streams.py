@@ -25,8 +25,7 @@ from collections.abc import AsyncIterator, Callable
 
 from starlette.requests import Request
 
-from desktalk.core.chat.message_hub import CLOSED
-from desktalk.ports import ChatFeed, Clock
+from desktalk.ports import CLOSED, ChatFeed, Clock
 
 SSE_TYPE = 'text/event-stream; charset=utf-8'
 SSE_HEADERS = {'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'}

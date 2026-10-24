@@ -26,7 +26,7 @@ from desktalk.core.agents.speakers import speaker_for
 from desktalk.core.chat import prompts as fill
 from desktalk.core.chat.agent_ai import AgentAI
 from desktalk.core.chat.alert_voice import AlertVoice
-from desktalk.core.chat.chat_answers import ChatAnswers, UnknownChat
+from desktalk.core.chat.chat_answers import ChatAnswers
 from desktalk.core.chat.live_context import build_live_context
 from desktalk.core.chat.memory import ChatMemory, TrackerPanels
 from desktalk.core.chat.nudge_voice import NudgeVoice
@@ -46,7 +46,7 @@ from desktalk.ports import (
     SafetyBoard,
 )
 
-__all__ = ['ChatDesk', 'MessageGenerator', 'UnknownChat']
+__all__ = ['ChatDesk', 'MessageGenerator']
 
 
 @runtime_checkable

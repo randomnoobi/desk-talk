@@ -19,8 +19,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import StreamingResponse
 
-from desktalk.core.agents.speakers import LENS
-from desktalk.core.chat.message_generator import UnknownChat
+from desktalk.domain import LENS, UnknownChat
 from desktalk.web.deps import App, Streams
 from desktalk.web.schemas import ChatMessage, Ok, PanelEvent, PanelList, PanelLists
 from desktalk.web.streams import SSE_HEADERS, SSE_TYPE

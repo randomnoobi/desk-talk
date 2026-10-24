@@ -57,15 +57,6 @@ WEB_MAY_IMPORT = ('desktalk.ports', 'desktalk.domain', 'desktalk.config', 'deskt
                   'desktalk_shared',       # the Pi's upload format (standard library only, like the domain)
                   'fastapi', 'starlette', 'pydantic', 'uvicorn', 'anyio',     # the web servers
                   'qrcode', 'cryptography')                                    # the phone link and its certificate
-# The few core names the web still imports, each a constant, an error or one small rule, until they move out of
-# core (they live in files the web layer doesn't own): Lens's id, the error for a chat with an unknown agent,
-# what the message hub puts last in a dropped page's queue, and whether quiet hours are on now.
-WEB_MAY_IMPORT_FROM_CORE = {
-    ('desktalk.core.agents.speakers', 'LENS'),
-    ('desktalk.core.chat.message_generator', 'UnknownChat'),
-    ('desktalk.core.chat.message_hub', 'CLOSED'),
-    ('desktalk.core.habits.preferences', 'quiet_hours_now'),
-}
 
 
 def imports(path: Path) -> set[tuple[str, str]]:
@@ -84,8 +75,7 @@ def web_forbidden(found: set[tuple[str, str]]) -> list[str]:
     def allowed(module: str, name: str) -> bool:
         top = module.split('.')[0]
         return (top in sys.stdlib_module_names or top == '__future__'
-                or any(module == ok or module.startswith(ok + '.') for ok in WEB_MAY_IMPORT)
-                or (module, name) in WEB_MAY_IMPORT_FROM_CORE)
+                or any(module == ok or module.startswith(ok + '.') for ok in WEB_MAY_IMPORT))
     return sorted(f'{module}.{name}' if name else module for module, name in found if not allowed(module, name))
 
 
@@ -104,5 +94,7 @@ def test_the_web_rule_catches_core_adapters_and_runtime(tmp_path):
                       'from desktalk.core.agents.speakers import speaker_for\n\ndef f():\n'
                       '    from desktalk.adapters.storage import EventLog\n    import desktalk.runtime\n'
                       '    import requests\n')
-    assert web_forbidden(imports(sample)) == ['desktalk.adapters.storage.EventLog', 'desktalk.core.agents.speakers.'
-                                              'speaker_for', 'desktalk.runtime', 'requests']
+    assert web_forbidden(imports(sample)) == ['desktalk.adapters.storage.EventLog',
+                                              'desktalk.core.agents.speakers.LENS',
+                                              'desktalk.core.agents.speakers.speaker_for', 'desktalk.runtime',
+                                              'requests']

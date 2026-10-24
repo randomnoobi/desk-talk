@@ -115,7 +115,7 @@ class DeskTalk:
     store             the data folder: preferences, habit days, learned personalities, the daily recap's day
     config_store      the config folder: safety_rules.json
     profiles          every agent: get(), for_label(), is_ignored() for the app's agent list and the live view
-    preferences       wake time, bedtime, quiet hours: all() and update() (/api/preferences)
+    preferences       wake time, bedtime, quiet hours: all(), update() and quiet_now() (/api/preferences)
     source            the camera: kind, connected, fps
     pi_inbox, pi      the Pi when it is the camera (None otherwise): push() for /api/pi/frame, status() and
                       pi_info() for /api/health and /api/live
@@ -323,7 +323,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     event_log = EventLog(data_path(config.event_log.folder), config.event_log)
     bus.subscribe('event-log', event_log.write)          # first, so it logs events in the order they happen
     profiles = ProfileBook(config.agents_file, store, personality_max_chars=config.agents.personality_max_chars)
-    preferences = PreferencesFile(store, config.protocols.schedule, config.reminders.quiet_hours)
+    preferences = PreferencesFile(store, config.protocols.schedule, config.reminders.quiet_hours, clock=clock)
 
     # ── the camera, the desk rules and detection ──
     camera = Camera(source) if source is not None else make_camera(config, clock)

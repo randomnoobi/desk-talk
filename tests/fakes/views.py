@@ -6,6 +6,8 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from desktalk.domain import AgentProfile, Nudge
+from desktalk.util import in_hour_window
+from tests.fakes.clock import FakeClock
 
 
 class StaticRoster:
@@ -88,8 +90,11 @@ class FakeHabits:
 
 
 class FakePreferences:
-    def __init__(self, values: Mapping[str, Any] | None = None):
+    """`clock`: what quiet_now() reads the local hour from (UTC by default)."""
+
+    def __init__(self, values: Mapping[str, Any] | None = None, clock: FakeClock | None = None):
         self.values = dict(values or {})
+        self.clock = clock or FakeClock()
 
     def get(self, key: str) -> Any:
         return self.values.get(key)
@@ -100,6 +105,10 @@ class FakePreferences:
     def update(self, changes: Mapping[str, Any]) -> dict[str, Any]:
         self.values.update(changes)
         return dict(self.values)
+
+    def quiet_now(self, now: float) -> bool:
+        return bool(self.values.get('quiet_enabled')) and in_hour_window(
+            self.clock.local_hour(now), int(self.values['quiet_start_hour']), int(self.values['quiet_end_hour']))
 
 
 class FakeDeskStatus:

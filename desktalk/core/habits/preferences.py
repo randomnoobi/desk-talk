@@ -40,8 +40,9 @@ def _clean(key: str, value: Any) -> Any:
 class PreferencesFile:
     """Implements the Preferences interface (desktalk/ports.py)."""
 
-    def __init__(self, store: KeyValueStore, schedule: Schedule, quiet_hours: QuietHours):
+    def __init__(self, store: KeyValueStore, schedule: Schedule, quiet_hours: QuietHours, *, clock: Clock):
         self._store = store
+        self._clock = clock                    # for quiet_now: the local hour
         self._lock = threading.Lock()          # the web server and the background jobs both read these
         self._data: dict[str, Any] = {
             'wake_time': schedule.wake_time,
@@ -79,6 +80,9 @@ class PreferencesFile:
             self._store.save(KEY, out)
             self._data = out
         return dict(out)
+
+    def quiet_now(self, now: float) -> bool:
+        return quiet_hours_now(self, now, self._clock)
 
 
 def quiet_hours_now(prefs: PreferencesView, now: float, clock: Clock) -> bool:

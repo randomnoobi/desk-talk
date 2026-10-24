@@ -17,9 +17,9 @@ from typing import Any
 
 from desktalk.config import AiReplies, DailySummarySettings
 from desktalk.config.prompts import DailyRecapPrompts, RecapFacts
-from desktalk.core.agents.speakers import LENS
 from desktalk.core.chat import prompts as fill
 from desktalk.core.chat.workers.ai import ask
+from desktalk.domain import LENS
 from desktalk.ports import ChatModel, Clock, HabitsView, KeyValueStore, Notifier, RosterView
 
 log = logging.getLogger(__name__)

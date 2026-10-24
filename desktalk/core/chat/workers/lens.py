@@ -22,9 +22,8 @@ from typing import Any
 
 from desktalk.config import LensSettings, PiSettings
 from desktalk.config.prompts import LensPrompts
-from desktalk.core.agents.speakers import LENS
 from desktalk.core.habits.preferences import quiet_hours_now
-from desktalk.domain import CameraNotice, DetectorState, PiHealth, UploadInfo
+from desktalk.domain import LENS, CameraNotice, DetectorState, PiHealth, UploadInfo
 from desktalk.ports import (
     CameraHealthView,
     Clock,

@@ -10,8 +10,7 @@ import random
 import re
 from collections.abc import Iterable, Mapping, Sequence
 
-from desktalk.core.agents.speakers import LENS
-from desktalk.domain import AgentProfile
+from desktalk.domain import LENS, AgentProfile
 
 # Words that introduce an object as the TOPIC of the sentence rather than the
 # one being spoken to (e.g. "how do you feel about computer", "stronger than cup").

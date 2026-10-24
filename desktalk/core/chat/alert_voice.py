@@ -14,11 +14,10 @@ from typing import Any
 
 from desktalk.config import ChatSettings
 from desktalk.config.prompts import AlertPrompts
-from desktalk.core.agents.speakers import LENS
 from desktalk.core.chat import prompts
 from desktalk.core.chat.agent_ai import AgentAI
 from desktalk.core.chat.replies import looks_cut_off, response_violates_evidence
-from desktalk.domain import AgentProfile, Alert
+from desktalk.domain import LENS, AgentProfile, Alert
 from desktalk.ports import DeskScene, Profiles
 
 

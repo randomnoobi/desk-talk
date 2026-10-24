@@ -14,7 +14,6 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from desktalk.core.habits.preferences import quiet_hours_now
 from desktalk.web.deps import App, list_size
 from desktalk.web.schemas import HabitEntry, PreferenceChanges
 
@@ -52,7 +51,7 @@ def habit_log(app: App, category: str | None = None, limit: str | None = None) -
 @router.get('/api/preferences')
 def preferences(app: App) -> dict[str, Any]:
     now = app.clock.now()
-    return {**app.preferences.all(), 'quiet_now': quiet_hours_now(app.preferences, now, app.clock),
+    return {**app.preferences.all(), 'quiet_now': app.preferences.quiet_now(now),
             'min_gap_sec': app.config.reminders.min_gap_sec, 'sunset_ts': app.habits.day_times(now)['sunset_ts']}
 
 

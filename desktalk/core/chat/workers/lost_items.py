@@ -29,13 +29,12 @@ from typing import Any
 
 from desktalk.config import AiReplies, LostItemsSettings
 from desktalk.config.prompts import LostItemsPrompts
-from desktalk.core.agents.speakers import LENS
 from desktalk.core.chat import prompts as fill
 from desktalk.core.chat.workers.ai import ask, look
 from desktalk.core.chat.workers.lost_item_words import TrackedItems
 from desktalk.core.chat.workers.lost_items_answers import LostItemAnswers, LostItemsDesk
 from desktalk.core.chat.workers.text import json_in
-from desktalk.domain import Alert, DetectionEvent, Event, Picture
+from desktalk.domain import LENS, Alert, DetectionEvent, Event, Picture
 from desktalk.ports import ChatModel, Clock, EventBus, HabitsView, PhotoTaker, PictureTools, Profiles, RosterView
 
 log = logging.getLogger(__name__)

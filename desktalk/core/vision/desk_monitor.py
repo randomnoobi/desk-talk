@@ -17,10 +17,9 @@ from typing import Any, Protocol
 
 from desktalk.config import AlertsSettings
 from desktalk.config.prompts import DeskAlertWords
-from desktalk.core.agents.speakers import LENS
 from desktalk.core.vision.findings import Thing
 from desktalk.core.vision.geometry import Box
-from desktalk.domain import Alert, Danger, DetectionEvent, Event
+from desktalk.domain import LENS, Alert, Danger, DetectionEvent, Event
 from desktalk.ports import DeskScene, DeskStatus, EventBus, HabitsView, PhotoTaker, Profiles, SafetyBoard
 
 SAFE, DANGEROUS = 'SAFE', 'DANGEROUS'
