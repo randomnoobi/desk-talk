@@ -21,7 +21,7 @@ from fastapi.responses import StreamingResponse
 
 from desktalk.core.agents.speakers import LENS
 from desktalk.core.chat.message_generator import UnknownChat
-from desktalk.web.deps import Desk, Streams
+from desktalk.web.deps import App, Streams
 from desktalk.web.schemas import ChatMessage, Ok, PanelEvent, PanelList, PanelLists
 from desktalk.web.streams import SSE_HEADERS, SSE_TYPE
 
@@ -32,64 +32,64 @@ router = APIRouter()
 
 
 @router.get('/api/agents')
-def agents(desk: Desk) -> dict[str, Any]:
-    return {'agents': desk.roster.snapshot(), 'lens': {'id': LENS, **desk.config.prompts.lens.card.model_dump()}}
+def agents(app: App) -> dict[str, Any]:
+    return {'agents': app.roster.snapshot(), 'lens': {'id': LENS, **app.config.prompts.lens.card.model_dump()}}
 
 
 @router.get('/api/events')
-def events(desk: Desk, streams: Streams) -> StreamingResponse:
-    web = desk.config.web
-    body = streams.chat_messages(desk.hub, retry_ms=web.live_retry_ms, keepalive_sec=web.live_keepalive_sec)
+def events(app: App, streams: Streams) -> StreamingResponse:
+    web = app.config.web
+    body = streams.chat_messages(app.hub, retry_ms=web.live_retry_ms, keepalive_sec=web.live_keepalive_sec)
     return StreamingResponse(body, media_type=SSE_TYPE, headers=SSE_HEADERS)
 
 
 @router.get('/api/messages/recent')
-def recent_messages(desk: Desk) -> dict[str, Any]:
-    return {'messages': desk.hub.recent()}
+def recent_messages(app: App) -> dict[str, Any]:
+    return {'messages': app.hub.recent()}
 
 
 @router.post('/api/activity', status_code=204)
-def activity(desk: Desk) -> Response:
-    desk.desk.last_user_activity = desk.clock.now()
+def activity(app: App) -> Response:
+    app.character_memory.note_user_activity(app.clock.now())
     return Response(status_code=204)
 
 
 @router.post('/api/chat')
-def chat(sent: ChatMessage, desk: Desk) -> dict[str, Any]:
-    desk.desk.last_user_activity = desk.clock.now()
+def chat(sent: ChatMessage, app: App) -> dict[str, Any]:
+    app.character_memory.note_user_activity(app.clock.now())
     message = (sent.message or '').strip()
     if not message:
         raise HTTPException(400, 'empty message')
-    if desk.lost_items.is_lost_query(message):
-        answer = desk.lost_items.answer(message)
-        in_one_on_one = sent.chat != 'group' and desk.profiles.get(sent.chat) is not None
+    if app.lost_items.is_lost_query(message):
+        answer = app.lost_items.answer(message)
+        in_one_on_one = sent.chat != 'group' and app.profiles.get(sent.chat) is not None
         return {'messages': [{'character': sent.chat if in_one_on_one else answer['speaker'], 'text': answer['text'],
                               'cta': answer['cta'], 'id': uuid.uuid4().hex[:MESSAGE_ID_LENGTH]}],
                 'lost_object_lookup': True}
     try:
-        return desk.generator.answer(sent.chat, message, sent.recent_messages or sent.history, widget=sent.widget)
+        return app.generator.answer(sent.chat, message, sent.recent_messages or sent.history, widget=sent.widget)
     except UnknownChat:
         raise HTTPException(400, UNKNOWN_CHAT) from None
 
 
 @router.post('/api/chat_todos')
-def chat_todos(sent: PanelList, desk: Desk) -> Ok:
-    if sent.chat is None or desk.profiles.get(sent.chat) is None:
+def chat_todos(sent: PanelList, app: App) -> Ok:
+    if sent.chat is None or app.profiles.get(sent.chat) is None:
         raise HTTPException(400, UNKNOWN_CHAT)
-    desk.generator.save_widget(sent.chat, sent.widget)
+    app.generator.save_widget(sent.chat, sent.widget)
     return Ok()
 
 
 @router.post('/api/chat_todos_sync')
-def chat_todos_sync(sent: PanelLists, desk: Desk) -> Ok:
+def chat_todos_sync(sent: PanelLists, app: App) -> Ok:
     for pid, widget in sent.by_chat.items():
         if isinstance(widget, dict):
-            desk.generator.save_widget(pid, widget)      # an unknown agent or a bad list is skipped
+            app.generator.save_widget(pid, widget)      # an unknown agent or a bad list is skipped
     return Ok()
 
 
 @router.post('/api/widget_event')
-def widget_event(sent: PanelEvent, desk: Desk) -> Ok:
-    if sent.chat is None or not desk.generator.note_panel_event(sent.chat, sent.action):
+def widget_event(sent: PanelEvent, app: App) -> Ok:
+    if sent.chat is None or not app.generator.note_panel_event(sent.chat, sent.action):
         raise HTTPException(400, UNKNOWN_CHAT)
     return Ok()

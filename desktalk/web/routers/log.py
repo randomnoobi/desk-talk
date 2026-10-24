@@ -18,7 +18,7 @@ from fastapi import APIRouter
 
 from desktalk.bootstrap import DeskTalk
 from desktalk.domain import is_day
-from desktalk.web.deps import Desk, list_size, today
+from desktalk.web.deps import App, list_size, today
 from desktalk.web.routers.live import camera_info
 
 router = APIRouter()
@@ -26,45 +26,45 @@ router = APIRouter()
 SCHEDULER_KEYS = ('name', 'every_sec', 'runs', 'last_error', 'next_in_sec')   # what the Log page shows
 
 
-def day_of(asked: str | None, desk: DeskTalk) -> str:
-    return asked if asked and is_day(asked) else today(desk)
+def day_of(asked: str | None, app: DeskTalk) -> str:
+    return asked if asked and is_day(asked) else today(app)
 
 
 @router.get('/api/log/days')
-def log_days(desk: Desk) -> dict[str, Any]:
-    return {'days': desk.event_log.days(), 'today': today(desk)}
+def log_days(app: App) -> dict[str, Any]:
+    return {'days': app.event_log.days(), 'today': today(app)}
 
 
 @router.get('/api/log/events')
-def log_events(desk: Desk, day: str | None = None, types: str | None = None,
+def log_events(app: App, day: str | None = None, types: str | None = None,
                limit: str | None = None) -> dict[str, Any]:
     wanted = {t for t in (types or '').split(',') if t} or None
-    size = list_size(limit, desk.config.web.list_sizes.log_events)
-    day = day_of(day, desk)
-    return {'day': day, 'events': desk.event_log.events(day, wanted, size)}
+    size = list_size(limit, app.config.web.list_sizes.log_events)
+    day = day_of(day, app)
+    return {'day': day, 'events': app.event_log.events(day, wanted, size)}
 
 
 @router.get('/api/log/presence')
-def log_presence(desk: Desk, day: str | None = None) -> dict[str, Any]:
-    day = day_of(day, desk)
-    return {'day': day, 'intervals': desk.event_log.presence(day)}
+def log_presence(app: App, day: str | None = None) -> dict[str, Any]:
+    day = day_of(day, app)
+    return {'day': day, 'intervals': app.event_log.presence(day)}
 
 
 @router.get('/api/log/detections')
-def log_detections(desk: Desk, day: str | None = None, limit: str | None = None) -> dict[str, Any]:
-    size = list_size(limit, desk.config.web.list_sizes.log_detections)
-    day = day_of(day, desk)
-    return {'day': day, 'detections': desk.event_log.recent_detections(day, size)}
+def log_detections(app: App, day: str | None = None, limit: str | None = None) -> dict[str, Any]:
+    size = list_size(limit, app.config.web.list_sizes.log_detections)
+    day = day_of(day, app)
+    return {'day': day, 'detections': app.event_log.recent_detections(day, size)}
 
 
 @router.get('/api/log/status')
-def log_status(desk: Desk) -> dict[str, Any]:
-    log = desk.event_log
-    return {'folder': str(log.folder), 'today': log.counts(today(desk)), 'last_compaction': log.last_compaction,
-            'scheduler': [{k: job[k] for k in SCHEDULER_KEYS} for job in desk.scheduler.status()],
-            'stream': desk.bus.stats(), 'camera': camera_info(desk)}
+def log_status(app: App) -> dict[str, Any]:
+    log = app.event_log
+    return {'folder': str(log.folder), 'today': log.counts(today(app)), 'last_compaction': log.last_compaction,
+            'scheduler': [{k: job[k] for k in SCHEDULER_KEYS} for job in app.scheduler.status()],
+            'stream': app.bus.stats(), 'camera': camera_info(app)}
 
 
 @router.post('/api/log/compact')
-def log_compact(desk: Desk) -> dict[str, Any]:
-    return desk.event_log.compact(desk.clock.now())
+def log_compact(app: App) -> dict[str, Any]:
+    return app.event_log.compact(app.clock.now())

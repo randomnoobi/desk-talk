@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException
 
 from desktalk.config import AppConfig
 from desktalk.core.agents.speakers import LENS
-from desktalk.web.deps import Desk
+from desktalk.web.deps import App
 from desktalk.web.routers.phone import phone_settings
 from desktalk.web.schemas import Ok, RuleChanges, UiChat, UiDesk, UiHabits, UiLensCard, UiPage, UiPi, UiSettings
 
@@ -34,33 +34,33 @@ router = APIRouter()
 
 
 @router.get('/api/rules')
-def rules(desk: Desk) -> dict[str, Any]:
-    return {**desk.safety_rules.for_settings_page(), 'available_objects': ZONE_OBJECTS}
+def rules(app: App) -> dict[str, Any]:
+    return {**app.safety_rules.for_settings_page(), 'available_objects': ZONE_OBJECTS}
 
 
 @router.put('/api/rules')
-def change_rules(desk: Desk, sent: RuleChanges | None = None) -> Ok:
+def change_rules(app: App, sent: RuleChanges | None = None) -> Ok:
     if sent is None or not sent.sent():
         raise HTTPException(400, 'Empty payload')
     changes = {part: getattr(sent, part) for part in RULE_PARTS if part in sent.sent()}
     if 'desk_outline' in sent.sent():
         try:
-            corners = desk.safety_rules.clean_outline(sent.desk_outline)
+            corners = app.safety_rules.clean_outline(sent.desk_outline)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
         changes['desk_outline'] = corners
         # How the phone was tilted when the desk was marked, so Lens can tell if it gets bumped.
-        tilt = desk.phone_source.recent_gravity() if desk.phone_source is not None else None
+        tilt = app.phone.recent_gravity() if app.phone is not None else None
         changes['camera_reference'] = {'gravity': [round(v, TILT_DECIMALS) for v in tilt]} if corners and tilt else None
-        desk.camera_health.forget('bumped')
-    desk.safety_rules.save(changes)
+        app.camera_health.forget('bumped')
+    app.safety_rules.save(changes)
     return Ok()
 
 
 
 @router.get('/api/ui_settings')
-def ui_settings(desk: Desk) -> UiSettings:
-    return ui_settings_from(desk.config)
+def ui_settings(app: App) -> UiSettings:
+    return ui_settings_from(app.config)
 
 
 def ui_settings_from(c: AppConfig) -> UiSettings:

@@ -15,6 +15,7 @@ import logging
 import sys
 from pathlib import Path
 
+from desktalk.adapters.storage.files import write_atomically
 from desktalk.bootstrap import build
 from desktalk.config import AppConfig, ConfigError, load_config
 from desktalk.runtime.log_setup import STARTUP_LOGGER, setup_logging
@@ -72,7 +73,7 @@ def main() -> int:
     phone_port = None
     if desktalk.source_kind == 'phone':
         camera = config.camera
-        phone_cert = ensure_cert(config.resolve(camera.phone_cert_folder), address, valid_days=camera.phone_cert_days)
+        phone_cert = ensure_cert(config.resolve(camera.phone_cert_folder), address, camera, save=write_atomically)
         phone_port = camera.phone_port
     links = Links(address, config.web.port, desktalk.pair_key, phone_port=phone_port)
     if desktalk.source_kind == 'pi':

@@ -1,7 +1,7 @@
 """
 What the routes share:
 
-    Desk           the running app (desktalk/bootstrap.py → DeskTalk): def live(desk: Desk) ...
+    App            the running app (desktalk/bootstrap.py → DeskTalk): def live(app: App) ...
     ShownLinks     the Pi command and the phone link (desktalk/web/pairing.py)
     Streams        the open live streams (desktalk/web/streams.py)
     FromHere       True when the request comes from this computer (the Pi command and the phone link are
@@ -19,7 +19,6 @@ from fastapi import Depends, HTTPException, Request
 
 from desktalk.bootstrap import DeskTalk
 from desktalk.config import ListSize
-from desktalk.util import local_day
 from desktalk.web.middleware import MB, too_big
 from desktalk.web.pairing import Links
 from desktalk.web.streams import LiveStreams
@@ -43,7 +42,7 @@ def _from_here(request: Request) -> bool:
     return request.client is not None and request.client.host in LOCAL_ADDRESSES
 
 
-Desk = Annotated[DeskTalk, Depends(_desktalk)]
+App = Annotated[DeskTalk, Depends(_desktalk)]
 ShownLinks = Annotated[Links, Depends(_links)]
 Streams = Annotated[LiveStreams, Depends(_streams)]
 FromHere = Annotated[bool, Depends(_from_here)]
@@ -51,18 +50,18 @@ FromHere = Annotated[bool, Depends(_from_here)]
 
 def key_check(problem: str) -> Callable[[Request, DeskTalk], None]:
     """A dependency: 403 {"error": problem} unless X-Desk-Key is the pairing key."""
-    def check(request: Request, desk: Desk) -> None:
+    def check(request: Request, app: App) -> None:
         given = request.headers.get('X-Desk-Key')
         # Compared in a way that takes as long for a near miss as for a wild guess, so the key can't be
         # worked out bit by bit from how fast the replies come. As bytes, so any letters in the header work.
-        if given is None or not secrets.compare_digest(given.encode(), desk.pair_key.encode()):
+        if given is None or not secrets.compare_digest(given.encode(), app.pair_key.encode()):
             raise HTTPException(403, problem)
     return check
 
 
-def other_camera(desk: DeskTalk, kind: str) -> HTTPException:
+def other_camera(app: DeskTalk, kind: str) -> HTTPException:
     """409: the camera in the settings is another one, so an upload from `kind` would go nowhere."""
-    return HTTPException(409, f'This computer is set to camera.source: {desk.source_kind}. '
+    return HTTPException(409, f'This computer is set to camera.source: {app.source_kind}. '
                               f'Set it to {kind} in config/settings.yaml.')
 
 
@@ -92,20 +91,19 @@ def list_size(asked: str | None, size: ListSize) -> int:
     return min(max(wanted, 1), size.max)
 
 
-def today(desk: DeskTalk) -> str:
-    return local_day(desk.clock.now())
+def today(app: DeskTalk) -> str:
+    return app.clock.local_day(app.clock.now())
 
 
-def uptime_sec(desk: DeskTalk) -> int:
-    return round(desk.clock.now() - desk.started_at)
+def uptime_sec(app: DeskTalk) -> int:
+    return round(app.clock.now() - app.started_at)
 
 
-def camera_index(desk: DeskTalk) -> int:
+def camera_index(app: DeskTalk) -> int:
     """The camera the live view shows (0 until a picture came)."""
-    with desk.desk.lock:
-        cameras = sorted(desk.desk.cameras)
+    cameras = app.live_pictures.camera_numbers()
     return cameras[0] if cameras else 0
 
 
-__all__ = ['Desk', 'FromHere', 'ShownLinks', 'Streams', 'camera_index', 'other_camera', 'key_check', 'list_size',
+__all__ = ['App', 'FromHere', 'ShownLinks', 'Streams', 'camera_index', 'other_camera', 'key_check', 'list_size',
            'read_upload', 'today', 'uptime_sec']

@@ -98,7 +98,7 @@ def test_typing_and_chatting_hold_off_the_small_talk(tmp_path):
     rig.clock.advance(30)
     reply = web_client(rig.app).post('/api/activity', content=b'', headers={'Content-Type': 'text/plain'})
     assert (reply.status_code, reply.content) == (204, b'')
-    assert rig.app.desk.last_user_activity == rig.clock.now()
+    assert rig.app.character_memory.user_active_at() == rig.clock.now()
 
 
 def test_a_lost_item_question_says_where_it_was_seen(tmp_path):

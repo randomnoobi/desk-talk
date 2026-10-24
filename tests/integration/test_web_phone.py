@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
+
+from desktalk.adapters.camera import PhoneFrameSource
 
 from desktalk.web.app import create_phone_app
 from desktalk.web.routers.phone import parse_gravity, parse_rotation
@@ -13,6 +17,11 @@ from tests.integration.web_kit import web_client
 @pytest.fixture
 def rig(tmp_path):
     return DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'camera', source='phone'))
+
+
+def phone_camera(rig: DeskRig) -> PhoneFrameSource:
+    """The real phone camera behind the app (its picture count and turn aren't in any interface)."""
+    return cast(PhoneFrameSource, rig.app.source)
 
 
 @pytest.fixture
@@ -54,7 +63,7 @@ def test_a_picture_with_a_turn_that_is_not_a_number_still_arrives(rig, phone):
         headers = {'X-Desk-Key': PAIR_KEY, 'Content-Type': 'image/jpeg', 'X-Desk-Rotation': bad.encode('latin-1')}
         reply = phone.post('/api/phone/frame', content=rig.jpeg, headers=headers)
         assert reply.status_code == 200, bad
-    assert rig.app.phone_source.pictures_received == 2
+    assert phone_camera(rig).pictures_received == 2
 
 
 def test_a_picture_from_the_phone_reaches_the_camera_with_its_tilt_and_turn(rig, phone):
@@ -62,7 +71,7 @@ def test_a_picture_from_the_phone_reaches_the_camera_with_its_tilt_and_turn(rig,
                'X-Desk-Gravity': '0.12,-9.71,0.85'}
     reply = phone.post('/api/phone/frame', content=rig.jpeg, headers=headers)
     assert reply.status_code == 200 and reply.json() == {'ok': True, 'fps': 0.0}      # no tip: nothing wrong
-    source = rig.app.phone_source
+    source = phone_camera(rig)
     assert source.pictures_received == 1
     assert source.recent_gravity() == (0.12, -9.71, 0.85) and source.rotation == 270
     assert 'access-control-allow-origin' not in reply.headers
@@ -74,7 +83,7 @@ def test_bad_phone_uploads_are_refused(rig, phone):
     for body in (b'', b'not a picture'):
         bad = phone.post('/api/phone/frame', content=body, headers={'X-Desk-Key': PAIR_KEY})
         assert (bad.status_code, bad.json()) == (400, {'error': 'not a JPEG image'})
-    assert rig.app.phone_source.pictures_received == 0
+    assert phone_camera(rig).pictures_received == 0
 
 
 def test_stop_on_the_phone_disconnects_the_camera(rig, phone):

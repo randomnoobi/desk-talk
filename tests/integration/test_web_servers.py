@@ -17,6 +17,7 @@ import anyio
 import httpx
 import pytest
 
+from desktalk.adapters.storage.files import write_atomically
 from desktalk.bootstrap import build
 from desktalk.domain import DetectorState, UploadInfo
 from desktalk.runtime import SystemClock
@@ -81,7 +82,7 @@ def test_the_camera_programs_uploads_reach_the_server_in_each_detector_state(tmp
     events = list(reversed(app.event_log.recent_detections(day, 10)))
     assert [(e['frame_id'], e['detected_on']) for e in events] == [('pi-000001', 'pi'), ('pi-000003', 'computer')]
     assert rig.detector.calls == 1                       # only the off picture was detected here
-    assert app.pi_source.status()['detector'] == 'off'
+    assert app.pi.status()['detector'] == 'off'
 
 
 def test_the_camera_program_reports_a_wrong_key(tmp_path):
@@ -106,8 +107,8 @@ def test_the_camera_program_gets_its_settings_from_the_server_and_its_pictures_g
                                       '--photo-dir', str(tmp_path / 'pi-photos')])
         assert status == 0
         assert wait_until(lambda: app.producer.pictures_analysed >= 1)
-    assert app.pi_source.pictures_received >= 1
-    upload, _ = app.pi_source.latest_upload()
+    assert app.source.pictures_received >= 1
+    upload, _ = app.source.latest_upload()
     assert (upload.version, upload.detector) == (2, DetectorState.OFF)
     assert upload.detector_reason == 'detection on the Pi is turned off (--no-detector)'
     day = app.event_log.days()[0]
@@ -204,7 +205,7 @@ def phone_desk(tmp_path):
 
 
 def test_the_phone_page_is_served_over_https_with_its_own_certificate(tmp_path, phone_desk):
-    cert = ensure_cert(tmp_path / 'certs', '127.0.0.1', valid_days=30)
+    cert = ensure_cert(tmp_path / 'certs', '127.0.0.1', phone_desk.config.camera, save=write_atomically)
     with running(create_phone_app(phone_desk.app), cert=cert) as url:
         assert url.startswith('https://')
         page = httpx.get(url + '/phone', verify=str(cert.cert_file))
@@ -212,9 +213,11 @@ def test_the_phone_page_is_served_over_https_with_its_own_certificate(tmp_path, 
 
 
 def test_the_certificate_is_made_once_and_kept_for_the_next_start(tmp_path):
-    cert = ensure_cert(tmp_path / 'certs', '192.168.1.20', valid_days=30)
+    camera = desk_config(tmp_path).camera
+    cert = ensure_cert(tmp_path / 'certs', '192.168.1.20', camera, save=write_atomically)
     made = cert.cert_file.read_bytes()
-    assert ensure_cert(tmp_path / 'certs', '192.168.1.20', valid_days=30) == cert
+    assert ensure_cert(tmp_path / 'certs', '192.168.1.20', camera, save=write_atomically) == cert
     assert cert.cert_file.read_bytes() == made
-    ensure_cert(tmp_path / 'certs', '192.168.1.77', valid_days=30)      # a new Wi-Fi address: a new certificate
-    assert cert.cert_file.read_bytes() != made
+    ensure_cert(tmp_path / 'certs', '192.168.1.77', camera, save=write_atomically)      # a new Wi-Fi address:
+    assert cert.cert_file.read_bytes() != made                                          # a new certificate
+    assert (cert.cert_file.name, cert.key_file.name) == (camera.phone_cert_file, camera.phone_key_file)

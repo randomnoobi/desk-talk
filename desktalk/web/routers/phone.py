@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse
 from starlette.concurrency import run_in_threadpool
 
 from desktalk.config import CameraSettings
-from desktalk.web.deps import Desk, key_check, other_camera, read_upload
+from desktalk.web.deps import App, key_check, other_camera, read_upload
 from desktalk.web.files import page
 from desktalk.web.schemas import Ok, PhoneFrameReply, PhoneSettings
 
@@ -53,8 +53,8 @@ def parse_rotation(header: str) -> int | None:
 @phone_router.get('/')
 @phone_router.get('/phone')
 @phone_router.get('/phone/')
-def phone_page(desk: Desk) -> FileResponse:
-    return page(desk.config.resolve(desk.config.web.phone_folder) / 'index.html')
+def phone_page(app: App) -> FileResponse:
+    return page(app.config.resolve(app.config.web.phone_folder) / 'index.html')
 
 
 def phone_settings(camera: CameraSettings) -> PhoneSettings:
@@ -64,29 +64,29 @@ def phone_settings(camera: CameraSettings) -> PhoneSettings:
 
 
 @phone_router.get('/api/phone/config')
-def phone_config(desk: Desk) -> PhoneSettings:
-    return phone_settings(desk.config.camera)
+def phone_config(app: App) -> PhoneSettings:
+    return phone_settings(app.config.camera)
 
 
 @phone_router.post('/api/phone/frame', response_model=PhoneFrameReply, response_model_exclude_none=True,
                    dependencies=[Depends(key_check('Pairing key does not match. Scan the QR code on your computer '
                                                    'again.'))])
-async def phone_frame(request: Request, desk: Desk) -> PhoneFrameReply:
-    source = desk.phone_source
-    if source is None:
-        raise other_camera(desk, 'phone')
-    body = await read_upload(request, desk.config.web.max_request_mb)
-    if not await run_in_threadpool(source.push, body):      # decodes the JPEG: not on the event loop
+async def phone_frame(request: Request, app: App) -> PhoneFrameReply:
+    inbox, phone = app.phone_inbox, app.phone
+    if inbox is None or phone is None:
+        raise other_camera(app, 'phone')
+    body = await read_upload(request, app.config.web.max_request_mb)
+    if not await run_in_threadpool(inbox.push, body):      # decodes the JPEG: not on the event loop
         raise HTTPException(400, NOT_A_PICTURE)
-    source.set_motion(parse_gravity(request.headers.get('X-Desk-Gravity'), most=desk.config.camera.phone_tilt_max),
+    phone.set_motion(parse_gravity(request.headers.get('X-Desk-Gravity'), most=app.config.camera.phone_tilt_max),
                       parse_rotation(request.headers.get('X-Desk-Rotation', '')))
-    return PhoneFrameReply(fps=source.fps, tip=desk.camera_health.phone_tip())
+    return PhoneFrameReply(fps=app.source.fps, tip=app.camera_health.phone_tip())
 
 
 @phone_router.post('/api/phone/stop', dependencies=[Depends(key_check('Pairing key does not match.'))])
-def phone_stop(desk: Desk) -> Ok:
-    source = desk.phone_source
-    if source is None:
-        raise other_camera(desk, 'phone')
-    source.mark_stopped()
+def phone_stop(app: App) -> Ok:
+    phone = app.phone
+    if phone is None:
+        raise other_camera(app, 'phone')
+    phone.mark_stopped()
     return Ok()

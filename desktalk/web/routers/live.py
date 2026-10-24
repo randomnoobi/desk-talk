@@ -12,94 +12,91 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from desktalk.bootstrap import DeskTalk
-from desktalk.web.deps import Desk, FromHere, ShownLinks, camera_index, uptime_sec
+from desktalk.web.deps import App, FromHere, ShownLinks, camera_index, uptime_sec
 
 router = APIRouter()
 
 
-def camera_info(desk: DeskTalk) -> dict[str, Any]:
-    source = desk.source
-    out = {'source': desk.source_kind, 'connected': desk.desk_status.camera_connected(), 'fps': source.fps,
+def camera_info(app: DeskTalk) -> dict[str, Any]:
+    source = app.source
+    out = {'source': app.source_kind, 'connected': app.desk_status.camera_connected(), 'fps': source.fps,
            'frames_received': getattr(source, 'pictures_received', None),
-           'yolo_ms': round(desk.producer.last_detect_ms or 0), 'model': desk.detector.label}
-    if desk.pi_source is not None:
-        out['pi'] = desk.pi_source.pi_info()
+           'yolo_ms': round(app.producer.last_detect_ms or 0), 'model': app.detector.label}
+    if app.pi is not None:
+        out['pi'] = app.pi.pi_info()
     return out
 
 
-def detections(desk: DeskTalk) -> dict[str, Any]:
-    d = desk.desk
-    with d.lock:
-        width, height = d.frame_w, d.frame_h
-        objects = dict(d.objects)
-        seen = dict(d.seen_labels)
-        relationships = (d.rel_result or {}).get('relationships') or []
-        vision_scan = sorted(d.lost_last_vlm_visible)
-        light = dict(d.light)
-    habit_check, habit_check_at = desk.vision_habits.latest()
+def detections(app: DeskTalk) -> dict[str, Any]:
+    size = app.live_pictures.size()
+    on_desk = app.scene.members()
+    seen = app.scene.seen()
+    relationships = (app.safety_board.now().result or {}).get('relationships') or []
+    vision_scan = sorted(app.scene.scan_labels())
+    light = app.live_pictures.newest_light()
+    habit_check, habit_check_at = app.vision_habits.latest()
     agents = {}
-    for pid, box in objects.items():
-        profile = desk.profiles.get(pid)
+    for pid, box in on_desk.items():
+        profile = app.profiles.get(pid)
         if profile:
-            agents[pid] = {'name': profile.name, 'icon': profile.icon, 'class': box['class_name'],
-                           'confidence': round(box['conf'], 2), 'center': [round(c) for c in box['center']],
-                           'bbox': [round(float(x)) for x in box['bbox']], 'cam': box.get('cam', 0)}
-    agent_labels = {box['class_name'] for box in objects.values()}
-    members = set(desk.roster.member_ids())
+            agents[pid] = {'name': profile.name, 'icon': profile.icon, 'class': box.label,
+                           'confidence': round(box.confidence, 2), 'center': [round(c) for c in box.center],
+                           'bbox': [round(float(x)) for x in box.box], 'cam': box.cam}
+    agent_labels = {box.label for box in on_desk.values()}
+    members = set(app.roster.member_ids())
     for label in seen:              # e.g. a mouse is part of Computer
-        profile = desk.profiles.for_label(label)
+        profile = app.profiles.for_label(label)
         if profile and profile.id in members:
             agent_labels.add(label)
-    lost_labels = set().union(*(item['labels'] for item in desk.lost_items.items.values()))
-    extras = sorted(({'yolo_class': label, 'confidence': round(box['conf'], 2),
-                      'bbox': [round(float(x)) for x in box['bbox']], 'highlight': label in lost_labels,
-                      'ignored': desk.profiles.is_ignored(label)}
+    lost_labels = set().union(*(item['labels'] for item in app.lost_items.items.values()))
+    extras = sorted(({'yolo_class': label, 'confidence': round(box.confidence, 2),
+                      'bbox': [round(float(x)) for x in box.box], 'highlight': label in lost_labels,
+                      'ignored': app.profiles.is_ignored(label)}
                      for label, box in seen.items() if label not in agent_labels), key=lambda x: -x['confidence'])
     edges = [{'from': r.get('intruder'), 'to': r.get('target'), 'kind': 'danger_zone', 'label': r.get('zone_label', '')}
              for r in relationships if r.get('type') == 'danger_zone']
-    return {'objects': agents, 'extras': extras, 'timestamp': desk.clock.now(), 'frame': {'w': width, 'h': height},
-            'relationship_edges': edges, 'vlm_habit': habit_check, 'vlm_habit_ts': habit_check_at,
-            'lost_vlm_labels': vision_scan, 'light': light}
+    return {'objects': agents, 'extras': extras, 'timestamp': app.clock.now(),
+            'frame': {'w': size.width, 'h': size.height}, 'relationship_edges': edges, 'vlm_habit': habit_check,
+            'vlm_habit_ts': habit_check_at, 'lost_vlm_labels': vision_scan, 'light': light.to_dict() if light else {}}
 
 
-def safety(desk: DeskTalk) -> dict[str, Any]:
-    d = desk.desk
-    with d.lock:
-        state, dangers, result = d.safety_state, list(d.safety_dangers), d.rel_result or {}
-    return {'state': state, 'dangers': dangers, 'rules_loaded': desk.safety_rules.loaded,
+def safety(app: DeskTalk) -> dict[str, Any]:
+    now = app.safety_board.now()
+    result = now.result or {}
+    return {'state': now.state, 'dangers': [d.to_dict() for d in now.dangers], 'rules_loaded': app.safety_rules.loaded,
             'risk_level': int(result.get('risk_level', 0)), 'explanations': list(result.get('explanations') or []),
             'risk_events': list(result.get('risk_events') or []),
             'relationships': list(result.get('relationships') or [])}
 
 
-def ai(desk: DeskTalk) -> dict[str, Any]:
-    return {'ready': desk.model.ready, 'label': desk.model.label, 'problem': desk.model.problem()}
+def ai(app: DeskTalk) -> dict[str, Any]:
+    return {'ready': app.model.ready, 'label': app.model.label, 'problem': app.model.problem()}
 
 
 @router.get('/api/live')
-def live(request: Request, desk: Desk, links: ShownLinks, from_here: FromHere) -> dict[str, Any]:
-    phone = desk.phone_source
-    out = {'phone_mode': phone is not None, 'camera_source': desk.source_kind,
-           'camera': desk.desk_status.camera_connected(), 'camera_index': camera_index(desk),
-           'camera_info': camera_info(desk), 'detections': detections(desk), 'safety': safety(desk),
-           'camera_issues': desk.camera_health.issues(), 'agents': desk.roster.snapshot(), 'ai': ai(desk)}
+def live(request: Request, app: App, links: ShownLinks, from_here: FromHere) -> dict[str, Any]:
+    phone = app.phone
+    out = {'phone_mode': phone is not None, 'camera_source': app.source_kind,
+           'camera': app.desk_status.camera_connected(), 'camera_index': camera_index(app),
+           'camera_info': camera_info(app), 'detections': detections(app), 'safety': safety(app),
+           'camera_issues': app.camera_health.issues(), 'agents': app.roster.snapshot(), 'ai': ai(app)}
     if phone is not None:
         wants_qr = bool(request.query_params.get('qr'))
-        out['phone'] = {'fps': phone.fps, 'url': links.phone_url if from_here else '',
+        out['phone'] = {'fps': app.source.fps, 'url': links.phone_url if from_here else '',
                         'qr_svg': links.phone_qr_svg if from_here and wants_qr else None}
-    if desk.pi_source is not None and from_here:
+    if app.pi is not None and from_here:
         out['pi_command'] = links.pi_command
     return out
 
 
 @router.get('/api/status')
-def status(desk: Desk) -> dict[str, Any]:
-    connected = desk.desk_status.camera_connected()
-    with desk.desk.lock:
-        state, result = desk.desk.safety_state, desk.desk.rel_result or {}
-    return {'status': 'running', 'camera': connected, 'camera_source': desk.source_kind,
-            'phone_mode': desk.phone_source is not None, 'camera_indices': [camera_index(desk)] if connected else [],
-            'llm': desk.model.ready, 'llm_label': desk.model.label, 'agents': desk.roster.member_ids(),
-            'safety_state': state, 'safety_rules': desk.safety_rules.loaded,
-            'risk_level': result.get('risk_level', 0), 'uptime_sec': uptime_sec(desk)}
+def status(app: App) -> dict[str, Any]:
+    connected = app.desk_status.camera_connected()
+    now = app.safety_board.now()
+    state, result = now.state, now.result or {}
+    return {'status': 'running', 'camera': connected, 'camera_source': app.source_kind,
+            'phone_mode': app.phone is not None, 'camera_indices': [camera_index(app)] if connected else [],
+            'llm': app.model.ready, 'llm_label': app.model.label, 'agents': app.roster.member_ids(),
+            'safety_state': state, 'safety_rules': app.safety_rules.loaded,
+            'risk_level': result.get('risk_level', 0), 'uptime_sec': uptime_sec(app)}
 

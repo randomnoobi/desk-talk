@@ -24,13 +24,13 @@ def test_objects_join_the_chat_warn_log_a_sip_and_leave(tmp_path):
     assert {(m['agent']['id'], m['action']) for m in roster} == {('computer', 'joined'), ('cup', 'joined')}
     assert {m['text'] for m in roster} == {'Computer joined the chat', 'Cup joined the chat'}
     assert {m['character'] for m in msgs if m.get('hello')} == {'computer', 'cup'}
-    assert set(app.roster.member_ids()) == set(app.desk.objects) == {'computer', 'cup'}
+    assert set(app.roster.member_ids()) == set(app.scene.members()) == {'computer', 'cup'}
 
     # 2. The cup slides next to the laptop: Computer (fragile) warns, with a proof photo.
     rig.watch(2, LAPTOP, CUP_NEAR)
     alerts = [m for m in rig.messages() if m.get('alert') == 'proximity']
     assert alerts and alerts[0]['character'] == 'computer'
-    assert 'Cup' in alerts[0]['text'] and app.desk.snapshots.get(alerts[0]['snapshot'])
+    assert 'Cup' in alerts[0]['text'] and app.photo_album.get(alerts[0]['snapshot'])
     assert app.habits.today()['danger_count'] >= 1
 
     # 3. The cup is picked up for 8 seconds and put back: a sip.
@@ -129,8 +129,7 @@ def test_busy_pictures_only_update_the_live_view(tmp_path):
     pi_pictures(rig, 4, DetectorState.BUSY)
     assert rig.detector.calls == 0 and rig.app.event_log.days() == []
     assert rig.app.roster.member_ids() == [] and rig.app.producer.pictures_analysed == 0
-    with rig.app.desk.lock:
-        assert rig.app.desk.raw_frames[0] == rig.jpeg
+    assert rig.app.live_pictures.plain(0) == rig.jpeg
 
 
 def test_off_pictures_are_detected_on_this_computer_and_the_pi_says_why(tmp_path):
@@ -139,7 +138,7 @@ def test_off_pictures_are_detected_on_this_computer_and_the_pi_says_why(tmp_path
     assert rig.detector.calls == 12
     assert {e['detected_on'] for e in detection_events(rig)} == {'computer'}
     assert rig.app.roster.member_ids() == []                  # only a person was seen
-    status = rig.app.pi_source.status()
+    status = rig.app.pi.status()
     assert (status['detector'], status['detector_reason']) == ('off', 'the detector container is not answering')
 
 
@@ -150,8 +149,7 @@ def test_an_ok_picture_that_arrives_after_later_busy_ones_is_analysed_but_not_sh
     rig.picture(from_pi(rig, DetectorState.BUSY, number=8, taken_at=taken + 0.3), jpeg=later)
     rig.clock.advance(0.3)
     rig.picture(from_pi(rig, DetectorState.OK, LAPTOP, number=7, taken_at=taken), jpeg=earlier)
-    with rig.app.desk.lock:
-        assert rig.app.desk.raw_frames[0] == later
+    assert rig.app.live_pictures.plain(0) == later
     assert [e['frame_id'] for e in detection_events(rig)] == ['pi-000007']
 
 
@@ -165,8 +163,7 @@ def test_a_busy_picture_never_pushes_out_an_ok_one_not_analysed_yet(tmp_path):
     [event] = detection_events(rig)
     assert event['frame_id'] == 'pi-000001' and event['detected_obj'][0]['label'] == 'laptop'
     rig.app.producer.tick(rig.clock.now())                  # then the busy one, for the live view only
-    with rig.app.desk.lock:
-        assert rig.app.desk.raw_frames[0] == busy_jpeg
+    assert rig.app.live_pictures.plain(0) == busy_jpeg
     assert len(detection_events(rig)) == 1
 
 

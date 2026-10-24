@@ -17,25 +17,25 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from desktalk.web.deps import Desk, uptime_sec
+from desktalk.web.deps import App, uptime_sec
 from desktalk.web.routers.live import ai
 
 router = APIRouter()
 
 
 @router.get('/api/health')
-def health(desk: Desk) -> dict[str, Any]:
-    source = desk.source
-    producer = desk.producer
+def health(app: App) -> dict[str, Any]:
+    source = app.source
+    producer = app.producer
     return {
-        'uptime_sec': uptime_sec(desk),
-        'jobs': desk.supervisor.status(),
-        'scheduler': desk.scheduler.status(),
-        'events': desk.bus.stats(),
-        'camera': {'source': desk.source_kind, 'connected': desk.desk_status.camera_connected(), 'fps': source.fps,
+        'uptime_sec': uptime_sec(app),
+        'jobs': app.supervisor.status(),
+        'scheduler': app.scheduler.status(),
+        'events': app.bus.stats(),
+        'camera': {'source': app.source_kind, 'connected': app.desk_status.camera_connected(), 'fps': source.fps,
                    'pictures_received': getattr(source, 'pictures_received', None)},
-        'pi': desk.pi_source.status() if desk.pi_source is not None else None,
+        'pi': app.pi.status() if app.pi is not None else None,
         'detection': {'pictures_analysed': producer.pictures_analysed, 'detect_ms': producer.last_detect_ms,
-                      'problem': producer.problem, 'model': desk.detector.label},
-        'ai': ai(desk),
+                      'problem': producer.problem, 'model': app.detector.label},
+        'ai': ai(app),
     }

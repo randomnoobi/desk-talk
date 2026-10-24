@@ -7,7 +7,9 @@ How the Pi and the phone find this computer:
     links.phone_qr_svg    # that link as a QR code, for the app to show
 
 Phones only allow the camera on https:// pages, so the phone page's server has a certificate of its own,
-made by ensure_cert() for this computer's Wi-Fi address and kept for the next start.
+made by ensure_cert() for this computer's Wi-Fi address and kept for the next start:
+
+    cert = ensure_cert(folder, lan_ip(), config.camera, save=write_atomically)
 """
 
 from __future__ import annotations
@@ -17,11 +19,12 @@ import io
 import ipaddress
 import logging
 import socket
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 
-from desktalk.adapters.storage.files import write_atomically
+from desktalk.config import CameraSettings
 
 log = logging.getLogger(__name__)
 
@@ -29,8 +32,6 @@ log = logging.getLogger(__name__)
 # is sent: a UDP connect only picks the way out.
 ANY_OUTSIDE_ADDRESS = ('8.8.8.8', 80)
 THIS_COMPUTER = '127.0.0.1'
-CERT_FILE = 'desk-talk.crt'
-KEY_FILE = 'desk-talk.key'
 RSA_KEY_BITS = 2048                 # the usual size for a certificate's key
 RSA_PUBLIC_EXPONENT = 65537         # the value everyone uses
 QR_BORDER_IN_APP = 2                # the empty border around the QR code, in squares
@@ -97,19 +98,24 @@ def qr_for_terminal(text: str) -> str:
 
 
 # ── the phone page's HTTPS certificate ───────────────────────────────
+# Writes a text file all-or-nothing, readable only by you (desktalk/adapters/storage/files.py: write_atomically).
+SaveText = Callable[[Path, str], None]
+
+
 @dataclass(frozen=True)
 class Cert:
     cert_file: Path
     key_file: Path
 
 
-def ensure_cert(folder: Path, address: str, *, valid_days: int) -> Cert:
-    """The certificate in `folder` if it covers `address` and hasn't run out, else a new self-signed one,
-    good for `valid_days`. The phone warns about it once ("not private"): it's this computer's own."""
+def ensure_cert(folder: Path, address: str, camera: CameraSettings, *, save: SaveText) -> Cert:
+    """The certificate in `folder` (camera.phone_cert_file, and its key in camera.phone_key_file) if it covers
+    `address` and hasn't run out, else a new self-signed one, good for camera.phone_cert_days and written with
+    `save`. The phone warns about it once ("not private"): it's this computer's own."""
     from cryptography import x509
 
     folder = Path(folder)
-    cert = Cert(folder / CERT_FILE, folder / KEY_FILE)
+    cert = Cert(folder / camera.phone_cert_file, folder / camera.phone_key_file)
     try:
         saved = x509.load_pem_x509_certificate(cert.cert_file.read_bytes())
         names = saved.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
@@ -120,7 +126,7 @@ def ensure_cert(folder: Path, address: str, *, valid_days: int) -> Cert:
         pass
     except (ValueError, x509.ExtensionNotFound) as exc:
         log.info('Making a new phone certificate: the old one could not be read (%s)', exc)
-    _make_cert(cert, address, valid_days)
+    _make_cert(cert, address, camera.phone_cert_days, save)
     return cert
 
 
@@ -128,7 +134,7 @@ def _now() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
 
 
-def _make_cert(cert: Cert, address: str, valid_days: int) -> None:
+def _make_cert(cert: Cert, address: str, valid_days: int, save: SaveText) -> None:
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import rsa
@@ -150,7 +156,6 @@ def _make_cert(cert: Cert, address: str, valid_days: int) -> None:
              .add_extension(x509.SubjectAlternativeName(names), critical=False)
              .sign(key, hashes.SHA256()))
     # Each file all-or-nothing, and only you can read them (the private key above all).
-    write_atomically(cert.key_file, key.private_bytes(serialization.Encoding.PEM,
-                                                      serialization.PrivateFormat.TraditionalOpenSSL,
-                                                      serialization.NoEncryption()).decode('ascii'))
-    write_atomically(cert.cert_file, built.public_bytes(serialization.Encoding.PEM).decode('ascii'))
+    save(cert.key_file, key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL,
+                                          serialization.NoEncryption()).decode('ascii'))
+    save(cert.cert_file, built.public_bytes(serialization.Encoding.PEM).decode('ascii'))
