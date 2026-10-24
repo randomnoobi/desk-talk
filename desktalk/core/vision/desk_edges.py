@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 
 from desktalk.core.vision.findings import Findings, Thing
 from desktalk.core.vision.geometry import Point, Segment, box_segment_distance, footprint
-from desktalk.core.vision.rules import DeskRules
+from desktalk.domain import DeskRules
 
 Size = tuple[float, float]           # picture width, height
 

@@ -25,9 +25,11 @@ from tests.fakes.views import (
     FakeProfiles,
     StaticRoster,
 )
+from tests.fakes.vision import FakeDeskRules, FakePhotoTaker, FakePictureTools, plain_desk_rules
 
 __all__ = [
-    'FakeCameraHealth', 'FakeChatModel', 'FakeChatVoice', 'FakeClock', 'FakeDeskStatus', 'FakeDetector',
-    'FakeFrameSource', 'FakeHabits', 'FakePainter', 'FakePictureCheck', 'FakePreferences', 'FakeProfiles',
-    'InMemoryEventStore', 'InMemoryKeyValueStore', 'RecordingNotifier', 'StaticRoster', 'SyncEventBus',
+    'FakeCameraHealth', 'FakeChatModel', 'FakeChatVoice', 'FakeClock', 'FakeDeskRules', 'FakeDeskStatus',
+    'FakeDetector', 'FakeFrameSource', 'FakeHabits', 'FakePainter', 'FakePhotoTaker', 'FakePictureCheck',
+    'FakePictureTools', 'FakePreferences', 'FakeProfiles', 'InMemoryEventStore', 'InMemoryKeyValueStore',
+    'RecordingNotifier', 'StaticRoster', 'SyncEventBus', 'plain_desk_rules',
 ]

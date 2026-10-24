@@ -8,17 +8,23 @@ import pytest
 
 from desktalk.domain import BBox, Detection
 from tests.contracts.chat_model_contract import ChatModelContract
+from tests.contracts.desk_rules_contract import DeskRulesContract
 from tests.contracts.detector_contract import DetectorContract
 from tests.contracts.event_bus_contract import EventBusContract
 from tests.contracts.event_store_contract import EventStoreContract
 from tests.contracts.frame_source_contract import FrameSourceContract
 from tests.contracts.key_value_contract import KeyValueContract
 from tests.contracts.notifier_contract import NotifierContract
+from tests.contracts.photo_taker_contract import PhotoTakerContract
+from tests.contracts.picture_tools_contract import PictureToolsContract
 from tests.contracts.push_source_contract import PushSourceContract
 from tests.fakes import (
     FakeChatModel,
+    FakeDeskRules,
     FakeDetector,
     FakeFrameSource,
+    FakePhotoTaker,
+    FakePictureTools,
     InMemoryEventStore,
     InMemoryKeyValueStore,
     RecordingNotifier,
@@ -89,6 +95,8 @@ class TestFakeChatModel(ChatModelContract):
     ('FakeChatVoice', 'ChatVoice'), ('StaticRoster', 'RosterView'), ('FakeProfiles', 'Profiles'),
     ('FakeHabits', 'HabitsView'), ('FakePreferences', 'Preferences'), ('FakeCameraHealth', 'CameraHealthView'),
     ('FakeDeskStatus', 'DeskStatus'), ('FakePictureCheck', 'PictureCheck'), ('FakePainter', 'LiveViewPainter'),
+    ('FakePictureTools', 'PictureTools'), ('FakePhotoTaker', 'PhotoTaker'), ('FakeDeskRules', 'DeskRulesView'),
+    ('FakeDeskRules', 'DeskLayout'),
 ])
 def test_every_fake_has_all_of_its_interface(fake, port):
     import desktalk.ports as ports
@@ -110,3 +118,36 @@ class TestRecordingNotifier(NotifierContract):
     @pytest.fixture
     def notifier(self, clock):
         return RecordingNotifier(clock)
+
+
+class TestFakePassesPictureToolsContract(PictureToolsContract):
+    @pytest.fixture
+    def tools(self):
+        return FakePictureTools()
+
+
+class TestFakePassesPhotoTakerContract(PhotoTakerContract):
+    @pytest.fixture
+    def taker(self):
+        return FakePhotoTaker()
+
+    @pytest.fixture
+    def taker_without_picture(self):
+        return FakePhotoTaker(has_picture=False)
+
+
+class TestFakePassesDeskRulesContract(DeskRulesContract):
+    @pytest.fixture
+    def rules(self):
+        return FakeDeskRules()
+
+
+def test_fake_photo_taker_remembers_what_it_was_asked():
+    taker = FakePhotoTaker()
+    taker.save('Spill risk', [(1.0, 2.0, 3.0, 4.0)])
+    assert taker.saved == [('Spill risk', ((1.0, 2.0, 3.0, 4.0),))]
+
+
+def test_fake_picture_tools_need_no_opencv():
+    import tests.fakes.vision as module
+    assert 'cv2' not in module.__dict__

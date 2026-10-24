@@ -13,7 +13,7 @@ from collections.abc import Mapping
 
 from desktalk.core.vision.findings import Findings, Thing
 from desktalk.core.vision.geometry import distance, grow, intrusion_depth
-from desktalk.core.vision.rules import DeskRules
+from desktalk.domain import DeskRules
 
 Pair = tuple[str, str]             # (the thing that went in, the thing whose zone it is)
 

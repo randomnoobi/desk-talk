@@ -6,7 +6,8 @@ import pytest
 
 from desktalk.core.vision import danger_zones as dz
 from desktalk.core.vision.findings import Thing
-from desktalk.core.vision.rules import Zone, make_rules
+from desktalk.core.vision.rules import make_rules
+from desktalk.domain import Zone
 from tests.unit.test_core_vision_kit import app_config, desk_object
 
 RULES = make_rules(app_config().safety)

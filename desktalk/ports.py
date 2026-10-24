@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, Protocol, runtime_checkable
 
-from desktalk.domain import AgentProfile, Detection, Event, Frame, Nudge, UploadInfo
+from desktalk.domain import AgentProfile, Box, DeskRules, Detection, Event, Frame, Nudge, Picture, Size, UploadInfo
 
 
 @runtime_checkable
@@ -377,4 +377,103 @@ class LiveViewPainter(Protocol):
 
     def paint(self, picture: Any, detections: Sequence[Detection]) -> Any:
         """A new picture with the drawings; the one passed in is left as it was."""
+        ...
+
+
+# ── Pictures, photos and the desk rules ───────────────────────────────
+@runtime_checkable
+class PictureTools(Protocol):
+    """Everything core does to a picture (OpenCV in the real app), so core never imports cv2 itself.
+    Pictures are numpy arrays: BGR colour or one gray channel."""
+
+    def decode_jpeg(self, jpeg: bytes, *, gray: bool = False) -> Picture | None:
+        """The picture in a JPEG (gray = read it straight into one gray channel). None if it isn't one."""
+        ...
+
+    def encode_jpeg(self, picture: Picture, quality: int) -> bytes | None:
+        """The picture as a JPEG (`quality` 1-100). None if it can't be made (an empty picture)."""
+        ...
+
+    def size(self, picture: Picture) -> Size:
+        ...
+
+    def shrink(self, picture: Picture, width: int, height: int | None = None) -> Picture:
+        """A smaller copy `width` pixels wide; as tall as keeps its shape, unless `height` is given."""
+        ...
+
+    def to_gray(self, picture: Picture) -> Picture:
+        """A one-channel gray copy (a gray picture comes back as it is)."""
+        ...
+
+    def crop(self, picture: Picture, box: Box) -> Picture:
+        """The part of the picture inside `box` (pixels), cut to the picture's own edges."""
+        ...
+
+    def brightness(self, gray: Picture) -> float:
+        """Average brightness of a gray picture, 0-255."""
+        ...
+
+    def glare(self, gray: Picture, white_level: float) -> float:
+        """Share (0-1) of a gray picture's pixels at `white_level` or brighter."""
+        ...
+
+    def difference(self, a: Picture, b: Picture) -> float:
+        """How different two gray pictures look: the average change per pixel, 0-255.
+        Pictures of different sizes count as completely different (infinity)."""
+        ...
+
+    def sharpness(self, gray: Picture) -> float:
+        """How sharp a gray picture is (edges make it bigger; about 0 for a flat or very blurry one)."""
+        ...
+
+
+@runtime_checkable
+class PhotoTaker(Protocol):
+    """Keeps the live view picture as a photo for the chat and the Captures page (the proof photos)."""
+
+    def save(self, label: str, crop_boxes: Sequence[Box] = ()) -> str | None:
+        """Keep the newest live view picture, cropped around `crop_boxes` (if any). Returns the photo's id,
+        or None when there is no picture yet."""
+        ...
+
+
+@runtime_checkable
+class DeskLayout(Protocol):
+    """The desk corners marked in Settings (what Lens needs from the desk rules)."""
+
+    def has_outline(self) -> bool:
+        """The desk corners are marked (Settings)."""
+        ...
+
+    def reference_gravity(self) -> tuple[float, ...] | None:
+        """How the phone was tilted when the corners were marked (None if they aren't, or it wasn't the phone)."""
+        ...
+
+
+@runtime_checkable
+class DeskRulesView(DeskLayout, Protocol):
+    """The danger rules in use: config/settings.yaml → safety, with what the Settings page saved on top."""
+
+    @property
+    def current(self) -> DeskRules:
+        """The rules right now. A save swaps in new ones, so a reader never sees half a change."""
+        ...
+
+    @property
+    def loaded(self) -> bool:
+        """Rules were saved from the Settings page (otherwise only the built-in ones are used)."""
+        ...
+
+    def save(self, changes: Mapping[str, Any]) -> None:
+        """Replace these parts of the saved rules (danger_zones, edge_proximity, desk_outline ...); the rest
+        stays as it was. Takes effect at once."""
+        ...
+
+    def clean_outline(self, points: Any) -> list[list[float]]:
+        """Desk corners sent by the Settings page, each cut to 0-1 of the picture.
+        Raises ValueError (plain words) for something that isn't corners."""
+        ...
+
+    def for_settings_page(self) -> dict[str, Any]:
+        """What the Settings page shows: the saved rules, or the built-in ones where nothing was saved."""
         ...

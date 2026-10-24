@@ -5,7 +5,6 @@ Lens asks for these; bootstrap connects them to the real parts (Phase 3):
 
     PhoneCamera   the phone camera's tilt and its Stop button   (PhoneFrameSource)
     PiUploads     what came with the Pi's newest picture, and how far its clock is off   (PiFrameSource)
-    DeskLayout    the desk corners marked in Settings            (the desk rules)
 """
 
 from __future__ import annotations
@@ -39,15 +38,4 @@ class PiUploads(Protocol):
     def clock_off_sec(self) -> float | None:
         """The Pi's clock minus this computer's (negative = behind), judged by its quickest recent picture
         (detection time taken off). None before a picture that said when it was taken."""
-        ...
-
-
-@runtime_checkable
-class DeskLayout(Protocol):
-    def has_outline(self) -> bool:
-        """The desk corners are marked (Settings)."""
-        ...
-
-    def reference_gravity(self) -> Gravity | None:
-        """How the phone was tilted when the corners were marked (None if they aren't, or it wasn't the phone)."""
         ...

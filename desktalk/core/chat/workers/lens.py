@@ -21,10 +21,10 @@ from typing import Any
 
 from desktalk.config import LensSettings, PiSettings
 from desktalk.core.agents.speakers import LENS
-from desktalk.core.chat.workers.needs import DeskLayout, PhoneCamera, PiUploads
+from desktalk.core.chat.workers.needs import PhoneCamera, PiUploads
 from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.domain import CameraNotice, DetectorState, PiHealth, UploadInfo
-from desktalk.ports import CameraHealthView, EventBus, FrameSource, Notifier, Preferences
+from desktalk.ports import CameraHealthView, DeskLayout, EventBus, FrameSource, Notifier, Preferences
 from desktalk.util import in_hour_window
 from desktalk_shared.wire import OFF_ON_PURPOSE
 

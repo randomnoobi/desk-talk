@@ -5,8 +5,9 @@ import logging
 
 import pytest
 
-from desktalk.core.chat.workers import DeskLayout
-from desktalk.core.vision.rules import SafetyRules, Zone, make_rules
+from desktalk.core.vision.rules import SafetyRules, make_rules
+from desktalk.domain import Zone
+from desktalk.ports import DeskLayout
 from tests.fakes import InMemoryKeyValueStore
 from tests.unit.test_core_vision_kit import ROOT, app_config
 

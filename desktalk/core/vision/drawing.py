@@ -15,8 +15,7 @@ import cv2
 from desktalk.core.vision.desk_edges import desk_edges
 from desktalk.core.vision.findings import Thing
 from desktalk.core.vision.geometry import footprint, grow, overlap
-from desktalk.core.vision.rules import DeskRules
-from desktalk.domain import Detection
+from desktalk.domain import DeskRules, Detection
 
 BOX_ON = (60, 200, 90)           # green: an agent in the chat (or everything, when nobody is in the chat)
 BOX_OFF = (150, 150, 150)        # grey: seen, but not chatting

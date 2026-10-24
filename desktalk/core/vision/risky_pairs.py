@@ -14,7 +14,7 @@ from collections.abc import Iterable, Mapping
 from desktalk.core.vision.danger_zones import Pair
 from desktalk.core.vision.findings import Findings, Thing
 from desktalk.core.vision.geometry import distance, point_segment_distance
-from desktalk.core.vision.rules import DeskRules
+from desktalk.domain import DeskRules
 
 
 def harmless_pair(rules: DeskRules, a: str, b: str) -> bool:

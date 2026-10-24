@@ -27,7 +27,8 @@ from desktalk.core.vision.danger_zones import ZoneVisits, repeated_entries, zone
 from desktalk.core.vision.desk_edges import Size, edge_risks
 from desktalk.core.vision.findings import Findings, Thing
 from desktalk.core.vision.risky_pairs import approaching, crowds, things_in_between
-from desktalk.core.vision.rules import DeskRules, SafetyRules
+from desktalk.core.vision.rules import SafetyRules
+from desktalk.domain import DeskRules
 
 
 def risk_level(events: Sequence[Mapping[str, Any]], weights: Mapping[str, int], steps: Sequence[int]) -> int:
