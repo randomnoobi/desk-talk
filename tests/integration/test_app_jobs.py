@@ -78,6 +78,40 @@ def test_the_ai_puts_the_nudge_in_the_computers_words(tmp_path):
     assert 'You are Computer' in system and 'Protocols' in system
 
 
+BOTTLE = Detection('bottle', 0.9, BBox(450, 300, 490, 380))
+
+
+def test_hydration_rule_nudges_in_the_running_app(tmp_path):
+    config = desk_config(tmp_path)
+    for rule in ('breaks', 'light', 'phone_free', 'food', 'tasks'):
+        config = changed(config, f'protocols.{rule}', enabled=False)
+    rig = DeskRig(tmp_path, config=config)
+    rig.watch(61 * 60, LAPTOP, BOTTLE, step=1)           # you and a bottle that never moves, for an hour
+    rig.tick(rig.app.rule_runner)
+    rig.tick(rig.app.reminders)
+    day = rig.app.event_log.days()[0]
+    [nudge] = rig.app.event_log.events(day, {'nudge'}, 10)
+    assert nudge['rule'] == 'rule.hydration'
+    rig.watch(3 * 60, LAPTOP, step=1)                    # the bottle is picked up
+    rig.tick(rig.app.rule_runner)
+    [outcome] = rig.app.event_log.events(day, {'rule_outcome'}, 10)
+    assert outcome['result'] == 'worked'
+
+
+def test_a_sip_logged_in_the_app_stops_the_hydration_nudge(tmp_path):
+    config = desk_config(tmp_path)
+    for rule in ('breaks', 'light', 'phone_free', 'food', 'tasks'):
+        config = changed(config, f'protocols.{rule}', enabled=False)
+    rig = DeskRig(tmp_path, config=config)
+    rig.watch(40 * 60, LAPTOP, BOTTLE, step=1)
+    rig.app.habits.log('hydration', 'sip')                # the water button in the app
+    rig.watch(21 * 60, LAPTOP, BOTTLE, step=1)           # 61 minutes with a bottle that never moves
+    rig.tick(rig.app.rule_runner)
+    rig.tick(rig.app.reminders)
+    day = rig.app.event_log.days()[0]
+    assert 'rule.hydration' not in [n.get('rule') for n in rig.app.event_log.events(day, {'nudge'}, 10)]
+
+
 # ── Lens ─────────────────────────────────────────────────────────────
 def test_lens_speaks_up_when_the_pi_goes_quiet(tmp_path):
     rig = DeskRig(tmp_path)
@@ -187,7 +221,7 @@ def test_with_ollama_the_vision_checks_look_at_the_desk_picture(tmp_path):
     rig = DeskRig(tmp_path, ai_reply=lambda request: (VISION_ANSWER.replace('good', 'slouch')
                                                       if isinstance(request['messages'][-1]['content'], list)
                                                       else 'Hey there!'), ollama=True)
-    rig.watch(2, LAPTOP)
+    rig.watch(rig.config.object_states.person_appear_sec + 2, LAPTOP)     # long enough for you to count as here
     rig.tick(rig.app.vision_habits)
     answer, when = rig.app.vision_habits.latest()
     assert answer['posture'] == 'slouch' and when == rig.clock.now()

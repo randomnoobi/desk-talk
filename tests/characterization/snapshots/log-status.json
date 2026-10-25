@@ -42,7 +42,8 @@
     "today": {
       "events": {
         "agent_joined": "number",
-        "alert": "number"
+        "alert": "number",
+        "object_state": "number"
       },
       "pictures_waiting": "number"
     }

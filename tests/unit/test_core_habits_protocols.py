@@ -24,12 +24,14 @@ DAY = time.mktime((2026, 6, 15, 12, 0, 0, 0, 0, -1))
 
 @pytest.fixture(scope='module')
 def rules(tmp_path_factory):
-    """config/protocols.yaml as it is in the repo."""
+    """config/protocols.yaml as it is in the repo, with the old hydration nudges switched back on (the
+    hydration rule under rules: took over from them, but the functions are still here)."""
     root = tmp_path_factory.mktemp('project')
     (root / 'config').mkdir()
     for name in ('settings.yaml', 'agents.yaml', 'protocols.yaml'):
         shutil.copy(ROOT / 'config' / name, root / 'config' / name)
-    return load_config(root, environ={}).protocols
+    protocols = load_config(root, environ={}).protocols
+    return protocols.model_copy(update={'hydration': changed(protocols.hydration, enabled=True)})
 
 
 def at(hhmm, days_later=0):

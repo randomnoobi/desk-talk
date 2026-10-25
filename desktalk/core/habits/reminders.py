@@ -1,10 +1,11 @@
 """
 Evidence-based habit reminders.
 
-Every reminders.check_every_sec this asks the habit tracker which Protocols nudges are ready
-(no sip in 45 minutes, sitting for 30, phone on the desk ...). If there is one, an agent in the
-chat that speaks for that habit says it in its own words, and the message says what the camera saw.
-With no such agent, Lens (the camera) says the nudge's ready-made text, without the AI.
+Every reminders.check_every_sec this asks the rule engine, then the habit tracker, which nudges are
+ready (no sip in 45 minutes, sitting for 30, phone on the desk ...). The rule engine's nudges come
+first. If there is one, an agent in the chat that speaks for that habit says it in its own words, and
+the message says what the camera saw. With no such agent, Lens (the camera) says the nudge's
+ready-made text, without the AI.
 
 Nothing is sent until the camera has watched for a while (reminders.warmup_min), during quiet
 hours, while the camera is off, when nobody is at the desk, or sooner than reminders.min_gap_sec
@@ -18,7 +19,7 @@ import logging
 from desktalk.config import RemindersSettings
 from desktalk.core.agents.speakers import LENS, speaker_for
 from desktalk.domain import NudgeSent
-from desktalk.ports import ChatVoice, DeskStatus, EventBus, HabitsView, Notifier, Profiles, RosterView
+from desktalk.ports import ChatVoice, DeskStatus, EventBus, HabitsView, Notifier, Profiles, RosterView, RuleNudges
 
 log = logging.getLogger(__name__)
 
@@ -28,9 +29,11 @@ class HabitReminders:
 
     name = 'habit reminders'
 
-    def __init__(self, habits: HabitsView, status: DeskStatus, roster: RosterView, profiles: Profiles,
-                 voice: ChatVoice, notifier: Notifier, bus: EventBus, settings: RemindersSettings):
+    def __init__(self, habits: HabitsView, rules: RuleNudges, status: DeskStatus, roster: RosterView,
+                 profiles: Profiles, voice: ChatVoice, notifier: Notifier, bus: EventBus,
+                 settings: RemindersSettings):
         self._habits = habits
+        self._rules = rules
         self._status = status
         self._roster = roster
         self._profiles = profiles
@@ -46,7 +49,7 @@ class HabitReminders:
             return self._every
         if self._last_sent is not None and now - self._last_sent < self._min_gap:
             return self._every
-        nudges = self._habits.nudges(now, self._status.open_todos())
+        nudges = [*self._rules.nudges(now), *self._habits.nudges(now, self._status.open_todos())]
         if not nudges:
             return self._every
         nudge = nudges[0]
@@ -55,6 +58,7 @@ class HabitReminders:
         text = text or nudge.text
         self._notifier.send({'type': 'group_message', 'character': speaker, 'text': text, 'habit': nudge.habit,
                              'toast': True})
+        self._rules.note_fired(nudge, now)
         self._habits.note_fired(nudge, now)
         self._bus.publish(NudgeSent(ts=now, habit=nudge.habit, rule=nudge.key, agent=speaker,
                                     evidence=nudge.evidence, text=text))

@@ -325,6 +325,8 @@ def test_every_value_in_the_config_files_reaches_the_config_unchanged(project):
     for name, section in [('settings.yaml', cfg), ('protocols.yaml', cfg.protocols),
                           ('agents.yaml', cfg.agents_file)]:
         for path, value in _leaves(yaml.safe_load((project / 'config' / name).read_text())):
+            if path == ('rules',):      # written as 30m and "is", kept as seconds and is_: see test_config_rules.py
+                continue
             assert _plain(_lookup(section, path)) == value, f'{name}: {".".join(map(str, path))}'
             checked.append((name, path))
     assert ('protocols.yaml', ('hydration', 'daily_goal_ml')) in checked

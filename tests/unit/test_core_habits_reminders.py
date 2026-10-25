@@ -14,7 +14,7 @@ from desktalk.core.habits.desk_status import DeskStatus
 from desktalk.core.habits.reminders import HabitReminders
 from desktalk.core.habits.tracker import HabitTracker
 from desktalk.desk_state import DeskState
-from desktalk.domain import AgentProfile, BBox, Detection, DetectionEvent, Light, Nudge, NudgeSent
+from desktalk.domain import AgentProfile, BBox, Detection, DetectionEvent, Light, Nudge, NudgeSent, ObjectSnapshot
 from desktalk.ports import PeriodicWorker
 from tests.fakes import (
     FakeChatVoice,
@@ -22,8 +22,10 @@ from tests.fakes import (
     FakeDeskStatus,
     FakeFrameSource,
     FakeHabits,
+    FakeObjectStates,
     FakePreferences,
     FakeProfiles,
+    FakeRuleNudges,
     InMemoryKeyValueStore,
     RecordingNotifier,
     StaticRoster,
@@ -41,6 +43,8 @@ SIT = Nudge('breaks', 'breaks.sit', evidence='At the desk for 34 minutes.', text
             repeat_after_sec=15 * MIN, speakers=('breaks', 'screens'))
 SIP = Nudge('hydration', 'hydration.pace', evidence='No sip in 50 minutes.', text='Have a sip?',
             repeat_after_sec=45 * MIN)
+RULE_SIP = Nudge('hydration', 'rule.hydration', evidence='No sip in 50 minutes.', text='Have a sip?',
+                 repeat_after_sec=45 * MIN)
 
 
 @pytest.fixture(scope='module')
@@ -54,16 +58,17 @@ def config(tmp_path_factory):
 
 class Rig:
     def __init__(self, config, nudges=(SIT,), members=('computer', 'cup'), voice_text='Hey, stretch your legs!',
-                 status=None):
+                 status=None, rule_nudges=()):
         self.habits = FakeHabits(nudges=nudges)
+        self.rules = FakeRuleNudges(rule_nudges)
         self.status = status or FakeDeskStatus(todos=['Essay'])
         self.roster = StaticRoster(members)
         self.profiles = FakeProfiles([COMPUTER, WATCH, CUP])
         self.voice = FakeChatVoice(voice_text)
         self.notifier = RecordingNotifier()
         self.bus = SyncEventBus()
-        self.reminders = HabitReminders(self.habits, self.status, self.roster, self.profiles, self.voice,
-                                        self.notifier, self.bus, config.reminders)
+        self.reminders = HabitReminders(self.habits, self.rules, self.status, self.roster, self.profiles,
+                                        self.voice, self.notifier, self.bus, config.reminders)
 
 
 def test_it_is_a_background_job(config):
@@ -128,7 +133,7 @@ def test_at_least_the_minimum_gap_between_reminders(config):
 
 def test_check_time_and_gap_come_from_the_settings(config):
     r = Rig(config)
-    r.reminders = HabitReminders(r.habits, r.status, r.roster, r.profiles, r.voice, r.notifier, r.bus,
+    r.reminders = HabitReminders(r.habits, r.rules, r.status, r.roster, r.profiles, r.voice, r.notifier, r.bus,
                                  config.reminders.model_copy(update={'check_every_sec': 5, 'min_gap_sec': 60}))
     assert r.reminders.tick(NOON) == 5
     r.reminders.tick(NOON + 60)
@@ -144,10 +149,39 @@ class TodoHabits(FakeHabits):
 def test_the_open_to_dos_go_to_the_rules(config):
     r = Rig(config)
     r.habits = TodoHabits(nudges=(SIT,))
-    r.reminders = HabitReminders(r.habits, r.status, r.roster, r.profiles, r.voice, r.notifier, r.bus,
+    r.reminders = HabitReminders(r.habits, r.rules, r.status, r.roster, r.profiles, r.voice, r.notifier, r.bus,
                                  config.reminders)
     r.reminders.tick(NOON)
     assert r.habits.asked_with == ['Essay']
+
+
+def test_rule_nudge_is_said_and_noted(config):
+    r = Rig(config, nudges=(), rule_nudges=(RULE_SIP,))
+    r.reminders.tick(NOON)
+    assert r.notifier.texts() == ['Hey, stretch your legs!'] and r.notifier.sent[0]['character'] == 'cup'
+    assert [e.rule for e in r.bus.of_type(NudgeSent)] == ['rule.hydration']
+    assert r.rules.fired == [(RULE_SIP, NOON)]
+    assert r.habits.fired == [(RULE_SIP, NOON)]                  # the old tracker counts every nudge sent
+
+
+def test_rule_nudges_go_before_old_ones(config):
+    r = Rig(config, nudges=(SIT,), rule_nudges=(RULE_SIP,))
+    r.reminders.tick(NOON)
+    assert [e.rule for e in r.bus.of_type(NudgeSent)] == ['rule.hydration']
+    assert len(r.notifier.sent) == 1
+
+
+def test_rule_nudges_respect_the_app_wide_gap(config):
+    r = Rig(config, nudges=(), rule_nudges=(RULE_SIP,))
+    r.reminders.tick(NOON)
+    r.reminders.tick(NOON + 9 * MIN)                            # reminders.min_gap_sec is 10 minutes
+    assert len(r.notifier.sent) == 1 and len(r.rules.fired) == 1
+
+
+def test_no_rule_nudges_while_away(config):
+    r = Rig(config, rule_nudges=(RULE_SIP,), status=FakeDeskStatus(active=False))
+    r.reminders.tick(NOON)
+    assert r.rules.calls == 0 and r.notifier.sent == []
 
 
 def test_speaker_is_an_agent_for_that_habit_or_lens():
@@ -178,18 +212,18 @@ class Desk:
         self.habits = HabitTracker(self.clock, self.bus, InMemoryKeyValueStore(), self.profiles, prefs, self.desk,
                                    config.protocols, config.habit_tracker, config.presence, config.agents,
                                    phone_counts=True)
-        self.status = DeskStatus(self.desk, self.camera, prefs, config.reminders)
+        states = FakeObjectStates([ObjectSnapshot('person', 'PRESENT', start)])     # someone at the desk
+        self.status = DeskStatus(self.desk, self.camera, prefs, config.reminders, states, person_label='person')
         self.voice = FakeChatVoice('35 minutes of sitting! Walk five minutes, leave your phone.')
         self.notifier = RecordingNotifier(self.clock)
-        self.reminders = HabitReminders(self.habits, self.status, self.roster, self.profiles, self.voice,
-                                        self.notifier, self.bus, config.reminders)
+        self.reminders = HabitReminders(self.habits, FakeRuleNudges(), self.status, self.roster, self.profiles,
+                                        self.voice, self.notifier, self.bus, config.reminders)
 
     def run(self, seconds, *labels):
         """One picture a second (keeps the long runs quick), with someone at the desk."""
         for _ in range(int(seconds)):
             now = self.clock.now()
             dets = tuple(Detection(label, 0.9, BBox(100, 100, 200, 200)) for label in labels)
-            self.desk.person_last_seen = now                  # the camera producer does this
             self.bus.publish(DetectionEvent(ts=now, frame_id='f', source='pi', size=(640, 480), detections=dets,
                                             person=True, light=Light(brightness=120)))
             self.clock.advance(1)

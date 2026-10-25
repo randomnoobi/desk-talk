@@ -19,6 +19,7 @@ from desktalk.domain import (
     HabitEvent,
     Light,
     NudgeSent,
+    ObjectStateChanged,
     event_from_dict,
 )
 from desktalk_shared.wire import UploadInfo
@@ -51,6 +52,10 @@ def test_detection_event_dict_matches_todays_shape():
     NudgeSent(ts=5.0, habit='breaks', rule='sit-50', agent='lamp', evidence='sitting 52 min', text='Stretch?'),
     CameraNotice(ts=6.0, key='dark', kind='problem', text='It is too dark to see the desk'),
     Compaction(ts=7.0, frames=900, intervals=12, from_ts=1.0, to_ts=6.0),
+    ObjectStateChanged(ts=8.0, change='moved', label='bottle', prev_state='PRESENT', new_state='PRESENT',
+                       device_id='pi-1', conf_avg=0.8, bbox=(10.0, 20.0, 50.0, 100.0), dwell_sec=12.5),
+    ObjectStateChanged(ts=9.0, change='appeared', label='cup', prev_state='ABSENT', new_state='PRESENT',
+                       device_id='pi-1'),
 ])
 def test_every_event_round_trips_through_its_dict(event):
     assert event_from_dict(event.to_dict()) == event
@@ -97,3 +102,14 @@ def test_frame_from_pi_uses_the_pi_id_and_detections():
     assert f.detector_state is DetectorState.OK
     assert f.frame_id == 'pi-000042'
     assert f.pi_detections == (CUP,)
+
+
+def test_object_state_event_says_object_in_its_dict():
+    event = ObjectStateChanged(id='2-abc', ts=8.0, change='removed', label='bottle', prev_state='PRESENT',
+                               new_state='ABSENT', device_id='pi-1', conf_avg=0.8, bbox=(10.0, 20.0, 50.0, 100.0),
+                               dwell_sec=61.0)
+    d = event.to_dict()
+    assert d == {'id': '2-abc', 'ts': 8.0, 'type': 'object_state', 'change': 'removed', 'object': 'bottle',
+                 'prev_state': 'PRESENT', 'new_state': 'ABSENT', 'device_id': 'pi-1', 'conf_avg': 0.8,
+                 'bbox': [10.0, 20.0, 50.0, 100.0], 'dwell_sec': 61.0}
+    assert event_from_dict(d).bbox == (10.0, 20.0, 50.0, 100.0)    # a tuple again, not a list

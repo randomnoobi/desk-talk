@@ -17,7 +17,17 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, Protocol, runtime_checkable
 
-from desktalk.domain import AgentProfile, Detection, Event, Frame, Nudge, UploadInfo
+from desktalk.domain import (
+    AgentProfile,
+    DeskSnapshot,
+    Detection,
+    Event,
+    Frame,
+    Nudge,
+    StateChange,
+    StateRecord,
+    UploadInfo,
+)
 
 
 @runtime_checkable
@@ -167,6 +177,28 @@ class EventStore(Protocol):
 
 
 @runtime_checkable
+class ObjectStateStore(Protocol):
+    """The history of object states: one row each time an object appears, goes away or moves,
+    plus a snapshot of every state now and then (so a restart can pick up where it left off)."""
+
+    def append(self, records: Sequence[StateRecord]) -> None:
+        ...
+
+    def latest_states(self, since: float) -> dict[str, StateRecord]:
+        """Per object, its newest `appeared`, `removed` or `snapshot` row with `ts >= since`.
+        `moved` rows are skipped: they don't change the state, and their `dwell_sec` isn't the time in the state."""
+        ...
+
+    def changes(self, since: float) -> list[StateRecord]:
+        """The `appeared`, `removed` and `moved` rows with `ts > since`, oldest first
+        (rows with the same `ts` in the order they were added)."""
+        ...
+
+    def close(self) -> None:
+        ...
+
+
+@runtime_checkable
 class KeyValueStore(Protocol):
     """Small JSON documents (preferences, habit days, learned personalities, desk rules).
     Saves are all-or-nothing (temp file + rename); a broken file reads as missing and is logged."""
@@ -307,6 +339,31 @@ class HabitsView(Protocol):
 
 
 @runtime_checkable
+class ObjectStatesView(Protocol):
+    """Where each object on the desk is right now, and what changed lately (read by the rule engine)."""
+
+    def snapshot(self) -> DeskSnapshot:
+        """Every object we know of, with its state (PRESENT, ABSENT or UNKNOWN) and since when."""
+        ...
+
+    def changes(self, since: float) -> list[StateChange]:
+        """The changes after `since` (a change at exactly `since` is left out), oldest first."""
+        ...
+
+
+@runtime_checkable
+class RuleNudges(Protocol):
+    """The reminders the rule engine can send, with the memory of when each one last went out."""
+
+    def nudges(self, now: float) -> list[Nudge]:
+        """The reminders ready to send now, best first (ones sent too recently are left out)."""
+        ...
+
+    def note_fired(self, nudge: Nudge, now: float) -> None:
+        ...
+
+
+@runtime_checkable
 class Preferences(Protocol):
     """Choices made in the app (wake time, bedtime, quiet hours); they win over config/protocols.yaml."""
 
@@ -347,7 +404,7 @@ class DeskStatus(Protocol):
         ...
 
     def user_active(self, now: float) -> bool:
-        """Someone seems to be at the desk (a person or movement seen lately)."""
+        """You're at the desk: the person's object state is PRESENT."""
         ...
 
     def open_todos(self) -> list[str]:
