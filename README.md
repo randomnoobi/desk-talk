@@ -385,10 +385,11 @@ The benchmark tool has its own tests: see [benchmarks/README.md](benchmarks/READ
 
 ## Developer page
 
-A second page, for working on Desk Talk rather than using it. It has five tabs:
+A second page, for working on Desk Talk rather than using it ([docs/CHECKING.md](docs/CHECKING.md) says how to
+check everything with it). It has five tabs:
 
-- **Checks**: one button that runs the fast tests, the lint and the type check, and every test on its
-  own (or a whole file or folder), with the printout as it runs.
+- **Checks**: one button that runs the fast tests, the lint, the type check, the dead code check and the page's
+  own tests, and every test on its own (or a whole file or folder), with the printout as it runs.
 - **Live**: each object's state (present, absent), the changes as they happen, and a chart of how the
   smoothing turned the last pictures into that state, so you can see why something flickers.
 - **System**: how the Pi is doing (pictures a second, temperature, disk, its detector) and every part on
