@@ -219,7 +219,6 @@ reminders:
     enabled: false
     start_hour: 22            # 24-hour clock
     end_hour: 7
-  someone_here_sec: 600       # a person or movement seen this recently = someone is at the desk
                               # (reminders and small talk wait otherwise)
 
 # ── AI (keys are in .env) ──────────────────────────────────────────

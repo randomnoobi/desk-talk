@@ -11,10 +11,12 @@ from desktalk.domain.pictures import Point
 
 @dataclass(frozen=True)
 class Zone:
-    """A danger zone around an object: `expand` pixels wider on every side."""
+    """A danger zone around an object: the part of it that sits on the desk (the bottom `base_share` of its
+    box; 1.0 = the whole box), `expand` pixels wider on every side."""
 
     expand: float
     label: str
+    base_share: float = 1.0
 
 
 @dataclass(frozen=True, kw_only=True)

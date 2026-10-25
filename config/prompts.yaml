@@ -624,6 +624,7 @@ vision:
   log:
     slouch_title: Poor posture ~{minutes} min
     slouch_detail: The desk camera saw a slouched stretch until your posture looked neutral again.
+    slouch_left_detail: The desk camera saw a slouched stretch until you left the desk.
     slouch_photo: 'Posture: ~{minutes}m slouch'
     nails_title: Nail biting noticed
     nails_detail: The vision check saw nail biting, or a hand at your mouth near your nails.

@@ -485,6 +485,7 @@ class VisionLog(_Section):
 
     slouch_title: str
     slouch_detail: str
+    slouch_left_detail: str
     slouch_photo: str
     nails_title: str
     nails_detail: str

@@ -21,9 +21,15 @@ def test_boxes_that_only_touch_do_not_overlap():
     assert g.overlap((0, 0, 10, 10), (10, 0, 20, 10)) is None
 
 
-def test_intrusion_depth_is_the_thinner_side_of_the_overlap():
-    assert g.intrusion_depth((0, 0, 10, 4), (0, 0, 100, 100)) == 4
-    assert g.intrusion_depth((200, 200, 210, 210), (0, 0, 100, 100)) == 0
+@pytest.mark.parametrize('a, b, want', [
+    ((0, 0, 10, 10), (5, 5, 20, 20), 0),          # overlapping
+    ((0, 0, 10, 10), (10, 0, 20, 10), 0),         # touching
+    ((0, 0, 10, 10), (25, 0, 30, 10), 15),        # side by side
+    ((0, 40, 10, 50), (0, 0, 10, 10), 30),        # one above the other
+    ((0, 0, 10, 10), (14, 30, 20, 40), 20),       # off to a corner: the larger of the two gaps
+])
+def test_gap_between_boxes(a, b, want):
+    assert g.box_gap(a, b) == want == g.box_gap(b, a)
 
 
 @pytest.mark.parametrize('point, a, b, want', [

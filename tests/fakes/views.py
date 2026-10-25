@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from desktalk.domain import AgentProfile, Nudge
+from desktalk.domain import AgentProfile, DeskSnapshot, Nudge, ObjectSnapshot, StateChange
 from desktalk.util import in_hour_window
 from tests.fakes.clock import FakeClock
 
@@ -87,6 +87,45 @@ class FakeHabits:
 
     def save(self, force: bool = False) -> None:
         self.saves += 1
+
+
+class FakeObjectStates:
+    """Objects and changes the test sets by hand. `snapshot_calls` counts how often snapshot() was asked."""
+
+    def __init__(self, objects: Sequence[ObjectSnapshot] = (), watched_since: float | None = None):
+        self.objects = {o.label: o for o in objects}
+        self.watched_since = watched_since
+        self.recorded: list[StateChange] = []
+        self.snapshot_calls = 0
+
+    def set(self, label: str, state: str, since: float | None) -> None:
+        self.objects[label] = ObjectSnapshot(label, state, since)
+
+    def change(self, ts: float, label: str, kind: str) -> None:
+        self.recorded.append(StateChange(ts, label, kind))
+
+    def snapshot(self) -> DeskSnapshot:
+        self.snapshot_calls += 1
+        return DeskSnapshot(dict(self.objects), self.watched_since)
+
+    def changes(self, since: float) -> list[StateChange]:
+        return sorted((c for c in self.recorded if c.ts > since), key=lambda c: c.ts)
+
+
+class FakeRuleNudges:
+    """The reminders the test hands out. `fired` records note_fired calls; `calls` counts nudges() calls."""
+
+    def __init__(self, nudges: Sequence[Nudge] = ()):
+        self._nudges = list(nudges)
+        self.fired: list[tuple[Nudge, float]] = []
+        self.calls = 0
+
+    def nudges(self, now: float) -> list[Nudge]:
+        self.calls += 1
+        return list(self._nudges)
+
+    def note_fired(self, nudge: Nudge, now: float) -> None:
+        self.fired.append((nudge, now))
 
 
 class FakePreferences:

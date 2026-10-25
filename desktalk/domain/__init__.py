@@ -12,6 +12,10 @@ Plain data, no I/O: what the parts of Desk Talk pass to each other.
     SeenObject, Danger,    the desk right now: what the camera sees, the dangers, a proof photo
     SafetyNow, Photo
     is_day                 a day's name, like 2026-10-21 (the event log's folders)
+    ObjectSnapshot, DeskSnapshot, StateChange, HabitDone, RuleHistory
+                           what the rule engine reads (where things are, what changed, what was logged,
+                           what nudged)
+    Phase, StateRecord     whether an object is on the desk (UNKNOWN, PRESENT, ABSENT), and a row of its history
 """
 
 from desktalk.domain.agents import HABITS, LENS, AgentProfile
@@ -32,18 +36,23 @@ from desktalk.domain.events import (
     HabitEvent,
     Light,
     NudgeSent,
+    ObjectStateChanged,
+    RuleOutcome,
     event_from_dict,
     new_event_id,
 )
 from desktalk.domain.habits import Nudge
+from desktalk.domain.object_states import CHANGE_TYPES, Phase, StateRecord
 from desktalk.domain.pictures import Box, Gravity, Picture, Point, Size
+from desktalk.domain.rules import DeskSnapshot, HabitDone, ObjectSnapshot, RuleHistory, StateChange
 from desktalk_shared.detection import BBox, Detection, keep_inside
 from desktalk_shared.wire import DetectorState, PiHealth, UploadInfo
 
 __all__ = [
-    'EVENT_TYPES', 'HABITS', 'LENS', 'AIUnavailable', 'AgentJoined', 'AgentLeft', 'AgentProfile', 'Alert', 'BBox',
-    'Box', 'CameraNotice', 'Compaction', 'Danger', 'DeskRules', 'Detection', 'DetectionEvent', 'DetectorState',
-    'DetectorUnavailable', 'Event', 'Frame', 'Gravity', 'HabitEvent', 'Light', 'Nudge', 'NudgeSent', 'Photo', 'Picture',
-    'PiHealth', 'Point', 'SafetyNow', 'SeenObject', 'Size', 'UnknownChat', 'UploadInfo', 'Zone', 'event_from_dict',
-    'is_day', 'keep_inside', 'new_event_id', 'plain_error',
+    'CHANGE_TYPES', 'EVENT_TYPES', 'HABITS', 'LENS', 'AgentJoined', 'AgentLeft', 'AgentProfile', 'AIUnavailable',
+    'Alert', 'BBox', 'Box', 'CameraNotice', 'Compaction', 'Danger', 'DeskRules', 'DeskSnapshot', 'Detection',
+    'DetectionEvent', 'DetectorState', 'DetectorUnavailable', 'Event', 'event_from_dict', 'Frame', 'Gravity',
+    'HabitDone', 'HabitEvent', 'is_day', 'keep_inside', 'Light', 'new_event_id', 'Nudge', 'NudgeSent', 'ObjectSnapshot',
+    'ObjectStateChanged', 'Phase', 'Photo', 'Picture', 'PiHealth', 'plain_error', 'Point', 'RuleHistory', 'RuleOutcome',
+    'SafetyNow', 'SeenObject', 'Size', 'StateChange', 'StateRecord', 'UnknownChat', 'UploadInfo', 'Zone',
 ]

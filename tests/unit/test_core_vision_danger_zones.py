@@ -1,19 +1,21 @@
 """Danger zones: a risky thing (a drink, food, something sharp) inside the zone around a fragile one."""
 
 import dataclasses
+import json
 
 import pytest
 
 from desktalk.core.vision import danger_zones as dz
 from desktalk.core.vision.findings import Thing
-from desktalk.core.vision.rules import make_rules
+from desktalk.core.vision.rules import make_rules, standing_strip
 from desktalk.domain import Zone
-from tests.unit.test_core_vision_kit import app_config, seen_object
+from tests.unit.test_core_vision_kit import ROOT, app_config, seen_object
 
 RULES = make_rules(app_config().safety)
+SAVED_RULES = make_rules(app_config().safety, json.loads((ROOT / 'config' / 'safety_rules.json').read_text()))
 WORDS = app_config().prompts.desk_checks
-LAPTOP = (200, 200, 400, 350)        # its zone (80 px wider) is 120, 120, 480, 430
-NEAR = (410, 250, 450, 320)          # inside the zone, 40 px deep
+LAPTOP = (200, 200, 400, 350)        # its base is the bottom half (y 275-350); the zone is that, 80 px wider
+NEAR = (410, 250, 450, 320)          # stands 10 px right of the base, so 70 px inside the zone
 FAR = (560, 380, 600, 450)
 
 
@@ -26,11 +28,11 @@ def test_cup_in_the_laptop_zone_is_a_danger():
                           words=WORDS)
     assert found.risk_events == [{'type': 'zone_intrusion', 'intruder': 'cup', 'intruder_class': 'cup',
                                   'target': 'computer', 'target_class': 'laptop',
-                                  'zone_label': 'Spill / pressure zone', 'depth_px': 40, 'center_dist_px': 130.4,
+                                  'zone_label': 'Spill / pressure zone', 'depth_px': 70, 'center_dist_px': 130.4,
                                   'zone_expand': 80}]
-    assert found.explanations == ["cup (hazard) in laptop's Spill / pressure zone — 40px"]
+    assert found.explanations == ["cup (hazard) in laptop's Spill / pressure zone — 70px"]
     assert found.relationships == [{'type': 'danger_zone', 'severity': 'danger', 'intruder': 'cup',
-                                    'target': 'computer', 'depth_px': 40, 'zone_label': 'Spill / pressure zone'}]
+                                    'target': 'computer', 'depth_px': 70, 'zone_label': 'Spill / pressure zone'}]
 
 
 def test_a_book_near_the_laptop_is_fine():
@@ -50,6 +52,46 @@ def test_zone_size_comes_from_the_rules():
     found = dz.zone_risks(things(('computer', 'laptop', LAPTOP), ('cup', 'cup', FAR)), wider, dz.ZoneVisits(), 0,
                           words=WORDS)
     assert [e['zone_label'] for e in found.risk_events] == ['Big zone']
+
+
+def zone_hits(rules, *items):
+    return [e for e in dz.zone_risks(things(*items), rules, dz.ZoneVisits(), 0, words=WORDS).risk_events
+            if e['type'] == 'zone_intrusion']
+
+
+@pytest.mark.parametrize('rules', [RULES, SAVED_RULES], ids=['built-in', 'saved'])
+def test_a_bottle_far_behind_the_laptop_screen_is_fine(rules):
+    """The camera looks at the desk at an angle, so the laptop's box reaches the top of the picture
+    (its open screen). The bottle stands far behind it; only its top shows above the screen."""
+    assert zone_hits(rules, ('computer', 'laptop', (210, 0, 1050, 570)), ('drink', 'bottle', (740, 0, 840, 130))) == []
+
+
+def test_a_bottle_right_against_the_back_of_the_laptop_is_a_danger():
+    """From a real picture from the Pi (1280 x 720): the bottle stands right behind the keyboard."""
+    [hit] = zone_hits(SAVED_RULES, ('computer', 'laptop', (210, 78, 978, 672)), ('drink', 'bottle', (585, 0, 712, 250)))
+    assert (hit['intruder'], hit['target'], hit['zone_expand']) == ('drink', 'computer', 134)
+
+
+def test_a_cup_touching_the_laptop_base_is_as_deep_as_the_zone():
+    [hit] = zone_hits(RULES, ('computer', 'laptop', LAPTOP), ('cup', 'cup', (400, 300, 440, 350)))
+    assert hit['depth_px'] == 80 == RULES.zones['laptop'].expand
+
+
+def test_a_cup_at_the_edge_of_the_zone_is_hardly_inside():
+    [hit] = zone_hits(RULES, ('computer', 'laptop', LAPTOP), ('cup', 'cup', (478, 300, 518, 350)))
+    assert hit['depth_px'] == 2
+
+
+def test_a_tall_bottle_standing_far_from_the_keyboard_is_fine_even_when_its_box_covers_it():
+    """The bottle stands in front of the keyboard (lower in the picture), and is tall enough that the top
+    of its box reaches over the keyboard's box. Where it stands is far away."""
+    keyboard, bottle = (300, 300, 700, 420), (450, 380, 510, 700)
+    assert zone_hits(RULES, ('keys', 'keyboard', keyboard), ('drink', 'bottle', bottle)) == []
+
+
+def test_the_zone_is_drawn_from_the_base_and_the_strip_from_where_a_thing_stands():
+    assert dz.zone_area(LAPTOP, RULES.zones['laptop'], RULES) == (120, 195, 480, 430)
+    assert standing_strip(NEAR, RULES) == (410, 306, 450, 320)
 
 
 # Ported from test_new_drink_words_count_as_liquids
@@ -126,4 +168,4 @@ def test_the_explanation_comes_from_prompts_yaml():
     words = WORDS.model_copy(update={'zone': '{intruder} in the {zone} of {target} by {depth}px'})
     found = dz.zone_risks(things(('computer', 'laptop', LAPTOP), ('cup', 'cup', NEAR)), RULES, dz.ZoneVisits(), 0,
                           words=words)
-    assert found.explanations == ['cup in the Spill / pressure zone of laptop by 40px']
+    assert found.explanations == ['cup in the Spill / pressure zone of laptop by 70px']

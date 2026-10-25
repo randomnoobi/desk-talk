@@ -43,7 +43,7 @@ def test_objects_join_the_chat_warn_log_a_sip_and_leave(tmp_path):
     assert app.habits.today(rig.clock.now())['hydration']['sips'] == 1
 
     # 4. The cup goes away for good: "Cup left the chat".
-    rig.watch(50, LAPTOP)
+    rig.watch(rig.config.agents.leave_after_sec + 5, LAPTOP)
     left = [m for m in rig.messages() if m['type'] == 'roster' and m['action'] == 'left']
     assert [m['agent']['id'] for m in left] == ['cup']
     assert app.roster.member_ids() == ['computer']
@@ -75,7 +75,8 @@ def test_an_unknown_object_gets_a_personality_from_the_ai(tmp_path):
 def test_a_pet_near_the_desk_gets_a_warning(tmp_path):
     rig = DeskRig(tmp_path)
     rig.watch(4, LAPTOP, CUP_FAR)
-    rig.watch(1, LAPTOP, CUP_FAR, CAT)
+    step = 1 / 3
+    rig.watch(rig.config.alerts.pet_min_pictures * step, LAPTOP, CUP_FAR, CAT, step=step)   # just enough pictures
     pets = [m for m in rig.messages() if m.get('alert') == 'pet_risk']
     assert pets and pets[0]['text'].startswith('Cat detected near the desk!') and 'Cup' in pets[0]['text']
 

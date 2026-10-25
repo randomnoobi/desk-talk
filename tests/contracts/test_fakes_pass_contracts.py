@@ -18,13 +18,16 @@ from tests.contracts.frame_source_contract import FrameSourceContract
 from tests.contracts.key_value_contract import KeyValueContract
 from tests.contracts.live_pictures_contract import LivePicturesContract
 from tests.contracts.notifier_contract import NotifierContract
+from tests.contracts.object_states_contract import ObjectStatesContract
 from tests.contracts.phone_camera_contract import PhoneCameraContract
 from tests.contracts.photo_album_contract import PhotoAlbumContract
 from tests.contracts.photo_taker_contract import PhotoTakerContract
 from tests.contracts.pi_status_contract import PiStatusContract
 from tests.contracts.picture_tools_contract import PictureToolsContract
 from tests.contracts.push_source_contract import PushSourceContract
+from tests.contracts.rule_nudges_contract import RuleNudgesContract, a_nudge
 from tests.contracts.safety_board_contract import SafetyBoardContract
+from tests.contracts.state_store_contract import StateStoreContract
 from tests.fakes import (
     FakeCharacterMemory,
     FakeChatModel,
@@ -33,14 +36,17 @@ from tests.fakes import (
     FakeDetector,
     FakeFrameSource,
     FakeLivePictures,
+    FakeObjectStates,
     FakePhone,
     FakePhotoAlbum,
     FakePhotoTaker,
     FakePi,
     FakePictureTools,
+    FakeRuleNudges,
     FakeSafetyBoard,
     InMemoryEventStore,
     InMemoryKeyValueStore,
+    InMemoryStateStore,
     RecordingNotifier,
     SyncEventBus,
 )
@@ -86,6 +92,12 @@ class TestInMemoryEventStore(EventStoreContract):
         return InMemoryEventStore()
 
 
+class TestInMemoryStateStore(StateStoreContract):
+    @pytest.fixture
+    def store(self):
+        return InMemoryStateStore()
+
+
 class TestInMemoryKeyValueStore(KeyValueContract):
     @pytest.fixture
     def kv(self):
@@ -104,8 +116,10 @@ class TestFakeChatModel(ChatModelContract):
 
 @pytest.mark.parametrize('fake, port', [
     ('FakeClock', 'Clock'), ('FakeDetector', 'Detector'), ('FakeFrameSource', 'FrameSource'),
+    ('FakeObjectStates', 'ObjectStatesView'), ('FakeRuleNudges', 'RuleNudges'),
     ('FakeFrameSource', 'PictureInbox'), ('SyncEventBus', 'EventBus'), ('InMemoryEventStore', 'EventStore'),
-    ('InMemoryKeyValueStore', 'KeyValueStore'), ('FakeChatModel', 'ChatModel'), ('RecordingNotifier', 'Notifier'),
+    ('InMemoryKeyValueStore', 'KeyValueStore'), ('InMemoryStateStore', 'ObjectStateStore'),
+    ('FakeChatModel', 'ChatModel'), ('RecordingNotifier', 'Notifier'),
     ('FakeChatVoice', 'ChatVoice'), ('StaticRoster', 'RosterView'), ('FakeProfiles', 'Profiles'),
     ('FakeHabits', 'HabitsView'), ('FakeHabits', 'HabitsLifecycle'), ('FakePreferences', 'Preferences'),
     ('FakeCameraHealth', 'CameraHealthView'),
@@ -214,3 +228,23 @@ class TestFakePassesPhotoAlbumContract(PhotoAlbumContract):
     @pytest.fixture
     def album(self):
         return FakePhotoAlbum(keep=3)
+
+
+class TestFakeObjectStates(ObjectStatesContract):
+    @pytest.fixture
+    def states(self):
+        return FakeObjectStates()
+
+    @pytest.fixture
+    def add_change(self):
+        return lambda states, ts, label, kind: states.change(ts, label, kind)
+
+    @pytest.fixture
+    def put_object(self):
+        return lambda states, label, state, since: states.set(label, state, since)
+
+
+class TestFakeRuleNudges(RuleNudgesContract):
+    @pytest.fixture
+    def rule_nudges(self):
+        return FakeRuleNudges([a_nudge('rule.hydration')])

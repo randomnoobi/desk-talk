@@ -38,7 +38,7 @@ class HabitReader:
         self._s = settings
         self._words = words
         self._min_conf = agents.min_confidence
-        self._user_window = presence.user_active_window_sec      # shorter than reminders.someone_here_sec
+        self._user_window = presence.user_active_window_sec      # not the reminders' switch (the person's object state)
         self._phone_counts = phone_counts                          # off when the phone itself is the camera
         self._healthy = frozenset(protocols.food.healthy)
         self._cats = {

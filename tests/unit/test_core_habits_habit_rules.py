@@ -51,8 +51,10 @@ def config(tmp_path_factory):
 
 @pytest.fixture(scope='module')
 def rules(config):
-    """config/protocols.yaml as it is in the repo."""
-    return config.protocols
+    """config/protocols.yaml as it is in the repo, with the old hydration nudges switched back on (the
+    hydration rule under rules: took over from them, but the functions are still here)."""
+    protocols = config.protocols
+    return protocols.model_copy(update={'hydration': changed(protocols.hydration, enabled=True)})
 
 
 @pytest.fixture(scope='module')
@@ -136,7 +138,8 @@ def test_hydration_morning_nudge_is_once_a_day(rules, words):
 
 
 def test_water_tip_follows_on_waking_ml(tmp_path):
-    config = load_config(project(tmp_path, on_waking_ml=450), environ={})
+    # enabled: the first one in protocols.yaml is hydration's (off since the hydration rule took over)
+    config = load_config(project(tmp_path, on_waking_ml=450, enabled='true'), environ={})
     s = day_state(at('07:20'), water_ml=0)
     n = P.hydration_nudges(s, config.protocols.hydration, at('07:20'), config.prompts.habits)
     assert '450 ml' in n[0].tip and '600 ml' not in n[0].tip

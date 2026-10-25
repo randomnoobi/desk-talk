@@ -10,6 +10,7 @@ from typing import Any, cast
 from uvicorn import Server
 
 from desktalk.config import LensWaits, RiskWeights, VisionNudgeRepeats
+from desktalk.config.habits import _ComputerZone
 from desktalk.config.prompts import ByCamera, HabitAreas
 from desktalk.core.habits.habit_days import HabitDay
 from desktalk.core.habits.sun_times import SunTimes
@@ -50,6 +51,8 @@ _ = (
     PhoneSettings.max_side, PhoneSettings.tilt_max, PhoneSettings.capture_width, PhoneSettings.capture_height,
     UiPage.log_shown, UiPage.photos_shown, UiPage.habit_log_shown,
     UiSettings.lens_card, UiSettings.chat_reply_timeout_ms,
+    # tzinfo methods the datetime module calls on the rules' "local" time zone (desktalk/config/habits.py).
+    _ComputerZone.dst, _ComputerZone.fromutc,
     # Pydantic's own settings attribute, and the flag uvicorn's thread reads to stop.
     PreferenceChanges.model_config, Server(config=None).should_exit,  # type: ignore[arg-type]
 )

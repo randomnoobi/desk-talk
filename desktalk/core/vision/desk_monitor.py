@@ -4,7 +4,9 @@ The desk monitor: safety alerts from each analysed picture.
 It listens for DetectionEvents. For the agents in the chat (DeskScene.members, kept by the roster) it runs
 the desk analyzer (danger zones, desk edges, things in between, crowds, things moving closer) and publishes
 an Alert for each danger, with a proof photo. It also notices a pet near the desk, a cluttered desk and a
-plant that may need water. Timings are in settings → alerts, the wording in config/prompts.yaml → desk_alerts.
+plant that may need water. A pet only counts when the detector was sure about it in enough of the last few
+pictures, because an arm close to the camera can look like a cat for a moment. Timings are in settings → alerts,
+the wording in config/prompts.yaml → desk_alerts.
 
 What the app and the AI read about the desk's safety goes to the SafetyBoard: each picture's report (SAFE or
 DANGEROUS, the dangers and the analyzer's full result) and the alerts that went out.
@@ -12,6 +14,7 @@ DANGEROUS, the dangers and the analyzer's full result) and the alerts that went 
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
 
@@ -19,7 +22,7 @@ from desktalk.config import AlertsSettings
 from desktalk.config.prompts import DeskAlertWords
 from desktalk.core.vision.findings import Thing
 from desktalk.core.vision.geometry import Box
-from desktalk.domain import LENS, Alert, Danger, DetectionEvent, Event
+from desktalk.domain import LENS, Alert, Danger, Detection, DetectionEvent, Event
 from desktalk.ports import DeskScene, DeskStatus, EventBus, HabitsView, PhotoTaker, Profiles, SafetyBoard
 
 SAFE, DANGEROUS = 'SAFE', 'DANGEROUS'
@@ -53,6 +56,10 @@ class DeskMonitor:
         self._last_alert: dict[str, float] = {}
         self._alerts_in_a_row: dict[str, int] = {}
         self._pet_alerted: dict[str, float] = {}
+        # For each pet, whether it was clearly seen in each of the last few pictures
+        self._pet_seen: dict[str, deque[bool]] = {pet: deque(maxlen=alerts.pet_window_pictures)
+                                                  for pet in alerts.pet_labels}
+        self._last_picture_ts: float | None = None
         self._last_clutter = 0.0
         self._last_plant = 0.0
         bus.subscribe('desk-monitor', self._on_event, types=[DetectionEvent])
@@ -69,7 +76,7 @@ class DeskMonitor:
         self._keep_safety_state(result, dangers, now)
         labels = {d.label for d in event.detections}
         warm = self._status.warm(now)
-        self._pets(labels, things, now)
+        self._pets(event.detections, things, now)
         self._clutter(labels, things, now, warm)
         self._plants(labels, things, now, warm)
 
@@ -132,9 +139,23 @@ class DeskMonitor:
     def _scenario_alert(self, now: float, scenario: str, feature: str, agent: str, text: str) -> None:
         self._bus.publish(Alert(ts=now, kind='scenario', scenario=scenario, feature=feature, agent=agent, text=text))
 
-    def _pets(self, labels: set[str], things: Mapping[str, Thing], now: float) -> None:
-        for pet in (p for p in self._settings.pet_labels if p in labels):
-            due = now - self._pet_alerted.get(pet, 0) > self._settings.pet_cooldown_sec
+    def _pets(self, detections: Sequence[Detection], things: Mapping[str, Thing], now: float) -> None:
+        """A pet counts once it was seen at alerts.pet_min_confidence or more in alerts.pet_min_pictures of the
+        last alerts.pet_window_pictures pictures. Then an alert goes out, at most every alerts.pet_cooldown_sec
+        for each pet. After more than alerts.pet_forget_after_sec without an analysed picture every pet's memory
+        starts over, so a cat that left before the gap isn't counted again."""
+        s = self._settings
+        if self._last_picture_ts is not None and now - self._last_picture_ts > s.pet_forget_after_sec:
+            for seen in self._pet_seen.values():
+                seen.clear()
+        self._last_picture_ts = now
+        sure = {d.label for d in detections if d.confidence >= s.pet_min_confidence}
+        for pet in s.pet_labels:
+            seen = self._pet_seen[pet]
+            seen.append(pet in sure)
+            if sum(seen) < s.pet_min_pictures:
+                continue
+            due = now - self._pet_alerted.get(pet, 0) > s.pet_cooldown_sec
             if not due:
                 continue
             self._pet_alerted[pet] = now

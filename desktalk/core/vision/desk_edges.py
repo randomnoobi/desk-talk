@@ -13,7 +13,8 @@ from collections.abc import Mapping, Sequence
 
 from desktalk.config.prompts import DeskCheckWords
 from desktalk.core.vision.findings import Findings, Thing
-from desktalk.core.vision.geometry import Point, Segment, box_segment_distance, footprint
+from desktalk.core.vision.geometry import Point, Segment, box_segment_distance
+from desktalk.core.vision.rules import standing_strip
 from desktalk.domain import DeskRules
 
 Size = tuple[float, float]           # picture width, height
@@ -92,7 +93,7 @@ def edge_risks(things: Mapping[str, Thing], rules: DeskRules, size: Size, *, wor
             continue
         # The bottom of the box, where the object stands. The camera looks at the desk at an angle, so the top
         # of a tall bottle can look like it's past the back edge even when it stands safely in the middle.
-        foot = footprint(thing.box, rules.footprint_share, rules.footprint_min_px)
+        foot = standing_strip(thing.box, rules)
         base = ((foot[0] + foot[2]) / 2, foot[3])
         gap, seg = min((box_segment_distance(foot, e), e) for e in edges)
         if not inside_outline(base, rules.outline, size) and gap >= rules.edge_danger_px:

@@ -21,9 +21,11 @@ from typing import Any, Protocol
 import cv2
 
 from desktalk.config import DrawingSettings
+from desktalk.core.vision.danger_zones import zone_area
 from desktalk.core.vision.desk_edges import desk_edges
 from desktalk.core.vision.findings import Thing
-from desktalk.core.vision.geometry import footprint, grow, overlap
+from desktalk.core.vision.geometry import overlap
+from desktalk.core.vision.rules import standing_strip
 from desktalk.domain import DeskRules, Detection
 from desktalk.ports import DeskScene, Profiles
 
@@ -180,7 +182,7 @@ class Pen:
             cv2.rectangle(img, _point(box[:2]), _point(box[2:]), color, s.line_px, AA)
             seg = rel.get('segment')
             if seg:
-                f = footprint(box, rules.footprint_share, rules.footprint_min_px)
+                f = standing_strip(box, rules)
                 mid = ((f[0] + f[2]) / 2, (f[1] + f[3]) / 2)
                 (ax, ay), (bx, by) = seg
                 dx, dy = bx - ax, by - ay       # the closest point on the edge, for the arrow
@@ -197,7 +199,7 @@ class Pen:
             zone = rules.zones.get(thing.label)
             if zone is None:
                 continue
-            area = grow(thing.box, zone.expand)
+            area = zone_area(thing.box, zone, rules)     # around the part that sits on the desk
             self._dashed_rect(img, int(area[0]), int(area[1]), int(area[2]), int(area[3]), c.zone, s.thin_line_px,
                               s.dash.zone)
             self._label(img, zone.label, int(area[0]) + 4, int(area[1]) + 14, c.soft_back, c.soft_text,
@@ -209,8 +211,8 @@ class Pen:
             zone = rules.zones.get(target.label)
             if zone is None:
                 continue
-            area = grow(target.box, zone.expand)
-            shared = overlap(intruder.box, area)
+            area = zone_area(target.box, zone, rules)
+            shared = overlap(standing_strip(intruder.box, rules), area)     # where the risky thing stands
             if shared:
                 self._see_through_rect(img, *shared, c.zone_hit, s.fill_alpha.zone)
             cv2.rectangle(img, _point(area[:2]), _point(area[2:]), c.danger, s.line_px, AA)

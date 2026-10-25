@@ -44,6 +44,7 @@ CUP_FAR = Detection('cup', 0.9, BBox(560, 380, 600, 450))
 CUP_NEAR = Detection('cup', 0.9, BBox(410, 250, 450, 320))      # inside the laptop's spill zone
 PERSON = Detection('person', 0.95, BBox(400, 0, 640, 300))
 VISION_ANSWER = '{"posture": "good", "face_screen_distance": "ok", "phone": "none", "attention": "screen"}'
+DESK_PICTURE_SIZE = (640, 480)          # width and height of the desk pictures the fake camera sends
 
 
 def inbox(app: DeskTalk) -> PictureInbox:
@@ -59,7 +60,8 @@ def pi_camera(app: DeskTalk) -> PiFrameSource:
 
 
 def desk_jpeg(value: int = 140) -> bytes:
-    picture = np.full((480, 640, 3), value, np.uint8)
+    width, height = DESK_PICTURE_SIZE
+    picture = np.full((height, width, 3), value, np.uint8)
     picture[::8] = 40                      # some texture, so Lens doesn't call it blurry
     return cv2.imencode('.jpg', picture, [cv2.IMWRITE_JPEG_QUALITY, 60])[1].tobytes()
 
@@ -127,12 +129,20 @@ class DeskRig:
         self.jpeg = desk_jpeg()
 
     # ── pictures ──
-    def watch(self, seconds: float, *things: Detection, person: bool = True, step: float = 1 / 3,
+    def watch(self, seconds: float, *things: Detection, person: bool = True, step: float | None = None,
               info: UploadInfo | None = None) -> None:
-        """The camera sends `seconds` of pictures showing `things` (and a person), `step` seconds apart;
-        the producer analyses each one."""
-        for _ in range(max(1, round(seconds / step))):
-            self.detector.detections = [*things, *([PERSON] if person else [])]
+        """The camera sends `seconds` of pictures showing `things` (and a person), `step` seconds apart
+        (the camera's own speed, camera.fps, if not given); the producer analyses each one."""
+        self.show(seconds, [[*things, *([PERSON] if person else [])]], step=step, info=info)
+
+    def show(self, seconds: float, pattern: list[list[Detection]], *, step: float | None = None,
+             info: UploadInfo | None = None) -> None:
+        """The camera sends `seconds` of pictures, `step` seconds apart (camera.fps if not given). The detector
+        finds the boxes in `pattern`: the first entry in the first picture, the next in the next, starting over
+        at the end. Nothing is added (no person). show(2, [[CUP_FAR], []]): the cup in every other picture."""
+        step = step if step is not None else 1 / self.config.camera.fps
+        for i in range(max(1, round(seconds / step))):
+            self.detector.detections = list(pattern[i % len(pattern)])
             self.picture(info)
             self.clock.advance(step)
 

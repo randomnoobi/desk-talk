@@ -50,6 +50,7 @@ Your computer keeps YOLO too, for the phone and the webcam, and as the backup fo
       ▼
  EventStream   (each consumer has its own queue and thread)
       ├─▶ EventLog          data/events/<day>/, compacted every 10 minutes
+      ├─▶ ObjectStateTracker  present / absent per object, saved in SQLite → ObjectStateChanged
       ├─▶ Roster            agents join and leave       → AgentJoined, AgentLeft
       ├─▶ HabitTracker      water, breaks, light, phone → HabitEvent
       ├─▶ DeskMonitor       danger zones, edges, pets   → Alert
@@ -59,7 +60,8 @@ Your computer keeps YOLO too, for the phone and the webcam, and as the backup fo
             ▼
           MessageHub ──── SSE: GET /api/events ────▶ every open app page (web_app/)
             ▲
-            └── background jobs that speak by themselves: HabitReminders, Lens, IdleChat, DailySummary
+            └── background jobs that speak by themselves: HabitReminders (with the RuleRunner's nudges), Lens,
+                IdleChat, DailySummary
 ```
 
 The events the consumers make (`AgentJoined`, `HabitEvent`, `Alert` ...) go back on the same event
@@ -79,13 +81,14 @@ reply only holds up the message generator's own queue, never the camera or the o
 | `desktalk/core/vision/` | `producer.py` (pictures → detection events), the desk rules (`rules.py`, `danger_zones.py`, `desk_edges.py`, `risky_pairs.py`, `findings.py`, `geometry.py`, `analyzer.py`), `desk_monitor.py` (safety alerts), Lens's checks on the picture (`camera_health.py`, the front, with `camera_measure.py` for the numbers and `camera_problems.py` for when a problem starts and ends), `proof_photos.py`. No OpenCV here: pictures go through `PictureTools`. |
 | `desktalk/core/events/` | `EventStream`: publish / subscribe inside the program, a bounded queue and a thread per consumer. |
 | `desktalk/core/agents/` | `ProfileBook` (who each object becomes, from `config/agents.yaml`), `Roster` (who's in the chat), `PresenceTracker`. |
-| `desktalk/core/habits/` | `habit_rules.py` (the book's rules as plain functions), `HabitTracker` (`tracker.py`, the front: the habit buttons and the reminders due), `habit_days.py` (`HabitDay`, one day's numbers, and `HabitDays`, which loads, saves and starts a new day), `habit_reader.py` (reading habits from the detection events), `HabitReminders`, `PreferencesFile` (wake time, bedtime, quiet hours), `DeskStatusService`, sun times. |
+| `desktalk/core/object_states/` | `ObjectStateTracker`: detection events → a steady present / absent state for each kind of object (smoothing, then a small state machine), `object_state` events, and rows in the SQLite store. The person's state is the on/off switch for reminders, small talk and vision checks. |
+| `desktalk/core/habits/` | `habit_rules.py` (the book's rules as plain functions), `HabitTracker` (`tracker.py`, the front: the habit buttons and the reminders due), `habit_days.py` (`HabitDay`, one day's numbers, and `HabitDays`, which loads, saves and starts a new day), `habit_reader.py` (reading habits from the detection events), `HabitReminders`, `PreferencesFile` (wake time, bedtime, quiet hours), `DeskStatusService`, sun times. The rule engine: `rule_engine.py` checks the rules in `config/protocols.yaml` → `rules` against the object states and the habits logged lately (`HabitEvent`), and `RuleRunner` (`rule_runner.py`) runs it once every `rule_engine.check_every_sec`, keeps the nudges that are due for the reminders, and checks whether each nudge worked (`rule_outcome`). |
 | `desktalk/core/chat/` | `MessageGenerator` (the front: events → messages, answering you), built from `alert_voice.py`, `nudge_voice.py`, `chat_answers.py` and `memory.py` (the only part that writes what the characters remember). `MessageHub` (messages → open app pages), `prompts.py` (fills in the blanks of the prompts in `config/prompts.yaml`), `names.py` (@mentions and who answers), `history.py`, `live_context.py` (what the AI is told about the desk), `replies.py`, `tracker_actions.py`. `workers/`: `IdleChat`, `LostItems` (with `lost_items_answers.py` and `lost_item_words.py`), `Lens`, `DailySummary`, `VisionHabits`. |
 | `desktalk/adapters/camera/` | `PiFrameSource`, `PhoneFrameSource`, `WebcamSource`, and the pairing key. |
 | `desktalk/adapters/detector/` | `UltralyticsDetector`: YOLO on this computer. |
 | `desktalk/adapters/llm/` | `OpenAICompatibleChatModel` (Gemini / OpenAI / Groq / Ollama) and `ResilientChatModel`, which wraps it with time limits, retries and a breaker. |
 | `desktalk/adapters/picture/` | What's done to pictures, with OpenCV: `OpenCvPictureTools` (decode, encode, shrink, crop, brightness, sharpness ...) and `DeskPainter` (the boxes and desk drawings on the live view, with every color, width and size from settings → `drawing`). |
-| `desktalk/adapters/storage/` | `EventLog` (the files in `data/events/`) and `JsonFileStore` (small JSON files, saved all-or-nothing). |
+| `desktalk/adapters/storage/` | `EventLog` (the files in `data/events/`), `JsonFileStore` (small JSON files, saved all-or-nothing) and `SqliteStateStore` (the object states' history, `object_states.database`). |
 | `desktalk/runtime/` | `Supervisor` (runs the background jobs and starts them again after a crash), `Scheduler`, `SystemClock` (the shared one), logging. |
 | `desktalk/web/` | FastAPI. `app.py` makes the two servers (the main one, and the phone page's own HTTPS one), `routers/` has the routes by area (`pi`, `phone`, `live`, `video`, `chat`, `habits`, `log`, `settings`, `health`), `schemas.py` the request and reply shapes, `streams.py` SSE and the video, `serve.py` runs uvicorn. The routes only see the interfaces, plain data and settings on `DeskTalk`. |
 | `shared/desktalk_shared/` | Used on the Pi and on this computer, standard library only: `detection.py` (`Detection`, `BBox`), `wire.py` (the upload format), `detector_api.py` (the detector service's requests and replies), `ultralytics_results.py` (YOLO results → `Detection`s, the same on both sides), `backoff.py` (`Backoff`: the wait after each failure in a row, doubling up to a most), `clock.py` (`SystemClock`, the one real clock), `workers.py` (`WorkerThread`: a job in a thread of its own that starts again after a crash). |
@@ -108,7 +111,7 @@ of the settings, for example `Roster(bus, profiles, scene, config.agents, config
 | Interface | What it promises | Real version | Fake for tests |
 |---|---|---|---|
 | `Clock` | `now()`, `monotonic()`, `sleep()`, `local_hour(now)`, `local_day(now)` | `SystemClock` (`shared/desktalk_shared/clock.py`) | `FakeClock` (you move time by hand) |
-| `PeriodicWorker` | `name`, `tick(now)` → seconds until the next round | the producer, `Scheduler`, `HabitReminders`, `Lens`, `IdleChat`, `LostItems`, `DailySummary`, `VisionHabits`, `OllamaKeepAlive` | tests call `tick()` themselves |
+| `PeriodicWorker` | `name`, `tick(now)` → seconds until the next round | the producer, `Scheduler`, `RuleRunner`, `HabitReminders`, `Lens`, `IdleChat`, `LostItems`, `DailySummary`, `VisionHabits`, `OllamaKeepAlive` | tests call `tick()` themselves |
 | `Detector` | picture → list of `Detection`, or `DetectorUnavailable` with a reason | `UltralyticsDetector` | `FakeDetector` |
 | `FrameSource` | the newest picture, `kind`, `connected`, `fps` | `PiFrameSource`, `PhoneFrameSource`, `WebcamSource` | `FakeFrameSource` |
 | `PictureInbox` | `push(jpeg, info)` for a camera that sends us pictures | `PiFrameSource`, `PhoneFrameSource` | `FakeFrameSource` |
@@ -124,7 +127,10 @@ of the settings, for example `Roster(bus, profiles, scene, config.agents, config
 | `Profiles` | who each detected object becomes | `ProfileBook` | `FakeProfiles` |
 | `HabitsView`, `HabitLog`, `HabitsLifecycle` | today's habits and the reminders ready to send; logging a habit by hand; saving the day (only `bootstrap` calls it) | `HabitTracker` | `FakeHabits` |
 | `Preferences` | wake time, bedtime, quiet hours | `PreferencesFile` (`core/habits/preferences.py`) | `FakePreferences` |
-| `DeskStatus` | camera on? someone at the desk? reminders allowed? | `DeskStatusService` (`core/habits/desk_status.py`) | `FakeDeskStatus` |
+| `RuleNudges` | the rule engine's nudges ready to send (`nudges(now)`), and which one went out (`note_fired()`) | `RuleRunner` (`core/habits/rule_runner.py`) | `FakeRuleNudges` |
+| `DeskStatus` | camera on? someone at the desk? (the person's object state) reminders allowed? | `DeskStatusService` (`core/habits/desk_status.py`) | `FakeDeskStatus` |
+| `ObjectStatesView` | each object's state now (`snapshot()`), what changed lately (`changes(since)`) | `ObjectStateTracker` | `FakeObjectStates` |
+| `ObjectStateStore` | the object states' history: add rows, newest state per object, the changes | `SqliteStateStore` | `InMemoryStateStore` |
 | `CameraHealthView`, `PictureCheck` | Lens's checks on the picture | `CameraHealth` | `FakeCameraHealth`, `FakePictureCheck` |
 | `LiveViewPainter` | boxes and desk drawings on the live view | `DeskPainter` | `FakePainter` |
 | `PictureTools` | decode and encode JPEGs, shrink, crop, grey, brightness, glare, sharpness, how much two pictures differ | `OpenCvPictureTools` | `FakePictureTools` |
@@ -151,7 +157,8 @@ The last section of `ports.py` is what the web layer asks of the running app, so
 may call: `ChatFeed` (`MessageHub`), `ChatReplies` (`MessageGenerator`), `RosterList` (`Roster`),
 `CameraTips` (`CameraHealth`), `DetectionStats` (the producer), `LostItemsView`, `VisionHabitsView`,
 `HabitTracking` (`HabitTracker`), `ScheduledJobs` (`Scheduler`) and `Jobs` (`Supervisor`). `DeskTalk`
-in `bootstrap.py` types its fields with these.
+in `bootstrap.py` types its fields with these (and with `ObjectStates`, in `bootstrap.py` itself: the
+`ObjectStatesView` plus `save_snapshot()`, which only the scheduler and `stop()` call).
 
 **Contract tests** keep the fakes honest: each interface that talks to the outside world, and each desk
 interface, has one test suite in `tests/contracts/`, and the fake and every real version run the same
@@ -230,6 +237,8 @@ the web API they're the same flat JSON as always: `id`, `ts` (when it happened, 
 | `alert` | `Alert` | desk monitor, lost items, vision habits | `kind: proximity` + `agent` and details like `snapshot`; or `kind: scenario` + `scenario`, `feature`, `text` |
 | `habit` | `HabitEvent` | the habit tracker | `habit: hydration`, `action: sip`, `say: "Sip detected!..."` |
 | `nudge` | `NudgeSent` | habit reminders | `habit`, `rule`, `agent`, `evidence`, `text` |
+| `rule_outcome` | `RuleOutcome` | the rule engine | `rule`, `habit`, `result: worked / missed`, `after_sec` |
+| `object_state` | `ObjectStateChanged` | the object state tracker | `change: appeared / removed / moved`, `object`, `prev_state`, `new_state`, `device_id`, `conf_avg`, `bbox`, `dwell_sec` |
 | `camera` | `CameraNotice` | Lens | `key: dark`, `kind: problem`, `text` |
 | `compaction` | `Compaction` | the event log | `frames`, `intervals`, `from`, `to` |
 
@@ -277,7 +286,8 @@ The jobs, and how long each waits before its first round (`DeskTalk.background_j
 | Job | What it does | First round after |
 |---|---|---|
 | `DetectionProducer` | pictures → detection events | at once |
-| `Scheduler` | timed jobs: compact the event log, delete old days, save today's habits | at once |
+| `Scheduler` | timed jobs: compact the event log, delete old days, save today's habits, save the object states | at once |
+| `RuleRunner` | checks the rules in `protocols.yaml` → `rules`, and whether earlier nudges worked | `rule_engine.check_every_sec` |
 | `HabitReminders` | one Protocols nudge at a time | `reminders.check_every_sec` |
 | `IdleChat` | small talk between agents | `idle_chat.start_delay_sec` |
 | `LostItems` | says when a tracked item (keys, phone ...) has been gone a while; looks for small things with a vision AI on this computer, if there is one | `lost_items.start_delay_sec` |
@@ -293,8 +303,9 @@ handler raises is logged and counted (`/api/health` → `events`), and keeps goi
 
 **Starting and stopping.** The main web server's FastAPI "lifespan" (`desktalk/web/app.py`) calls
 `desktalk.start()` when it starts and `desktalk.stop()` when it stops. `stop()` goes in this order: stop
-the jobs, let the consumers finish the events still waiting, save today's habits, compact the event log,
-close the event stream (and let go of a webcam). A step that fails is logged and the rest still happen.
+the jobs, let the consumers finish the events still waiting, save the object states, save today's habits,
+compact the event log, close the event stream (and let go of a webcam), close the object states database.
+A step that fails is logged and the rest still happen.
 
 **On the Pi**, the camera program has a few threads of its own (the detector worker, the uploader, the
 settings watcher, the cleaner that deletes old pictures), so a slow container, Wi-Fi or SD card never holds

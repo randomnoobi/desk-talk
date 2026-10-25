@@ -1,6 +1,10 @@
 """
 Danger zones: an invisible bubble around fragile things (the laptop, the keyboard ...).
 
+The camera looks at the desk at an angle, so boxes are judged by where things stand: a zone is grown
+around the part of the fragile thing that sits on the desk (the bottom `base_share` of its box, not a
+laptop's open screen), and a drink counts when the bottom strip of its box is inside.
+
 Overlap alone isn't a danger: only things that can really do harm there count (a drink or food near
 the laptop, something sharp near the phone), not a book resting next to it. Which words count for
 which zone is in the rules (settings → safety.zone_dangers, plus the agents' drink and food words).
@@ -13,10 +17,21 @@ from collections.abc import Mapping
 
 from desktalk.config.prompts import DeskCheckWords
 from desktalk.core.vision.findings import Findings, Thing
-from desktalk.core.vision.geometry import distance, grow, intrusion_depth
-from desktalk.domain import DeskRules
+from desktalk.core.vision.geometry import Box, box_gap, distance, footprint, grow, overlap
+from desktalk.core.vision.rules import standing_strip
+from desktalk.domain import DeskRules, Zone
 
 Pair = tuple[str, str]             # (the thing that went in, the thing whose zone it is)
+
+
+def base(box: Box, zone: Zone, rules: DeskRules) -> Box:
+    """The part of a fragile thing that sits on the desk: the bottom zone.base_share of its box."""
+    return footprint(box, zone.base_share, rules.footprint_min_px)
+
+
+def zone_area(box: Box, zone: Zone, rules: DeskRules) -> Box:
+    """The danger zone around a fragile thing: its base, zone.expand pixels wider on every side."""
+    return grow(base(box, zone, rules), zone.expand)
 
 
 def counts_as_danger(rules: DeskRules, zone_label: str, intruder_label: str) -> bool:
@@ -55,15 +70,17 @@ def zone_risks(things: Mapping[str, Thing], rules: DeskRules, visits: ZoneVisits
         zone = rules.zones.get(target.label)
         if zone is None:
             continue
-        area = grow(target.box, zone.expand)
+        target_base = base(target.box, zone, rules)
+        area = grow(target_base, zone.expand)       # as zone_area(); the base is needed again below
         for intruder in things.values():
             if intruder.id == target.id:
                 continue
-            depth = intrusion_depth(intruder.box, area)
-            danger = depth > 0 and counts_as_danger(rules, target.label, intruder.label)
+            strip = standing_strip(intruder.box, rules)
+            danger = overlap(strip, area) is not None and counts_as_danger(rules, target.label, intruder.label)
             visits.note((intruder.id, target.id), danger, now)
             if not danger:
                 continue
+            depth = zone.expand - box_gap(strip, target_base)     # how far inside: all of expand when touching
             found.add({'type': 'zone_intrusion', 'intruder': intruder.id, 'intruder_class': intruder.label,
                        'target': target.id, 'target_class': target.label, 'zone_label': zone.label,
                        'depth_px': round(depth, 1),

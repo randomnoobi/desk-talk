@@ -13,6 +13,7 @@ from tests.fakes.parts import (
     FakeFrameSource,
     InMemoryEventStore,
     InMemoryKeyValueStore,
+    InMemoryStateStore,
     RecordingNotifier,
     SyncEventBus,
 )
@@ -21,10 +22,12 @@ from tests.fakes.views import (
     FakeChatVoice,
     FakeDeskStatus,
     FakeHabits,
+    FakeObjectStates,
     FakePainter,
     FakePictureCheck,
     FakePreferences,
     FakeProfiles,
+    FakeRuleNudges,
     StaticRoster,
 )
 from tests.fakes.vision import FakeDeskRules, FakePhotoTaker, FakePictureTools, plain_desk_rules
@@ -32,7 +35,8 @@ from tests.fakes.vision import FakeDeskRules, FakePhotoTaker, FakePictureTools, 
 __all__ = [
     'FakeCameraHealth', 'FakeCharacterMemory', 'FakeChatModel', 'FakeChatVoice', 'FakeClock', 'FakeDeskRules',
     'FakeDeskScene', 'FakeDeskStatus', 'FakeDetector', 'FakeFrameSource', 'FakeHabits', 'FakeLivePictures',
-    'FakePainter', 'FakePhone', 'FakePhotoAlbum', 'FakePhotoTaker', 'FakePi', 'FakePictureCheck', 'FakePictureTools',
-    'FakePreferences', 'FakeProfiles', 'FakeSafetyBoard', 'InMemoryEventStore', 'InMemoryKeyValueStore',
-    'RecordingNotifier', 'StaticRoster', 'SyncEventBus', 'plain_desk_rules',
+    'FakeObjectStates', 'FakePainter', 'FakePhone', 'FakePhotoAlbum', 'FakePhotoTaker', 'FakePi', 'FakePictureCheck',
+    'FakePictureTools', 'FakePreferences', 'FakeProfiles', 'FakeRuleNudges', 'FakeSafetyBoard', 'InMemoryEventStore',
+    'InMemoryKeyValueStore', 'InMemoryStateStore', 'RecordingNotifier', 'StaticRoster', 'SyncEventBus',
+    'plain_desk_rules',
 ]

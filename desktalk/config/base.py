@@ -5,7 +5,8 @@ the value types (a number above 0, an hour, a JPEG quality ...) and the error a 
 
 from __future__ import annotations
 
-from typing import Annotated, ClassVar
+import json
+from typing import Annotated, Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -30,6 +31,10 @@ class _Section(BaseModel):
             if a > b:
                 raise ValueError(f'{small} ({_number(a)}) must not be more than {large} ({_number(b)})')
         return self
+
+
+class _Said(ValueError):
+    """A problem whose message is already a whole sentence: the error shows it as it is, after the setting's name."""
 
 
 class _Says:
@@ -58,3 +63,8 @@ Words = tuple[str, ...]
 
 def _number(x: float) -> str:
     return f'{x:g}'
+
+
+def _got(value: Any) -> str:
+    text = json.dumps(value, ensure_ascii=False, default=str)
+    return text if len(text) <= 60 else text[:57] + '...'

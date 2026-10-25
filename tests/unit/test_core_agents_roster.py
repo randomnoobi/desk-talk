@@ -68,11 +68,11 @@ def test_object_joins_and_leaves(config):
     assert r.joined()[0].ts == pytest.approx(1003.0)          # seen for 3 s (agents.join_after_sec)
     assert r.roster.member_ids() == ['computer']
     assert set(r.desk.members()) == {'computer'}                # person is ignored
-    r.run(t, 50, d('person'))                                 # 50 s with no laptop
+    r.run(t, config.agents.leave_after_sec + 5, d('person'))  # 5 s longer than the wait, with no laptop
     assert [(e.agent, e.name, e.label) for e in r.left()] == [('computer', 'Computer', 'laptop')]
     left = r.left()[0]
     assert left.stayed_sec == pytest.approx(round(left.ts - 1003.0, 1))
-    assert left.ts - t == pytest.approx(45.0, abs=0.5)        # gone 45 s (agents.leave_after_sec)
+    assert left.ts - t == pytest.approx(config.agents.leave_after_sec, abs=0.5)   # gone this long
     assert r.roster.member_ids() == [] and r.desk.members() == {}
     snap = r.roster.snapshot()
     assert snap[0]['id'] == 'computer' and snap[0]['on_desk'] is False and snap[0]['left_at'] == left.ts
@@ -149,7 +149,8 @@ def test_max_agents(config):
     keep = (first_two - {gone}).pop()
     boxes = {'computer': d('laptop'), 'paper': d('book', box=(300, 300, 400, 400)),
              'scissors': d('scissors', box=(10, 10, 50, 50))}
-    r.run(t, 50, *[boxes[a] for a in boxes if a != gone])     # one leaves: the waiting one gets its seat
+    # one leaves: the waiting one gets its seat
+    r.run(t, config.agents.leave_after_sec + 5, *[boxes[a] for a in boxes if a != gone])
     assert [e.agent for e in r.left()] == [gone]
     assert set(r.roster.member_ids()) == {keep} | (set(boxes) - first_two)
 
@@ -191,7 +192,7 @@ def test_snapshot_lists_members_and_earlier_agents_newest_first(config):
 def test_an_agent_that_left_has_no_seen_label_in_the_snapshot(config):
     r = Rig(config)
     t = r.run(0.0, 4, d('laptop'))
-    r.run(t, 50)
+    r.run(t, config.agents.leave_after_sec + 5)
     snap = r.roster.snapshot()[0]
     assert 'label_seen' not in snap and 'confidence' not in snap and snap['joined_at'] == pytest.approx(3.0)
 

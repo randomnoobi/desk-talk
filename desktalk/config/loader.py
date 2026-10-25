@@ -6,7 +6,6 @@ pydantic's errors into one plain sentence each, naming the file and the setting.
 from __future__ import annotations
 
 import difflib
-import json
 import os
 import types
 import typing
@@ -20,7 +19,7 @@ from pydantic import BaseModel, ValidationError
 from pydantic.fields import FieldInfo
 
 from desktalk.config.app import AppConfig
-from desktalk.config.base import CONFIG_FOLDER, ConfigError, _number, _Says
+from desktalk.config.base import CONFIG_FOLDER, ConfigError, _got, _number, _Said, _Says
 from desktalk.config.prompts import blank_problems, fill_settings, prompt_values
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -111,6 +110,14 @@ def _merge(base: dict, extra: dict) -> None:
 
 
 # ── turning pydantic's errors into one plain sentence each ──
+_UNIONS = (typing.Union, types.UnionType)
+
+
+def _field_named(model: type[BaseModel], key: str | int) -> FieldInfo | None:
+    """The field written as `key` in the file (a field may be written under another name: is_ is "is")."""
+    return next((f for name, f in model.model_fields.items() if (f.alias or name) == key), None)
+
+
 def _unwrap(annotation: Any, metadata: list) -> tuple[Any, list]:
     """Look through `X | None` and Annotated[X, limits] to X and its limits."""
     while True:
@@ -119,8 +126,11 @@ def _unwrap(annotation: Any, metadata: list) -> tuple[Any, list]:
             annotation, *extra = typing.get_args(annotation)
             for item in extra:      # Field(...) keeps its limits in .metadata
                 metadata = metadata + (list(item.metadata) if isinstance(item, FieldInfo) else [item])
-        elif origin in (typing.Union, types.UnionType):
-            annotation = next(a for a in typing.get_args(annotation) if a is not type(None))
+        elif origin in _UNIONS:
+            options = [a for a in typing.get_args(annotation) if a is not type(None)]
+            if len(options) > 1:        # a real choice (a rule's condition): _field_at picks by the key
+                return annotation, metadata
+            annotation = options[0]
         else:
             return annotation, metadata
 
@@ -131,8 +141,11 @@ def _field_at(loc: Loc) -> tuple[Any, list]:
     for part in loc:
         annotation, metadata = _unwrap(annotation, metadata)
         origin, args = typing.get_origin(annotation), typing.get_args(annotation)
+        if origin in _UNIONS:       # one of several sections: the one that has this key
+            annotation, metadata = _unwrap(next(a for a in args if _field_named(_unwrap(a, [])[0], part)), [])
         if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-            field = annotation.model_fields[str(part)]
+            field = _field_named(annotation, part)
+            assert field is not None
             annotation, metadata = field.annotation, list(field.metadata)
         elif origin is dict:
             annotation, metadata = args[1], []
@@ -153,6 +166,8 @@ def _describe(annotation: Any, metadata: list) -> str:
     if annotation is str:
         return 'text'
     if typing.get_origin(annotation) is tuple:
+        if any(isinstance(m, annotated_types.MinLen) and m.min_length > 0 for m in metadata):
+            return 'a list with at least one item, like [a, b]'
         return 'a list, like [a, b]'
     if typing.get_origin(annotation) is dict or (isinstance(annotation, type) and issubclass(annotation, BaseModel)):
         return 'a group of settings'
@@ -166,16 +181,13 @@ def _describe(annotation: Any, metadata: list) -> str:
                 limits[name] = _number(getattr(m, name))
     if 'ge' in limits and 'le' in limits:
         return f"{words} from {limits['ge']} to {limits['le']}"
+    if 'gt' in limits and 'le' in limits:
+        return f"{words} above {limits['gt']} and at most {limits['le']}"
     if 'gt' in limits:
         return f"{words} above {limits['gt']}"
     if 'ge' in limits:
         return f"{words}, {limits['ge']} or more"
     return words
-
-
-def _got(value: Any) -> str:
-    text = json.dumps(value, ensure_ascii=False, default=str)
-    return text if len(text) <= 60 else text[:57] + '...'
 
 
 def _dotted(loc: Loc) -> str:
@@ -196,21 +208,40 @@ def _unknown(file: str, loc: Loc, shown: Loc) -> str:
     """Message for a key nobody reads: most likely a typo, or an API key in the wrong place."""
     if str(loc[-1]).lower() in _SECRET_NAMES:
         return f'{file}: {_dotted(shown)} is not a known setting (API keys go in .env, see .env.example)'
-    known = [k for k in _field_at(loc[:-1])[0].model_fields if loc[:-1] or k not in _NOT_FROM_SETTINGS]
+    known = [f.alias or k for k, f in _field_at(loc[:-1])[0].model_fields.items()
+             if loc[:-1] or k not in _NOT_FROM_SETTINGS]
     close = difflib.get_close_matches(str(loc[-1]), known, n=1)
     hint = f' (did you mean {_dotted(shown[:-1] + (close[0],))}?)' if close else ''
     return f'{file}: {_dotted(shown)} is not a known setting{hint}'
 
 
+def _without_tags(loc: Loc) -> Loc:
+    """Pydantic names the kind of condition in the path, then its key again: when.state.state.is → when.state.is."""
+    if loc[:2] != ('protocols', 'rules'):
+        return loc
+    out, skipped = [], False
+    for part in loc:
+        skipped = bool(out) and part == out[-1] and not skipped and isinstance(part, str)
+        if not skipped:
+            out.append(part)
+    return tuple(out)
+
+
+def _length_after_a_bad_item(err: Mapping[str, Any]) -> bool:
+    """Pydantic also says "too short" for a list whose items were all bad; the bad items already explain it."""
+    return err['type'] == 'too_short' and err['ctx']['actual_length'] == 0 and bool(err['input'])
+
+
 def _problem(err: Mapping[str, Any], sources: _Sources) -> str:
-    loc = tuple(err['loc'])
+    loc = _without_tags(tuple(err['loc']))
     file = sources.last(loc)
     shown = loc[1:] if loc[0] in _OTHER_FILES else loc     # as written in that file
     if err['type'] == 'extra_forbidden':
         return _unknown(file, loc, shown)
     if err['type'] == 'missing':
         return f'{sources.first(loc)}: {_dotted(shown)} is missing'
-    if err['type'] == 'value_error' and isinstance(err['input'], dict):     # a check across two settings
+    if err['type'] == 'value_error' and (isinstance(err['input'], dict) or isinstance(err['ctx']['error'], _Said)):
+        # a check across two settings, or a sentence that says it all
         return f'{file}: {_dotted(shown)}: {err["ctx"]["error"]}'
     return f'{file}: {_dotted(shown)} must be {_describe(*_field_at(loc))} (got {_got(err["input"])})'
 
@@ -254,7 +285,7 @@ def load_config(root: Path | None = None, environ: Mapping[str, str] | None = No
     try:
         config = AppConfig.model_validate(data)
     except ValidationError as exc:
-        problems += [_problem(e, sources) for e in exc.errors()]
+        problems += [_problem(e, sources) for e in exc.errors() if not _length_after_a_bad_item(e)]
     if problems:
         raise ConfigError('\n'.join(problems))
     return _with_settings_in_prompts(config)

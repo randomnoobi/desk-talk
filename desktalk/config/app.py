@@ -133,6 +133,25 @@ class PresenceSettings(_Section):
     user_active_window_sec: PositiveNumber
 
 
+class ObjectStatesSettings(_Section):
+    _in_order = (('off_confidence', 'on_confidence'),)
+    on_confidence: Fraction
+    off_confidence: Fraction
+    window_pictures: PositiveInt
+    vote_share: Fraction
+    appear_sec: ZeroOrMore
+    gone_sec: ZeroOrMore
+    move_fraction: Fraction
+    no_move_labels: Words
+    person_label: str
+    person_appear_sec: ZeroOrMore
+    person_gone_sec: ZeroOrMore
+    person_counts_movement: bool
+    snapshot_every_sec: PositiveNumber
+    restore_max_age_sec: PositiveNumber
+    database: Path
+
+
 class SupervisorSettings(_Section):
     _in_order = (('restart_start_sec', 'restart_max_sec'),)
     restart_start_sec: PositiveNumber
@@ -155,9 +174,14 @@ class EventLogSettings(_Section):
 
 
 class AlertsSettings(_Section):
+    _in_order = (('pet_min_pictures', 'pet_window_pictures'),)
     cooldown_sec: ZeroOrMore
     reset_after_sec: ZeroOrMore
     pet_cooldown_sec: ZeroOrMore
+    pet_min_confidence: Fraction
+    pet_min_pictures: PositiveInt
+    pet_window_pictures: PositiveInt
+    pet_forget_after_sec: PositiveNumber
     clutter_threshold: PositiveInt
     clutter_cooldown_sec: ZeroOrMore
     plant_water_every_sec: PositiveNumber
@@ -177,6 +201,7 @@ class EdgeProximity(_Section):
 
 class DangerZone(_Section):
     expand: ZeroOrMore
+    base_share: Annotated[float, Field(gt=0, le=1)] = 1.0     # left out = the whole box (as before it existed)
     label: str
 
 
@@ -237,7 +262,11 @@ class RemindersSettings(_Section):
     min_gap_sec: ZeroOrMore
     check_every_sec: PositiveNumber
     quiet_hours: QuietHours
-    someone_here_sec: PositiveNumber
+
+
+class RuleEngineSettings(_Section):
+    check_every_sec: PositiveNumber
+    grace_sec: ZeroOrMore
 
 
 class AiReply(_Section):
@@ -621,12 +650,14 @@ class AppConfig(_Section):
     detector: DetectorSettings
     agents: AgentsSettings
     presence: PresenceSettings
+    object_states: ObjectStatesSettings
     supervisor: SupervisorSettings
     event_stream: EventStreamSettings
     event_log: EventLogSettings
     alerts: AlertsSettings
     safety: SafetySettings
     reminders: RemindersSettings
+    rule_engine: RuleEngineSettings
     llm: LlmSettings
     chat: ChatSettings
     idle_chat: IdleChatSettings
