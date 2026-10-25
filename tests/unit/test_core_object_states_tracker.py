@@ -34,6 +34,7 @@ SETTINGS = {
     'snapshot_every_sec': 60,
     'restore_max_age_sec': 300,
     'database': 'data/object_states.sqlite',
+    'trace_pictures': 90,
 }
 STEP = 1 / 3          # 3 pictures a second
 SETTLE = 15           # pictures it takes to settle into a state (5 s)

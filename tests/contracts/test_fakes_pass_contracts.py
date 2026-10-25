@@ -6,12 +6,18 @@ import cv2
 import numpy as np
 import pytest
 
-from desktalk.domain import BBox, Detection
+from desktalk.domain import BBox, Detection, QueryResult, TableInfo, TestItem
 from tests.contracts.character_memory_contract import CharacterMemoryContract
 from tests.contracts.chat_model_contract import ChatModelContract
 from tests.contracts.desk_rules_contract import DeskRulesContract
 from tests.contracts.desk_scene_contract import DeskSceneContract
 from tests.contracts.detector_contract import DetectorContract
+from tests.contracts.dev_contracts import (
+    DatabaseBrowserContract,
+    DataFilesContract,
+    RunnerContract,
+    SmoothingTraceContract,
+)
 from tests.contracts.event_bus_contract import EventBusContract
 from tests.contracts.event_store_contract import EventStoreContract
 from tests.contracts.frame_source_contract import FrameSourceContract
@@ -31,6 +37,8 @@ from tests.contracts.state_store_contract import StateStoreContract
 from tests.fakes import (
     FakeCharacterMemory,
     FakeChatModel,
+    FakeDatabaseBrowser,
+    FakeDataFiles,
     FakeDeskRules,
     FakeDeskScene,
     FakeDetector,
@@ -44,11 +52,14 @@ from tests.fakes import (
     FakePictureTools,
     FakeRuleNudges,
     FakeSafetyBoard,
+    FakeSmoothingTrace,
+    FakeTestRunner,
     InMemoryEventStore,
     InMemoryKeyValueStore,
     InMemoryStateStore,
     RecordingNotifier,
     SyncEventBus,
+    smoothing_step,
 )
 
 
@@ -128,6 +139,8 @@ class TestFakeChatModel(ChatModelContract):
     ('FakeDeskRules', 'DeskLayout'), ('FakePi', 'PiStatus'), ('FakePi', 'PiUploads'), ('FakePhone', 'PhoneCamera'),
     ('FakePhone', 'PhoneControls'), ('FakeLivePictures', 'LivePictures'), ('FakeDeskScene', 'DeskScene'),
     ('FakeSafetyBoard', 'SafetyBoard'), ('FakeCharacterMemory', 'CharacterMemory'), ('FakePhotoAlbum', 'PhotoAlbum'),
+    ('FakeTestRunner', 'TestRunner'), ('FakeDatabaseBrowser', 'DatabaseBrowser'), ('FakeDataFiles', 'DataFiles'),
+    ('FakeSmoothingTrace', 'SmoothingTraceView'),
 ])
 def test_every_fake_has_all_of_its_interface(fake, port):
     import desktalk.ports as ports
@@ -248,3 +261,47 @@ class TestFakeRuleNudges(RuleNudgesContract):
     @pytest.fixture
     def rule_nudges(self):
         return FakeRuleNudges([a_nudge('rule.hydration')])
+
+
+# ── the developer page's tools ──
+class TestFakeTestRunner(RunnerContract):
+    @pytest.fixture
+    def runner(self):
+        return FakeTestRunner([TestItem('tests/unit/test_a.py::test_x', 'tests/unit/test_a.py', ()),
+                               TestItem('tests/unit/test_a.py::test_y', 'tests/unit/test_a.py', ('slow',))],
+                              checks={'Fast tests': 0, 'Lint': 1, 'Types': 0})
+
+
+EVENTS = TableInfo('events', ('ts', 'object'), 2, 'CREATE TABLE events (ts REAL, object TEXT)')
+
+
+class TestFakeDatabaseBrowser(DatabaseBrowserContract):
+    @pytest.fixture
+    def browser(self):
+        rows = QueryResult(('ts', 'object'), ((1.0, 'cup'), (2.0, 'pen/pencil')), False, 0.1)
+        return FakeDatabaseBrowser({'object_states': [EVENTS]}, {'SELECT * FROM events': rows})
+
+
+class TestFakeDataFiles(DataFilesContract):
+    @pytest.fixture
+    def data_files(self):
+        return FakeDataFiles({'logs/notes.txt': 'hello desk', 'events/2026-10-24/events.jsonl': '{}'})
+
+
+class TestFakeSmoothingTrace(SmoothingTraceContract):
+    @pytest.fixture
+    def view(self):
+        return FakeSmoothingTrace({'cup': [smoothing_step(1.0), smoothing_step(2.0, conf=None)],
+                                   'pen/pencil': [smoothing_step(1.0)]})
+
+
+def test_the_fake_runner_fails_a_run_with_a_failed_test():
+    from desktalk.domain import TestOutcome
+    item = TestItem('tests/unit/test_a.py::test_x', 'tests/unit/test_a.py', ())
+    runner = FakeTestRunner([item], {item.id: TestOutcome(item.id, 'failed', 0.1, 'assert 1 == 2')})
+    runner.collect()
+    status = runner.status(runner.start_tests([item.file]), 0)
+    assert (status.state, status.outcomes[0].message) == ('failed', 'assert 1 == 2')
+    assert '1 failed' in status.output
+    assert runner.started == [('tests', [item.file])]
+

@@ -150,6 +150,7 @@ class ObjectStatesSettings(_Section):
     snapshot_every_sec: PositiveNumber
     restore_max_age_sec: PositiveNumber
     database: Path
+    trace_pictures: PositiveInt
 
 
 class SupervisorSettings(_Section):
@@ -645,6 +646,44 @@ class LoggingSettings(_Section):
     preview_chars: PositiveInt
 
 
+Command = Annotated[tuple[str, ...], Field(min_length=1)]    # a program and its arguments, run without a shell
+
+
+class DevCheck(_Section):
+    """One step of the developer page's "Run everything" button."""
+
+    name: str
+    command: Command
+
+
+class DevHealthLimits(_Section):
+    """When the developer page's system tab turns a number amber or red."""
+
+    _in_order = (('pi_cpu_warn_c', 'pi_cpu_bad_c'),)
+    pi_cpu_warn_c: PositiveNumber
+    pi_cpu_bad_c: PositiveNumber
+    pi_disk_warn_mb: ZeroOrMore
+    detect_warn_ms: PositiveNumber
+
+
+class DevSettings(_Section):
+    """The developer page at /dev/ (only from this computer): running the tests, the database, the data folder."""
+
+    enabled: bool
+    ui_folder: Path
+    vite_port: Port
+    poll_sec: PositiveNumber
+    checks: Annotated[tuple[DevCheck, ...], Field(min_length=1)]
+    test_command: Command
+    collect_markers: str
+    run_timeout_min: PositiveNumber
+    output_keep_kb: PositiveInt
+    sql_max_rows: PositiveInt
+    sql_timeout_sec: PositiveNumber
+    file_preview_kb: PositiveInt
+    health: DevHealthLimits
+
+
 # ════════════════════════════════════════════════════════════════════
 #  .env (never YAML)
 # ════════════════════════════════════════════════════════════════════
@@ -688,6 +727,7 @@ class AppConfig(_Section):
     web: WebSettings
     logging: LoggingSettings
     storage: StorageSettings
+    dev: DevSettings
     protocols: Protocols
     agents_file: AgentsFile
     prompts: Prompts                  # config/prompts.yaml, with the settings blanks filled in

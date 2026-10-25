@@ -760,3 +760,27 @@ desk_checks:
   in_between: '{middle} lies between {a} and {b} — chain reaction risk'
   crowd: '{count} objects crowded together ({labels}) — instability risk'
   approaching: '{a} moving toward {b} ({percent}% closer in {pictures} frames)'
+
+# ── The developer page's server messages (http://localhost:5000/dev/, settings → dev) ───
+dev:
+  # a second "Run" while a run of the tests or the checks is still going
+  run_already_going: A run is already going.
+  # a request from another device on the network
+  other_computer: The developer page only answers this computer.
+  # a request sent by some other web page open in your browser
+  other_web_page: The developer page only answers its own page, not other web pages.
+  # the storage tab asked for a file: {path} is the path it asked for, inside the data folder
+  outside_data_folder: '{path} is outside the data folder, so it is never read.'
+  is_a_folder: '{path} is a folder, not a file.'
+  no_such_file: "{path} isn't there."
+  database_file: '{path} is a database: look inside it on the Database tab.'
+  # a test or a run that isn't in the list
+  unknown_test: "There's no test called {test_id}. Reload the test list and try again."
+  unknown_run: "There's no run called {run_id}."
+  unknown_database: "There's no database called {name}."
+  # the database tab's query box
+  query_not_one_statement: Write one whole statement, with nothing after it.
+  query_refused: "The database is opened read-only here, so that query can't run ({reason})."
+  query_timed_out: 'The query took longer than {seconds:g} seconds (dev.sql_timeout_sec), so it was stopped.'
+  # /dev/ before `npm run build` has made the page
+  not_built: "The developer page isn't built yet. In dev_ui/, run: npm install && npm run build"

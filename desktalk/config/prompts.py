@@ -188,6 +188,15 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'camera.problems.cutoff': ('object', 'side', 'hint'),
     'camera.problems.slow': ('fps',),
     'camera.cutoff_title': ('object', 'side'),
+    'dev.outside_data_folder': ('path',),
+    'dev.is_a_folder': ('path',),
+    'dev.no_such_file': ('path',),
+    'dev.database_file': ('path',),
+    'dev.unknown_test': ('test_id',),
+    'dev.unknown_run': ('run_id',),
+    'dev.unknown_database': ('name',),
+    'dev.query_refused': ('reason',),
+    'dev.query_timed_out': ('seconds',),
 }
 
 
@@ -628,6 +637,25 @@ class CameraPrompts(_Section):
     edge_tip: str
 
 
+class DevWords(_Section):
+    """The developer page's server messages (desktalk/web/routers/dev.py and the parts behind it)."""
+
+    run_already_going: str
+    other_computer: str
+    other_web_page: str
+    outside_data_folder: str
+    is_a_folder: str
+    no_such_file: str
+    database_file: str
+    unknown_test: str
+    unknown_run: str
+    unknown_database: str
+    query_not_one_statement: str
+    query_refused: str
+    query_timed_out: str
+    not_built: str
+
+
 class Prompts(_Section):
     replies: Replies
     alert: AlertPrompts
@@ -649,6 +677,7 @@ class Prompts(_Section):
     desk_rules: DeskRuleWords
     photos: PhotoWords
     desk_checks: DeskCheckWords
+    dev: DevWords
 
 
 # ── the blanks that come from the settings ───────────────────────────

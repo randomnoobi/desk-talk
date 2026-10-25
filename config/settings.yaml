@@ -148,6 +148,7 @@ object_states:
   snapshot_every_sec: 60      # save every object's state this often (restart + heartbeat)
   restore_max_age_sec: 300    # after a restart, saved states older than this start over as UNKNOWN
   database: data/object_states.sqlite     # where the states are saved
+  trace_pictures: 90          # the developer page shows each object's last this many pictures of smoothing
 
 # ── Keeping background jobs running ────────────────────────────────
 supervisor:
@@ -565,3 +566,29 @@ logging:
 # ── Your data on this computer ──────────────────────────────────────
 storage:
   folder: data                # preferences.json, habits/<day>.json and learned_personalities.json live here
+
+# ── Developer page (http://localhost:5000/dev/, only from this computer) ──
+dev:
+  enabled: true                 # false = no developer page and no /api/dev routes
+  ui_folder: dev_ui/dist        # where `npm run build` in dev_ui/ puts the page
+  vite_port: 5173               # `npm run dev` serves the page here while you work on it
+  poll_sec: 1                   # how often the page asks for new numbers
+  checks:                       # the "Run everything" button: these run one after the other
+    - name: Fast tests
+      command: [uv, run, pytest, -m, "not slow and not docker and not e2e", -o, "addopts=", -q]
+    - name: Lint
+      command: [uv, run, ruff, check, .]
+    - name: Types
+      command: [uv, run, pyright]
+  test_command: [uv, run, pytest, -o, "addopts=", -q]    # one test or file: its id goes at the end
+  collect_markers: "not docker and not e2e"   # which tests the list shows
+  run_timeout_min: 15           # a run going longer than this is stopped
+  output_keep_kb: 2000          # how much of a run's printout the page can scroll back through
+  sql_max_rows: 500             # a query shows at most this many rows
+  sql_timeout_sec: 5            # a query running longer than this is stopped
+  file_preview_kb: 64           # how much of a file the storage tab shows
+  health:                       # when the system tab turns a number amber or red
+    pi_cpu_warn_c: 70           # the Pi's CPU this hot (°C) turns amber...
+    pi_cpu_bad_c: 80            # ...and this hot turns red
+    pi_disk_warn_mb: 1000       # less free space than this on the Pi's card turns amber
+    detect_warn_ms: 500         # finding things in one picture on this computer taking longer turns amber
