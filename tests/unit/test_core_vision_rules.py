@@ -17,15 +17,16 @@ OUTLINE = [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9]]
 
 def test_built_in_rules_when_nothing_was_saved():
     rules = make_rules(SAFETY)
-    assert rules.zones['laptop'] == Zone(expand=80, label='Spill / pressure zone')
+    assert rules.zones['laptop'] == Zone(expand=80, label='Spill / pressure zone', base_share=0.5)
     assert (rules.edge_danger_px, rules.edge_warn_px) == (35, 75)
     assert rules.outline == ()
 
 
 def test_every_built_in_rule_keeps_the_value_the_old_code_had():
     rules = make_rules(SAFETY)
-    assert rules.zones == {'laptop': Zone(80, 'Spill / pressure zone'), 'keyboard': Zone(60, 'Crumb / debris zone'),
-                           'book': Zone(45, 'Stacking zone'), 'cell phone': Zone(35, 'Screen scratch zone')}
+    assert rules.zones == {'laptop': Zone(80, 'Spill / pressure zone', 0.5),
+                           'keyboard': Zone(60, 'Crumb / debris zone', 1.0),
+                           'book': Zone(45, 'Stacking zone', 1.0), 'cell phone': Zone(35, 'Screen scratch zone', 1.0)}
     assert rules.zone_intruders['cell phone'] == {'cup', 'bottle', 'wine glass', 'scissors', 'knife'}
     assert (rules.crowd_radius_px, rules.crowd_min_objects, rules.path_ratio) == (140, 3, 0.30)
     assert (rules.approach_min_frames, rules.approach_rate, rules.repeated_times) == (8, 0.12, 3)
@@ -37,9 +38,42 @@ def test_every_built_in_rule_keeps_the_value_the_old_code_had():
     assert rules.edge_objects == {'cup', 'bottle', 'cell phone', 'laptop', 'remote', 'mouse'}
 
 
+def test_where_a_thing_stands_is_the_bottom_strip_of_its_box():
+    rules = make_rules(SAFETY)                      # footprint_share 0.2, at least footprint_min_px 4
+    assert rules.standing_strip((0, 0, 10, 100)) == (0, 80, 10, 100)
+    assert rules.standing_strip((0, 0, 10, 10)) == (0, 6, 10, 10)
+
+
 def test_saved_zone_wins_over_the_built_in_one():
     rules = make_rules(SAFETY, SAVED_FILE)
-    assert rules.zones['laptop'] == Zone(expand=134, label='Spill / pressure zone')
+    assert rules.zones['laptop'] == Zone(expand=134, label='Spill / pressure zone', base_share=0.5)
+
+
+def test_a_saved_zone_without_base_share_takes_the_built_in_one():
+    rules = make_rules(SAFETY, {'danger_zones': {'laptop': {'expand': 100, 'label': 'Mine'}}})
+    assert rules.zones['laptop'] == Zone(100, 'Mine', 0.5)
+
+
+def test_a_saved_base_share_wins():
+    rules = make_rules(SAFETY, {'danger_zones': {'laptop': {'expand': 100, 'label': 'Mine', 'base_share': 0.3}}})
+    assert rules.zones['laptop'].base_share == 0.3
+
+
+@pytest.mark.parametrize('bad', [0, -0.5, 1.5, 'half', None, float('nan')])
+def test_a_bad_saved_base_share_falls_back_and_is_logged(caplog, bad):
+    with caplog.at_level(logging.WARNING):
+        rules = make_rules(SAFETY, {'danger_zones': {'laptop': {'expand': 100, 'label': 'Mine', 'base_share': bad},
+                                                     'mouse': {'expand': 20, 'label': 'Mouse', 'base_share': bad}}})
+    assert rules.zones['laptop'] == Zone(100, 'Mine', 0.5)
+    assert rules.zones['mouse'] == Zone(20, 'Mouse', 1.0)
+    assert 'base_share' in caplog.text
+
+
+def test_a_saved_zone_with_no_built_in_one_covers_the_whole_box(caplog):
+    with caplog.at_level(logging.WARNING):
+        rules = make_rules(SAFETY, {'danger_zones': {'mouse': {'expand': 20, 'label': 'Mouse zone'}}})
+    assert rules.zones['mouse'] == Zone(20, 'Mouse zone', 1.0)
+    assert caplog.text == ''
 
 
 def test_built_in_zones_stay_when_the_saved_rules_leave_them_out():
@@ -176,6 +210,8 @@ def test_settings_page_sees_the_saved_rules():
 def test_settings_page_sees_the_built_in_rules_when_nothing_was_saved():
     page = SafetyRules(InMemoryKeyValueStore(), SAFETY).for_settings_page()
     assert page['loaded'] is False
+    # No base_share: the page doesn't show it but sends zones back as they are, so it would be saved
+    # and a later change to it in settings.yaml would do nothing.
     assert page['danger_zones']['laptop'] == {'expand': 80, 'label': 'Spill / pressure zone'}
     assert page['edge_proximity'] == {'danger_px': 35, 'warn_px': 75,
                                       'objects': ['bottle', 'cell phone', 'cup', 'laptop', 'mouse', 'remote']}

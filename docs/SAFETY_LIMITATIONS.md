@@ -140,6 +140,7 @@ If one object is placed behind or on top of another:
 
 - Objects at different heights on the desk (stacked books vs. flat phone) may appear close in 2D but aren't actually near each other
 - The system cannot distinguish between "beside" and "on top of"
+- To make up for the camera's angle a little, danger zones are drawn around where things stand (the bottom of a laptop's box, not its open screen), and a drink counts by the bottom of its box
 
 ---
 

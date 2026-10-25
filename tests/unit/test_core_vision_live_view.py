@@ -70,6 +70,13 @@ def test_a_danger_zone_with_something_risky_in_it_is_drawn_red():
     assert pixel(painted, 120, 380) == RED          # the left side of the laptop's zone (80 px around it)
 
 
+def test_only_where_the_risky_thing_stands_is_shaded():
+    painter, _ = rig({'computer': ('laptop', LAPTOP), 'cup': ('cup', CUP_NEAR)})
+    painted = painter.paint(blank(), [])
+    assert pixel(painted, 440, 313) != (100, 100, 100)     # the bottom strip of the cup's box
+    assert pixel(painted, 440, 260) == (100, 100, 100)     # higher up the cup
+
+
 def test_the_risk_badge_is_drawn_in_the_corner():
     painter, _ = rig({'computer': ('laptop', LAPTOP), 'cup': ('cup', CUP_NEAR)})
     painted = painter.paint(blank(), [])
@@ -154,9 +161,11 @@ def test_something_close_to_the_edge_gets_a_red_box():
 
 def test_every_danger_zone_is_drawn_dashed_even_with_nothing_in_it():
     picture = painted({'computer': ('laptop', (200, 200, 400, 350))})
-    assert near(pixel(picture, 480, 208), ZONE_OK)              # the right side, 80 px out from the laptop
-    assert pixel(picture, 480, 216) == (100, 100, 100)          # a gap between dashes
-    assert pixel(picture, 130, 125) == (60, 60, 60)             # the zone's name, on a dark grey label
+    # The zone is around the laptop's base (the bottom half, y 275-350), 80 px wider: 120, 195, 480, 430
+    assert near(pixel(picture, 480, 283), ZONE_OK)              # the right side, 80 px out from the laptop
+    assert pixel(picture, 480, 291) == (100, 100, 100)          # a gap between dashes
+    assert pixel(picture, 130, 200) == (60, 60, 60)             # the zone's name, on a dark grey label
+    assert pixel(picture, 480, 150) == (100, 100, 100)          # nothing up beside the screen
 
 
 def test_a_thing_in_between_a_danger_pair_gets_a_magenta_ring():

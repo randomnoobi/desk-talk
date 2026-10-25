@@ -164,12 +164,20 @@ def test_missing_setting_names_the_file_it_belongs_in(project):
     ('reminders:\n  quiet_hours:\n    start_hour: 24\n',
      'reminders.quiet_hours.start_hour must be a whole number from 0 to 23 (got 24)'),
     ('lens: 5\n', 'lens must be a group of settings (got 5)'),
+    ('safety:\n  danger_zones:\n    laptop: {base_share: 1.5}\n',
+     'safety.danger_zones.laptop.base_share must be a number above 0 and at most 1 (got 1.5)'),
 ])
 def test_each_kind_of_bad_value_is_described_in_plain_words(project, local, problem):
     write_local(project, local)
     with pytest.raises(ConfigError) as err:
         load_config(root=project, environ={})
     assert str(err.value) == f'config/settings.local.yaml: {problem}'
+
+
+def test_a_danger_zone_written_before_base_share_existed_still_loads(project):
+    write_local(project, 'safety:\n  danger_zones:\n    mouse: {expand: 20, label: Mouse zone}\n')
+    zone = load_config(root=project, environ={}).safety.danger_zones['mouse']
+    assert (zone.expand, zone.label, zone.base_share) == (20, 'Mouse zone', 1.0)
 
 
 def test_several_problems_are_all_listed_one_per_line(project):
