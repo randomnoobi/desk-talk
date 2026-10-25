@@ -1,6 +1,7 @@
 // What the app page (web_app/app.js) keeps in this browser's localStorage, read for the Storage tab.
 // The developer page and the app page share it only when both come from the same address
-// (http://localhost:<web.port>), because a browser keeps one localStorage per address.
+// (http://localhost:<web.port>, the port in settings → web.port), because a browser keeps one
+// localStorage per address.
 
 /** The keys web_app/app.js uses, and what each one is for. */
 export const APP_KEYS: Readonly<Record<string, string>> = {
@@ -81,15 +82,16 @@ export interface PageAddress {
 /**
  * Whether this page sees the app page's storage, and words saying so.
  * `fromViteDev` is true when `npm run dev` sent this page rather than the Desk Talk server.
- * The page doesn't know the server's port then, so the words point at web.port in the settings.
+ * Then the words give the Desk Talk server's own address, using `webPort` (settings → web.port).
  */
-export function whereThisPageIs(page: PageAddress, fromViteDev: boolean): { sharesWithApp: boolean, words: string } {
+export function whereThisPageIs(page: PageAddress, fromViteDev: boolean,
+                                webPort: number): { sharesWithApp: boolean, words: string } {
   if (fromViteDev) {
     return {
       sharesWithApp: false,
       words: `This page is coming from npm run dev at ${page.origin}, a different address from the app page, ` +
         "so this isn't the app's storage. To see the app's storage, open this page from the Desk Talk server: " +
-        `${page.protocol}//${page.hostname}:<web.port>/dev/ (web.port is in config/settings.yaml).`,
+        `${page.protocol}//${page.hostname}:${webPort}/dev/`,
     }
   }
   return {

@@ -4,19 +4,17 @@ import type { Phase, SmoothingSettings, SmoothingStep, StateChange } from './api
 
 const MINUTE_SEC = 60
 
-/**
- * An object with more than this many flips (appeared or removed) in the last minute gets a
- * "flickering" badge. The plan sets it here; it can move to settings → dev if it needs tuning.
- */
-export const FLICKER_FLIPS = 4
-
 /** How many times `label` appeared or was removed in the minute before `now`. Moves don't count. */
 export function flipsPerMinute(changes: StateChange[], label: string, now: number): number {
   return changes.filter(c => c.label === label && c.change !== 'moved' && c.ts > now - MINUTE_SEC && c.ts <= now).length
 }
 
-export function isFlickering(changes: StateChange[], label: string, now: number): boolean {
-  return flipsPerMinute(changes, label, now) > FLICKER_FLIPS
+/**
+ * Whether `label` gets the "flickering" badge: more than `limit` flips (appeared or removed) in the
+ * minute before `now`. The limit is settings → dev.flicker_flips_per_min.
+ */
+export function isFlickering(changes: StateChange[], label: string, now: number, limit: number): boolean {
+  return flipsPerMinute(changes, label, now) > limit
 }
 
 const keyOf = (c: StateChange) => `${c.ts}|${c.label}|${c.change}`

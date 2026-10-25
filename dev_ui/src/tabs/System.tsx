@@ -20,7 +20,8 @@ export default function System(props: { settings: DevSettings }): JSX.Element {
     const at = Date.now() / 1000
     const before = seen.current
     seen.current = remember(before, health, at)
-    return { rows: healthRows(health, log, settings.health, at, before), uptime: health.uptime_sec, at }
+    const limits = { ...settings.health, disconnect_after_sec: settings.disconnect_after_sec }
+    return { rows: healthRows(health, log, limits, at, before), uptime: health.uptime_sec, at }
   }, settings.poll_sec * 1000)
 
   const reply = poll.data

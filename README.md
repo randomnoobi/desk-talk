@@ -365,7 +365,8 @@ uv run vulture                             # dead code check: prints nothing
 
 GitHub runs the lint, the type check, the dead code check and the fast tests on every push
 (`.github/workflows/tests.yml`). The fast tests run there with `--cov`, which fails when they cover less
-of the code than `fail_under` in `pyproject.toml`.
+of the code than `fail_under` in `pyproject.toml`. It also runs the developer page's own tests and builds
+it (`npm test` and `npm run build` in `dev_ui/`).
 
 | Folder | What it checks |
 |---|---|
@@ -379,6 +380,38 @@ of the code than `fail_under` in `pyproject.toml`.
 | `tests/fakes/` | the fakes: `FakeClock`, `FakeDetector`, `FakeChatModel`, `SyncEventBus` ... |
 
 The benchmark tool has its own tests: see [benchmarks/README.md](benchmarks/README.md).
+
+---
+
+## Developer page
+
+A second page, for working on Desk Talk rather than using it. It has five tabs:
+
+- **Checks**: one button that runs the fast tests, the lint and the type check, and every test on its
+  own (or a whole file or folder), with the printout as it runs.
+- **Live**: each object's state (present, absent), the changes as they happen, and a chart of how the
+  smoothing turned the last pictures into that state, so you can see why something flickers.
+- **System**: how the Pi is doing (pictures a second, temperature, disk, its detector) and every part on
+  this computer (background jobs, timed jobs, the event stream, detection, the AI).
+- **Database**: the tables in the SQLite databases, and a box to run a query that only reads.
+- **Storage**: what this browser keeps for the app page (localStorage), and the files in `data/`.
+
+You need [Node](https://nodejs.org/) 22 for it. **On your Mac**, in the `desk-talk` folder, once (and
+again after `dev_ui/` changes):
+
+```bash
+cd dev_ui && npm install && npm run build
+```
+
+Then start Desk Talk as usual and open **http://localhost:5000/dev/** (`web.port`, 5000 unless you changed
+it). Only this computer gets answers from it: other devices on the Wi-Fi, and other web pages open in
+your browser, are turned away (403). It can't change anything, apart from starting and stopping a test
+run and deleting a localStorage key after you say yes. The database is opened read-only. To switch it off, set
+`dev.enabled: false` in `config/settings.local.yaml`; its other numbers are in the `dev:` section of
+`config/settings.yaml`.
+
+To work on the page itself, `npm run dev` in `dev_ui/` serves it at http://localhost:5173/dev/
+(`dev.vite_port`) and changes show up as you save (the server must be running too). More in [dev_ui/README.md](dev_ui/README.md).
 
 ---
 
@@ -406,7 +439,8 @@ desk-talk/
 │   │   ├── detector/         #     YOLO on this computer (Ultralytics)
 │   │   ├── llm/              #     the AI (Gemini / OpenAI / Groq / Ollama), with time limits, retries and a breaker
 │   │   ├── picture/          #     OpenCV: the picture tools, and the drawing on the live view
-│   │   └── storage/          #     the event log files and small JSON files (preferences, habit days)
+│   │   ├── storage/          #     the event log files and small JSON files (preferences, habit days)
+│   │   └── dev/              #     for the developer page: the test runner, the read-only database and data folder
 │   ├── runtime/              #   Supervisor (starts crashed background jobs again), Scheduler, clock, logging
 │   ├── web/                  #   FastAPI: app.py, routers/ (one file per area), schemas.py, serve.py (uvicorn)
 │   └── util.py               #   small helpers
@@ -417,6 +451,7 @@ desk-talk/
 ├── benchmarks/               # times YOLO models on your Mac and on the Pi, to pick the Pi's model
 ├── web_app/                  # the app you open at localhost:5000 (HTML / CSS / JS, art, fonts)
 ├── phone_camera/             # the page a phone opens to be the camera instead of the Pi
+├── dev_ui/                   # the developer page at localhost:5000/dev/ (Vite + React + TypeScript; dev_ui/README.md)
 ├── models/                   # YOLO model files (downloaded, not uploaded)
 ├── tests/                    # unit, contracts, integration, characterization, slow, docker, e2e; fakes/, e2e_kit/
 ├── scripts/                  # download_models.py, camera_preview.py, yolo_webcam_detect.py, capture_app_screenshots.py

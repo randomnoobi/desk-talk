@@ -6,6 +6,8 @@ What the routes share:
     Streams        the open live streams (desktalk/web/streams.py)
     FromHere       True when the request comes from this computer (the Pi command and the phone link are
                    only shown there, not to every device on the Wi-Fi)
+    DevOnly        403 unless the request comes from this computer and, when it says which page sent it
+                   (Origin), from the server's own page or the Vite dev server's (the developer page's routes)
     key_check(...) 403 unless the request carries the pairing key in X-Desk-Key
 """
 
@@ -46,6 +48,27 @@ App = Annotated[DeskTalk, Depends(_desktalk)]
 ShownLinks = Annotated[Links, Depends(_links)]
 Streams = Annotated[LiveStreams, Depends(_streams)]
 FromHere = Annotated[bool, Depends(_from_here)]
+
+
+def _own_pages(app: DeskTalk) -> set[str]:
+    """The pages that may use the developer page's routes: this server's own, and the Vite dev server's."""
+    web, vite = app.config.web.port, app.config.dev.vite_port
+    return {f'http://localhost:{web}', f'http://127.0.0.1:{web}', f'http://localhost:{vite}'}
+
+
+def dev_only(request: Request, app: App) -> None:
+    """403 for a request from another device on the network, or one a web page from somewhere else sent
+    (a browser always says which page sent a POST, in Origin), so no other page open in your browser can start
+    a test run or a query. The main server lets any page ask (CORS *); this is on top of that."""
+    words = app.config.prompts.dev
+    if not _from_here(request):
+        raise HTTPException(403, words.other_computer)
+    origin = request.headers.get('origin')
+    if origin is not None and origin not in _own_pages(app):
+        raise HTTPException(403, words.other_web_page)
+
+
+DevOnly = Depends(dev_only)
 
 
 def key_check(problem: str) -> Callable[[Request, DeskTalk], None]:
@@ -105,5 +128,5 @@ def camera_index(app: DeskTalk) -> int:
     return cameras[0] if cameras else 0
 
 
-__all__ = ['App', 'FromHere', 'ShownLinks', 'Streams', 'camera_index', 'other_camera', 'key_check', 'list_size',
-           'read_upload', 'today', 'uptime_sec']
+__all__ = ['App', 'DevOnly', 'FromHere', 'ShownLinks', 'Streams', 'camera_index', 'dev_only', 'other_camera',
+           'key_check', 'list_size', 'read_upload', 'today', 'uptime_sec']

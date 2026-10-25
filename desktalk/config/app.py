@@ -680,7 +680,9 @@ class DevSettings(_Section):
     output_keep_kb: PositiveInt
     sql_max_rows: PositiveInt
     sql_timeout_sec: PositiveNumber
+    sql_check_every_steps: PositiveInt
     file_preview_kb: PositiveInt
+    flicker_flips_per_min: Count
     health: DevHealthLimits
 
 

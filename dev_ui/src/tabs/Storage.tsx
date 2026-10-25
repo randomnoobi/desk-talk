@@ -16,7 +16,7 @@ const MB = 1024 * 1024
 export default function Storage(props: { settings: DevSettings }): JSX.Element {
   return (
     <div className="stack">
-      <InThisBrowser />
+      <InThisBrowser webPort={props.settings.web_port} />
       <OnThisComputer settings={props.settings} />
       <OnThePi settings={props.settings} />
     </div>
@@ -39,7 +39,7 @@ function readAll(): BrowserKey[] {
   return store ? readBrowserStorage(store) : []
 }
 
-function InThisBrowser(): JSX.Element {
+function InThisBrowser(props: { webPort: number }): JSX.Element {
   const [rows, setRows] = useState<BrowserKey[]>(readAll)
   const [picked, setPicked] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -60,7 +60,7 @@ function InThisBrowser(): JSX.Element {
   }
 
   // npm run dev sends a development build of the page, so this tells us where the page came from.
-  const where = whereThisPageIs(window.location, import.meta.env.DEV)
+  const where = whereThisPageIs(window.location, import.meta.env.DEV, props.webPort)
   const shown = rows.find(r => r.key === picked)
 
   return (

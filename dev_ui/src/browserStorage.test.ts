@@ -82,15 +82,16 @@ describe('deleting a key', () => {
 
 describe('whereThisPageIs', () => {
   it('says the page shares the app page\'s storage when the server sent it', () => {
-    const where = whereThisPageIs({ origin: 'http://localhost:5000', protocol: 'http:', hostname: 'localhost' }, false)
+    const where = whereThisPageIs({ origin: 'http://localhost:5000', protocol: 'http:', hostname: 'localhost' }, false, 5000)
     expect(where.sharesWithApp).toBe(true)
     expect(where.words).toContain('http://localhost:5000/')
   })
 
-  it('says where to open it under npm run dev, using this address, not a fixed port', () => {
-    const where = whereThisPageIs({ origin: 'http://localhost:6123', protocol: 'http:', hostname: 'localhost' }, true)
+  it('says where to open it under npm run dev, using this address and settings → web.port', () => {
+    const where = whereThisPageIs({ origin: 'http://localhost:6123', protocol: 'http:', hostname: 'localhost' }, true, 5123)
     expect(where.sharesWithApp).toBe(false)
     expect(where.words).toContain('http://localhost:6123')
-    expect(where.words).toContain('http://localhost:<web.port>/dev/')
+    expect(where.words).toContain('http://localhost:5123/dev/')
+    expect(where.words).not.toContain('<web.port>')
   })
 })

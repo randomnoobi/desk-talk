@@ -1,0 +1,10 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "run_id": "str"
+  },
+  "request": "POST /api/dev/runs (main server, fresh desk)"
+}

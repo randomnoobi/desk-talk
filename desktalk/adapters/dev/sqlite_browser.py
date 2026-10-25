@@ -23,9 +23,9 @@ from desktalk.ports import Clock
 
 # What a typed query may make SQLite do: read tables, call functions, and run SELECTs (WITH RECURSIVE too).
 _ALLOWED = frozenset({sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ, sqlite3.SQLITE_FUNCTION, sqlite3.SQLITE_RECURSIVE})
-# How often (in SQLite's own small steps) a running query checks the time. Not a setting: it only changes
-# how close to dev.sql_timeout_sec a query gets stopped, by far less than a millisecond.
-_CHECK_EVERY_STEPS = 1000
+# What SQLite says when a query was refused (the authorizer said no) or tried to write to the read-only file:
+# those get the "opened read-only" words; any other mistake gets SQLite's own words.
+_REFUSED = frozenset({sqlite3.SQLITE_AUTH, sqlite3.SQLITE_READONLY})
 # Python's sqlite3 says this when it is handed more than one statement.
 _TWO_STATEMENTS = 'one statement'
 
@@ -43,13 +43,15 @@ class SqliteBrowser:
 
     files: each database's name and file, e.g. {'object_states': config.resolve(config.object_states.database)}.
     max_rows, timeout_sec: settings → dev.sql_max_rows and dev.sql_timeout_sec.
+    check_every_steps: settings → dev.sql_check_every_steps, how often a running query looks at the clock.
     words: config/prompts.yaml → dev, for the refusals."""
 
     def __init__(self, files: Mapping[str, Path], max_rows: int, timeout_sec: float, clock: Clock,
-                 words: DevWords):
+                 words: DevWords, *, check_every_steps: int):
         self._files = {name: Path(path) for name, path in files.items()}
         self._max_rows = max_rows
         self._timeout_sec = timeout_sec
+        self._check_every_steps = check_every_steps
         self._clock = clock
         self._words = words
 
@@ -80,7 +82,7 @@ class SqliteBrowser:
         try:
             with closing(self._open(path)) as connection:
                 connection.set_authorizer(_only_reading)
-                connection.set_progress_handler(out_of_time, _CHECK_EVERY_STEPS)
+                connection.set_progress_handler(out_of_time, self._check_every_steps)
                 cursor = connection.execute(text)
                 if cursor.description is None:          # only a comment, or nothing at all
                     raise QueryRefused(self._words.query_not_one_statement)
@@ -89,11 +91,13 @@ class SqliteBrowser:
         except sqlite3.ProgrammingError as error:
             if _TWO_STATEMENTS in str(error):
                 raise QueryRefused(self._words.query_not_one_statement) from error
-            raise QueryRefused(self._words.query_refused.format(reason=error)) from error
+            raise QueryRefused(self._words.query_failed.format(reason=error)) from error
         except sqlite3.Error as error:
             if took_too_long:
                 raise QueryRefused(self._words.query_timed_out.format(seconds=self._timeout_sec)) from error
-            raise QueryRefused(self._words.query_refused.format(reason=error)) from error
+            if getattr(error, 'sqlite_errorcode', None) in _REFUSED:
+                raise QueryRefused(self._words.query_refused.format(reason=error)) from error
+            raise QueryRefused(self._words.query_failed.format(reason=error)) from error
         return QueryResult(columns=columns, rows=tuple(rows[:self._max_rows]),
                            truncated=len(rows) > self._max_rows,
                            took_ms=(self._clock.monotonic() - started) * 1000)

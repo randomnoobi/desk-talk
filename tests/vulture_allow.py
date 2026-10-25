@@ -9,24 +9,20 @@ from typing import Any, cast
 
 from uvicorn import Server
 
+from desktalk.adapters.dev import pytest_report
 from desktalk.config import (
-    AppConfig,
-    DevCheck,
     DevHealthLimits,
-    DevSettings,
     LensWaits,
-    ObjectStatesSettings,
     RiskWeights,
     VisionNudgeRepeats,
 )
 from desktalk.config.habits import _ComputerZone
-from desktalk.config.prompts import ByCamera, DevWords, HabitAreas, Prompts
+from desktalk.config.prompts import ByCamera, HabitAreas
 from desktalk.core.habits.habit_days import HabitDay
 from desktalk.core.habits.sun_times import SunTimes
 from desktalk.core.habits.tracker import DayTimes
-from desktalk.domain.dev import DataFile, QueryResult, RunStatus, SmoothingStep, StepStatus, TableInfo, TestItem
+from desktalk.domain.dev import DataFile, QueryResult, RunStatus, SmoothingStep
 from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent, NudgeSent
-from desktalk.ports import DatabaseBrowser, DataFiles, SmoothingTraceView, TestRunner
 from desktalk.web.schemas import PhoneSettings, PreferenceChanges, UiPage, UiSettings
 from desktalk_shared.wire import PiHealth
 
@@ -72,26 +68,12 @@ _ = (
 # interfaces. Task 1 of the plan adds them; Tasks 2 to 6 use them (the test runner, the database browser, the data
 # folder viewer, the smoothing trace and the /api/dev routes). Take a name off once its task uses it.
 _developer_page = (
-    # Settings (config/settings.yaml → dev:, object_states.trace_pictures): used by Tasks 2 to 6.
-    AppConfig.dev, ObjectStatesSettings.trace_pictures, DevCheck.command,
-    DevSettings.ui_folder, DevSettings.vite_port, DevSettings.poll_sec, DevSettings.test_command,
-    DevSettings.collect_markers, DevSettings.run_timeout_min, DevSettings.output_keep_kb, DevSettings.sql_max_rows,
-    DevSettings.sql_timeout_sec, DevSettings.file_preview_kb,
+    # pytest calls a plugin's hooks by name: desktalk/adapters/dev/pytest_report.py, loaded with -p.
+    pytest_report.pytest_runtest_logreport,
+    # Sent to the developer page whole (GET /api/dev/settings → health, with model_dump()), read by dev_ui/.
     DevHealthLimits.pi_cpu_warn_c, DevHealthLimits.pi_cpu_bad_c, DevHealthLimits.pi_disk_warn_mb,
     DevHealthLimits.detect_warn_ms,
-    # Wording (config/prompts.yaml → dev:): used by Tasks 2, 3, 4 and 6.
-    Prompts.dev, DevWords.run_already_going, DevWords.other_computer, DevWords.other_web_page,
-    DevWords.outside_data_folder, DevWords.is_a_folder, DevWords.no_such_file, DevWords.database_file,
-    DevWords.unknown_test, DevWords.unknown_run, DevWords.unknown_database, DevWords.query_not_one_statement,
-    DevWords.query_refused, DevWords.query_timed_out, DevWords.not_built,
-    # Plain data (desktalk/domain/dev.py): filled in by Tasks 2 to 5, sent as JSON by Task 6.
-    TestItem.markers, StepStatus.exit_code, RunStatus.run_id, RunStatus.finished, RunStatus.output,
+    # Plain data the /api/dev routes send as JSON (dataclasses.asdict) and only dev_ui/ reads.
     RunStatus.output_end, SmoothingStep.votes_yes, SmoothingStep.votes_total, SmoothingStep.waiting_sec,
-    TableInfo.columns, TableInfo.sql, QueryResult.truncated, QueryResult.took_ms, DataFile.modified,
-    DataFile.is_folder,
-    # Interfaces (desktalk/ports.py): made real by Tasks 2 to 5, called by Task 6's routes. The last two are
-    # argument names that nothing reads yet.
-    TestRunner.collect, TestRunner.start_check, TestRunner.start_tests, DatabaseBrowser.databases,
-    DatabaseBrowser.tables, DatabaseBrowser.query, DataFiles.preview, SmoothingTraceView.traced_labels,
-    SmoothingTraceView.trace, cast(Any, TestRunner).output_from, cast(Any, DatabaseBrowser).db,
+    QueryResult.truncated, QueryResult.took_ms, DataFile.modified,
 )

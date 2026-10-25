@@ -33,6 +33,7 @@ from typing import Any
 
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource, make_pair_key
 from desktalk.adapters.detector import UltralyticsDetector
+from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser
 from desktalk.adapters.llm import OpenAICompatibleChatModel, ResilientChatModel
 from desktalk.adapters.picture import DeskPainter, OpenCvPictureTools
 from desktalk.adapters.storage import EventLog, JsonFileStore, SqliteStateStore
@@ -70,6 +71,8 @@ from desktalk.ports import (
     ChatModel,
     ChatReplies,
     Clock,
+    DatabaseBrowser,
+    DataFiles,
     DeskRulesView,
     DeskScene,
     DeskStatus,
@@ -83,7 +86,6 @@ from desktalk.ports import (
     KeyValueStore,
     LivePictures,
     LostItemsView,
-    ObjectStates,
     ObjectStateStore,
     PeriodicWorker,
     PhoneControls,
@@ -96,6 +98,8 @@ from desktalk.ports import (
     RosterList,
     SafetyBoard,
     ScheduledJobs,
+    TestRunner,
+    TracedObjectStates,
     VisionHabitsView,
 )
 from desktalk.runtime import Scheduler, Supervisor, SystemClock, plain_error, setup_logging
@@ -135,7 +139,8 @@ class DeskTalk:
     detector          object detection on this computer: label (/api/live)
     producer          camera pictures → events: pictures_analysed, last_detect_ms (yolo_ms), problem (/api/health)
     object_states     present / absent for each object on the desk: snapshot() and changes() (the person is the
-                      switch), save_snapshot() (the scheduler and stop())
+                      switch), save_snapshot() (the scheduler and stop()), and each object's last pictures of
+                      smoothing: traced_labels() and trace() (/api/dev/smoothing)
     state_store       the SQLite file the object states are saved in (settings → object_states.database)
     roster            who's in the chat: snapshot() and member_ids() (/api/agents, /api/live)
     desk_status       camera_connected(), warm(), reminders_ready() ... (/api/live, /api/health)
@@ -158,6 +163,11 @@ class DeskTalk:
     started_at        when the app was built (how long it has been running)
     keepalive         keeps Ollama's model loaded (None for a cloud AI)
     log_file          the log file (None when build() didn't set up logging)
+    test_runner       the developer page's tests and checks: collect(), start_check(), start_tests(), status(),
+                      stop() (/api/dev/tests, /api/dev/runs...); close() at stop()
+    databases         the developer page's read-only look inside the databases (/api/dev/db...)
+    data_files        what's in the data folder, read-only (/api/dev/files...)
+                      (these three are None when settings → dev.enabled is false)
     """
 
     config: AppConfig
@@ -184,7 +194,7 @@ class DeskTalk:
     photos: PhotoTaker
     detector: Detector
     producer: DetectionStats
-    object_states: ObjectStates
+    object_states: TracedObjectStates
     state_store: ObjectStateStore
     roster: RosterList
     desk_status: DeskStatus
@@ -205,6 +215,9 @@ class DeskTalk:
     started_at: float
     keepalive: PeriodicWorker | None = None
     log_file: Path | None = None
+    test_runner: TestRunner | None = None
+    databases: DatabaseBrowser | None = None
+    data_files: DataFiles | None = None
 
     @property
     def source_kind(self) -> str:
@@ -237,14 +250,16 @@ class DeskTalk:
         log.info('Desk Talk started: %s', ', '.join(job.name for job, _ in self.background_jobs()))
 
     def stop(self, timeout: float | None = None) -> list[str]:
-        """Stop everything, in this order: the background jobs; the events still waiting are handled; the object
-        states are saved; today's habits are saved; the event log is compacted; the event stream is closed (and
-        a webcam let go); the object states database is closed.
+        """Stop everything, in this order: the background jobs and a developer page test run still going; the
+        events still waiting are handled; the object states are saved; today's habits are saved; the event log
+        is compacted; the event stream is closed (and a webcam let go); the object states database is closed.
         A step that fails is logged and the rest still happen. `timeout`: how long to wait for each job
         (settings → supervisor.stop_wait_sec when not given). Returns the names of jobs and event consumers
         still busy after their wait (their threads don't keep the app from closing)."""
         wait = self.config.supervisor.stop_wait_sec if timeout is None else timeout
         still_running = self.supervisor.stop(wait)
+        if self.test_runner is not None:
+            self._shutdown_step('stop the test run', self.test_runner.close)
         if not self.bus.wait_idle(wait):
             log.warning('Some events were still waiting when Desk Talk stopped')
         self._shutdown_step('save the object states', lambda: self.object_states.save_snapshot(self.clock.now()))
@@ -304,7 +319,8 @@ def make_detector(config: AppConfig) -> UltralyticsDetector:
 def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector | None = None,
           client_factory: Callable[..., Any] | None = None, source: FrameSource | None = None,
           data_folder: Path | None = None, config_store: KeyValueStore | None = None, pair_key: str | None = None,
-          synchronous_events: bool = False, set_up_logging: bool = True) -> DeskTalk:
+          synchronous_events: bool = False, set_up_logging: bool = True,
+          test_runner: TestRunner | None = None) -> DeskTalk:
     """Every part of Desk Talk, connected. Nothing runs until start().
 
     The keyword arguments are for tests; left out, the real things are made from `config`:
@@ -320,7 +336,9 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         pair_key            the key in settings → camera.pair_key_file (made and saved the first time)
         synchronous_events  the event stream hands each event to its consumers right inside publish(),
                             with no threads, so tests are exact
-        set_up_logging      log to the terminal and to the log folder (settings → logging)"""
+        set_up_logging      log to the terminal and to the log folder (settings → logging)
+        test_runner         the developer page's test runner (PytestRunner on this project), when settings →
+                            dev.enabled is on"""
     clock = clock or SystemClock()
 
     def data_path(path: Path) -> Path:
@@ -431,6 +449,20 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     supervisor = Supervisor(clock, first_retry_sec=config.supervisor.restart_start_sec,
                             max_retry_sec=config.supervisor.restart_max_sec)
 
+    # ── the developer page's tools (only when settings → dev.enabled) ──
+    dev = config.dev
+    databases = data_files = None
+    if dev.enabled:
+        if test_runner is None:
+            test_runner = PytestRunner(dev, config.prompts.dev, config.root, clock,
+                                       stop_wait_sec=config.supervisor.stop_wait_sec)
+        databases = SqliteBrowser({'object_states': data_path(config.object_states.database)},
+                                  max_rows=dev.sql_max_rows, timeout_sec=dev.sql_timeout_sec, clock=clock,
+                                  words=config.prompts.dev, check_every_steps=dev.sql_check_every_steps)
+        data_files = DataFolder(data_path(config.storage.folder), dev.file_preview_kb * 1024, words=config.prompts.dev)
+    else:
+        test_runner = None
+
     return DeskTalk(
         config=config, clock=clock, live_pictures=live_pictures, scene=scene, safety_board=safety_board,
         character_memory=character_memory, photo_album=photo_album, bus=bus, event_log=event_log, store=store,
@@ -441,4 +473,5 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         desk_status=desk_status, habits=habits, ai=ai, model=model, hub=hub, generator=generator,
         rule_runner=rule_runner, reminders=reminders, lens=lens, idle_chat=idle_chat,
         lost_items=lost_items, vision_habits=vision_habits, daily_summary=daily_summary, scheduler=scheduler,
-        supervisor=supervisor, started_at=clock.now(), keepalive=ai.keepalive_worker(), log_file=log_file)
+        supervisor=supervisor, started_at=clock.now(), keepalive=ai.keepalive_worker(), log_file=log_file,
+        test_runner=test_runner, databases=databases, data_files=data_files)

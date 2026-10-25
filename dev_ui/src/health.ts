@@ -1,8 +1,12 @@
 // The System tab's rows: how the Pi and every part of the app are doing, each with a level
-// (ok, warn, bad, or off when not in use). The limits come from settings → dev.health.
+// (ok, warn, bad, or off when not in use). The limits come from settings → dev.health, plus
+// settings → camera.disconnect_after_sec for the last picture.
 import type { Health, HealthLimits, LogStatus, PiStatus } from './api'
 import { formatAgo, formatBytes, formatSeconds } from './format'
 import type { Level } from './ui'
+
+/** settings → dev.health, plus settings → camera.disconnect_after_sec: no picture for this long = red. */
+export type RowLimits = HealthLimits & { disconnect_after_sec: number }
 
 export interface Row {
   group: string
@@ -49,7 +53,7 @@ const rate = (n: number) => String(Number(n.toFixed(1)))
 const ms = (n: number) => `${Math.round(n)} ms`
 const notSent: [string, Level] = ['not sent yet', 'off']
 
-function piRows(health: Health, pi: PiStatus | null, limits: HealthLimits, now: number,
+function piRows(health: Health, pi: PiStatus | null, limits: RowLimits, now: number,
                 before: Seen | null): Row[] {
   const group = 'Pi'
   if (pi === null) {
@@ -58,6 +62,7 @@ function piRows(health: Health, pi: PiStatus | null, limits: HealthLimits, now: 
   }
   const { connected, pictures_received } = health.camera
   const seen = remember(before, health, now)
+  const pictureAge = seen.lastPictureAt === null ? null : now - seen.lastPictureAt
   const cells: Record<(typeof PI_ROWS)[number], [string, Level]> = {
     connected: connected ? ['yes', 'ok'] : ['no', 'bad'],
     'pictures per second': (() => {
@@ -66,11 +71,11 @@ function piRows(health: Health, pi: PiStatus | null, limits: HealthLimits, now: 
       if (r === null) return ['working it out…', 'off']
       return [rate(r), r > 0 ? 'ok' : 'warn']
     })(),
-    // How old the newest picture is, as this page saw it come in. The red comes from the server's own
-    // "connected" answer, which uses settings → camera.disconnect_after_sec.
+    // How old the newest picture is, as this page saw it come in. Red when it's older than
+    // settings → camera.disconnect_after_sec, or when the server itself says the camera isn't connected.
     'last picture': [
       seen.lastPictureAt !== null ? formatAgo(seen.lastPictureAt, now) : connected ? 'recently' : 'none lately',
-      connected ? 'ok' : 'bad',
+      !connected || (pictureAge !== null && pictureAge > limits.disconnect_after_sec) ? 'bad' : 'ok',
     ],
     detector: pi.detector === null ? ['no picture yet', 'off']
       : pi.detector === 'off' ? [pi.detector_reason ? `off: ${pi.detector_reason}` : 'off', 'off']
@@ -162,7 +167,7 @@ function aiRows(health: Health): Row[] {
  * Every row of the System tab, in order. `now` is seconds since 1970. `before` is what the poll before
  * saw (from remember()); without it, the "per second" numbers wait for the next poll.
  */
-export function healthRows(health: Health, logStatus: LogStatus, limits: HealthLimits, now: number,
+export function healthRows(health: Health, logStatus: LogStatus, limits: RowLimits, now: number,
                            before: Seen | null = null): Row[] {
   return [
     ...piRows(health, health.pi, limits, now, before),

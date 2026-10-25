@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { Health, HealthLimits, LogStatus, PiStatus } from './api'
-import { healthRows, remember, type Row } from './health'
+import type { Health, LogStatus, PiStatus } from './api'
+import { healthRows, remember, type Row, type RowLimits } from './health'
 
-const limits: HealthLimits = { pi_cpu_warn_c: 70, pi_cpu_bad_c: 80, pi_disk_warn_mb: 1000, detect_warn_ms: 500 }
+const limits: RowLimits = {
+  pi_cpu_warn_c: 70, pi_cpu_bad_c: 80, pi_disk_warn_mb: 1000, detect_warn_ms: 500, disconnect_after_sec: 3,
+}
 const NOW = 1_800_000_000
 
 function pi(over: Partial<PiStatus> = {}): PiStatus {
@@ -112,6 +114,16 @@ describe('healthRows', () => {
     expect(still.lastPictureAt).toBe(NOW + 5)
     expect(row(healthRows(health({ camera: { source: 'pi', connected: true, fps: 3, pictures_received: 301 } }),
                           log, limits, NOW + 9, seen), 'Pi', 'last picture').value).toBe('4 s ago')
+  })
+
+  it('turns the last picture red once it is older than settings → camera.disconnect_after_sec', () => {
+    const before = remember(null, health(), NOW)
+    const newer = health({ camera: { source: 'pi', connected: true, fps: 3, pictures_received: 301 } })
+    const seen = remember(before, newer, NOW + 5)
+    expect(row(healthRows(newer, log, limits, NOW + 7, seen), 'Pi', 'last picture').level).toBe('ok')
+    expect(row(healthRows(newer, log, limits, NOW + 9, seen), 'Pi', 'last picture').level).toBe('bad')
+    expect(row(healthRows(newer, log, { ...limits, disconnect_after_sec: 10 }, NOW + 9, seen), 'Pi', 'last picture').level)
+      .toBe('ok')
   })
 
   it('lists jobs, timed jobs, the event log and the AI', () => {

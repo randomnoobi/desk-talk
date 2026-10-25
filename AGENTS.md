@@ -17,6 +17,7 @@ How it got this way (history, finished): the refactor, [docs/plans/2026-10-21-re
 - Lint: `uv run ruff check <files you changed>`. Old files may still have ruff errors, so don't fix files you didn't touch. Just don't add new errors. Don't run `ruff format`.
 - Types: `uv run pyright` must show 0 errors. `pyrightconfig.json`'s `ignore` list only shrinks: fix a file and take it off; never add one.
 - Dead code: `uv run vulture` must print nothing. A name it can't see being used goes in `tests/vulture_allow.py`, with what uses it.
+- The developer page (`dev_ui/`, TypeScript): run `npm test` and `npm run build` in `dev_ui/` when you change it. It keeps no numbers of its own: they come from `GET /api/dev/settings`. A new `/api/dev` route needs a characterization case like any other route.
 - Show the test, ruff, pyright and vulture output. Don't just say they passed.
 
 ## Config, not code

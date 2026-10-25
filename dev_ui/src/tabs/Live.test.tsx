@@ -17,6 +17,9 @@ const settings: DevSettings = {
   trace_pictures: 90,
   sql_max_rows: 500,
   data_folder: 'data',
+  disconnect_after_sec: 3,
+  web_port: 5000,
+  flicker_flips_per_min: 4,
   object_states: { on_confidence: 0.5, off_confidence: 0.4, appear_sec: 3, gone_sec: 3, window_pictures: 5, vote_share: 0.5 },
 }
 
@@ -78,5 +81,15 @@ describe('Live tab', () => {
     const card = await screen.findByRole('group', { name: 'cup' })
     expect(await within(card).findByText('flickering')).toBeInTheDocument()
     expect(within(screen.getByRole('group', { name: 'pen/pencil' })).queryByText('flickering')).not.toBeInTheDocument()
+  })
+
+  it('takes the flicker limit from settings', async () => {
+    const flips = ['appeared', 'removed', 'appeared'] as const
+    vi.mocked(getStates).mockResolvedValue({
+      ...states, changes: flips.map((change, i) => ({ ts: now - 50 + i * 5, label: 'cup', change })),
+    })
+    render(<Live settings={{ ...settings, flicker_flips_per_min: 2 }} />)
+    const card = await screen.findByRole('group', { name: 'cup' })
+    expect(await within(card).findByText('flickering')).toHaveAttribute('title', 'More than 2 flips in the last minute')
   })
 })

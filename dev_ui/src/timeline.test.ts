@@ -26,10 +26,16 @@ describe('flipsPerMinute', () => {
     expect(flipsPerMinute(changes, 'cup', 1000)).toBe(1)
   })
 
-  it('calls more than 4 flips in a minute flickering', () => {
+  it('calls more than the limit of flips in a minute flickering', () => {
     const four = [cup(950, 'appeared'), cup(955, 'removed'), cup(960, 'appeared'), cup(965, 'removed')]
-    expect(isFlickering(four, 'cup', 1000)).toBe(false)
-    expect(isFlickering([...four, cup(970, 'appeared')], 'cup', 1000)).toBe(true)
+    expect(isFlickering(four, 'cup', 1000, 4)).toBe(false)
+    expect(isFlickering([...four, cup(970, 'appeared')], 'cup', 1000, 4)).toBe(true)
+  })
+
+  it('takes the limit it is given (settings → dev.flicker_flips_per_min), not a fixed one', () => {
+    const three = [cup(950, 'appeared'), cup(955, 'removed'), cup(960, 'appeared')]
+    expect(isFlickering(three, 'cup', 1000, 2)).toBe(true)
+    expect(isFlickering(three, 'cup', 1000, 3)).toBe(false)
   })
 })
 

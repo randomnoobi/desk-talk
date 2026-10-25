@@ -30,7 +30,8 @@ class FakeTestRunner:
     """Knows the tests in `items` and runs nothing: a run finishes as soon as status() is called.
 
     `results`: test id → its outcome (a test not in it passes). `checks`: each "Run everything" step's name →
-    the exit code it finishes with. `started` records every run started, as ('check', []) or ('tests', ids)."""
+    the exit code it finishes with. `started` records every run started, as ('check', []) or ('tests', ids);
+    `closed` says close() was called."""
 
     def __init__(self, items: Sequence[TestItem] = (), results: Mapping[str, TestOutcome] | None = None,
                  checks: Mapping[str, int] | None = None, clock: FakeClock | None = None):
@@ -39,6 +40,7 @@ class FakeTestRunner:
         self.checks = dict(checks if checks is not None else {'Fast tests': 0})
         self.clock = clock or FakeClock()
         self.started: list[tuple[str, list[str]]] = []
+        self.closed = False                         # close() was called (the app stopped)
         self._known: set[str] = set()
         self._runs: dict[str, RunStatus] = {}
         self._asked: dict[str, list[str]] = {}
@@ -75,6 +77,11 @@ class FakeTestRunner:
             output = run.output + 'stopped\n'
             self._runs[run_id] = replace(run, state='stopped', finished=self.clock.now(), steps=steps,
                                          output=output, output_end=len(output))
+
+    def close(self) -> None:
+        self.closed = True
+        for run_id in list(self._runs):
+            self.stop(run_id)
 
     def _refuse_while_running(self) -> None:
         if any(run.state == 'running' for run in self._runs.values()):

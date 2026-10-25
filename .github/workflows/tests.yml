@@ -1,6 +1,8 @@
 # Lint, type check, dead code check and fast tests on every push and pull request.
 # No network, API keys, camera, Pi, Docker or browser needed: the slow (real YOLO), docker and e2e (browser)
 # tests are skipped. --cov makes the run fail if the tests cover less than fail_under in pyproject.toml.
+# The `page` job runs the developer page's own tests and builds it (dev_ui/, with Node 22), the same way
+# as `npm test` and `npm run build` there.
 name: Tests
 
 on:
@@ -22,3 +24,19 @@ jobs:
       - run: uv run pyright
       - run: uv run vulture
       - run: uv run pytest -m "not slow and not docker and not e2e" --cov
+
+  page:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dev_ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dev_ui/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build

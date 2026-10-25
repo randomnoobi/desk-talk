@@ -10,6 +10,9 @@ const SETTINGS: DevSettings = {
   trace_pictures: 90,
   sql_max_rows: 500,
   data_folder: '/tmp/data',
+  disconnect_after_sec: 3,
+  web_port: 5000,
+  flicker_flips_per_min: 4,
   object_states: { on_confidence: 0.5, off_confidence: 0.3, appear_sec: 2, gone_sec: 5, window_pictures: 5, vote_share: 0.6 },
 }
 

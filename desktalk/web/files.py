@@ -5,19 +5,23 @@ scripts and SVG drawings.
 
     app.mount('/', PageFiles(directory=folder))     # every file in a folder
     page(folder / 'index.html')                     # one file
+    app.mount('/dev', BuiltPage(folder, not_built='...'))   # a page a build step makes (dev_ui/ → npm run build)
 """
 
 from __future__ import annotations
 
+import html
 import mimetypes
 import os
 from pathlib import Path
 
-from starlette.responses import FileResponse, Response
+from starlette.responses import FileResponse, HTMLResponse, Response
 from starlette.staticfiles import StaticFiles
-from starlette.types import Scope
+from starlette.types import Receive, Scope, Send
 
 NO_CACHE = 'no-cache'
+INDEX = 'index.html'
+FRONT_PAGE = ('', '.', INDEX)       # what StaticFiles calls the folder's own address (/dev/)
 UTF8_TYPES = ('application/javascript', 'application/json', 'application/xml')
 
 
@@ -42,3 +46,22 @@ class PageFiles(StaticFiles):
         if isinstance(response, FileResponse):
             response.headers['Content-Type'] = media_type(full_path)
         return response
+
+
+class BuiltPage(PageFiles):
+    """A page that a build step makes, e.g. the developer page (dev_ui/ → npm run build → dev_ui/dist/).
+    Until its index.html is there, its address answers `not_built` (how to build it) and every other file a 404.
+    It looks each time, so a page built while the server runs shows up without a restart."""
+
+    def __init__(self, directory: Path, *, not_built: str):
+        super().__init__(directory=directory, html=True, check_dir=False)
+        self._folder = Path(directory)
+        self._not_built = not_built
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if (self._folder / INDEX).is_file():
+            await super().__call__(scope, receive, send)
+            return
+        status = 200 if self.get_path(scope) in FRONT_PAGE else 404
+        text = f'<!DOCTYPE html>\n<meta charset="utf-8">\n<p>{html.escape(self._not_built)}</p>\n'
+        await HTMLResponse(text, status_code=status, headers={'Cache-Control': NO_CACHE})(scope, receive, send)

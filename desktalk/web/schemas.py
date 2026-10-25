@@ -100,6 +100,19 @@ class Ok(BaseModel):
     ok: bool = True
 
 
+class RunRequest(BaseModel):
+    """POST /api/dev/runs: {"check": true} for "Run everything", or {"tests": [ids]} for some tests."""
+
+    check: bool = False
+    tests: list[str] | None = None
+
+
+class QueryRequest(BaseModel):
+    """POST /api/dev/db/{name}/query"""
+
+    sql: str
+
+
 class PiFrameReply(BaseModel):
     ok: bool = True
     fps: float

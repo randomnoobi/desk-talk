@@ -586,7 +586,10 @@ dev:
   output_keep_kb: 2000          # how much of a run's printout the page can scroll back through
   sql_max_rows: 500             # a query shows at most this many rows
   sql_timeout_sec: 5            # a query running longer than this is stopped
+  sql_check_every_steps: 1000   # a running query looks at the clock every this many of SQLite's own small steps
+                                # (fewer = stopped closer to sql_timeout_sec, but a little slower)
   file_preview_kb: 64           # how much of a file the storage tab shows
+  flicker_flips_per_min: 4      # the live tab calls an object "flickering" after more flips than this in a minute
   health:                       # when the system tab turns a number amber or red
     pi_cpu_warn_c: 70           # the Pi's CPU this hot (°C) turns amber...
     pi_cpu_bad_c: 80            # ...and this hot turns red

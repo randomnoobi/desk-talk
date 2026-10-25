@@ -128,6 +128,14 @@ class PytestRunner:
         if run is not None:
             self._end(run, 'stopped')
 
+    def close(self) -> None:
+        """Stop the run still going, if any (the server is stopping). A run has its own process group, so
+        Ctrl+C on the server never reaches it: without this it would keep going after the server has gone."""
+        with self._lock:
+            run = self._run
+        if run is not None:
+            self._end(run, 'stopped')
+
     # ── starting a run ────────────────────────────────────────────
     def _start(self, what: str, steps: list[_Step], *, shows_steps: bool) -> str:
         if self._run is not None:

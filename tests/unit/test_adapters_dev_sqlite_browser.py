@@ -16,6 +16,7 @@ from tests.fakes import FakeClock
 from tests.unit.test_core_vision_kit import app_config
 
 WORDS = app_config().prompts.dev
+CHECK_EVERY_STEPS = app_config().dev.sql_check_every_steps
 NEVER_ENDS = 'WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM r) SELECT count(*) FROM r'
 
 
@@ -35,9 +36,9 @@ def db_file(tmp_path):
     return path
 
 
-def browser_for(path, *, max_rows=500, timeout_sec=5.0, clock=None):
+def browser_for(path, *, max_rows=500, timeout_sec=5.0, clock=None, check_every_steps=CHECK_EVERY_STEPS):
     return SqliteBrowser({'object_states': path}, max_rows=max_rows, timeout_sec=timeout_sec,
-                         clock=clock or FakeClock(), words=WORDS)
+                         clock=clock or FakeClock(), words=WORDS, check_every_steps=check_every_steps)
 
 
 class TestSqliteBrowserPassesDatabaseBrowserContract(DatabaseBrowserContract):
@@ -146,11 +147,26 @@ def test_a_mistake_in_the_query_is_refused_and_says_what_sqlite_said(db_file):
         browser_for(db_file).query('object_states', 'SELECT * FROM no_such_table')
 
 
+def test_a_mistake_isnt_called_a_write(db_file):
+    """A typing mistake gets the plain query_failed words, not "opened read-only" (that's for writes)."""
+    with pytest.raises(QueryRefused) as refused:
+        browser_for(db_file).query('object_states', 'SELEC 1')
+    assert str(refused.value) == WORDS.query_failed.format(reason='near "SELEC": syntax error')
+    assert str(refused.value) != WORDS.query_refused.format(reason='near "SELEC": syntax error')
+
+
 def test_a_slow_query_is_stopped(db_file):
     browser = browser_for(db_file, timeout_sec=0.2, clock=SystemClock())
     with pytest.raises(QueryRefused, match='sql_timeout_sec') as refused:
         browser.query('object_states', NEVER_ENDS)
     assert str(refused.value) == WORDS.query_timed_out.format(seconds=0.2)
+
+
+@pytest.mark.parametrize('check_every_steps', [1, 100_000])
+def test_a_slow_query_is_stopped_however_often_it_checks(db_file, check_every_steps):
+    browser = browser_for(db_file, timeout_sec=0.2, clock=SystemClock(), check_every_steps=check_every_steps)
+    with pytest.raises(QueryRefused, match='sql_timeout_sec'):
+        browser.query('object_states', NEVER_ENDS)
 
 
 def test_the_time_limit_is_per_query(db_file):

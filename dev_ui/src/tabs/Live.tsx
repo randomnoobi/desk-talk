@@ -6,7 +6,7 @@ import { getStates, getTrace, getTracedLabels, type DevSettings, type ObjectNow,
 import { formatClock, formatSeconds } from '../format'
 import SmoothingChart from '../SmoothingChart'
 import { ErrorLine, Pill, Table } from '../ui'
-import { countdown, FLICKER_FLIPS, isFlickering, mergeChanges, newestFirst, withPhases, type ChangeRow } from '../timeline'
+import { countdown, isFlickering, mergeChanges, newestFirst, withPhases, type ChangeRow } from '../timeline'
 import { usePoll } from '../usePoll'
 
 const nowSec = () => Date.now() / 1000
@@ -18,7 +18,8 @@ function StatePill(props: { state: ObjectNow['state'] }): JSX.Element {
   return <span className="pill" style={{ background: 'transparent', boxShadow: 'inset 0 0 0 1.5px var(--ink-3)' }}>UNKNOWN</span>
 }
 
-const Flickering = () => <Pill level="warn" title={`More than ${FLICKER_FLIPS} flips in the last minute`}>flickering</Pill>
+const Flickering = (props: { limit: number }) =>
+  <Pill level="warn" title={`More than ${props.limit} flips in the last minute`}>flickering</Pill>
 
 /**
  * Asks for the states, and only for the changes it hasn't got yet. The first time it asks for the
@@ -53,8 +54,9 @@ function useTrace(picked: string | null, everyMs: number) {
   return poll
 }
 
-function NowCards(props: { states: States, now: number, traced: string[], onPick: (label: string) => void }): JSX.Element {
-  const { states, now, traced, onPick } = props
+function NowCards(props: { states: States, now: number, flickerLimit: number, traced: string[],
+                           onPick: (label: string) => void }): JSX.Element {
+  const { states, now, flickerLimit, traced, onPick } = props
   const labels = Object.keys(states.objects).sort()
   if (labels.length === 0) return <p className="muted">No objects seen yet.</p>
   return (
@@ -66,7 +68,7 @@ function NowCards(props: { states: States, now: number, traced: string[], onPick
             <h3 className="mono" style={{ wordBreak: 'break-word' }}>{label}</h3>
             <div className="row">
               <StatePill state={object.state} />
-              {isFlickering(states.changes, label, now) && <Flickering />}
+              {isFlickering(states.changes, label, now, flickerLimit) && <Flickering limit={flickerLimit} />}
             </div>
             <p className="muted small" style={{ marginTop: 6 }}>
               {object.since === null ? 'since: not known' : `for ${formatSeconds(now - object.since)}`}
@@ -83,8 +85,8 @@ function NowCards(props: { states: States, now: number, traced: string[], onPick
   )
 }
 
-function Changes(props: { states: States, now: number }): JSX.Element {
-  const { states, now } = props
+function Changes(props: { states: States, now: number, flickerLimit: number }): JSX.Element {
+  const { states, now, flickerLimit } = props
   const [only, setOnly] = useState('')
   const rows = useMemo(() => newestFirst(withPhases(states.changes)), [states.changes])
   const labels = useMemo(
@@ -110,7 +112,10 @@ function Changes(props: { states: States, now: number }): JSX.Element {
         columns={[
           { label: 'Time', cell: r => <span className="mono">{formatClock(r.ts)}</span> },
           { label: 'Object', cell: r => (
-            <span className="row"><span className="mono">{r.label}</span>{isFlickering(states.changes, r.label, now) && <Flickering />}</span>
+            <span className="row">
+              <span className="mono">{r.label}</span>
+              {isFlickering(states.changes, r.label, now, flickerLimit) && <Flickering limit={flickerLimit} />}
+            </span>
           ) },
           { label: 'Change', cell: r => r.change },
           { label: 'Before → after', cell: r => `${r.before} → ${r.after}` },
@@ -170,13 +175,14 @@ export default function Live(props: { settings: DevSettings }): JSX.Element {
       <div className="card">
         <h2>Now</h2>
         <ErrorLine error={states.error} />
-        {states.data ? <NowCards states={states.data} now={now} traced={labels} onPick={setPicked} />
+        {states.data ? <NowCards states={states.data} now={now} flickerLimit={settings.flicker_flips_per_min}
+                                 traced={labels} onPick={setPicked} />
                      : !states.error && <p className="muted">Asking for the object states…</p>}
       </div>
 
       <div className="card">
         <h2>Changes</h2>
-        {states.data && <Changes states={states.data} now={now} />}
+        {states.data && <Changes states={states.data} now={now} flickerLimit={settings.flicker_flips_per_min} />}
       </div>
 
       <div className="card">

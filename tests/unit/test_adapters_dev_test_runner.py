@@ -225,6 +225,33 @@ def test_a_stopped_run_says_so(project):
     assert wait_until_finished(runner, run_id).state == 'stopped'
 
 
+def test_close_stops_the_run_and_its_process(project):
+    """The server stopping ends a run too: it has its own process group, so Ctrl+C never reaches it."""
+    (project / 'test_hangs.py').write_text(
+        'import os, pathlib, time\n'
+        '\n'
+        'def test_hangs():\n'
+        "    pathlib.Path('pid').write_text(str(os.getpid()))\n"
+        '    time.sleep(60)\n'
+    )
+    runner = make_runner(project)
+    runner.collect()
+    run_id = runner.start_tests(['test_hangs.py::test_hangs'])
+    give_up = time.monotonic() + 30
+    while not (project / 'pid').exists() or not (project / 'pid').read_text():
+        assert time.monotonic() < give_up
+        time.sleep(0.05)
+    runner.close()
+    assert runner.status(run_id, 0).state == 'stopped'
+    with pytest.raises(ProcessLookupError):
+        os.kill(int((project / 'pid').read_text()), 0)
+    runner.close()                                              # again: nothing left to stop
+
+
+def test_close_with_no_run_does_nothing(project):
+    make_runner(project).close()
+
+
 def test_the_check_runs_every_step(project):
     runner = make_runner(project)
     status = wait_until_finished(runner, runner.start_check())

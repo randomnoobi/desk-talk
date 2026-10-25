@@ -68,6 +68,12 @@ WRONG_KEY = {'X-Desk-Key': 'not-the-key'}
 TODO_LIST = {'type': 'todo', 'items': [{'text': 'Send the report', 'done': False},
                                        {'text': 'Water the plant', 'done': True}]}
 OUTLINE = [[0, 0.5], [1, 0.5], [1, 1], [0, 1]]
+# The developer page (/api/dev/..., only from this computer): the test its fake runner knows, and the pages that
+# may ask (the server's own and the Vite dev server's, settings → web.port and dev.vite_port as in git).
+DEV_TEST_ID = 'tests/unit/test_example.py::test_one'
+OTHER_PAGE = {'Origin': 'https://example.com'}
+VITE_PAGE = {'Origin': 'http://localhost:5173'}
+
 HISTORY = [{'role': 'user', 'text': 'morning!'},
            {'role': 'assistant', 'name': 'Cup', 'text': 'Morning! Drink me sometime?'}]
 
@@ -101,6 +107,8 @@ class Case:
     values: dict = field(default_factory=dict)   # dotted JSON path → exact value
     starts_with: bytes = b''              # FILE replies: the body starts with these bytes
 
+
+DEV_RUN = Step('POST', '/api/dev/runs', {'check': True})     # the developer page starts "Run everything"
 
 CASES = [
     # ── The browser app's page and files (web_app/) ──
@@ -243,6 +251,57 @@ CASES = [
     Case('rules-put-bad-outline', 'PUT', '/api/rules', 400, json={'desk_outline': 'the whole desk'}),
     Case('rules-put-empty', 'PUT', '/api/rules', 400, json={}),
     Case('ui-settings', 'GET', '/api/ui_settings', 200, values={'web.refresh_ms.live': 1500, 'lens_card.id': 'lens'}),
+
+    # ── The developer page (dev_ui/ at /dev/, and /api/dev/...) ──
+    Case('dev-page-not-built', 'GET', '/dev/', 200, desk='fresh', reply=FILE, starts_with=HTML_START),
+    Case('dev-page-not-built-file', 'GET', '/dev/assets/index.js', 404, desk='fresh', reply=STATUS),
+    Case('dev-page-no-slash', 'GET', '/dev', 307, desk='fresh', reply=STATUS),
+    Case('dev-settings', 'GET', '/api/dev/settings', 200, desk='fresh',
+         values={'checks': ['Fast tests', 'Lint', 'Types'], 'web_port': 5000, 'flicker_flips_per_min': 4}),
+    Case('dev-settings-other-computer', 'GET', '/api/dev/settings', 403, desk='fresh', from_ip=LAN_DEVICE),
+    Case('dev-settings-other-web-page', 'GET', '/api/dev/settings', 403, desk='fresh', headers=OTHER_PAGE),
+    Case('dev-states', 'GET', '/api/dev/states?since=0', 200),
+    Case('dev-states-nothing-seen', 'GET', '/api/dev/states', 200, desk='fresh'),
+    Case('dev-states-bad-since', 'GET', '/api/dev/states?since=yesterday', 400),
+    Case('dev-smoothing', 'GET', '/api/dev/smoothing', 200),
+    Case('dev-smoothing-trace', 'GET', '/api/dev/smoothing/trace?label=cup', 200, values={'label': 'cup'}),
+    Case('dev-smoothing-trace-never-seen', 'GET', '/api/dev/smoothing/trace?label=pen%2Fpencil', 200,
+         values={'label': 'pen/pencil', 'steps': []}),
+    Case('dev-smoothing-trace-no-label', 'GET', '/api/dev/smoothing/trace', 400),
+    Case('dev-tests', 'GET', '/api/dev/tests', 200, desk='fresh'),
+    Case('dev-run-check', 'POST', '/api/dev/runs', 200, desk='fresh', json={'check': True},
+         values={'run_id': 'run-1'}),
+    Case('dev-run-check-from-vite', 'POST', '/api/dev/runs', 200, desk='fresh', json={'check': True},
+         headers=VITE_PAGE),
+    Case('dev-run-check-other-web-page', 'POST', '/api/dev/runs', 403, desk='fresh', json={'check': True},
+         headers=OTHER_PAGE),
+    Case('dev-run-check-other-computer', 'POST', '/api/dev/runs', 403, desk='fresh', json={'check': True},
+         from_ip=LAN_DEVICE),
+    Case('dev-run-tests', 'POST', '/api/dev/runs', 200, desk='fresh', json={'tests': [DEV_TEST_ID]},
+         before=(Step('GET', '/api/dev/tests'),)),
+    Case('dev-run-unknown-test', 'POST', '/api/dev/runs', 400, desk='fresh', json={'tests': ['tests/x.py::nope']},
+         before=(Step('GET', '/api/dev/tests'),)),
+    Case('dev-run-nothing', 'POST', '/api/dev/runs', 400, desk='fresh', json={}),
+    Case('dev-run-already-going', 'POST', '/api/dev/runs', 409, desk='fresh', json={'check': True},
+         before=(DEV_RUN,), values={'error': 'A run is already going.'}),
+    Case('dev-run-status', 'GET', '/api/dev/runs/run-1?from=0', 200, desk='fresh', before=(DEV_RUN,),
+         values={'state': 'passed'}),
+    Case('dev-run-status-unknown', 'GET', '/api/dev/runs/run-9', 404, desk='fresh'),
+    Case('dev-run-status-bad-from', 'GET', '/api/dev/runs/run-1?from=-1', 400, desk='fresh', before=(DEV_RUN,)),
+    Case('dev-run-stop', 'POST', '/api/dev/runs/run-1/stop', 200, desk='fresh', before=(DEV_RUN,)),
+    Case('dev-db', 'GET', '/api/dev/db', 200, desk='fresh', values={'databases': ['object_states']}),
+    Case('dev-db-tables', 'GET', '/api/dev/db/object_states/tables', 200),
+    Case('dev-db-tables-unknown', 'GET', '/api/dev/db/nope/tables', 404),
+    Case('dev-db-query', 'POST', '/api/dev/db/object_states/query', 200,
+         json={'sql': 'SELECT object, type FROM events ORDER BY ts LIMIT 3'}),
+    Case('dev-db-query-writes', 'POST', '/api/dev/db/object_states/query', 400, json={'sql': 'DELETE FROM events'}),
+    Case('dev-db-query-mistake', 'POST', '/api/dev/db/object_states/query', 400, json={'sql': 'SELEC 1'}),
+    Case('dev-db-query-no-sql', 'POST', '/api/dev/db/object_states/query', 400, json={}),
+    Case('dev-db-query-unknown', 'POST', '/api/dev/db/nope/query', 404, json={'sql': 'SELECT 1'}),
+    Case('dev-files', 'GET', '/api/dev/files', 200),
+    Case('dev-files-preview-database', 'GET', '/api/dev/files/preview?path=object_states.sqlite', 200),
+    Case('dev-files-preview-outside', 'GET', '/api/dev/files/preview?path=../.env', 400),
+    Case('dev-files-preview-missing', 'GET', '/api/dev/files/preview?path=nothing-here.txt', 404),
 
     # ── The phone camera's own server (phone_camera/) ──
     Case('phone-page', 'GET', '/', 200, desk='phone', server='phone', reply=FILE, starts_with=HTML_START),

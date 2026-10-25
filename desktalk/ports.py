@@ -1034,6 +1034,10 @@ class TestRunner(Protocol):
         """Stop the run (its state becomes 'stopped'). A finished run, or one it doesn't know, is left alone."""
         ...
 
+    def close(self) -> None:
+        """Stop the run still going, if any: the app is stopping (DeskTalk.stop())."""
+        ...
+
 
 @runtime_checkable
 class DatabaseBrowser(Protocol):
@@ -1078,3 +1082,9 @@ class SmoothingTraceView(Protocol):
     def trace(self, label: str) -> list[SmoothingStep]:
         """Oldest first; [] for a label never seen."""
         ...
+
+
+@runtime_checkable
+class TracedObjectStates(ObjectStates, SmoothingTraceView, Protocol):
+    """The object states that also keep each object's last pictures of smoothing (the object state tracker):
+    what the web layer asks of DeskTalk.object_states."""

@@ -82,6 +82,9 @@ export interface DevSettings {
   trace_pictures: number
   sql_max_rows: number
   data_folder: string
+  disconnect_after_sec: number     // settings → camera.disconnect_after_sec: no picture for this long = camera is off
+  web_port: number                 // settings → web.port: the Desk Talk server's port (this page is at /dev/ on it)
+  flicker_flips_per_min: number    // settings → dev.flicker_flips_per_min: more flips than this in a minute = "flickering"
   object_states: SmoothingSettings
 }
 

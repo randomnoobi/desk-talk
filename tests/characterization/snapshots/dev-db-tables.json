@@ -1,0 +1,19 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "tables": [
+      {
+        "columns": [
+          "str"
+        ],
+        "name": "str",
+        "rows": "number",
+        "sql": "str"
+      }
+    ]
+  },
+  "request": "GET /api/dev/db/object_states/tables (main server, busy desk)"
+}

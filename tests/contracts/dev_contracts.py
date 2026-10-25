@@ -1,6 +1,6 @@
 """What the developer page's tools must do (desktalk/ports.py: TestRunner, DatabaseBrowser, DataFiles,
-SmoothingTraceView). The fakes in tests/fakes/dev.py run these in test_fakes_pass_contracts.py, and the real
-ones in test_dev_real_parts.py.
+SmoothingTraceView). The fakes in tests/fakes/dev.py run these in test_fakes_pass_contracts.py, and each real
+one in its own unit test file (tests/unit/test_adapters_dev_*.py, test_core_object_states_tracker.py).
 
 (The classes aren't named Test... so pytest only runs them through a subclass that gives the fixtures.)"""
 
@@ -108,6 +108,12 @@ class RunnerContract:
         runner.stop(run_id)
         assert wait_until_finished(runner, run_id).state in FINISHED
         wait_until_finished(runner, runner.start_check())
+
+    def test_close_stops_a_run_still_going(self, runner):
+        run_id = runner.start_tests([runner.collect()[0].id])
+        runner.close()
+        assert wait_until_finished(runner, run_id).state in FINISHED
+        runner.close()                                  # nothing going: nothing to do
 
     def test_an_unknown_run_is_a_key_error(self, runner):
         with pytest.raises(KeyError):

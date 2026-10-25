@@ -196,6 +196,7 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'dev.unknown_run': ('run_id',),
     'dev.unknown_database': ('name',),
     'dev.query_refused': ('reason',),
+    'dev.query_failed': ('reason',),
     'dev.query_timed_out': ('seconds',),
 }
 
@@ -648,10 +649,12 @@ class DevWords(_Section):
     no_such_file: str
     database_file: str
     unknown_test: str
+    nothing_to_run: str
     unknown_run: str
     unknown_database: str
     query_not_one_statement: str
     query_refused: str
+    query_failed: str
     query_timed_out: str
     not_built: str
 

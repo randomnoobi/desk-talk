@@ -4,13 +4,13 @@ Every web address (route) the Desk Talk servers answer, grouped by area: what it
 who is allowed to. The code is the source of truth; this page is a map of it. How the parts fit together
 is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-**47 routes in all: 35 on the main server, 9 on the phone camera's server, 3 on the detector service.**
+**62 routes in all: 50 on the main server (15 of them for the developer page), 9 on the phone camera's server, 3 on the detector service.**
 
 ## Three servers
 
 | Server | Where it runs | Port | What it's for |
 |---|---|---|---|
-| **Main server** | Your computer (`uv run python server.py`) | `web.port` in `config/settings.yaml`, 5000 | The app page (`web_app/`) and everything it asks for, and the Pi's uploads. |
+| **Main server** | Your computer (`uv run python server.py`) | `web.port` in `config/settings.yaml`, 5000 | The app page (`web_app/`) and everything it asks for, the Pi's uploads, and the developer page (`dev_ui/`, at `/dev/`). |
 | **Phone camera server** | Your computer, in a thread of the main one. Only runs when the phone is the camera. | `camera.phone_port`, 5443, **https** | The phone camera page (`phone_camera/`). Phones only allow the camera on https pages, so it has its own certificate. |
 | **Detector service** | The Pi, in Docker | `DETECTOR_PORT` in `raspberry_pi/detector_service/.env`, 8100; only reachable from the Pi itself | YOLO object detection for the Pi's camera program. |
 
@@ -19,8 +19,8 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 - **Main server and phone server:** `desktalk/web/app.py` builds both (`create_app`, `create_phone_app`).
   The routes are in `desktalk/web/routers/`, one file per area, and the top of each file lists its URLs.
   `routers/__init__.py` says which files belong to which server (`MAIN_SERVER`, `PHONE_SERVER`). What the
-  routes share (the pairing key check, "is this computer") is in `desktalk/web/deps.py`; what a request
-  body looks like is in `desktalk/web/schemas.py`.
+  routes share (the pairing key check, "is this computer", the developer page's `DevOnly`) is in
+  `desktalk/web/deps.py`; what a request body looks like is in `desktalk/web/schemas.py`.
 - **Detector service:** `raspberry_pi/detector_service/desktalk_detector/app.py`. The request and reply
   shapes are in `shared/desktalk_shared/detector_api.py`.
 - **Every route has a test case:** `tests/characterization/cases.py`.
@@ -40,6 +40,7 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 | **anyone on the network** | No check. The main server listens on every network this computer is on (`web.host`), so anyone on the same Wi-Fi can call these. |
 | **pairing key** | The request must carry the key in the `X-Desk-Key` header, or it gets 403. The key is made on start and printed in the Pi command and the phone link (`desktalk/web/pairing.py`). Checked by `key_check` in `deps.py`. |
 | **this computer only** | Not a block: the route answers everyone, but leaves out some parts of its reply unless the request comes from `127.0.0.1` or `::1` (`FromHere` in `deps.py`). Today only `GET /api/live` does this: the Pi command and the phone link (and its QR code) are only shown on this computer. |
+| **this computer and its own page only** | A block. A request that doesn't come from `127.0.0.1` or `::1` gets 403. So does one whose `Origin` header is set to anything but the server's own address (`http://localhost:<web.port>`, `http://127.0.0.1:<web.port>`) or `npm run dev`'s (`http://localhost:<dev.vite_port>`), so another web page open in your browser can't start a test run or a query. Checked by `DevOnly` in `deps.py`, on top of the `*` cross-origin header every reply has. Only the developer page's routes use it. |
 
 ---
 
@@ -49,7 +50,7 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 | Method | Path | What it does | Called by | Access |
 |---|---|---|---|---|
-| GET | `/api/health` | How every part is doing in one reply: background jobs, timed jobs, event consumers, camera, what the Pi said lately, detection, the AI. | Nothing in the code. People `curl` it ([raspberry_pi/README.md](../raspberry_pi/README.md)); `tests/e2e/test_full_stack.py` | anyone on the network |
+| GET | `/api/health` | How every part is doing in one reply: background jobs, timed jobs, event consumers, camera, what the Pi said lately, detection, the AI. | The developer page's System and Storage tabs (`dev_ui/src/api.ts`). People `curl` it ([raspberry_pi/README.md](../raspberry_pi/README.md)); `tests/e2e/test_full_stack.py` | anyone on the network |
 
 ### Chat (8)
 
@@ -123,7 +124,7 @@ number, kept between 1 and the most `web.list_sizes` allows; anything else is a 
 | GET | `/api/log/events` | Joins, leaves, alerts, habits ... newest first. `?types=alert,habit`. | `web_app/app.js` | anyone on the network |
 | GET | `/api/log/presence` | What was on the desk when, as intervals. | `web_app/app.js` | anyone on the network |
 | GET | `/api/log/detections` | The per-picture lines that aren't compacted yet, newest first. | `web_app/app.js` | anyone on the network |
-| GET | `/api/log/status` | The log's folder, today's counts, the timed jobs, the event stream, the camera. | `web_app/app.js` | anyone on the network |
+| GET | `/api/log/status` | The log's folder, today's counts, the timed jobs, the event stream, the camera. | `web_app/app.js`; the developer page's System tab | anyone on the network |
 | POST | `/api/log/compact` | Compact the log now (per-picture lines become intervals). | `web_app/app.js` (the Log page's button) | anyone on the network |
 
 ### Settings (3)
@@ -157,6 +158,60 @@ The Pi's camera program (`raspberry_pi/camera/`) is the only caller. Both routes
 - Errors: 400 not a JPEG or a bad `info`, 403 wrong key, 409 `camera.source` is not `pi`, 413 bigger than
   `web.pi_upload_max_mb`.
 
+### Developer page (this computer only) (15)
+
+The routes behind the developer page (`dev_ui/`, see [its README](../dev_ui/README.md)), in
+`desktalk/web/routers/dev.py`. They are only there when `dev.enabled` is on in `config/settings.yaml`;
+switched off, every one of them, and `/dev/`, is a 404. They are never on the phone server. The only caller
+is the developer page, through `dev_ui/src/api.ts`; the tab that uses each one is in the "Called by" column.
+
+| Method | Path | What it does | Called by | Access |
+|---|---|---|---|---|
+| GET | `/api/dev/settings` | The page's numbers, so it keeps no copies: how often to ask again, the checks' names, the System tab's limits, the smoothing settings, the most rows a query shows, the data folder. | The page, once when it opens | this computer and its own page only |
+| GET | `/api/dev/states` | Each object's state now, and the changes since `?since=<time>`. | Live tab | this computer and its own page only |
+| GET | `/api/dev/smoothing` | The objects that have a smoothing trace. | Live tab | this computer and its own page only |
+| GET | `/api/dev/smoothing/trace` | What the smoothing made of one object's last pictures, oldest first. `?label=pen%2Fpencil` (a query, so a label with a slash works); an object never seen gives an empty list, not an error. | Live tab | this computer and its own page only |
+| GET | `/api/dev/tests` | Every test the Checks tab lists (`dev.collect_markers`), slow ones marked. | Checks tab | this computer and its own page only |
+| POST | `/api/dev/runs` | Start a run: every step in `dev.checks`, or some tests by id. One run at a time. | Checks tab | this computer and its own page only |
+| GET | `/api/dev/runs/{run_id}` | How a run is going: its steps, each finished test, and the printout after `?from=<offset>`. | Checks tab, while a run goes | this computer and its own page only |
+| POST | `/api/dev/runs/{run_id}/stop` | Stop a run. | Checks tab (**Stop**) | this computer and its own page only |
+| GET | `/api/dev/db` | The SQLite databases' names. | Database tab | this computer and its own page only |
+| GET | `/api/dev/db/{name}/tables` | One database's tables: columns, row count, the `CREATE` line. | Database tab | this computer and its own page only |
+| POST | `/api/dev/db/{name}/query` | Run one query that only reads, on a read-only connection. | Database tab | this computer and its own page only |
+| GET | `/api/dev/files` | Every file and folder in the data folder, with sizes and dates. | Storage tab | this computer and its own page only |
+| GET | `/api/dev/files/preview` | The start of one file in the data folder (`dev.file_preview_kb`). `?path=` is relative to the folder. | Storage tab | this computer and its own page only |
+| GET | `/dev/` | The developer page (`dev_ui/dist/index.html`, from `dev.ui_folder`). Before `npm run build` has made it, a plain line saying how to build it (200). | Your browser | anyone on the network (only the page itself: what it shows comes from the routes above) |
+| GET | `/dev/{file}` | The page's other files (its script and style, the font). | Your browser | anyone on the network |
+
+- Every `/api/dev` route turns away other computers and other web pages with 403 and `{"error": ...}`
+  (the wording is in `config/prompts.yaml` under `dev:`), before anything runs.
+- `GET /api/dev/settings`: `{"poll_sec", "checks": [names], "health": {...}, "trace_pictures",
+  "sql_max_rows", "data_folder", "object_states": {"on_confidence", "off_confidence", "appear_sec",
+  "gone_sec", "window_pictures", "vote_share"}}`.
+- `GET /api/dev/states`: `{"objects": {label: {"state", "since"}}, "watched_since", "changes": [{"ts",
+  "label", "change"}]}`.
+- `GET /api/dev/smoothing`: `{"labels": [...]}`. `/api/dev/smoothing/trace`: `{"label", "steps": [...]}`;
+  each step has `ts`, `conf`, `box_seen`, `votes_yes`, `votes_total`, `seen`, `center`, `phase`, `heading`
+  and `waiting_sec`.
+- `GET /api/dev/tests`: `{"tests": [{"id", "file", "markers"}]}`. The `id` is pytest's, e.g.
+  `tests/unit/test_x.py::test_y`.
+- `POST /api/dev/runs`: `{"check": true}` or `{"tests": [ids]}`. Replies `{"run_id"}`. 409 `{"error": "A run
+  is already going."}` while one is; 400 for a test id that isn't in the list. The commands only come from
+  `dev.checks` and `dev.test_command`, never from the request.
+- `GET /api/dev/runs/{run_id}`: `{"run_id", "what", "state", "started", "finished", "steps": [{"name",
+  "state", "exit_code"}], "outcomes": [{"id", "outcome", "duration_sec", "message"}], "output",
+  "output_end"}`. `state` is `running`, `passed`, `failed`, `stopped` or `timed out` (after
+  `dev.run_timeout_min`); ask again with `?from=<output_end>` for only the new printout. 404 for a run it
+  doesn't know (only the newest run is kept). `POST .../stop` replies `{"ok": true}`.
+- `GET /api/dev/db`: `{"databases": [...]}`. `.../tables`: `{"tables": [{"name", "columns", "rows",
+  "sql"}]}`.
+- `POST /api/dev/db/{name}/query`: `{"sql": "..."}`. Replies `{"columns", "rows", "truncated", "took_ms"}`,
+  at most `dev.sql_max_rows` rows. 400 `{"error": ...}` for anything but one statement that only reads
+  (`DELETE`, `INSERT`, `ATTACH`, two statements ...), or a query that ran longer than `dev.sql_timeout_sec`.
+- `GET /api/dev/files`: `{"files": [{"path", "bytes", "modified", "is_folder"}]}`. `.../preview`:
+  `{"path", "text"}`; 400 for a path outside the data folder (`../.env`, an absolute path, a symlink out) or
+  a folder, never read; 404 when nothing is there.
+
 ### Pages and files (2)
 
 | Method | Path | What it does | Called by | Access |
@@ -164,7 +219,7 @@ The Pi's camera program (`raspberry_pi/camera/`) is the only caller. Both routes
 | GET | `/` | The app page (`web_app/index.html`). | Your browser | anyone on the network |
 | GET | `/{file}` | Any other file in `web_app/` (`app.js`, `style.css`, `art/`, `fonts/` ...). 404 if it isn't there. | Your browser | anyone on the network |
 
-This one is mounted last, so every route above wins over it.
+This one is mounted last, so every route above (`/dev/` included) wins over it.
 
 ---
 
