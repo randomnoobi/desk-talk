@@ -10,6 +10,7 @@ from test_camera_program_fakes import KEY, MODEL, FakeClock, FakeComputer, FakeC
 from desktalk_shared.detector_api import ModelSettings
 from raspberry_pi.camera.detector_client import DetectorClient
 from raspberry_pi.camera.settings import (
+    IF_OLDER,
     ComputerProblem,
     SettingsError,
     SettingsWatcher,
@@ -218,6 +219,29 @@ def test_pi_settings_match_the_server_model():
 def test_the_repo_settings_have_the_camera_and_error_text_values_the_code_had():
     pi = read_repo_settings(Path(__file__).resolve().parents[2] / 'config' / 'settings.yaml')
     assert (pi['camera'], pi['error_text_chars']) == ('auto', 200)
+    assert {name: pi[name] for name in IF_OLDER} == IF_OLDER       # the fallback below says the same
+
+
+@pytest.mark.parametrize('missing', [('camera',), ('error_text_chars',), ('camera', 'error_text_chars')])
+def test_an_older_settings_file_gets_the_values_the_program_had_and_says_so(missing, caplog):
+    repo = {name: value for name, value in pi_settings().items() if name not in missing}
+    with caplog.at_level(logging.WARNING):
+        settings = from_layers(repo)
+    assert (settings.camera, settings.error_text_chars) == ('auto', 200)
+    assert "The Pi's config/settings.yaml is older than its camera program" in caplog.text
+    for name in missing:
+        assert f'pi.{name}' in caplog.text
+
+
+def test_a_new_enough_settings_file_says_nothing_about_being_older(caplog):
+    with caplog.at_level(logging.WARNING):
+        from_layers(pi_settings(camera='usb'))
+    assert 'older' not in caplog.text
+
+
+def test_a_bad_camera_value_is_still_an_error():
+    with pytest.raises(SettingsError, match=r'pi\.camera must be text'):
+        from_layers(pi_settings(camera=''))
 
 
 def test_a_cut_error_text_from_the_computer_follows_the_setting():

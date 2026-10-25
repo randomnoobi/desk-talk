@@ -12,8 +12,6 @@ from dataclasses import dataclass
 from desktalk.domain import Picture
 from desktalk.ports import PictureTools
 
-TRUSTED_GRAVITY = 1.0     # a gravity reading weaker than this (m/s²) is noise, not a direction
-
 
 @dataclass(frozen=True)
 class Reading:
@@ -42,9 +40,8 @@ class CameraMeasure:
                        sharpness=tools.sharpness(gray))
 
     def change(self, before: Picture, after: Picture) -> float:
-        """The average change per pixel (0-255) between two gray copies; 0 when they aren't the same size."""
-        if self._pictures.size(before) != self._pictures.size(after):
-            return 0.0
+        """The average change per pixel (0-255) between two gray copies. Copies of different sizes (the camera
+        turned or was swapped) count as completely different (infinity), as in PictureTools.difference."""
         return self._pictures.difference(before, after)
 
 
@@ -60,10 +57,11 @@ def cut_off_side(box: Sequence[float], size: tuple[int, int], touch_px: float, f
     return side if gap <= touch_px else None
 
 
-def tilt_degrees(g1: Sequence[float], g2: Sequence[float]) -> float:
-    """Degrees between two gravity readings (0 when either is missing or too small to trust)."""
+def tilt_degrees(g1: Sequence[float], g2: Sequence[float], *, trusted: float) -> float:
+    """Degrees between two gravity readings (0 when either is weaker than `trusted`, in m/s²: settings →
+    lens.trusted_gravity)."""
     a, b = math.hypot(*g1), math.hypot(*g2)
-    if a < TRUSTED_GRAVITY or b < TRUSTED_GRAVITY:
+    if a < trusted or b < trusted:
         return 0.0
     cos = sum(x * y for x, y in zip(g1, g2, strict=True)) / (a * b)
     return math.degrees(math.acos(max(-1.0, min(1.0, cos))))

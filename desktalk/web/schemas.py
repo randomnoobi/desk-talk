@@ -12,7 +12,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from desktalk.config import BreaksRule, EdgeProximity, MorningMinutes, PageRefresh, QuietHours
+from desktalk.config import BreaksRule, EdgeProximity, MorningMinutes, PageRefresh, QuietHours, SettingsSliders
 
 
 class ChatMessage(BaseModel):
@@ -138,6 +138,8 @@ class UiPage(BaseModel):
     chat_kept: int                       # web.list_sizes.chat_kept: messages kept per chat...
     chat_saved: int                      # ...and saved in the browser (web.list_sizes.chat_saved)
     left_chat_shown_min: float           # a chat whose object left stays in the list this long
+    settings_sliders: SettingsSliders    # the Settings page's slider ranges, in pixels...
+    new_zone_px: int                     # ...and where a new danger zone's slider starts
     palette: list[str]
 
 

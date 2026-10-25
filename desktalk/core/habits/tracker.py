@@ -189,6 +189,7 @@ class HabitTracker:
                 bright_since=r.bright_since, dim_since=r.dim_since,
                 screen_on_desk=r.screen_on_desk,
                 open_todos=tuple(open_todos), utc_offset_sec=self._clock.utc_offset_sec(now),
+                utc_offset_at=self._clock.utc_offset_sec,
             )
 
     def nudges(self, now: float, open_todos: Sequence[str]) -> list[Nudge]:

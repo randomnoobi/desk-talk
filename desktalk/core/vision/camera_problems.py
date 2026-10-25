@@ -148,7 +148,7 @@ class CameraProblems:
         if connected and fps is not None and 0 < fps < self._lens.slow_fps_below:
             raw['slow'] = {'fps': fps}
         if connected and gravity and reference_gravity:
-            tilt = tilt_degrees(gravity, reference_gravity)
+            tilt = tilt_degrees(gravity, reference_gravity, trusted=self._lens.trusted_gravity)
             if tilt > self._lens.bump_degrees:
                 raw['bumped'] = {'degrees': round(tilt)}
         return raw

@@ -24,7 +24,6 @@ import logging
 import os
 import shutil
 import threading
-import time
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -33,6 +32,7 @@ from desktalk.adapters.storage.files import write_atomically
 from desktalk.adapters.storage.intervals import build_intervals, merge_intervals
 from desktalk.config import EventLogSettings
 from desktalk.domain import Compaction, DetectionEvent, Event, is_day
+from desktalk.ports import Clock
 
 log = logging.getLogger(__name__)
 
@@ -40,9 +40,6 @@ RAW = 'detections.jsonl'
 PRESENCE = 'presence.jsonl'
 OTHER = 'events.jsonl'
 COMPACTING = 'detections-*.compacting.jsonl'
-def _day_of(ts: float) -> str:
-    """'2026-10-21' for a timestamp, in local time."""
-    return time.strftime('%Y-%m-%d', time.localtime(ts))
 
 
 def _line(data: dict[str, Any]) -> str:
@@ -54,10 +51,12 @@ class EventLog:
 
     folder: where the day folders go (config.resolve(config.event_log.folder)).
     settings: merge_gap_sec, keep_days and log_empty_frames are used here; the scheduler uses
-    compact_every_min and prune_every_min to call compact() and prune()."""
+    compact_every_min and prune_every_min to call compact() and prune().
+    clock: says which local day a time falls on, so the day folders match the app's "today"."""
 
-    def __init__(self, folder: Path, settings: EventLogSettings):
+    def __init__(self, folder: Path, settings: EventLogSettings, clock: Clock):
         self.folder = Path(folder)
+        self._clock = clock
         self._merge_gap = settings.merge_gap_sec
         self._keep_days = settings.keep_days
         self._log_empty_frames = settings.log_empty_frames
@@ -73,7 +72,7 @@ class EventLog:
         name = RAW if isinstance(event, DetectionEvent) else OTHER
         line = _line(event.to_dict()).encode('utf-8')
         with self._lock:
-            d = self.folder / _day_of(event.ts)
+            d = self.folder / self._clock.local_day(event.ts)
             d.mkdir(parents=True, exist_ok=True)
             with open(d / name, 'a+b') as f:
                 # A crash can leave the last line cut off; start on a new line so this one stays whole.
@@ -154,7 +153,8 @@ class EventLog:
     def prune(self, now: float) -> list[str]:
         """Delete the days older than keep_days (today counts as one). Returns the days deleted, oldest first.
         A day ahead of `now` (after the clock was off) is kept."""
-        oldest_kept = (date.fromtimestamp(now) - timedelta(days=self._keep_days - 1)).isoformat()
+        today = date.fromisoformat(self._clock.local_day(now))
+        oldest_kept = (today - timedelta(days=self._keep_days - 1)).isoformat()
         removed = []
         with self._lock:
             for d in sorted(self._day_folders()):

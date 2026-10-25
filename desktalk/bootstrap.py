@@ -341,7 +341,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     # For the parts that still ask for several desk interfaces in one object; it passes each call on.
     desk = WholeDesk(live_pictures, scene, safety_board, character_memory, photo_album)
     bus = EventStream(config.event_stream, synchronous=synchronous_events)
-    event_log = EventLog(data_path(config.event_log.folder), config.event_log)
+    event_log = EventLog(data_path(config.event_log.folder), config.event_log, clock)
     bus.subscribe('event-log', event_log.write)          # first, so it logs events in the order they happen
     profiles = ProfileBook(config.agents_file, store, personality_max_chars=config.agents.personality_max_chars)
     preferences = PreferencesFile(store, config.protocols.schedule, config.reminders.quiet_hours, clock=clock)

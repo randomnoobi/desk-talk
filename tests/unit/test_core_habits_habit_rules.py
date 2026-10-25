@@ -108,6 +108,55 @@ def test_day_frame_on_the_day_the_clocks_go_back():
     assert bed == calendar.timegm((2026, 11, 2, 3, 30, 0, 0, 0, 0))   # 22:30 winter time
 
 
+def europe_offset_at(change_utc, before_hours, after_hours):
+    """Central Europe's offset from UTC around one clock change (summer time 2 hours ahead, winter time 1)."""
+    def offset_at(ts):
+        return before_hours * HOUR if ts < change_utc else after_hours * HOUR
+    return offset_at
+
+
+# The night summer time ends in Europe: 25 October 2026, 03:00 summer time → 02:00 winter time (01:00 UTC).
+EUROPE_GO_BACK = europe_offset_at(calendar.timegm((2026, 10, 25, 1, 0, 0, 0, 0, 0)), 2, 1)
+# The night summer time starts: 29 March 2026, 02:00 winter time → 03:00 summer time (01:00 UTC).
+EUROPE_GO_FORWARD = europe_offset_at(calendar.timegm((2026, 3, 29, 1, 0, 0, 0, 0, 0)), 1, 2)
+
+
+def test_day_frame_before_waking_on_the_night_the_clocks_go_back():
+    """01:00 summer time on 25 October is still the waking day of the 24th: wake at 07:00 summer time on the
+    24th, bed at 03:30 winter time on the 25th (not an hour off from stepping a fixed 24 hours)."""
+    now = calendar.timegm((2026, 10, 24, 23, 0, 0, 0, 0, 0))            # 01:00 summer time on the 25th
+    wake, bed = P.day_frame(now, '07:00', '03:30', utc_offset_at=EUROPE_GO_BACK)
+    assert wake == calendar.timegm((2026, 10, 24, 5, 0, 0, 0, 0, 0))   # 07:00 summer time on the 24th
+    assert bed == calendar.timegm((2026, 10, 25, 2, 30, 0, 0, 0, 0))   # 03:30 winter time on the 25th
+
+
+def test_day_frame_before_waking_on_the_night_the_clocks_go_forward():
+    now = calendar.timegm((2026, 3, 28, 23, 30, 0, 0, 0, 0))           # 00:30 winter time on 29 March
+    wake, bed = P.day_frame(now, '07:00', '00:45', utc_offset_at=EUROPE_GO_FORWARD)
+    assert wake == calendar.timegm((2026, 3, 28, 6, 0, 0, 0, 0, 0))    # 07:00 winter time on the 28th
+    assert bed == calendar.timegm((2026, 3, 28, 23, 45, 0, 0, 0, 0))   # 00:45 winter time on the 29th
+
+
+def test_day_frame_just_after_midnight_the_day_after_a_short_day():
+    """The 29 March was only 23 hours long: going back a fixed 24 hours from 00:10 on the 30th lands on the
+    28th, two days back. The waking day is still the 29th's."""
+    now = calendar.timegm((2026, 3, 29, 22, 10, 0, 0, 0, 0))           # 00:10 summer time on 30 March
+    wake, bed = P.day_frame(now, '07:00', '00:30', utc_offset_at=EUROPE_GO_FORWARD)
+    assert wake == calendar.timegm((2026, 3, 29, 5, 0, 0, 0, 0, 0))    # 07:00 summer time on the 29th
+    assert bed == calendar.timegm((2026, 3, 29, 22, 30, 0, 0, 0, 0))   # 00:30 summer time on the 30th
+
+
+def test_bedtime_is_shown_in_its_own_local_time_on_the_night_the_clocks_go_back(rules, words):
+    """Bed was at 01:30 summer time. At 02:15 winter time (45 minutes later) the nudge says 1:30, not 12:30."""
+    now = calendar.timegm((2026, 10, 25, 1, 15, 0, 0, 0, 0))           # 02:15 winter time
+    wake, bed = P.day_frame(now, '07:00', '01:30', utc_offset_at=EUROPE_GO_BACK)
+    assert bed == calendar.timegm((2026, 10, 24, 23, 30, 0, 0, 0, 0))  # 01:30 summer time
+    s = P.RuleState(wake_ts=wake, bed_ts=bed, at_desk=True, phone_on_desk_since=now - 10 * MIN,
+                    utc_offset_sec=EUROPE_GO_BACK(now), utc_offset_at=EUROPE_GO_BACK)
+    n = P.phone_nudges(s, rules.phone_free, now, words)
+    assert keys(n) == ['phone.bedtime'] and 'Bed is at 1:30 AM' in n[0].evidence
+
+
 def test_day_frame_before_waking_is_still_yesterday():
     wake, bed = P.day_frame(at('05:00'), '07:00', '22:30')
     assert wake == at('07:00', days_later=-1) and bed == at('22:30', days_later=-1)

@@ -94,6 +94,9 @@ DETECTOR_FIELDS = {
     'pause_max_sec': POSITIVE, 'health_check_every_sec': POSITIVE,
 }
 MODEL_FIELDS = ('model', 'format', 'image_size', 'confidence', 'half')
+# Settings newer than some Pis' config/settings.yaml: when the Pi's copy is older and the computer can't be asked
+# (or --offline), these are used, the same as pi: in config/settings.yaml and what the program used before them.
+IF_OLDER = {'camera': 'auto', 'error_text_chars': 200}
 IN_ORDER = (('upload_retry_start_sec', 'upload_retry_max_sec'),)        # (smaller, larger)
 DETECTOR_IN_ORDER = (('pause_start_sec', 'pause_max_sec'),)
 
@@ -116,6 +119,12 @@ def from_layers(*layers: Mapping[str, Any] | None) -> CameraSettings:
     detector = pi.get('detector')
     if not isinstance(detector, Mapping):
         raise SettingsError('pi.detector is missing' + _WHERE)
+    missing = [name for name in IF_OLDER if pi.get(name) is None]
+    if missing:
+        log.warning("The Pi's config/settings.yaml is older than its camera program (it has no %s), so %s are used. "
+                    'Run git pull on the Pi to get the newest one.', ' or '.join(f'pi.{name}' for name in missing),
+                    ', '.join(f'{name}: {IF_OLDER[name]}' for name in missing))
+        pi = {**pi, **{name: IF_OLDER[name] for name in missing}}
     values = _check(pi, FIELDS, 'pi.', IN_ORDER)
     values['detector'] = DetectorConfig(model=_model(detector),
                                         **_check(detector, DETECTOR_FIELDS, 'pi.detector.', DETECTOR_IN_ORDER))

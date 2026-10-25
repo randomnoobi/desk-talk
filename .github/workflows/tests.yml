@@ -20,5 +20,5 @@ jobs:
       - run: uv sync --all-packages --frozen
       - run: uv run ruff check .
       - run: uv run pyright
-      - run: uv run vulture --min-confidence 80
+      - run: uv run vulture
       - run: uv run pytest -m "not slow and not docker and not e2e" --cov

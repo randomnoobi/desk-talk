@@ -51,6 +51,12 @@ def _timezone(utc_offset_sec: float) -> str:
     return f'{sign}{minutes // 60:02d}:{minutes % 60:02d}'
 
 
+def _rounded(det: Detection) -> tuple[float, float, float, float]:
+    """A box as (x1, y1, x2, y2), kept to 0.1 px like Detection.to_dict() and the rows saved before."""
+    x1, y1, x2, y2 = det.bbox.to_list()
+    return x1, y1, x2, y2
+
+
 class ObjectStateTracker:
     """Detection events → object states and ObjectStateChanged events. Implements ObjectStatesView."""
 
@@ -170,7 +176,7 @@ class ObjectStateTracker:
                 own = det if (det is not None and box_seen) else None
                 inp = StepInput(ts=ts, seen=majority, center=middle,
                                 conf=own.confidence if own is not None else None,
-                                bbox=(own.bbox.x1, own.bbox.y1, own.bbox.x2, own.bbox.y2) if own is not None else None)
+                                bbox=_rounded(own) if own is not None else None)
                 self._states[label], fired = step(state, inp, self._rules(label))
                 transitions.extend(fired)
 

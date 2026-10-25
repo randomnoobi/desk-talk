@@ -168,6 +168,16 @@ def test_events_go_to_the_bus_and_the_store():
     assert row.timezone == '+08:00'          # the clock's UTC offset
 
 
+def test_boxes_are_rounded_like_detections():
+    """A box keeps 0.1 px, like Detection.to_dict() and the rows saved before."""
+    tracker, bus, store = make_tracker()
+    feed(tracker, 1000, [[Detection('bottle', 0.6, BBox(300.04, 219.96, 340.04, 259.96))]] * SETTLE)
+    [event] = bus.of_type(ObjectStateChanged)
+    assert event.bbox == (300.0, 220.0, 340.0, 260.0)
+    [row] = store.changes(0)
+    assert row.bbox == (300.0, 220.0, 340.0, 260.0)
+
+
 @pytest.mark.parametrize('hours, text', [(0, '+00:00'), (-7, '-07:00'), (5.75, '+05:45'), (-3.5, '-03:30')])
 def test_each_row_says_the_clocks_utc_offset(hours, text):
     tracker, _, store = make_tracker(utc_offset_hours=hours)

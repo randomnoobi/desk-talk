@@ -68,6 +68,21 @@ def test_without_error_text_chars_the_computers_whole_reason_is_shown(tmp_path, 
         load_settings(args, older_repo_file(tmp_path, 'error_text_chars'), need_computer=True)
 
 
+def test_an_older_pi_settings_file_without_camera_or_error_text_chars_still_starts_offline(tmp_path, caplog):
+    """The Pi wasn't git-pulled and can't ask the computer: it uses the values the program had before."""
+    args = ['--offline', '--camera', f'folder:{tmp_path}', '--photo-dir', str(tmp_path / 'p')]
+    assert main(args, repo_settings=older_repo_file(tmp_path, 'camera', 'error_text_chars')) == 1   # 1: the camera
+    assert 'no .jpg files' in caplog.text
+    assert "The Pi's config/settings.yaml is older than its camera program" in caplog.text
+
+
+def test_an_older_pi_settings_file_is_used_when_the_computer_is_away(tmp_path, computer, caplog):
+    computer.away = True
+    args = parse_args(['--server', computer.url, '--key', KEY])
+    settings = load_settings(args, older_repo_file(tmp_path, 'camera', 'error_text_chars'))
+    assert (settings.camera, settings.error_text_chars) == ('auto', 200)
+
+
 def test_computer_away_at_start_uses_the_repos_settings(tmp_path, computer, caplog):
     computer.away = True
     args = parse_args(['--server', computer.url, '--key', KEY])

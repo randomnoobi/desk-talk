@@ -903,9 +903,8 @@ async function renderCaptures() {
 }
 
 // ————— Settings page —————
-// The sliders' ranges, in pixels, and where a new danger zone's slider starts.
-const SLIDERS = { zone: [10, 200], warn: [20, 200], alert: [10, 120] };
-const NEW_ZONE_PX = 60;
+// The sliders' ranges and where a new danger zone's slider starts come from ui.web.settings_sliders and
+// ui.web.new_zone_px (settings → web).
 async function renderSettings() {
   const page = $('#view-settings');
   const head = `<header><h1 class="page-title">Settings</h1>
@@ -925,7 +924,9 @@ async function renderSettings() {
   let outlineChanged = false;
   let startOver = outline.length >= ui.desk.min_desk_corners;   // a saved outline: the first tap starts a new one
   let picSize = null;
-  const range = (name, value, [min, max]) => `<label class="range"><input type="range" name="${name}" min="${min}" max="${max}" value="${value}"><output>${value} px</output></label>`;
+  const sliders = ui.web.settings_sliders;
+  const newZonePx = ui.web.new_zone_px;
+  const range = (name, value, { min, max }) => `<label class="range"><input type="range" name="${name}" min="${min}" max="${max}" value="${value}"><output>${value} px</output></label>`;
 
   const draw = () => {
     page.innerHTML = `${head}
@@ -940,7 +941,7 @@ async function renderSettings() {
       <div class="form-rows">${Object.entries(zones).map(([cls, z]) => `<div class="zone" data-zone="${esc(cls)}">
           <strong>${esc(cls)}</strong>
           <input type="text" name="label" value="${esc(z.label || '')}" aria-label="Name for the ${esc(cls)} zone">
-          ${range('expand', z.expand || NEW_ZONE_PX, SLIDERS.zone)}
+          ${range('expand', z.expand || newZonePx, sliders.zone)}
           <button type="button" class="round" data-remove aria-label="Remove ${esc(cls)} zone">×</button></div>`).join('') || '<p class="muted">No zones yet.</p>'}
         <form class="inline-add" id="add-zone"><select aria-label="Object">${(rules.available_objects || []).filter((o) => !zones[o]).map((o) => `<option>${esc(o)}</option>`).join('')}</select>
           <button type="submit" class="btn-quiet">Add zone</button></form>
@@ -959,8 +960,8 @@ async function renderSettings() {
         </div>
       </div>
       <div class="form-rows">
-        <div class="field"><span>Warn at</span>${range('warn_px', edge.warn_px, SLIDERS.warn)}</div>
-        <div class="field"><span>Alert at</span>${range('danger_px', edge.danger_px, SLIDERS.alert)}</div>
+        <div class="field"><span>Warn at</span>${range('warn_px', edge.warn_px, sliders.warn)}</div>
+        <div class="field"><span>Alert at</span>${range('danger_px', edge.danger_px, sliders.alert)}</div>
       </div></section>
     <section><h2>Quiet hours</h2>
       <p class="hint">Habit reminders wait until quiet hours end. Safety alerts still come through.</p>
@@ -990,7 +991,7 @@ async function renderSettings() {
     $('#add-zone')?.addEventListener('submit', (e) => {
       e.preventDefault();
       const cls = e.target.querySelector('select').value;
-      if (cls) { zones[cls] = { expand: NEW_ZONE_PX, label: `${cls} zone` }; draw(); }
+      if (cls) { zones[cls] = { expand: newZonePx, label: `${cls} zone` }; draw(); }
     });
     wireEdgeEditor();
     $('#clear-chats').addEventListener('click', () => {

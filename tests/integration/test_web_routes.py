@@ -214,6 +214,9 @@ def test_ui_settings_reply(tmp_path):
     assert (ui['web']['log_shown'], ui['web']['photos_shown'], ui['web']['habit_log_shown']) == (150, 6, 40)
     assert ui['web']['palette'][-1] == 'ink'
     assert (ui['web']['chat_kept'], ui['web']['chat_saved'], ui['web']['left_chat_shown_min']) == (200, 60, 60)
+    assert ui['web']['settings_sliders'] == {'zone': {'min': 10, 'max': 200}, 'warn': {'min': 20, 'max': 200},
+                                             'alert': {'min': 10, 'max': 120}}
+    assert ui['web']['new_zone_px'] == 60
     assert ui['chat'] == {'message_max_chars': 1200, 'history_from_app': 10, 'todo_max_items': 20,
                           'todo_max_chars': 200}
     assert ui['habits']['sunlight_default_min'] == 10

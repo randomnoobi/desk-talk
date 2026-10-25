@@ -257,6 +257,7 @@ def test_a_wait_that_starts_longer_than_its_limit_is_refused(project):
     ('idle_chat:\n  min_sec: 9999\n', 'idle_chat', 'min_sec', 'max_sec'),
     ('safety:\n  edge_proximity:\n    danger_px: 999\n', 'safety.edge_proximity', 'danger_px', 'warn_px'),
     ('web:\n  list_sizes:\n    log_events: {default: 9999}\n', 'web.list_sizes.log_events', 'default', 'max'),
+    ('web:\n  settings_sliders:\n    alert: {min: 999}\n', 'web.settings_sliders.alert', 'min', 'max'),
 ])
 def test_every_smaller_larger_pair_is_checked(project, local, section, smaller, larger):
     write_local(project, local)
@@ -364,6 +365,8 @@ NEW_SETTINGS = {
         ('camera', 'phone_capture_width'), ('camera', 'phone_capture_height'),
         ('logging', 'file_name'), ('logging', 'preview_chars'), ('llm', 'error_text_chars'),
         ('pi', 'camera'), ('pi', 'error_text_chars'), ('llm', 'error_log_chars'), ('safety', 'min_desk_corners'),
+        ('web', 'settings_sliders', 'zone'), ('web', 'settings_sliders', 'warn'), ('web', 'settings_sliders', 'alert'),
+        ('web', 'new_zone_px'), ('lens', 'trusted_gravity'),
     ],
     'protocols.yaml': [('food', 'healthy')],
 }
@@ -424,6 +427,10 @@ def test_new_settings_keep_the_values_the_code_has_today(project):
     assert (web.list_sizes.log, web.list_sizes.photos) == (150, 6)
     assert (web.list_sizes.chat_kept, web.list_sizes.chat_saved, web.left_chat_shown_min) == (200, 60, 60)  # app.js
     assert (camera.phone_capture_width, camera.phone_capture_height) == (1280, 720)                  # camera.js
+    assert web.settings_sliders.model_dump() == {'zone': {'min': 10, 'max': 200}, 'warn': {'min': 20, 'max': 200},
+                                                 'alert': {'min': 10, 'max': 120}}                    # app.js
+    assert web.new_zone_px == 60                                                                     # app.js
+    assert cfg.lens.trusted_gravity == 1.0                                                           # camera_measure.py
     assert (cfg.logging.file_name, cfg.llm.error_text_chars, cfg.llm.error_log_chars) == ('desktalk.log', 160, 200)
     assert 'banana' in cfg.protocols.food.healthy and len(cfg.protocols.food.healthy) == 20          # tracker.py
 

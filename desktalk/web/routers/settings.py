@@ -72,6 +72,7 @@ def ui_settings_from(c: AppConfig) -> UiSettings:
                    photos_shown=web.list_sizes.photos, habit_log_shown=web.list_sizes.habit_log.default,
                    chat_kept=web.list_sizes.chat_kept, chat_saved=web.list_sizes.chat_saved,
                    left_chat_shown_min=web.left_chat_shown_min,
+                   settings_sliders=web.settings_sliders, new_zone_px=web.new_zone_px,
                    palette=list(web.palette)),
         chat=UiChat(message_max_chars=chat.message_max_chars, history_from_app=chat.history_from_app,
                     todo_max_items=chat.todo_max_items, todo_max_chars=chat.todo_max_chars),

@@ -15,7 +15,7 @@ import yaml
 from desktalk_detector.settings import ServiceSettings
 
 SERVICE = Path(__file__).resolve().parents[2] / 'raspberry_pi' / 'detector_service'
-NAME = re.compile(r'\$\{(\w+)\}')
+NAME = re.compile(r'\$\{(\w+)(?::-([^}]*))?\}')     # ${NAME} or ${NAME:-what it is when .env doesn't say}
 
 
 def env_file() -> dict[str, str]:
@@ -33,12 +33,32 @@ def detector():
 
 
 def fill(text: str, values: dict[str, str]) -> str:
-    return NAME.sub(lambda m: values[m.group(1)], str(text))
+    """As docker compose does it: the .env value, or the fallback after :- when .env doesn't have that name."""
+    return NAME.sub(lambda m: values[m.group(1)] if m.group(1) in values else m.group(2), str(text))
+
+
+def compose_names() -> list[tuple[str, str | None]]:
+    """Every ${NAME} or ${NAME:-fallback} in compose.yaml."""
+    text = (SERVICE / 'compose.yaml').read_text(encoding='utf-8')
+    return [(m.group(1), m.group(2)) for m in NAME.finditer(text)]
 
 
 def test_every_value_compose_uses_is_in_the_env_file():
-    used = set(NAME.findall((SERVICE / 'compose.yaml').read_text(encoding='utf-8')))
+    used = {name for name, _ in compose_names()}
     assert used and used <= set(env_file())
+
+
+def test_every_value_compose_uses_has_a_fallback_that_matches_the_env_file():
+    """A Pi whose .env was edited by hand, without a newer name, still starts: compose uses the fallback,
+    which is the same as .env here (and not '', which docker compose up refuses for a health check)."""
+    values = env_file()
+    for name, fallback in compose_names():
+        assert fallback is not None, f'${{{name}}} in compose.yaml needs a fallback: ${{{name}:-{values[name]}}}'
+        assert fallback == values[name], f'${{{name}:-{fallback}}} in compose.yaml, but .env says {values[name]}'
+
+
+def test_with_an_empty_env_file_the_container_gets_the_same_values(detector):
+    assert fill(detector, {}) == fill(detector, env_file())
 
 
 def test_the_container_gets_settings_the_service_accepts(detector):

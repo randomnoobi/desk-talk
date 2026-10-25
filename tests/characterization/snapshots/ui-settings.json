@@ -81,6 +81,7 @@
       "left_chat_shown_min": "number",
       "live_timeout_ms": "number",
       "log_shown": "number",
+      "new_zone_px": "number",
       "palette": [
         "str"
       ],
@@ -92,6 +93,20 @@
         "photos": "number"
       },
       "request_timeout_ms": "number",
+      "settings_sliders": {
+        "alert": {
+          "max": "number",
+          "min": "number"
+        },
+        "warn": {
+          "max": "number",
+          "min": "number"
+        },
+        "zone": {
+          "max": "number",
+          "min": "number"
+        }
+      },
       "toast_ms": "number"
     }
   },

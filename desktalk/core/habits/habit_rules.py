@@ -27,6 +27,7 @@ from desktalk.util import at_time_today, clock_text
 MIN = 60
 HOUR = 3600
 DAY_SEC = 86400
+MIDDAY = '12:00'     # a time far from midnight: a day on from it is always the next day, even when the clocks change
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -57,24 +58,32 @@ class RuleState:
     screen_on_desk: bool = False
     open_todos: tuple[str, ...] = ()
     utc_offset_sec: float | None = None     # the local time's offset from UTC (the clock's); None = this computer's
+    utc_offset_at: Callable[[float], float] | None = None   # the offset at any time (Clock.utc_offset_sec); wins
+                                            # over utc_offset_sec, so a bedtime after a clock change shows right
 
 
 def day_frame(now: float, wake: str, bed: str, *,
               utc_offset_at: Callable[[float], float] | None = None) -> tuple[float, float]:
     """(wake_ts, bed_ts) of the waking day that contains `now` (bedtime may be after midnight). `utc_offset_at(ts)`:
     the local time's offset from UTC at `ts` (the clock's utc_offset_sec; None = this computer's)."""
+    def next_day(ts: float, days: int) -> float:
+        """A time in the day `days` from the one with `ts`. Steps from midday, not from `ts`: a day can be 23 or
+        25 hours long when the clocks change, so 24 hours on from 00:10 or 23:50 can land on the wrong day."""
+        return at_time_today(MIDDAY, ts, utc_offset_at=utc_offset_at) + days * DAY_SEC
+
     wake_ts = at_time_today(wake, now, utc_offset_at=utc_offset_at)
     if wake_ts > now:                     # past midnight but before waking: still "yesterday"
-        wake_ts -= DAY_SEC
+        wake_ts = at_time_today(wake, next_day(now, -1), utc_offset_at=utc_offset_at)
     bed_ts = at_time_today(bed, wake_ts, utc_offset_at=utc_offset_at)
-    if bed_ts <= wake_ts:
-        bed_ts += DAY_SEC
+    if bed_ts <= wake_ts:                 # bedtime after midnight: the next day's
+        bed_ts = at_time_today(bed, next_day(wake_ts, 1), utc_offset_at=utc_offset_at)
     return wake_ts, bed_ts
 
 
 def _time(ts: float, s: RuleState) -> str:
-    """'3:05 PM' for a time, in the state's local time."""
-    return clock_text(ts, utc_offset_sec=s.utc_offset_sec)
+    """'3:05 PM' for a time, in the state's local time (with the offset at `ts` itself, when the state has it)."""
+    offset = s.utc_offset_at(ts) if s.utc_offset_at else s.utc_offset_sec
+    return clock_text(ts, utc_offset_sec=offset)
 
 
 def _mins(seconds: float) -> int:

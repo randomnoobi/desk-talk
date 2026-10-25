@@ -449,6 +449,7 @@ class LensSettings(_Section):
     blur_below: ZeroOrMore
     motion_above: ZeroOrMore
     bump_degrees: ZeroOrMore
+    trusted_gravity: PositiveNumber
     slow_fps_below: ZeroOrMore
     speak_gap_sec: ZeroOrMore
     repeat_after_min: ZeroOrMore
@@ -585,6 +586,20 @@ class ListSizes(_Section):
     chat_saved: PositiveInt       # ...and saves in the browser
 
 
+class SliderRange(_Section):
+    _in_order = (('min', 'max'),)
+    min: PositiveInt
+    max: PositiveInt
+
+
+class SettingsSliders(_Section):
+    """The Settings page's sliders, in pixels."""
+
+    zone: SliderRange             # a danger zone's bubble
+    warn: SliderRange             # desk edges: warn at...
+    alert: SliderRange            # ...and alert at
+
+
 class PageRefresh(_Section):
     """How often the app page asks for new numbers, in thousandths of a second."""
 
@@ -616,6 +631,8 @@ class WebSettings(_Section):
     activity_ping_ms: PositiveInt
     toast_ms: PositiveInt
     left_chat_shown_min: ZeroOrMore
+    settings_sliders: SettingsSliders
+    new_zone_px: PositiveInt
     palette: Words
 
 

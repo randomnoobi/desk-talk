@@ -403,6 +403,7 @@ lens:
   blur_below: 25
   motion_above: 6.0
   bump_degrees: 12            # phone camera only
+  trusted_gravity: 1.0        # a phone tilt reading weaker than this (m/s²) is noise, not a direction (gravity is 9.8)
   slow_fps_below: 1.5
   speak_gap_sec: 20
   repeat_after_min: 20
@@ -544,6 +545,11 @@ web:
   activity_ping_ms: 3000      # while you type, the page tells the server at most this often (small talk waits)
   toast_ms: 4000              # how long a pop-up note stays
   left_chat_shown_min: 60     # a chat whose object left the desk stays in the chat list this long
+  settings_sliders:           # the Settings page's sliders, in pixels: the lowest and highest each one goes
+    zone:  {min: 10, max: 200}  # how far a danger zone's bubble reaches past its object
+    warn:  {min: 20, max: 200}  # desk edges: "Warn at"
+    alert: {min: 10, max: 120}  # desk edges: "Alert at"
+  new_zone_px: 60             # a danger zone added on the Settings page starts with a bubble this big
   # The colors the page knows. Agents (agents.yaml) use the first eight; ink is the group chat's.
   palette: [cobalt, teal, tang, mustard, coral, plum, moss, slate, ink]
 

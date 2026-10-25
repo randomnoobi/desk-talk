@@ -1,6 +1,8 @@
 """Lens's numbers from a picture (brightness, glare, sharpness, change), from boxes (cut off) and from the phone's
 tilt. Pictures go through the picture tools, so the fake ones do here."""
 
+import math
+
 import numpy as np
 import pytest
 
@@ -46,11 +48,12 @@ def test_change_between_pictures_of_the_same_size():
     assert m.change(a, b) == 30.0
 
 
-def test_pictures_of_different_sizes_did_not_change():
+def test_pictures_of_different_sizes_count_as_completely_different():
+    """Like PictureTools.difference: a picture that changed size (the camera turned or was swapped) changed a lot."""
     m = measure()
     a = m.gray(np.full((360, 480, 3), 100, np.uint8))
-    b = measure(width=60).gray(np.full((360, 480, 3), 255, np.uint8))
-    assert m.change(a, b) == 0.0
+    b = measure(width=60).gray(np.full((360, 480, 3), 100, np.uint8))
+    assert m.change(a, b) == math.inf
 
 
 @pytest.mark.parametrize('box, side', [
@@ -63,9 +66,15 @@ def test_which_side_a_box_is_cut_off_at(box, side):
 
 
 def test_tilt_between_two_gravity_readings():
-    assert round(tilt_degrees((0, 9.8, 0), (0, 9.8, 4))) == 22
-    assert tilt_degrees((0, 9.8, 0), (0, 9.8, 0)) == 0.0
+    assert round(tilt_degrees((0, 9.8, 0), (0, 9.8, 4), trusted=1.0)) == 22
+    assert tilt_degrees((0, 9.8, 0), (0, 9.8, 0), trusted=1.0) == 0.0
 
 
 def test_a_tiny_gravity_reading_is_not_trusted():
-    assert tilt_degrees((0, 0.5, 0), (9.8, 0, 0)) == 0.0
+    assert tilt_degrees((0, 0.5, 0), (9.8, 0, 0), trusted=1.0) == 0.0
+
+
+def test_how_strong_a_trusted_gravity_reading_must_be_comes_from_settings():
+    """settings → lens.trusted_gravity: a reading weaker than that is noise, not a direction."""
+    assert round(tilt_degrees((0, 0.5, 0), (0.5, 0, 0), trusted=0.4)) == 90
+    assert tilt_degrees((0, 9.8, 0), (9.8, 0, 0), trusted=10) == 0.0

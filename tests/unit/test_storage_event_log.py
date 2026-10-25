@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 import threading
-import time
 from pathlib import Path
 
 import pytest
@@ -14,12 +13,16 @@ from desktalk.adapters.storage import EventLog
 from desktalk.config import EventLogSettings
 from desktalk.domain import AgentJoined, Alert, BBox, Compaction, Detection, DetectionEvent, Light
 from tests.contracts.event_store_contract import EventStoreContract
+from tests.fakes import FakeClock
 
 NOW = 1_760_000_000.0                          # 9 October 2025
 
 
+CLOCK = FakeClock()                            # the log's day names come from its clock (UTC here)
+
+
 def day_of(ts: float) -> str:
-    return time.strftime('%Y-%m-%d', time.localtime(ts))
+    return CLOCK.local_day(ts)
 
 
 TODAY = day_of(NOW)
@@ -33,16 +36,43 @@ def picture(ts: float, *labels: str, conf: float = 0.8) -> DetectionEvent:
                           detections=tuple(Detection(lab, conf, BBox(90, 90, 110, 110)) for lab in labels))
 
 
-def make_log(folder: Path, **changes) -> EventLog:
+def make_log(folder: Path, clock: FakeClock = CLOCK, **changes) -> EventLog:
     values = {'folder': folder, 'compact_every_min': 10, 'merge_gap_sec': 3, 'keep_days': 30,
               'log_empty_frames': True, 'prune_every_min': 60} | changes
-    return EventLog(folder, EventLogSettings(**values))
+    return EventLog(folder, EventLogSettings(**values), clock)
 
 
 class TestEventLog(EventStoreContract):
     @pytest.fixture
     def store(self, tmp_path):
         return make_log(tmp_path)
+
+    def day_of(self, ts: float) -> str:
+        return CLOCK.local_day(ts)
+
+
+# 11:30 UTC: a desk 14 hours ahead is already on the next day, one 12 hours behind still on the day before,
+# so whatever the computer's own time zone, at least one of them is on a different day than the computer.
+HALF_PAST_ELEVEN_UTC = 1_760_009_400.0
+OTHER_ZONES = [14, -12]
+
+
+@pytest.mark.parametrize('hours', OTHER_ZONES)
+def test_days_follow_the_clock_not_the_computer(tmp_path, hours):
+    clock = FakeClock(HALF_PAST_ELEVEN_UTC, utc_offset_hours=hours)
+    log = make_log(tmp_path, clock)
+    log.write(Alert(ts=HALF_PAST_ELEVEN_UTC, kind='proximity'))
+    assert log.days() == [clock.local_day(HALF_PAST_ELEVEN_UTC)]
+    assert [e['type'] for e in log.events(clock.local_day(HALF_PAST_ELEVEN_UTC), None, 10)] == ['alert']
+
+
+@pytest.mark.parametrize('hours', OTHER_ZONES)
+def test_prune_counts_days_by_the_clock(tmp_path, hours):
+    clock = FakeClock(HALF_PAST_ELEVEN_UTC, utc_offset_hours=hours)
+    log = make_log(tmp_path, clock, keep_days=1)
+    log.write(Alert(ts=HALF_PAST_ELEVEN_UTC, kind='proximity'))
+    assert log.prune(HALF_PAST_ELEVEN_UTC) == []                 # today's day is kept
+    assert log.days() == [clock.local_day(HALF_PAST_ELEVEN_UTC)]
 
 
 def test_write_compact_and_read(tmp_path):
