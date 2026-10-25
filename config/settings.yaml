@@ -503,6 +503,8 @@ web:
     log: 20000                # ...events, while the Log page is open
   request_timeout_ms: 8000    # the page gives up on an ordinary request after this long (a chat reply waits
                               # longer: as long as the server may try the AI, see GET /api/ui_settings)
+  chat_reply_max_ms: 180000   # ...but never longer than this. The worst case (every agent, every retry) adds up
+                              # to over an hour, which looks like a frozen page, so the page shows the error here
   live_timeout_ms: 5000       # ...on the live status request after this long
   activity_ping_ms: 3000      # while you type, the page tells the server at most this often (small talk waits)
   toast_ms: 4000              # how long a pop-up note stays

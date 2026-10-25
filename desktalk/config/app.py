@@ -582,6 +582,7 @@ class WebSettings(_Section):
     list_sizes: ListSizes
     refresh_ms: PageRefresh
     request_timeout_ms: PositiveInt
+    chat_reply_max_ms: PositiveInt
     live_timeout_ms: PositiveInt
     activity_ping_ms: PositiveInt
     toast_ms: PositiveInt

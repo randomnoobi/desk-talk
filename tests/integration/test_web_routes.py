@@ -232,10 +232,14 @@ def test_ui_settings_reply(tmp_path):
     assert ui['chat_reply_timeout_ms'] > ui['web']['request_timeout_ms']
 
 
+NO_CAP_MS = 10 ** 9   # a cap so high the tests above see the worked-out wait itself
+
+
 def test_ui_chat_timeout_covers_the_slowest_server_reply(tmp_path):
     """The page waits for a chat reply as long as the server may keep trying the AI (Ollama loading a model
     can take its whole 90 s, three times), so it never gives up while the server is still on a try."""
     config = changed(desk_config(tmp_path), 'llm', ollama_timeout_sec=90, max_retries=3, timeout_sec=30)
+    config = changed(config, 'web', chat_reply_max_ms=NO_CAP_MS)
     ui = web_client(DeskRig(tmp_path, config=config).app).get('/api/ui_settings').json()
     assert ui['chat_reply_timeout_ms'] >= 270_000
     slower = changed(config, 'llm', ollama_timeout_sec=120)
@@ -249,6 +253,7 @@ def test_ui_chat_timeout_covers_every_ai_call_one_message_can_make(tmp_path):
     The page waits for the most of those."""
     config = changed(desk_config(tmp_path), 'agents', max_agents=3)
     config = changed(config, 'lost_items', items={})
+    config = changed(config, 'web', chat_reply_max_ms=NO_CAP_MS)
     one_call_ms = round(config.llm.longest_reply_sec() * 1000)
     request_ms = config.web.request_timeout_ms
 
@@ -261,6 +266,21 @@ def test_ui_chat_timeout_covers_every_ai_call_one_message_can_make(tmp_path):
     assert len(four_items) == 4
     more_items = changed(config, 'lost_items', items=four_items)
     assert wait(more_items, 'b') == (2 * 4 + 1) * one_call_ms + request_ms       # two looks per item, then the answer
+
+
+def test_ui_chat_timeout_stops_at_the_cap(tmp_path):
+    """The worst case (every agent, every try) can add up to over an hour, which looks like a frozen page. The
+    page stops waiting at web.chat_reply_max_ms and shows the error, unless the worked-out wait is shorter."""
+    config = changed(desk_config(tmp_path), 'web', chat_reply_max_ms=180_000)
+
+    def wait(c, folder):
+        return web_client(DeskRig(tmp_path / folder, config=c).app).get('/api/ui_settings').json()[
+            'chat_reply_timeout_ms']
+
+    assert wait(config, 'a') == 180_000
+    quick = changed(config, 'llm', ollama_timeout_sec=1, timeout_sec=1, max_retries=1, min_interval_sec=0)
+    quick = changed(quick, 'agents', max_agents=1)
+    assert wait(quick, 'b') < 180_000
 
 
 # ── what every reply has in common ───────────────────────────────────

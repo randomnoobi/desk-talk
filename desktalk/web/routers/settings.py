@@ -89,8 +89,8 @@ def ui_settings_from(c: AppConfig) -> UiSettings:
         pi=UiPi(fps=c.pi.fps, delete_every_min=c.pi.delete_every_min, compact_every_min=c.event_log.compact_every_min),
         phone=phone_settings(c.camera),
         lens_card=UiLensCard(id=LENS, **c.prompts.lens.card.model_dump()),
-        chat_reply_timeout_ms=most_ai_calls_per_message(c) * round(c.llm.longest_reply_sec() * MS)
-        + web.request_timeout_ms,
+        chat_reply_timeout_ms=min(most_ai_calls_per_message(c) * round(c.llm.longest_reply_sec() * MS)
+                                  + web.request_timeout_ms, web.chat_reply_max_ms),
     )
 
 

@@ -449,7 +449,7 @@ async function send(text) {
   try {
     res = await api('/api/chat', {
       method: 'POST',
-      timeout: ui.chat_reply_timeout_ms,      // as long as the server may keep trying every AI call it makes
+      timeout: ui.chat_reply_timeout_ms,      // as long as the server may keep trying the AI, up to web.chat_reply_max_ms
       body: { chat: chatId, message: text, recent_messages: historyFor(chatId), widget: who(chatId).tracker === 'todo' ? todo : undefined },
     });
   } catch {

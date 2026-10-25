@@ -97,6 +97,8 @@ Tasks 1-11 are done on the `cleanup` branch. Where the work differs from the ste
   their own worktrees and were merged, so each could make small edits to `bootstrap.py` and the settings.
   `WholeDesk` (in `core/desk/`) passes calls on to the five desk parts for the seven constructors that still take
   one object for several desk interfaces.
+- **Chat wait:** the worked-out wait for a chat reply (every agent, every retry) came to about 73 minutes, so the
+  page now stops at `web.chat_reply_max_ms` (3 minutes) and shows the error instead of looking frozen.
 - **Not done:** upload format 1 stays (Decision 3). The chat box's `maxlength="500"` in `web_app/index.html` is
   shorter than `chat.message_max_chars` (1200); it was left alone because changing it changes what you can type.
 
