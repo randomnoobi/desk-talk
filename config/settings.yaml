@@ -580,6 +580,10 @@ dev:
       command: [uv, run, ruff, check, .]
     - name: Types
       command: [uv, run, pyright]
+    - name: Dead code
+      command: [uv, run, vulture]
+    - name: Page tests            # the developer page's own tests (needs `npm install` in dev_ui/ once)
+      command: [npm, --prefix, dev_ui, test]
   test_command: [uv, run, pytest, -o, "addopts=", -q]    # one test or file: its id goes at the end
   collect_markers: "not docker and not e2e"   # which tests the list shows
   run_timeout_min: 15           # a run going longer than this is stopped

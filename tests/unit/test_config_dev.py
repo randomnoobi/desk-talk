@@ -41,7 +41,9 @@ def test_dev_settings_load(project):
     assert isinstance(dev, DevSettings)
     assert dev.enabled is True
     assert dev.checks[0].name == 'Fast tests'
-    assert [check.name for check in dev.checks] == ['Fast tests', 'Lint', 'Types']
+    assert [check.name for check in dev.checks] == ['Fast tests', 'Lint', 'Types', 'Dead code', 'Page tests']
+    assert dev.checks[3].command == ('uv', 'run', 'vulture')
+    assert dev.checks[4].command == ('npm', '--prefix', 'dev_ui', 'test')
     assert all(isinstance(check, DevCheck) for check in dev.checks)
     assert dev.checks[1].command == ('uv', 'run', 'ruff', 'check', '.')
     assert dev.test_command == ('uv', 'run', 'pytest', '-o', 'addopts=', '-q')
