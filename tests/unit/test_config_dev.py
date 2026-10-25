@@ -54,6 +54,7 @@ def test_dev_settings_load(project):
     assert dev.health.pi_cpu_bad_c == 80
     assert config.object_states.trace_pictures == 90
     assert (dev.flicker_flips_per_min, dev.sql_check_every_steps) == (4, 1000)
+    assert (dev.collect_timeout_sec, dev.flips_window_min, dev.table_counts_every_sec) == (120, 10, 30)
 
 
 def test_dev_check_needs_a_command(project):

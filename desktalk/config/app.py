@@ -677,12 +677,15 @@ class DevSettings(_Section):
     test_command: Command
     collect_markers: str
     run_timeout_min: PositiveNumber
+    collect_timeout_sec: PositiveNumber
     output_keep_kb: PositiveInt
     sql_max_rows: PositiveInt
     sql_timeout_sec: PositiveNumber
     sql_check_every_steps: PositiveInt
     file_preview_kb: PositiveInt
     flicker_flips_per_min: Count
+    flips_window_min: PositiveNumber
+    table_counts_every_sec: PositiveNumber
     health: DevHealthLimits
 
 
