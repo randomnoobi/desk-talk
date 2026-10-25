@@ -1,0 +1,198 @@
+/* ============================================
+   DESK TALK — developer page
+   The app page's look (web_app/style.css): white paper, ink text, the same font.
+   Shared words every tab can use:
+     .card .cards .row .stack .split       boxes and layout
+     .ok .warn .bad .off                   a level, on .pill, .dot or a table row
+     .pill .dot .tag .chip                 small labels
+     .btn .btn.primary .btn.big .btn.danger buttons
+     .input .code .printout                typing boxes and scrolling text
+     .table .num .clickable                tables (see Table in ui.tsx)
+     .muted .small .mono .error            text
+   ============================================ */
+
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  src: url('../../web_app/fonts/bricolage-grotesque.woff2') format('woff2');
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+:root {
+  --ink: #2B2440;
+  --ink-2: #5E5873;
+  --ink-3: #8D88A0;
+  --paper: #FFFFFF;
+  --mist: #F3F4F9;
+  --line: #E4E5EE;
+  --peri-tint: #E9EDF8;
+
+  --cobalt: #2F5FD0;   --cobalt-tint: #E4EAFB;
+  --teal: #1F9A83;     --teal-tint: #DDF2ED;
+  --mustard: #9A6C00;  --mustard-tint: #FCF0CC;
+  --coral-tint: #FCE4E8;
+  --danger: #C8324A;
+
+  --font: 'Bricolage Grotesque', ui-rounded, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
+
+body {
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.45;
+  font-variation-settings: 'opsz' 14;
+  color: var(--ink);
+  background: var(--paper);
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: 0; }
+:focus-visible { outline: 2.5px solid var(--cobalt); outline-offset: 2px; border-radius: 8px; }
+h1, h2, h3 { font-variation-settings: 'opsz' 96; line-height: 1.1; }
+h2 { font-size: 20px; margin-bottom: 10px; }
+h3 { font-size: 16px; margin-bottom: 8px; }
+code, .mono { font-family: var(--mono); font-size: 13px; }
+a { color: var(--cobalt); }
+
+/* ---------- the frame: header, tabs, the offline bar ---------- */
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 14px 28px;
+  background: var(--peri-tint);
+}
+.brand { display: flex; align-items: baseline; gap: 8px; font-size: 18px; }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.tab {
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.tab:hover { background: var(--paper); }
+.tab[aria-selected="true"] { background: var(--ink); color: #fff; }
+
+.offline-bar {
+  padding: 10px 28px;
+  background: var(--mustard-tint);
+  color: var(--mustard);
+  font-weight: 600;
+}
+.offline-bar .detail { font-weight: 400; }
+
+.page { padding: 24px 28px 48px; }
+
+/* ---------- boxes and layout ---------- */
+.card {
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--paper);
+}
+.card + .card { margin-top: 16px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.cards > .card + .card { margin-top: 0; }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.split { display: grid; grid-template-columns: minmax(200px, 280px) minmax(0, 1fr); gap: 20px; align-items: start; }
+
+/* ---------- levels: set --level, then .pill, .dot and table rows use it ---------- */
+.ok   { --level: var(--teal);    --level-tint: var(--teal-tint); }
+.warn { --level: var(--mustard); --level-tint: var(--mustard-tint); }
+.bad  { --level: var(--danger);  --level-tint: var(--coral-tint); }
+.off  { --level: var(--ink-3);   --level-tint: var(--mist); }
+
+/* ---------- small labels ---------- */
+.pill {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--level, var(--ink-2));
+  background: var(--level-tint, var(--mist));
+}
+.dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--level, var(--ink-3));
+}
+.tag {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.chip { padding: 6px 14px; border-radius: 999px; background: var(--mist); font-size: 14px; font-weight: 600; }
+.chip.ok, .chip.warn, .chip.bad, .chip.off { color: var(--level); background: var(--level-tint); }
+
+/* ---------- buttons ---------- */
+.btn {
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--mist);
+  font-size: 14px;
+  font-weight: 600;
+}
+.btn:hover { background: var(--line); }
+.btn.primary { background: var(--cobalt); color: #fff; font-weight: 700; }
+.btn.primary:hover { background: #244CB0; }
+.btn.danger { color: var(--danger); }
+.btn.big { padding: 14px 26px; font-size: 17px; }
+.btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ---------- typing boxes and scrolling text ---------- */
+.input, .code {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+}
+.code { width: 100%; min-height: 96px; font-family: var(--mono); font-size: 13px; resize: vertical; }
+.printout {
+  max-height: 420px;
+  overflow: auto;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--mist);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---------- tables ---------- */
+.table-wrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.table th {
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--line);
+}
+.table td { padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.table tr.ok td:first-child, .table tr.warn td:first-child,
+.table tr.bad td:first-child, .table tr.off td:first-child { box-shadow: inset 3px 0 0 var(--level); }
+.table tr.bad td, .table tr.warn td { color: var(--level); }
+.table tr.clickable { cursor: pointer; }
+.table tr.clickable:hover td { background: var(--mist); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- text ---------- */
+.muted { color: var(--ink-3); }
+.small { font-size: 13px; }
+.error { color: var(--danger); font-weight: 600; }
