@@ -7,29 +7,16 @@ that each step turns into the next, and that the three places agree.
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from desktalk.domain import BBox, Detection
-from tests.integration.app_kit import DeskRig
-
-STEP = 1 / 3                          # the camera sends 3 pictures a second
-PICTURE_WIDTH = 640                   # app_kit's desk pictures are 640 x 480
+from tests.integration.app_kit import DESK_PICTURE_SIZE, DeskRig, changed, desk_config
 
 
 def bottle(conf: float = 0.9, left: float = 100) -> Detection:
     return Detection('bottle', conf, BBox(left, 300, left + 40, 400))
-
-
-def show(rig: DeskRig, pictures: list[list[Detection]]) -> None:
-    """One picture per entry, STEP seconds apart: the boxes the detector finds in it (no person)."""
-    for boxes in pictures:
-        rig.detector.detections = boxes
-        rig.picture()
-        rig.clock.advance(STEP)
-
-
-def pictures_for(seconds: float) -> int:
-    return round(seconds / STEP)
 
 
 def logged(rig: DeskRig, label: str) -> list[dict]:
@@ -52,7 +39,7 @@ def test_a_bottle_put_down_moved_and_taken_away(tmp_path):
     rig = DeskRig(tmp_path)
     s = rig.config.object_states
     here, there = bottle(left=100), bottle(left=500)
-    assert (there.bbox.x1 - here.bbox.x1) / PICTURE_WIDTH > s.move_fraction
+    assert (there.bbox.x1 - here.bbox.x1) / DESK_PICTURE_SIZE[0] > s.move_fraction
 
     put_down = rig.clock.now()
     rig.watch(s.appear_sec + 2, here, person=False)
@@ -85,24 +72,41 @@ def test_a_bottle_put_down_moved_and_taken_away(tmp_path):
 def test_a_wobbly_confidence_is_one_steady_appearance(tmp_path):
     rig = DeskRig(tmp_path)
     s = rig.config.object_states
-    sure = bottle(s.on_confidence + 0.02)
+    sure = bottle((s.on_confidence + 1) / 2)                       # over the "on" line
     unsure = bottle((s.on_confidence + s.off_confidence) / 2)      # under the "on" line, over the "off" line
-    show(rig, [[sure], [unsure]] * pictures_for(s.appear_sec + s.gone_sec + 4))
+    rig.show(s.appear_sec + s.gone_sec + 4, [[sure], [unsure]])
 
     assert state(rig, 'bottle') == 'PRESENT'
     assert [e['change'] for e in logged(rig, 'bottle')] == ['appeared']
     assert [r.type for r in saved(rig, 'bottle')] == ['appeared']
 
 
-def test_missed_pictures_and_a_short_gap_do_not_remove_it(tmp_path):
+def test_the_vote_keeps_it_through_missed_pictures(tmp_path):
+    config = desk_config(tmp_path)
+    s = config.object_states
+    step = 1 / config.camera.fps
+    # Seen in just enough pictures to win every vote, then missed in the rest of the window, over and over.
+    seen = math.floor(s.vote_share * s.window_pictures) + 1
+    missed = s.window_pictures - seen
+    pattern = [[bottle()]] * seen + [[]] * missed
+    # gone_sec shorter than one picture: without the vote, the run of missed pictures would already remove it.
+    quick_gone = step / 2
+    assert (missed - 1) * step > quick_gone
+    rig = DeskRig(tmp_path, config=changed(config, 'object_states', gone_sec=quick_gone))
+    rig.show(s.appear_sec + 2, [[bottle()]])
+    rig.show(s.appear_sec + s.gone_sec + 4, pattern)
+
+    assert state(rig, 'bottle') == 'PRESENT'
+    assert [e['change'] for e in logged(rig, 'bottle')] == ['appeared']
+    assert [r.type for r in saved(rig, 'bottle')] == ['appeared']
+
+
+def test_a_short_gap_does_not_remove_it(tmp_path):
     rig = DeskRig(tmp_path)
     s = rig.config.object_states
-    rig.watch(s.appear_sec + 2, bottle(), person=False)
-    # The detector misses it in every third picture...
-    show(rig, [[bottle()], [bottle()], []] * pictures_for(s.gone_sec + 3))
-    # ...then loses it for a moment, shorter than gone_sec.
-    show(rig, [[]] * pictures_for(s.gone_sec / 2))
-    rig.watch(s.appear_sec + 2, bottle(), person=False)
+    rig.show(s.appear_sec + 2, [[bottle()]])
+    rig.show(s.gone_sec / 2, [[]])                      # lost for a moment, shorter than gone_sec
+    rig.show(s.appear_sec + 2, [[bottle()]])
 
     assert state(rig, 'bottle') == 'PRESENT'
     assert [e['change'] for e in logged(rig, 'bottle')] == ['appeared']
@@ -113,7 +117,7 @@ def test_one_stray_box_somewhere_else_is_not_a_move(tmp_path):
     rig = DeskRig(tmp_path)
     s = rig.config.object_states
     rig.watch(s.appear_sec + 2, bottle(left=100), person=False)
-    show(rig, [[bottle(left=500)]])                     # one picture puts the box across the desk
+    rig.show(1 / rig.config.camera.fps, [[bottle(left=500)]])     # one picture puts the box across the desk
     rig.watch(s.appear_sec + 2, bottle(left=100), person=False)
 
     assert [e['change'] for e in logged(rig, 'bottle')] == ['appeared']
@@ -126,6 +130,6 @@ def test_a_box_never_sure_enough_never_appears(tmp_path):
     unsure = bottle((s.on_confidence + s.off_confidence) / 2)
     rig.watch(s.appear_sec + s.gone_sec + 4, unsure, person=False)
 
-    assert state(rig, 'bottle') != 'PRESENT'
+    assert state(rig, 'bottle') == 'ABSENT'
     assert logged(rig, 'bottle') == []
     assert saved(rig, 'bottle') == []
