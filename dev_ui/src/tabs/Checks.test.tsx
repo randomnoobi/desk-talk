@@ -33,6 +33,9 @@ const SETTINGS: DevSettings = {
   disconnect_after_sec: 3,
   web_port: 5000,
   flicker_flips_per_min: 4,
+  output_keep_kb: 2000,
+  flips_window_min: 10,
+  table_counts_every_sec: 30,
   object_states: { on_confidence: 0.5, off_confidence: 0.3, appear_sec: 2, gone_sec: 5, window_pictures: 5, vote_share: 0.6 },
 }
 
@@ -56,8 +59,8 @@ async function wait(ms: number) {
   await act(async () => { await vi.advanceTimersByTimeAsync(ms) })
 }
 
-async function show() {
-  render(<Checks settings={SETTINGS} />)
+async function show(settings: DevSettings = SETTINGS) {
+  render(<Checks settings={settings} />)
   await wait(0)
 }
 
@@ -129,6 +132,21 @@ describe('Checks: during and after a run', () => {
     expect(screen.getByLabelText('Count')).toHaveTextContent('1 passed')
     expect(screen.getByLabelText('Count')).toHaveTextContent('0 failed')
     expect(screen.getByLabelText('Count')).toHaveTextContent('1 skipped')
+  })
+
+  it('keeps only the last settings.output_keep_kb of the printout (a character counted as a byte)', async () => {
+    getRun
+      .mockResolvedValueOnce(run({ output: `START${'a'.repeat(1000)}`, output_end: 1005 }))
+      .mockResolvedValueOnce(run({ output: `${'b'.repeat(1000)}END`, output_end: 2008 }))
+    await show({ ...SETTINGS, output_keep_kb: 1 })
+    fireEvent.click(screen.getByRole('button', { name: 'Run everything' }))
+    await wait(0)
+    await wait(SETTINGS.poll_sec * 1000)
+
+    const printout = screen.getByLabelText('Printout').textContent ?? ''
+    expect(printout).toHaveLength(1024)
+    expect(printout.endsWith('END')).toBe(true)
+    expect(printout).not.toContain('START')
   })
 
   it('stops asking once the run is over', async () => {

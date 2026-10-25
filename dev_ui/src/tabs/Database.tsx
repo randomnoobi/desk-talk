@@ -1,8 +1,9 @@
 // The Database tab: the databases and their tables on the left, a query box and its answer on the right.
-// The server opens every database read-only, so nothing typed here can change one.
-import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+// The server opens every database read-only, so nothing typed here can change one. Counting the rows
+// reads every table, so it happens on open, every settings.table_counts_every_sec and on "Count again".
+import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { getDatabases, getTables, runQuery, type DevSettings, type QueryResult, type TableInfo } from '../api'
-import { OBJECT_STATES_DB, READY_MADE } from '../queries'
+import { OBJECT_STATES_DB, readyMade } from '../queries'
 import { ErrorLine, Table, type Column } from '../ui'
 import { usePoll } from '../usePoll'
 
@@ -54,7 +55,8 @@ interface Answer {
 
 export default function Database(props: { settings: DevSettings }): JSX.Element {
   const { settings } = props
-  const list = usePoll(loadEverything, settings.poll_sec * 1000)
+  const list = usePoll(loadEverything, settings.table_counts_every_sec * 1000)
+  const queries = useMemo(() => readyMade(settings), [settings])
   const databases = list.data ?? []
 
   const [picked, setPicked] = useState<string | null>(null)
@@ -97,7 +99,10 @@ export default function Database(props: { settings: DevSettings }): JSX.Element 
   return (
     <div className="split">
       <div className="card stack">
-        <h2>Databases</h2>
+        <div className="row">
+          <h2 style={{ marginBottom: 0 }}>Databases</h2>
+          <button type="button" className="btn" onClick={list.refresh}>Count again</button>
+        </div>
         <ErrorLine error={list.error} />
         {list.data === null && !list.error && <p className="muted">Asking for the tables…</p>}
         {list.data !== null && databases.length === 0 && <p className="muted">No databases.</p>}
@@ -126,7 +131,7 @@ export default function Database(props: { settings: DevSettings }): JSX.Element 
         {names.includes(OBJECT_STATES_DB) && (
           <div className="row">
             <span className="muted small">Ready-made:</span>
-            {READY_MADE.map(q => (
+            {queries.map(q => (
               <button key={q.name} type="button" className="btn" onClick={() => fillAndRun(OBJECT_STATES_DB, q.sql, null)}>
                 {q.name}
               </button>

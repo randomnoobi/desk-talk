@@ -87,6 +87,9 @@ def dev_settings(app: App) -> dict[str, Any]:
         'disconnect_after_sec': config.camera.disconnect_after_sec,
         'web_port': config.web.port,
         'flicker_flips_per_min': dev.flicker_flips_per_min,
+        'output_keep_kb': dev.output_keep_kb,
+        'flips_window_min': dev.flips_window_min,
+        'table_counts_every_sec': dev.table_counts_every_sec,
     }
 
 
@@ -112,7 +115,10 @@ def dev_smoothing_trace(app: App, label: str) -> dict[str, Any]:
 
 @router.get('/api/dev/tests')
 def dev_tests(app: App) -> dict[str, Any]:
-    return {'tests': [asdict(item) for item in _runner(app).collect()]}
+    try:
+        return {'tests': [asdict(item) for item in _runner(app).collect()]}
+    except RuntimeError as error:           # the test command can't run (a missing program, a test file stuck)
+        raise HTTPException(503, str(error)) from None
 
 
 @router.post('/api/dev/runs')

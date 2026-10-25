@@ -14,18 +14,21 @@ You need Node 22 (it comes with npm).
   on each. While a run goes you see each test pass or fail as it finishes, the printout, and **Stop**.
   Afterwards the failed tests come first, with their messages, and **Run again** runs just those.
 - **Live**: a card per object with its state (present, absent, unknown) and for how long, the changes
-  newest first (with a "flickering" badge on an object that keeps flipping), and a chart of the smoothing
+  newest first (the newest `dev.sql_max_rows` of them, with a "flickering" badge on an object that keeps
+  flipping), and a chart of the smoothing
   for one object over its last `object_states.trace_pictures` pictures: the box's confidence against the
   on and off lines, the vote, the state, and the wait before it changes.
 - **System**: how the Pi is doing (connected, pictures a second, last picture, its detector, temperature,
   slowed down, disk, clock) and every part on this computer (detection, the event stream, background jobs,
   timed jobs, the event log, the AI), from `/api/health` and `/api/log/status`. Numbers turn amber or red
   at the limits in `dev.health`.
-- **Database**: the databases and their tables with row counts. Click a table to see its newest rows and
+- **Database**: the databases and their tables with row counts (counted on open, every
+  `dev.table_counts_every_sec` and on **Count again**). Click a table to see its newest rows and
   its `CREATE` line, or type a query (Ctrl/Cmd+Enter runs it) or pick a ready-made one. Only queries that
   read can run; the database is opened read-only.
 - **Storage**: what the app page keeps in this browser (localStorage), what each key is for, and a
-  **Delete** button that asks first; the files in the data folder, with a look at the start of each; and
+  **Delete** button that asks first; the files in the data folder, with a look at the start of each (read
+  again every `dev.table_counts_every_sec` and on **Read the folder again**); and
   the Pi's stored photos and free space.
 
 ## Use it

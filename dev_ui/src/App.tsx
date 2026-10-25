@@ -7,9 +7,11 @@ import Storage from './tabs/Storage'
 import System from './tabs/System'
 import { usePoll } from './usePoll'
 
-// How often to try again before the first settings arrive. After that the page asks every
-// settings.dev.poll_sec; this is the one number it can't get from the server, because it's
-// only used while the server isn't answering.
+// How often to ask again while the first settings haven't arrived. Once they have, the page asks
+// every settings.dev.poll_sec instead. This is the one number the page keeps itself, and it has to:
+// it's only used while the server isn't answering, so there's no server to ask for it. It isn't read
+// from config/settings.yaml when the page is built either, because the built page (dev_ui/dist) would
+// then keep an old copy that goes wrong as soon as someone changes the setting without building again.
 export const FIRST_TRY_AGAIN_MS = 2000
 
 /** The tabs, in order. Link to one with its id: <a href="#database">. */

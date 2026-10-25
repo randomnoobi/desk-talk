@@ -41,3 +41,8 @@ export function formatDateTime(ts: number): string {
   const two = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`
 }
+
+/** The last `chars` characters of `text`: the oldest text goes first, like the server's own printout. */
+export function keepLast(text: string, chars: number): string {
+  return text.length > chars ? text.slice(-chars) : text
+}

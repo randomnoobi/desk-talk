@@ -28,6 +28,7 @@ from desktalk.web.pairing import Links
 
 THIS_COMPUTER = '127.0.0.1'         # where the browser on this computer connects from
 CLIENT_PORT = 50000                 # the port the requests seem to come from (nothing listens on it)
+TEST_ADDRESS = 'http://testserver'  # where requests go when no address is given (FastAPI's TestClient's own)
 STREAM_TIMEOUT_SEC = 10             # give up on a live stream (SSE, video) after this long
 STREAM_MAX_BYTES = 2_000_000        # never read more than this from a live stream
 AUTOMATIC_METHODS = {'HEAD', 'OPTIONS'}   # the web framework answers these by itself
@@ -53,13 +54,15 @@ class StreamTimeout(AssertionError):
 
 
 class WebClient:
-    def __init__(self, app: FastAPI):
+    def __init__(self, app: FastAPI, address: str = TEST_ADDRESS):
+        """`address` is where the requests are sent (their Host header), e.g. http://localhost:5000."""
         self._app = app
+        self._address = address
         self._clients: dict[str, TestClient] = {}
 
     @classmethod
     def main_server(cls, desktalk: DeskTalk, links: Links) -> WebClient:
-        return cls(create_app(desktalk, links))
+        return cls(create_app(desktalk, links), f'http://localhost:{desktalk.config.web.port}')
 
     @classmethod
     def phone_server(cls, desktalk: DeskTalk) -> WebClient:
@@ -70,7 +73,7 @@ class WebClient:
         background jobs stay off: the tests drive the desk by hand. Errors come back as replies (500), as
         from a real server, and redirects aren't followed, so they can be checked."""
         if from_ip not in self._clients:
-            self._clients[from_ip] = TestClient(self._app, client=(from_ip, CLIENT_PORT),
+            self._clients[from_ip] = TestClient(self._app, base_url=self._address, client=(from_ip, CLIENT_PORT),
                                                 raise_server_exceptions=False, follow_redirects=False)
         return self._clients[from_ip]
 
@@ -103,7 +106,8 @@ class WebClient:
         def run():
             try:
                 # A client of its own: this thread reads while the test's thread sends other requests.
-                client = TestClient(self._app, client=(from_ip, CLIENT_PORT), raise_server_exceptions=False)
+                client = TestClient(self._app, base_url=self._address, client=(from_ip, CLIENT_PORT),
+                                    raise_server_exceptions=False)
                 with client.stream('GET', path) as r:
                     out['status'] = r.status_code
                     out['headers'] = {k.lower(): v for k, v in r.headers.items()}

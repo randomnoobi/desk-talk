@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DataFile, DevSettings, PiStatus } from '../api'
 import Storage, { visibleTree } from './Storage'
@@ -13,6 +13,9 @@ const SETTINGS: DevSettings = {
   disconnect_after_sec: 3,
   web_port: 5000,
   flicker_flips_per_min: 4,
+  output_keep_kb: 2000,
+  flips_window_min: 10,
+  table_counts_every_sec: 30,
   object_states: { on_confidence: 0.5, off_confidence: 0.3, appear_sec: 2, gone_sec: 5, window_pictures: 5, vote_share: 0.6 },
 }
 
@@ -111,6 +114,29 @@ describe('Storage tab: this computer', () => {
     fireEvent.click(screen.getByText('notes.txt'))
     expect(await screen.findByText('the start of notes.txt')).toBeInTheDocument()
     expect(asked).toContain('/api/dev/files/preview?path=notes.txt')
+  })
+
+  it('reads the folder once on open, then every settings.table_counts_every_sec (not every poll_sec), and on a click', async () => {
+    vi.useFakeTimers()
+    try {
+      const asked = fakeServer()
+      const reads = () => asked.filter(path => path === '/api/dev/files').length
+      const wait = async (ms: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms) }) }
+      render(<Storage settings={{ ...SETTINGS, poll_sec: 1, table_counts_every_sec: 30 }} />)
+      await wait(0)
+      expect(reads()).toBe(1)
+
+      await wait(29_000)
+      expect(reads()).toBe(1)
+      await wait(1_000)
+      expect(reads()).toBe(2)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Read the folder again' }))
+      await wait(0)
+      expect(reads()).toBe(3)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('puts folders first and indents what is inside', () => {

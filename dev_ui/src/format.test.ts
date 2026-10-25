@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatAgo, formatBytes, formatSeconds } from './format'
+import { formatAgo, formatBytes, formatSeconds, keepLast } from './format'
 
 describe('formatBytes', () => {
   it.each([
@@ -22,5 +22,15 @@ describe('formatAgo', () => {
   it('says how long ago, or how long until', () => {
     expect(formatAgo(100, 112)).toBe('12 s ago')
     expect(formatAgo(115, 112)).toBe('in 3 s')
+  })
+})
+
+describe('keepLast', () => {
+  it('keeps text that fits as it is', () => {
+    expect(keepLast('hello', 5)).toBe('hello')
+  })
+
+  it('lets the oldest text go when there is too much', () => {
+    expect(keepLast('old lines, new lines', 9)).toBe('new lines')
   })
 })

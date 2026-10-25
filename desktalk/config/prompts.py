@@ -194,6 +194,7 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'dev.database_file': ('path',),
     'dev.unknown_test': ('test_id',),
     'dev.unknown_run': ('run_id',),
+    'dev.cannot_list_tests': ('reason',),
     'dev.unknown_database': ('name',),
     'dev.query_refused': ('reason',),
     'dev.query_failed': ('reason',),
@@ -651,6 +652,7 @@ class DevWords(_Section):
     unknown_test: str
     nothing_to_run: str
     unknown_run: str
+    cannot_list_tests: str
     unknown_database: str
     query_not_one_statement: str
     query_refused: str

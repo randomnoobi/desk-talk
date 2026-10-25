@@ -73,6 +73,8 @@ OUTLINE = [[0, 0.5], [1, 0.5], [1, 1], [0, 1]]
 DEV_TEST_ID = 'tests/unit/test_example.py::test_one'
 OTHER_PAGE = {'Origin': 'https://example.com'}
 VITE_PAGE = {'Origin': 'http://localhost:5173'}
+# a web site whose name was pointed at 127.0.0.1: its page reaches the server from this computer, with no Origin
+OTHER_ADDRESS = {'Host': 'evil.example:5000'}
 
 HISTORY = [{'role': 'user', 'text': 'morning!'},
            {'role': 'assistant', 'name': 'Cup', 'text': 'Morning! Drink me sometime?'}]
@@ -258,9 +260,11 @@ CASES = [
     Case('dev-page-no-slash', 'GET', '/dev', 307, desk='fresh', reply=STATUS),
     Case('dev-settings', 'GET', '/api/dev/settings', 200, desk='fresh',
          values={'checks': ['Fast tests', 'Lint', 'Types', 'Dead code', 'Page tests'], 'web_port': 5000,
-                 'flicker_flips_per_min': 4}),
+                 'flicker_flips_per_min': 4, 'output_keep_kb': 2000, 'flips_window_min': 10,
+                 'table_counts_every_sec': 30}),
     Case('dev-settings-other-computer', 'GET', '/api/dev/settings', 403, desk='fresh', from_ip=LAN_DEVICE),
     Case('dev-settings-other-web-page', 'GET', '/api/dev/settings', 403, desk='fresh', headers=OTHER_PAGE),
+    Case('dev-settings-other-address', 'GET', '/api/dev/settings', 403, desk='fresh', headers=OTHER_ADDRESS),
     Case('dev-states', 'GET', '/api/dev/states?since=0', 200),
     Case('dev-states-nothing-seen', 'GET', '/api/dev/states', 200, desk='fresh'),
     Case('dev-states-bad-since', 'GET', '/api/dev/states?since=yesterday', 400),
@@ -303,6 +307,8 @@ CASES = [
     Case('dev-files-preview-database', 'GET', '/api/dev/files/preview?path=object_states.sqlite', 200),
     Case('dev-files-preview-outside', 'GET', '/api/dev/files/preview?path=../.env', 400),
     Case('dev-files-preview-missing', 'GET', '/api/dev/files/preview?path=nothing-here.txt', 404),
+    Case('dev-files-preview-other-address', 'GET', '/api/dev/files/preview?path=preferences.json', 403,
+         headers=OTHER_ADDRESS),
 
     # ── The phone camera's own server (phone_camera/) ──
     Case('phone-page', 'GET', '/', 200, desk='phone', server='phone', reply=FILE, starts_with=HTML_START),

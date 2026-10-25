@@ -1,12 +1,13 @@
 // The Checks tab: one button that runs every check in settings → dev.checks, and every test pytest
 // finds, by folder and file, each with its own Run button. One run at a time; the page asks the
-// server how it's going every settings.poll_sec and adds the new printout on.
+// server how it's going every settings.poll_sec and adds the new printout on, keeping only the last
+// settings.output_keep_kb of it (counting a character as a byte), as the server does.
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   ApiError, getRun, getTests, startCheck, startTests, stopRun,
   type DevSettings, type RunStatus, type StepStatus, type TestItem, type TestOutcome,
 } from '../api'
-import { formatClock, formatSeconds } from '../format'
+import { formatClock, formatSeconds, keepLast } from '../format'
 import { buildTree, filterTree, type TreeNode } from '../testTree'
 import { ErrorLine, Pill, type Level } from '../ui'
 
@@ -107,6 +108,7 @@ function Branch(props: {
 export default function Checks(props: { settings: DevSettings }): JSX.Element {
   const { settings } = props
   const everyMs = settings.poll_sec * 1000
+  const keepChars = settings.output_keep_kb * 1024
 
   // ── the list of tests ──
   const [tests, setTests] = useState<TestItem[] | null>(null)
@@ -150,7 +152,7 @@ export default function Checks(props: { settings: DevSettings }): JSX.Element {
         if (gone) return
         from = Math.max(from, now.output_end)
         setStatus(now)
-        if (now.output) setOutput(old => old + now.output)
+        if (now.output) setOutput(old => keepLast(old + now.output, keepChars))
         if (started.kind === 'check') setCheckSteps(now.steps)
         setRunError(null)
         if (now.state === 'running') timer = setTimeout(ask, everyMs)
@@ -168,7 +170,7 @@ export default function Checks(props: { settings: DevSettings }): JSX.Element {
       gone = true
       clearTimeout(timer)
     }
-  }, [started, everyMs])
+  }, [started, everyMs, keepChars])
 
   const start = async (kind: Started['kind'], ids: string[]) => {
     if (busy) return

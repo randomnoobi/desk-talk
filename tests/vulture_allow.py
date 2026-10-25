@@ -9,6 +9,7 @@ from typing import Any, cast
 
 from uvicorn import Server
 
+import desktalk.adapters.dev
 from desktalk.adapters.dev import pytest_report
 from desktalk.config import (
     DevHealthLimits,
@@ -70,6 +71,9 @@ _ = (
 _developer_page = (
     # pytest calls a plugin's hooks by name: desktalk/adapters/dev/pytest_report.py, loaded with -p.
     pytest_report.pytest_runtest_logreport,
+    # Python calls a package's __getattr__ for a name it doesn't have yet: the developer page's tools are only
+    # imported when first asked for, so loading the plugin above brings in nothing else.
+    desktalk.adapters.dev.__getattr__,
     # Sent to the developer page whole (GET /api/dev/settings → health, with model_dump()), read by dev_ui/.
     DevHealthLimits.pi_cpu_warn_c, DevHealthLimits.pi_cpu_bad_c, DevHealthLimits.pi_disk_warn_mb,
     DevHealthLimits.detect_warn_ms,

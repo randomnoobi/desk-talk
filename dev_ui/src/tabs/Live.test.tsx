@@ -20,6 +20,9 @@ const settings: DevSettings = {
   disconnect_after_sec: 3,
   web_port: 5000,
   flicker_flips_per_min: 4,
+  output_keep_kb: 2000,
+  flips_window_min: 10,
+  table_counts_every_sec: 30,
   object_states: { on_confidence: 0.5, off_confidence: 0.4, appear_sec: 3, gone_sec: 3, window_pictures: 5, vote_share: 0.5 },
 }
 
@@ -91,5 +94,13 @@ describe('Live tab', () => {
     render(<Live settings={{ ...settings, flicker_flips_per_min: 2 }} />)
     const card = await screen.findByRole('group', { name: 'cup' })
     expect(await within(card).findByText('flickering')).toHaveAttribute('title', 'More than 2 flips in the last minute')
+  })
+
+  it('keeps only the newest settings.sql_max_rows changes in the list', async () => {
+    const moves = Array.from({ length: 20 }, (_, i) => ({ ts: now - 5000 + i, label: 'cup', change: 'moved' as const }))
+    vi.mocked(getStates).mockResolvedValue({ ...states, changes: moves })
+    render(<Live settings={{ ...settings, sql_max_rows: 5 }} />)
+    await screen.findAllByText('moved')
+    expect(screen.getAllByText('moved')).toHaveLength(5)
   })
 })

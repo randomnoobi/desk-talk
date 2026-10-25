@@ -1011,7 +1011,9 @@ class TestRunner(Protocol):
     test file imports by name."""
 
     def collect(self) -> list[TestItem]:
-        """Every test the list shows (settings → dev.collect_markers); the slow ones are marked 'slow'."""
+        """Every test the list shows (settings → dev.collect_markers); the slow ones are marked 'slow'.
+        Raises RuntimeError, with the reason, when the test command can't run or takes longer than
+        dev.collect_timeout_sec."""
         ...
 
     def start_check(self) -> str:

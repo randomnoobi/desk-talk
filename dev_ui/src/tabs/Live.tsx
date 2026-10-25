@@ -6,7 +6,7 @@ import { getStates, getTrace, getTracedLabels, type DevSettings, type ObjectNow,
 import { formatClock, formatSeconds } from '../format'
 import SmoothingChart from '../SmoothingChart'
 import { ErrorLine, Pill, Table } from '../ui'
-import { countdown, isFlickering, mergeChanges, newestFirst, withPhases, type ChangeRow } from '../timeline'
+import { countdown, isFlickering, keepRecent, mergeChanges, newestFirst, withPhases, type ChangeRow } from '../timeline'
 import { usePoll } from '../usePoll'
 
 const nowSec = () => Date.now() / 1000
@@ -24,8 +24,10 @@ const Flickering = (props: { limit: number }) =>
 /**
  * Asks for the states, and only for the changes it hasn't got yet. The first time it asks for the
  * changes since the camera's current run of pictures began (or since the page opened, if that isn't known).
+ * It keeps the newest `keep` changes, plus all of the last minute's for the flickering badge, so a day of
+ * changes doesn't pile up in the page.
  */
-function useStates(everyMs: number) {
+function useStates(everyMs: number, keep: number) {
   const since = useRef<number | null>(null)
   const changes = useRef<StateChange[]>([])
   return usePoll<States>(async () => {
@@ -34,7 +36,7 @@ function useStates(everyMs: number) {
       since.current = first.watched_since ?? nowSec()
     }
     const reply = await getStates(since.current)
-    changes.current = mergeChanges(changes.current, reply.changes)
+    changes.current = keepRecent(mergeChanges(changes.current, reply.changes), nowSec(), keep)
     const newest = changes.current[changes.current.length - 1]
     if (newest && newest.ts > since.current) since.current = newest.ts
     return { ...reply, changes: changes.current }
@@ -160,7 +162,8 @@ function Smoothing(props: { settings: DevSettings, steps: SmoothingStep[] }): JS
 export default function Live(props: { settings: DevSettings }): JSX.Element {
   const { settings } = props
   const everyMs = settings.poll_sec * 1000
-  const states = useStates(everyMs)
+  // The list keeps as many changes as the Database tab's "Latest changes" query shows (settings.sql_max_rows).
+  const states = useStates(everyMs, settings.sql_max_rows)
   const traced = usePoll(getTracedLabels, everyMs)
   const labels = useMemo(() => traced.data ?? [], [traced.data])
   const [picked, setPicked] = useState<string | null>(null)
@@ -182,6 +185,7 @@ export default function Live(props: { settings: DevSettings }): JSX.Element {
 
       <div className="card">
         <h2>Changes</h2>
+        <p className="muted small">The newest {settings.sql_max_rows}; the Database tab has them all.</p>
         {states.data && <Changes states={states.data} now={now} flickerLimit={settings.flicker_flips_per_min} />}
       </div>
 

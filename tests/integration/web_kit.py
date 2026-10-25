@@ -29,6 +29,7 @@ THIS_COMPUTER = '127.0.0.1'
 ON_THE_WIFI = '192.168.1.50'
 ADDRESS = '192.168.1.20'          # this computer on the Wi-Fi, as the Pi command and the phone link show it
 CLIENT_PORT = 50000
+TEST_ADDRESS = 'http://testserver'      # where FastAPI's TestClient sends requests unless told otherwise
 
 
 def links_for(app: DeskTalk, *, phone_page: bool = False) -> Links:
@@ -37,10 +38,15 @@ def links_for(app: DeskTalk, *, phone_page: bool = False) -> Links:
 
 
 def web_client(app: DeskTalk | FastAPI, *, from_ip: str = THIS_COMPUTER) -> TestClient:
-    """Requests to the main server (or to `app` when it's a web app already). The lifespan doesn't run,
+    """Requests to the main server, sent to http://localhost:<web.port> as this computer's browser sends them
+    (or to `app` when it's a web app already, at FastAPI's TestClient's own address). The lifespan doesn't run,
     so the background jobs stay off unless the test starts them."""
-    web = app if isinstance(app, FastAPI) else create_app(app, links_for(app))
-    return TestClient(web, client=(from_ip, CLIENT_PORT), raise_server_exceptions=False, follow_redirects=False)
+    if isinstance(app, FastAPI):
+        web, address = app, TEST_ADDRESS
+    else:
+        web, address = create_app(app, links_for(app)), f'http://localhost:{app.config.web.port}'
+    return TestClient(web, base_url=address, client=(from_ip, CLIENT_PORT), raise_server_exceptions=False,
+                      follow_redirects=False)
 
 
 def pi_upload(client: TestClient, jpeg: bytes, info: UploadInfo, key: str = PAIR_KEY) -> Any:

@@ -779,6 +779,9 @@ dev:
   # a request to start a run that names neither the check nor any tests
   nothing_to_run: 'Say what to run: the check ("Run everything"), or a list of tests.'
   unknown_run: "There's no run called {run_id}."
+  # the test list couldn't be made: the test command (dev.test_command) can't start, or listing took longer
+  # than dev.collect_timeout_sec. {reason} is what went wrong
+  cannot_list_tests: "Couldn't list the tests: {reason}"
   unknown_database: "There's no database called {name}."
   # the database tab's query box
   query_not_one_statement: Write one whole statement, with nothing after it.

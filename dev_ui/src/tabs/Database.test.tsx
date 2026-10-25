@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, getDatabases, getTables, runQuery, type DevSettings, type QueryResult, type TableInfo } from '../api'
-import { READY_MADE } from '../queries'
+import { readyMade } from '../queries'
 import Database from './Database'
 
 // The page's calls to the server are faked; ApiError and the rest of api.ts stay real.
@@ -22,6 +22,9 @@ const SETTINGS: DevSettings = {
   disconnect_after_sec: 3,
   web_port: 5000,
   flicker_flips_per_min: 4,
+  output_keep_kb: 2000,
+  flips_window_min: 10,
+  table_counts_every_sec: 30,
   object_states: { on_confidence: 0.5, off_confidence: 0.3, appear_sec: 2, gone_sec: 5, window_pictures: 5, vote_share: 0.6 },
 }
 
@@ -42,6 +45,7 @@ function result(over: Partial<QueryResult> = {}): QueryResult {
 }
 
 beforeEach(() => {
+  vi.mocked(getTables).mockClear()
   vi.mocked(getDatabases).mockResolvedValue(['object_states'])
   vi.mocked(getTables).mockResolvedValue([EVENTS])
   vi.mocked(runQuery).mockResolvedValue(result())
@@ -102,7 +106,7 @@ describe('Database tab', () => {
     vi.mocked(getDatabases).mockResolvedValue(['other', 'object_states'])
     render(<Database settings={SETTINGS} />)
     await screen.findAllByText('events')
-    const [first] = READY_MADE
+    const [first] = readyMade(SETTINGS)
     fireEvent.click(screen.getByRole('button', { name: first.name }))
 
     expect(screen.getByLabelText('Query')).toHaveValue(first.sql)
@@ -117,9 +121,44 @@ describe('Database tab', () => {
   })
 })
 
+describe('Database tab: counting the rows', () => {
+  async function wait(ms: number) {
+    await act(async () => { await vi.advanceTimersByTimeAsync(ms) })
+  }
+
+  afterEach(() => { vi.useRealTimers() })
+
+  it('counts once on open, then every settings.table_counts_every_sec (not every poll_sec), and on Count again', async () => {
+    vi.useFakeTimers()
+    render(<Database settings={{ ...SETTINGS, poll_sec: 1, table_counts_every_sec: 30 }} />)
+    await wait(0)
+    expect(getTables).toHaveBeenCalledTimes(1)
+
+    await wait(29_000)
+    expect(getTables).toHaveBeenCalledTimes(1)
+    await wait(1_000)
+    expect(getTables).toHaveBeenCalledTimes(2)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Count again' }))
+    await wait(0)
+    expect(getTables).toHaveBeenCalledTimes(3)
+  })
+})
+
 describe('the ready-made queries', () => {
+  it('the flips query looks back settings.flips_window_min and says so', () => {
+    const flips = readyMade({ ...SETTINGS, flips_window_min: 7 }).find(q => q.name.startsWith('Flips'))!
+    expect(flips.name).toBe('Flips per object, last 7 minutes')
+    expect(flips.sql).toContain("- 7 * 60")
+    expect(flips.sql).not.toContain('10 * 60')
+  })
+
+  it('says "minute" for one', () => {
+    expect(readyMade({ ...SETTINGS, flips_window_min: 1 }).map(q => q.name)).toContain('Flips per object, last minute')
+  })
+
   // The server's SqliteBrowser only lets plain reads run: a PRAGMA or anything else is refused.
-  it.each(READY_MADE.map(q => [q.name, q.sql]))('%s is a plain read', (_, sql) => {
+  it.each(readyMade(SETTINGS).map(q => [q.name, q.sql]))('%s is a plain read', (_, sql) => {
     expect(sql).toMatch(/^\s*(SELECT|WITH)\b/i)
     expect(sql).not.toMatch(/PRAGMA|ATTACH|INSERT|UPDATE|DELETE|;/i)
   })

@@ -37,6 +37,16 @@ export function mergeChanges(old: StateChange[], fresh: StateChange[]): StateCha
   return [...old, ...added].sort((a, b) => a.ts - b.ts)   // a stable sort keeps same-time changes in order
 }
 
+/**
+ * The changes worth keeping: the newest `keep` (what the list shows), plus every change from the minute
+ * before `now`, so the flickering badge still sees them all. Gives back `changes` itself when none go.
+ */
+export function keepRecent(changes: StateChange[], now: number, keep: number): StateChange[] {
+  const firstKept = changes.length - keep
+  if (firstKept <= 0) return changes
+  return changes.filter((c, i) => i >= firstKept || c.ts > now - MINUTE_SEC)
+}
+
 export interface ChangeRow extends StateChange {
   before: string
   after: Phase

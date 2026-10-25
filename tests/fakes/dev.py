@@ -30,15 +30,18 @@ class FakeTestRunner:
     """Knows the tests in `items` and runs nothing: a run finishes as soon as status() is called.
 
     `results`: test id → its outcome (a test not in it passes). `checks`: each "Run everything" step's name →
-    the exit code it finishes with. `started` records every run started, as ('check', []) or ('tests', ids);
-    `closed` says close() was called."""
+    the exit code it finishes with. `collect_error`: what collect() raises instead, like the real one when the
+    tests can't be listed (a RuntimeError with prompts.yaml → dev.cannot_list_tests). `started` records every
+    run started, as ('check', []) or ('tests', ids); `closed` says close() was called."""
 
     def __init__(self, items: Sequence[TestItem] = (), results: Mapping[str, TestOutcome] | None = None,
-                 checks: Mapping[str, int] | None = None, clock: FakeClock | None = None):
+                 checks: Mapping[str, int] | None = None, clock: FakeClock | None = None,
+                 collect_error: Exception | None = None):
         self.items = list(items)
         self.results = dict(results or {})
         self.checks = dict(checks if checks is not None else {'Fast tests': 0})
         self.clock = clock or FakeClock()
+        self.collect_error = collect_error
         self.started: list[tuple[str, list[str]]] = []
         self.closed = False                         # close() was called (the app stopped)
         self._known: set[str] = set()
@@ -46,6 +49,8 @@ class FakeTestRunner:
         self._asked: dict[str, list[str]] = {}
 
     def collect(self) -> list[TestItem]:
+        if self.collect_error is not None:
+            raise self.collect_error
         self._known = {item.id for item in self.items} | {item.file for item in self.items}
         return list(self.items)
 

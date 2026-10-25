@@ -145,7 +145,8 @@ export function visibleTree(files: DataFile[], open: ReadonlySet<string>): TreeR
 const isDatabase = (path: string) => path.toLowerCase().endsWith('.sqlite')
 
 function OnThisComputer(props: { settings: DevSettings }): JSX.Element {
-  const files = usePoll(getFiles, props.settings.poll_sec * 1000)
+  // Reading the folder walks all of it, so it happens on open, every settings.table_counts_every_sec and on a click.
+  const files = usePoll(getFiles, props.settings.table_counts_every_sec * 1000)
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set())
   const [picked, setPicked] = useState<string | null>(null)
   const [preview, setPreview] = useState<{ text: string | null, error: string | null }>({ text: null, error: null })
@@ -187,7 +188,10 @@ function OnThisComputer(props: { settings: DevSettings }): JSX.Element {
 
   return (
     <div className="card">
-      <h2>On this computer</h2>
+      <div className="row">
+        <h2>On this computer</h2>
+        <button type="button" className="btn" onClick={files.refresh}>Read the folder again</button>
+      </div>
       <p className="muted small">
         The data folder, <code>{props.settings.data_folder}</code>. Click a folder to open it, a file to see its
         start. Databases open in the Database tab.

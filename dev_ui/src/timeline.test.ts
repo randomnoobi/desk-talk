@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SmoothingSettings, SmoothingStep, StateChange } from './api'
-import { countdown, flipsPerMinute, isFlickering, mergeChanges, newestFirst, withPhases } from './timeline'
+import { countdown, flipsPerMinute, isFlickering, keepRecent, mergeChanges, newestFirst, withPhases } from './timeline'
 
 const cup = (ts: number, change: StateChange['change']): StateChange => ({ ts, label: 'cup', change })
 
@@ -76,5 +76,22 @@ describe('countdown', () => {
   it('is null when it is not waiting', () => {
     expect(countdown(step({}), smoothing)).toBeNull()
     expect(countdown(undefined, smoothing)).toBeNull()
+  })
+})
+
+describe('keepRecent', () => {
+  it('gives back the same list when nothing has to go', () => {
+    const changes = [cup(10, 'appeared'), cup(20, 'removed')]
+    expect(keepRecent(changes, 1000, 5)).toBe(changes)
+  })
+
+  it('keeps only the newest ones the list shows', () => {
+    const changes = [cup(10, 'appeared'), cup(20, 'removed'), cup(30, 'appeared')]
+    expect(keepRecent(changes, 1000, 2)).toEqual([cup(20, 'removed'), cup(30, 'appeared')])
+  })
+
+  it('keeps every change from the last minute too, so the flickering badge still counts them all', () => {
+    const changes = [cup(10, 'appeared'), cup(950, 'removed'), cup(960, 'appeared'), cup(970, 'removed')]
+    expect(keepRecent(changes, 1000, 1)).toEqual([cup(950, 'removed'), cup(960, 'appeared'), cup(970, 'removed')])
   })
 })

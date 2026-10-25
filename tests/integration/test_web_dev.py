@@ -2,8 +2,10 @@
 whole app with a fake test runner (nothing really runs) and the real database browser on the desk's own object
 state history.
 
-Only this computer may ask, and only from the server's own page or the Vite dev server's: anything else is a 403
-and nothing runs. With settings → dev.enabled false there are no routes and no page."""
+Only this computer may ask, only at the server's own address or the Vite dev server's (the Host header: so a
+web site whose name was pointed at 127.0.0.1 can't read the data folder), and only from the server's own page or
+the Vite dev server's (the Origin header): anything else is a 403 and nothing runs. With settings →
+dev.enabled false there are no routes and no page."""
 
 from __future__ import annotations
 
@@ -11,13 +13,16 @@ import html
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 
+from desktalk.bootstrap import DeskTalk
 from desktalk.domain import BBox, Detection, TestItem
 from desktalk.web.app import create_app
 from tests.characterization.client import WebClient
 from tests.fakes import FakeTestRunner
 from tests.integration.app_kit import CUP_FAR, DeskRig, changed, desk_config
-from tests.integration.web_kit import ON_THE_WIFI, links_for, web_client
+from tests.integration.web_kit import ON_THE_WIFI, THIS_COMPUTER, links_for
+from tests.integration.web_kit import web_client as main_client
 
 PEN = Detection('pen/pencil', 0.8, BBox(100, 380, 160, 400))
 TESTS = [TestItem('tests/unit/test_a.py::test_one', 'tests/unit/test_a.py', ()),
@@ -40,6 +45,28 @@ EVERY_ROUTE: list[tuple[str, str, Any]] = [
     ('GET', '/api/dev/files', None),
     ('GET', '/api/dev/files/preview?path=preferences.json', None),
 ]
+
+
+# The addresses this computer's browser may open the server or the Vite dev server at: {web} is settings →
+# web.port, {vite} dev.vite_port. Vite passes the browser's Host on to the server unchanged.
+OWN_ADDRESSES = ['localhost:{web}', '127.0.0.1:{web}', '[::1]:{web}',
+                 'localhost:{vite}', '127.0.0.1:{vite}', '[::1]:{vite}']
+# Addresses a request from this computer may name that aren't the server's own: a web site whose name was pointed
+# at 127.0.0.1 (the request still comes from this computer, with no Origin on a GET), or another port.
+OTHER_ADDRESSES = ['evil.example:{web}', 'evil.example', 'localhost:9999', '127.0.0.1.evil.example:{web}',
+                   'localhost.evil.example:{web}', '192.168.1.20:{web}']
+
+
+def own(address: str, rig: DeskRig) -> str:
+    return address.format(web=rig.config.web.port, vite=rig.config.dev.vite_port)
+
+
+def web_client(app: DeskTalk, *, from_ip: str = THIS_COMPUTER, address: str = 'localhost:{web}') -> TestClient:
+    """Requests to the main server, sent to http://<address> (its Host header): http://localhost:<web.port>,
+    as this computer's browser sends them, unless told otherwise."""
+    client = main_client(app, from_ip=from_ip)
+    client.base_url = f'http://{address.format(web=app.config.web.port, vite=app.config.dev.vite_port)}'
+    return client
 
 
 def settle_sec(rig: DeskRig) -> float:
@@ -228,12 +255,51 @@ def test_other_web_pages_get_403(rig, origin):
     assert runner(rig).started == []
 
 
-@pytest.mark.parametrize('origin', ['http://localhost:{vite}', 'http://localhost:{web}', 'http://127.0.0.1:{web}'])
-def test_the_page_itself_may_ask(rig, origin):
-    origin = origin.format(vite=rig.config.dev.vite_port, web=rig.config.web.port)
+@pytest.mark.parametrize('address', OWN_ADDRESSES)
+def test_the_page_itself_may_ask(rig, address):
+    origin = f'http://{own(address, rig)}'
     reply = web_client(rig.app).post('/api/dev/runs', json={'check': True}, headers={'Origin': origin})
     assert reply.status_code == 200
     assert runner(rig).started == [('check', [])]
+
+
+@pytest.mark.parametrize('address', OWN_ADDRESSES)
+def test_each_own_address_may_ask(rig, address):
+    """The page opened at localhost, 127.0.0.1 or [::1], on the server's port or Vite's (which passes Host on)."""
+    client = web_client(rig.app, address=address)
+    assert client.get('/api/dev/settings').status_code == 200
+    reply = client.post('/api/dev/runs', json={'check': True}, headers={'Origin': f'http://{own(address, rig)}'})
+    assert reply.status_code == 200
+    assert runner(rig).started == [('check', [])]
+
+
+@pytest.mark.parametrize('method, path, body', EVERY_ROUTE, ids=[f'{m} {p}' for m, p, _ in EVERY_ROUTE])
+def test_another_address_gets_403(rig, method, path, body):
+    """A web site whose name was pointed at 127.0.0.1: its own page asks this computer, with no Origin on a GET."""
+    reply = web_client(rig.app, address='evil.example:{web}').request(method, path, json=body)
+    assert (reply.status_code, reply.json()) == (403, {'error': rig.config.prompts.dev.other_web_page})
+    assert runner(rig).started == []
+
+
+@pytest.mark.parametrize('address', OTHER_ADDRESSES)
+def test_other_addresses_get_403(rig, address):
+    reply = web_client(rig.app, address=address).get('/api/dev/files/preview?path=preferences.json')
+    assert (reply.status_code, reply.json()) == (403, {'error': rig.config.prompts.dev.other_web_page})
+
+
+def test_no_address_gets_403(rig):
+    reply = web_client(rig.app).get('/api/dev/settings', headers={'Host': ''})
+    assert reply.status_code == 403
+
+
+def test_the_page_files_answer_any_address(tmp_path):
+    """The page's own files are the same for everyone (they're built from dev_ui/ in git) and hold nothing
+    from this computer, so /dev/ doesn't check the address: only its /api/dev/ routes do."""
+    built = tmp_path / 'dist'
+    built.mkdir()
+    (built / 'index.html').write_text('<!DOCTYPE html><title>Desk Talk developer page</title>')
+    rig = DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'dev', ui_folder=built))
+    assert web_client(rig.app, address='evil.example:{web}').get('/dev/').status_code == 200
 
 
 def test_dev_off_means_no_routes(tmp_path):
