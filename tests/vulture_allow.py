@@ -9,12 +9,20 @@ from typing import Any, cast
 
 from uvicorn import Server
 
-from desktalk.config import LensWaits, RiskWeights, VisionNudgeRepeats
+import desktalk.adapters.dev
+from desktalk.adapters.dev import pytest_report
+from desktalk.config import (
+    DevHealthLimits,
+    LensWaits,
+    RiskWeights,
+    VisionNudgeRepeats,
+)
 from desktalk.config.habits import _ComputerZone
 from desktalk.config.prompts import ByCamera, HabitAreas
 from desktalk.core.habits.habit_days import HabitDay
 from desktalk.core.habits.sun_times import SunTimes
 from desktalk.core.habits.tracker import DayTimes
+from desktalk.domain.dev import DataFile, QueryResult, RunStatus, SmoothingStep
 from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent, NudgeSent
 from desktalk.web.schemas import PhoneSettings, PreferenceChanges, UiPage, UiSettings
 from desktalk_shared.wire import PiHealth
@@ -55,4 +63,21 @@ _ = (
     _ComputerZone.dst, _ComputerZone.fromutc,
     # Pydantic's own settings attribute, and the flag uvicorn's thread reads to stop.
     PreferenceChanges.model_config, Server(config=None).should_exit,  # type: ignore[arg-type]
+)
+
+# The developer page (docs/plans/2026-10-24-developer-ui-plan.md): its settings, wording, plain data and
+# interfaces. Task 1 of the plan adds them; Tasks 2 to 6 use them (the test runner, the database browser, the data
+# folder viewer, the smoothing trace and the /api/dev routes). Take a name off once its task uses it.
+_developer_page = (
+    # pytest calls a plugin's hooks by name: desktalk/adapters/dev/pytest_report.py, loaded with -p.
+    pytest_report.pytest_runtest_logreport,
+    # Python calls a package's __getattr__ for a name it doesn't have yet: the developer page's tools are only
+    # imported when first asked for, so loading the plugin above brings in nothing else.
+    desktalk.adapters.dev.__getattr__,
+    # Sent to the developer page whole (GET /api/dev/settings → health, with model_dump()), read by dev_ui/.
+    DevHealthLimits.pi_cpu_warn_c, DevHealthLimits.pi_cpu_bad_c, DevHealthLimits.pi_disk_warn_mb,
+    DevHealthLimits.detect_warn_ms,
+    # Plain data the /api/dev routes send as JSON (dataclasses.asdict) and only dev_ui/ reads.
+    RunStatus.output_end, SmoothingStep.votes_yes, SmoothingStep.votes_total, SmoothingStep.waiting_sec,
+    QueryResult.truncated, QueryResult.took_ms, DataFile.modified,
 )

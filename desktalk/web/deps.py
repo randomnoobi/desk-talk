@@ -6,6 +6,9 @@ What the routes share:
     Streams        the open live streams (desktalk/web/streams.py)
     FromHere       True when the request comes from this computer (the Pi command and the phone link are
                    only shown there, not to every device on the Wi-Fi)
+    DevOnly        403 unless the request comes from this computer, to the server's own address or the Vite dev
+                   server's (Host), and, when it says which page sent it (Origin), from the server's own page or
+                   the Vite dev server's (the developer page's routes)
     key_check(...) 403 unless the request carries the pairing key in X-Desk-Key
 """
 
@@ -24,6 +27,7 @@ from desktalk.web.pairing import Links
 from desktalk.web.streams import LiveStreams
 
 LOCAL_ADDRESSES = ('127.0.0.1', '::1')
+LOCAL_NAMES = ('localhost', '127.0.0.1', '[::1]')    # how a browser on this computer writes them in an address
 
 
 def _desktalk(request: Request) -> DeskTalk:
@@ -46,6 +50,35 @@ App = Annotated[DeskTalk, Depends(_desktalk)]
 ShownLinks = Annotated[Links, Depends(_links)]
 Streams = Annotated[LiveStreams, Depends(_streams)]
 FromHere = Annotated[bool, Depends(_from_here)]
+
+
+def _own_addresses(app: DeskTalk) -> set[str]:
+    """Where this computer's browser opens the developer page: this server, or the Vite dev server (whose proxy
+    passes the browser's Host on unchanged), each at localhost, 127.0.0.1 or [::1]. E.g. "localhost:5173"."""
+    ports = (app.config.web.port, app.config.dev.vite_port)
+    return {f'{name}:{port}' for name in LOCAL_NAMES for port in ports}
+
+
+def dev_only(request: Request, app: App) -> None:
+    """403 for a request from another device on the network, or one a web page from somewhere else sent, so no
+    other page open in your browser can read the data folder, start a test run or run a query. The main server
+    lets any page ask (CORS *); this is on top of that.
+
+    Two checks for the other pages. Host: a web site can point its own name at 127.0.0.1, and then its page
+    reaches this server as "its own" site, with no Origin on a GET; the browser still names that site in Host.
+    Origin: a browser always says which page sent a POST."""
+    words = app.config.prompts.dev
+    if not _from_here(request):
+        raise HTTPException(403, words.other_computer)
+    own = _own_addresses(app)
+    if request.headers.get('host', '').lower() not in own:
+        raise HTTPException(403, words.other_web_page)
+    origin = request.headers.get('origin')
+    if origin is not None and origin.lower() not in {f'http://{address}' for address in own}:
+        raise HTTPException(403, words.other_web_page)
+
+
+DevOnly = Depends(dev_only)
 
 
 def key_check(problem: str) -> Callable[[Request, DeskTalk], None]:
@@ -105,5 +138,5 @@ def camera_index(app: DeskTalk) -> int:
     return cameras[0] if cameras else 0
 
 
-__all__ = ['App', 'FromHere', 'ShownLinks', 'Streams', 'camera_index', 'other_camera', 'key_check', 'list_size',
-           'read_upload', 'today', 'uptime_sec']
+__all__ = ['App', 'DevOnly', 'FromHere', 'ShownLinks', 'Streams', 'camera_index', 'dev_only', 'other_camera',
+           'key_check', 'list_size', 'read_upload', 'today', 'uptime_sec']

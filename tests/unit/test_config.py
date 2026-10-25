@@ -367,6 +367,14 @@ NEW_SETTINGS = {
         ('pi', 'camera'), ('pi', 'error_text_chars'), ('llm', 'error_log_chars'), ('safety', 'min_desk_corners'),
         ('web', 'settings_sliders', 'zone'), ('web', 'settings_sliders', 'warn'), ('web', 'settings_sliders', 'alert'),
         ('web', 'new_zone_px'), ('lens', 'trusted_gravity'),
+        # the developer page (docs/plans/2026-10-24-developer-ui-plan.md)
+        ('object_states', 'trace_pictures'), ('dev', 'enabled'), ('dev', 'ui_folder'), ('dev', 'vite_port'),
+        ('dev', 'poll_sec'), ('dev', 'checks'), ('dev', 'test_command'), ('dev', 'collect_markers'),
+        ('dev', 'run_timeout_min'), ('dev', 'output_keep_kb'), ('dev', 'sql_max_rows'), ('dev', 'sql_timeout_sec'),
+        ('dev', 'file_preview_kb'), ('dev', 'health', 'pi_cpu_warn_c'), ('dev', 'health', 'pi_cpu_bad_c'),
+        ('dev', 'health', 'pi_disk_warn_mb'), ('dev', 'health', 'detect_warn_ms'),
+        ('dev', 'flicker_flips_per_min'), ('dev', 'sql_check_every_steps'), ('dev', 'collect_timeout_sec'),
+        ('dev', 'flips_window_min'), ('dev', 'table_counts_every_sec'),
     ],
     'protocols.yaml': [('food', 'healthy')],
 }

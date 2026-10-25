@@ -1,0 +1,12 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "databases": [
+      "str"
+    ]
+  },
+  "request": "GET /api/dev/db (main server, fresh desk)"
+}

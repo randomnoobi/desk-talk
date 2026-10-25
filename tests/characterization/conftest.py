@@ -5,8 +5,9 @@ Fixtures for the characterization tests: ready-made desks, each with its two web
     desk.main               # WebClient for the main server (web_app/ and the Pi)
     desk.phone              # WebClient for the phone camera's own server
 
-Each desk is the whole app built by bootstrap.build(), in temp folders, with a fake detector, a fake AI and a
-FakeClock; nothing touches data/, .env, a camera, the network or a Pi. The settings come only from the config
+Each desk is the whole app built by bootstrap.build(), in temp folders, with a fake detector, a fake AI, a fake
+test runner for the developer page (DEV_TESTS) and a FakeClock; nothing touches data/, .env, a camera, the
+network or a Pi, and no test runs. The settings come only from the config
 files in git (not your settings.local.yaml), the danger-zone rules from the copy next to this file, and the
 clock reads 10:00 on 21 Oct 2026 (local time) when the requests are sent, so "today" is the same on every run.
 
@@ -24,13 +25,13 @@ from typing import Any
 import pytest
 
 from desktalk.bootstrap import DeskTalk, build
-from desktalk.domain import BBox, Detection
+from desktalk.domain import BBox, Detection, TestItem
 from desktalk.web.pairing import Links
 from tests.conftest import FakeAI
-from tests.fakes import FakeClock, FakeDetector
+from tests.fakes import FakeClock, FakeDetector, FakeTestRunner
 from tests.integration.app_kit import changed, desk_config, inbox
 
-from .cases import PAIR_KEY, PHONE_HEADERS, PHONE_URL, PI_HEADERS, PICTURE
+from .cases import DEV_TEST_ID, PAIR_KEY, PHONE_HEADERS, PHONE_URL, PI_HEADERS, PICTURE
 from .client import WebClient
 
 HERE = Path(__file__).resolve().parent
@@ -49,6 +50,9 @@ def det(label: str, x1: float, y1: float, x2: float, y2: float, conf: float = 0.
 ON_THE_DESK = [det('laptop', 200, 200, 400, 350), det('cup', 410, 250, 450, 320), det('key', 50, 50, 80, 70),
                det('book', 470, 380, 600, 460), det('remote', 560, 20, 620, 60, conf=0.3)]
 PERSON = det('person', 400, 0, 640, 300, conf=0.95)
+# The tests the developer page's (fake) test runner finds.
+DEV_TESTS = [TestItem(DEV_TEST_ID, DEV_TEST_ID.split('::')[0], ()),
+             TestItem('tests/unit/test_example.py::test_slow', 'tests/unit/test_example.py', ('slow',))]
 # What the fake vision AI says about the picture (the vision habit check asks it).
 SCENE = '{"posture": "good", "nail_biting": true, "phone": "none", "attention": "screen"}'
 
@@ -110,6 +114,7 @@ def desks(tmp_path):
         detector = FakeDetector()
         app = build(config, clock=clock, detector=detector, data_folder=tmp_path / 'run', pair_key=PAIR_KEY,
                     synchronous_events=True, set_up_logging=False,
+                    test_runner=FakeTestRunner(DEV_TESTS, clock=clock),
                     client_factory=None if reply is None else lambda **kw: FakeAI(reply=reply, **kw))
         phone_port = config.camera.phone_port if name == 'phone' else None    # its server runs only then
         links = Links(COMPUTER_ADDRESS, config.web.port, app.pair_key, phone_port=phone_port)

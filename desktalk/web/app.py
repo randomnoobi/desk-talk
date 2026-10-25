@@ -1,7 +1,8 @@
 """
 The two web servers, built on the running app (desktalk/bootstrap.py → DeskTalk):
 
-    main = create_app(desktalk, links)      # the app in your browser (web_app/) and the Pi: web.port
+    main = create_app(desktalk, links)      # the app in your browser (web_app/) and the Pi: web.port, plus
+                                            # the developer page at /dev/ (dev_ui/) when dev.enabled is true
     phone = create_phone_app(desktalk)      # the phone camera page's own HTTPS server: camera.phone_port
 
 The routes are in desktalk/web/routers/, one module per area. desktalk/web/serve.py runs the servers.
@@ -26,14 +27,14 @@ import anyio
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from starlette.exceptions import HTTPException
 
 from desktalk.bootstrap import DeskTalk
-from desktalk.web.files import PageFiles, page
+from desktalk.web.files import BuiltPage, PageFiles, page
 from desktalk.web.middleware import MB, AnyPageMayAsk, LogFailedRequests, SizeLimit
 from desktalk.web.pairing import Links
-from desktalk.web.routers import MAIN_SERVER, PHONE_SERVER
+from desktalk.web.routers import DEV_SERVER, MAIN_SERVER, PHONE_SERVER
 from desktalk.web.streams import LiveStreams
 
 SOMETHING_WENT_WRONG = 'Something went wrong on this computer. The details are in the log.'
@@ -57,12 +58,23 @@ def create_app(desktalk: DeskTalk, links: Links) -> FastAPI:
     app.add_middleware(AnyPageMayAsk)
     for router in MAIN_SERVER:
         app.include_router(router)
-    pages = desktalk.config.resolve(desktalk.config.web.app_folder)
+    config = desktalk.config
+    pages = config.resolve(config.web.app_folder)
 
     @app.get('/')
     def index() -> FileResponse:
         return page(pages / 'index.html')
 
+    if config.dev.enabled:                          # the developer page: its routes, and the page at /dev/
+        for router in DEV_SERVER:
+            app.include_router(router)
+
+        @app.get('/dev')
+        def dev_page() -> RedirectResponse:         # its files are found from /dev/, with the slash
+            return RedirectResponse('/dev/')
+
+        app.mount('/dev', BuiltPage(config.resolve(config.dev.ui_folder), not_built=config.prompts.dev.not_built),
+                  name='dev_ui')
     app.mount('/', PageFiles(directory=pages), name='web_app')     # last: every other path is a file
     return app
 

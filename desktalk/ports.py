@@ -9,8 +9,9 @@ that the real version and the fake both pass.
 Change this file only on purpose: every part depends on it.
 
 The desk right now is five small interfaces near the end of this file: LivePictures, DeskScene, SafetyBoard,
-CharacterMemory and PhotoAlbum (desktalk/core/desk/ has one class for each). The last section is what the
-web layer asks of the running app (desktalk/bootstrap.py → DeskTalk types its fields with these).
+CharacterMemory and PhotoAlbum (desktalk/core/desk/ has one class for each). The last sections are what the
+web layer asks of the running app (desktalk/bootstrap.py → DeskTalk types its fields with these), and the
+developer page's tools (tests, smoothing, the database, the data folder).
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from desktalk.domain import (
     AgentProfile,
     Box,
     Danger,
+    DataFile,
     DeskRules,
     DeskSnapshot,
     Detection,
@@ -34,11 +36,16 @@ from desktalk.domain import (
     Nudge,
     Photo,
     Picture,
+    QueryResult,
+    RunStatus,
     SafetyNow,
     SeenObject,
     Size,
+    SmoothingStep,
     StateChange,
     StateRecord,
+    TableInfo,
+    TestItem,
     UploadInfo,
 )
 
@@ -993,3 +1000,93 @@ class Jobs(Protocol):
     def status(self) -> list[dict[str, Any]]:
         """One entry per job: name, state, failures_in_row, total_failures, last_error, last_ok_at."""
         ...
+
+
+# ── The developer page (http://localhost:5000/dev/, only from this computer) ──
+# Only built when settings → dev.enabled is true. The plain data they return is in desktalk/domain/dev.py.
+@runtime_checkable
+class TestRunner(Protocol):
+    """Runs the checks ("Run everything": settings → dev.checks) or some tests, one run at a time, in a child
+    process. In a test file, use it as `ports.TestRunner`: pytest tries to run any class named Test... that a
+    test file imports by name."""
+
+    def collect(self) -> list[TestItem]:
+        """Every test the list shows (settings → dev.collect_markers); the slow ones are marked 'slow'.
+        Raises RuntimeError, with the reason, when the test command can't run or takes longer than
+        dev.collect_timeout_sec."""
+        ...
+
+    def start_check(self) -> str:
+        """Start every step of settings → dev.checks, one after the other. Returns the new run's id.
+        Raises RunAlreadyGoing while another run is going."""
+        ...
+
+    def start_tests(self, ids: list[str]) -> str:
+        """Start the tests (or files) with these ids. Returns the new run's id. Raises RunAlreadyGoing while
+        another run is going, and ValueError for an id that the last collect() didn't give."""
+        ...
+
+    def status(self, run_id: str, output_from: int) -> RunStatus:
+        """How the run is going, with its printout after offset `output_from` (ask from the last output_end
+        next time). A run past settings → dev.run_timeout_min is stopped here, as 'timed out'. Raises
+        KeyError for a run it doesn't know."""
+        ...
+
+    def stop(self, run_id: str) -> None:
+        """Stop the run (its state becomes 'stopped'). A finished run, or one it doesn't know, is left alone."""
+        ...
+
+    def close(self) -> None:
+        """Stop the run still going, if any: the app is stopping (DeskTalk.stop())."""
+        ...
+
+
+@runtime_checkable
+class DatabaseBrowser(Protocol):
+    """Looks inside the app's SQLite databases, read-only. tables() and query() raise KeyError for a database
+    name that databases() doesn't list."""
+
+    def databases(self) -> list[str]:
+        """The databases' names, e.g. ['object_states']. One whose file isn't there yet has no tables."""
+        ...
+
+    def tables(self, db: str) -> list[TableInfo]:
+        ...
+
+    def query(self, db: str, sql: str) -> QueryResult:
+        """Run one statement that only reads. Raises QueryRefused for anything else (a write, two statements)
+        or one that runs longer than settings → dev.sql_timeout_sec."""
+        ...
+
+
+@runtime_checkable
+class DataFiles(Protocol):
+    """What's stored in the data folder on this computer, read-only."""
+
+    def list(self) -> list[DataFile]:
+        """Every file and folder in it, with paths relative to it."""
+        ...
+
+    def preview(self, path: str) -> str:
+        """The start of a file (path relative to the data folder), as text. Raises ValueError for a path outside
+        the folder or a folder, and FileNotFoundError when nothing is there."""
+        ...
+
+
+@runtime_checkable
+class SmoothingTraceView(Protocol):
+    """What the object state tracker made of each of the last pictures, per kind of object (settings →
+    object_states.trace_pictures), so the developer page can show the smoothing."""
+
+    def traced_labels(self) -> list[str]:
+        ...
+
+    def trace(self, label: str) -> list[SmoothingStep]:
+        """Oldest first; [] for a label never seen."""
+        ...
+
+
+@runtime_checkable
+class TracedObjectStates(ObjectStates, SmoothingTraceView, Protocol):
+    """The object states that also keep each object's last pictures of smoothing (the object state tracker):
+    what the web layer asks of DeskTalk.object_states."""

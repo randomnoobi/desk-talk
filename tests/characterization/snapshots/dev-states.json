@@ -1,0 +1,43 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "changes": [
+      {
+        "change": "str",
+        "label": "str",
+        "ts": "number"
+      }
+    ],
+    "objects": {
+      "book": {
+        "since": "number",
+        "state": "str"
+      },
+      "cup": {
+        "since": "number",
+        "state": "str"
+      },
+      "key": {
+        "since": "number",
+        "state": "str"
+      },
+      "laptop": {
+        "since": "number",
+        "state": "str"
+      },
+      "person": {
+        "since": "number",
+        "state": "str"
+      },
+      "remote": {
+        "since": "number",
+        "state": "str"
+      }
+    },
+    "watched_since": "number"
+  },
+  "request": "GET /api/dev/states?since=0 (main server, busy desk)"
+}

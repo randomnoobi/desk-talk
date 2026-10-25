@@ -89,13 +89,16 @@ reply only holds up the message generator's own queue, never the camera or the o
 | `desktalk/adapters/llm/` | `OpenAICompatibleChatModel` (Gemini / OpenAI / Groq / Ollama) and `ResilientChatModel`, which wraps it with time limits, retries and a breaker. |
 | `desktalk/adapters/picture/` | What's done to pictures, with OpenCV: `OpenCvPictureTools` (decode, encode, shrink, crop, brightness, sharpness ...) and `DeskPainter` (the boxes and desk drawings on the live view, with every color, width and size from settings → `drawing`). |
 | `desktalk/adapters/storage/` | `EventLog` (the files in `data/events/`), `JsonFileStore` (small JSON files, saved all-or-nothing) and `SqliteStateStore` (the object states' history, `object_states.database`). |
+| `desktalk/adapters/dev/` | For the developer page, only built when `dev.enabled` is on: `PytestRunner` (`test_runner.py`: runs the checks in `dev.checks`, or some tests with `dev.test_command`, in a child process, one run at a time, stopped after `dev.run_timeout_min`), with `pytest_report.py`, a pytest plugin that writes one line per finished test so the page sees each one as it finishes; `SqliteBrowser` (`sqlite_browser.py`: the SQLite databases opened read-only, one statement that only reads, at most `dev.sql_max_rows` rows, stopped after `dev.sql_timeout_sec`); `DataFolder` (`data_files.py`: the files in `data/` and the start of one, never anything outside it). |
 | `desktalk/runtime/` | `Supervisor` (runs the background jobs and starts them again after a crash), `Scheduler`, `SystemClock` (the shared one), logging. |
-| `desktalk/web/` | FastAPI. `app.py` makes the two servers (the main one, and the phone page's own HTTPS one), `routers/` has the routes by area (`pi`, `phone`, `live`, `video`, `chat`, `habits`, `log`, `settings`, `health`), `schemas.py` the request and reply shapes, `streams.py` SSE and the video, `serve.py` runs uvicorn. The routes only see the interfaces, plain data and settings on `DeskTalk`. |
+| `desktalk/web/` | FastAPI. `app.py` makes the two servers (the main one, and the phone page's own HTTPS one), `routers/` has the routes by area (`pi`, `phone`, `live`, `video`, `chat`, `habits`, `log`, `settings`, `health`, `dev`), `schemas.py` the request and reply shapes, `streams.py` SSE and the video, `serve.py` runs uvicorn. The routes only see the interfaces, plain data and settings on `DeskTalk`. |
+| `desktalk/web/routers/dev.py` | The developer page's routes, `/api/dev/...` (the list is in [API.md](API.md#developer-page-this-computer-only-15)). Every one only answers this computer, and only its own page (`DevOnly` in `deps.py`: the `FromHere` check plus a `Host` and an `Origin` check). It's only added to the main server when `dev.enabled` is on, never to the phone's. `app.py` serves the built page (`dev.ui_folder`) at `/dev/`, or a line saying how to build it. |
 | `shared/desktalk_shared/` | Used on the Pi and on this computer, standard library only: `detection.py` (`Detection`, `BBox`), `wire.py` (the upload format), `detector_api.py` (the detector service's requests and replies), `ultralytics_results.py` (YOLO results → `Detection`s, the same on both sides), `backoff.py` (`Backoff`: the wait after each failure in a row, doubling up to a most), `clock.py` (`SystemClock`, the one real clock), `workers.py` (`WorkerThread`: a job in a thread of its own that starts again after a crash). |
 | `raspberry_pi/camera/` | The camera program: `cli.py` (the command line and loading the settings), `main.py` (the loop: take, save, ask, send), `workers.py` (the threads, and `build_program`, which connects the parts), `cameras.py`, `photo_store.py`, `cleaner.py`, `detector_client.py`, `uploader.py`, `health.py`, `watchdog.py`, `self_test.py`, `settings.py`. [README](../raspberry_pi/camera/README.md). |
 | `raspberry_pi/detector_service/` | The detector service: `Dockerfile`, `compose.yaml`, `.env`, and `desktalk_detector/` (FastAPI: `POST /detect`, `GET /health`, `PUT /model`; converts `.pt` models to ncnn and keeps the last good one). [README](../raspberry_pi/detector_service/README.md). |
 | `benchmarks/` | `deskbench`: times YOLO models on the Mac and on the Pi (in its own Docker image), to pick the Pi's model. [README](../benchmarks/README.md). |
 | `web_app/`, `phone_camera/` | The app's page, and the page a phone opens to be the camera. They keep no copies of the settings: the app page asks `GET /api/ui_settings` when it opens (refresh times, limits, the palette, Lens's card, how long a chat reply may take) and shows its "can't reach Desk Talk" note until it gets them; the phone page asks `GET /api/phone/config` (picture size and quality). |
+| `dev_ui/` | The developer page at `http://localhost:5000/dev/`: Checks, Live, System, Database and Storage tabs. Vite + React + TypeScript, with its own tests (Vitest) and `package-lock.json`; `npm run build` puts it in `dev_ui/dist/`. It keeps no numbers of its own: it asks `GET /api/dev/settings` once when it opens. The app page stays plain JavaScript with no build step. [README](../dev_ui/README.md). |
 
 There are three uv packages in one workspace with one `uv.lock`: `desktalk` (this folder), `desktalk-shared`
 (`shared/`) and `desktalk-detector` (`raspberry_pi/detector_service/`). The camera program isn't installed
@@ -147,6 +150,16 @@ locking, so nobody outside ever holds a lock:
 | `SafetyBoard` | the dangers right now (`SafetyNow`), since when a pair has been a danger, the latest alerts | `DangerBoard` | `FakeSafetyBoard` |
 | `CharacterMemory` | what each character said lately, the tracker panels, when you last typed, the vision brief | `Memories` | `FakeCharacterMemory` |
 | `PhotoAlbum` | add a proof photo, get one, the newest ones | `Album` | `FakePhotoAlbum` |
+
+**The developer page** has four interfaces of its own. Only the `/api/dev` routes use them, and `DeskTalk`'s
+`test_runner`, `databases` and `data_files` are None when `dev.enabled` is off:
+
+| Interface | What it promises | Real version | Fake for tests |
+|---|---|---|---|
+| `TestRunner` | the list of tests (`collect()`), start the checks or some tests (`RunAlreadyGoing` while a run is going), a run's status and new printout, stop it | `PytestRunner` (`adapters/dev/test_runner.py`) | `FakeTestRunner` |
+| `DatabaseBrowser` | the databases, their tables (with row counts and the `CREATE` line), one read-only query (`QueryRefused` for anything else, or one that takes too long) | `SqliteBrowser` (`adapters/dev/sqlite_browser.py`) | `FakeDatabaseBrowser` |
+| `DataFiles` | every file and folder in `data/`, the start of one file (`ValueError` for a path outside it) | `DataFolder` (`adapters/dev/data_files.py`) | `FakeDataFiles` |
+| `SmoothingTraceView` | what the smoothing made of each object's last `object_states.trace_pictures` pictures (confidence, the votes, seen or not, the state, the wait), oldest first; `[]` for an object never seen | `ObjectStateTracker` | `FakeSmoothingTrace` |
 
 A part asks only for the desk interfaces it uses (the roster gets `scene`, idle chat gets `character_memory`).
 The producer, proof photos, the desk monitor, the desk status, lost items, the message generator and the
@@ -389,6 +402,7 @@ settings (port, memory limit, retry waits, Docker's health check, log file sizes
 | `tests/docker/` | Builds the detector's image, starts it with `docker compose`, checks `/health`, `/detect`, the `127.0.0.1` port and the memory limit (`-m docker`, opt-in). | Docker, the internet |
 | `tests/e2e/` | The real app page in a headless Chromium (`-m e2e`, opt-in), against the whole app on a real web server with a fake detector and a fake AI (`tests/e2e_kit/server.py`): the page opens, a bottle joins the chat, a chat reply, a habit button, the page coming back after the server restarts, the demo without a server. Skipped when Chromium isn't installed. `test_full_stack.py` (`-m docker`) runs the camera program → the detector container → the server. | Chromium (`uv run playwright install chromium`, once); Docker for the full stack |
 | `tests/fakes/` | The fakes (see the interface tables). | |
+| `dev_ui/` (`*.test.ts`, `*.test.tsx`) | The developer page on its own (Vitest, Testing Library, a pretend browser page): the API client, the ports `npm run dev` reads from the settings, each tab with the server's replies faked. Run with `npm test` in `dev_ui/`; no server needed. | Node 22 (`npm install` in `dev_ui/`, once) |
 
 **On your Mac**, in the `desk-talk` folder:
 
@@ -410,7 +424,8 @@ GitHub runs `uv run ruff check .`, `uv run pyright`, `uv run vulture --min-confi
 `pyproject.toml` (branches counted too); it may only go up. `pyrightconfig.json` lists the files that had
 type errors when pyright was switched on; the list only gets shorter. `tests/vulture_allow.py` lists the
 names vulture can't see being used, each with what uses it. The default test run never needs the network,
-an API key, a camera, a Pi, Docker or a browser.
+an API key, a camera, a Pi, Docker or a browser. A second job (`page`) runs `npm ci`, `npm test` and
+`npm run build` in `dev_ui/` with Node 22.
 
 ## Agents
 

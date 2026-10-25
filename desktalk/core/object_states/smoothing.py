@@ -48,11 +48,15 @@ class MajorityWindow:
         Center and confidence only use the pictures where it was seen; None if there were none.
         """
         self._pictures.append((seen, center, conf))
-        yes = sum(1 for was_seen, _, _ in self._pictures if was_seen)
-        majority = yes > self._vote_share * len(self._pictures)
+        yes, total = self.votes()
+        majority = yes > self._vote_share * total
 
         centers = [c for was_seen, c, _ in self._pictures if was_seen and c is not None]
         confs = [v for was_seen, _, v in self._pictures if was_seen and v is not None]
         middle = (median(x for x, _ in centers), median(y for _, y in centers)) if centers else None
         average = sum(confs) / len(confs) if confs else None
         return majority, middle, average
+
+    def votes(self) -> tuple[int, int]:
+        """(yes votes, pictures in the window) for the pictures added so far."""
+        return sum(1 for was_seen, _, _ in self._pictures if was_seen), len(self._pictures)

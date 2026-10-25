@@ -1,0 +1,36 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "checks": [
+      "str"
+    ],
+    "data_folder": "str",
+    "disconnect_after_sec": "number",
+    "flicker_flips_per_min": "number",
+    "flips_window_min": "number",
+    "health": {
+      "detect_warn_ms": "number",
+      "pi_cpu_bad_c": "number",
+      "pi_cpu_warn_c": "number",
+      "pi_disk_warn_mb": "number"
+    },
+    "object_states": {
+      "appear_sec": "number",
+      "gone_sec": "number",
+      "off_confidence": "number",
+      "on_confidence": "number",
+      "vote_share": "number",
+      "window_pictures": "number"
+    },
+    "output_keep_kb": "number",
+    "poll_sec": "number",
+    "sql_max_rows": "number",
+    "table_counts_every_sec": "number",
+    "trace_pictures": "number",
+    "web_port": "number"
+  },
+  "request": "GET /api/dev/settings (main server, fresh desk)"
+}

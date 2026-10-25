@@ -44,3 +44,7 @@ models/*_ncnn_model/
 # coverage data from pytest --cov
 .coverage
 .coverage.*
+
+# The developer page's packages and build (npm install / npm run build in dev_ui/)
+dev_ui/node_modules/
+dev_ui/dist/

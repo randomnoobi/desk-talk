@@ -1,0 +1,24 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "finished": "number",
+    "outcomes": [],
+    "output": "str",
+    "output_end": "number",
+    "run_id": "str",
+    "started": "number",
+    "state": "str",
+    "steps": [
+      {
+        "exit_code": "number",
+        "name": "str",
+        "state": "str"
+      }
+    ],
+    "what": "str"
+  },
+  "request": "GET /api/dev/runs/run-1?from=0 (main server, fresh desk)"
+}

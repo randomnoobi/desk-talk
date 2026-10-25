@@ -1,0 +1,12 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "labels": [
+      "str"
+    ]
+  },
+  "request": "GET /api/dev/smoothing (main server, busy desk)"
+}

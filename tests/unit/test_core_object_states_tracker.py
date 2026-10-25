@@ -15,6 +15,7 @@ from desktalk.config import ObjectStatesSettings
 from desktalk.core.object_states import ObjectStateTracker
 from desktalk.domain import BBox, Detection, DetectionEvent, ObjectStateChanged, Phase, StateChange, StateRecord
 from desktalk.domain.events import Light
+from tests.contracts.dev_contracts import SmoothingTraceContract
 from tests.contracts.object_states_contract import ObjectStatesContract
 from tests.fakes import FakeClock, InMemoryStateStore, SyncEventBus
 
@@ -34,6 +35,7 @@ SETTINGS = {
     'snapshot_every_sec': 60,
     'restore_max_age_sec': 300,
     'database': 'data/object_states.sqlite',
+    'trace_pictures': 90,
 }
 STEP = 1 / 3          # 3 pictures a second
 SETTLE = 15           # pictures it takes to settle into a state (5 s)
@@ -148,6 +150,71 @@ def test_it_listens_on_the_bus():
         bus.publish(picture(1000 + i * STEP, o('bottle', 0.6)))
     assert state_of(tracker, 'bottle') == 'PRESENT'
     assert changes(bus) == [('appeared', 'bottle')]
+
+
+# ── the smoothing trace (for the developer page) ──
+
+def test_trace_follows_each_picture():
+    tracker, _, _ = make_tracker()
+    feed(tracker, 1000, [[o('cup', 0.9)]] * 4 + [[]] * 3)
+    steps = tracker.trace('cup')
+    assert len(steps) == 7
+    first, gap, last = steps[0], steps[4], steps[-1]
+    assert (first.ts, first.conf, first.box_seen) == (1000, 0.9, True)
+    assert (first.votes_yes, first.votes_total, first.seen) == (1, 1, True)
+    assert first.center == pytest.approx((0.5, 0.5))
+    assert (first.phase, first.heading, first.waiting_sec) == ('UNKNOWN', 'PRESENT', 0)
+    # The first picture without a cup: this picture says no, but the vote still says yes.
+    assert (gap.conf, gap.box_seen, gap.votes_yes, gap.votes_total, gap.seen) == (None, False, 4, 5, True)
+    assert gap.heading == 'PRESENT'
+    assert gap.waiting_sec == pytest.approx(4 * STEP)
+    # Two more without: now the vote says no too, and it starts waiting to call the cup gone.
+    assert (last.conf, last.box_seen, last.votes_yes, last.votes_total, last.seen) == (None, False, 2, 5, False)
+    assert last.center == pytest.approx((0.5, 0.5))        # still the middle of the pictures that saw it
+    assert (last.phase, last.heading, last.waiting_sec) == ('UNKNOWN', 'ABSENT', 0)
+
+
+def test_trace_shows_a_settled_object_with_no_wait():
+    tracker, _, _ = make_tracker()
+    feed(tracker, 1000, [[o('cup', 0.9)]] * SETTLE)
+    last = tracker.trace('cup')[-1]
+    assert (last.phase, last.heading, last.waiting_sec) == ('PRESENT', None, None)
+
+
+def test_trace_keeps_only_the_last_pictures():
+    tracker, _, _ = make_tracker(trace_pictures=3)
+    feed(tracker, 1000, [[o('cup', 0.9)]] * 10)
+    steps = tracker.trace('cup')
+    assert [s.ts for s in steps] == pytest.approx([1000 + 7 * STEP, 1000 + 8 * STEP, 1000 + 9 * STEP])
+
+
+def test_trace_of_a_label_with_a_slash():
+    tracker, _, _ = make_tracker()
+    feed(tracker, 1000, [[o('pen/pencil', 0.7), o('cup', 0.9)]])
+    assert set(tracker.traced_labels()) == {'pen/pencil', 'cup'}
+    [only] = tracker.trace('pen/pencil')
+    assert only.conf == 0.7
+
+
+def test_trace_of_an_unknown_label_is_empty():
+    tracker, _, _ = make_tracker()
+    feed(tracker, 1000, [[o('cup', 0.9)]])
+    assert tracker.trace('nothing') == []
+
+
+def test_an_object_no_longer_in_the_picture_is_still_traced():
+    tracker, _, _ = make_tracker()
+    feed(tracker, 1000, [[o('cup', 0.9)], [o('pen/pencil', 0.7)]])
+    assert len(tracker.trace('cup')) == 2
+    assert len(tracker.trace('pen/pencil')) == 1
+
+
+class TestObjectStateTrackerPassesSmoothingTraceContract(SmoothingTraceContract):
+    @pytest.fixture
+    def view(self):
+        tracker = make_tracker()[0]
+        feed(tracker, 1000, [[o('cup', 0.9)], [o('cup', 0.8), o('pen/pencil', 0.7)]])
+        return tracker
 
 
 # ── the bus and the store ──

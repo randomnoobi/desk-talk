@@ -12,10 +12,12 @@ import typing
 import pytest
 
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource
+from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser
 from desktalk.adapters.storage import JsonFileStore
 from desktalk.bootstrap import DeskTalk, build
 from desktalk.domain import AgentJoined
-from tests.fakes import FakeClock, FakeDetector, FakeFrameSource
+from desktalk.ports import SmoothingTraceView
+from tests.fakes import FakeClock, FakeDetector, FakeFrameSource, FakeTestRunner
 from tests.integration.app_kit import (
     AFTERNOON,
     CUP_FAR,
@@ -223,3 +225,30 @@ def test_a_failing_compaction_at_stop_still_closes_the_event_stream(tmp_path, ca
     rig.app.bus.publish(AgentJoined(ts=rig.clock.now(), agent='cup', name='Cup', label='cup', conf=0.9))
     day = rig.app.event_log.days()[0]
     assert rig.app.event_log.events(day, {'agent_joined'}, 10) == []
+
+
+# ── the developer page's tools (settings → dev) ──────────────────────
+def test_the_developer_tools_are_built_when_the_developer_page_is_on(tmp_path):
+    config = desk_config(tmp_path)
+    app = build_quietly(config, tmp_path)
+    assert isinstance(app.test_runner, PytestRunner)
+    assert isinstance(app.databases, SqliteBrowser) and isinstance(app.data_files, DataFolder)
+    assert app.databases.databases() == ['object_states']
+    assert app.databases.tables('object_states')            # the object states database in the data folder
+    app.store.save('preferences', {'wake_time': '06:45'})
+    assert 'preferences.json' in {f.path for f in app.data_files.list()}
+    assert isinstance(app.object_states, SmoothingTraceView)
+
+
+def test_with_the_developer_page_off_there_are_no_developer_tools(tmp_path):
+    app = build_quietly(changed(desk_config(tmp_path), 'dev', enabled=False), tmp_path)
+    assert (app.test_runner, app.databases, app.data_files) == (None, None, None)
+    assert app.stop(timeout=1) == []
+
+
+def test_stop_stops_a_test_run_still_going(tmp_path):
+    runner = FakeTestRunner()
+    app = build_quietly(desk_config(tmp_path), tmp_path, test_runner=runner)
+    assert app.test_runner is runner
+    app.stop(timeout=1)
+    assert runner.closed

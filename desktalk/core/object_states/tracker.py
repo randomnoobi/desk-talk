@@ -13,6 +13,8 @@ The person goes through the same machine with its own waits, and movement in the
 It also answers the rule engine (ObjectStatesView): `snapshot()` is the state of every object seen so far,
 and `changes(since)` reads the store (plus any changes not saved yet), so changes from before a restart are still
 there.
+It also keeps each object's last pictures of smoothing for the developer page (SmoothingTraceView):
+`traced_labels()` and `trace(label)`, up to `trace_pictures` per object.
 `save_snapshot(now)` and `restore(now)` let a restart pick up where the last run left off.
 """
 
@@ -21,6 +23,7 @@ from __future__ import annotations
 import logging
 import math
 import threading
+from collections import deque
 
 from desktalk.config import ObjectStatesSettings
 from desktalk.core.object_states.machine import ObjectState, Rules, StepInput, Transition, step
@@ -33,6 +36,7 @@ from desktalk.domain import (
     ObjectSnapshot,
     ObjectStateChanged,
     Phase,
+    SmoothingStep,
     StateChange,
     StateRecord,
     plain_error,
@@ -57,8 +61,18 @@ def _rounded(det: Detection) -> tuple[float, float, float, float]:
     return x1, y1, x2, y2
 
 
+def _value(phase: Phase | None) -> str | None:
+    return phase.value if phase is not None else None
+
+
+def _since(start: float | None, ts: float) -> float | None:
+    """How long since `start`, or None when there is no start."""
+    return ts - start if start is not None else None
+
+
 class ObjectStateTracker:
-    """Detection events → object states and ObjectStateChanged events. Implements ObjectStatesView."""
+    """Detection events → object states and ObjectStateChanged events. Implements ObjectStatesView and
+    SmoothingTraceView."""
 
     def __init__(self, settings: ObjectStatesSettings, bus: EventBus, store: ObjectStateStore, *,
                  device_id: str, new_session_after_sec: float, clock: Clock):
@@ -76,17 +90,19 @@ class ObjectStateTracker:
         self._person_label = settings.person_label
         self._person_counts_movement = settings.person_counts_movement
         self._restore_max_age_sec = settings.restore_max_age_sec
+        self._trace_pictures = settings.trace_pictures
         self._object_rules = (settings.appear_sec, settings.gone_sec, settings.move_fraction)
         self._person_rules = (settings.person_appear_sec, settings.person_gone_sec, settings.move_fraction)
         self._rules_by_label: dict[str, Rules] = {}     # built once per kind of object, on first use
 
-        # One lock for the states, the smoothing and watched_since: pictures come in on the event bus
+        # One lock for the states, the smoothing, the trace and watched_since: pictures come in on the event bus
         # thread, snapshot() and changes() are read from the rule engine's and reminders' threads, and
         # save_snapshot() runs on the scheduler's.
         self._lock = threading.Lock()
         self._states: dict[str, ObjectState] = {}
         self._hysteresis: dict[str, Hysteresis] = {}
         self._windows: dict[str, MajorityWindow] = {}
+        self._trace: dict[str, deque[SmoothingStep]] = {}   # each object's last pictures, oldest first
         self._watched_since: float | None = None
         self._last_picture: float | None = None
         self._store_errors_in_row = 0
@@ -105,6 +121,12 @@ class ObjectStateTracker:
             self._hysteresis[label] = Hysteresis(self._on_conf, self._off_conf)
             self._windows[label] = MajorityWindow(self._window_pictures, self._vote_share)
         return self._hysteresis[label], self._windows[label]
+
+    def _add_to_trace(self, label: str, smoothing_step: SmoothingStep) -> None:
+        """Call with the lock held."""
+        if label not in self._trace:
+            self._trace[label] = deque(maxlen=self._trace_pictures)
+        self._trace[label].append(smoothing_step)
 
     @staticmethod
     def _share(det: Detection, width: int, height: int) -> Center | None:
@@ -179,6 +201,12 @@ class ObjectStateTracker:
                                 bbox=_rounded(own) if own is not None else None)
                 self._states[label], fired = step(state, inp, self._rules(label))
                 transitions.extend(fired)
+                yes, total = window.votes()
+                self._add_to_trace(label, SmoothingStep(
+                    ts=ts, conf=det.confidence if det is not None else None, box_seen=box_seen,
+                    votes_yes=yes, votes_total=total, seen=majority, center=middle,
+                    phase=self._states[label].phase.value, heading=_value(self._states[label].heading),
+                    waiting_sec=_since(self._states[label].pending_since, ts)))
 
         if not transitions:
             return
@@ -216,6 +244,16 @@ class ObjectStateTracker:
         known = set(saved)
         extra = [c for c in (StateChange(r.ts, r.label, change=r.type) for r in unsaved) if c not in known]
         return sorted(saved + extra, key=lambda c: c.ts)
+
+    # ── SmoothingTraceView ──
+    def traced_labels(self) -> list[str]:
+        with self._lock:
+            return list(self._trace)
+
+    def trace(self, label: str) -> list[SmoothingStep]:
+        """The object's last pictures of smoothing, oldest first; [] for a label never seen."""
+        with self._lock:
+            return list(self._trace.get(label, ()))
 
     # ── saving and restarting ──
     def save_snapshot(self, now: float) -> int:

@@ -1,0 +1,26 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "label": "str",
+    "steps": [
+      {
+        "box_seen": "bool",
+        "center": [
+          "number"
+        ],
+        "conf": "number",
+        "heading": "null|str",
+        "phase": "str",
+        "seen": "bool",
+        "ts": "number",
+        "votes_total": "number",
+        "votes_yes": "number",
+        "waiting_sec": "null|number"
+      }
+    ]
+  },
+  "request": "GET /api/dev/smoothing/trace?label=cup (main server, busy desk)"
+}

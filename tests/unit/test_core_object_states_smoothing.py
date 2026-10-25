@@ -47,3 +47,17 @@ def test_majority_window_center_uses_seen_pictures_only():
 def test_majority_window_has_no_center_when_nothing_was_seen():
     window = MajorityWindow(size=3, vote_share=0.5)
     assert window.add(False, None, None) == (False, None, None)
+
+
+def test_votes_count_the_window():
+    window = MajorityWindow(size=5, vote_share=0.5)
+    for seen in (True, False, True):
+        window.add(seen, None, None)
+    assert window.votes() == (2, 3)
+
+
+def test_votes_only_count_the_last_pictures():
+    window = MajorityWindow(size=2, vote_share=0.5)
+    for seen in (True, True, False):
+        window.add(seen, None, None)
+    assert window.votes() == (1, 2)

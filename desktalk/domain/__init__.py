@@ -16,6 +16,9 @@ Plain data, no I/O: what the parts of Desk Talk pass to each other.
                            what the rule engine reads (where things are, what changed, what was logged,
                            what nudged)
     Phase, StateRecord     whether an object is on the desk (UNKNOWN, PRESENT, ABSENT), and a row of its history
+    TestItem, RunStatus, SmoothingStep, TableInfo, QueryResult, DataFile ...
+                           what the developer page shows (tests and their runs, smoothing, the database, the
+                           data folder), and its errors RunAlreadyGoing and QueryRefused
 """
 
 from desktalk.domain.agents import HABITS, LENS, AgentProfile
@@ -23,6 +26,18 @@ from desktalk.domain.camera import Frame
 from desktalk.domain.days import is_day
 from desktalk.domain.desk import Danger, Photo, SafetyNow, SeenObject
 from desktalk.domain.desk_rules import DeskRules, Zone
+from desktalk.domain.dev import (
+    DataFile,
+    QueryRefused,
+    QueryResult,
+    RunAlreadyGoing,
+    RunStatus,
+    SmoothingStep,
+    StepStatus,
+    TableInfo,
+    TestItem,
+    TestOutcome,
+)
 from desktalk.domain.errors import AIUnavailable, DetectorUnavailable, UnknownChat, plain_error
 from desktalk.domain.events import (
     EVENT_TYPES,
@@ -55,4 +70,6 @@ __all__ = [
     'HabitDone', 'HabitEvent', 'is_day', 'keep_inside', 'Light', 'new_event_id', 'Nudge', 'NudgeSent', 'ObjectSnapshot',
     'ObjectStateChanged', 'Phase', 'Photo', 'Picture', 'PiHealth', 'plain_error', 'Point', 'RuleHistory', 'RuleOutcome',
     'SafetyNow', 'SeenObject', 'Size', 'StateChange', 'StateRecord', 'UnknownChat', 'UploadInfo', 'Zone',
+    'DataFile', 'QueryRefused', 'QueryResult', 'RunAlreadyGoing', 'RunStatus', 'SmoothingStep', 'StepStatus',
+    'TableInfo', 'TestItem', 'TestOutcome',
 ]
