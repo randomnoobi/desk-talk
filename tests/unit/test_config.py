@@ -1,4 +1,4 @@
-"""Typed settings (desktalk/config.py): loading config/*.yaml and .env, and clear messages for bad values.
+"""Typed settings (desktalk/config/): loading config/*.yaml and .env, and clear messages for bad values.
 
 Every test works on copies of the real config files in a temp folder and passes environ={},
 so your own .env and config/settings.local.yaml never change the result.
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 import pytest
@@ -17,7 +18,7 @@ from pydantic import BaseModel, SecretStr, ValidationError
 from desktalk.config import ConfigError, load_config
 
 ROOT = Path(__file__).resolve().parents[2]
-CONFIG_FILES = ('settings.yaml', 'agents.yaml', 'protocols.yaml')
+CONFIG_FILES = ('settings.yaml', 'agents.yaml', 'protocols.yaml', 'prompts.yaml')
 
 
 @pytest.fixture
@@ -95,7 +96,7 @@ def test_config_is_read_only(project):
     with pytest.raises(ValidationError, match='frozen'):
         cfg.camera.fps = 10
     with pytest.raises(AttributeError):
-        cfg.camera.webcam_indices.append(1)          # lists come back as tuples
+        cast(Any, cfg.camera.webcam_indices).append(1)          # lists come back as tuples
 
 
 def test_api_keys_come_from_dotenv_and_are_hidden_when_printed(project):
@@ -256,6 +257,7 @@ def test_a_wait_that_starts_longer_than_its_limit_is_refused(project):
     ('idle_chat:\n  min_sec: 9999\n', 'idle_chat', 'min_sec', 'max_sec'),
     ('safety:\n  edge_proximity:\n    danger_px: 999\n', 'safety.edge_proximity', 'danger_px', 'warn_px'),
     ('web:\n  list_sizes:\n    log_events: {default: 9999}\n', 'web.list_sizes.log_events', 'default', 'max'),
+    ('web:\n  settings_sliders:\n    alert: {min: 999}\n', 'web.settings_sliders.alert', 'min', 'max'),
 ])
 def test_every_smaller_larger_pair_is_checked(project, local, section, smaller, larger):
     write_local(project, local)
@@ -345,3 +347,109 @@ def test_environment_variables_win_and_moved_ones_are_listed(project):
     assert cfg.camera.source == 'pi'
     assert cfg.env_applied == {'OLLAMA_MODEL': 'llm.ollama_model', 'YOLO_MODEL': 'detector.model'}
     assert cfg.env_moved == ('CAMERA_SOURCE',)
+
+
+# ── settings added by the 2026 cleanup (docs/plans/2026-10-23-codebase-cleanup-plan.md) ──
+BEFORE_CLEANUP = ROOT / 'tests' / 'fixtures' / 'settings_before_cleanup.yaml'   # config/settings.yaml before it
+NEW_SETTINGS = {
+    'settings.yaml': [
+        ('camera', 'phone_cert_file'), ('camera', 'phone_key_file'), ('camera', 'phone_max_side'),
+        ('camera', 'phone_jpeg_quality'), ('camera', 'phone_tilt_max'),
+        ('drawing', 'colors', 'risk'), ('drawing', 'line_px'), ('drawing', 'font_scale'),
+        ('drawing', 'fill_alpha', 'zone'), ('drawing', 'trail', 'start_after'), ('drawing', 'trail', 'keep'),
+        ('drawing', 'dash'), ('drawing', 'arrow_tip'), ('drawing', 'radius'),
+        ('web', 'refresh_ms', 'live'), ('web', 'refresh_ms', 'log'), ('web', 'refresh_ms', 'habits'),
+        ('web', 'request_timeout_ms'), ('web', 'activity_ping_ms'), ('web', 'toast_ms'),
+        ('web', 'list_sizes', 'log'), ('web', 'list_sizes', 'photos'),
+        ('web', 'list_sizes', 'chat_kept'), ('web', 'list_sizes', 'chat_saved'), ('web', 'left_chat_shown_min'),
+        ('camera', 'phone_capture_width'), ('camera', 'phone_capture_height'),
+        ('logging', 'file_name'), ('logging', 'preview_chars'), ('llm', 'error_text_chars'),
+        ('pi', 'camera'), ('pi', 'error_text_chars'), ('llm', 'error_log_chars'), ('safety', 'min_desk_corners'),
+        ('web', 'settings_sliders', 'zone'), ('web', 'settings_sliders', 'warn'), ('web', 'settings_sliders', 'alert'),
+        ('web', 'new_zone_px'), ('lens', 'trusted_gravity'),
+    ],
+    'protocols.yaml': [('food', 'healthy')],
+}
+
+
+def _key_lines(text: str) -> dict[tuple, int]:
+    """Every key in a YAML file → the line it's on (0 = the first line)."""
+    out: dict[tuple, int] = {}
+
+    def walk(node, path):
+        if isinstance(node, yaml.MappingNode):
+            for key, value in node.value:
+                out[path + (key.value,)] = key.start_mark.line
+                walk(value, path + (key.value,))
+
+    walk(yaml.compose(text), ())
+    return out
+
+
+def test_local_settings_with_every_old_key_still_loads(project):
+    """Your own settings.local.yaml may set any setting settings.yaml had before the cleanup, in the same place."""
+    shutil.copy(BEFORE_CLEANUP, project / 'config' / 'settings.local.yaml')
+    cfg = load_config(root=project, environ={})
+    checked = 0
+    for path, value in _leaves(yaml.safe_load(BEFORE_CLEANUP.read_text())):
+        assert _plain(_lookup(cfg, path)) == value, '.'.join(map(str, path))
+        checked += 1
+    assert checked > 300
+
+
+@pytest.mark.parametrize('name', NEW_SETTINGS)
+def test_every_new_setting_has_a_comment(name):
+    """Each setting added since the cleanup started says what it does, on its line or the line above."""
+    text = (ROOT / 'config' / name).read_text()
+    lines = text.splitlines()
+    keys = _key_lines(text)
+    old = set(_key_lines(BEFORE_CLEANUP.read_text())) if name == 'settings.yaml' else set()
+    new = {path: line for path, line in keys.items() if path not in old} if old else \
+        {path: line for path, line in keys.items() if path[:2] in NEW_SETTINGS[name]}
+    for path in NEW_SETTINGS[name]:
+        assert path in keys, f'{name}: {".".join(path)} is missing'
+    no_comment = ['.'.join(map(str, path)) for path, line in new.items()
+                  if '#' not in lines[line] and not lines[line - 1].lstrip().startswith('#')]
+    assert no_comment == []
+
+
+def test_new_settings_keep_the_values_the_code_has_today(project):
+    cfg = load_config(root=project, environ={})
+    camera, drawing, web = cfg.camera, cfg.drawing, cfg.web
+    assert (camera.phone_cert_file, camera.phone_key_file) == ('desk-talk.crt', 'desk-talk.key')    # web/pairing.py
+    assert (camera.phone_max_side, camera.phone_jpeg_quality, camera.phone_tilt_max) == (960, 70, 50)   # camera.js
+    assert drawing.colors.box_on == (60, 200, 90) and drawing.colors.danger == (0, 0, 255)          # drawing.py
+    assert drawing.colors.risk == ((0, 200, 0), (0, 220, 220), (0, 140, 255), (0, 0, 255), (0, 0, 160))
+    assert (drawing.line_px, drawing.arrow_tip, drawing.trail.start_after, drawing.trail.keep) == (2, 0.15, 3, 6)
+    assert (drawing.fill_alpha.zone, drawing.fill_alpha.crowd) == (0.30, 0.10)
+    assert web.refresh_ms.model_dump() == {'live': 1500, 'habits': 15000, 'photos': 10000, 'log': 20000}  # app.js
+    assert (web.request_timeout_ms, web.activity_ping_ms, web.toast_ms) == (8000, 3000, 4000)
+    assert (web.list_sizes.log, web.list_sizes.photos) == (150, 6)
+    assert (web.list_sizes.chat_kept, web.list_sizes.chat_saved, web.left_chat_shown_min) == (200, 60, 60)  # app.js
+    assert (camera.phone_capture_width, camera.phone_capture_height) == (1280, 720)                  # camera.js
+    assert web.settings_sliders.model_dump() == {'zone': {'min': 10, 'max': 200}, 'warn': {'min': 20, 'max': 200},
+                                                 'alert': {'min': 10, 'max': 120}}                    # app.js
+    assert web.new_zone_px == 60                                                                     # app.js
+    assert cfg.lens.trusted_gravity == 1.0                                                           # camera_measure.py
+    assert (cfg.logging.file_name, cfg.llm.error_text_chars, cfg.llm.error_log_chars) == ('desktalk.log', 160, 200)
+    assert 'banana' in cfg.protocols.food.healthy and len(cfg.protocols.food.healthy) == 20          # tracker.py
+
+
+def test_every_agent_color_is_in_the_page_palette(project):
+    cfg = load_config(root=project, environ={})
+    colors = {a.color for a in cfg.agents_file.agents.values() if a.color}
+    assert colors <= set(cfg.web.palette)
+
+
+def test_the_longest_chat_reply_follows_how_the_server_tries_the_ai(project):
+    """Wait its turn, keep trying until the time limit (the last try may start just before it), and on Ollama
+    ask that last try up to max_retries times for a reply that isn't empty (adapters/llm/)."""
+    llm = load_config(root=project, environ={}).llm
+    assert (llm.min_interval_sec, llm.ollama_timeout_sec, llm.max_retries, llm.ollama_retry_sec) == (6, 90, 3, 2)
+    assert llm.longest_reply_sec() == 6 + 90 + 3 * 90 + 2 * 2
+
+
+def test_the_page_no_longer_has_a_first_check_wait():
+    """The page stopped using web.first_check_timeout_ms, so the setting is gone (it only lived on the cleanup
+    branch, so no settings.local.yaml has it)."""
+    assert 'first_check_timeout_ms' not in type(load_config(environ={}, dotenv=Path('/nonexistent')).web).model_fields

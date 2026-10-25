@@ -9,7 +9,7 @@ import time
 from desktalk.bootstrap import build
 from desktalk.runtime import SystemClock
 from tests.fakes import FakeDetector
-from tests.integration.app_kit import LAPTOP, PAIR_KEY, PERSON, desk_config, desk_jpeg
+from tests.integration.app_kit import LAPTOP, PAIR_KEY, PERSON, desk_config, desk_jpeg, inbox
 
 JOBS = {'detection', 'scheduler', 'rule engine', 'habit reminders', 'idle chat', 'lost items', 'lens',
         'daily recap', 'vision habits'}
@@ -33,7 +33,7 @@ def test_start_runs_every_job_in_its_own_thread_and_stop_ends_them_quickly(tmp_p
     try:
         assert {job['name'] for job in app.supervisor.status()} == JOBS
         assert {job['state'] for job in app.supervisor.status()} == {'running'}
-        assert app.source.push(desk_jpeg())
+        assert inbox(app).push(desk_jpeg())
         assert wait_until(lambda: app.producer.pictures_analysed == 1, seconds=5)
         assert app.bus.wait_idle(timeout=5)
         day = app.event_log.days()[0]

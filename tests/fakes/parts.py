@@ -6,7 +6,8 @@ import copy
 import time
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import Any
+from pathlib import Path
+from typing import Any, TypeVar
 
 import cv2
 import numpy as np
@@ -21,6 +22,8 @@ from desktalk.domain import (
     StateRecord,
     UploadInfo,
 )
+
+E = TypeVar('E', bound=Event)
 
 
 class FakeDetector:
@@ -112,7 +115,10 @@ class SyncEventBus:
         return [{'name': s['name'], 'handled': s['handled'], 'waiting': 0, 'dropped': 0, 'errors': s['errors']}
                 for s in self._subs]
 
-    def of_type(self, cls: type[Event]) -> list[Event]:
+    def close(self, timeout: float) -> list[str]:
+        return []         # no threads: nothing is ever still busy
+
+    def of_type(self, cls: type[E]) -> list[E]:
         """Everything published of one type (handy in asserts)."""
         return [e for e in self.published if isinstance(e, cls)]
 
@@ -128,6 +134,8 @@ class InMemoryEventStore:
         self._events: dict[str, list[dict]] = {}
         self._detections: dict[str, list[dict]] = {}
         self.compactions = 0
+        self.folder = Path('in memory')
+        self.last_compaction: dict[str, Any] | None = None
 
     def write(self, event: Event) -> None:
         d = event.to_dict()
@@ -157,7 +165,9 @@ class InMemoryEventStore:
         self.compactions += 1
         frames = sum(len(v) for v in self._detections.values())
         self._detections.clear()
-        return {'frames': frames, 'intervals': 0, 'from': None, 'to': None}
+        summary = {'frames': frames, 'intervals': 0, 'from': None, 'to': None}
+        self.last_compaction = {'ts': now, **summary}
+        return summary
 
     def prune(self, now: float) -> list[str]:
         return []
@@ -174,9 +184,6 @@ class InMemoryKeyValueStore:
     def save(self, key: str, value: Any) -> None:
         self.saves += 1
         self.data[key] = copy.deepcopy(value)
-
-    def delete(self, key: str) -> None:
-        self.data.pop(key, None)
 
     def keys(self, prefix: str = '') -> list[str]:
         return sorted(k for k in self.data if k.startswith(prefix))

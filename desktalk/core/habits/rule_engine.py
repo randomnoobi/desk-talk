@@ -221,7 +221,8 @@ def _evidence(cond: Condition, snapshot: DeskSnapshot, changes: Sequence[StateCh
         if check.for_ is None:
             return [f'the {check.object} is {check.is_}']
         found = _state_of(check.object, snapshot)
-        return [f'the {check.object} has been {check.is_} for {_minutes(now - (found.since or now))}']
+        since = found.since if found is not None else None
+        return [f'the {check.object} has been {check.is_} for {_minutes(now - (since or now))}']
     if isinstance(cond, NoEventCond):
         check = cond.no_event
         said = f"the {_one_of(check.object)} hasn't {_has_not(check.events)} in"

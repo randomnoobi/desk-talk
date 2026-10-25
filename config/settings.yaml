@@ -12,6 +12,7 @@
 #  Other config files:
 #    config/agents.yaml     who each detected object becomes in the chat
 #    config/protocols.yaml  the habit rules from the book "Protocols"
+#    config/prompts.yaml    what Desk Talk says, and what it tells the AI
 #    config/safety_rules.json  danger zones + desk corners (the Settings page saves this one)
 # ════════════════════════════════════════════════════════════════════
 
@@ -27,6 +28,13 @@ camera:
   phone_port: 5443            # HTTPS port the phone page uses (phones only allow cameras on https)
   phone_cert_folder: certs    # the phone page's own HTTPS certificate is made and kept here
   phone_cert_days: 365        # a new certificate is good for this long (a new one is made when it runs out)
+  phone_cert_file: desk-talk.crt  # the certificate's file name in phone_cert_folder...
+  phone_key_file: desk-talk.key   # ...and its secret key's (made on this computer, never leaves it)
+  phone_max_side: 960         # the phone shrinks each picture so its longest side is at most this many pixels
+  phone_jpeg_quality: 70      # JPEG quality of the pictures the phone sends (1-100)
+  phone_tilt_max: 50          # a phone tilt reading above this (m/s², on any axis) isn't a real one (gravity is 9.8)
+  phone_capture_width: 1280   # the picture size the phone page asks its camera for (the phone picks the nearest
+  phone_capture_height: 720   # size it has; each picture is then shrunk to phone_max_side)
   wait_for_picture_sec: 1.0   # analysis waits this long for a new picture, then checks again
   jpeg_quality: 78            # JPEG quality when this computer makes the picture itself (webcam)
   boxes_jpeg_quality: 70      # JPEG quality of the live view with boxes ("Boxes" in the app)
@@ -70,6 +78,9 @@ pi:
                               # to the container right away; others need the camera program restarted)
   restart_after_missed_pictures: 30  # no new picture for this many picture times (30 at 3 a second = 10 s): the
                               # camera seems stuck, so the camera program stops and systemd starts it again
+  camera: auto                # which camera: auto, picamera2, usb (usb:1 for the second one), folder:<dir> or
+                              # video:<file>; the camera program's --camera flag beats it
+  error_text_chars: 200       # a reply the Pi can't read (not JSON): at most this many letters of it go in its log
   detector:                   # object detection on the Pi itself, in Docker (raspberry_pi/detector_service/)
     model: yolo26m-objv1-150.pt  # in the container's models folder; the Pi speed test (benchmarks/) picks the final one
     format: ncnn              # ncnn = fastest on the Pi's processor; pt = plain PyTorch, to compare
@@ -136,7 +147,7 @@ object_states:
   # Saving
   snapshot_every_sec: 60      # save every object's state this often (restart + heartbeat)
   restore_max_age_sec: 300    # after a restart, saved states older than this start over as UNKNOWN
-  database: data/object_states.sqlite
+  database: data/object_states.sqlite     # where the states are saved
 
 # ── Keeping background jobs running ────────────────────────────────
 supervisor:
@@ -166,9 +177,9 @@ alerts:
   # An arm close to the lens can look like a cat for a moment, so a pet only counts when the
   # detector is at least pet_min_confidence sure (0-1) in pet_min_pictures of the last
   # pet_window_pictures analysed pictures (a few blurry ones in between are fine).
-  pet_min_confidence: 0.8
-  pet_min_pictures: 5
-  pet_window_pictures: 7
+  pet_min_confidence: 0.8     # see above
+  pet_min_pictures: 5         # see above
+  pet_window_pictures: 7      # see above
   pet_forget_after_sec: 10    # no picture analysed for longer than this = forget which pets were seen before
   clutter_threshold: 6        # this many things on the desk = "maybe tidy up?"
   clutter_cooldown_sec: 1800
@@ -192,10 +203,10 @@ safety:
   # stands) is inside. The camera looks at the desk at an angle, so the top of a laptop's box is its open
   # screen, and a bottle far behind the screen would look close if the whole box counted.
   danger_zones:
-    laptop:     {expand: 80, base_share: 0.5, label: Spill / pressure zone}
-    keyboard:   {expand: 60, base_share: 1.0, label: Crumb / debris zone}
-    book:       {expand: 45, base_share: 1.0, label: Stacking zone}
-    cell phone: {expand: 35, base_share: 1.0, label: Screen scratch zone}
+    laptop:     {expand: 80, base_share: 0.5, label: Spill / pressure zone}    # the bottom half: not the open screen
+    keyboard:   {expand: 60, base_share: 1.0, label: Crumb / debris zone}      # flat: the whole box
+    book:       {expand: 45, base_share: 1.0, label: Stacking zone}            # flat: the whole box
+    cell phone: {expand: 35, base_share: 1.0, label: Screen scratch zone}      # flat: the whole box
   zone_dangers:               # which kinds of things (below) are a danger inside each zone
     laptop:     [liquids, foods]
     keyboard:   [liquids, foods]
@@ -239,6 +250,7 @@ safety:
   desk_border_share: 0.03     # desk corners this close to the picture's edge (share of its size) are on the edge
   footprint_share: 0.2        # the bottom part of a box (share of its height) is where it stands on the desk...
   footprint_min_px: 4         # ...but at least this many pixels
+  min_desk_corners: 3         # fewest desk corners that mark the desk (3 is the least that makes an area)
   max_desk_corners: 12        # most desk corners the Settings page keeps
 
 # ── Reminders (the habit rules are in protocols.yaml) ─────────────
@@ -286,6 +298,8 @@ llm:
   gemini_url: https://generativelanguage.googleapis.com/v1beta/openai/
   groq_url: https://api.groq.com/openai/v1
   gemini_thinking_budget: 0   # 0 = Gemini answers straight away, without "thinking" first (faster, cheaper)
+  error_text_chars: 160       # an error from the AI is cut to this many letters before it's shown
+  error_log_chars: 200        # ...and to this many in the log, when it's written there as it came
   # How long each kind of AI reply may be (max_tokens; a token is about 3/4 of a word) and how
   # creative (temperature, 0-1). No temperature = the agent's own, from agents.yaml.
   replies:
@@ -389,6 +403,7 @@ lens:
   blur_below: 25
   motion_above: 6.0
   bump_degrees: 12            # phone camera only
+  trusted_gravity: 1.0        # a phone tilt reading weaker than this (m/s²) is noise, not a direction (gravity is 9.8)
   slow_fps_below: 1.5
   speak_gap_sec: 20
   repeat_after_min: 20
@@ -429,6 +444,56 @@ snapshots:
   crop_min_px: 40             # a crop smaller than this keeps the whole picture
   jpeg_quality: 85            # JPEG quality of cropped proof photos
 
+# ── Drawing on the live view ("Boxes" in the app) ──────────────────
+drawing:
+  colors:                     # each is [blue, green, red], 0-255 (OpenCV's order, not the usual red-green-blue)
+    box_on: [60, 200, 90]     # green: an agent in the chat (or everything, when nobody is in the chat)
+    box_off: [150, 150, 150]  # grey: seen, but not chatting
+    danger: [0, 0, 255]       # red: something about to fall, or in a danger zone
+    warn: [0, 190, 255]       # orange-yellow: the desk edges, near an edge, crowded
+    zone: [200, 160, 0]       # teal: the outline of a danger zone with nothing in it
+    zone_hit: [0, 50, 230]    # dark red: the part of a danger zone something risky is in
+    chain: [220, 80, 255]     # magenta: one thing between two others
+    moving: [255, 200, 0]     # light blue: things moving toward each other
+    text: [255, 255, 255]     # white: writing on a colored label
+    soft_text: [180, 180, 180]  # light grey: the danger zone names and the risk badge's event count
+    soft_back: [60, 60, 60]   # dark grey: behind the danger zone names
+    badge_back: [0, 0, 0]     # black: behind the risk badge
+    # the risk badge: risk level 0 (green) up to 4 (dark red)
+    risk: [[0, 200, 0], [0, 220, 220], [0, 140, 255], [0, 0, 255], [0, 0, 160]]
+  line_px: 2                  # how thick boxes, edges, arrows and chains are drawn
+  thin_line_px: 1             # how thick the danger zone outlines and most writing are drawn
+  bold_text_px: 2             # how thick the risk badge's and the "keeps coming back" count's writing is
+  font_scale:                 # how big the writing is (1 = OpenCV's normal size)
+    box: 0.5                  # "cup 83%" on each box
+    label: 0.42               # labels on the desk overlays ("35px to left edge", "INTRUSION 20px")
+    zone: 0.35                # each danger zone's name
+    chain: 0.35               # "chain: Cup->Book->Laptop"
+    crowd: 0.4                # "3 crowded"
+    moving: 0.38              # "approaching 12%"
+    count: 0.5                # the number of times something kept coming back into a zone
+    risk: 0.7                 # "RISK 2/4"
+    risk_events: 0.35         # "3 events" next to it
+  fill_alpha:                 # how see-through the filled areas are (0 = can't see them, 1 = solid)
+    zone: 0.30                # the part of a danger zone something risky is in
+    crowd: 0.10               # the square around a crowd
+  trail:                      # dots showing where each thing was in the last few pictures
+    start_after: 3            # drawn once there are this many pictures...
+    keep: 6                   # ...showing at most this many
+    shade_from: 80            # the oldest dot's grey (0-255)...
+    shade_range: 120          # ...and how much lighter the newest gets
+  dash:                       # dashed lines: [dash, gap] in pixels
+    zone: [8, 6]              # danger zone outlines
+    chain: [8, 5]             # the lines of a chain
+  arrow_tip: 0.15             # an arrow's tip, as a share of its length
+  radius:                     # circles, in pixels
+    chain: 16                 # around the thing in the middle of a chain...
+    chain_ring: 18            # ...with a thin white ring just outside it
+    count: 14                 # the "keeps coming back" count
+    trail_dot: 4              # the newest trail dot (each older one is 1 smaller)...
+    trail_dot_min: 2          # ...down to this
+  badge: [8, 8, 160, 52]      # the risk badge's box: left, top, right, bottom, in pixels
+
 # ── Habit tracker (the numbers behind the Habits page) ─────────────
 habit_tracker:
   save_every_sec: 30          # save today's habit numbers this often while pictures come in...
@@ -462,6 +527,31 @@ web:
     habit_log:      {default: 40, max: 100}
     log_events:     {default: 200, max: 2000}
     log_detections: {default: 30, max: 500}
+    log: 150                  # events the Log page asks for
+    photos: 6                 # proof photos shown under the live view
+    chat_kept: 200            # messages the page keeps in each chat (older ones drop off)...
+    chat_saved: 60            # ...and saves in the browser for each chat, so a refresh keeps them
+  # The app page (web_app/), in thousandths of a second:
+  refresh_ms:                 # how often the page asks for new...
+    live: 1500                # ...camera status, agents and risks
+    habits: 15000             # ...habit numbers
+    photos: 10000             # ...proof photos
+    log: 20000                # ...events, while the Log page is open
+  request_timeout_ms: 8000    # the page gives up on an ordinary request after this long (a chat reply waits
+                              # longer: as long as the server may try the AI, see GET /api/ui_settings)
+  chat_reply_max_ms: 180000   # ...but never longer than this. The worst case (every agent, every retry) adds up
+                              # to over an hour, which looks like a frozen page, so the page shows the error here
+  live_timeout_ms: 5000       # ...on the live status request after this long
+  activity_ping_ms: 3000      # while you type, the page tells the server at most this often (small talk waits)
+  toast_ms: 4000              # how long a pop-up note stays
+  left_chat_shown_min: 60     # a chat whose object left the desk stays in the chat list this long
+  settings_sliders:           # the Settings page's sliders, in pixels: the lowest and highest each one goes
+    zone:  {min: 10, max: 200}  # how far a danger zone's bubble reaches past its object
+    warn:  {min: 20, max: 200}  # desk edges: "Warn at"
+    alert: {min: 10, max: 120}  # desk edges: "Alert at"
+  new_zone_px: 60             # a danger zone added on the Settings page starts with a bubble this big
+  # The colors the page knows. Agents (agents.yaml) use the first eight; ink is the group chat's.
+  palette: [cobalt, teal, tang, mustard, coral, plum, moss, slate, ink]
 
 # ── Logs ────────────────────────────────────────────────────────────
 logging:
@@ -469,6 +559,8 @@ logging:
   level: INFO                 # DEBUG (everything), INFO, WARNING or ERROR (problems only)
   file_size_mb: 5             # start a new log file at this size...
   files_kept: 5               # ...and keep this many old ones
+  file_name: desktalk.log     # the log file's name in the folder (old ones get .1, .2 ... added)
+  preview_chars: 120          # a log line quoting an AI reply or a chat line shows at most this many letters
 
 # ── Your data on this computer ──────────────────────────────────────
 storage:

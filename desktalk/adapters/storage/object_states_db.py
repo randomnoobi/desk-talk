@@ -61,8 +61,12 @@ def _record_of(row: tuple) -> StateRecord:
     ts, timezone, device_id, type_, label, prev_state, new_state, conf_avg, bbox, dwell_sec = row
     return StateRecord(ts=ts, timezone=timezone, device_id=device_id, type=type_, label=label,
                        prev_state=Phase(prev_state), new_state=Phase(new_state), conf_avg=conf_avg,
-                       bbox=None if bbox is None else tuple(float(v) for v in json.loads(bbox)),
-                       dwell_sec=dwell_sec)
+                       bbox=None if bbox is None else _box(json.loads(bbox)), dwell_sec=dwell_sec)
+
+
+def _box(values: list) -> tuple[float, float, float, float]:
+    left, top, right, bottom = (float(v) for v in values)
+    return left, top, right, bottom
 
 
 class SqliteStateStore:

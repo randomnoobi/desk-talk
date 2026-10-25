@@ -1,12 +1,15 @@
 /* ============================================
    DESK TALK — phone camera page
-   Grabs frames from the phone camera and sends them to the
+   Grabs pictures from the phone camera and sends them to the
    computer as JPEGs over Wi-Fi (POST /api/phone/frame).
+   How many a second, how big and how sharp come from the computer
+   (GET /api/phone/config, i.e. config/settings.yaml → camera).
    ============================================ */
 
-let TARGET_FPS = 3;       // frames per second sent to the computer (the computer's camera.fps setting)
-const MAX_SIDE = 960;      // longest side of each frame in pixels (YOLO works at 640)
-const JPEG_QUALITY = 0.7;
+// From GET /api/phone/config when you tap Start: fps, max_side, jpeg_quality (1-100), capture_width/height.
+let config = null;
+const MS = 1000;                 // thousandths of a second in a second
+const QUALITY_SCALE = 100;       // the settings say JPEG quality as 1-100; the browser wants 0-1
 
 const $ = (id) => document.getElementById(id);
 const video = $('preview');
@@ -26,7 +29,7 @@ let lastStatsTime = performance.now();
 // ---------- keeping the picture upright ----------
 // If the phone's screen rotation is locked and you turn the phone sideways, the camera
 // keeps sending the picture "portrait", so the desk shows up on its side on the computer.
-// The motion sensor tells us which way is really up, and we turn each frame to match.
+// The motion sensor tells us which way is really up, and we turn each picture to match.
 // The "Turn" button adds an extra quarter turn by hand, in case a phone gets it wrong.
 const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent)
   || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -87,7 +90,7 @@ function onMotion(e) {
   if (phoneTurn === null || (snapped !== phoneTurn && now - candidateSince > 700)) phoneTurn = snapped;
 }
 
-/** Clockwise turn to apply to each frame so the desk is the right way up. */
+/** Clockwise turn to apply to each picture so the desk is the right way up. */
 function turnDegrees() {
   // If the screen turned with the phone, the camera picture is already upright
   // (phoneTurn + screenAngle() comes out as 0). If rotation lock kept the screen
@@ -126,8 +129,8 @@ async function openCamera() {
     audio: false,
     video: {
       facingMode: { ideal: facingMode },
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
+      width: { ideal: config.capture_width },
+      height: { ideal: config.capture_height },
     },
   });
   video.srcObject = stream;
@@ -140,7 +143,7 @@ async function keepScreenOn() {
   } catch (_) { /* not supported or denied — the user can turn off auto-lock */ }
 }
 
-// ---------- sending frames ----------
+// ---------- sending pictures ----------
 const sent = $('sent');
 const sentCtx = sent.getContext('2d');
 let lastThumb = 0;
@@ -149,7 +152,7 @@ function grabFrame() {
   const w = video.videoWidth;
   const h = video.videoHeight;
   if (!w || !h) return Promise.resolve(null);
-  const scale = Math.min(1, MAX_SIDE / Math.max(w, h));
+  const scale = Math.min(1, config.max_side / Math.max(w, h));
   const fw = Math.round(w * scale);
   const fh = Math.round(h * scale);
   const turn = turnDegrees();
@@ -162,7 +165,7 @@ function grabFrame() {
   ctx.drawImage(video, -fw / 2, -fh / 2, fw, fh);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   drawThumb();
-  return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY));
+  return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', config.jpeg_quality / QUALITY_SCALE));
 }
 
 /** Small copy of exactly what the computer gets, so you can check it's the right way up. */
@@ -209,30 +212,38 @@ async function sendLoop() {
         }
       } catch (_) {
         setStatus('Reconnecting…', 'warn');
-        await sleep(1000);
+        await sleep(MS);              // a second, then try again
       }
     }
     updateStats();
-    // Wait so we send about TARGET_FPS frames per second.
-    const wait = 1000 / TARGET_FPS - (performance.now() - started);
+    // Wait so we send about config.fps pictures a second.
+    const wait = MS / config.fps - (performance.now() - started);
     if (wait > 0) await sleep(wait);
   }
 }
 
 function updateStats() {
   const now = performance.now();
-  if (now - lastStatsTime < 1000) return;
-  const fps = (sentCount * 1000) / (now - lastStatsTime);
-  $('stats').textContent = `Sending ${fps.toFixed(0)} frames a second (${canvas.width}×${canvas.height})`;
+  if (now - lastStatsTime < MS) return;
+  const fps = (sentCount * MS) / (now - lastStatsTime);
+  $('stats').textContent = `Sending ${fps.toFixed(0)} pictures a second (${canvas.width}×${canvas.height})`;
   sentCount = 0;
   lastStatsTime = now;
 }
 
 // ---------- start / stop ----------
+/** The picture settings from the computer, or null when it can't be reached. */
+async function loadConfig() {
+  try {
+    const res = await fetch('/api/phone/config');
+    return res.ok ? await res.json() : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 async function startStreaming() {
   $('error').hidden = true;
-  fetch('/api/phone/config').then((r) => r.json()).then((c) => { if (c && c.fps > 0) TARGET_FPS = c.fps; }).catch(() => {});
-
   if (!pairKey) {
     showError('Open this page by scanning the QR code on your computer (it has your pairing key).');
     return;
@@ -245,6 +256,13 @@ async function startStreaming() {
   $('start').disabled = true;
   setStatus('Starting…', 'warn');
   startMotion();       // ask for the motion sensor during the tap (iPhone); not awaited
+  config = await loadConfig();
+  if (!config) {
+    $('start').disabled = false;
+    setStatus('Not streaming', 'error');
+    showError('Can’t reach Desk Talk on your computer. Check that it is running and on the same Wi-Fi, then tap Start again.');
+    return;
+  }
   try {
     await openCamera();
   } catch (err) {

@@ -4,8 +4,27 @@
    Right: what the desk camera sees.
    Agents aren't fixed: when the camera sees an object it joins the chat,
    and when it's gone a while it leaves. Without a server it runs as a demo.
+   Its numbers (refresh times, limits, the habit rules ...) come from the
+   server: GET /api/ui_settings, i.e. config/settings.yaml on the computer.
    ============================================ */
 'use strict';
+
+// ————— Settings from the server —————
+// Filled from GET /api/ui_settings when the page starts (and again when the server comes back after a break).
+// The demo fills in the few it needs itself (see "Demo" below). The page keeps no copies of its own.
+let ui = null;
+
+// How long the first check waits for the server (see firstCheck). It can't be a setting like the others: the
+// settings are what it asks the server for. With no answer by then, the page runs the demo.
+const FIRST_CHECK_MS = 4000;
+
+// Units, not settings.
+const MS = 1000;               // thousandths of a second in a second
+const MINUTE = 60;             // seconds
+const HOUR = 3600;             // seconds
+const ML_PER_OZ = 29.57;
+const PERCENT = 100;
+const LEVEL_MAX = 255;         // a picture's brightness runs from 0 to this
 
 // ————— Who can talk —————
 const GROUP = {
@@ -14,13 +33,10 @@ const GROUP = {
   empty: 'Nobody here yet. When the camera sees something on your desk, it joins the chat. Type @ to talk to one of them.',
 };
 // Lens is the camera. It only talks in the group chat, about the camera view (and fills in for missing agents).
-const LENS = {
-  id: 'lens', name: 'Lens', art: 'art/lens.svg', color: 'coral',
-  about: 'The camera. Speaks up when the view needs fixing.',
-};
-const COLORS = ['cobalt', 'teal', 'tang', 'mustard', 'coral', 'plum', 'moss', 'slate', 'ink'];
-const colorVar = (c) => `var(--${COLORS.includes(c) ? (c === 'coral' ? 'coral-ink' : c) : 'plum'})`;
-const tintVar = (c) => (c === 'ink' ? 'var(--mist)' : `var(--${COLORS.includes(c) ? c : 'plum'}-tint)`);
+const lens = () => ui.lens_card;
+const known = (c) => ui.web.palette.includes(c);
+const colorVar = (c) => `var(--${known(c) ? (c === 'coral' ? 'coral-ink' : c) : 'plum'})`;
+const tintVar = (c) => (c === 'ink' ? 'var(--mist)' : `var(--${known(c) ? c : 'plum'}-tint)`);
 
 // ————— Small helpers —————
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -33,22 +49,29 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 function clock(tsSeconds) {
-  return new Date(tsSeconds * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return new Date(tsSeconds * MS).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 function agoText(tsSeconds) {
   if (!tsSeconds) return '';
-  const s = Math.max(0, Math.floor(Date.now() / 1000 - tsSeconds));
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
-  return `${Math.floor(s / 3600)} h ago`;
+  const s = Math.max(0, Math.floor(Date.now() / MS - tsSeconds));
+  if (s < MINUTE) return 'just now';
+  if (s < HOUR) return `${Math.floor(s / MINUTE)} min ago`;
+  return `${Math.floor(s / HOUR)} h ago`;
 }
-const mins = (sec) => Math.round((sec || 0) / 60);
-const liters = (ml) => `${((ml || 0) / 1000).toFixed(1)} L`;
+const mins = (sec) => Math.round((sec || 0) / MINUTE);
+const liters = (ml) => `${((ml || 0) / MS).toFixed(1)} L`;
+/** 60 → 'an hour', 120 → '2 hours', 45 → '45 minutes'. */
+function duration(minutes) {
+  if (minutes === MINUTE) return 'an hour';
+  if (minutes > MINUTE && minutes % MINUTE === 0) return `${minutes / MINUTE} hours`;
+  return `${minutes} minutes`;
+}
 
-/** fetch → JSON, with a timeout. Throws on network errors and non-2xx. */
-async function api(path, { method = 'GET', body, timeout = 8000 } = {}) {
+/** fetch → JSON, with a timeout (an ordinary request's, from the settings). Throws on network errors and non-2xx.
+ * The first check, which fetches the settings, passes its own (FIRST_CHECK_MS). */
+async function api(path, { method = 'GET', body, timeout = ui?.web.request_timeout_ms } = {}) {
   const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), timeout);
+  const t = timeout ? setTimeout(() => ctl.abort(), timeout) : null;
   try {
     const res = await fetch(path, {
       method,
@@ -75,7 +98,8 @@ const storage = {
 
 // ————— State —————
 const state = {
-  live: false,          // the Python server is reachable
+  live: false,          // the Python server answered when the page opened (otherwise: the demo)
+  offline: false,       // ...but can't be reached right now
   cameraSource: 'pi',   // pi | phone | webcam (config/settings.yaml)
   phoneMode: false,
   camOk: false,         // pictures are arriving right now
@@ -101,7 +125,7 @@ const agentIds = () => Object.keys(state.agents);
 /** Who a chat or message belongs to: the group, Lens, or an agent. */
 function who(id) {
   if (id === 'group') return GROUP;
-  if (id === 'lens') return LENS;
+  if (id === 'lens') return lens();
   return state.agents[id] || { id, name: id, color: 'plum', icon: '✨', about: '' };
 }
 function ensureChat(id) {
@@ -123,7 +147,7 @@ function saveHistory() {
   clearTimeout(historyTimer);
   historyTimer = setTimeout(() => {
     const chats = {};
-    for (const [id, list] of Object.entries(state.messages)) chats[id] = list.filter((m) => !m.note).slice(-60);
+    for (const [id, list] of Object.entries(state.messages)) chats[id] = list.filter((m) => !m.note).slice(-ui.web.chat_saved);
     const agents = {};
     for (const [id, a] of Object.entries(state.agents)) agents[id] = { ...a, on_desk: false };
     storage.save(HISTORY_KEY, { saved: Date.now(), chats, agents });
@@ -169,7 +193,7 @@ function upsertAgent(a) {
   state.agents[a.id] = { ...(state.agents[a.id] || {}), ...a };
   ensureChat(a.id);
 }
-/** Reconcile with the server's list (polled every 1.5 s) so a missed event can't leave the list stale. */
+/** Reconcile with the server's list (asked for every web.refresh_ms.live) so a missed event can't leave it stale. */
 function syncAgents(list) {
   if (!Array.isArray(list)) return;
   const onDesk = new Set(list.filter((a) => a.on_desk).map((a) => a.id));
@@ -186,10 +210,10 @@ function syncAgents(list) {
 }
 function rosterEvent(d) {
   const joined = d.action === 'joined';
-  const when = d.ts || Date.now() / 1000;
+  const when = d.ts || Date.now() / MS;
   upsertAgent({ ...d.agent, on_desk: joined, ...(joined ? { joined_at: when } : { left_at: when }) });
   if (!d.quiet) {
-    addMessage('group', { id: d.id, time: d.ts ? d.ts * 1000 : Date.now(), system: joined ? 'joined' : 'left', agent: d.agent.id, text: d.text || `${d.agent.name} ${joined ? 'joined' : 'left'} the chat` });
+    addMessage('group', { id: d.id, time: d.ts ? d.ts * MS : Date.now(), system: joined ? 'joined' : 'left', agent: d.agent.id, text: d.text || `${d.agent.name} ${joined ? 'joined' : 'left'} the chat` });
   }
   if (joined && d.agent.tracker === 'todo') syncTodos();
   renderChatList();
@@ -197,12 +221,13 @@ function rosterEvent(d) {
 }
 
 // ————— Sidebar —————
-/** The group, then agents on the desk, then ones that left in the last hour or that you chatted with. */
+/** The group, then agents on the desk, then ones that left a short while ago (web.left_chat_shown_min) or that
+ * you chatted with. */
 function chatOrder() {
-  const hourAgo = Date.now() / 1000 - 3600;
+  const leftLately = (a) => a.left_at && a.left_at > Date.now() / MS - ui.web.left_chat_shown_min * MINUTE;
   const ids = agentIds().filter((id) => {
     const a = state.agents[id];
-    return a.on_desk || (state.messages[id] || []).length || (a.left_at && a.left_at > hourAgo);
+    return a.on_desk || (state.messages[id] || []).length || leftLately(a);
   });
   ids.sort((x, y) => (state.agents[y].on_desk - state.agents[x].on_desk)
     || ((state.agents[y].joined_at || 0) - (state.agents[x].joined_at || 0)));
@@ -239,14 +264,17 @@ function renderConn() {
   const el = $('#conn');
   let st = 'demo';
   let text = 'Demo mode';
-  if (state.live) {
+  if (state.live && state.offline) {
+    st = 'waiting';
+    text = 'Offline';
+  } else if (state.live) {
     const name = { pi: 'Pi camera', phone: 'Phone camera', webcam: 'Webcam' }[state.cameraSource] || 'Camera';
     st = state.camOk ? 'live' : 'waiting';
     text = state.camOk ? `${name} on` : (state.cameraSource === 'phone' ? 'Connect your phone' : `${name} off`);
   }
   el.dataset.state = st;
   $('#conn-text').textContent = text;
-  el.title = st === 'demo' ? 'Run python server.py on this computer and open http://localhost:5000 to use your real desk.' : '';
+  el.title = st === 'demo' ? DEMO_HOW_TO_RUN : '';
 }
 
 // ————— Navigation —————
@@ -318,7 +346,7 @@ function messageHtml(m, chatId) {
   if (m.mine) return `<div class="msg mine"><div class="msg-body"><div class="bubble">${formatText(m.text)}</div></div></div>`;
   const c = who(m.char);
   const quote = m.replyTo && m.replyTo.text
-    ? `<div class="quote" style="--quote-color:${colorVar(who(m.replyTo.character).color)}">${esc(who(m.replyTo.character).name)}: ${esc(m.replyTo.text.slice(0, 90))}</div>`
+    ? `<div class="quote" style="--quote-color:${colorVar(who(m.replyTo.character).color)}">${esc(who(m.replyTo.character).name)}: ${esc(m.replyTo.text.slice(0, QUOTE_CHARS))}</div>`
     : '';
   // Photos live on the server; after a restart old ones may be gone, so hide broken ones.
   const photo = m.snapshot && state.live
@@ -358,7 +386,7 @@ function addMessage(chatId, msg) {
   ensureChat(chatId);
   const list = state.messages[chatId];
   list.push({ ...msg, time: msg.time || Date.now() });
-  if (list.length > 200) list.splice(0, list.length - 200);
+  if (list.length > ui.web.chat_kept) list.splice(0, list.length - ui.web.chat_kept);
   const visible = state.view === 'chat' && state.chat === chatId;
   if (visible) {
     const box = $('#messages');
@@ -389,21 +417,26 @@ function showTyping(charId, chatId) {
 }
 function hideTyping() { $('#typing')?.remove(); }
 
+// How much text the page shows in a quoted reply and in a pop-up note (they're cut to fit the box).
+const QUOTE_CHARS = 90;
+const TOAST_CHARS = 140;
 let toastTimer = null;
 function toast(character, text) {
   const el = $('#toast');
-  el.innerHTML = `${character ? avatar(character, 32) : ''}<span>${esc(text.slice(0, 140))}</span>`;
+  el.innerHTML = `${character ? avatar(character, 32) : ''}<span>${esc(text.slice(0, TOAST_CHARS))}</span>`;
   el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.hidden = true; }, 4000);
+  toastTimer = setTimeout(() => { el.hidden = true; }, ui.web.toast_ms);
 }
 
 // ————— Sending —————
+/** The messages before the one just sent (at most chat.history_from_app of them). */
 function historyFor(chatId) {
-  return (state.messages[chatId] || []).filter((m) => !m.note && !m.system).slice(-11, -1).map((m) => ({
+  const earlier = (state.messages[chatId] || []).filter((m) => !m.note && !m.system).slice(0, -1);
+  return earlier.slice(earlier.length - ui.chat.history_from_app).map((m) => ({
     role: m.mine ? 'user' : 'assistant',
     name: m.mine ? undefined : who(m.char).name,
-    text: m.text.slice(0, 1200),
+    text: m.text.slice(0, ui.chat.message_max_chars),
   }));
 }
 
@@ -416,7 +449,7 @@ async function send(text) {
   try {
     res = await api('/api/chat', {
       method: 'POST',
-      timeout: 60000,
+      timeout: ui.chat_reply_timeout_ms,      // as long as the server may keep trying the AI, up to web.chat_reply_max_ms
       body: { chat: chatId, message: text, recent_messages: historyFor(chatId), widget: who(chatId).tracker === 'todo' ? todo : undefined },
     });
   } catch {
@@ -438,8 +471,8 @@ function applyTodoActions(id, actions) {
   let changed = false;
   for (const a of actions) {
     const text = (a.text || '').toLowerCase();
-    if (a.action === 'add_todo' && a.text && todo.items.length < 20) {
-      todo.items.push({ text: a.text.slice(0, 200), done: false }); changed = true;
+    if (a.action === 'add_todo' && a.text && todo.items.length < ui.chat.todo_max_items) {
+      todo.items.push({ text: a.text.slice(0, ui.chat.todo_max_chars), done: false }); changed = true;
     } else if (a.action === 'done_todo' && text) {
       const item = todo.items.find((i) => !i.done && i.text.toLowerCase().includes(text));
       if (item) { item.done = true; changed = true; }
@@ -454,6 +487,7 @@ function applyTodoActions(id, actions) {
 // ————— @mentions —————
 let mentionStart = -1;
 let mentionIndex = 0;
+const MENTION_MAX_CHARS = 12;     // longer than this after an @ and you're not typing a name any more
 
 function mentionMatches(query) {
   const q = query.toLowerCase();
@@ -470,7 +504,7 @@ function updateMentions() {
   const at = before.lastIndexOf('@');
   const query = at >= 0 ? before.slice(at + 1) : '';
   const box = $('#mentions');
-  if (at < 0 || (at > 0 && before[at - 1] !== ' ') || /\s/.test(query) || query.length > 12) {
+  if (at < 0 || (at > 0 && before[at - 1] !== ' ') || /\s/.test(query) || query.length > MENTION_MAX_CHARS) {
     box.hidden = true; mentionStart = -1; return;
   }
   const ids = mentionMatches(query);
@@ -526,8 +560,8 @@ async function logHabit(habit, action, extra = {}) {
 }
 
 function bar(value, goal, pace) {
-  const pct = Math.max(0, Math.min(100, (value / Math.max(1, goal)) * 100));
-  const pacePct = pace != null ? Math.max(0, Math.min(100, (pace / Math.max(1, goal)) * 100)) : null;
+  const pct = Math.max(0, Math.min(PERCENT, (value / Math.max(1, goal)) * PERCENT));
+  const pacePct = pace != null ? Math.max(0, Math.min(PERCENT, (pace / Math.max(1, goal)) * PERCENT)) : null;
   return `<div class="bar" role="img" aria-label="${Math.round(pct)} percent"><i style="width:${pct}%"></i>${pacePct != null ? `<b style="left:${pacePct}%" title="Where the pace says you should be now"></b>` : ''}</div>`;
 }
 
@@ -547,7 +581,7 @@ function renderTracker() {
       <ul class="todo">${todo.items.map((item, i) => `<li>
         <label><input type="checkbox" data-i="${i}" ${item.done ? 'checked' : ''}><span class="${item.done ? 'done' : ''}">${esc(item.text)}</span></label>
         <button type="button" class="x" data-del="${i}" aria-label="Remove ${esc(item.text)}">×</button></li>`).join('')}</ul>
-      <form class="inline-add"><input type="text" maxlength="200" placeholder="Add a task" aria-label="New task"><button type="submit" class="btn-quiet">Add</button></form>`;
+      <form class="inline-add"><input type="text" maxlength="${ui.chat.todo_max_chars}" placeholder="Add a task" aria-label="New task"><button type="submit" class="btn-quiet">Add</button></form>`;
     box.querySelectorAll('input[type="checkbox"]').forEach((cb) => cb.addEventListener('change', () => {
       todo.items[+cb.dataset.i].done = cb.checked; todoChanged(id);
     }));
@@ -558,7 +592,7 @@ function renderTracker() {
       e.preventDefault();
       const v = e.target.querySelector('input').value.trim();
       if (!v) return;
-      todo.items.push({ text: v.slice(0, 200), done: false });
+      todo.items.push({ text: v.slice(0, ui.chat.todo_max_chars), done: false });
       todoChanged(id);
       $('#tracker input[type="text"]')?.focus();
     });
@@ -574,7 +608,7 @@ function renderTracker() {
         <button type="button" class="btn-quiet" data-log="sip">+ Sip</button>
         <button type="button" class="btn-quiet" data-log="glass">+ Glass</button>
       </div>
-      <p class="tracker-note">${w.last_sip_ts ? `Last sip ${agoText(w.last_sip_ts)}. ` : ''}A sip counts when the cup leaves the desk and comes back (about ${w.ml_per_sip} ml). <em>Protocols</em>: ${Math.round(w.on_waking_ml / 30)} oz right after waking, then about ${liters(w.goal_ml)} in the first 10 hours.</p>`;
+      <p class="tracker-note">${w.last_sip_ts ? `Last sip ${agoText(w.last_sip_ts)}. ` : ''}A sip counts when the cup leaves the desk and comes back (about ${w.ml_per_sip} ml). <em>Protocols</em>: ${Math.round(w.on_waking_ml / ML_PER_OZ)} oz right after waking, then about ${liters(w.goal_ml)} in the first ${ui.habits.goal_window_hours} hours.</p>`;
     box.querySelector('[data-log="sip"]').addEventListener('click', () => logHabit('hydration', 'sip'));
     box.querySelector('[data-log="glass"]').addEventListener('click', () => logHabit('hydration', 'glass'));
     return;
@@ -591,7 +625,7 @@ function renderTracker() {
         </div>
         <button type="button" class="btn-quiet" id="log-break">Log a break</button>
       </div>
-      <p class="tracker-note">${b.last_break_ts ? `Last break ${agoText(b.last_break_ts)}. ` : ''}Breaks log themselves when you leave the desk for 5 minutes. <em>Protocols</em>: walk 5 minutes for every 30 minutes of sitting, without your phone. <a class="link" data-open="habits">Habits</a></p>`;
+      <p class="tracker-note">${b.last_break_ts ? `Last break ${agoText(b.last_break_ts)}. ` : ''}Breaks log themselves when you leave the desk for ${ui.habits.breaks.break_min} minutes. <em>Protocols</em>: walk ${ui.habits.breaks.break_min} minutes for every ${b.sit_limit_min} minutes of sitting, without your phone. <a class="link" data-open="habits">Habits</a></p>`;
     $('#log-break').addEventListener('click', () => logHabit('breaks', 'break'));
     return;
   }
@@ -599,11 +633,11 @@ function renderTracker() {
   if (kind === 'food') {
     const entries = h.food.entries || [];
     box.innerHTML = `<div class="pills">${entries.map((e, i) => `<span class="pill ${e.healthy ? 'healthy' : 'treat'}">${esc(e.label)}<button type="button" data-del="${i}" aria-label="Remove ${esc(e.label)}">×</button></span>`).join('') || '<span class="muted">Nothing logged yet today.</span>'}</div>
-      <form class="inline-add"><input type="text" maxlength="60" placeholder="What did you eat?" aria-label="Food name">
+      <form class="inline-add"><input type="text" maxlength="${ui.habits.food_label_max_chars}" placeholder="What did you eat?" aria-label="Food name">
         <button type="submit" class="btn-quiet" data-healthy="1">Healthy</button><button type="button" class="btn-quiet" data-healthy="0">Treat</button></form>`;
     const add = (healthy) => {
       const input = box.querySelector('input');
-      const label = input.value.trim().slice(0, 60);
+      const label = input.value.trim().slice(0, ui.habits.food_label_max_chars);
       if (!label) { input.focus(); return; }
       logHabit('food', 'food', { label, healthy });
     };
@@ -627,28 +661,42 @@ function renderTracker() {
 
   if (kind === 'light') {
     const l = h.light;
-    const level = l.lux != null ? `${Math.round(l.lux)} lux` : (l.brightness != null ? `${Math.round(l.brightness)}/255` : '–');
+    const sun = ui.habits.sunlight_default_min;
+    const level = l.lux != null ? `${Math.round(l.lux)} lux` : (l.brightness != null ? `${Math.round(l.brightness)}/${LEVEL_MAX}` : '–');
     box.innerHTML = `<div class="tracker-row">
         <div class="stat"><strong>${l.sunlight_ts ? '✓' : '–'}</strong><span>morning sunlight</span></div>
         <div class="stat"><strong>${level}</strong><span>room light now</span></div>
         <div class="stat"><strong>${clock(h.times.sunset_ts)}</strong><span>sunset</span></div>
-        <button type="button" class="btn-quiet" data-sun="10">I got sunlight</button>
+        <button type="button" class="btn-quiet" data-sun="${sun}">I got sunlight</button>
       </div>
-      <p class="tracker-note"><em>Protocols</em>: sunlight within an hour of waking (10 min clear, 20 cloudy, 30 overcast), some again before sunset, and dim lights in the last hour before bed.</p>`;
-    box.querySelector('[data-sun]').addEventListener('click', () => logHabit('light', 'sunlight', { minutes: 10 }));
+      <p class="tracker-note"><em>Protocols</em>: ${morningLight()}, some again before sunset, and dim lights in the last ${duration(ui.habits.evening_dim_before_bed_min)} before bed.</p>`;
+    box.querySelector('[data-sun]').addEventListener('click', () => logHabit('light', 'sunlight', { minutes: sun }));
   }
 }
 
+/** 'sunlight within an hour of waking (10 min clear, 20 cloudy, 30 overcast)', from protocols.yaml → light. */
+function morningLight(extra = '') {
+  const m = ui.habits.morning_minutes;
+  return `sunlight within ${duration(ui.habits.morning_window_min)} of waking (${m.clear} min clear, ${m.partly_cloudy} cloudy, ${m.overcast} overcast${extra})`;
+}
+
 // ————— Habits page —————
+// Your own counters live only in this browser, so their label length is the page's own.
+const COUNTER_LABEL_CHARS = 60;
 async function renderHabits() {
   const page = $('#view-habits');
   if (!state.habits) await refreshHabits();
   const h = state.habits || demoHabits();
-  const vdata = state.live ? await api(`/api/habit_log?category=${state.habitFilter}&limit=40`).catch(() => null) : null;
+  const vdata = state.live ? await api(`/api/habit_log?category=${state.habitFilter}&limit=${ui.web.habit_log_shown}`).catch(() => null) : null;
   const v = h.vision || {};
   const events = vdata?.events || [];
   const w = h.hydration; const b = h.breaks; const p = h.phone_free; const l = h.light;
-  const level = l.lux != null ? `${Math.round(l.lux)} lux` : (l.brightness != null ? `brightness ${Math.round(l.brightness)}/255` : 'no reading yet');
+  const level = l.lux != null ? `${Math.round(l.lux)} lux` : (l.brightness != null ? `brightness ${Math.round(l.brightness)}/${LEVEL_MAX}` : 'no reading yet');
+  const rules = ui.habits;
+  const sunButtons = [['clear', 'Got'], ['partly_cloudy', ''], ['overcast', '']].map(([sky, before]) => {
+    const n = rules.morning_minutes[sky];
+    return `<button class="btn-quiet" data-log="light:sunlight:${n}">${before ? `${before} ` : ''}${n} min</button>`;
+  }).join('');
   page.innerHTML = `
     <header><h1 class="page-title">Habits</h1>
       <p class="page-intro">Four habits from Andrew Huberman's <em>Protocols</em>, checked by the desk camera. Your day: up at ${clock(h.times.wake_ts)}, bed at ${clock(h.times.bed_ts)} (<a class="link" data-open="settings">change</a>).</p></header>
@@ -657,21 +705,21 @@ async function renderHabits() {
         <h2>Water</h2>
         <p class="big">${liters(w.water_ml)} <small>of ${liters(w.goal_ml)}</small></p>
         ${bar(w.water_ml, w.goal_ml, w.pace_ml)}
-        <p class="hint">${w.sips} sips. Pace for now: ${liters(w.pace_ml)}. About ${liters(w.on_waking_ml)} right after waking, then a glass about every waking hour; less in the 2 hours before bed.</p>
+        <p class="hint">${w.sips} sips. Pace for now: ${liters(w.pace_ml)}. About ${liters(w.on_waking_ml)} right after waking, then a glass about every waking hour; less in the ${duration(rules.stop_before_bed_hours * MINUTE)} before bed.</p>
         <div class="row"><button class="btn-quiet" data-log="hydration:sip">+ Sip</button><button class="btn-quiet" data-log="hydration:glass">+ Glass</button></div>
       </article>
       <article class="habit-card" style="--tint:var(--cobalt-tint)">
         <h2>Breaks</h2>
         <p class="big">${b.count} <small>breaks today</small></p>
         ${bar(mins(b.sitting_sec), b.sit_limit_min)}
-        <p class="hint">Sitting for ${mins(b.sitting_sec)} min now; longest stretch today ${mins(b.longest_sit_sec)} min. Walk 5 minutes for every ${b.sit_limit_min} minutes of sitting, and 5 to 10 minutes after meals. Leave the phone behind.</p>
+        <p class="hint">Sitting for ${mins(b.sitting_sec)} min now; longest stretch today ${mins(b.longest_sit_sec)} min. Walk ${rules.breaks.break_min} minutes for every ${b.sit_limit_min} minutes of sitting${rules.breaks.walk_after_meal ? ', and a short walk after meals' : ''}. Leave the phone behind.</p>
         <div class="row"><button class="btn-quiet" data-log="breaks:break">Log a break</button></div>
       </article>
       <article class="habit-card" style="--tint:var(--mustard-tint)">
         <h2>Light</h2>
         <p class="big">${l.sunlight_ts ? 'Sunlight ✓' : 'No sunlight yet'}</p>
-        <p class="hint">Room right now: ${esc(level)}. Sunset ${clock(h.times.sunset_ts)}. Morning sunlight within an hour of waking (10 min clear, 20 cloudy, 30 overcast; not through a window), late-afternoon light before sunset, and dim lights in the last hour before bed.</p>
-        <div class="row"><button class="btn-quiet" data-log="light:sunlight:10">Got 10 min</button><button class="btn-quiet" data-log="light:sunlight:20">20 min</button><button class="btn-quiet" data-log="light:sunlight:30">30 min</button></div>
+        <p class="hint">Room right now: ${esc(level)}. Sunset ${clock(h.times.sunset_ts)}. Morning ${morningLight('; not through a window')}, late-afternoon light before sunset, and dim lights in the last ${duration(rules.evening_dim_before_bed_min)} before bed.</p>
+        <div class="row">${sunButtons}</div>
       </article>
       <article class="habit-card" style="--tint:var(--coral-tint)">
         <h2>Phone-free</h2>
@@ -694,7 +742,7 @@ async function renderHabits() {
         <button type="button" class="round" data-dec="${i}" aria-label="Minus one">−</button><strong>${c.count}</strong>
         <button type="button" class="round" data-inc="${i}" aria-label="Plus one">+</button>
         <button type="button" class="round" data-del="${i}" aria-label="Remove ${esc(c.label)}">×</button></li>`).join('')}</ul>
-      <form class="inline-add" id="add-habit" style="max-width:520px"><input type="text" maxlength="60" placeholder="Something else to count" aria-label="New counter"><button type="submit" class="btn-quiet">Add</button></form></section>
+      <form class="inline-add" id="add-habit" style="max-width:520px"><input type="text" maxlength="${COUNTER_LABEL_CHARS}" placeholder="Something else to count" aria-label="New counter"><button type="submit" class="btn-quiet">Add</button></form></section>
     <section><h2>Camera log</h2>
       <div class="chips" role="group" aria-label="Filter">${[['all', 'Everything'], ['posture_bad', 'Posture'], ['nail_biting', 'Nail biting']]
         .map(([k, label]) => `<button type="button" class="chip" data-filter="${k}" aria-pressed="${state.habitFilter === k}">${label}</button>`).join('')}</div>
@@ -719,7 +767,7 @@ async function renderHabits() {
     e.preventDefault();
     const val = e.target.querySelector('input').value.trim();
     if (!val) return;
-    counters.items.push({ label: val.slice(0, 60), count: 0 });
+    counters.items.push({ label: val.slice(0, COUNTER_LABEL_CHARS), count: 0 });
     saveCounters(); renderHabits();
   });
   page.querySelectorAll('[data-filter]').forEach((btn) => btn.addEventListener('click', () => {
@@ -737,15 +785,16 @@ const LOG_FILTERS = [
 ];
 function eventLine(e) {
   const a = e.agent ? who(e.agent) : null;
+  const cam = lens();
   switch (e.type) {
-    case 'agent_joined': return [a || LENS, `${e.name} joined the chat`, `seen as “${e.label}” (${Math.round((e.conf || 0) * 100)}%)`];
-    case 'agent_left': return [a || LENS, `${e.name} left the chat`, `was here ${mins(e.stayed_sec)} min`];
-    case 'alert': return [a || LENS, e.text || `${who(e.agent).name}: ${e.rule_label || 'too close'}`, e.kind === 'proximity' ? `near ${who(e.near).name || ''}` : (e.feature || '')];
-    case 'habit': return [LENS, e.say || `${e.habit}: ${e.action}`, HABIT_NAMES[e.habit] || e.habit];
-    case 'nudge': return [a || LENS, e.text, `reminder · ${e.evidence || ''}`];
-    case 'camera': return [LENS, e.text, e.kind];
-    case 'compaction': return [LENS, `Compacted ${e.frames} pictures into ${e.intervals} intervals`, e.from ? `${clock(e.from)} to ${clock(e.to)}` : ''];
-    default: return [LENS, e.type, ''];
+    case 'agent_joined': return [a || cam, `${e.name} joined the chat`, `seen as “${e.label}” (${Math.round((e.conf || 0) * PERCENT)}%)`];
+    case 'agent_left': return [a || cam, `${e.name} left the chat`, `was here ${mins(e.stayed_sec)} min`];
+    case 'alert': return [a || cam, e.text || `${who(e.agent).name}: ${e.rule_label || 'too close'}`, e.kind === 'proximity' ? `near ${who(e.near).name || ''}` : (e.feature || '')];
+    case 'habit': return [cam, e.say || `${e.habit}: ${e.action}`, HABIT_NAMES[e.habit] || e.habit];
+    case 'nudge': return [a || cam, e.text, `reminder · ${e.evidence || ''}`];
+    case 'camera': return [cam, e.text, e.kind];
+    case 'compaction': return [cam, `Compacted ${e.frames} pictures into ${e.intervals} intervals`, e.from ? `${clock(e.from)} to ${clock(e.to)}` : ''];
+    default: return [cam, e.type, ''];
   }
 }
 /** One detection event as JSON, one object per line (like a line of detections.jsonl, but readable). */
@@ -759,43 +808,52 @@ ${objs.join(',\n')}
   "light": ${JSON.stringify(e.light || {})}
 }`;
 }
+const TIMELINE_ROWS = 14;                                         // things shown, the longest on the desk first
+const TIMELINE_STEPS = [1, 5, 15, 30, 60, 120, 180].map((m) => m * MINUTE);   // time marks: the first that gives...
+const TIMELINE_MARKS = 8;                                         // ...at most this many
 function timelineHtml(intervals, dayStart, dayEnd) {
   const byLabel = {};
   for (const iv of intervals) (byLabel[iv.label] = byLabel[iv.label] || []).push(iv);
   const labels = Object.keys(byLabel).sort((x, y) => byLabel[y].reduce((s, i) => s + i.interval[1] - i.interval[0], 0)
-    - byLabel[x].reduce((s, i) => s + i.interval[1] - i.interval[0], 0)).slice(0, 14);
+    - byLabel[x].reduce((s, i) => s + i.interval[1] - i.interval[0], 0)).slice(0, TIMELINE_ROWS);
   if (!labels.length) return '<p class="muted">Nothing on the desk yet today.</p>';
-  const span = Math.max(60, dayEnd - dayStart);
-  const step = [60, 300, 900, 1800, 3600, 7200, 10800].find((s) => span / s <= 8) || 14400;
+  const span = Math.max(MINUTE, dayEnd - dayStart);
+  const step = TIMELINE_STEPS.find((s) => span / s <= TIMELINE_MARKS) || 4 * HOUR;
   const ticks = [];
   for (let t = Math.ceil(dayStart / step) * step; t < dayEnd; t += step) ticks.push(t);
   return `<div class="timeline">
     ${labels.map((lab) => `<div class="tl-row"><span class="tl-label">${esc(lab)}</span><div class="tl-track">${byLabel[lab].map((iv) => {
-      const left = ((iv.interval[0] - dayStart) / span) * 100;
-      const width = Math.max(0.4, ((iv.interval[1] - iv.interval[0]) / span) * 100);
+      const left = ((iv.interval[0] - dayStart) / span) * PERCENT;
+      const width = Math.max(0.4, ((iv.interval[1] - iv.interval[0]) / span) * PERCENT);
       return `<i style="left:${left}%;width:${width}%" title="${esc(lab)}: ${clock(iv.interval[0])} – ${clock(iv.interval[1])} (${iv.frames} pictures)"></i>`;
     }).join('')}</div></div>`).join('')}
-    <div class="tl-row tl-axis"><span class="tl-label"></span><div class="tl-track">${ticks.map((t) => `<span style="left:${((t - dayStart) / span) * 100}%">${clock(t)}</span>`).join('')}</div></div>
+    <div class="tl-row tl-axis"><span class="tl-label"></span><div class="tl-track">${ticks.map((t) => `<span style="left:${((t - dayStart) / span) * PERCENT}%">${clock(t)}</span>`).join('')}</div></div>
   </div>`;
 }
 async function renderLog() {
   const page = $('#view-log');
+  const intro = 'Everything the camera turned into events, saved on this computer in <code>data/events/</code>.';
+  if (!state.live) {
+    page.innerHTML = `<header><h1 class="page-title">Event log</h1><p class="page-intro">${intro}</p></header>
+      <p class="muted">Run the server to start the event log.</p>`;
+    return;
+  }
+  const { fps, compact_every_min: compactMin, delete_every_min: deleteMin } = ui.pi;
   const head = `<header><h1 class="page-title">Event log</h1>
-    <p class="page-intro">Everything the camera turned into events, saved on this computer in <code>data/events/</code>. The camera takes 3 pictures a second; each one becomes a detection event, and every 10 minutes those are compacted into “on the desk from … to …” intervals. The pictures themselves stay on the Raspberry Pi and are deleted every 10 minutes.</p></header>`;
-  if (!state.live) { page.innerHTML = `${head}<p class="muted">Run the server to start the event log.</p>`; return; }
+    <p class="page-intro">${intro} The camera takes ${fps} pictures a second; each one becomes a detection event, and every ${compactMin} minutes those are compacted into “on the desk from … to …” intervals. The pictures themselves stay on the Raspberry Pi${deleteMin ? ` and are deleted every ${deleteMin} minutes` : ''}.</p></header>`;
   const filter = LOG_FILTERS.find((f) => f[0] === state.logFilter) || LOG_FILTERS[0];
   const dayQ = state.logDay ? `day=${state.logDay}&` : '';
   const [days, status, evs, pres, det] = await Promise.all([
     api('/api/log/days').catch(() => null),
     api('/api/log/status').catch(() => null),
-    api(`/api/log/events?${dayQ}limit=150${filter[2] ? `&types=${filter[2]}` : ''}`).catch(() => null),
+    api(`/api/log/events?${dayQ}limit=${ui.web.log_shown}${filter[2] ? `&types=${filter[2]}` : ''}`).catch(() => null),
     api(`/api/log/presence?${dayQ}`).catch(() => null),
     api(`/api/log/detections?${dayQ}limit=1`).catch(() => null),
   ]);
   const day = evs?.day || todayKey();
   const intervals = pres?.intervals || [];
-  const nowS = Date.now() / 1000;
-  const first = intervals.length ? Math.min(...intervals.map((i) => i.interval[0])) : nowS - 3600;
+  const nowS = Date.now() / MS;
+  const first = intervals.length ? Math.min(...intervals.map((i) => i.interval[0])) : nowS - HOUR;
   const last = intervals.length ? Math.max(...intervals.map((i) => i.interval[1])) : nowS;
   const cam = status?.camera || {};
   const pi = cam.pi || {};
@@ -811,14 +869,14 @@ async function renderLog() {
     </section>
     <section><h2>On the desk ${day === todayKey() ? 'today' : esc(day)}</h2>
       <div class="chips" role="group" aria-label="Day">${(days?.days || [day]).slice(0, 7).map((d) => `<button type="button" class="chip" data-day="${esc(d)}" aria-pressed="${d === day}">${d === todayKey() ? 'Today' : esc(d.slice(5))}</button>`).join('')}</div>
-      ${timelineHtml(intervals, first - 60, Math.max(last + 60, day === todayKey() ? nowS : last + 60))}</section>
+      ${timelineHtml(intervals, first - MINUTE, Math.max(last + MINUTE, day === todayKey() ? nowS : last + MINUTE))}</section>
     <section><h2>Events</h2>
       <div class="chips" role="group" aria-label="Filter">${LOG_FILTERS.map(([k, label]) => `<button type="button" class="chip" data-filter="${k}" aria-pressed="${state.logFilter === k}">${label}</button>`).join('')}</div>
       ${(evs?.events || []).length ? `<ul class="log events">${evs.events.map((e) => {
         const [a, title, sub] = eventLine(e);
         return `<li><time>${clock(e.ts)}</time>${avatar(a, 28)}<p>${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ''}</p></li>`;
       }).join('')}</ul>` : '<p class="muted">No events yet.</p>'}</section>
-    ${lastDet ? `<section><h2>The newest picture's event</h2><p class="hint">What one of the 3-a-second detection events looks like in <code>detections.jsonl</code>.</p>
+    ${lastDet ? `<section><h2>The newest picture's event</h2><p class="hint">What one of the ${fps}-a-second detection events looks like in <code>detections.jsonl</code>.</p>
       <pre class="json">${esc(compactEvent(lastDet))}</pre></section>` : ''}`;
   $('#compact-now').addEventListener('click', async () => {
     const r = await api('/api/log/compact', { method: 'POST' }).catch(() => null);
@@ -840,11 +898,13 @@ async function renderCaptures() {
   page.innerHTML = head + (items.length
     ? `<div class="gallery">${items.map((it) => `<button type="button" data-photo="/api/snapshot/${esc(it.id)}">
         <img src="/api/snapshot/${esc(it.id)}" alt="" loading="lazy">
-        <strong>${esc(it.label || 'Capture')}</strong><span>${new Date((it.ts || 0) * 1000).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</span></button>`).join('')}</div>`
+        <strong>${esc(it.label || 'Capture')}</strong><span>${new Date((it.ts || 0) * MS).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</span></button>`).join('')}</div>`
     : '<p class="muted">No photos yet. They appear when something gets too close, or when your phone, keys, or wallet show up.</p>');
 }
 
 // ————— Settings page —————
+// The sliders' ranges and where a new danger zone's slider starts come from ui.web.settings_sliders and
+// ui.web.new_zone_px (settings → web).
 async function renderSettings() {
   const page = $('#view-settings');
   const head = `<header><h1 class="page-title">Settings</h1>
@@ -858,12 +918,15 @@ async function renderSettings() {
     return;
   }
   const zones = { ...(rules.danger_zones || {}) };
-  const edge = { danger_px: 35, warn_px: 75, ...(rules.edge_proximity || {}) };
+  const builtIn = ui.desk.edge_proximity;
+  const edge = { danger_px: builtIn.danger_px, warn_px: builtIn.warn_px, ...(rules.edge_proximity || {}) };
   let outline = (rules.desk_outline || []).map(([x, y]) => [x, y]);
   let outlineChanged = false;
-  let startOver = outline.length >= 3;   // a saved outline: the first tap starts a new one
+  let startOver = outline.length >= ui.desk.min_desk_corners;   // a saved outline: the first tap starts a new one
   let picSize = null;
-  const range = (name, value, min, max) => `<label class="range"><input type="range" name="${name}" min="${min}" max="${max}" value="${value}"><output>${value} px</output></label>`;
+  const sliders = ui.web.settings_sliders;
+  const newZonePx = ui.web.new_zone_px;
+  const range = (name, value, { min, max }) => `<label class="range"><input type="range" name="${name}" min="${min}" max="${max}" value="${value}"><output>${value} px</output></label>`;
 
   const draw = () => {
     page.innerHTML = `${head}
@@ -878,7 +941,7 @@ async function renderSettings() {
       <div class="form-rows">${Object.entries(zones).map(([cls, z]) => `<div class="zone" data-zone="${esc(cls)}">
           <strong>${esc(cls)}</strong>
           <input type="text" name="label" value="${esc(z.label || '')}" aria-label="Name for the ${esc(cls)} zone">
-          ${range('expand', z.expand || 60, 10, 200)}
+          ${range('expand', z.expand || newZonePx, sliders.zone)}
           <button type="button" class="round" data-remove aria-label="Remove ${esc(cls)} zone">×</button></div>`).join('') || '<p class="muted">No zones yet.</p>'}
         <form class="inline-add" id="add-zone"><select aria-label="Object">${(rules.available_objects || []).filter((o) => !zones[o]).map((o) => `<option>${esc(o)}</option>`).join('')}</select>
           <button type="submit" class="btn-quiet">Add zone</button></form>
@@ -897,14 +960,14 @@ async function renderSettings() {
         </div>
       </div>
       <div class="form-rows">
-        <div class="field"><span>Warn at</span>${range('warn_px', edge.warn_px, 20, 200)}</div>
-        <div class="field"><span>Alert at</span>${range('danger_px', edge.danger_px, 10, 120)}</div>
+        <div class="field"><span>Warn at</span>${range('warn_px', edge.warn_px, sliders.warn)}</div>
+        <div class="field"><span>Alert at</span>${range('danger_px', edge.danger_px, sliders.alert)}</div>
       </div></section>
     <section><h2>Quiet hours</h2>
       <p class="hint">Habit reminders wait until quiet hours end. Safety alerts still come through.</p>
       <div class="form-rows">
         <label class="check"><input type="checkbox" id="dnd-on" ${prefs.quiet_enabled ? 'checked' : ''}> Use quiet hours</label>
-        <div class="field"><span>From</span><input type="number" id="dnd-start" min="0" max="23" value="${prefs.quiet_start_hour ?? 22}"><span>to</span><input type="number" id="dnd-end" min="0" max="23" value="${prefs.quiet_end_hour ?? 7}"><span class="muted">(24-hour clock)</span></div>
+        <div class="field"><span>From</span><input type="number" id="dnd-start" min="0" max="23" value="${prefs.quiet_start_hour ?? ui.quiet_hours.start_hour}"><span>to</span><input type="number" id="dnd-end" min="0" max="23" value="${prefs.quiet_end_hour ?? ui.quiet_hours.end_hour}"><span class="muted">(24-hour clock)</span></div>
       </div></section>
     <div class="save-row"><button type="button" class="btn" id="save-settings">Save settings</button><span class="saved" id="saved" role="status"></span></div>
     ${state.cameraSource === 'pi' && state.piCommand ? `<section><h2>Raspberry Pi camera</h2>
@@ -928,7 +991,7 @@ async function renderSettings() {
     $('#add-zone')?.addEventListener('submit', (e) => {
       e.preventDefault();
       const cls = e.target.querySelector('select').value;
-      if (cls) { zones[cls] = { expand: 60, label: `${cls} zone` }; draw(); }
+      if (cls) { zones[cls] = { expand: newZonePx, label: `${cls} zone` }; draw(); }
     });
     wireEdgeEditor();
     $('#clear-chats').addEventListener('click', () => {
@@ -940,8 +1003,8 @@ async function renderSettings() {
     $('#save-settings').addEventListener('click', async () => {
       const out = $('#saved');
       out.className = 'saved'; out.textContent = 'Saving…';
-      if (outline.length && outline.length < 3) {
-        out.className = 'saved error'; out.textContent = 'Tap at least 3 corners of the desk, or press Clear.';
+      if (outline.length && outline.length < ui.desk.min_desk_corners) {
+        out.className = 'saved error'; out.textContent = `Tap at least ${ui.desk.min_desk_corners} corners of the desk, or press Clear.`;
         return;
       }
       try {
@@ -964,17 +1027,17 @@ async function renderSettings() {
   };
 
   // ——— Desk edge editor: tap corners on the camera picture ———
-  const SNAP = 0.03;
+  const SNAP = ui.desk.desk_border_share;     // a tap this close to the picture's side goes onto the side
   const sameBorder = (a, b) => (a[0] <= SNAP && b[0] <= SNAP) || (a[0] >= 1 - SNAP && b[0] >= 1 - SNAP)
     || (a[1] <= SNAP && b[1] <= SNAP) || (a[1] >= 1 - SNAP && b[1] >= 1 - SNAP);
 
   function drawOutline() {
     const svg = $('#edge-svg');
     const status = $('#edge-status');
-    const real = outline.length >= 3 ? outline.filter((p, i) => !sameBorder(p, outline[(i + 1) % outline.length])).length : 0;
+    const real = outline.length >= ui.desk.min_desk_corners ? outline.filter((p, i) => !sameBorder(p, outline[(i + 1) % outline.length])).length : 0;
     if (status) {
-      status.textContent = outline.length < 3
-        ? `${outline.length} of at least 3 corners`
+      status.textContent = outline.length < ui.desk.min_desk_corners
+        ? `${outline.length} of at least ${ui.desk.min_desk_corners} corners`
         : `${outline.length} corners, ${real} real desk edge${real === 1 ? '' : 's'}${outlineChanged ? '. Press Save settings.' : '. Tap the picture to start over.'}`;
     }
     if (!svg || !picSize) return;
@@ -983,9 +1046,9 @@ async function renderSettings() {
     const P = (p) => `${(p[0] * w).toFixed(1)},${(p[1] * h).toFixed(1)}`;
     const sw = Math.max(2, w / 220);
     let out = '';
-    if (outline.length >= 3) out += `<polygon points="${outline.map(P).join(' ')}" class="edge-fill"/>`;
+    if (outline.length >= ui.desk.min_desk_corners) out += `<polygon points="${outline.map(P).join(' ')}" class="edge-fill"/>`;
     outline.forEach((p, i) => {
-      if (i === outline.length - 1 && outline.length < 3) return;
+      if (i === outline.length - 1 && outline.length < ui.desk.min_desk_corners) return;
       const q = outline[(i + 1) % outline.length];
       const ignored = sameBorder(p, q);
       out += `<line x1="${p[0] * w}" y1="${p[1] * h}" x2="${q[0] * w}" y2="${q[1] * h}" class="${ignored ? 'edge-ignored' : 'edge-real'}" stroke-width="${ignored ? sw * 0.7 : sw * 1.4}" ${ignored ? `stroke-dasharray="${sw * 3} ${sw * 3}"` : ''}/>`;
@@ -1004,7 +1067,7 @@ async function renderSettings() {
       img.addEventListener('error', () => { $('#edge-status').textContent = 'Could not load the camera picture. Try New picture.'; });
       $('#edge-pic').addEventListener('click', (e) => {
         if (startOver) { outline = []; startOver = false; }
-        if (outline.length >= 12) return;
+        if (outline.length >= ui.desk.max_desk_corners) return;
         const r = img.getBoundingClientRect();
         let x = (e.clientX - r.left) / r.width;
         let y = (e.clientY - r.top) / r.height;
@@ -1056,7 +1119,7 @@ function renderCamStage() {
       </ol>
       <pre class="json pi-cmd">${esc(state.piCommand || 'python3 -m raspberry_pi.camera --server … --key … (printed by server.py)')}</pre>
       ${state.piCommand ? '<button type="button" class="btn-quiet" id="copy-pi">Copy command</button>' : ''}
-      <p class="pair-url">It takes 3 pictures a second, keeps them on the Pi, and deletes them every 10 minutes.</p></div>`;
+      <p class="pair-url">It takes ${ui.pi.fps} pictures a second${ui.pi.delete_every_min ? `, keeps them on the Pi, and deletes them every ${ui.pi.delete_every_min} minutes` : ' and keeps them on the Pi'}.</p></div>`;
     $('#copy-pi')?.addEventListener('click', () => {
       navigator.clipboard?.writeText(state.piCommand).then(() => toast(null, 'Copied'), () => {});
     });
@@ -1092,7 +1155,7 @@ function renderOnDesk(det) {
   list.innerHTML = here.map((id) => {
     const a = state.agents[id];
     const o = objs[id];
-    return `<li style="--tint:${tintVar(a.color)}" title="${o ? `Detected as ${esc(o.class)}` : ''}">${avatar(a, 26)}${esc(a.name)}${o ? ` <small>${Math.round((o.confidence || 0) * 100)}%</small>` : ''}</li>`;
+    return `<li style="--tint:${tintVar(a.color)}" title="${o ? `Detected as ${esc(o.class)}` : ''}">${avatar(a, 26)}${esc(a.name)}${o ? ` <small>${Math.round((o.confidence || 0) * PERCENT)}%</small>` : ''}</li>`;
   }).join('') + extras.map((e) => `<li class="extra" title="Seen, not in the chat yet">${esc(e.yolo_class)}</li>`).join('');
 }
 
@@ -1100,7 +1163,7 @@ function renderRisks(safety, cameraIssues) {
   const list = $('#risks');
   if (!state.live) { list.innerHTML = '<li>Cup is a little close to Computer.</li>'; return; }
   const lens = (cameraIssues || []).slice(0, 2).map((i) => `<li class="lens-issue">
-      ${avatar(LENS, 30)}<span><strong>${esc(i.title)}.</strong> ${esc(i.fix)}</span></li>`);
+      ${avatar(lens(), 30)}<span><strong>${esc(i.title)}.</strong> ${esc(i.fix)}</span></li>`);
   const lines = (safety?.explanations || []).slice(0, 6).map((l) => `<li>${esc(l)}</li>`);
   const html = [...lens, ...lines].join('') || `<li class="calm">${state.camOk ? 'All calm on the desk.' : 'Nothing to report yet.'}</li>`;
   if (list.innerHTML !== html) list.innerHTML = html;
@@ -1110,7 +1173,7 @@ async function renderProofs() {
   const box = $('#proofs');
   if (!state.live) { box.innerHTML = '<p class="muted" style="grid-column:1/-1">Proof photos from alerts show up here.</p>'; return; }
   const data = await api('/api/snapshots').catch(() => null);
-  const items = (data?.items || []).slice(0, 6);
+  const items = (data?.items || []).slice(0, ui.web.photos_shown);
   const ids = items.map((i) => i.id).join(',');
   if (ids === state.snapshotIds) return;
   state.snapshotIds = ids;
@@ -1119,14 +1182,18 @@ async function renderProofs() {
     : '<p class="muted" style="grid-column:1/-1">None yet. Photos are saved when something gets too close.</p>';
 }
 
-/** One request every 1.5 s: camera status, agents, detections, and risks together. */
+/** One request every web.refresh_ms.live: camera status, agents, detections, and risks together. When the server
+ * can't be reached the page says so, and it keeps asking until the server is back. */
 async function pollLive() {
   let d;
   try {
-    d = await api(`/api/live${state.phone?.qr_svg ? '' : '?qr=1'}`, { timeout: 5000 });
+    if (state.offline) ui = await api('/api/ui_settings');     // back: the settings may have changed meanwhile
+    d = await api(`/api/live${state.phone?.qr_svg ? '' : '?qr=1'}`, { timeout: ui.web.live_timeout_ms });
   } catch {
+    showOffline(true);
     return;
   }
+  showOffline(false);
   const wasOk = state.camOk;
   state.cameraSource = d.camera_source || state.cameraSource;
   state.phoneMode = d.phone_mode;
@@ -1147,6 +1214,17 @@ async function pollLive() {
   renderAi(d.ai);
 }
 
+/** The note at the top of the page while the server can't be reached. */
+function showOffline(on) {
+  if (on === state.offline) return;
+  state.offline = on;
+  const el = $('#offline');
+  el.textContent = on ? 'Can’t reach Desk Talk. Trying again…' : '';
+  el.hidden = !on;
+  renderConn();
+  if (!on) renderCamStage();          // the live video stopped with the server: start it again
+}
+
 function renderAi(ai) {
   if (!ai) return;
   let text = '';
@@ -1160,7 +1238,7 @@ function renderAi(ai) {
 }
 
 // ————— Live connection —————
-/** Messages and join / leave notes from before this page opened (the server keeps the last 150). */
+/** Messages and join / leave notes from before this page opened (the server keeps the newest few: chat.recent_kept). */
 async function loadRecentMessages() {
   for (const list of Object.values(state.messages)) for (const m of list) if (m.id) state.seen.add(m.id);
   let recent = [];
@@ -1172,7 +1250,7 @@ function handleServerMessage(d, old = false) {
   if (d.type === 'roster' && d.agent) {
     if (old) {
       if (!state.agents[d.agent.id]) upsertAgent({ ...d.agent, on_desk: false });
-      if (!d.quiet) addMessage('group', { id: d.id, time: d.ts * 1000, system: d.action, agent: d.agent.id, text: d.text });
+      if (!d.quiet) addMessage('group', { id: d.id, time: d.ts * MS, system: d.action, agent: d.agent.id, text: d.text });
     } else {
       rosterEvent(d);
     }
@@ -1182,7 +1260,7 @@ function handleServerMessage(d, old = false) {
   if (!d.text) return;
   if (d.type === 'group_message' && d.character) {
     addMessage('group', {
-      id: d.id, time: d.ts ? d.ts * 1000 : Date.now(), char: d.character, text: d.text, snapshot: d.snapshot,
+      id: d.id, time: d.ts ? d.ts * MS : Date.now(), char: d.character, text: d.text, snapshot: d.snapshot,
       replyTo: d.reply_to, habit: d.habit,
       toast: !old && (d.toast || (d.character === 'lens' && d.lens === 'problem')),
     });
@@ -1200,6 +1278,15 @@ function listenForEvents() {
   };
 }
 
+/** Run `job` again and again, waiting `ms()` between the end of one run and the start of the next (read each time,
+ * so settings that changed while the server was away count). */
+function repeat(ms, job) {
+  const next = async () => {
+    try { await job(); } finally { setTimeout(next, ms()); }
+  };
+  setTimeout(next, ms());
+}
+
 async function startLive(status) {
   state.live = true;
   loadHistory();
@@ -1214,16 +1301,32 @@ async function startLive(status) {
   renderConn();
   renderCamStage();
   await pollLive();
-  setInterval(pollLive, 1500);
+  repeat(() => ui.web.refresh_ms.live, pollLive);
   refreshHabits();
-  setInterval(refreshHabits, 15000);
+  repeat(() => ui.web.refresh_ms.habits, refreshHabits);
   renderProofs();
-  setInterval(renderProofs, 10000);
-  setInterval(() => { if (state.view === 'log') renderLog(); }, 20000);
+  repeat(() => ui.web.refresh_ms.photos, renderProofs);
+  repeat(() => ui.web.refresh_ms.log, async () => { if (state.view === 'log') await renderLog(); });
   renderAi({ ready: !!status.llm });
 }
 
 // ————— Demo (no server, e.g. GitHub Pages) —————
+// Everything below is the demo's made-up story. The numbers in it are only for the story: the real app takes its
+// numbers from the server (GET /api/ui_settings).
+const DEMO_HOW_TO_RUN = 'Run python server.py on this computer and open http://localhost:5000 to use your real desk.';
+// The settings the demo needs to tell its story (in the real app: config/settings.yaml and protocols.yaml).
+const DEMO_UI = {
+  web: {
+    toast_ms: 4000, chat_kept: 200, chat_saved: 60, left_chat_shown_min: 60,
+    palette: ['cobalt', 'teal', 'tang', 'mustard', 'coral', 'plum', 'moss', 'slate', 'ink'],
+  },
+  chat: { todo_max_chars: 200 },
+  habits: {
+    sunlight_default_min: 10, glass_ml: 240, food_label_max_chars: 60, goal_window_hours: 10, stop_before_bed_hours: 2,
+    morning_minutes: { clear: 10, partly_cloudy: 20, overcast: 30 }, morning_window_min: 60, evening_dim_before_bed_min: 60,
+    breaks: { break_min: 5, walk_after_meal: true },
+  },
+};
 const DEMO_AGENTS = [
   { id: 'computer', name: 'Computer', art: 'art/computer.svg', color: 'cobalt', tracker: 'breaks', about: 'Anxious. Watches your screen breaks, posture, and anything near the keyboard.', labels: ['laptop'] },
   { id: 'cup', name: 'Cup', art: 'art/cup.svg', color: 'teal', tracker: 'hydration', about: 'Completely innocent. Counts your sips and insists it is nowhere near the laptop.', labels: ['cup'] },
@@ -1239,22 +1342,23 @@ const DEMO_SCRIPT = [
   ['computer', '@user 34 minutes of sitting! Five-minute walk? I will count it when you leave.'],
 ];
 function demoHabits() {
-  const now = Date.now() / 1000;
+  const now = Date.now() / MS;
   return {
-    day: todayKey(), times: { wake_ts: now - 5 * 3600, bed_ts: now + 9 * 3600, sunset_ts: now + 4 * 3600 },
+    day: todayKey(), times: { wake_ts: now - 5 * HOUR, bed_ts: now + 9 * HOUR, sunset_ts: now + 4 * HOUR },
     hydration: { sips: 9, water_ml: 720, goal_ml: 2400, on_waking_ml: 600, pace_ml: 1200, last_sip_ts: now - 1500, ml_per_sip: 80 },
-    breaks: { count: 3, last_break_ts: now - 2400, sitting_sec: 34 * 60, longest_sit_sec: 51 * 60, sit_limit_min: 30, log: [] },
-    phone_free: { counted: true, phone_free_sec: 64 * 60, phone_on_desk_sec: 600, streak_sec: 22 * 60, best_sec: 41 * 60, phone_on_desk: false, goal_min: 120 },
-    light: { sunlight_ts: now - 4 * 3600, afternoon_light_ts: null, sunlight_minutes: 10, lux: 310, brightness: 120 },
+    breaks: { count: 3, last_break_ts: now - 2400, sitting_sec: 34 * MINUTE, longest_sit_sec: 51 * MINUTE, sit_limit_min: 30, log: [] },
+    phone_free: { counted: true, phone_free_sec: 64 * MINUTE, phone_on_desk_sec: 10 * MINUTE, streak_sec: 22 * MINUTE, best_sec: 41 * MINUTE, phone_on_desk: false, goal_min: 120 },
+    light: { sunlight_ts: now - 4 * HOUR, afternoon_light_ts: null, sunlight_minutes: 10, lux: 310, brightness: 120 },
     food: { entries: [{ label: 'apple', healthy: true }, { label: 'chips', healthy: false }] },
-    desk_sec: 3 * 3600, danger_count: 2, lost_alerts: 0, hourly_activity: [], objects_seen: [], vision: {},
+    desk_sec: 3 * HOUR, danger_count: 2, lost_alerts: 0, hourly_activity: [], objects_seen: [], vision: {},
   };
 }
 function demoLog(habit, action, extra) {
   const h = state.habits || demoHabits();
-  if (habit === 'hydration') { h.hydration.sips += 1; h.hydration.water_ml += action === 'glass' ? 240 : 80; h.hydration.last_sip_ts = Date.now() / 1000; }
-  if (habit === 'breaks') { h.breaks.count += 1; h.breaks.sitting_sec = 0; h.breaks.last_break_ts = Date.now() / 1000; }
-  if (habit === 'light') h.light.sunlight_ts = Date.now() / 1000;
+  const now = Date.now() / MS;
+  if (habit === 'hydration') { h.hydration.sips += 1; h.hydration.water_ml += action === 'glass' ? ui.habits.glass_ml : h.hydration.ml_per_sip; h.hydration.last_sip_ts = now; }
+  if (habit === 'breaks') { h.breaks.count += 1; h.breaks.sitting_sec = 0; h.breaks.last_break_ts = now; }
+  if (habit === 'light') h.light.sunlight_ts = now;
   if (habit === 'food' && action === 'food') h.food.entries.push({ label: extra.label, healthy: !!extra.healthy });
   if (habit === 'food' && action === 'remove') h.food.entries.splice(extra.index, 1);
   state.habits = h;
@@ -1265,7 +1369,7 @@ async function playDemoOnce() {
   addMessage('group', { note: true, text: 'Demo. With the server running, objects your camera sees join this chat.' });
   for (const a of DEMO_AGENTS) {
     await sleep(500);
-    upsertAgent({ ...a, on_desk: true, joined_at: Date.now() / 1000 });
+    upsertAgent({ ...a, on_desk: true, joined_at: Date.now() / MS });
     addMessage('group', { system: 'joined', agent: a.id, text: `${a.name} joined the chat` });
     renderOnDesk(null);
   }
@@ -1275,6 +1379,17 @@ async function playDemoOnce() {
     await sleep(900 + text.length * 12);
     addMessage('group', { char: id, text });
   }
+}
+/** No server when the page opened: run the demo. */
+function startDemo() {
+  state.live = false;
+  ui = DEMO_UI;
+  state.habits = demoHabits();
+  renderConn();
+  renderCamStage();
+  renderOnDesk(null);
+  renderRisks(null);
+  renderProofs();
 }
 async function demoReply(chatId, text) {
   const ids = agentIds();
@@ -1289,6 +1404,11 @@ async function demoReply(chatId, text) {
 
 // ————— Wiring —————
 function wire() {
+  // Until the first check is done (live or demo), clicks and the chat box do nothing: their handlers read the
+  // settings (ui). Meanwhile the corner says "Connecting…" (index.html).
+  for (const type of ['click', 'submit']) {
+    document.addEventListener(type, (e) => { if (!ui) { e.preventDefault(); e.stopPropagation(); } }, true);
+  }
   $('#chat-list').addEventListener('click', (e) => {
     const b = e.target.closest('[data-chat]');
     if (b) openChat(b.dataset.chat);
@@ -1320,7 +1440,7 @@ function wire() {
   });
   input.addEventListener('input', () => {
     updateMentions();
-    if (state.live && Date.now() - lastPing > 3000) {
+    if (state.live && Date.now() - lastPing > ui.web.activity_ping_ms) {
       lastPing = Date.now();
       navigator.sendBeacon?.('/api/activity');
     }
@@ -1353,29 +1473,29 @@ function wire() {
   $('#cam-toggle').addEventListener('click', () => $('#cam').classList.add('open'));
   $('#cam-close').addEventListener('click', () => $('#cam').classList.remove('open'));
   $('#conn').addEventListener('click', () => {
-    if (!state.live) toast(null, 'Demo mode. Run python server.py and open http://localhost:5000 to use your real desk.');
+    if (!state.live) toast(null, `Demo mode. ${DEMO_HOW_TO_RUN}`);
     else if (!state.camOk) $('#cam').classList.add('open');
   });
 }
 
+/** Is Desk Talk's server there? Its settings and status, or null (opened from a file, or from GitHub Pages). */
+async function firstCheck() {
+  if (!location.protocol.startsWith('http')) return null;
+  try {
+    const wait = { timeout: FIRST_CHECK_MS };
+    const [settings, status] = await Promise.all([api('/api/ui_settings', wait), api('/api/status', wait)]);
+    ui = settings;
+    return status;
+  } catch {
+    return null;
+  }
+}
+
 async function init() {
   wire();
-  renderConn();
-  let status = null;
-  if (location.protocol.startsWith('http')) {
-    status = await api('/api/status', { timeout: 4000 }).catch(() => null);
-  }
-  if (status) {
-    await startLive(status);
-  } else {
-    state.live = false;
-    state.habits = demoHabits();
-    renderConn();
-    renderCamStage();
-    renderOnDesk(null);
-    renderRisks(null);
-    renderProofs();
-  }
+  const status = await firstCheck();
+  if (status) await startLive(status);
+  else startDemo();
   openChat('group');
 }
 

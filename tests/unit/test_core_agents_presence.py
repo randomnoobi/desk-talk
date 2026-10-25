@@ -26,11 +26,11 @@ def test_presence_flicker_restarts_the_count():
     assert p.update({'cup'}, 8) == (['cup'], [])           # 3 s after the new sighting began
 
 
-def test_last_seen_and_absent_for():
+def test_last_seen():
     p = PresenceTracker(appear_sec=0, gone_sec=10)
-    assert p.absent_for('cup', 5) is None and p.last_seen('cup') is None
+    assert p.last_seen('cup') is None
     p.update({'cup'}, 2)
-    assert p.last_seen('cup') == 2 and p.absent_for('cup', 7) == 5
+    assert p.last_seen('cup') == 2
 
 
 def test_dropped_key_appears_again_on_the_next_sighting():

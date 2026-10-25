@@ -24,7 +24,7 @@ from dataclasses import dataclass
 
 from desktalk.config import RuleConfig, RuleEngineSettings
 from desktalk.core.habits.rule_engine import check_success, evaluate, in_quiet_hours, lookback_sec
-from desktalk.domain import HabitEvent, Nudge, RuleOutcome
+from desktalk.domain import Event, HabitEvent, Nudge, RuleOutcome
 from desktalk.domain.rules import HabitDone, RuleHistory
 from desktalk.ports import EventBus, ObjectStatesView
 
@@ -63,7 +63,9 @@ class RuleRunner:
         self._habits: list[HabitDone] = []                 # logged habits, oldest first
         bus.subscribe('rule-engine-habits', self._on_habit, types={HabitEvent})
 
-    def _on_habit(self, event: HabitEvent) -> None:
+    def _on_habit(self, event: Event) -> None:
+        if not isinstance(event, HabitEvent):
+            return
         with self._lock:
             self._habits.append(HabitDone(event.ts, event.habit))
 

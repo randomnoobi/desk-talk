@@ -1,4 +1,4 @@
-"""The habit rules in config/protocols.yaml (desktalk/config.py: RuleConfig, Condition, Duration ...).
+"""The habit rules in config/protocols.yaml (desktalk/config/habits.py: RuleConfig, Condition, Duration ...).
 
 Like the other config tests, these load from copies of the real config files in a temp folder.
 """
@@ -16,10 +16,21 @@ import yaml
 from pydantic import ValidationError
 
 from desktalk.config import ConfigError, Habit, RuleConfig, load_config, rule_timezone
+from desktalk.config.habits import (
+    AllCond,
+    AnyCond,
+    EventCond,
+    HabitCond,
+    NoEventCond,
+    NoHabitCond,
+    NotCond,
+    StateCond,
+    Success,
+)
 from desktalk.domain.habits import HABIT_WORDS
+from tests.unit.test_config import CONFIG_FILES  # the four config files, prompts.yaml too
 
 ROOT = Path(__file__).resolve().parents[2]
-CONFIG_FILES = ('settings.yaml', 'agents.yaml', 'protocols.yaml')
 
 # Every drink Cup knows (config/agents.yaml), less measuring cup and kettle.
 DRINKS = ['cup', 'mug', 'bottle', 'water bottle', 'wine glass']
@@ -45,6 +56,17 @@ HYDRATION = {
         {'habit': {'habit': 'hydration'}},
     ]}},
 }
+
+
+def as_a[T](kind: type[T], value: object) -> T:
+    """`value`, after checking it is a `kind` (a condition is one of several kinds), so the test can read it."""
+    assert isinstance(value, kind), value
+    return value
+
+
+def success_of(rule: RuleConfig) -> Success:
+    assert rule.success is not None
+    return rule.success
 
 
 @pytest.fixture
@@ -84,24 +106,29 @@ def test_hydration_rule_loads_as_written(project):
     assert rule.id == 'hydration' and rule.habit == 'hydration'
     assert rule.enabled is True                        # it took over from the old hydration nudges
     assert rule.cooldown == 1800 and rule.max_nudges_per_hour == 4
+    assert rule.quiet_hours is not None
     assert rule.quiet_hours.start == '22:00' and rule.quiet_hours.end == '07:00'
-    assert rule.gate.state.object == 'person' and rule.gate.state.is_ == 'present'
-    first, second, third = rule.when.all
-    assert first.state.for_ == 3600
-    assert second.no_event.object == ('cup', 'mug', 'bottle', 'water bottle', 'wine glass')
-    assert second.no_event.events == ('moved', 'removed') and second.no_event.for_ == 3600
-    assert (third.no_habit.habit, third.no_habit.for_) == ('hydration', 3600)
-    assert rule.success.within == 300
-    moved, sipped = rule.success.when.any
-    assert moved.event.object == second.no_event.object and moved.event.events == ('moved', 'removed')
-    assert sipped.habit.habit == 'hydration'
+    gate = as_a(StateCond, rule.gate).state
+    assert gate.object == 'person' and gate.is_ == 'present'
+    first, second, third = as_a(AllCond, rule.when).all
+    assert as_a(StateCond, first).state.for_ == 3600
+    no_drink = as_a(NoEventCond, second).no_event
+    assert no_drink.object == ('cup', 'mug', 'bottle', 'water bottle', 'wine glass')
+    assert no_drink.events == ('moved', 'removed') and no_drink.for_ == 3600
+    no_sip = as_a(NoHabitCond, third).no_habit
+    assert (no_sip.habit, no_sip.for_) == ('hydration', 3600)
+    assert success_of(rule).within == 300
+    moved, sipped = as_a(AnyCond, success_of(rule).when).any
+    drink = as_a(EventCond, moved).event
+    assert drink.object == no_drink.object and drink.events == ('moved', 'removed')
+    assert as_a(HabitCond, sipped).habit.habit == 'hydration'
 
 
 def test_one_object_is_kept_as_a_list_of_one(project):
     rule = load_rule(project, when={'no_event': NO_EVENT})
-    assert rule.when.no_event.object == ('bottle',)
+    assert as_a(NoEventCond, rule.when).no_event.object == ('bottle',)
     success = {'within': '5m', 'when': {'event': {'object': 'bottle', 'events': ['moved']}}}
-    assert load_rule(project, success=success).success.when.event.object == ('bottle',)
+    assert as_a(EventCond, success_of(load_rule(project, success=success)).when).event.object == ('bottle',)
 
 
 def test_the_rule_engine_check_time_is_a_setting(project):
@@ -114,8 +141,8 @@ def test_the_grace_after_a_success_deadline_is_a_setting(project):
 
 def test_rules_can_be_built_from_the_yaml_keys():
     rule = RuleConfig.model_validate(HYDRATION)
-    assert rule.when.all[0].state.for_ == 3600
-    assert rule.gate.state.for_ is None
+    assert as_a(StateCond, as_a(AllCond, rule.when).all[0]).state.for_ == 3600
+    assert as_a(StateCond, rule.gate).state.for_ is None
 
 
 def test_rules_are_read_only():
@@ -194,7 +221,7 @@ def test_habit_is_refused_deep_inside_gate_and_under_not_in_success(project):
 def test_a_rule_names_only_the_habit(project):
     for habit in HABIT_WORDS:
         rule = load_rule(project, when={'no_habit': {'habit': habit, 'for': '5m'}})
-        assert rule.when.no_habit.habit == habit
+        assert as_a(NoHabitCond, rule.when).no_habit.habit == habit
 
 
 def test_an_old_action_key_is_refused_and_names_the_rule(project):
@@ -233,8 +260,8 @@ def test_the_drink_list_is_written_once_and_both_places_get_all_five(project):
     text = (project / 'config' / 'protocols.yaml').read_text()
     assert text.count('wine glass') == 1                          # one anchor, one alias
     rule = load_config(root=project, environ={}).protocols.rules[0]
-    assert rule.when.all[1].no_event.object == tuple(DRINKS)
-    assert rule.success.when.any[0].event.object == tuple(DRINKS)
+    assert as_a(NoEventCond, as_a(AllCond, rule.when).all[1]).no_event.object == tuple(DRINKS)
+    assert as_a(EventCond, as_a(AnyCond, success_of(rule).when).any[0]).event.object == tuple(DRINKS)
 
 
 def test_a_misspelled_condition_says_what_was_meant(project):
@@ -290,7 +317,7 @@ def test_event_is_refused_deep_inside_gate_or_when_but_fine_inside_success(proje
         load_rule(project, gate={'all': [{'not': event}]})
     assert 'rules[0].gate: event only works inside success' in str(err.value)
     nested = {'any': [{'all': [event]}]}
-    assert load_rule(project, success={'within': '5m', 'when': nested}).success.within == 300
+    assert success_of(load_rule(project, success={'within': '5m', 'when': nested})).within == 300
 
 
 @pytest.mark.parametrize('when', [
@@ -307,7 +334,7 @@ def test_event_under_not_in_success_is_refused_and_no_event_is_suggested(project
 
 def test_not_around_a_state_in_success_is_fine(project):
     when = {'not': {'state': {'object': 'person', 'is': 'present'}}}
-    assert load_rule(project, success={'within': '2m', 'when': when}).success.within == 120
+    assert success_of(load_rule(project, success={'within': '2m', 'when': when})).within == 120
 
 
 def test_two_rules_with_the_same_id_is_an_error(project):
@@ -391,9 +418,11 @@ def test_any_all_not_nest(project):
     when = {'all': [{'any': [state, {'state': {'object': 'cup', 'is': 'unknown', 'for': '5m'}}]},
                     {'not': {'state': {'object': 'phone', 'is': 'present'}}}]}
     rule = load_rule(project, when=when)
-    any_, not_ = rule.when.all
-    assert len(any_.any) == 2 and any_.any[1].state.for_ == 300
-    assert not_.not_.state.object == 'phone' and not_.not_.state.is_ == 'present'
+    any_, not_ = as_a(AllCond, rule.when).all
+    either = as_a(AnyCond, any_).any
+    assert len(either) == 2 and as_a(StateCond, either[1]).state.for_ == 300
+    phone = as_a(StateCond, as_a(NotCond, not_).not_).state
+    assert phone.object == 'phone' and phone.is_ == 'present'
 
 
 def test_a_wrong_state_in_a_deep_condition_lists_the_choices(project):

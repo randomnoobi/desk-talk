@@ -16,7 +16,8 @@ until you've stopped for idle_chat.quiet_after_typing_sec, and a chat in progres
                     config.llm.replies, memory_kept=config.llm.memory_per_agent,
                     memory_chars=config.chat.memory_reply_chars,
                     default_temperature=config.agents_file.default.temperature,
-                    reply_max_chars=config.chat.reply_max_chars)
+                    reply_max_chars=config.chat.reply_max_chars, prompts=config.prompts.small_talk,
+                    memory_words=config.prompts.memory, preview_chars=config.logging.preview_chars)
     supervisor.add(idle, start_after=config.idle_chat.start_delay_sec)
 """
 
@@ -28,13 +29,15 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 from desktalk.config import AiReplies, IdleChatSettings
-from desktalk.core.chat import prompts
-from desktalk.core.chat.context import single_speaker_text, speaker_names
+from desktalk.config.prompts import MemoryWords, SmallTalkPrompts
+from desktalk.core.chat import prompts as fill
+from desktalk.core.chat.memory import ChatMemory
+from desktalk.core.chat.names import speaker_names
+from desktalk.core.chat.replies import single_speaker_text
 from desktalk.core.chat.tracker_actions import strip_action_tags
 from desktalk.core.chat.workers.ai import ask
 from desktalk.core.chat.workers.text import json_in
-from desktalk.desk_state import DeskState
-from desktalk.ports import ChatModel, DeskStatus, Notifier, Profiles, RosterView
+from desktalk.ports import CharacterMemory, ChatModel, DeskStatus, Notifier, Profiles, RosterView
 
 log = logging.getLogger(__name__)
 
@@ -52,19 +55,23 @@ class _Talk:
 
 
 class IdleChat:
-    """A PeriodicWorker. `desk_summary()` is the desk right now in words (what the chat's AI is told)."""
+    """A PeriodicWorker. `desk_summary()` is the desk right now in words (what the chat's AI is told). `desk`:
+    what the agents remember, and when you last typed."""
 
     name = 'idle chat'
 
     def __init__(self, chat: ChatModel, notifier: Notifier, status: DeskStatus, roster: RosterView,
-                 profiles: Profiles, desk: DeskState, desk_summary: Callable[[], str], settings: IdleChatSettings,
-                 replies: AiReplies, *, memory_kept: int, memory_chars: int, default_temperature: float,
-                 reply_max_chars: int, rng: random.Random | None = None):
+                 profiles: Profiles, desk: CharacterMemory, desk_summary: Callable[[], str],
+                 settings: IdleChatSettings, replies: AiReplies, *, memory_kept: int, memory_chars: int,
+                 default_temperature: float, reply_max_chars: int, prompts: SmallTalkPrompts,
+                 memory_words: MemoryWords, preview_chars: int, rng: random.Random | None = None):
         """`replies`: settings → llm.replies (idle_topic, idle_line, idle_director). `memory_kept` /
         `memory_chars`: settings → llm.memory_per_agent / chat.memory_reply_chars, for the lines each agent
         remembers saying. `default_temperature`: agents.yaml's default, for the topic writer and the
         director when their settings have none. `reply_max_chars`: settings → chat.reply_max_chars, the
-        longest line kept."""
+        longest line kept. `prompts`: config/prompts.yaml → small_talk; `memory_words`: config/prompts.yaml →
+        memory, how the lines the agents said are remembered. `preview_chars`: settings →
+        logging.preview_chars, the longest line quoted in the log."""
         self._chat = chat
         self._notifier = notifier
         self._status = status
@@ -74,8 +81,9 @@ class IdleChat:
         self._desk_summary = desk_summary
         self._settings = settings
         self._replies = replies
-        self._memory_kept = memory_kept
-        self._memory_chars = memory_chars
+        self._memory = ChatMemory(desk, keep=memory_kept, reply_chars=memory_chars, words=memory_words)
+        self._words = prompts
+        self._preview_chars = preview_chars
         self._default_temperature = default_temperature
         self._reply_max_chars = reply_max_chars
         self._rng = rng or random.Random()
@@ -141,14 +149,14 @@ class IdleChat:
         return self._settings.pause_between_lines_sec + self._rng.random() * self._settings.pause_random_sec
 
     def _since_typing(self, now: float) -> float:
-        with self._desk.lock:
-            return now - self._desk.last_user_activity
+        return now - self._desk.user_active_at()
 
     # ── asking the AI ──
     def _topic(self, members: Sequence[str], summary: str) -> str | None:
-        user = (f'DESK STATUS:\n{summary}\n\nOBJECTS PRESENT: {self._names(members)}\n'
-                f'RECENT MEMORY:\n{self._memories(members)}\n\nTopic:')
-        text = ask(self._chat, [{'role': 'system', 'content': prompts.TOPIC_SYSTEM}, {'role': 'user', 'content': user}],
+        user = self._words.topic_user.format(summary=summary, names=self._names(members),
+                                             memories=self._memories(members))
+        text = ask(self._chat, [{'role': 'system', 'content': self._words.topic_system},
+                                {'role': 'user', 'content': user}],
                    self._replies.idle_topic, own_temperature=self._default_temperature, background=True,
                    what='a small-talk topic')
         lines = (text or '').strip().splitlines()
@@ -160,17 +168,14 @@ class IdleChat:
         if agent is None:
             return None
         if talk.recent:
-            user = (f'The desk objects are chatting about: {talk.topic}\n\n'
-                    f'RECENT MESSAGES:\n{self._transcript(talk)}\n\n'
-                    'Add one short line — answer or react to what was just said, tease, agree, or build on it.')
+            user = self._words.line_reply.format(topic=talk.topic, transcript=self._transcript(talk))
         else:
-            user = (f'You are starting a group chat about: {talk.topic}\n\nOpen it by ASKING the other desk objects '
-                    'a short, specific question about this, so they can answer and discuss. One line, in character.')
-        text = ask(self._chat, [{'role': 'system', 'content': prompts.idle_line_system(agent, talk.desk_summary)},
-                                {'role': 'user', 'content': user}],
+            user = self._words.line_open.format(topic=talk.topic)
+        system = fill.idle_line_system(self._words, agent, talk.desk_summary)
+        text = ask(self._chat, [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
                    self._replies.idle_line, own_temperature=agent.temperature, background=True,
                    what=f"{agent.name}'s small talk")
-        text = strip_action_tags(single_speaker_text(text, agent, speaker_names(self._profiles.all()),
+        text = strip_action_tags(single_speaker_text(text or '', agent, speaker_names(self._profiles.all()),
                                                      self._reply_max_chars))
         return text if text and len(text.split()) >= self._settings.line_min_words else None
 
@@ -179,9 +184,9 @@ class IdleChat:
         options = [m for m in talk.members if m != talk.last_speaker]
         if not options:
             return None
-        user = (f'TOPIC: {talk.topic}\nOBJECTS THAT COULD SPEAK NEXT: {self._names(options)}\n'
-                f'RECENT MESSAGES:\n{self._transcript(talk)}\n\nJSON:')
-        decision = json_in(ask(self._chat, [{'role': 'system', 'content': prompts.DIRECTOR_SYSTEM},
+        user = self._words.director_user.format(topic=talk.topic, names=self._names(options),
+                                                transcript=self._transcript(talk))
+        decision = json_in(ask(self._chat, [{'role': 'system', 'content': self._words.director_system},
                                             {'role': 'user', 'content': user}],
                                self._replies.idle_director, own_temperature=self._default_temperature,
                                background=True, what='who speaks next in small talk'))
@@ -202,19 +207,8 @@ class IdleChat:
         self._notifier.send(message)
         talk.recent.append({'character': agent_id, 'text': text})
         talk.last_speaker = agent_id
-        self._remember(agent_id, text)
-        log.info('Small talk: %s: %s', self._name(agent_id), text[:80])
-
-    def _remember(self, agent_id: str, text: str) -> None:
-        """The agent remembers what it said, like a chat reply (the message generator reads these)."""
-        snippet = text[:self._memory_chars].strip()
-        if not snippet:
-            return
-        with self._desk.lock:
-            memory = self._desk.char_memory.setdefault(agent_id, [])
-            memory.append(f'[You said] {snippet}')
-            if len(memory) > self._memory_kept:
-                del memory[:len(memory) - self._memory_kept]
+        self._memory.remember(agent_id, text)      # like a chat reply: the chat's answers read these
+        log.info('Small talk: %s: %s', self._name(agent_id), text[:self._preview_chars])
 
     # ── names and memories ──
     def _name(self, agent_id: str) -> str:
@@ -226,15 +220,15 @@ class IdleChat:
 
     def _transcript(self, talk: _Talk) -> str:
         if not talk.recent:
-            return '(nothing yet)'
-        return '\n'.join(f'{self._name(m["character"])}: {m["text"]}' for m in talk.recent)
+            return self._words.nothing_yet
+        return '\n'.join(self._words.said.format(name=self._name(m['character']), text=m['text']) for m in talk.recent)
 
     def _memories(self, agent_ids: Sequence[str]) -> str:
         """The agents' newest memories, for the topic writer."""
         each, total = self._settings.memory_per_agent, self._settings.memory_lines
         lines = []
-        with self._desk.lock:
-            for agent_id in agent_ids:
-                memory = self._desk.char_memory.get(agent_id) or []
-                lines += [f'{self._name(agent_id)}: {entry}' for entry in (memory[-each:] if each else [])]
-        return '\n'.join(lines[-total:] if total else []) or '(no recent memory)'
+        for agent_id in agent_ids:
+            memory = self._memory.recent(agent_id)
+            lines += [self._words.said.format(name=self._name(agent_id), text=entry)
+                      for entry in (memory[-each:] if each else [])]
+        return '\n'.join(lines[-total:] if total else []) or self._words.no_memory

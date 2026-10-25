@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 import threading
-import time
 from pathlib import Path
 
 import pytest
@@ -14,12 +13,16 @@ from desktalk.adapters.storage import EventLog
 from desktalk.config import EventLogSettings
 from desktalk.domain import AgentJoined, Alert, BBox, Compaction, Detection, DetectionEvent, Light
 from tests.contracts.event_store_contract import EventStoreContract
+from tests.fakes import FakeClock
 
 NOW = 1_760_000_000.0                          # 9 October 2025
 
 
+CLOCK = FakeClock()                            # the log's day names come from its clock (UTC here)
+
+
 def day_of(ts: float) -> str:
-    return time.strftime('%Y-%m-%d', time.localtime(ts))
+    return CLOCK.local_day(ts)
 
 
 TODAY = day_of(NOW)
@@ -33,16 +36,43 @@ def picture(ts: float, *labels: str, conf: float = 0.8) -> DetectionEvent:
                           detections=tuple(Detection(lab, conf, BBox(90, 90, 110, 110)) for lab in labels))
 
 
-def make_log(folder: Path, **changes) -> EventLog:
+def make_log(folder: Path, clock: FakeClock = CLOCK, **changes) -> EventLog:
     values = {'folder': folder, 'compact_every_min': 10, 'merge_gap_sec': 3, 'keep_days': 30,
               'log_empty_frames': True, 'prune_every_min': 60} | changes
-    return EventLog(folder, EventLogSettings(**values))
+    return EventLog(folder, EventLogSettings(**values), clock)
 
 
 class TestEventLog(EventStoreContract):
     @pytest.fixture
     def store(self, tmp_path):
         return make_log(tmp_path)
+
+    def day_of(self, ts: float) -> str:
+        return CLOCK.local_day(ts)
+
+
+# 11:30 UTC: a desk 14 hours ahead is already on the next day, one 12 hours behind still on the day before,
+# so whatever the computer's own time zone, at least one of them is on a different day than the computer.
+HALF_PAST_ELEVEN_UTC = 1_760_009_400.0
+OTHER_ZONES = [14, -12]
+
+
+@pytest.mark.parametrize('hours', OTHER_ZONES)
+def test_days_follow_the_clock_not_the_computer(tmp_path, hours):
+    clock = FakeClock(HALF_PAST_ELEVEN_UTC, utc_offset_hours=hours)
+    log = make_log(tmp_path, clock)
+    log.write(Alert(ts=HALF_PAST_ELEVEN_UTC, kind='proximity'))
+    assert log.days() == [clock.local_day(HALF_PAST_ELEVEN_UTC)]
+    assert [e['type'] for e in log.events(clock.local_day(HALF_PAST_ELEVEN_UTC), None, 10)] == ['alert']
+
+
+@pytest.mark.parametrize('hours', OTHER_ZONES)
+def test_prune_counts_days_by_the_clock(tmp_path, hours):
+    clock = FakeClock(HALF_PAST_ELEVEN_UTC, utc_offset_hours=hours)
+    log = make_log(tmp_path, clock, keep_days=1)
+    log.write(Alert(ts=HALF_PAST_ELEVEN_UTC, kind='proximity'))
+    assert log.prune(HALF_PAST_ELEVEN_UTC) == []                 # today's day is kept
+    assert log.days() == [clock.local_day(HALF_PAST_ELEVEN_UTC)]
 
 
 def test_write_compact_and_read(tmp_path):
@@ -224,6 +254,24 @@ def test_logs_written_by_the_old_app_still_read(tmp_path):
         {'type': 'presence', 'label': 'cup', 'interval': [1792345678.1, 1792347463.0], 'frames': 5311,
          'source': 'pi', 'avg_conf': 0.81, 'center': [100.2, 101.0]}]
     assert log.recent_detections('2026-10-18', 10)[0]['frame_id'] == 'pi-000123'
+
+
+def test_old_log_lines_with_removed_fields_still_read(tmp_path):
+    """Lines written before the 2026-10 cleanup still open in the Log tab, with every field they had."""
+    day = tmp_path / '2026-10-18'
+    day.mkdir()
+    nudge = ('{"id":"1-a1b2c3","ts":1792345600.0,"type":"nudge","habit":"hydration","rule":"no_sip_long",'
+             '"agent":"cup","evidence":"no sip for 2 h","text":"Time for some water?"}')
+    picture_line = ('{"id":"2-d4e5f6","ts":1792345700.0,"type":"detection","frame_id":"pi-000123","source":"pi",'
+                    '"size":[640,480],"person":false,"light":{"brightness":120.0,"lux":null},"detected_on":"pi",'
+                    '"detected_obj":[{"label":"cup","conf":0.82,"bbox":[90,90,110,110],"center":[100,100]}]}')
+    (day / 'events.jsonl').write_text(f'{nudge}\n{picture_line}\n', encoding='utf-8')
+    (day / 'detections.jsonl').write_text(f'{picture_line}\n', encoding='utf-8')
+    log = make_log(tmp_path)
+    events = log.events('2026-10-18', None, 10)
+    assert [e['id'] for e in events] == ['2-d4e5f6', '1-a1b2c3']
+    assert events[0]['detected_on'] == 'pi' and events[1]['rule'] == 'no_sip_long'
+    assert log.recent_detections('2026-10-18', 10)[0]['detected_on'] == 'pi'
 
 
 def test_the_same_broken_line_is_reported_once_however_often_the_page_reads_it(tmp_path, caplog):

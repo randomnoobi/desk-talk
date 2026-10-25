@@ -12,9 +12,8 @@ import yaml
 
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource
 from desktalk.config import CameraSettings
-from desktalk.core.chat.workers import PiUploads
 from desktalk.domain import BBox, Detection, DetectorState, PiHealth, UploadInfo
-from desktalk.ports import FrameSource, PictureInbox
+from desktalk.ports import FrameSource, PictureInbox, PiUploads
 from desktalk_shared.wire import info_from_v1_headers
 from tests.contracts.frame_source_contract import FrameSourceContract
 from tests.contracts.push_source_contract import PushSourceContract

@@ -15,9 +15,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from desktalk.config.prompts import DeskCheckWords
 from desktalk.core.vision.findings import Findings, Thing
 from desktalk.core.vision.geometry import Box, box_gap, distance, footprint, grow, overlap
-from desktalk.core.vision.rules import DeskRules, Zone
+from desktalk.core.vision.rules import standing_strip
+from desktalk.domain import DeskRules, Zone
 
 Pair = tuple[str, str]             # (the thing that went in, the thing whose zone it is)
 
@@ -61,7 +63,8 @@ class ZoneVisits:
         return out
 
 
-def zone_risks(things: Mapping[str, Thing], rules: DeskRules, visits: ZoneVisits, now: float) -> Findings:
+def zone_risks(things: Mapping[str, Thing], rules: DeskRules, visits: ZoneVisits, now: float, *,
+               words: DeskCheckWords) -> Findings:
     found = Findings()
     for target in things.values():
         zone = rules.zones.get(target.label)
@@ -72,7 +75,7 @@ def zone_risks(things: Mapping[str, Thing], rules: DeskRules, visits: ZoneVisits
         for intruder in things.values():
             if intruder.id == target.id:
                 continue
-            strip = rules.standing_strip(intruder.box)
+            strip = standing_strip(intruder.box, rules)
             danger = overlap(strip, area) is not None and counts_as_danger(rules, target.label, intruder.label)
             visits.note((intruder.id, target.id), danger, now)
             if not danger:
@@ -85,11 +88,13 @@ def zone_risks(things: Mapping[str, Thing], rules: DeskRules, visits: ZoneVisits
                        'zone_expand': zone.expand},
                       {'type': 'danger_zone', 'severity': 'danger', 'intruder': intruder.id, 'target': target.id,
                        'depth_px': round(depth, 1), 'zone_label': zone.label},
-                      f"{intruder.label} (hazard) in {target.label}'s {zone.label} — {int(depth)}px")
+                      words.zone.format(intruder=intruder.label, target=target.label, zone=zone.label,
+                                        depth=int(depth)))
     return found
 
 
-def repeated_entries(things: Mapping[str, Thing], rules: DeskRules, visits: ZoneVisits, now: float) -> Findings:
+def repeated_entries(things: Mapping[str, Thing], rules: DeskRules, visits: ZoneVisits, now: float, *,
+                     words: DeskCheckWords) -> Findings:
     """Things that went into the same zone at least rules.repeated_times times lately."""
     found = Findings()
     for (intruder, target), count in visits.times_within(now, rules.repeated_window_sec):
@@ -98,6 +103,6 @@ def repeated_entries(things: Mapping[str, Thing], rules: DeskRules, visits: Zone
         found.add({'type': 'repeated_intrusion', 'intruder': intruder, 'target': target, 'count': count},
                   {'type': 'repeated_intrusion', 'severity': 'high', 'intruder': intruder, 'target': target,
                    'count': count},
-                  f"{things[intruder].label} entered {things[target].label}'s zone {count} times "
-                  f'in the last {rules.repeated_window_sec:g} s')
+                  words.repeated.format(intruder=things[intruder].label, target=things[target].label, count=count,
+                                        window=rules.repeated_window_sec))
     return found

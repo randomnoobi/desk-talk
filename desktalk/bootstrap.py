@@ -33,7 +33,8 @@ from typing import Any
 
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource, make_pair_key
 from desktalk.adapters.detector import UltralyticsDetector
-from desktalk.adapters.llm import OllamaKeepAlive, OpenAICompatibleChatModel, ResilientChatModel
+from desktalk.adapters.llm import OpenAICompatibleChatModel, ResilientChatModel
+from desktalk.adapters.picture import DeskPainter, OpenCvPictureTools
 from desktalk.adapters.storage import EventLog, JsonFileStore, SqliteStateStore
 from desktalk.config import AppConfig, ConfigError
 from desktalk.core.agents.profiles import ProfileBook
@@ -45,27 +46,58 @@ from desktalk.core.chat.workers import (
     IdleChat,
     Lens,
     LostItems,
-    PhoneCamera,
-    PiUploads,
     VisionHabits,
 )
+from desktalk.core.desk import Album, DangerBoard, LiveView, Memories, Scene, WholeDesk
 from desktalk.core.events import EventStream
-from desktalk.core.habits.desk_status import DeskStatus
-from desktalk.core.habits.preferences import Preferences
+from desktalk.core.habits.desk_status import DeskStatusService
+from desktalk.core.habits.preferences import PreferencesFile
 from desktalk.core.habits.reminders import HabitReminders
 from desktalk.core.habits.rule_runner import RuleRunner
 from desktalk.core.habits.tracker import HabitTracker
-from desktalk.core.object_states.tracker import ObjectStateTracker
+from desktalk.core.object_states import ObjectStateTracker
 from desktalk.core.vision import desk_edges
 from desktalk.core.vision.analyzer import DeskAnalyzer
 from desktalk.core.vision.camera_health import CameraHealth
 from desktalk.core.vision.desk_monitor import DeskMonitor
-from desktalk.core.vision.live_view import DeskPainter
 from desktalk.core.vision.producer import DetectionProducer
 from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.core.vision.rules import SafetyRules
-from desktalk.desk_state import DeskState
-from desktalk.ports import Clock, Detector, FrameSource, KeyValueStore, PeriodicWorker
+from desktalk.ports import (
+    CameraTips,
+    CharacterMemory,
+    ChatFeed,
+    ChatModel,
+    ChatReplies,
+    Clock,
+    DeskRulesView,
+    DeskScene,
+    DeskStatus,
+    DetectionStats,
+    Detector,
+    EventBus,
+    EventStore,
+    FrameSource,
+    HabitTracking,
+    Jobs,
+    KeyValueStore,
+    LivePictures,
+    LostItemsView,
+    ObjectStates,
+    ObjectStateStore,
+    PeriodicWorker,
+    PhoneControls,
+    PhotoAlbum,
+    PhotoTaker,
+    PictureInbox,
+    PiStatus,
+    Preferences,
+    Profiles,
+    RosterList,
+    SafetyBoard,
+    ScheduledJobs,
+    VisionHabitsView,
+)
 from desktalk.runtime import Scheduler, Supervisor, SystemClock, plain_error, setup_logging
 
 log = logging.getLogger(__name__)
@@ -75,109 +107,109 @@ MINUTE = 60
 
 @dataclass(eq=False)
 class DeskTalk:
-    """Every part of the running app, each a named field. What the web layer uses each one for:
+    """Every part of the running app, each a named field typed with the interface the web layer (and the
+    tests) may use it through. What the web layer uses each one for:
 
-    config          everything from config/ and .env: web.port, the list sizes, the pi section for /api/pi/config
-    clock           the time, for the times in replies
-    desk            DeskState: the live view pictures, what's on the desk, the safety state and the proof photos
-                    (/api/live, the video, /api/snapshot/<id>, the captures list)
-    bus             the event stream: stats() for /api/health
-    event_log       the event log: days(), events(), presence(), recent_detections(), counts() (/api/log/...)
-    store           the data folder: preferences, habit days, learned personalities, the daily recap's day
-    config_store    the config folder: safety_rules.json
-    profiles        every agent: get(), all(), public() for the app's agent list and names
-    preferences     wake time, bedtime, quiet hours: all() and update() (/api/preferences)
-    source          the camera: kind, connected, fps; uploads go to pi_source / phone_source (below)
-    pair_key        what the Pi and the phone must send in X-Desk-Key (and show in the Pi command and phone link)
-    safety_rules    the danger rules: for_settings_page(), save(), clean_outline() (/api/rules, desk corners)
-    analyzer        the desk checks: latest result (/api/scenarios, the relationships graph)
-    painter         draws the boxes on the live view (the producer uses it)
-    camera_health   Lens's camera checks: issues() (/api/live) and phone_tip() (the phone upload reply)
-    photos          proof photos: save() (a photo of the desk on request)
-    detector        object detection on this computer: label (/api/live)
-    producer        camera pictures → events: pictures_analysed, last_detect_ms (yolo_ms), problem (/api/health)
-    object_states   present / absent for each object on the desk: snapshot() and changes() (the person is the switch)
-    state_store     the SQLite file the object states are saved in (settings → object_states.database)
-    roster          who's in the chat: snapshot() and member_ids() (/api/agents, /api/live)
-    desk_status     camera_connected(), warm(), reminders_ready() ... (/api/live, /api/health)
-    habits          today's habits: today(), log(), day_times() (/api/habits, the habit buttons)
-    monitor         the desk monitor (safety alerts; nothing for the web to call)
-    ai              the AI connection itself: label, is_local, local_vision
-    model           the AI as the parts use it (time limits, retries, a breaker): ready, label, problem()
-    hub             chat messages for open app pages: subscribe() / unsubscribe() (SSE), recent(), send()
-    generator       the chat: answer(), live_context(), save_widget(), note_panel_event() (/api/chat ...)
-    rule_runner     the habit rules in protocols.yaml → rules, checked against the object states (a background
-                    job); the reminders ask it for nudges
-    reminders       habit reminders (a background job)
-    lens            the camera's own character (a background job)
-    idle_chat       small talk between agents (a background job)
-    lost_items      "have you seen my keys?": is_lost_query() and answer() (/api/chat), sightings() (/api/scenarios)
-    vision_habits   posture and nail biting: summary(), events(), latest() (/api/habits, /api/scenarios)
-    daily_summary   the end-of-day recap (a background job)
-    scheduler       timed jobs (compacting and pruning the event log, saving habits): status() (/api/health)
-    supervisor      runs the background jobs: status() (/api/health)
-    started_at      when the app was built (how long it has been running)
-    keepalive       keeps Ollama's model loaded (None for a cloud AI)
-    log_file        the log file (None when build() didn't set up logging)
-
-    pi_source / phone_source are the source when it's the Pi / the phone (None otherwise): push() for
-    /api/pi/frame and /api/phone/frame, status() and pi_info() for /api/health and /api/live,
-    set_motion() and mark_stopped() for the phone.
+    config            everything from config/ and .env: web.port, the list sizes, the pi section for /api/pi/config
+    clock             the time, for the times in replies and today's day
+    live_pictures     the newest pictures: the video, /api/latest_frame_raw, which camera the live view shows
+    scene             what the camera sees: the agents' and other boxes, what the vision scan saw (/api/live)
+    safety_board      the dangers right now (/api/live, /api/status)
+    character_memory  when you last typed (/api/activity, /api/chat)
+    photo_album       the proof photos (/api/snapshot/<id>, /api/snapshots)
+    bus               the event stream: stats() for /api/health
+    event_log         the event log: days(), events(), presence(), recent_detections(), counts() (/api/log/...)
+    store             the data folder: preferences, habit days, learned personalities, the daily recap's day
+    config_store      the config folder: safety_rules.json
+    profiles          every agent: get(), for_label(), is_ignored() for the app's agent list and the live view
+    preferences       wake time, bedtime, quiet hours: all(), update() and quiet_now() (/api/preferences)
+    source            the camera: kind, connected, fps
+    pi_inbox, pi      the Pi when it is the camera (None otherwise): push() for /api/pi/frame, status() and
+                      pi_info() for /api/health and /api/live
+    phone_inbox,      the phone when it is the camera (None otherwise): push() for /api/phone/frame, set_motion()
+    phone             and mark_stopped(), and its tilt when the desk corners are marked
+    pair_key          what the Pi and the phone must send in X-Desk-Key (and show in the Pi command and phone link)
+    safety_rules      the danger rules: for_settings_page(), save(), clean_outline() (/api/rules, desk corners)
+    camera_health     Lens's camera checks: issues() (/api/live), phone_tip() (the upload replies), forget()
+    photos            proof photos: save() (a photo of the desk on request)
+    detector          object detection on this computer: label (/api/live)
+    producer          camera pictures → events: pictures_analysed, last_detect_ms (yolo_ms), problem (/api/health)
+    object_states     present / absent for each object on the desk: snapshot() and changes() (the person is the
+                      switch), save_snapshot() (the scheduler and stop())
+    state_store       the SQLite file the object states are saved in (settings → object_states.database)
+    roster            who's in the chat: snapshot() and member_ids() (/api/agents, /api/live)
+    desk_status       camera_connected(), warm(), reminders_ready() ... (/api/live, /api/health)
+    habits            today's habits: today(), log(), day_times() (/api/habits, the habit buttons), save()
+    ai                the AI connection itself: label, is_local, local_vision
+    model             the AI as the parts use it (time limits, retries, a breaker): ready, label, problem()
+    hub               chat messages for open app pages: subscribe() / unsubscribe() (SSE), recent()
+    generator         the chat: answer(), save_widget(), note_panel_event() (/api/chat ...)
+    rule_runner       the habit rules in protocols.yaml → rules, checked against the object states (a background
+                      job); the reminders ask it for nudges
+    reminders         habit reminders (a background job)
+    lens              the camera's own character (a background job)
+    idle_chat         small talk between agents (a background job)
+    lost_items        "have you seen my keys?": is_lost_query(), answer() and the items (/api/chat, /api/live)
+    vision_habits     posture and nail biting: summary(), events(), latest() (/api/habits)
+    daily_summary     the end-of-day recap (a background job)
+    scheduler         timed jobs (compacting and pruning the event log, saving habits and object states):
+                      status() (/api/health)
+    supervisor        runs the background jobs: status() (/api/health)
+    started_at        when the app was built (how long it has been running)
+    keepalive         keeps Ollama's model loaded (None for a cloud AI)
+    log_file          the log file (None when build() didn't set up logging)
     """
 
     config: AppConfig
     clock: Clock
-    desk: DeskState
-    bus: EventStream
-    event_log: EventLog
+    live_pictures: LivePictures
+    scene: DeskScene
+    safety_board: SafetyBoard
+    character_memory: CharacterMemory
+    photo_album: PhotoAlbum
+    bus: EventBus
+    event_log: EventStore
     store: KeyValueStore
     config_store: KeyValueStore
-    profiles: ProfileBook
+    profiles: Profiles
     preferences: Preferences
     source: FrameSource
+    pi_inbox: PictureInbox | None
+    pi: PiStatus | None
+    phone_inbox: PictureInbox | None
+    phone: PhoneControls | None
     pair_key: str
-    safety_rules: SafetyRules
-    analyzer: DeskAnalyzer
-    painter: DeskPainter
-    camera_health: CameraHealth
-    photos: ProofPhotos
+    safety_rules: DeskRulesView
+    camera_health: CameraTips
+    photos: PhotoTaker
     detector: Detector
-    producer: DetectionProducer
-    object_states: ObjectStateTracker
-    state_store: SqliteStateStore
-    roster: Roster
+    producer: DetectionStats
+    object_states: ObjectStates
+    state_store: ObjectStateStore
+    roster: RosterList
     desk_status: DeskStatus
-    habits: HabitTracker
-    monitor: DeskMonitor
-    ai: OpenAICompatibleChatModel
-    model: ResilientChatModel
-    hub: MessageHub
-    generator: MessageGenerator
-    rule_runner: RuleRunner
-    reminders: HabitReminders
-    lens: Lens
-    idle_chat: IdleChat
-    lost_items: LostItems
-    vision_habits: VisionHabits
-    daily_summary: DailySummary
-    scheduler: Scheduler
-    supervisor: Supervisor
+    habits: HabitTracking
+    ai: ChatModel
+    model: ChatModel
+    hub: ChatFeed
+    generator: ChatReplies
+    rule_runner: PeriodicWorker
+    reminders: PeriodicWorker
+    lens: PeriodicWorker
+    idle_chat: PeriodicWorker
+    lost_items: LostItemsView
+    vision_habits: VisionHabitsView
+    daily_summary: PeriodicWorker
+    scheduler: ScheduledJobs
+    supervisor: Jobs
     started_at: float
-    keepalive: OllamaKeepAlive | None = None
+    keepalive: PeriodicWorker | None = None
     log_file: Path | None = None
 
     @property
     def source_kind(self) -> str:
         """pi, phone or webcam."""
         return self.source.kind
-
-    @property
-    def pi_source(self) -> PiFrameSource | None:
-        return self.source if isinstance(self.source, PiFrameSource) else None
-
-    @property
-    def phone_source(self) -> PhoneFrameSource | None:
-        return self.source if isinstance(self.source, PhoneFrameSource) else None
 
     def background_jobs(self) -> list[tuple[PeriodicWorker, float]]:
         """Every background job, with how long it waits before its first round."""
@@ -237,16 +269,27 @@ class DeskTalk:
 # ════════════════════════════════════════════════════════════════════
 #  Building it
 # ════════════════════════════════════════════════════════════════════
-def make_source(config: AppConfig, clock: Clock) -> FrameSource:
+@dataclass(frozen=True)
+class Camera:
+    """The camera, and what else it is when it's the Pi or the phone (both send their pictures to us)."""
+
+    source: FrameSource
+    pi: PiFrameSource | None = None
+    phone: PhoneFrameSource | None = None
+
+
+def make_camera(config: AppConfig, clock: Clock) -> Camera:
     """The camera named in settings → camera.source."""
     camera = config.camera
     if camera.source == 'phone':
-        return PhoneFrameSource(clock, camera)
+        phone = PhoneFrameSource(clock, camera)
+        return Camera(phone, phone=phone)
     if camera.source == 'webcam':
         if not camera.webcam_indices:
             raise ConfigError('config/settings.yaml: camera.webcam_indices needs at least one webcam number')
-        return WebcamSource(clock, camera, camera.webcam_indices[0])
-    return PiFrameSource(clock, camera)
+        return Camera(WebcamSource(clock, camera, camera.webcam_indices[0]))
+    pi = PiFrameSource(clock, camera)
+    return Camera(pi, pi=pi)
 
 
 def make_detector(config: AppConfig) -> UltralyticsDetector:
@@ -268,8 +311,10 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         clock               the computer's clock
         detector            UltralyticsDetector (settings → detector), warmed up
         client_factory      makes the OpenAI-compatible client (openai.OpenAI)
-        source              the camera in settings → camera.source
-        data_folder         where the files this run writes go (the store, the event log, the log files):
+        source              the camera in settings → camera.source (one passed in is only a camera: not the
+                            Pi's or the phone's uploads)
+        data_folder         where the files this run writes go (the store, the event log, the object states
+                            database, the log files):
                             the folders in the settings are taken under it instead of the project folder
         config_store        the store for config/safety_rules.json (a JsonFileStore of the config folder)
         pair_key            the key in settings → camera.pair_key_file (made and saved the first time)
@@ -285,35 +330,42 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     log_file = None
     if set_up_logging:
         logs = config.logging
-        log_file = setup_logging(data_path(logs.folder), logs.level, logs.file_size_mb, logs.files_kept)
+        log_file = setup_logging(data_path(logs.folder), logs.level, logs.file_size_mb, logs.files_kept,
+                                 logs.file_name)
 
-    # ── storage and shared state ──
+    # ── storage and the desk right now ──
     store = JsonFileStore(data_path(config.storage.folder))
     config_store = config_store if config_store is not None else JsonFileStore(config.config_folder)
-    desk = DeskState(max_snapshots=config.snapshots.max_kept)
+    live_pictures, scene, safety_board = LiveView(), Scene(), DangerBoard()
+    character_memory, photo_album = Memories(), Album(keep=config.snapshots.max_kept)
+    # For the parts that still ask for several desk interfaces in one object; it passes each call on.
+    desk = WholeDesk(live_pictures, scene, safety_board, character_memory, photo_album)
     bus = EventStream(config.event_stream, synchronous=synchronous_events)
-    event_log = EventLog(data_path(config.event_log.folder), config.event_log)
+    event_log = EventLog(data_path(config.event_log.folder), config.event_log, clock)
     bus.subscribe('event-log', event_log.write)          # first, so it logs events in the order they happen
     profiles = ProfileBook(config.agents_file, store, personality_max_chars=config.agents.personality_max_chars)
-    preferences = Preferences(store, config.protocols.schedule, config.reminders.quiet_hours)
+    preferences = PreferencesFile(store, config.protocols.schedule, config.reminders.quiet_hours, clock=clock)
 
     # ── the camera, the desk rules and detection ──
-    source = source if source is not None else make_source(config, clock)
+    camera = Camera(source) if source is not None else make_camera(config, clock)
+    source = camera.source
     if pair_key is None:
         pair_key = make_pair_key(config.resolve(config.camera.pair_key_file), config.camera.pair_key_bytes)
-    safety_rules = SafetyRules(config_store, config.safety, liquids=profiles.labels_for_habit('hydration'),
-                               foods=profiles.labels_for_habit('food'))
-    analyzer = DeskAnalyzer(safety_rules)
-    painter = DeskPainter(desk, profiles, analyzer)
-    photos = ProofPhotos(desk, clock, config.snapshots)
+    safety_rules = SafetyRules(config_store, config.safety, words=config.prompts.desk_rules,
+                               liquids=profiles.labels_for_habit('hydration'), foods=profiles.labels_for_habit('food'))
+    analyzer = DeskAnalyzer(safety_rules, words=config.prompts.desk_checks)
+    painter = DeskPainter(scene, profiles, analyzer, config.drawing)
+    pictures = OpenCvPictureTools()
+    photos = ProofPhotos(desk, clock, config.snapshots, pictures=pictures, no_label=config.prompts.photos.no_label)
     camera_health = CameraHealth(config.lens, source_kind=source.kind, moved_within_sec=config.camera.moved_within_sec,
+                                 pictures=pictures, words=config.prompts.camera,
                                  ignore_labels=config.agents_file.ignore)
     detector = detector if detector is not None else make_detector(config)
     producer = DetectionProducer(source, detector, bus, desk, clock, camera_health, painter, config.camera,
-                                 new_session_after_sec=config.protocols.breaks.break_min * MINUTE)
+                                 new_session_after_sec=config.protocols.breaks.break_min * MINUTE, pictures=pictures)
     state_store = SqliteStateStore(data_path(config.object_states.database))
     object_states = ObjectStateTracker(config.object_states, bus, state_store, device_id=source.kind,
-                                       new_session_after_sec=config.protocols.breaks.break_min * MINUTE)
+                                       new_session_after_sec=config.protocols.breaks.break_min * MINUTE, clock=clock)
     object_states.restore(clock.now())
 
     # ── the consumers of detection events (each subscribes itself, in this order) ──
@@ -321,26 +373,33 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         return desk_edges.on_desk((x, y), safety_rules.current.outline, (width, height))
 
     phone_is_camera = source.kind == 'phone'
-    roster = Roster(bus, profiles, desk, config.agents, config.presence, on_desk=on_desk)
-    desk_status = DeskStatus(desk, source, preferences, config.reminders, object_states,
-                             person_label=config.object_states.person_label)
-    habits = HabitTracker(clock, bus, store, profiles, preferences, desk, config.protocols, config.habit_tracker,
-                          config.presence, config.agents, phone_counts=not phone_is_camera)
-    monitor = DeskMonitor(bus, desk, analyzer, profiles, habits, desk_status, photos, config.alerts)
+    roster = Roster(bus, profiles, scene, config.agents, config.presence, on_desk=on_desk)
+    desk_status = DeskStatusService(desk, source, preferences, config.reminders, object_states,
+                                    person_label=config.object_states.person_label, clock=clock)
+    habits = HabitTracker(clock, bus, store, profiles, preferences, scene, config.protocols, config.habit_tracker,
+                          config.presence, config.agents, phone_counts=not phone_is_camera,
+                          words=config.prompts.habits)
+    # The desk monitor has nothing the web calls: it subscribes itself, and the event stream keeps it.
+    DeskMonitor(bus, desk, analyzer, profiles, habits, desk_status, photos, config.alerts,
+                words=config.prompts.desk_alerts)
 
     # ── the AI and the chat ──
-    ai = OpenAICompatibleChatModel(config.llm, config.secrets, clock, client_factory=client_factory)
-    model = ResilientChatModel(ai, clock, config.llm, time_limit_sec=ai.time_limit_sec)
+    ai = OpenAICompatibleChatModel(config.llm, config.secrets, clock, client_factory=client_factory,
+                                   replies=config.prompts.replies)
+    model = ResilientChatModel(ai, clock, config.llm, time_limit_sec=ai.time_limit_sec, replies=config.prompts.replies)
     vision = model if model.local_vision else None       # pictures only go to an AI on this computer (no quota)
     hub = MessageHub(clock, recent_kept=config.chat.recent_kept, queue_size=config.web.live_queue_size)
     default_temperature = config.agents_file.default.temperature
     lost_items = LostItems(clock, bus, desk, roster, profiles, habits, model, vision, config.lost_items,
                            config.llm.replies, photos=photos, default_temperature=default_temperature,
-                           phone_is_camera=phone_is_camera)
+                           pictures=pictures, prompts=config.prompts.lost_items,
+                           photos_kept=config.snapshots.max_kept, phone_is_camera=phone_is_camera)
     generator = MessageGenerator(model, hub, roster, profiles, habits, desk, clock, status=desk_status,
                                  habit_log=habits, llm=config.llm, chat=config.chat, agents=config.agents,
                                  sunlight_default_min=config.habit_tracker.sunlight_default_min,
-                                 reply_max_chars=config.chat.reply_max_chars, local_model=ai.is_local)
+                                 reply_max_chars=config.chat.reply_max_chars, prompts=config.prompts,
+                                 drink_labels=config.safety.liquids, preview_chars=config.logging.preview_chars,
+                                 local_model=ai.is_local)
     generator.subscribe_to(bus)
 
     # ── the background jobs ──
@@ -348,15 +407,19 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     reminders = HabitReminders(habits, rule_runner, desk_status, roster, profiles, generator, hub, bus,
                                config.reminders)
     lens = Lens(camera_health, source, safety_rules, preferences, hub, bus, photos, config.lens, config.pi,
-                phone=source if isinstance(source, PhoneCamera) else None,
-                pi_uploads=source if isinstance(source, PiUploads) else None)
-    idle_chat = IdleChat(model, hub, desk_status, roster, profiles, desk, lambda: generator.live_context()['summary'],
-                         config.idle_chat, config.llm.replies, memory_kept=config.llm.memory_per_agent,
-                         memory_chars=config.chat.memory_reply_chars, default_temperature=default_temperature,
-                         reply_max_chars=config.chat.reply_max_chars)
-    vision_habits = VisionHabits(vision, bus, desk, roster, profiles, desk_status, config.vision_habits, clock, photos)
+                clock=clock, prompts=config.prompts.lens, preview_chars=config.logging.preview_chars,
+                phone=camera.phone, pi_uploads=camera.pi)
+    idle_chat = IdleChat(model, hub, desk_status, roster, profiles, character_memory,
+                         lambda: generator.live_context()['summary'], config.idle_chat, config.llm.replies,
+                         memory_kept=config.llm.memory_per_agent, memory_chars=config.chat.memory_reply_chars,
+                         default_temperature=default_temperature, reply_max_chars=config.chat.reply_max_chars,
+                         prompts=config.prompts.small_talk, memory_words=config.prompts.memory,
+                         preview_chars=config.logging.preview_chars)
+    vision_habits = VisionHabits(vision, bus, desk, roster, profiles, desk_status, config.vision_habits, clock, photos,
+                                 prompts=config.prompts.vision)
     daily_summary = DailySummary(model, hub, roster, habits, store, config.daily_summary, config.llm.replies,
-                                 default_temperature=default_temperature)
+                                 default_temperature=default_temperature, clock=clock,
+                                 prompts=config.prompts.daily_recap, preview_chars=config.logging.preview_chars)
     scheduler = Scheduler(clock, longest_wait_sec=config.supervisor.scheduler_longest_wait_sec)
     scheduler.every(config.event_log.compact_every_min * MINUTE, lambda: event_log.compact(clock.now()),
                     'compact event log')
@@ -369,11 +432,13 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                             max_retry_sec=config.supervisor.restart_max_sec)
 
     return DeskTalk(
-        config=config, clock=clock, desk=desk, bus=bus, event_log=event_log, store=store, config_store=config_store,
-        profiles=profiles, preferences=preferences, source=source, pair_key=pair_key, safety_rules=safety_rules,
-        analyzer=analyzer, painter=painter, camera_health=camera_health, photos=photos, detector=detector,
+        config=config, clock=clock, live_pictures=live_pictures, scene=scene, safety_board=safety_board,
+        character_memory=character_memory, photo_album=photo_album, bus=bus, event_log=event_log, store=store,
+        config_store=config_store, profiles=profiles, preferences=preferences, source=source,
+        pi_inbox=camera.pi, pi=camera.pi, phone_inbox=camera.phone, phone=camera.phone, pair_key=pair_key,
+        safety_rules=safety_rules, camera_health=camera_health, photos=photos, detector=detector,
         producer=producer, object_states=object_states, state_store=state_store, roster=roster,
-        desk_status=desk_status, habits=habits, monitor=monitor, ai=ai, model=model, hub=hub, generator=generator,
-        rule_runner=rule_runner, reminders=reminders, lens=lens, idle_chat=idle_chat, lost_items=lost_items,
-        vision_habits=vision_habits, daily_summary=daily_summary, scheduler=scheduler, supervisor=supervisor,
-        started_at=clock.now(), keepalive=ai.keepalive_worker(), log_file=log_file)
+        desk_status=desk_status, habits=habits, ai=ai, model=model, hub=hub, generator=generator,
+        rule_runner=rule_runner, reminders=reminders, lens=lens, idle_chat=idle_chat,
+        lost_items=lost_items, vision_habits=vision_habits, daily_summary=daily_summary, scheduler=scheduler,
+        supervisor=supervisor, started_at=clock.now(), keepalive=ai.keepalive_worker(), log_file=log_file)

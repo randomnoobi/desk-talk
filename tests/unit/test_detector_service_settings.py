@@ -20,8 +20,12 @@ ENV = {
 
 def test_reads_every_setting_from_the_environment():
     assert ServiceSettings.from_env(ENV) == ServiceSettings(
-        host='0.0.0.0', port=8765, models_dir=Path('/models'), max_picture_bytes=2_500_000,
+        host='0.0.0.0', port=8765, models_dir=Path('/models'), max_picture_bytes=int(2.5 * 1024 * 1024),
         retry_first_sec=5.0, retry_max_sec=300.0)
+
+
+def test_a_megabyte_is_1024_times_1024_bytes():
+    assert ServiceSettings.from_env({**ENV, 'DETECTOR_MAX_PICTURE_MB': '1'}).max_picture_bytes == 1_048_576
 
 
 @pytest.mark.parametrize('name', sorted(ENV))

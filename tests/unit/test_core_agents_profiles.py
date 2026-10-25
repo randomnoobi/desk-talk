@@ -20,7 +20,7 @@ def agents_file(tmp_path_factory) -> AgentsFile:
     """config/agents.yaml as it is in the repo."""
     root = tmp_path_factory.mktemp('project')
     (root / 'config').mkdir()
-    for name in ('settings.yaml', 'agents.yaml', 'protocols.yaml'):
+    for name in ('settings.yaml', 'agents.yaml', 'protocols.yaml', 'prompts.yaml'):
         shutil.copy(ROOT / 'config' / name, root / 'config' / name)
     return load_config(root, environ={}).agents_file
 
@@ -179,3 +179,9 @@ def test_a_personality_that_cannot_be_saved_is_still_used(agents_file, caplog):
         book.set_personality('cup', 'Very calm.')
     assert book.get('cup').personality == 'Very calm.'
     assert 'disk full' in caplog.text
+
+
+def test_a_new_objects_about_line_comes_from_the_default_block(agents_file, store):
+    default = agents_file.default.model_copy(update={'about': 'A new {object} friend.'})
+    book = ProfileBook(agents_file.model_copy(update={'default': default}), store, personality_max_chars=MAX_CHARS)
+    assert book.for_label('stapler').about == 'A new stapler friend.'

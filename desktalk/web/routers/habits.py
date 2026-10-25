@@ -4,8 +4,7 @@ Habits and your preferences:
     GET  /api/habits/today        today's habits (water, breaks, light, phone, food) and the vision checks
     POST /api/habits/log          a habit button: a glass of water, a break, some sunlight, a snack
     GET  /api/habit_log           the vision habit timeline (posture, nail biting), ?category= and ?limit=
-    GET  /api/daily_stats         today's habits
-    GET  /api/preferences         wake time, bedtime, quiet hours (also at the old /api/habit_policy)
+    GET  /api/preferences         wake time, bedtime, quiet hours
     PUT  /api/preferences         change them
 """
 
@@ -15,8 +14,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from desktalk.core.habits.preferences import quiet_hours_now
-from desktalk.web.deps import Desk, list_size
+from desktalk.web.deps import App, list_size
 from desktalk.web.schemas import HabitEntry, PreferenceChanges
 
 ALL = 'all'
@@ -25,48 +23,41 @@ router = APIRouter()
 
 
 @router.get('/api/habits/today')
-def habits_today(desk: Desk) -> dict[str, Any]:
-    return {**desk.habits.today(), 'vision': desk.vision_habits.summary()}
+def habits_today(app: App) -> dict[str, Any]:
+    return {**app.habits.today(app.clock.now()), 'vision': app.vision_habits.summary()}
 
 
 @router.post('/api/habits/log')
-def habits_log(entry: HabitEntry, desk: Desk) -> dict[str, Any]:
+def habits_log(entry: HabitEntry, app: App) -> dict[str, Any]:
     try:
-        return desk.habits.log(entry.habit, entry.action, **entry.details())
+        return app.habits.log(entry.habit, entry.action, **entry.details())
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from None
 
 
 @router.get('/api/habit_log')
-def habit_log(desk: Desk, category: str | None = None, limit: str | None = None) -> dict[str, Any]:
+def habit_log(app: App, category: str | None = None, limit: str | None = None) -> dict[str, Any]:
     category = (category or ALL).strip().lower()
-    events = desk.vision_habits.events()
+    events = app.vision_habits.events()
     if category != ALL:
         events = [e for e in events if e.get('category') == category]
-    summary = desk.vision_habits.summary()
-    summary['breaks_today'] = desk.habits.today()['breaks']['count']
-    check, checked_at = desk.vision_habits.latest()
-    return {'events': events[:list_size(limit, desk.config.web.list_sizes.habit_log)], 'summary': summary,
+    summary = app.vision_habits.summary()
+    summary['breaks_today'] = app.habits.today(app.clock.now())['breaks']['count']
+    check, checked_at = app.vision_habits.latest()
+    return {'events': events[:list_size(limit, app.config.web.list_sizes.habit_log)], 'summary': summary,
             'vlm_state': check, 'vlm_ts': checked_at}
 
 
-@router.get('/api/daily_stats')
-def daily_stats(desk: Desk) -> dict[str, Any]:
-    return desk.habits.today()
-
-
 @router.get('/api/preferences')
-@router.get('/api/habit_policy')
-def preferences(desk: Desk) -> dict[str, Any]:
-    now = desk.clock.now()
-    return {**desk.preferences.all(), 'quiet_now': quiet_hours_now(desk.preferences, now),
-            'min_gap_sec': desk.config.reminders.min_gap_sec, 'sunset_ts': desk.habits.day_times(now)['sunset_ts']}
+def preferences(app: App) -> dict[str, Any]:
+    now = app.clock.now()
+    return {**app.preferences.all(), 'quiet_now': app.preferences.quiet_now(now),
+            'min_gap_sec': app.config.reminders.min_gap_sec, 'sunset_ts': app.habits.day_times(now)['sunset_ts']}
 
 
 @router.put('/api/preferences')
-@router.put('/api/habit_policy')
-def change_preferences(changes: PreferenceChanges, desk: Desk) -> dict[str, Any]:
+def change_preferences(changes: PreferenceChanges, app: App) -> dict[str, Any]:
     try:
-        return {'ok': True, 'preferences': desk.preferences.update(changes.changes())}
+        return {'ok': True, 'preferences': app.preferences.update(changes.changes())}
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from None

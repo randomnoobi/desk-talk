@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+LENS = 'lens'           # Lens, the camera's own character: speaks when no agent fits
 HABITS = ('hydration', 'breaks', 'light', 'phone_free', 'screens', 'food', 'tasks')
 
 

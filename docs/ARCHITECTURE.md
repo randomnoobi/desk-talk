@@ -50,6 +50,7 @@ Your computer keeps YOLO too, for the phone and the webcam, and as the backup fo
       ▼
  EventStream   (each consumer has its own queue and thread)
       ├─▶ EventLog          data/events/<day>/, compacted every 10 minutes
+      ├─▶ ObjectStateTracker  present / absent per object, saved in SQLite → ObjectStateChanged
       ├─▶ Roster            agents join and leave       → AgentJoined, AgentLeft
       ├─▶ HabitTracker      water, breaks, light, phone → HabitEvent
       ├─▶ DeskMonitor       danger zones, edges, pets   → Alert
@@ -59,7 +60,8 @@ Your computer keeps YOLO too, for the phone and the webcam, and as the backup fo
             ▼
           MessageHub ──── SSE: GET /api/events ────▶ every open app page (web_app/)
             ▲
-            └── background jobs that speak by themselves: HabitReminders, Lens, IdleChat, DailySummary
+            └── background jobs that speak by themselves: HabitReminders (with the RuleRunner's nudges), Lens,
+                IdleChat, DailySummary
 ```
 
 The events the consumers make (`AgentJoined`, `HabitEvent`, `Alert` ...) go back on the same event
@@ -71,28 +73,29 @@ reply only holds up the message generator's own queue, never the camera or the o
 | Folder / file | Job |
 |---|---|
 | `server.py` | Loads the settings, builds the app, prints the Pi command (or the phone link), runs the web servers with uvicorn. |
-| `desktalk/config.py` | Reads `config/*.yaml` and `.env` into typed, read-only settings. A bad value stops the start (see [Settings](#settings)). |
-| `desktalk/bootstrap.py` | **Builds every part and connects them.** The only place that knows the real classes. `build(config)` returns a `DeskTalk` with every part as a named field; `start()` and `stop()` run and stop the background jobs. |
+| `desktalk/config/` | Reads `config/*.yaml` and `.env` into typed, read-only settings, one file per config file: `app.py` (`settings.yaml`, and `AppConfig`, everything together), `habits.py` (`protocols.yaml`), `agents.py` (`agents.yaml`), `prompts.py` (`prompts.yaml`), `loader.py` (reading the files, and the plain-words errors), `base.py` (the building blocks). A bad value stops the start (see [Settings](#settings)). |
+| `desktalk/bootstrap.py` | **Builds every part and connects them.** The only place that knows the real classes. `build(config)` returns a `DeskTalk` with every part as a named field, each typed with an interface; `start()` and `stop()` run and stop the background jobs. |
 | `desktalk/ports.py` | The interfaces between the parts (below). |
-| `desktalk/domain/` | Plain data, no files or network: `Detection`, `Frame`, the event classes, `AgentProfile`, `Nudge`, and the errors `DetectorUnavailable` / `AIUnavailable`. |
-| `desktalk/core/vision/` | `producer.py` (pictures → detection events), the desk rules (`rules.py`, `danger_zones.py`, `desk_edges.py`, `risky_pairs.py`, `analyzer.py`), `desk_monitor.py` (safety alerts), `camera_health.py` (Lens's checks on the picture), `live_view.py` (boxes on the live view), `proof_photos.py`. |
+| `desktalk/domain/` | Plain data, no files or network: `Detection`, `Frame`, the event classes, `AgentProfile`, `Nudge`, the desk right now (`SeenObject`, `SafetyNow`, `Photo`), the danger rules (`DeskRules`), names for pictures and shapes (`Picture`, `Box`, `Size`), day names, and the errors `DetectorUnavailable` / `AIUnavailable` with `plain_error`. |
+| `desktalk/core/desk/` | **The desk right now**, in five parts, each with its own lock inside its methods: `LiveView` (the newest live view pictures and the light), `Scene` (what the camera sees on the desk), `DangerBoard` (the dangers right now and the latest alerts), `Memories` (what the characters said, the tracker panels, when you last typed), `Album` (the proof photos). `WholeDesk` passes calls on to the five, for the parts that still ask for several desk interfaces in one object. |
+| `desktalk/core/vision/` | `producer.py` (pictures → detection events), the desk rules (`rules.py`, `danger_zones.py`, `desk_edges.py`, `risky_pairs.py`, `findings.py`, `geometry.py`, `analyzer.py`), `desk_monitor.py` (safety alerts), Lens's checks on the picture (`camera_health.py`, the front, with `camera_measure.py` for the numbers and `camera_problems.py` for when a problem starts and ends), `proof_photos.py`. No OpenCV here: pictures go through `PictureTools`. |
 | `desktalk/core/events/` | `EventStream`: publish / subscribe inside the program, a bounded queue and a thread per consumer. |
 | `desktalk/core/agents/` | `ProfileBook` (who each object becomes, from `config/agents.yaml`), `Roster` (who's in the chat), `PresenceTracker`. |
 | `desktalk/core/object_states/` | `ObjectStateTracker`: detection events → a steady present / absent state for each kind of object (smoothing, then a small state machine), `object_state` events, and rows in the SQLite store. The person's state is the on/off switch for reminders, small talk and vision checks. |
-| `desktalk/core/habits/` | `protocols.py` (the book's rules as plain functions), `HabitTracker` (today's numbers), `HabitReminders`, `Preferences` (wake time, bedtime, quiet hours), `DeskStatus`, sun times. The rule engine: `rule_engine.py` checks the rules in `config/protocols.yaml` → `rules` against the object states and the habits logged lately (`HabitEvent`), and `RuleRunner` runs it once every `rule_engine.check_every_sec`, keeps the nudges that are due for the reminders, and checks whether each nudge worked (`rule_outcome`). |
-| `desktalk/core/chat/` | `MessageGenerator` (events → messages, answering you), `MessageHub` (messages → open app pages), `prompts.py` (every prompt), `context.py`, `tracker_actions.py`. `workers/`: `IdleChat`, `LostItems`, `Lens`, `DailySummary`, `VisionHabits`. |
+| `desktalk/core/habits/` | `habit_rules.py` (the book's rules as plain functions), `HabitTracker` (`tracker.py`, the front: the habit buttons and the reminders due), `habit_days.py` (`HabitDay`, one day's numbers, and `HabitDays`, which loads, saves and starts a new day), `habit_reader.py` (reading habits from the detection events), `HabitReminders`, `PreferencesFile` (wake time, bedtime, quiet hours), `DeskStatusService`, sun times. The rule engine: `rule_engine.py` checks the rules in `config/protocols.yaml` → `rules` against the object states and the habits logged lately (`HabitEvent`), and `RuleRunner` (`rule_runner.py`) runs it once every `rule_engine.check_every_sec`, keeps the nudges that are due for the reminders, and checks whether each nudge worked (`rule_outcome`). |
+| `desktalk/core/chat/` | `MessageGenerator` (the front: events → messages, answering you), built from `alert_voice.py`, `nudge_voice.py`, `chat_answers.py` and `memory.py` (the only part that writes what the characters remember). `MessageHub` (messages → open app pages), `prompts.py` (fills in the blanks of the prompts in `config/prompts.yaml`), `names.py` (@mentions and who answers), `history.py`, `live_context.py` (what the AI is told about the desk), `replies.py`, `tracker_actions.py`. `workers/`: `IdleChat`, `LostItems` (with `lost_items_answers.py` and `lost_item_words.py`), `Lens`, `DailySummary`, `VisionHabits`. |
 | `desktalk/adapters/camera/` | `PiFrameSource`, `PhoneFrameSource`, `WebcamSource`, and the pairing key. |
 | `desktalk/adapters/detector/` | `UltralyticsDetector`: YOLO on this computer. |
 | `desktalk/adapters/llm/` | `OpenAICompatibleChatModel` (Gemini / OpenAI / Groq / Ollama) and `ResilientChatModel`, which wraps it with time limits, retries and a breaker. |
+| `desktalk/adapters/picture/` | What's done to pictures, with OpenCV: `OpenCvPictureTools` (decode, encode, shrink, crop, brightness, sharpness ...) and `DeskPainter` (the boxes and desk drawings on the live view, with every color, width and size from settings → `drawing`). |
 | `desktalk/adapters/storage/` | `EventLog` (the files in `data/events/`), `JsonFileStore` (small JSON files, saved all-or-nothing) and `SqliteStateStore` (the object states' history, `object_states.database`). |
-| `desktalk/runtime/` | `Supervisor` (runs the background jobs and starts them again after a crash), `Scheduler`, `SystemClock`, logging. |
-| `desktalk/web/` | FastAPI. `app.py` makes the two servers (the main one, and the phone page's own HTTPS one), `routers/` has the routes by area (`pi`, `phone`, `live`, `video`, `chat`, `habits`, `log`, `settings`, `health`), `schemas.py` the request shapes, `streams.py` SSE and the video, `serve.py` runs uvicorn. |
-| `desktalk/desk_state.py` | `DeskState`: what's on the desk right now, the live view pictures, the proof photos. Still shared directly (passed in, never through an `app` object). |
-| `shared/desktalk_shared/` | Used on the Pi and on this computer, standard library only: `detection.py` (`Detection`, `BBox`), `wire.py` (the upload format), `detector_api.py` (the detector service's requests and replies), `ultralytics_results.py` (YOLO results → `Detection`s, the same on both sides). |
-| `raspberry_pi/camera/` | The camera program: `cameras.py`, `photo_store.py`, `detector_client.py`, `uploader.py`, `health.py`, `watchdog.py`, `self_test.py`, `settings.py`, `main.py`. [README](../raspberry_pi/camera/README.md). |
+| `desktalk/runtime/` | `Supervisor` (runs the background jobs and starts them again after a crash), `Scheduler`, `SystemClock` (the shared one), logging. |
+| `desktalk/web/` | FastAPI. `app.py` makes the two servers (the main one, and the phone page's own HTTPS one), `routers/` has the routes by area (`pi`, `phone`, `live`, `video`, `chat`, `habits`, `log`, `settings`, `health`), `schemas.py` the request and reply shapes, `streams.py` SSE and the video, `serve.py` runs uvicorn. The routes only see the interfaces, plain data and settings on `DeskTalk`. |
+| `shared/desktalk_shared/` | Used on the Pi and on this computer, standard library only: `detection.py` (`Detection`, `BBox`), `wire.py` (the upload format), `detector_api.py` (the detector service's requests and replies), `ultralytics_results.py` (YOLO results → `Detection`s, the same on both sides), `backoff.py` (`Backoff`: the wait after each failure in a row, doubling up to a most), `clock.py` (`SystemClock`, the one real clock), `workers.py` (`WorkerThread`: a job in a thread of its own that starts again after a crash). |
+| `raspberry_pi/camera/` | The camera program: `cli.py` (the command line and loading the settings), `main.py` (the loop: take, save, ask, send), `workers.py` (the threads, and `build_program`, which connects the parts), `cameras.py`, `photo_store.py`, `cleaner.py`, `detector_client.py`, `uploader.py`, `health.py`, `watchdog.py`, `self_test.py`, `settings.py`. [README](../raspberry_pi/camera/README.md). |
 | `raspberry_pi/detector_service/` | The detector service: `Dockerfile`, `compose.yaml`, `.env`, and `desktalk_detector/` (FastAPI: `POST /detect`, `GET /health`, `PUT /model`; converts `.pt` models to ncnn and keeps the last good one). [README](../raspberry_pi/detector_service/README.md). |
 | `benchmarks/` | `deskbench`: times YOLO models on the Mac and on the Pi (in its own Docker image), to pick the Pi's model. [README](../benchmarks/README.md). |
-| `web_app/`, `phone_camera/` | The app's page, and the page a phone opens to be the camera. Unchanged by the new design. |
+| `web_app/`, `phone_camera/` | The app's page, and the page a phone opens to be the camera. They keep no copies of the settings: the app page asks `GET /api/ui_settings` when it opens (refresh times, limits, the palette, Lens's card, how long a chat reply may take) and shows its "can't reach Desk Talk" note until it gets them; the phone page asks `GET /api/phone/config` (picture size and quality). |
 
 There are three uv packages in one workspace with one `uv.lock`: `desktalk` (this folder), `desktalk-shared`
 (`shared/`) and `desktalk-detector` (`raspberry_pi/detector_service/`). The camera program isn't installed
@@ -102,16 +105,18 @@ with uv: it runs on the Pi's own `python3` and finds `desktalk_shared` in the cl
 
 Every part is written against small interfaces (`typing.Protocol`s in `desktalk/ports.py`), never against
 another part's class. A part asks in its constructor for only the interfaces it uses and its own section
-of the settings, for example `Roster(bus, profiles, desk, config.agents, config.presence, on_desk=...)`.
+of the settings, for example `Roster(bus, profiles, scene, config.agents, config.presence, on_desk=...)`.
 `desktalk/bootstrap.py` passes in the real versions; tests pass in the fakes from `tests/fakes/`.
 
 | Interface | What it promises | Real version | Fake for tests |
 |---|---|---|---|
-| `Clock` | `now()`, `monotonic()`, `sleep()` | `SystemClock` | `FakeClock` (you move time by hand) |
+| `Clock` | `now()`, `monotonic()`, `sleep()`, `local_hour(now)`, `local_day(now)` | `SystemClock` (`shared/desktalk_shared/clock.py`) | `FakeClock` (you move time by hand) |
 | `PeriodicWorker` | `name`, `tick(now)` → seconds until the next round | the producer, `Scheduler`, `RuleRunner`, `HabitReminders`, `Lens`, `IdleChat`, `LostItems`, `DailySummary`, `VisionHabits`, `OllamaKeepAlive` | tests call `tick()` themselves |
 | `Detector` | picture → list of `Detection`, or `DetectorUnavailable` with a reason | `UltralyticsDetector` | `FakeDetector` |
 | `FrameSource` | the newest picture, `kind`, `connected`, `fps` | `PiFrameSource`, `PhoneFrameSource`, `WebcamSource` | `FakeFrameSource` |
 | `PictureInbox` | `push(jpeg, info)` for a camera that sends us pictures | `PiFrameSource`, `PhoneFrameSource` | `FakeFrameSource` |
+| `PiUploads`, `PiStatus` | what came with the Pi's newest picture, how far its clock is off; `pi_info()` and `status()` for the pages | `PiFrameSource` | `FakePi` |
+| `PhoneCamera`, `PhoneControls` | the phone's recent tilt, whether you stopped it; `set_motion()` and `mark_stopped()` for the phone routes | `PhoneFrameSource` | `FakePhone` |
 | `EventBus` | publish, subscribe by event class, `wait_idle()`, `stats()` | `EventStream` | `SyncEventBus` |
 | `EventStore` | write, read a day, compact, prune | `EventLog` | `InMemoryEventStore` |
 | `KeyValueStore` | load / save small JSON documents | `JsonFileStore` | `InMemoryKeyValueStore` |
@@ -120,27 +125,55 @@ of the settings, for example `Roster(bus, profiles, desk, config.agents, config.
 | `ChatVoice` | a character's words for a habit reminder | `MessageGenerator` | `FakeChatVoice` |
 | `RosterView` | who's in the chat | `Roster` | `StaticRoster` |
 | `Profiles` | who each detected object becomes | `ProfileBook` | `FakeProfiles` |
-| `HabitsView` | today's habits, the reminders ready to send | `HabitTracker` | `FakeHabits` |
+| `HabitsView`, `HabitLog`, `HabitsLifecycle` | today's habits and the reminders ready to send; logging a habit by hand; saving the day (only `bootstrap` calls it) | `HabitTracker` | `FakeHabits` |
+| `Preferences` | wake time, bedtime, quiet hours | `PreferencesFile` (`core/habits/preferences.py`) | `FakePreferences` |
 | `RuleNudges` | the rule engine's nudges ready to send (`nudges(now)`), and which one went out (`note_fired()`) | `RuleRunner` (`core/habits/rule_runner.py`) | `FakeRuleNudges` |
-| `Preferences` | wake time, bedtime, quiet hours | `Preferences` (`core/habits/preferences.py`) | `FakePreferences` |
-| `DeskStatus` | camera on? someone at the desk? (the person's object state) reminders allowed? | `DeskStatus` (`core/habits/desk_status.py`) | `FakeDeskStatus` |
+| `DeskStatus` | camera on? someone at the desk? (the person's object state) reminders allowed? | `DeskStatusService` (`core/habits/desk_status.py`) | `FakeDeskStatus` |
 | `ObjectStatesView` | each object's state now (`snapshot()`), what changed lately (`changes(since)`) | `ObjectStateTracker` | `FakeObjectStates` |
 | `ObjectStateStore` | the object states' history: add rows, newest state per object, the changes | `SqliteStateStore` | `InMemoryStateStore` |
 | `CameraHealthView`, `PictureCheck` | Lens's checks on the picture | `CameraHealth` | `FakeCameraHealth`, `FakePictureCheck` |
 | `LiveViewPainter` | boxes and desk drawings on the live view | `DeskPainter` | `FakePainter` |
+| `PictureTools` | decode and encode JPEGs, shrink, crop, grey, brightness, glare, sharpness, how much two pictures differ | `OpenCvPictureTools` | `FakePictureTools` |
+| `PhotoTaker` | save a proof photo of the live view, cropped around some boxes | `ProofPhotos` | `FakePhotoTaker` |
+| `DeskLayout`, `DeskRulesView` | the desk outline and the phone's tilt when it was marked; the danger rules in use, saving changes from the Settings page | `SafetyRules` | `FakeDeskRules` |
 
-The background chat jobs need a few more small interfaces, in `desktalk/core/chat/workers/needs.py`:
-`PiUploads` (what came with the Pi's newest picture: `PiFrameSource`), `PhoneCamera` (`PhoneFrameSource`)
-and `DeskLayout` (the desk outline: `SafetyRules`).
+**The desk right now** is five interfaces, one per part in `desktalk/core/desk/`. Each method does its own
+locking, so nobody outside ever holds a lock:
 
-**Contract tests** keep the fakes honest: each interface that talks to the outside world has one test
-suite in `tests/contracts/`, and the fake and every real version run the same suite. The fakes run them in
-`tests/contracts/`, the real versions next to their own tests in `tests/unit/` (for example `TestEventLog`
-runs `EventStoreContract`). The detector service, asked over its HTTP API, passes the same `Detector`
-suite as `UltralyticsDetector`.
+| Interface | What it promises | Real version | Fake for tests |
+|---|---|---|---|
+| `LivePictures` | the newest plain and boxed picture per camera, the camera numbers, the picture size, the light | `LiveView` | `FakeLivePictures` |
+| `DeskScene` | who's on the desk (`SeenObject`s), everything seen, first and last seen, the person, motion, the vision scan's labels | `Scene` | `FakeDeskScene` |
+| `SafetyBoard` | the dangers right now (`SafetyNow`), since when a pair has been a danger, the latest alerts | `DangerBoard` | `FakeSafetyBoard` |
+| `CharacterMemory` | what each character said lately, the tracker panels, when you last typed, the vision brief | `Memories` | `FakeCharacterMemory` |
+| `PhotoAlbum` | add a proof photo, get one, the newest ones | `Album` | `FakePhotoAlbum` |
+
+A part asks only for the desk interfaces it uses (the roster gets `scene`, idle chat gets `character_memory`).
+The producer, proof photos, the desk monitor, the desk status, lost items, the message generator and the
+vision checks still ask for several at once; `bootstrap.py` gives them a `WholeDesk`, which keeps nothing
+itself and passes each call on to the part that owns it.
+
+The last section of `ports.py` is what the web layer asks of the running app, so a route only sees what it
+may call: `ChatFeed` (`MessageHub`), `ChatReplies` (`MessageGenerator`), `RosterList` (`Roster`),
+`CameraTips` (`CameraHealth`), `DetectionStats` (the producer), `LostItemsView`, `VisionHabitsView`,
+`HabitTracking` (`HabitTracker`), `ScheduledJobs` (`Scheduler`) and `Jobs` (`Supervisor`). `DeskTalk`
+in `bootstrap.py` types its fields with these (and with `ObjectStates`, in `bootstrap.py` itself: the
+`ObjectStatesView` plus `save_snapshot()`, which only the scheduler and `stop()` call).
+
+**Contract tests** keep the fakes honest: each interface that talks to the outside world, and each desk
+interface, has one test suite in `tests/contracts/`, and the fake and every real version run the same
+suite. The fakes run them in `tests/contracts/`; the real versions run them there too
+(`test_desk_parts_contracts.py`, `test_real_parts_pass_new_contracts.py`, `test_opencv_picture_tools.py`)
+or next to their own tests in `tests/unit/` (for example `TestEventLog` runs `EventStoreContract`). The
+detector service, asked over its HTTP API, passes the same `Detector` suite as `UltralyticsDetector`.
+
+`tests/unit/test_layers.py` checks the layers: `desktalk/core/` and `desktalk/domain/` import no OpenCV,
+numpy, web or AI libraries (and nothing from `adapters/`, `web/`, `runtime/` or `bootstrap`), and
+`desktalk/web/` imports only interfaces, plain data, settings and the app.
 
 The Pi's two programs are built the same way, with their own small pieces: the camera program's
-`main.py` puts together a camera, a `DetectorClient`, an `Uploader`, a `HealthReader` and a `Watchdog`;
+`workers.py` (`build_program`) puts together a camera, a `PhotoStore`, a `DetectorClient`, an `Uploader`,
+a `HealthReader`, a `Watchdog` and a `Cleaner`, and `cli.py` reads the flags and the settings and starts it;
 the detector service's `desktalk_detector/bootstrap.py` puts together its model folder, model manager and
 web API.
 
@@ -231,7 +264,7 @@ in the app shows the intervals as a timeline, plus the other events.
 
 The rest of `data/` (settings → `storage.folder`, kept by `JsonFileStore`): `preferences.json`,
 `habits/<day>.json`, `learned_personalities.json`, `daily_summary.json`. The log file is
-`data/logs/desktalk.log` (settings → `logging`).
+`data/logs/desktalk.log` (settings → `logging.folder` and `logging.file_name`).
 
 The pictures themselves stay on the Pi and are deleted every 10 minutes (`pi.delete_every_min`). This
 computer keeps only a few proof photos in memory.
@@ -243,7 +276,8 @@ round and returns how many seconds to wait before the next. It never starts a th
 
 The `Supervisor` (`desktalk/runtime/supervisor.py`) runs each job in its own thread. When a round raises,
 it logs the error with the job's name and tries again after `supervisor.restart_start_sec` (1 s), then
-twice that, up to `supervisor.restart_max_sec` (60 s). One good round starts the count over. It never gives
+twice that, up to `supervisor.restart_max_sec` (60 s). One good round starts the count over. (The waits come
+from `Backoff` in `shared/desktalk_shared/backoff.py`, the same one the Pi's uploader and detector client use.) It never gives
 up, so one bad AI reply can't switch a feature off until the app restarts. `GET /api/health` → `jobs`
 shows each job: running, waiting after an error, or stopped, with its failures and last error.
 
@@ -270,11 +304,14 @@ handler raises is logged and counted (`/api/health` → `events`), and keeps goi
 **Starting and stopping.** The main web server's FastAPI "lifespan" (`desktalk/web/app.py`) calls
 `desktalk.start()` when it starts and `desktalk.stop()` when it stops. `stop()` goes in this order: stop
 the jobs, let the consumers finish the events still waiting, save the object states, save today's habits,
-compact the event log, close the event stream (and let go of a webcam), close the object states database. A step that fails is logged and the rest still happen.
+compact the event log, close the event stream (and let go of a webcam), close the object states database.
+A step that fails is logged and the rest still happen.
 
 **On the Pi**, the camera program has a few threads of its own (the detector worker, the uploader, the
-settings watcher), so a slow container or Wi-Fi never holds up the camera. A fourth, the watchdog, ends the
-program when the camera stops giving pictures, so systemd starts it again. The container is started again
+settings watcher, the cleaner that deletes old pictures), so a slow container, Wi-Fi or SD card never holds
+up the camera. Another, the watchdog, ends the program when the camera stops giving pictures, so systemd
+starts it again. Each is a `WorkerThread` (`shared/desktalk_shared/workers.py`): one that crashes is logged
+and goes on after `pi.pause_after_error_sec`. The container is started again
 by Docker (`restart: unless-stopped`).
 
 ## When something fails
@@ -305,15 +342,22 @@ computer; `journalctl -u desk-talk-camera` and `docker compose logs` on the Pi).
 
 ## Settings
 
-`desktalk/config.py` reads, in this order (later wins):
+`desktalk/config/` reads, in this order (later wins):
 
 ```
 config/settings.yaml  →  config/settings.local.yaml (yours, not in git)  →  a few model names from .env
 ```
 
-plus `config/agents.yaml`, `config/protocols.yaml` and the AI keys from `.env` (hidden when printed). The
-result is one read-only `AppConfig` with a typed section per area (`config.camera`, `config.pi`,
-`config.supervisor` ...). Each part gets only its own section, so it can't depend on the rest.
+plus `config/agents.yaml`, `config/protocols.yaml`, `config/prompts.yaml` and the AI keys from `.env`
+(hidden when printed). The result is one read-only `AppConfig` with a typed section per area
+(`config.camera`, `config.pi`, `config.supervisor`, `config.prompts` ...). Each part gets only its own
+section, so it can't depend on the rest.
+
+**Wording lives in `config/prompts.yaml`**: every prompt the AI gets, Lens's wording, the habit nudges and
+tips, the desk alerts and the fixed replies. The code only fills in the blanks (`{on_waking_ml}`,
+`{break_min}` ...), and the numbers in them come from the settings. Each text may only use the blanks its
+code fills in (`BLANKS` in `desktalk/config/prompts.py`); an unknown blank stops the start with the text's
+name, and `tests/unit/test_prompts.py` checks every one.
 
 A missing, misspelled or bad setting **stops the start** with a message that names the file, the setting
 and what's wrong, for example:
@@ -324,13 +368,14 @@ config/settings.local.yaml: camera.fps must be a number above 0 (got "fast")
 ```
 
 What each setting means is in the comments of `config/settings.yaml`. New numbers go there, with a plain
-comment, and get a typed field in `desktalk/config.py`.
+comment, and get a typed field in `desktalk/config/app.py`.
 
 On the Pi, the camera program reads the `pi:` section: first the copy of `config/settings.yaml` in the
 repo on the Pi, then what your computer sends (`/api/pi/config`, asked again every
 `pi.settings_check_every_sec`), then its command-line flags. New `pi.detector` settings go to the
 container right away (`PUT /model`); anything else needs the camera program restarted. The container's own
-settings (port, memory limit, retry waits) are in `raspberry_pi/detector_service/.env`.
+settings (port, memory limit, retry waits, Docker's health check, log file sizes) are in
+`raspberry_pi/detector_service/.env`.
 
 ## Tests
 
@@ -342,7 +387,8 @@ settings (port, memory limit, retry waits) are in `raspberry_pi/detector_service
 | `tests/characterization/` | Every route of both web servers: status code, content type, a few headers and the JSON shape, saved in `snapshots/`. `test_route_coverage.py` fails for a route without a case in `cases.py`. Re-record a snapshot you changed on purpose with `DESKTALK_RECORD_SNAPSHOTS=1`, and check the diff. | nothing |
 | `tests/slow/` and other `-m slow` tests | The real YOLO model: the ncnn model finds the same objects as the `.pt`, the detector service with a real model. Skipped when the model files aren't in `models/`. | model files |
 | `tests/docker/` | Builds the detector's image, starts it with `docker compose`, checks `/health`, `/detect`, the `127.0.0.1` port and the memory limit (`-m docker`, opt-in). | Docker, the internet |
-| `tests/fakes/` | The fakes (see the interface table). | |
+| `tests/e2e/` | The real app page in a headless Chromium (`-m e2e`, opt-in), against the whole app on a real web server with a fake detector and a fake AI (`tests/e2e_kit/server.py`): the page opens, a bottle joins the chat, a chat reply, a habit button, the page coming back after the server restarts, the demo without a server. Skipped when Chromium isn't installed. `test_full_stack.py` (`-m docker`) runs the camera program → the detector container → the server. | Chromium (`uv run playwright install chromium`, once); Docker for the full stack |
+| `tests/fakes/` | The fakes (see the interface tables). | |
 
 **On your Mac**, in the `desk-talk` folder:
 
@@ -351,12 +397,20 @@ uv sync --all-packages
 uv run pytest -m "not slow"                # the fast tests (what you run most)
 uv run pytest tests/characterization       # just the routes
 uv run pytest -m slow                      # the real model
-uv run pytest -m docker tests/docker       # the detector's Docker image
+uv run pytest -m e2e                       # the real page in a browser (uv run playwright install chromium, once)
+uv run pytest -m docker                    # the detector's Docker image, and the full stack through it
+uv run ruff check .                        # lint
+uv run pyright                             # types: 0 errors
+uv run vulture                             # dead code: prints nothing
 ```
 
-GitHub runs `uv run ruff check .` and `uv run pytest -m "not slow and not docker"` on every push and pull
-request (`.github/workflows/tests.yml`). The default test run never needs the network, an API key, a
-camera, a Pi or Docker.
+GitHub runs `uv run ruff check .`, `uv run pyright`, `uv run vulture --min-confidence 80` and
+`uv run pytest -m "not slow and not docker and not e2e" --cov` on every push and pull request
+(`.github/workflows/tests.yml`). `--cov` fails the run when the tests cover less than `fail_under` in
+`pyproject.toml` (branches counted too); it may only go up. `pyrightconfig.json` lists the files that had
+type errors when pyright was switched on; the list only gets shorter. `tests/vulture_allow.py` lists the
+names vulture can't see being used, each with what uses it. The default test run never needs the network,
+an API key, a camera, a Pi, Docker or a browser.
 
 ## Agents
 

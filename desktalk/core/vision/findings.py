@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 from desktalk.core.vision.geometry import Box, Point
+from desktalk.domain import SeenObject
 
 
 @dataclass(frozen=True)
@@ -19,14 +19,14 @@ class Thing:
     center: Point
 
     @classmethod
-    def from_desk(cls, agent_id: str, obj: Mapping[str, Any]) -> Thing:
-        """From DeskState.objects: {class_name, bbox, center, ...}."""
-        return cls(agent_id, obj['class_name'], tuple(obj['bbox']), tuple(obj['center']))
+    def from_seen(cls, agent_id: str, seen: SeenObject) -> Thing:
+        """From the desk scene (DeskScene.members)."""
+        return cls(agent_id, seen.label, seen.box, seen.center)
 
 
 @dataclass
 class Findings:
-    """What the checks found, in the shape the app and the AI have always read (DeskState.rel_result):
+    """What the checks found, in the shape the app and the AI have always read (SafetyNow.result):
     risk events, relationships (what the live view draws) and explanations (plain sentences)."""
 
     risk_events: list[dict[str, Any]] = field(default_factory=list)

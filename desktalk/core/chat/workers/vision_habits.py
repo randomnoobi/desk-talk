@@ -7,7 +7,7 @@ distance and a phone in hand. Long slouching stretches and nail biting go in the
 waits vision_habits.repeat_after_sec before it's sent again.
 
     vision_habits = VisionHabits(ollama_or_none, bus, desk, roster, profiles, desk_status, config.vision_habits, clock,
-                                 proof_photos)
+                                 proof_photos, prompts=config.prompts.vision)
     supervisor.add(vision_habits, start_after=config.vision_habits.start_delay_sec)
     vision_habits.summary(), .events(), .latest()       # for the web routes
 """
@@ -17,31 +17,37 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from desktalk.config import VisionHabitsSettings
+from desktalk.config.prompts import VisionPrompts
 from desktalk.core.agents.speakers import speaker_for
-from desktalk.core.chat import prompts
 from desktalk.core.chat.workers.ai import look
 from desktalk.core.chat.workers.text import json_in
-from desktalk.core.vision.proof_photos import ProofPhotos
-from desktalk.desk_state import DeskState
 from desktalk.domain import Alert
-from desktalk.ports import ChatModel, Clock, DeskStatus, EventBus, Profiles, RosterView
-from desktalk.util import local_day
+from desktalk.ports import (
+    CharacterMemory,
+    ChatModel,
+    Clock,
+    DeskStatus,
+    EventBus,
+    LivePictures,
+    PhotoTaker,
+    Profiles,
+    RosterView,
+)
 
 log = logging.getLogger(__name__)
 
 BRIEF_KEYS = ('posture', 'phone', 'attention')      # what the chat's AI is told about the last look
-# Nudges, in order of importance: what was seen → (the habit whose agent says it, the text)
-NUDGES = {
-    'too_close': ('screens', "You've been leaning really close to my screen for a bit. "
-                             "Could you sit back a little? Your eyes will thank you."),
-    'slouch': ('screens', "The camera has seen you slouching for a couple of minutes. "
-                          "Quick reset? Shoulders back, chin level."),
-    'phone': ('phone_free', "I keep seeing your phone in your hand. If you're trying to focus, "
-                            "maybe put it in another room for 20 minutes?"),
-}
+# Nudges, in order of importance: what was seen → the habit whose agent says it (the words: prompts → vision.nudges)
+NUDGE_HABITS = {'too_close': 'screens', 'slouch': 'screens', 'phone': 'phone_free'}
+
+
+@runtime_checkable
+class VisionDesk(LivePictures, CharacterMemory, Protocol):
+    """What the vision checks use of the desk: the newest picture, and the last check in a few words for the
+    chat's AI. (bootstrap passes WholeDesk from desktalk/core/desk/, which is both.)"""
 
 
 def _seen(answer: dict[str, Any]) -> dict[str, bool]:
@@ -58,9 +64,10 @@ class VisionHabits:
 
     name = 'vision habits'
 
-    def __init__(self, vision: ChatModel | None, bus: EventBus, desk: DeskState, roster: RosterView,
+    def __init__(self, vision: ChatModel | None, bus: EventBus, desk: VisionDesk, roster: RosterView,
                  profiles: Profiles, status: DeskStatus, settings: VisionHabitsSettings, clock: Clock,
-                 photos: ProofPhotos):
+                 photos: PhotoTaker, *, prompts: VisionPrompts):
+        """`prompts`: config/prompts.yaml → vision (the question about the picture and the nudges' words)."""
         self._vision = vision
         self._bus = bus
         self._desk = desk
@@ -70,6 +77,7 @@ class VisionHabits:
         self._settings = settings
         self._clock = clock
         self._photos = photos
+        self._words = prompts
         self._every = max(settings.min_every_sec, settings.every_sec)
         self._lock = threading.Lock()                # the web routes read the log and the summary
         self._latest: dict[str, Any] = {}
@@ -85,11 +93,15 @@ class VisionHabits:
     def summary(self) -> dict[str, int]:
         """Today's slouching (seconds, including a slouch going on right now) and nail biting (times)."""
         now = self._clock.now()
-        today = local_day(now)
+        today = self._clock.local_day(now)
+
+        def on_today(entry: dict[str, Any]) -> bool:
+            return self._clock.local_day(entry['ts']) == today
+
         with self._lock:
             posture = sum(int(e.get('duration_sec') or 0) for e in self._log
-                          if e['category'] == 'posture_bad' and local_day(e['ts']) == today)
-            nails = sum(1 for e in self._log if e['category'] == 'nail_biting' and local_day(e['ts']) == today)
+                          if e['category'] == 'posture_bad' and on_today(e))
+            nails = sum(1 for e in self._log if e['category'] == 'nail_biting' and on_today(e))
             ongoing = max(0.0, now - self._slouch_since) if self._slouch_since is not None else 0.0
         return {'posture_bad_seconds_today': int(posture + ongoing), 'nail_biting_count_today': nails,
                 'ongoing_slouch_seconds': int(ongoing)}
@@ -109,20 +121,17 @@ class VisionHabits:
         if self._vision is None:
             return self._every
         if not self._status.user_active(now):            # nobody at the desk: don't spend an AI call
-            self._end_slouch(now, 'until you left the desk')   # a slouch doesn't go on while you're away
+            self._end_slouch(now, self._words.log.slouch_left_detail)     # a slouch doesn't go on while you're away
             return self._every
-        with self._desk.lock:
-            on = self._desk.active_scenarios.get('reminders', True)
-            jpeg = self._desk.first_raw_frame() if on else None
-        answer = json_in(look(self._vision, jpeg, prompts.HABIT_SCENE_VLM_PROMPT, background=True,
+        jpeg = self._desk.plain()
+        answer = json_in(look(self._vision, jpeg, self._words.habit_scene, background=True,
                               what='the posture check'))
         if answer is None:
             return self._every
         brief = ', '.join(f'{k}={v}' for k, v in answer.items() if k in BRIEF_KEYS)
         with self._lock:
             self._latest, self._latest_ts = dict(answer), now
-        with self._desk.lock:
-            self._desk.vision_habit_brief = brief
+        self._desk.set_vision_brief(brief)
         self._log_habits(answer, now)
         self._maybe_nudge(answer, now)
         return self._every
@@ -132,7 +141,7 @@ class VisionHabits:
         posture = str(answer.get('posture') or '').lower()
         nails = bool(answer.get('nail_biting') or answer.get('nails_hand_to_mouth'))
         if posture == 'good':
-            self._end_slouch(now, 'until your posture looked neutral again')
+            self._end_slouch(now, self._words.log.slouch_detail)
         with self._lock:
             if posture == 'slouch' and self._slouch_since is None:
                 self._slouch_since = now
@@ -142,22 +151,23 @@ class VisionHabits:
                 self._nails_logged_at = now
             self._nails_before = nails
         if nails_started:
-            photo = self._photos.save('Habit: nail biting')
-            self._add('nail_biting', 'Nail biting noticed', now, snapshot_id=photo,
-                      detail='The vision check saw nail biting, or a hand at your mouth near your nails.')
+            w = self._words.log
+            photo = self._photos.save(w.nails_photo)
+            self._add('nail_biting', w.nails_title, now, snapshot_id=photo, detail=w.nails_detail)
 
-    def _end_slouch(self, now: float, until: str) -> None:
-        """End a slouching stretch that's going on, at `now`, and log it if it was long enough.
-        `until` says why it ended, for the log entry."""
+    def _end_slouch(self, now: float, detail: str) -> None:
+        """End a slouching stretch that's going on, at `now` (good posture again, or you left the desk), and log
+        it if it was long enough."""
         with self._lock:
             start, self._slouch_since = self._slouch_since, None
         if start is None or now - start < self._settings.slouch_log_min_sec:
             return
         slouched = int(now - start)
         minutes = max(1, round(slouched / 60))
-        photo = self._photos.save(f'Posture: ~{minutes}m slouch')
-        self._add('posture_bad', f'Poor posture ~{minutes} min', now, duration_sec=slouched, snapshot_id=photo,
-                  detail=f'The desk camera saw a slouched stretch {until}.')
+        w = self._words.log
+        photo = self._photos.save(w.slouch_photo.format(minutes=minutes))
+        self._add('posture_bad', w.slouch_title.format(minutes=minutes), now, duration_sec=slouched,
+                  snapshot_id=photo, detail=detail)
 
     def _add(self, category: str, title: str, now: float, *, detail: str, duration_sec: int | None = None,
              snapshot_id: str | None = None) -> None:
@@ -178,12 +188,12 @@ class VisionHabits:
         if not self._status.warm(now):
             return
         repeats = self._settings.repeat_after_sec
-        for key, (habit, text) in NUDGES.items():
+        for key, habit in NUDGE_HABITS.items():
             last = self._nudged_at.get(key)
             if not (seen[key] and before.get(key)) or (last is not None and now - last < getattr(repeats, key)):
                 continue
             self._nudged_at[key] = now
             speaker = speaker_for((habit, 'tasks'), self._roster.member_ids(), self._profiles)
             self._bus.publish(Alert(ts=now, kind='scenario', scenario='reminders', feature=f'vision_{key}',
-                                    agent=speaker, text=text))
+                                    agent=speaker, text=getattr(self._words.nudges, key)))
             return      # one nudge at a time

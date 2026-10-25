@@ -99,6 +99,9 @@ food:
   enabled: true
   remind_after_min: 20        # food sitting on the desk this long → "eat it or move it"
   repeat_after_hours: 6
+  # Food the camera sees (or you log) that counts as healthy; anything else counts as a treat.
+  healthy: [banana, apple, orange, broccoli, carrot, pear, peach, strawberry, grapes, tangerine, nuts,
+            kiwi fruit, cucumber, tomato, avocado, mango, cherry, plum, lettuce, green vegetables]
 
 tasks:
   enabled: true

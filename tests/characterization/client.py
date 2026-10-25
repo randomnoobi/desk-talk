@@ -147,5 +147,6 @@ class WebClient:
         for context in iter_route_contexts(self._app.routes):
             match, _ = context.route.matches(scope)
             if match is Match.FULL:
-                return (method, f'{context.path}/{FILES}' if isinstance(context.route, Mount) else context.path)
+                rule = context.path or ''
+                return (method, f'{rule}/{FILES}' if isinstance(context.route, Mount) else rule)
         return None

@@ -60,16 +60,6 @@ def test_the_latest_picture_and_proof_photos_are_served(tmp_path):
     assert client.get('/api/snapshot/nope').status_code == 404
 
 
-def test_the_safety_pipeline_can_set_the_safety_state(tmp_path):
-    rig = DeskRig(tmp_path)
-    client = web_client(rig.app)
-    pairs = [{'objects': ['cup', 'laptop'], 'distance_px': 42.5}]
-    assert client.post('/api/safety', json={'type': 'danger_alert', 'pairs': pairs}).json() == {'ok': True}
-    assert client.get('/api/safety').json()['state'] == 'DANGEROUS'
-    client.post('/api/safety', json={'type': 'safe_status'})
-    assert client.get('/api/safety').json()['dangers'] == []
-
-
 # ── chat ─────────────────────────────────────────────────────────────
 def test_a_one_on_one_reply_logs_the_habit_the_ai_asked_for(tmp_path):
     rig = DeskRig(tmp_path, ai_reply=fake_ai)
@@ -77,7 +67,7 @@ def test_a_one_on_one_reply_logs_the_habit_the_ai_asked_for(tmp_path):
     reply = web_client(rig.app).post('/api/chat', json={'chat': 'cup', 'message': 'I just drank some water'}).json()
     assert reply['messages'] == [{'character': 'cup', 'text': 'Splash, nice one!'}]
     assert reply['habits_changed'] is True
-    assert rig.app.habits.today()['hydration']['sips'] == 1
+    assert rig.app.habits.today(rig.clock.now())['hydration']['sips'] == 1
     system = rig.ai_clients[0].requests[-1]['messages'][0]['content']
     assert 'You are Cup' in system and 'LIVE DESK STATUS' in system
 
@@ -108,7 +98,7 @@ def test_typing_and_chatting_hold_off_the_small_talk(tmp_path):
     rig.clock.advance(30)
     reply = web_client(rig.app).post('/api/activity', content=b'', headers={'Content-Type': 'text/plain'})
     assert (reply.status_code, reply.content) == (204, b'')
-    assert rig.app.desk.last_user_activity == rig.clock.now()
+    assert rig.app.character_memory.user_active_at() == rig.clock.now()
 
 
 def test_a_lost_item_question_says_where_it_was_seen(tmp_path):
@@ -150,7 +140,7 @@ def test_preferences_change_and_the_old_names_still_work(tmp_path):
     assert reply['preferences']['wake_time'] == '06:30' and reply['preferences']['quiet_enabled'] is True
     bad = client.put('/api/preferences', json={'wake_time': 'noon'})
     assert bad.status_code == 400 and 'noon' in bad.json()['error']
-    old = client.put('/api/habit_policy', json={'dnd_enabled': False, 'dnd_start_hour': 21}).json()
+    old = client.put('/api/preferences', json={'dnd_enabled': False, 'dnd_start_hour': 21}).json()
     assert (old['preferences']['quiet_enabled'], old['preferences']['quiet_start_hour']) == (False, 21)
     assert rig.app.store.load('preferences')['wake_time'] == '06:30'
     assert client.get('/api/preferences').json()['min_gap_sec'] == rig.config.reminders.min_gap_sec
@@ -213,16 +203,108 @@ def test_marking_the_desk_corners_saves_them_in_the_rules(tmp_path):
     assert client.get('/api/rules').json()['desk_outline'] == saved['desk_outline']
 
 
-def test_scenarios_list_the_lost_items_seen(tmp_path):
+
+def test_ui_settings_reply(tmp_path):
+    """GET /api/ui_settings: the numbers and words the app page used to keep its own copies of."""
     rig = DeskRig(tmp_path)
-    rig.watch(2, KEY)
-    rig.clock.advance(30)
-    scenarios = web_client(rig.app).get('/api/scenarios').json()
-    assert scenarios['lost_objects']['keys']['last_seen_ago_sec'] == 30
-    assert scenarios['lost_items']['keys'] == {'name': rig.config.lost_items.items['keys'].name}
+    c = rig.config
+    ui = web_client(rig.app).get('/api/ui_settings').json()
+    assert ui['web']['refresh_ms'] == {'live': 1500, 'habits': 15000, 'photos': 10000, 'log': 20000}
+    assert (ui['web']['request_timeout_ms'], ui['web']['toast_ms'], ui['web']['activity_ping_ms']) == (8000, 4000, 3000)
+    assert (ui['web']['log_shown'], ui['web']['photos_shown'], ui['web']['habit_log_shown']) == (150, 6, 40)
+    assert ui['web']['palette'][-1] == 'ink'
+    assert (ui['web']['chat_kept'], ui['web']['chat_saved'], ui['web']['left_chat_shown_min']) == (200, 60, 60)
+    assert ui['web']['settings_sliders'] == {'zone': {'min': 10, 'max': 200}, 'warn': {'min': 20, 'max': 200},
+                                             'alert': {'min': 10, 'max': 120}}
+    assert ui['web']['new_zone_px'] == 60
+    assert ui['chat'] == {'message_max_chars': 1200, 'history_from_app': 10, 'todo_max_items': 20,
+                          'todo_max_chars': 200}
+    assert ui['habits']['sunlight_default_min'] == 10
+    assert ui['habits']['morning_minutes'] == {'clear': 10, 'partly_cloudy': 20, 'overcast': 30}
+    assert ui['habits']['breaks']['sit_limit_min'] == c.protocols.breaks.sit_limit_min
+    assert (ui['habits']['morning_window_min'], ui['habits']['evening_dim_before_bed_min'],
+            ui['habits']['stop_before_bed_hours']) == (60, 60, 2)
+    assert ui['desk']['edge_proximity']['danger_px'] == 35 and ui['desk']['max_desk_corners'] == 12
+    assert ui['desk']['desk_border_share'] == 0.03 and ui['desk']['min_desk_corners'] == 3
+    assert ui['quiet_hours'] == {'enabled': False, 'start_hour': 22, 'end_hour': 7}
+    assert ui['pi'] == {'fps': 3, 'delete_every_min': 10, 'compact_every_min': 10}
+    assert ui['phone'] == {'fps': 3, 'max_side': 960, 'jpeg_quality': 70, 'tilt_max': 50,
+                           'capture_width': 1280, 'capture_height': 720}
+    assert ui['lens_card'] == {'id': 'lens', 'name': 'Lens', 'art': 'art/lens.svg', 'color': 'coral',
+                               'about': 'The camera. Speaks up when the view needs fixing.'}
+    assert ui['chat_reply_timeout_ms'] > ui['web']['request_timeout_ms']
+
+
+NO_CAP_MS = 10 ** 9   # a cap so high the tests above see the worked-out wait itself
+
+
+def test_ui_chat_timeout_covers_the_slowest_server_reply(tmp_path):
+    """The page waits for a chat reply as long as the server may keep trying the AI (Ollama loading a model
+    can take its whole 90 s, three times), so it never gives up while the server is still on a try."""
+    config = changed(desk_config(tmp_path), 'llm', ollama_timeout_sec=90, max_retries=3, timeout_sec=30)
+    config = changed(config, 'web', chat_reply_max_ms=NO_CAP_MS)
+    ui = web_client(DeskRig(tmp_path, config=config).app).get('/api/ui_settings').json()
+    assert ui['chat_reply_timeout_ms'] >= 270_000
+    slower = changed(config, 'llm', ollama_timeout_sec=120)
+    assert web_client(DeskRig(tmp_path / 'b', config=slower).app).get('/api/ui_settings').json()[
+        'chat_reply_timeout_ms'] > ui['chat_reply_timeout_ms']
+
+
+def test_ui_chat_timeout_covers_every_ai_call_one_message_can_make(tmp_path):
+    """One chat message can make several AI calls in a row: a group message asks each agent it names in turn
+    (at most agents.max_agents), and a lost-item question can look twice for each item and then ask the chat AI.
+    The page waits for the most of those."""
+    config = changed(desk_config(tmp_path), 'agents', max_agents=3)
+    config = changed(config, 'lost_items', items={})
+    config = changed(config, 'web', chat_reply_max_ms=NO_CAP_MS)
+    one_call_ms = round(config.llm.longest_reply_sec() * 1000)
+    request_ms = config.web.request_timeout_ms
+
+    def wait(c, folder):
+        return web_client(DeskRig(tmp_path / folder, config=c).app).get('/api/ui_settings').json()[
+            'chat_reply_timeout_ms']
+
+    assert wait(config, 'a') == 3 * one_call_ms + request_ms                     # three agents, one after another
+    four_items = desk_config(tmp_path / 'full').lost_items.items
+    assert len(four_items) == 4
+    more_items = changed(config, 'lost_items', items=four_items)
+    assert wait(more_items, 'b') == (2 * 4 + 1) * one_call_ms + request_ms       # two looks per item, then the answer
+
+
+def test_ui_chat_timeout_stops_at_the_cap(tmp_path):
+    """The worst case (every agent, every try) can add up to over an hour, which looks like a frozen page. The
+    page stops waiting at web.chat_reply_max_ms and shows the error, unless the worked-out wait is shorter."""
+    config = changed(desk_config(tmp_path), 'web', chat_reply_max_ms=180_000)
+
+    def wait(c, folder):
+        return web_client(DeskRig(tmp_path / folder, config=c).app).get('/api/ui_settings').json()[
+            'chat_reply_timeout_ms']
+
+    assert wait(config, 'a') == 180_000
+    quick = changed(config, 'llm', ollama_timeout_sec=1, timeout_sec=1, max_retries=1, min_interval_sec=0)
+    quick = changed(quick, 'agents', max_agents=1)
+    assert wait(quick, 'b') < 180_000
 
 
 # ── what every reply has in common ───────────────────────────────────
+# Routes nothing called, taken out in the 2026-10 cleanup. They answer like any path the server doesn't know:
+# 404 to a GET, and 405 to anything else (only the page's files are left at that path, and they only GET).
+REMOVED_ROUTES = (
+    ('GET', '/api/context'), ('GET', '/api/daily_stats'), ('GET', '/api/habit_policy'), ('PUT', '/api/habit_policy'),
+    ('GET', '/api/detections'), ('GET', '/api/safety'), ('POST', '/api/safety'), ('GET', '/api/scenarios'),
+    ('GET', '/api/phone/info'), ('GET', '/api/video_feed'), ('GET', '/api/latest_frame/0'),
+)
+
+
+def test_removed_routes_answer_404(tmp_path):
+    rig = DeskRig(tmp_path)
+    rig.watch(1, LAPTOP)                        # a picture, so a video route that is still there would answer
+    client = web_client(rig.app)
+    for method, path in REMOVED_ROUTES:
+        reply = client.request(method, path, json={} if method != 'GET' else None)
+        assert reply.status_code == (404 if method == 'GET' else 405), f'{method} {path}'
+
+
 def test_errors_say_error_not_detail_and_every_reply_allows_any_page(tmp_path):
     client = web_client(DeskRig(tmp_path).app)
     missing = client.get('/api/nothing-here')
@@ -265,13 +347,13 @@ def test_the_browser_app_is_served_and_always_checked_again(tmp_path):
     assert client.get('/no-such-file.js').status_code == 404
 
 
-def test_the_phone_info_shows_the_link_only_on_this_computer(tmp_path):
+def test_the_phone_link_shows_only_on_this_computer(tmp_path):
     rig = DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'camera', source='phone'))
     web = create_app(rig.app, links_for(rig.app, phone_page=True))
-    here = web_client(web).get('/api/phone/info').json()
+    here = web_client(web).get('/api/live?qr=1').json()['phone']
     assert here['url'] == f'https://192.168.1.20:{rig.config.camera.phone_port}/phone?key={PAIR_KEY}'
     assert here['qr_svg'].startswith('<svg')
-    there = web_client(web, from_ip=ON_THE_WIFI).get('/api/phone/info').json()
+    there = web_client(web, from_ip=ON_THE_WIFI).get('/api/live?qr=1').json()['phone']
     assert (there['url'], there['qr_svg']) == ('', None)
 
 
@@ -281,6 +363,5 @@ def test_the_agents_lens_the_status_and_the_recent_messages_have_their_values(tm
     client = web_client(rig.app)
     assert client.get('/api/agents').json()['lens']['name'] == 'Lens'
     assert client.get('/api/status').json()['agents'] == ['computer']
-    assert client.get('/api/context').json()['mention_options']
     assert client.get('/api/messages/recent').json()['messages'][0]['text'] == 'Computer joined the chat'
     assert client.get('/api/habit_log').json()['summary']['breaks_today'] == 0

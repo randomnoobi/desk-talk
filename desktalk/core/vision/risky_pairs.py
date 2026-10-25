@@ -11,10 +11,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 
+from desktalk.config.prompts import DeskCheckWords
 from desktalk.core.vision.danger_zones import Pair
 from desktalk.core.vision.findings import Findings, Thing
 from desktalk.core.vision.geometry import distance, point_segment_distance
-from desktalk.core.vision.rules import DeskRules
+from desktalk.domain import DeskRules
 
 
 def harmless_pair(rules: DeskRules, a: str, b: str) -> bool:
@@ -27,7 +28,8 @@ def _harmless_crowd(rules: DeskRules, labels: Iterable[str]) -> bool:
     return all((label or '').strip().lower() in rules.harmless_crowd for label in labels)
 
 
-def things_in_between(things: Mapping[str, Thing], pairs: Iterable[Pair], rules: DeskRules) -> Findings:
+def things_in_between(things: Mapping[str, Thing], pairs: Iterable[Pair], rules: DeskRules, *,
+                      words: DeskCheckWords) -> Findings:
     """A thing close to the path between a danger pair (closer than rules.path_ratio of the path's length)."""
     found = Findings()
     seen = set()
@@ -47,11 +49,11 @@ def things_in_between(things: Mapping[str, Thing], pairs: Iterable[Pair], rules:
             found.add({'type': 'chain_reaction', 'chain': [a, c.id, b], 'mediator': c.id, 'mediator_class': c.label,
                        'endpoints': [things[a].label, things[b].label], 'distance_to_path': round(gap, 1)},
                       {'type': 'chain_reaction', 'severity': 'high', 'chain': [a, c.id, b]},
-                      f'{c.label} lies between {things[a].label} and {things[b].label} — chain reaction risk')
+                      words.in_between.format(middle=c.label, a=things[a].label, b=things[b].label))
     return found
 
 
-def crowds(things: Mapping[str, Thing], rules: DeskRules) -> Findings:
+def crowds(things: Mapping[str, Thing], rules: DeskRules, *, words: DeskCheckWords) -> Findings:
     """At least rules.crowd_min_objects things within rules.crowd_radius_px of one of them."""
     found = Findings()
     seen = set()
@@ -68,11 +70,12 @@ def crowds(things: Mapping[str, Thing], rules: DeskRules) -> Findings:
             continue
         found.add({'type': 'crowd', 'cluster': cluster, 'count': len(cluster)},
                   {'type': 'crowd', 'severity': 'warning', 'cluster': list(cluster)},
-                  f"{len(cluster)} objects crowded together ({', '.join(labels)}) — instability risk")
+                  words.crowd.format(count=len(cluster), labels=', '.join(labels)))
     return found
 
 
-def approaching(things: Mapping[str, Thing], before: Mapping[str, Thing], rules: DeskRules) -> Findings:
+def approaching(things: Mapping[str, Thing], before: Mapping[str, Thing], rules: DeskRules, *,
+                words: DeskCheckWords) -> Findings:
     """Pairs at least rules.approach_rate closer than in `before` (rules.approach_min_frames pictures ago)."""
     found = Findings()
     ids = list(things)
@@ -91,6 +94,6 @@ def approaching(things: Mapping[str, Thing], before: Mapping[str, Thing], rules:
                        'new_dist': round(now, 1), 'rate_pct': round(rate * 100, 1)},
                       {'type': 'approaching', 'severity': 'warning', 'from': a, 'to': b,
                        'rate_pct': round(rate * 100, 1)},
-                      f'{things[a].label} moving toward {things[b].label} '
-                      f'({int(rate * 100)}% closer in {rules.approach_min_frames} frames)')
+                      words.approaching.format(a=things[a].label, b=things[b].label, percent=int(rate * 100),
+                                               pictures=rules.approach_min_frames))
     return found

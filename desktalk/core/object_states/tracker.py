@@ -21,7 +21,6 @@ from __future__ import annotations
 import logging
 import math
 import threading
-from datetime import datetime
 
 from desktalk.config import ObjectStatesSettings
 from desktalk.core.object_states.machine import ObjectState, Rules, StepInput, Transition, step
@@ -30,31 +29,42 @@ from desktalk.domain import (
     DeskSnapshot,
     Detection,
     DetectionEvent,
+    Event,
     ObjectSnapshot,
     ObjectStateChanged,
     Phase,
     StateChange,
     StateRecord,
+    plain_error,
 )
-from desktalk.ports import EventBus, ObjectStateStore
-from desktalk.runtime.errors import plain_error
+from desktalk.ports import Clock, EventBus, ObjectStateStore
 
 log = logging.getLogger(__name__)
 
 Center = tuple[float, float]
 
 
-def _timezone(ts: float) -> str:
-    """The desk's UTC offset at that moment, e.g. '+08:00'."""
-    return datetime.fromtimestamp(ts).astimezone().isoformat()[-6:]
+def _timezone(utc_offset_sec: float) -> str:
+    """A UTC offset in seconds as text, e.g. 28800 → '+08:00'."""
+    sign = '-' if utc_offset_sec < 0 else '+'
+    minutes = round(abs(utc_offset_sec) / 60)
+    return f'{sign}{minutes // 60:02d}:{minutes % 60:02d}'
+
+
+def _rounded(det: Detection) -> tuple[float, float, float, float]:
+    """A box as (x1, y1, x2, y2), kept to 0.1 px like Detection.to_dict() and the rows saved before."""
+    x1, y1, x2, y2 = det.bbox.to_list()
+    return x1, y1, x2, y2
 
 
 class ObjectStateTracker:
     """Detection events → object states and ObjectStateChanged events. Implements ObjectStatesView."""
 
     def __init__(self, settings: ObjectStatesSettings, bus: EventBus, store: ObjectStateStore, *,
-                 device_id: str, new_session_after_sec: float):
+                 device_id: str, new_session_after_sec: float, clock: Clock):
+        """`clock`: only for the desk's UTC offset written with each row."""
         self._bus = bus
+        self._clock = clock
         self._store = store
         self._device_id = device_id
         self._new_session_after_sec = new_session_after_sec    # a gap this long starts a new run of watching
@@ -81,7 +91,7 @@ class ObjectStateTracker:
         self._last_picture: float | None = None
         self._store_errors_in_row = 0
         self._unsaved: list[StateRecord] = []           # changes the store couldn't take yet, oldest first
-        bus.subscribe('object-states', self.on_detection, types={DetectionEvent})
+        bus.subscribe('object-states', self._on_event, types={DetectionEvent})
 
     # ── helpers ──
     def _rules(self, label: str) -> Rules:
@@ -118,8 +128,11 @@ class ObjectStateTracker:
                 return min(placed, key=lambda p: math.dist(anchor, p[1]))[0]
         return max(boxes, key=lambda det: det.confidence)
 
+    def _zone(self, ts: float) -> str:
+        return _timezone(self._clock.utc_offset_sec(ts))
+
     def _record(self, t: Transition) -> StateRecord:
-        return StateRecord(ts=t.ts, timezone=_timezone(t.ts), device_id=self._device_id, type=t.type,
+        return StateRecord(ts=t.ts, timezone=self._zone(t.ts), device_id=self._device_id, type=t.type,
                            label=t.label, prev_state=t.prev_state, new_state=t.new_state, conf_avg=t.conf_avg,
                            bbox=t.bbox, dwell_sec=t.dwell_sec)
 
@@ -129,6 +142,10 @@ class ObjectStateTracker:
                                   bbox=t.bbox, dwell_sec=t.dwell_sec)
 
     # ── the consumer ──
+    def _on_event(self, event: Event) -> None:
+        if isinstance(event, DetectionEvent):
+            self.on_detection(event)
+
     def on_detection(self, event: DetectionEvent) -> None:
         ts = event.ts
         width, height = event.size
@@ -159,7 +176,7 @@ class ObjectStateTracker:
                 own = det if (det is not None and box_seen) else None
                 inp = StepInput(ts=ts, seen=majority, center=middle,
                                 conf=own.confidence if own is not None else None,
-                                bbox=tuple(own.bbox.to_list()) if own is not None else None)
+                                bbox=_rounded(own) if own is not None else None)
                 self._states[label], fired = step(state, inp, self._rules(label))
                 transitions.extend(fired)
 
@@ -208,7 +225,7 @@ class ObjectStateTracker:
         only grow the table with every label ever seen."""
         with self._lock:
             records = [
-                StateRecord(ts=now, timezone=_timezone(now), device_id=self._device_id, type='snapshot',
+                StateRecord(ts=now, timezone=self._zone(now), device_id=self._device_id, type='snapshot',
                             label=label, prev_state=s.phase, new_state=s.phase,
                             dwell_sec=now - s.since if s.since is not None else None)
                 for label, s in self._states.items() if s.phase == Phase.PRESENT

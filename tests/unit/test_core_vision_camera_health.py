@@ -2,16 +2,20 @@
 
 import threading
 import time
+from typing import Any
 
 import numpy as np
 import pytest
 
+from desktalk.adapters.picture import OpenCvPictureTools
 from desktalk.core.vision.camera_health import CameraHealth
 from desktalk.domain import BBox, Detection
 from desktalk.ports import CameraHealthView, PictureCheck
 from tests.unit.test_core_vision_kit import app_config
 
 LENS = app_config().lens
+WORDS = app_config().prompts.camera
+TOOLS = OpenCvPictureTools()
 CUP = Detection('cup', 0.9, BBox(100, 100, 200, 200))
 PERSON = Detection('person', 0.9, BBox(300, 0, 480, 300))
 
@@ -28,8 +32,8 @@ WHITE = np.full((360, 480, 3), 255, np.uint8)
 FLAT = np.full((360, 480, 3), 140, np.uint8)        # nothing sharp in it: blurry
 
 
-def health(source='phone', lens=LENS, **kw):
-    return CameraHealth(lens, source_kind=source, moved_within_sec=1.5, **kw)
+def health(source='phone', lens=LENS, words=WORDS, **kw):
+    return CameraHealth(lens, source_kind=source, moved_within_sec=1.5, pictures=TOOLS, words=words, **kw)
 
 
 def lens_with(**waits):
@@ -230,7 +234,7 @@ def test_the_same_problem_is_mentioned_again_only_after_a_long_while():
 
 def test_one_thanks_when_several_problems_clear_at_once():
     h = health()
-    tilted = {'gravity': (0, 9.8, 0), 'reference_gravity': (0, 9.8, 4)}
+    tilted: dict[str, Any] = {'gravity': (0, 9.8, 0), 'reference_gravity': (0, 9.8, 4)}
     assert run(h, 60, DARK, **tilted) == ['bumped:problem', 'dark:problem']
     assert run(h, 10, bright(), start=1060) == ['dark:fixed']       # dark comes first in PRIORITY
 
@@ -287,7 +291,7 @@ class SwitchingDict(dict):
 def test_the_web_thread_can_read_the_problems_while_lens_changes_them():
     """issues() and phone_tip() run on the web server's threads while Lens's job checks and forgets problems."""
     h = health(lens=lens_with(dark=0))
-    h._active = SwitchingDict()
+    h._problems._active = SwitchingDict()
     h.sample(DARK, [CUP], 1000)
     errors, stop = [], threading.Event()
 
@@ -387,6 +391,7 @@ def test_each_problem_is_said_in_the_same_words_after_the_same_wait(key, waited,
 def test_each_problem_that_clears_up_gets_its_own_thanks(key, thanks):
     h = health()
     waited, _ = first_words(h, key)
+    assert waited is not None
     start = 1000 + waited + 1
     said = []
     for t in range(start, start + 30):
@@ -402,3 +407,51 @@ def test_the_tip_to_mark_the_desk_word_for_word():
     assert h.check(1120, connected=True, fps=3.0, has_outline=False) == [{'key': 'edge_tip', 'kind': 'tip', 'text': (
         'Tip from me, Lens: open Settings and tap the corners of your desk on the picture. Then I know where the '
         'desk really ends, and everyone can warn you before something slides off the edge.')}]
+
+
+# ── the wording comes from config/prompts.yaml → camera ──
+def words_with(**changes):
+    return WORDS.model_copy(update=changes)
+
+
+def test_what_lens_says_comes_from_the_prompts_file():
+    problems = WORDS.problems.model_copy(update={'dark': 'Lights, please!'})
+    fixed = WORDS.fixed.model_copy(update={'dark': 'Ah, light.'})
+    h = health(words=words_with(problems=problems, fixed=fixed))
+    texts = []
+    for t in range(1000, 1020):
+        h.sample(DARK if t < 1010 else bright(), [CUP], t)
+        texts += [m['text'] for m in h.check(t, connected=True, fps=3.0)]
+    assert texts == ['Lights, please!', 'Ah, light.']
+
+
+def test_the_app_panel_titles_come_from_the_prompts_file():
+    titles = WORDS.titles.model_copy(update={'covered': WORDS.titles.covered.model_copy(update={'title': 'Lens shut'})})
+    h = health(words=words_with(titles=titles))
+    run(h, 30, BLACK)
+    assert h.issues()[0]['title'] == 'Lens shut' and h.phone_tip() == 'Lens shut'
+
+
+@pytest.mark.parametrize('source', ['pi', 'phone', 'webcam'])
+def test_lost_video_words_come_from_the_prompts_file_for_each_camera(source):
+    h = health(source)
+    run(h, 2, bright())
+    said = [m for t in range(1002, 1030) for m in h.check(t, connected=False)]
+    assert said[0]['text'] == getattr(WORDS.lost, source)
+    assert h.issues() == [{'key': 'lost', 'title': WORDS.lost_title, 'fix': getattr(WORDS.lost_fix, source)}]
+
+
+def test_a_cut_off_object_on_an_unknown_side_gets_the_other_hint():
+    h = health()
+    assert h._problem_text('cutoff', {'object': 'cup', 'side': 'middle'}) == WORDS.problems.cutoff.format(
+        object='cup', side='middle', hint=WORDS.other_side_hint)
+    assert h._problem_text('cutoff', {}) == WORDS.problems.cutoff.format(
+        object=WORDS.unknown_object, side='left', hint=WORDS.side_hints.left)
+
+
+def test_bumped_without_degrees_says_the_setting():
+    assert health()._problem_text('bumped', {}) == WORDS.problems.bumped.format(degrees=LENS.bump_degrees)
+
+
+def test_slow_says_the_pictures_a_second():
+    assert health()._problem_text('slow', {'fps': 1.234}) == WORDS.problems.slow.format(fps=1.234)

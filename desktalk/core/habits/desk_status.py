@@ -1,5 +1,5 @@
 """
-DeskStatus: the questions the background jobs ask before speaking up.
+DeskStatusService: the questions the background jobs ask before speaking up.
 
     status.reminders_ready(now)   # the camera has watched a while, it's on, and it's not quiet hours
     status.user_active(now)       # you're at the desk: the person's object state is PRESENT
@@ -12,22 +12,29 @@ you've been seen for a few seconds (object_states.person_appear_sec) and off aft
 
 from __future__ import annotations
 
+from typing import Protocol
+
 from desktalk.config import RemindersSettings
 from desktalk.core.habits.preferences import quiet_hours_now
-from desktalk.desk_state import DeskState
 from desktalk.domain import Phase
-from desktalk.ports import FrameSource, ObjectStatesView, Preferences
+from desktalk.ports import CharacterMemory, Clock, DeskScene, FrameSource, ObjectStatesView, Preferences
 
 MIN = 60
 
 
-class DeskStatus:
-    """Implements the DeskStatus interface (desktalk/ports.py) from DeskState, the camera, the preferences and
+class SceneAndPanels(DeskScene, CharacterMemory, Protocol):
+    """What the status asks the desk: the scene (when the camera started) and the tracker panels the app sent
+    (the to-do list)."""
+
+
+class DeskStatusService:
+    """Implements the DeskStatus interface (desktalk/ports.py) from the desk, the camera, the preferences and
     the object states. person_label: the detector's word for you (object_states.person_label)."""
 
-    def __init__(self, desk: DeskState, camera: FrameSource, prefs: Preferences, reminders: RemindersSettings,
-                 states: ObjectStatesView, *, person_label: str):
+    def __init__(self, desk: SceneAndPanels, camera: FrameSource, prefs: Preferences, reminders: RemindersSettings,
+                 states: ObjectStatesView, *, person_label: str, clock: Clock):
         self._desk = desk
+        self._clock = clock
         self._camera = camera
         self._prefs = prefs
         self._warmup_sec = reminders.warmup_min * MIN
@@ -39,12 +46,11 @@ class DeskStatus:
 
     def warm(self, now: float) -> bool:
         """The camera has watched long enough for nudges (reminders.warmup_min)."""
-        with self._desk.lock:
-            start = self._desk.session_start
+        start = self._desk.session_started_at()
         return bool(start) and now - start >= self._warmup_sec
 
     def reminders_ready(self, now: float) -> bool:
-        return self.warm(now) and self.camera_connected() and not quiet_hours_now(self._prefs, now)
+        return self.warm(now) and self.camera_connected() and not quiet_hours_now(self._prefs, now, self._clock)
 
     def user_active(self, now: float) -> bool:
         """You're at the desk: the person's object state is PRESENT. Not seen yet, or UNKNOWN, counts as away."""
@@ -54,8 +60,7 @@ class DeskStatus:
     def open_todos(self) -> list[str]:
         """Unfinished items on the to-do tracker(s) the app sent."""
         todos: list[str] = []
-        with self._desk.lock:
-            for widget in self._desk.char_widgets.values():
-                if isinstance(widget, dict) and widget.get('type') == 'todo':
-                    todos += [t.get('text', '') for t in widget.get('items', []) if not t.get('done')]
+        for widget in self._desk.widgets().values():
+            if widget.get('type') == 'todo':
+                todos += [t.get('text', '') for t in widget.get('items', []) if not t.get('done')]
         return todos

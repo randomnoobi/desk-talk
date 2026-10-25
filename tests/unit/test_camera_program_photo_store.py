@@ -35,7 +35,6 @@ def test_cleanup_deletes_every_picture_and_the_empty_day_folders(tmp_path):
     assert store.count() == 0
     assert list((tmp_path / 'photos').iterdir()) == []
     assert store.last_cleanup == TAKEN + 86400
-    assert store.deleted_total == 6
 
 
 def test_cleanup_can_keep_the_last_minutes(tmp_path):
@@ -55,7 +54,6 @@ def test_disk_nearly_full_deletes_the_oldest_until_there_is_room(tmp_path):
         store.save(b'x', TAKEN + i, f'pi-{i}')
     assert store.free_up_space() == 2
     assert [p.name.split('_')[1] for p in store.photos()] == ['pi-2.jpg', 'pi-3.jpg']
-    assert store.deleted_total == 2
 
 
 def test_disk_with_room_deletes_nothing(tmp_path):

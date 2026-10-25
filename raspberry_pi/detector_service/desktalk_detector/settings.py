@@ -11,7 +11,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-BYTES_PER_MB = 1_000_000
+BYTES_PER_MB = 1024 * 1024
 WHERE = 'raspberry_pi/detector_service/.env'
 
 

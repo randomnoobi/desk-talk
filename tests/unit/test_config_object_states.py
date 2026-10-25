@@ -1,4 +1,4 @@
-"""The object_states section of config/settings.yaml (desktalk/config.py: ObjectStatesSettings).
+"""The object_states section of config/settings.yaml (desktalk/config/app.py: ObjectStatesSettings).
 
 Like the other config tests, these load from copies of the real config files in a temp folder.
 """
@@ -12,9 +12,9 @@ import pytest
 import yaml
 
 from desktalk.config import ConfigError, load_config
+from tests.unit.test_config import CONFIG_FILES  # the four config files, prompts.yaml too
 
 ROOT = Path(__file__).resolve().parents[2]
-CONFIG_FILES = ('settings.yaml', 'agents.yaml', 'protocols.yaml')
 
 
 @pytest.fixture

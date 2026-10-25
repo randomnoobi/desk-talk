@@ -6,7 +6,7 @@ agents.join_after_sec, its agent joins ("Cup joined the chat"); when it has been
 agents.leave_after_sec, it leaves ("Cup left the chat"). Both go back on the event bus as
 AgentJoined / AgentLeft. No pictures (camera off) means no events, so nobody leaves.
 
-It also keeps DeskState.objects: the agents in the chat that were in a picture just now
+It also tells the desk scene (DeskScene.set_members) which agents in the chat were in a picture just now
 (presence.disappear_after_sec), which the desk rules and the live view use.
 """
 
@@ -18,9 +18,8 @@ from collections.abc import Callable
 
 from desktalk.config import AgentsSettings, PresenceSettings
 from desktalk.core.agents.presence import PresenceTracker
-from desktalk.desk_state import DeskState
-from desktalk.domain import AgentJoined, AgentLeft, Detection, DetectionEvent
-from desktalk.ports import EventBus, Profiles
+from desktalk.domain import AgentJoined, AgentLeft, Detection, DetectionEvent, SeenObject
+from desktalk.ports import DeskScene, EventBus, Profiles
 
 log = logging.getLogger(__name__)
 
@@ -31,17 +30,17 @@ OnDesk = Callable[[float, float, int, int], bool]
 class Roster:
     """Detection events → AgentJoined / AgentLeft. Implements RosterView."""
 
-    def __init__(self, bus: EventBus, profiles: Profiles, desk: DeskState, agents: AgentsSettings,
+    def __init__(self, bus: EventBus, profiles: Profiles, scene: DeskScene, agents: AgentsSettings,
                  presence: PresenceSettings, on_desk: OnDesk | None = None):
         self._bus = bus
         self._profiles = profiles
-        self._desk = desk
+        self._scene = scene
         self._min_conf = agents.min_confidence
         self._only_on_desk = agents.only_on_desk
         self._max_agents = agents.max_agents
         self._on_desk = on_desk
         self._presence = PresenceTracker(agents.join_after_sec, agents.leave_after_sec)
-        self._fresh_sec = presence.disappear_after_sec       # "on the desk right now" for DeskState.objects
+        self._fresh_sec = presence.disappear_after_sec       # "on the desk right now" for the scene
         self._lock = threading.Lock()                         # snapshot() is read from the web server's thread
         self._members: dict[str, dict] = {}      # id → {'joined_at', 'label', 'det', 'last_seen'}, in join order
         self._history: dict[str, dict] = {}      # id → {'joined_at', 'left_at'} for agents seen before
@@ -92,13 +91,9 @@ class Roster:
                 if member is not None:
                     self._history.setdefault(pid, {})['left_at'] = now
                     left.append((pid, member))
-            objects = {pid: _desk_object(m['det']) for pid, m in self._members.items()
+            on_desk = {pid: SeenObject.from_detection(m['det']) for pid, m in self._members.items()
                        if now - m['last_seen'] <= self._fresh_sec}
-        with self._desk.lock:
-            self._desk.objects = objects
-            for pid in objects:
-                self._desk.object_first_seen.setdefault(pid, now)
-                self._desk.object_last_seen[pid] = now
+        self._scene.set_members(on_desk, now)
         for pid, det in joined:
             name = self._name(pid)
             log.info('%s joined the chat (%s)', name, det.label)
@@ -117,10 +112,6 @@ class Roster:
     def member_ids(self) -> list[str]:
         with self._lock:
             return list(self._members)
-
-    def is_member(self, agent_id: str) -> bool:
-        with self._lock:
-            return agent_id in self._members
 
     def snapshot(self) -> list[dict]:
         """Agents in the chat now, plus ones that were here earlier (for the chat list), newest first."""
@@ -146,8 +137,3 @@ class Roster:
             out.append(d)
         return out
 
-
-def _desk_object(det: Detection) -> dict:
-    """An agent's box the way DeskState.objects has always held it."""
-    d = det.to_dict()
-    return {'class_name': d['label'], 'bbox': d['bbox'], 'center': d['center'], 'conf': d['conf'], 'cam': 0}

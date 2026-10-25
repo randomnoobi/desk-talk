@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import AsyncGenerator
+from typing import cast
 
 import anyio
 
@@ -37,7 +39,7 @@ def test_a_page_that_falls_behind_gets_what_it_had_then_its_stream_ends():
 
 def test_a_quiet_stream_says_it_is_still_there():
     hub = MessageHub(FakeClock(), recent_kept=10, queue_size=5)
-    stream = LiveStreams().chat_messages(hub, retry_ms=RETRY_MS, keepalive_sec=0.01)
+    stream = cast(AsyncGenerator[str, None], LiveStreams().chat_messages(hub, retry_ms=RETRY_MS, keepalive_sec=0.01))
 
     async def main() -> list[str]:
         out = [await anext(stream), await anext(stream)]

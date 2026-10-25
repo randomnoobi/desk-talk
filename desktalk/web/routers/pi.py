@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
-from desktalk.web.deps import Desk, key_check, other_camera, read_upload
+from desktalk.web.deps import App, key_check, other_camera, read_upload
 from desktalk.web.schemas import PiFrameReply
 from desktalk_shared.wire import WireError, decode_upload, info_from_v1_headers
 
@@ -28,16 +28,16 @@ router = APIRouter(dependencies=[Depends(key_check(KEY_PROBLEM))])
 
 
 @router.get('/api/pi/config')
-def pi_config(desk: Desk) -> dict[str, Any]:
-    return {'pi': desk.config.pi.model_dump(mode='json'), 'camera_source': desk.source_kind}
+def pi_config(app: App) -> dict[str, Any]:
+    return {'pi': app.config.pi.model_dump(mode='json'), 'camera_source': app.source_kind}
 
 
 @router.post('/api/pi/frame', response_model=PiFrameReply)
-async def pi_frame(request: Request, desk: Desk) -> PiFrameReply:
-    source = desk.pi_source
-    if source is None:
-        raise other_camera(desk, 'pi')
-    body = await read_upload(request, desk.config.web.pi_upload_max_mb)
+async def pi_frame(request: Request, app: App) -> PiFrameReply:
+    inbox = app.pi_inbox
+    if inbox is None:
+        raise other_camera(app, 'pi')
+    body = await read_upload(request, app.config.web.pi_upload_max_mb)
     content_type = request.headers.get('content-type', '')
     if content_type.lower().startswith(FORMAT_2):
         try:
@@ -46,6 +46,6 @@ async def pi_frame(request: Request, desk: Desk) -> PiFrameReply:
             raise HTTPException(400, str(exc)) from None
     else:
         jpeg, info = body, info_from_v1_headers(request.headers)
-    if not await run_in_threadpool(source.push, jpeg, info):      # decodes the JPEG: not on the event loop
+    if not await run_in_threadpool(inbox.push, jpeg, info):      # decodes the JPEG: not on the event loop
         raise HTTPException(400, NOT_A_PICTURE)
-    return PiFrameReply(fps=source.fps, tip=desk.camera_health.phone_tip())
+    return PiFrameReply(fps=app.source.fps, tip=app.camera_health.phone_tip())

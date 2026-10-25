@@ -19,11 +19,8 @@ class KeyValueContract:
         kv.load('prefs')['a'].append(2)
         assert kv.load('prefs') == {'a': [1]}
 
-    def test_keys_by_prefix_and_delete(self, kv):
+    def test_keys_by_prefix(self, kv):
         kv.save('habits/2026-10-20', {})
         kv.save('habits/2026-10-21', {})
         kv.save('preferences', {})
         assert kv.keys('habits/') == ['habits/2026-10-20', 'habits/2026-10-21']
-        kv.delete('habits/2026-10-20')
-        assert kv.keys('habits/') == ['habits/2026-10-21']
-        kv.delete('not-there')

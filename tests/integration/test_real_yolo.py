@@ -18,7 +18,9 @@ pytestmark = pytest.mark.slow
 def sample_jpeg(name: str) -> bytes:
     import cv2
     from ultralytics.utils import ASSETS
-    return cv2.imencode('.jpg', cv2.imread(str(ASSETS / name)))[1].tobytes()   # comes with Ultralytics
+    picture = cv2.imread(str(ASSETS / name))          # comes with Ultralytics
+    assert picture is not None
+    return cv2.imencode('.jpg', picture)[1].tobytes()
 
 
 @pytest.fixture
@@ -47,5 +49,4 @@ def test_real_pictures_through_the_whole_app(rig):
     names = {a['name'] for a in rig.app.roster.snapshot() if a['on_desk']}
     assert 'Bus' in names and 'Person' not in names and 'Tie' not in names
     assert any(m['type'] == 'roster' and m['agent']['name'] == 'Bus' for m in rig.messages())
-    with rig.app.desk.lock:
-        assert rig.app.desk.frames.get(0) and rig.app.desk.raw_frames.get(0)     # the live view pictures
+    assert rig.app.live_pictures.boxed(0) and rig.app.live_pictures.plain(0)     # the live view pictures

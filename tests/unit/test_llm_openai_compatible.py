@@ -16,9 +16,13 @@ from tests.fakes import FakeClock
 HELLO = [{'role': 'user', 'content': 'Say hello.'}]
 
 
+CONFIG = load_config(environ={}, dotenv=Path('/nonexistent'))
+REPLIES = CONFIG.prompts.replies
+
+
 @pytest.fixture(scope='module')
 def base_llm():
-    return load_config(environ={}, dotenv=Path('/nonexistent')).llm
+    return CONFIG.llm
 
 
 @pytest.fixture
@@ -54,9 +58,10 @@ class Factory:
         return next(c for c in self.clients if c.base_url == url)
 
 
-def make(llm, reply='Hi there, nice desk you have!', clock=None, **keys):
+def make(llm, reply='Hi there, nice desk you have!', clock=None, replies=REPLIES, **keys):
     factory = Factory(reply)
-    model = OpenAICompatibleChatModel(llm, secrets(**keys), clock or FakeClock(), client_factory=factory)
+    model = OpenAICompatibleChatModel(llm, secrets(**keys), clock or FakeClock(), client_factory=factory,
+                                      replies=replies)
     return model, factory
 
 
@@ -84,10 +89,18 @@ def test_the_key_from_env_goes_to_the_client(llm):
 
 def test_no_key_means_no_ai_and_a_plain_reason(llm):
     model, factory = make(llm)
-    assert not model.ready and model.label == 'No AI (add a key to .env)'
+    assert not model.ready and model.label == 'No AI (add a key to .env)' == REPLIES.no_ai_label
     with pytest.raises(AIUnavailable) as err:
         model.chat(HELLO, max_tokens=50, temperature=0.7)
-    assert '.env' in err.value.reason and factory.clients == []
+    assert err.value.reason == REPLIES.needs_an_ai and '.env' in err.value.reason and factory.clients == []
+
+
+def test_the_fixed_replies_come_from_the_prompt_settings(llm):
+    replies = REPLIES.model_copy(update={'no_ai_label': 'Nobody home', 'needs_an_ai': 'Set up an AI first.'})
+    model, _ = make(llm, replies=replies)
+    with pytest.raises(AIUnavailable) as err:
+        model.chat(HELLO, max_tokens=50, temperature=0.7)
+    assert (model.label, err.value.reason) == ('Nobody home', 'Set up an AI first.')
 
 
 def test_without_the_openai_package_there_is_no_ai(llm, monkeypatch):
@@ -99,7 +112,7 @@ def test_without_the_openai_package_there_is_no_ai(llm, monkeypatch):
             raise ImportError('No module named openai')
         return real_import(name, *args, **kw)
     monkeypatch.setattr(builtins, '__import__', no_openai)
-    model = OpenAICompatibleChatModel(llm, secrets(gemini='g'), FakeClock())
+    model = OpenAICompatibleChatModel(llm, secrets(gemini='g'), FakeClock(), replies=REPLIES)
     assert not model.ready
 
 
@@ -277,3 +290,17 @@ class TestOpenAICompatibleChatModel(ChatModelContract):
     @pytest.fixture
     def broken_model(self, llm):
         return make(llm, reply=ConnectionError('Connection refused'), gemini='g')[0]
+
+
+def test_the_error_words_come_from_the_prompt_settings(llm):
+    words = REPLIES.ai_errors.model_copy(update={'no_pictures': '{model} is blind.', 'no_connection': 'Offline.'})
+    replies = REPLIES.model_copy(update={'ai_errors': words})
+    model, _ = make(llm, reply=RuntimeError('model llava-test does not support multimodal input'),
+                    ollama='http://ollama.test/v1', replies=replies)
+    with pytest.raises(AIRefused) as err:
+        model.vision(b'\xff\xd8jpeg', 'What is on the desk?')
+    assert err.value.reason == f'{llm.vision_model} is blind.'
+    model, _ = make(llm, reply=ConnectionError('Connection refused'), gemini='g', replies=replies)
+    with pytest.raises(AIUnavailable) as err:
+        model.chat(HELLO, max_tokens=50, temperature=0.7)
+    assert err.value.reason == 'Offline.'

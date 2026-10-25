@@ -17,16 +17,27 @@ import anyio
 import httpx
 import pytest
 
+from desktalk.adapters.storage.files import write_atomically
 from desktalk.bootstrap import build
 from desktalk.domain import DetectorState, UploadInfo
 from desktalk.runtime import SystemClock
 from desktalk.web.app import create_app, create_phone_app
 from desktalk.web.pairing import ensure_cert
-from raspberry_pi.camera import main as camera_program
+from raspberry_pi.camera import cli as camera_program
 from raspberry_pi.camera.clock import SystemClock as PiClock
 from raspberry_pi.camera.uploader import Uploader
 from tests.fakes import FakeDetector
-from tests.integration.app_kit import LAPTOP, PAIR_KEY, PERSON, DeskRig, changed, desk_config, desk_jpeg
+from tests.integration.app_kit import (
+    LAPTOP,
+    PAIR_KEY,
+    PERSON,
+    DeskRig,
+    changed,
+    desk_config,
+    desk_jpeg,
+    inbox,
+    pi_camera,
+)
 from tests.integration.web_kit import links_for, running
 
 WAIT_SEC = 10          # longest a test waits for something to happen
@@ -51,7 +62,8 @@ def real_desk(tmp_path, **changes):
 
 
 def uploader(url: str, key: str = PAIR_KEY) -> Uploader:
-    return Uploader(url, key, timeout_sec=5, retry_start_sec=1, retry_max_sec=10, clock=PiClock())
+    return Uploader(url, key, timeout_sec=5, retry_start_sec=1, retry_max_sec=10, error_text_chars=200,
+                    clock=PiClock())
 
 
 def from_pi(state: DetectorState, number: int, *found) -> UploadInfo:
@@ -80,7 +92,7 @@ def test_the_camera_programs_uploads_reach_the_server_in_each_detector_state(tmp
     events = list(reversed(app.event_log.recent_detections(day, 10)))
     assert [(e['frame_id'], e['detected_on']) for e in events] == [('pi-000001', 'pi'), ('pi-000003', 'computer')]
     assert rig.detector.calls == 1                       # only the off picture was detected here
-    assert app.pi_source.status()['detector'] == 'off'
+    assert pi_camera(app).status()['detector'] == 'off'
 
 
 def test_the_camera_program_reports_a_wrong_key(tmp_path):
@@ -105,8 +117,10 @@ def test_the_camera_program_gets_its_settings_from_the_server_and_its_pictures_g
                                       '--photo-dir', str(tmp_path / 'pi-photos')])
         assert status == 0
         assert wait_until(lambda: app.producer.pictures_analysed >= 1)
-    assert app.pi_source.pictures_received >= 1
-    upload, _ = app.pi_source.latest_upload()
+    assert pi_camera(app).pictures_received >= 1
+    latest = pi_camera(app).latest_upload()
+    assert latest is not None
+    upload, _ = latest
     assert (upload.version, upload.detector) == (2, DetectorState.OFF)
     assert upload.detector_reason == 'detection on the Pi is turned off (--no-detector)'
     day = app.event_log.days()[0]
@@ -139,8 +153,8 @@ def test_open_pages_do_not_hold_up_the_server_when_it_stops(tmp_path):
 
     with running(create_app(app, links_for(app))) as url:
         readers = [threading.Thread(target=watch, args=(url, path), daemon=True)
-                   for path in ('/api/events', '/api/video_feed')]
-        app.source.push(desk_jpeg())
+                   for path in ('/api/events', '/api/video_feed/0')]
+        inbox(app).push(desk_jpeg())
         app.producer.tick(app.clock.now())           # a picture, so the video starts
         for reader in readers:
             reader.start()
@@ -149,7 +163,7 @@ def test_open_pages_do_not_hold_up_the_server_when_it_stops(tmp_path):
     took = time.monotonic() - started
     for reader in readers:
         reader.join(WAIT_SEC)
-    assert ended == {'/api/events': True, '/api/video_feed': True}
+    assert ended == {'/api/events': True, '/api/video_feed/0': True}
     assert took < app.config.web.stop_wait_sec
 
 
@@ -203,7 +217,7 @@ def phone_desk(tmp_path):
 
 
 def test_the_phone_page_is_served_over_https_with_its_own_certificate(tmp_path, phone_desk):
-    cert = ensure_cert(tmp_path / 'certs', '127.0.0.1', valid_days=30)
+    cert = ensure_cert(tmp_path / 'certs', '127.0.0.1', phone_desk.config.camera, save=write_atomically)
     with running(create_phone_app(phone_desk.app), cert=cert) as url:
         assert url.startswith('https://')
         page = httpx.get(url + '/phone', verify=str(cert.cert_file))
@@ -211,9 +225,11 @@ def test_the_phone_page_is_served_over_https_with_its_own_certificate(tmp_path, 
 
 
 def test_the_certificate_is_made_once_and_kept_for_the_next_start(tmp_path):
-    cert = ensure_cert(tmp_path / 'certs', '192.168.1.20', valid_days=30)
+    camera = desk_config(tmp_path).camera
+    cert = ensure_cert(tmp_path / 'certs', '192.168.1.20', camera, save=write_atomically)
     made = cert.cert_file.read_bytes()
-    assert ensure_cert(tmp_path / 'certs', '192.168.1.20', valid_days=30) == cert
+    assert ensure_cert(tmp_path / 'certs', '192.168.1.20', camera, save=write_atomically) == cert
     assert cert.cert_file.read_bytes() == made
-    ensure_cert(tmp_path / 'certs', '192.168.1.77', valid_days=30)      # a new Wi-Fi address: a new certificate
-    assert cert.cert_file.read_bytes() != made
+    ensure_cert(tmp_path / 'certs', '192.168.1.77', camera, save=write_atomically)      # a new Wi-Fi address:
+    assert cert.cert_file.read_bytes() != made                                          # a new certificate
+    assert (cert.cert_file.name, cert.key_file.name) == (camera.phone_cert_file, camera.phone_key_file)

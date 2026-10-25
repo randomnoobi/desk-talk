@@ -13,5 +13,5 @@
       "wake_time": "str"
     }
   },
-  "request": "PUT /api/habit_policy (main server, busy desk)"
+  "request": "PUT /api/preferences (main server, busy desk)"
 }

@@ -2,7 +2,7 @@
 
 from desktalk.web.routers import chat, habits, health, live, log, phone, pi, settings, video
 
-MAIN_SERVER = (pi.router, phone.router, live.router, video.router, chat.router, habits.router, log.router,
+MAIN_SERVER = (pi.router, live.router, video.router, chat.router, habits.router, log.router,
                settings.router, health.router)
 PHONE_SERVER = (phone.phone_router,)
 

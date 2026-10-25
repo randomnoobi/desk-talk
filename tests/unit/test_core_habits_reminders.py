@@ -9,12 +9,12 @@ import pytest
 from desktalk.config import load_config
 from desktalk.core.agents.profiles import ProfileBook
 from desktalk.core.agents.roster import Roster
-from desktalk.core.agents.speakers import LENS, speaker_for
-from desktalk.core.habits.desk_status import DeskStatus
+from desktalk.core.agents.speakers import speaker_for
+from desktalk.core.desk import Album, DangerBoard, LiveView, Memories, Scene, WholeDesk
+from desktalk.core.habits.desk_status import DeskStatusService
 from desktalk.core.habits.reminders import HabitReminders
 from desktalk.core.habits.tracker import HabitTracker
-from desktalk.desk_state import DeskState
-from desktalk.domain import AgentProfile, BBox, Detection, DetectionEvent, Light, Nudge, NudgeSent, ObjectSnapshot
+from desktalk.domain import LENS, AgentProfile, BBox, Detection, DetectionEvent, Light, Nudge, NudgeSent, ObjectSnapshot
 from desktalk.ports import PeriodicWorker
 from tests.fakes import (
     FakeChatVoice,
@@ -51,7 +51,7 @@ RULE_SIP = Nudge('hydration', 'rule.hydration', evidence='No sip in 50 minutes.'
 def config(tmp_path_factory):
     root = tmp_path_factory.mktemp('project')
     (root / 'config').mkdir()
-    for name in ('settings.yaml', 'agents.yaml', 'protocols.yaml'):
+    for name in ('settings.yaml', 'agents.yaml', 'protocols.yaml', 'prompts.yaml'):
         shutil.copy(ROOT / 'config' / name, root / 'config' / name)
     return load_config(root, environ={})
 
@@ -199,10 +199,10 @@ class Desk:
     """Pictures → roster and habit tracker → reminders, with a fake camera, AI voice and chat."""
 
     def __init__(self, config, start):
-        self.clock = FakeClock(start=start)
+        self.clock = FakeClock(start=start, utc_offset_hours=time.localtime(start).tm_gmtoff / 3600)   # local noon
         self.bus = SyncEventBus()
-        self.desk = DeskState()
-        self.desk.session_start = start
+        self.desk = WholeDesk(LiveView(), Scene(), DangerBoard(), Memories(), Album(keep=1))   # the real desk parts
+        self.desk.note_picture({}, start, person=False, moved=False, new_session=True)
         self.camera = FakeFrameSource()
         self.camera.connected = True
         prefs = FakePreferences({'wake_time': '07:00', 'bed_time': '22:30', 'quiet_enabled': False,
@@ -211,9 +211,10 @@ class Desk:
         self.roster = Roster(self.bus, self.profiles, self.desk, config.agents, config.presence)
         self.habits = HabitTracker(self.clock, self.bus, InMemoryKeyValueStore(), self.profiles, prefs, self.desk,
                                    config.protocols, config.habit_tracker, config.presence, config.agents,
-                                   phone_counts=True)
+                                   phone_counts=True, words=config.prompts.habits)
         states = FakeObjectStates([ObjectSnapshot('person', 'PRESENT', start)])     # someone at the desk
-        self.status = DeskStatus(self.desk, self.camera, prefs, config.reminders, states, person_label='person')
+        self.status = DeskStatusService(self.desk, self.camera, prefs, config.reminders, states,
+                                        person_label='person', clock=self.clock)
         self.voice = FakeChatVoice('35 minutes of sitting! Walk five minutes, leave your phone.')
         self.notifier = RecordingNotifier(self.clock)
         self.reminders = HabitReminders(self.habits, FakeRuleNudges(), self.status, self.roster, self.profiles,
@@ -224,6 +225,8 @@ class Desk:
         for _ in range(int(seconds)):
             now = self.clock.now()
             dets = tuple(Detection(label, 0.9, BBox(100, 100, 200, 200)) for label in labels)
+            # the camera producer does this
+            self.desk.note_picture({}, now, person=True, moved=False, new_session=False)
             self.bus.publish(DetectionEvent(ts=now, frame_id='f', source='pi', size=(640, 480), detections=dets,
                                             person=True, light=Light(brightness=120)))
             self.clock.advance(1)

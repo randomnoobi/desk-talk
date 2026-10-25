@@ -1,16 +1,16 @@
 """Choices made in the app: wake time, bedtime and quiet hours (desktalk/core/habits/preferences.py)."""
 
+import calendar
 import logging
 import shutil
-import time
 from pathlib import Path
 
 import pytest
 
 from desktalk.config import load_config
-from desktalk.core.habits.preferences import Preferences, quiet_hours_now
+from desktalk.core.habits.preferences import PreferencesFile, quiet_hours_now
 from desktalk.ports import Preferences as PreferencesPort
-from tests.fakes import FakePreferences, InMemoryKeyValueStore
+from tests.fakes import FakeClock, FakePreferences, InMemoryKeyValueStore
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULTS = {'wake_time': '07:00', 'bed_time': '22:30', 'quiet_enabled': False, 'quiet_start_hour': 22,
@@ -21,7 +21,7 @@ DEFAULTS = {'wake_time': '07:00', 'bed_time': '22:30', 'quiet_enabled': False, '
 def config(tmp_path_factory):
     root = tmp_path_factory.mktemp('project')
     (root / 'config').mkdir()
-    for name in ('settings.yaml', 'agents.yaml', 'protocols.yaml'):
+    for name in ('settings.yaml', 'agents.yaml', 'protocols.yaml', 'prompts.yaml'):
         shutil.copy(ROOT / 'config' / name, root / 'config' / name)
     return load_config(root, environ={})
 
@@ -31,8 +31,8 @@ def store():
     return InMemoryKeyValueStore()
 
 
-def prefs_from(config, store):
-    return Preferences(store, config.protocols.schedule, config.reminders.quiet_hours)
+def prefs_from(config, store, clock=None):
+    return PreferencesFile(store, config.protocols.schedule, config.reminders.quiet_hours, clock=clock or FakeClock())
 
 
 def test_it_is_a_preferences_view(config, store):
@@ -48,7 +48,7 @@ def test_defaults_come_from_protocols_and_settings(config, store):
 def test_defaults_follow_the_config_files(config, store):
     schedule = config.protocols.schedule.model_copy(update={'wake_time': '06:15'})
     quiet = config.reminders.quiet_hours.model_copy(update={'enabled': True, 'start_hour': 21})
-    p = Preferences(store, schedule, quiet)
+    p = PreferencesFile(store, schedule, quiet, clock=FakeClock())
     assert p.get('wake_time') == '06:15' and p.get('quiet_enabled') is True and p.get('quiet_start_hour') == 21
 
 
@@ -131,18 +131,45 @@ def test_changing_the_copy_from_all_changes_nothing(config, store):
     assert p.get('wake_time') == '07:00'
 
 
+CLOCK = FakeClock()          # UTC, so the hours below are the same on every computer
+
+
 def local(hour):
-    return time.mktime((2026, 6, 15, hour, 30, 0, 0, 0, -1))
+    return calendar.timegm((2026, 6, 15, hour, 30, 0, 0, 0, 0))
 
 
 def test_quiet_hours_across_midnight():
     prefs = FakePreferences({'quiet_enabled': True, 'quiet_start_hour': 22, 'quiet_end_hour': 7})
-    assert quiet_hours_now(prefs, local(23)) and quiet_hours_now(prefs, local(6))
-    assert not quiet_hours_now(prefs, local(7)) and not quiet_hours_now(prefs, local(12))
+    assert quiet_hours_now(prefs, local(23), CLOCK) and quiet_hours_now(prefs, local(6), CLOCK)
+    assert not quiet_hours_now(prefs, local(7), CLOCK) and not quiet_hours_now(prefs, local(12), CLOCK)
+
+
+def test_quiet_hours_follow_the_clocks_time_zone():
+    prefs = FakePreferences({'quiet_enabled': True, 'quiet_start_hour': 22, 'quiet_end_hour': 7})
+    noon_utc = 1_781_524_800.0                                    # 15 June 2026, 12:00 UTC
+    assert not quiet_hours_now(prefs, noon_utc, FakeClock())
+    assert quiet_hours_now(prefs, noon_utc, FakeClock(utc_offset_hours=11))      # 23:00 there
 
 
 def test_quiet_hours_in_the_day_and_switched_off():
     prefs = FakePreferences({'quiet_enabled': True, 'quiet_start_hour': 13, 'quiet_end_hour': 15})
-    assert quiet_hours_now(prefs, local(14)) and not quiet_hours_now(prefs, local(15))
+    assert quiet_hours_now(prefs, local(14), CLOCK) and not quiet_hours_now(prefs, local(15), CLOCK)
     prefs.values['quiet_enabled'] = False
-    assert not quiet_hours_now(prefs, local(14))
+    assert not quiet_hours_now(prefs, local(14), CLOCK)
+
+
+def test_preferences_say_if_quiet_hours_are_on_now(config, store):
+    """What GET /api/preferences shows as quiet_now: the same rule as quiet_hours_now, by the preferences' clock."""
+    p = prefs_from(config, store, FakeClock(utc_offset_hours=11))
+    p.update({'quiet_enabled': True, 'quiet_start_hour': 22, 'quiet_end_hour': 7})
+    noon_utc = 1_781_524_800.0                                    # 15 June 2026, 12:00 UTC: 23:00 there
+    assert p.quiet_now(noon_utc) and not p.quiet_now(noon_utc - 12 * 3600)
+    p.update({'quiet_enabled': False})
+    assert not p.quiet_now(noon_utc)
+
+
+def test_the_fake_preferences_follow_the_same_quiet_hours_rule():
+    prefs = FakePreferences({'quiet_enabled': True, 'quiet_start_hour': 22, 'quiet_end_hour': 7})
+    assert prefs.quiet_now(local(23)) and not prefs.quiet_now(local(12))
+    there = FakePreferences(prefs.values, clock=FakeClock(utc_offset_hours=11))
+    assert there.quiet_now(1_781_524_800.0)

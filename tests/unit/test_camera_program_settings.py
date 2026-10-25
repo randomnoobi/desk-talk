@@ -4,11 +4,13 @@ import logging
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel
 from test_camera_program_fakes import KEY, MODEL, FakeClock, FakeComputer, FakeContainer, pi_settings
 
 from desktalk_shared.detector_api import ModelSettings
 from raspberry_pi.camera.detector_client import DetectorClient
 from raspberry_pi.camera.settings import (
+    IF_OLDER,
     ComputerProblem,
     SettingsError,
     SettingsWatcher,
@@ -110,21 +112,21 @@ def test_a_broken_settings_file_says_so(tmp_path):
 # ── asking the computer ───────────────────────────────────────────────
 def test_asks_the_computer_for_its_settings_with_the_key():
     with FakeComputer(pi=pi_settings(fps=2)) as computer:
-        reply = computer_config(computer.url, KEY, timeout=2)
+        reply = computer_config(computer.url, KEY, timeout=2, error_text_chars=200)
         assert reply['pi']['fps'] == 2 and reply['camera_source'] == 'pi'
         assert computer.requests[0].headers['x-desk-key'] == KEY
 
 
 def test_a_wrong_key_is_a_plain_problem():
     with FakeComputer() as computer, pytest.raises(ComputerProblem, match='Pairing key does not match'):
-        computer_config(computer.url, 'WRONG', timeout=2)
+        computer_config(computer.url, 'WRONG', timeout=2, error_text_chars=200)
 
 
 def test_a_computer_that_is_away_is_a_plain_problem():
     with FakeComputer() as computer:
         computer.away = True
         with pytest.raises(ComputerProblem, match='Cannot reach the computer'):
-            computer_config(computer.url, KEY, timeout=2)
+            computer_config(computer.url, KEY, timeout=2, error_text_chars=200)
 
 
 # ── settings that change on the computer ──────────────────────────────
@@ -137,11 +139,11 @@ def parts():
         computer.pi = pi_settings(detector={'url': container.url})
         clock = FakeClock()
         current = from_layers(computer.pi)
-        client = DetectorClient(current.detector, clock)
+        client = DetectorClient(current.detector, clock, error_text_chars=current.error_text_chars)
         client.upkeep()                                     # the model is sent on start
 
         def load():
-            return from_layers(computer_config(computer.url, KEY, timeout=2)['pi'])
+            return from_layers(computer_config(computer.url, KEY, timeout=2, error_text_chars=200)['pi'])
 
         watcher = SettingsWatcher(load, current, client, every_sec=EVERY, clock=clock)
         yield container, computer, clock, client, watcher
@@ -190,3 +192,61 @@ def test_other_changed_settings_need_a_restart_and_say_so_once(parts, caplog):
     assert caplog.text.count('restart the camera program') == 1
     client.upkeep()
     assert container.models_put == [MODEL]
+
+
+# ── the Pi's settings check and the computer's agree ─────────────────
+# Settings in pi: that only the computer uses. The Pi gets them in /api/pi/config but doesn't check them.
+COMPUTER_ONLY = {'clock_off_warning_sec'}         # Lens compares the Pi's clock with this computer's
+
+
+def test_pi_settings_match_the_server_model():
+    """raspberry_pi/camera/settings.py checks the pi: section by hand (the Pi has no pydantic), and
+    desktalk/config checks it with PiSettings. A setting added to one must be added to the other."""
+    from desktalk.config import PiSettings
+    from raspberry_pi.camera import settings as pi_check
+
+    detector = PiSettings.model_fields['detector'].annotation
+    assert isinstance(detector, type) and issubclass(detector, BaseModel)
+    assert set(pi_check.FIELDS) | {'detector'} == set(PiSettings.model_fields) - COMPUTER_ONLY
+    assert set(pi_check.DETECTOR_FIELDS) | set(pi_check.MODEL_FIELDS) == set(detector.model_fields)
+    nested = [name for name, field in PiSettings.model_fields.items()
+              if isinstance(field.annotation, type) and issubclass(field.annotation, BaseModel)]
+    assert nested == ['detector']                     # a new section needs its own check on the Pi
+    assert PiSettings._in_order == pi_check.IN_ORDER
+    assert detector._in_order == pi_check.DETECTOR_IN_ORDER    # type: ignore[attr-defined]
+
+
+def test_the_repo_settings_have_the_camera_and_error_text_values_the_code_had():
+    pi = read_repo_settings(Path(__file__).resolve().parents[2] / 'config' / 'settings.yaml')
+    assert (pi['camera'], pi['error_text_chars']) == ('auto', 200)
+    assert {name: pi[name] for name in IF_OLDER} == IF_OLDER       # the fallback below says the same
+
+
+@pytest.mark.parametrize('missing', [('camera',), ('error_text_chars',), ('camera', 'error_text_chars')])
+def test_an_older_settings_file_gets_the_values_the_program_had_and_says_so(missing, caplog):
+    repo = {name: value for name, value in pi_settings().items() if name not in missing}
+    with caplog.at_level(logging.WARNING):
+        settings = from_layers(repo)
+    assert (settings.camera, settings.error_text_chars) == ('auto', 200)
+    assert "The Pi's config/settings.yaml is older than its camera program" in caplog.text
+    for name in missing:
+        assert f'pi.{name}' in caplog.text
+
+
+def test_a_new_enough_settings_file_says_nothing_about_being_older(caplog):
+    with caplog.at_level(logging.WARNING):
+        from_layers(pi_settings(camera='usb'))
+    assert 'older' not in caplog.text
+
+
+def test_a_bad_camera_value_is_still_an_error():
+    with pytest.raises(SettingsError, match=r'pi\.camera must be text'):
+        from_layers(pi_settings(camera=''))
+
+
+def test_a_cut_error_text_from_the_computer_follows_the_setting():
+    with FakeComputer() as computer:
+        computer.routes[('GET', '/api/pi/config')] = lambda req: (502, b'x' * 50)    # not JSON: a proxy's page
+        with pytest.raises(ComputerProblem) as problem:
+            computer_config(computer.url, KEY, timeout=2, error_text_chars=7)
+    assert str(problem.value).endswith(': xxxxxxx')

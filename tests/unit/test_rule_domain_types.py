@@ -20,10 +20,10 @@ def test_rule_outcome_round_trips_through_a_dict():
 
 def test_the_rule_data_is_frozen():
     with pytest.raises(dataclasses.FrozenInstanceError):
-        ObjectSnapshot('cup', 'PRESENT', 1.0).state = 'ABSENT'
+        ObjectSnapshot('cup', 'PRESENT', 1.0).state = 'ABSENT'     # type: ignore[misc]
     history = RuleHistory(changes=[StateChange(1.0, 'cup', 'moved')], fired={'sip': [5.0]})
     with pytest.raises(dataclasses.FrozenInstanceError):
-        history.fired = {}
+        history.fired = {}                                         # type: ignore[misc]
 
 
 def test_fake_object_states_counts_snapshots_and_lets_watched_since_change():

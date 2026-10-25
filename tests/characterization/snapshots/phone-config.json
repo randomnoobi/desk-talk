@@ -2,7 +2,12 @@
   "content_type": "application/json",
   "headers": {},
   "json": {
-    "fps": "number"
+    "capture_height": "number",
+    "capture_width": "number",
+    "fps": "number",
+    "jpeg_quality": "number",
+    "max_side": "number",
+    "tilt_max": "number"
   },
   "request": "GET /api/phone/config (phone server, phone desk)"
 }

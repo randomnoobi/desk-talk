@@ -3,23 +3,27 @@ or its own object detection is off."""
 
 from __future__ import annotations
 
-import time
+import calendar
+from pathlib import Path
 
-import cv2
-import numpy as np
-
-from desktalk.config import LensSettings, LensWaits, PiSettings, SnapshotsSettings
+from desktalk.config import LensSettings, LensWaits, PiSettings, load_config
 from desktalk.core.chat.workers.lens import Lens
-from desktalk.core.vision.proof_photos import ProofPhotos
-from desktalk.desk_state import DeskState
 from desktalk.domain import CameraNotice, DetectorState, PiHealth, UploadInfo
 from desktalk_shared.wire import DETECTOR_TURNED_OFF, info_from_v1_headers
-from tests.fakes import FakeCameraHealth, FakeClock, FakeFrameSource, FakePreferences, RecordingNotifier, SyncEventBus
+from tests.fakes import (
+    FakeCameraHealth,
+    FakeClock,
+    FakeFrameSource,
+    FakePhotoTaker,
+    FakePreferences,
+    RecordingNotifier,
+    SyncEventBus,
+)
 
 SETTINGS = LensSettings.model_construct(check_every_sec=2.0, repeat_after_min=20.0, fixed_after_sec=5.0,
                                         wait_before_saying_sec=LensWaits.model_construct(pi=10.0, pi_detector=60.0))
 PI = PiSettings.model_construct(hot_warning_c=75.0, clock_off_warning_sec=5.0)
-SNAPSHOTS = SnapshotsSettings(max_kept=150, crop_padding=0.25, crop_min_px=40, jpeg_quality=85)
+WORDS = load_config(environ={}, dotenv=Path('/nonexistent')).prompts.lens
 LOST = {'key': 'lost', 'kind': 'problem', 'text': "I can't see anything: the Raspberry Pi stopped sending pictures."}
 
 
@@ -66,18 +70,21 @@ class PiReports:
 
 
 class Rig:
-    def __init__(self, messages=(), kind='pi', phone=None, layout=None, prefs=None, pi=None):
-        self.clock = FakeClock(time.mktime((2026, 10, 21, 14, 0, 0, 0, 0, -1)))
+    def __init__(self, messages=(), kind='pi', phone=None, layout=None, prefs=None, pi=None, words=WORDS,
+                 hours_from_utc=0.0):
+        # 21 October 2026, 14:00 on the clock (its own time zone, so the test is the same on every computer)
+        self.clock = FakeClock(calendar.timegm((2026, 10, 21, 14, 0, 0, 0, 0, 0)) - hours_from_utc * 3600,
+                               utc_offset_hours=hours_from_utc)
         self.health = FakeCameraHealth(messages)
         self.source = FakeFrameSource(kind=kind, clock=self.clock)
         self.source.connected, self.source.fps = True, 3.0
         self.notifier = RecordingNotifier(self.clock)
         self.bus = SyncEventBus()
-        self.desk = DeskState()
+        self.photos = FakePhotoTaker()
         self.pi = pi
         self.lens = Lens(self.health, self.source, layout or Layout(), prefs or FakePreferences(), self.notifier,
-                         self.bus, ProofPhotos(self.desk, self.clock, SNAPSHOTS), SETTINGS, PI, phone=phone,
-                         pi_uploads=pi)
+                         self.bus, self.photos, SETTINGS, PI, clock=self.clock, prompts=words, preview_chars=120,
+                         phone=phone, pi_uploads=pi)
 
     def tick(self, after=0.0):
         self.clock.advance(after)
@@ -85,10 +92,6 @@ class Rig:
 
     def said(self):
         return [(m['lens'], m['text']) for m in self.notifier.sent]
-
-
-def a_jpeg():
-    return cv2.imencode('.jpg', np.zeros((48, 64, 3), np.uint8))[1].tobytes()
 
 
 # ── what the camera check finds ──
@@ -142,6 +145,13 @@ def test_quiet_hours_keep_lens_quiet():
     assert rig.notifier.sent == [] and rig.bus.published == []
 
 
+def test_quiet_hours_go_by_the_clocks_time_zone():
+    prefs = FakePreferences({'quiet_enabled': True, 'quiet_start_hour': 13, 'quiet_end_hour': 15})
+    rig = Rig([LOST], prefs=prefs, hours_from_utc=5)      # 14:00 on the clock is 09:00 UTC
+    rig.tick()
+    assert rig.notifier.sent == []
+
+
 def test_quiet_hours_tell_the_camera_checks_to_stay_quiet_too():
     """So the checks don't count a problem as said, and no "fixed, thanks" follows a problem nobody heard."""
     quiet = Rig(prefs=FakePreferences({'quiet_enabled': True, 'quiet_start_hour': 13, 'quiet_end_hour': 15}))
@@ -161,21 +171,38 @@ def test_quiet_hours_switched_off_let_lens_speak():
 
 def test_a_photo_goes_with_problems_you_can_see_in_the_picture():
     rig = Rig([{'key': 'glare', 'kind': 'problem', 'text': 'Too much glare.'}])
-    rig.desk.frames[0] = a_jpeg()
     rig.tick()
-    snap = rig.notifier.sent[0]['snapshot']
-    assert rig.desk.snapshot_order[0]['id'] == snap and rig.desk.snapshot_order[0]['label'] == 'Lens: camera view'
-    assert rig.desk.snapshot_order[0]['ts'] == rig.clock.now()
+    assert rig.notifier.sent[0]['snapshot'] == 'photo-1'
+    assert rig.photos.saved == [(WORDS.photo_label, ())] and WORDS.photo_label == 'Lens: camera view'
+
+
+def test_no_photo_when_there_is_no_picture_yet():
+    rig = Rig([{'key': 'glare', 'kind': 'problem', 'text': 'Too much glare.'}])
+    rig.photos.has_picture = False
+    rig.tick()
+    assert 'snapshot' not in rig.notifier.sent[0]
 
 
 def test_no_photo_for_other_problems():
     rig = Rig([{'key': 'dark', 'kind': 'problem', 'text': 'It is dark.'}])
-    rig.desk.frames[0] = a_jpeg()
     rig.tick()
-    assert 'snapshot' not in rig.notifier.sent[0] and rig.desk.snapshot_order == []
+    assert 'snapshot' not in rig.notifier.sent[0] and rig.photos.saved == []
 
 
 # ── the Pi's own health ──
+def test_what_lens_says_about_the_pi_comes_from_the_prompt_settings():
+    words = WORDS.model_copy(update={'pi_hot': 'Hot Pi: {temp:.1f} degrees.',
+                                     'pi_fixed': WORDS.pi_fixed.model_copy(update={'pi_hot': 'Cool again.'})})
+    rig = Rig(pi=PiReports(), words=words)
+    rig.pi.picture(rig.clock.now(), temp=78.44)
+    rig.tick()
+    rig.tick(after=10)
+    rig.pi.picture(rig.clock.now(), temp=50.0)
+    rig.tick(after=1)
+    rig.tick(after=5)
+    assert rig.said() == [('problem', 'Hot Pi: 78.4 degrees.'), ('fixed', 'Cool again.')]
+
+
 def test_lens_mentions_a_hot_pi_once_it_has_been_hot_a_while():
     rig = Rig(pi=PiReports())
     rig.pi.picture(rig.clock.now(), temp=78.4)

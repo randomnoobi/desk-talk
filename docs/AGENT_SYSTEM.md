@@ -88,15 +88,25 @@ message gets a plain reason instead of a reply.
 
 ## Prompts
 
-Every prompt is in `desktalk/core/chat/prompts.py`. A chat reply is built in three layers:
+Every prompt, and every fixed line (Lens's wording, the habit nudges, the replies when the AI
+is down), is in `config/prompts.yaml`. The code only fills in the blanks
+(`desktalk/core/chat/prompts.py` knows which blanks each prompt has). A chat reply
+(`desktalk/core/chat/chat_answers.py`) is built in three layers:
 
 1. **Identity + rules**: name, object, personality, habit focus, action tags.
-2. **Live desk status** (`desktalk/core/chat/context.py`): who is in the chat, what else the camera sees,
-   active dangers, today's habit numbers, the tracker's data, memory of earlier replies.
-3. **The conversation**: recent turns word for word, older ones summarized.
+2. **Live desk status** (`desktalk/core/chat/live_context.py`): who is in the chat, what else the camera sees,
+   active dangers, the latest alerts, today's habit numbers, the tracker's data, and how the objects you
+   @mention are doing. What the agent said lately comes from its memory (`desktalk/core/chat/memory.py`).
+3. **The conversation** (`desktalk/core/chat/history.py`): recent turns word for word, older ones summarized.
 
-Replies are cleaned so an agent never speaks for another one, and dramatic claims
-the camera didn't see ("the laptop is about to shatter") are dropped.
+Who answers in the group (@mentions, an agent named in plain text) is worked out in
+`desktalk/core/chat/names.py`. Replies are cleaned (`desktalk/core/chat/replies.py`) so an agent never
+speaks for another one, and dramatic claims the camera didn't see ("the laptop is about to shatter") are dropped.
+
+`MessageGenerator` (`desktalk/core/chat/message_generator.py`) is the front the rest of the app talks to.
+It builds the pieces that do the work: `alert_voice.py` (alerts in an agent's voice), `nudge_voice.py`
+(habit reminders in an agent's voice), `chat_answers.py` (answering you) and `memory.py` (the only part
+that writes what the characters remember, into `CharacterMemory`).
 
 ## Trackers and action tags
 

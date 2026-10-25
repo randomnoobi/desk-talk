@@ -17,8 +17,8 @@ from __future__ import annotations
 import logging
 
 from desktalk.config import RemindersSettings
-from desktalk.core.agents.speakers import LENS, speaker_for
-from desktalk.domain import NudgeSent
+from desktalk.core.agents.speakers import speaker_for
+from desktalk.domain import LENS, NudgeSent
 from desktalk.ports import ChatVoice, DeskStatus, EventBus, HabitsView, Notifier, Profiles, RosterView, RuleNudges
 
 log = logging.getLogger(__name__)

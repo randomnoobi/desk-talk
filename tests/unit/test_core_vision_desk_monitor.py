@@ -1,17 +1,13 @@
 """The desk monitor: safety alerts from each analysed picture (danger zones, desk edges, pets, clutter, plants)."""
 
-import cv2
-import numpy as np
 import pytest
 
 from desktalk.core.vision.analyzer import DeskAnalyzer
 from desktalk.core.vision.desk_monitor import DeskMonitor
-from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.core.vision.rules import SafetyRules
-from desktalk.desk_state import DeskState
 from desktalk.domain import AgentProfile, Alert, BBox, Detection, DetectionEvent, Light
-from tests.fakes import FakeClock, FakeDeskStatus, FakeHabits, FakeProfiles, InMemoryKeyValueStore, SyncEventBus
-from tests.unit.test_core_vision_kit import app_config, desk_object
+from tests.fakes import FakeDeskStatus, FakeHabits, FakePhotoTaker, FakeProfiles, InMemoryKeyValueStore, SyncEventBus
+from tests.unit.test_core_vision_kit import FakeDesk, app_config, seen_object
 
 T = 1_760_000_000          # a real time: the monitor counts 0 as "never alerted"
 LAPTOP = (200, 200, 400, 350)
@@ -29,25 +25,28 @@ AGENTS = [
 
 class Rig:
     """A desk monitor wired to fakes. look() is one analysed picture: the agents' objects on the desk
-    (as the roster leaves them in DeskState) and every detector word in the picture. show_pet() shows
+    (as the roster leaves them in the desk scene) and every detector word in the picture. show_pet() shows
     pets for just enough pictures for them to count."""
 
-    def __init__(self, agents=AGENTS, warm=True, saved=None):
+    def __init__(self, agents=AGENTS, warm=True, saved=None, words=None):
         self.bus = SyncEventBus()
-        self.desk = DeskState()
-        self.desk.frames[0] = cv2.imencode('.jpg', np.full((480, 640, 3), 120, np.uint8))[1].tobytes()
+        self.desk = FakeDesk()
+        self.photos = FakePhotoTaker()
         self.habits = FakeHabits()
         self.status = FakeDeskStatus(warm=warm)
         self.profiles = FakeProfiles(agents, ignored=['person', 'chair'])
         self.settings = app_config().alerts
-        rules = SafetyRules(InMemoryKeyValueStore({'safety_rules': saved} if saved else {}), app_config().safety)
-        self.monitor = DeskMonitor(self.bus, self.desk, DeskAnalyzer(rules), self.profiles, self.habits, self.status,
-                                   ProofPhotos(self.desk, FakeClock(), app_config().snapshots), app_config().alerts)
+        prompts = app_config().prompts
+        rules = SafetyRules(InMemoryKeyValueStore({'safety_rules': saved} if saved else {}), app_config().safety,
+                            words=prompts.desk_rules)
+        self.monitor = DeskMonitor(self.bus, self.desk, DeskAnalyzer(rules, words=prompts.desk_checks), self.profiles,
+                                   self.habits, self.status, self.photos, self.settings,
+                                   words=words or prompts.desk_alerts)
 
     def look(self, ts, agents=None, labels=(), size=(640, 480), confidence=0.9, box=(0, 0, 10, 10)):
         """Returns the alerts this picture caused. The words in `labels` are seen at `confidence`, in `box`."""
         agents = agents or {}
-        self.desk.objects = {a: desk_object(label, box) for a, (label, box) in agents.items()}
+        self.desk.set_members({a: seen_object(label, box) for a, (label, box) in agents.items()}, ts)
         found = [Detection(label, 0.9, BBox(*box)) for label, box in agents.values()]
         found += [Detection(label, confidence, BBox(*box)) for label in labels]
         self.bus.publish(DetectionEvent(ts=ts, frame_id=f'pi-{int(ts)}', source='pi', size=size,
@@ -65,6 +64,14 @@ class Rig:
     def alerts(self):
         return self.bus.of_type(Alert)
 
+    def dangers(self):
+        return [d.to_dict() for d in self.desk.now().dangers]
+
+    def result(self):
+        result = self.desk.now().result
+        assert result is not None
+        return result
+
 
 def cup_near_laptop():
     return {'computer': ('laptop', LAPTOP), 'cup': ('cup', CUP_NEAR)}
@@ -78,7 +85,7 @@ def test_cup_in_the_laptop_zone_makes_the_fragile_laptop_speak_up():
     snap = alert.extra['snapshot']
     assert {k: v for k, v in alert.extra.items() if k != 'snapshot'} == {
         'follow_up': 0, 'near': 'cup', 'severity': 'high', 'rule_label': 'Spill / pressure zone', 'depth_px': 70}
-    assert rig.desk.snapshots[snap] and rig.desk.snapshot_order[0]['label'] == 'Proximity alert'
+    assert snap == 'photo-1' and rig.photos.saved == [('Proximity alert', (CUP_NEAR, LAPTOP))]
     assert rig.habits.bumps == [('danger_count', 1)]
 
 
@@ -109,15 +116,15 @@ def test_a_pair_quiet_for_a_while_starts_over():
 def test_the_ai_is_told_about_recent_alerts():
     rig = Rig()
     rig.look(T + 1000, cup_near_laptop())
-    assert rig.desk.recent_events == [{'time': T + 1000, 'type': 'proximity', 'character': 'computer', 'near': 'cup',
-                                       'severity': 'high', 'rule_label': 'Spill / pressure zone'}]
+    assert rig.desk.recent_alerts(100) == [{'time': T + 1000, 'type': 'proximity', 'character': 'computer',
+                                            'near': 'cup', 'severity': 'high', 'rule_label': 'Spill / pressure zone'}]
 
 
 def test_only_the_latest_alerts_are_remembered_for_the_ai():
     rig = Rig()
     for k in range(40):
         rig.look(T + 1000 + 1000 * k, cup_near_laptop())
-    assert len(rig.desk.recent_events) == app_config().alerts.recent_kept == 30
+    assert len(rig.desk.recent_alerts(100)) == app_config().alerts.recent_kept == 30
 
 
 # ── desk edges ──
@@ -127,7 +134,7 @@ def test_something_at_the_desk_edge():
     assert alert.agent == 'cup'
     assert {k: v for k, v in alert.extra.items() if k != 'snapshot'} == {
         'follow_up': 0, 'severity': 'medium', 'rule_label': 'Near front edge (6px)'}
-    assert rig.desk.safety_dangers == [{'pair': ['cup', 'desk_edge'], 'label': 'cup near front edge',
+    assert rig.dangers() == [{'pair': ['cup', 'desk_edge'], 'label': 'cup near front edge',
                                         'type': 'edge_danger'}]
 
 
@@ -141,36 +148,28 @@ def test_desk_edges_use_the_size_of_the_picture():
 def test_safety_state_for_the_app_and_the_ai():
     rig = Rig()
     rig.look(T + 1000, cup_near_laptop())
-    assert rig.desk.safety_state == 'SAFE'           # one zone intrusion is risk level 1
-    assert rig.desk.safety_dangers == [{'pair': ['cup', 'laptop'], 'label': 'Spill / pressure zone',
+    assert rig.desk.now().state == 'SAFE'            # one zone intrusion is risk level 1
+    assert rig.dangers() == [{'pair': ['cup', 'laptop'], 'label': 'Spill / pressure zone',
                                         'depth_px': 70, 'type': 'zone_intrusion'}]
-    assert rig.desk.rel_result['risk_level'] == 1
-    assert rig.desk.danger_active_since == {frozenset({'cup', 'laptop'}): T + 1000}
+    assert rig.result()['risk_level'] == 1
+    assert rig.desk.danger_since(frozenset({'cup', 'laptop'})) == T + 1000
 
 
 def test_dangerous_from_the_risk_level_in_the_settings():
     rig = Rig()
     mouse = ('mouse', (405, 270, 415, 280))           # right between the cup and the laptop
     rig.look(T + 1000, {**cup_near_laptop(), 'mouse': mouse})
-    assert rig.desk.rel_result['risk_level'] >= app_config().alerts.dangerous_from_risk
-    assert rig.desk.safety_state == 'DANGEROUS'
+    assert rig.result()['risk_level'] >= app_config().alerts.dangerous_from_risk
+    assert rig.desk.now().state == 'DANGEROUS'
 
 
 def test_a_danger_keeps_its_start_time_until_it_is_gone():
     rig = Rig()
     rig.look(T + 1000, cup_near_laptop())
     rig.look(T + 1010, cup_near_laptop())
-    assert rig.desk.danger_active_since == {frozenset({'cup', 'laptop'}): T + 1000}
+    assert rig.desk.danger_since(frozenset({'cup', 'laptop'})) == T + 1000
     rig.look(T + 1020, {'computer': ('laptop', LAPTOP), 'cup': ('cup', CUP_FAR)})
-    assert rig.desk.danger_active_since == {} and rig.desk.safety_dangers == []
-
-
-def test_no_safety_alerts_when_risk_detection_is_off():
-    rig = Rig()
-    rig.desk.active_scenarios['risk_detection'] = False
-    rig.show_pet(T + 1000, cup_near_laptop())
-    assert rig.alerts() == []
-    assert rig.desk.safety_dangers == [] and rig.desk.rel_result['risk_events']
+    assert rig.desk.danger_since(frozenset({'cup', 'laptop'})) is None and rig.dangers() == []
 
 
 # ── pets ──
@@ -272,14 +271,6 @@ def test_two_pets_in_the_order_of_the_settings():
     assert [a.text.split()[0] for a in alerts] == ['Cat', 'Dog']
 
 
-def test_a_pet_seen_while_risk_detection_is_off_still_starts_the_wait():
-    rig = Rig()
-    rig.desk.active_scenarios['risk_detection'] = False
-    rig.show_pet(T + 1000)
-    rig.desk.active_scenarios['risk_detection'] = True
-    assert rig.show_pet(T + 1100) == []
-
-
 # ── clutter ──
 CLUTTER = ['cup', 'book', 'pen', 'phone', 'keys', 'remote', 'person', 'chair']
 
@@ -331,3 +322,28 @@ def test_it_listens_only_to_detection_events():
     assert [s['name'] for s in rig.bus.stats()] == ['desk-monitor']
     rig.bus.publish(Alert(ts=1, kind='scenario', text='hi'))
     assert rig.bus.stats()[0]['handled'] == 0
+
+
+def test_no_photo_means_the_alert_still_goes_out_without_one():
+    rig = Rig()
+    rig.photos.has_picture = False
+    [alert] = rig.look(T + 1000, cup_near_laptop())
+    assert alert.extra['snapshot'] is None
+
+
+def test_the_alert_words_come_from_prompts_yaml():
+    words = app_config().prompts.desk_alerts.model_copy(update={
+        'photo_label': 'Too close', 'pet': '{pet}!{knock}', 'pet_knock': ' Mind {names}.', 'clutter': '{count} things.',
+        'plant': 'Water me.', 'edge_reason': '{edge} side, {distance}px', 'edge_danger': '{object} at {edge}'})
+    rig = Rig(words=words)
+    rig.look(T + 1000, cup_near_laptop())
+    assert rig.photos.saved[0][0] == 'Too close'
+    [alert] = rig.show_pet(T + 3000, {'computer': ('laptop', LAPTOP), 'cup': ('cup', CUP_FAR)})
+    assert alert.text == 'Cat! Mind Cup.'
+    [alert] = rig.look(T + 5000, {'paper': ('book', (10, 10, 50, 50))}, labels=CLUTTER)
+    assert alert.text == '6 things.'
+    [alert] = rig.look(T + 7000, {'plant': ('potted plant', (10, 10, 50, 50))})
+    assert alert.text == 'Water me.'
+    rig = Rig(saved={'desk_outline': [[0, 0], [1, 0], [1, 0.8], [0, 0.8]]}, words=words)
+    [alert] = rig.look(T + 1000, {'cup': ('cup', (400, 480, 470, 570))}, size=(960, 720))
+    assert alert.extra['rule_label'] == 'front side, 6px' and rig.dangers()[0]['label'] == 'cup at front'

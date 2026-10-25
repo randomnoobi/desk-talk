@@ -65,13 +65,6 @@ PHONE_HEADERS = {'Content-Type': 'image/jpeg', 'X-Desk-Key': PAIR_KEY, 'X-Desk-R
 KEY = {'X-Desk-Key': PAIR_KEY}
 WRONG_KEY = {'X-Desk-Key': 'not-the-key'}
 
-# What safety_pipeline/messaging.py posts to /api/safety.
-DANGER_ALERT = {'type': 'danger_alert', 'message': 'Safety Alert: the cup is close to the laptop.',
-                'timestamp': 1792569600.0,
-                'pairs': [{'objects': ['cup', 'laptop'], 'distance_px': 42.5, 'threshold_px': 80}]}
-SAFE_STATUS = {'type': 'safe_status', 'message': 'All monitored object distances are within safe range.',
-               'timestamp': 1792569600.0}
-
 TODO_LIST = {'type': 'todo', 'items': [{'text': 'Send the report', 'done': False},
                                        {'text': 'Water the plant', 'done': True}]}
 OUTLINE = [[0, 0.5], [1, 0.5], [1, 1], [0, 1]]
@@ -137,19 +130,12 @@ CASES = [
          before=(Step('POST', '/api/pi/frame', data=PICTURE, headers=PI_HEADERS),),
          values={'camera': True, 'camera_info.frames_received': 1, 'camera_info.pi.last_frame_id': 'pi-000042',
                  'camera_info.pi.photos_stored': 42, 'camera_info.pi.disk_free_mb': 1234}),
-    Case('phone-info-pi-camera', 'GET', '/api/phone/info', 200),
-    Case('phone-info-phone-camera', 'GET', '/api/phone/info', 200, desk='phone', values={'url': PHONE_URL}),
-    Case('phone-info-phone-camera-from-lan', 'GET', '/api/phone/info', 200, desk='phone', from_ip=LAN_DEVICE,
-         values={'url': '', 'qr_svg': None}),
 
     # ── Video and photos ──
-    Case('video-feed', 'GET', '/api/video_feed', 200, reply=MJPEG),
     Case('video-feed-camera-0', 'GET', '/api/video_feed/0', 200, reply=MJPEG),
     Case('video-feed-raw', 'GET', '/api/video_feed_raw', 200, reply=MJPEG),
     Case('video-feed-raw-camera-0', 'GET', '/api/video_feed_raw/0', 200, reply=MJPEG),
-    Case('video-feed-waits-for-first-picture', 'GET', '/api/video_feed', 200, desk='fresh', reply=MJPEG_WAITS),
-    Case('latest-frame', 'GET', '/api/latest_frame/0', 200, reply=FILE, starts_with=JPEG_START),
-    Case('latest-frame-no-picture-yet', 'GET', '/api/latest_frame/0', 404, desk='fresh', reply=STATUS),
+    Case('video-feed-waits-for-first-picture', 'GET', '/api/video_feed/0', 200, desk='fresh', reply=MJPEG_WAITS),
     Case('latest-frame-raw', 'GET', '/api/latest_frame_raw/0', 200, reply=FILE, starts_with=JPEG_START),
     Case('latest-frame-raw-no-picture-yet', 'GET', '/api/latest_frame_raw/0', 404, desk='fresh', reply=STATUS),
     Case('snapshot', 'GET', '/api/snapshot/{snapshot_id}', 200, reply=FILE, starts_with=JPEG_START),
@@ -158,14 +144,6 @@ CASES = [
     Case('snapshots-none-yet', 'GET', '/api/snapshots', 200, desk='fresh'),
 
     # ── Live status ──
-    Case('detections', 'GET', '/api/detections', 200),
-    Case('detections-nothing-seen', 'GET', '/api/detections', 200, desk='fresh'),
-    Case('safety', 'GET', '/api/safety', 200),
-    Case('safety-nothing-seen', 'GET', '/api/safety', 200, desk='fresh'),
-    Case('safety-post-danger-alert', 'POST', '/api/safety', 200, json=DANGER_ALERT),
-    Case('safety-post-safe-status', 'POST', '/api/safety', 200, json=SAFE_STATUS),
-    Case('safety-after-danger-alert', 'GET', '/api/safety', 200, before=(Step('POST', '/api/safety', DANGER_ALERT),),
-         values={'state': 'DANGEROUS'}),
     Case('live', 'GET', '/api/live', 200),
     Case('live-from-lan', 'GET', '/api/live', 200, from_ip=LAN_DEVICE),
     Case('live-nothing-seen', 'GET', '/api/live', 200, desk='fresh'),
@@ -215,8 +193,6 @@ CASES = [
     Case('chat-todos-sync-bad-payload', 'POST', '/api/chat_todos_sync', 400, json={'by_chat': ['paper']}),
     Case('widget-event', 'POST', '/api/widget_event', 200, json={'chat': 'cup', 'action': 'view'}),
     Case('widget-event-unknown-chat', 'POST', '/api/widget_event', 400, json={'chat': 'nobody', 'action': 'view'}),
-    Case('context', 'GET', '/api/context', 200),
-    Case('context-nothing-seen', 'GET', '/api/context', 200, desk='fresh'),
 
     # ── Habits ──
     Case('habits-today', 'GET', '/api/habits/today', 200),
@@ -229,13 +205,11 @@ CASES = [
     Case('habit-log', 'GET', '/api/habit_log', 200),
     Case('habit-log-one-category', 'GET', '/api/habit_log?category=posture_bad&limit=5', 200),
     Case('habit-log-bad-limit', 'GET', '/api/habit_log?limit=lots', 400),     # the Flask server crashed: 500
-    Case('daily-stats', 'GET', '/api/daily_stats', 200),
     Case('preferences', 'GET', '/api/preferences', 200),
-    Case('preferences-old-url', 'GET', '/api/habit_policy', 200),
     Case('preferences-put', 'PUT', '/api/preferences', 200,
          json={'wake_time': '06:30', 'bed_time': '23:00', 'quiet_enabled': True}),
     Case('preferences-put-bad-time', 'PUT', '/api/preferences', 400, json={'wake_time': 'noon'}),
-    Case('preferences-put-old-names', 'PUT', '/api/habit_policy', 200, json={'dnd_enabled': True, 'dnd_start_hour': 21},
+    Case('preferences-put-old-names', 'PUT', '/api/preferences', 200, json={'dnd_enabled': True, 'dnd_start_hour': 21},
          values={'preferences.quiet_enabled': True, 'preferences.quiet_start_hour': 21}),
     Case('preferences-after-put', 'GET', '/api/preferences', 200,
          before=(Step('PUT', '/api/preferences', {'wake_time': '06:30'}),), values={'wake_time': '06:30'}),
@@ -268,8 +242,7 @@ CASES = [
     Case('rules-put-too-few-corners', 'PUT', '/api/rules', 400, json={'desk_outline': [[0, 0], [1, 0]]}),
     Case('rules-put-bad-outline', 'PUT', '/api/rules', 400, json={'desk_outline': 'the whole desk'}),
     Case('rules-put-empty', 'PUT', '/api/rules', 400, json={}),
-    Case('scenarios', 'GET', '/api/scenarios', 200),
-    Case('scenarios-nothing-seen', 'GET', '/api/scenarios', 200, desk='fresh'),
+    Case('ui-settings', 'GET', '/api/ui_settings', 200, values={'web.refresh_ms.live': 1500, 'lens_card.id': 'lens'}),
 
     # ── The phone camera's own server (phone_camera/) ──
     Case('phone-page', 'GET', '/', 200, desk='phone', server='phone', reply=FILE, starts_with=HTML_START),

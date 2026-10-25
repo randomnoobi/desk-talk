@@ -7,7 +7,6 @@ so changing config/settings.yaml never breaks these tests.
 from __future__ import annotations
 
 import logging
-import re
 import sqlite3
 
 import pytest
@@ -17,7 +16,7 @@ from desktalk.core.object_states import ObjectStateTracker
 from desktalk.domain import BBox, Detection, DetectionEvent, ObjectStateChanged, Phase, StateChange, StateRecord
 from desktalk.domain.events import Light
 from tests.contracts.object_states_contract import ObjectStatesContract
-from tests.fakes import InMemoryStateStore, SyncEventBus
+from tests.fakes import FakeClock, InMemoryStateStore, SyncEventBus
 
 SETTINGS = {
     'on_confidence': 0.5,
@@ -52,11 +51,12 @@ def o(label, conf, x=320, y=240):
     return Detection(label, conf, BBox(x - 20, y - 20, x + 20, y + 20))
 
 
-def make_tracker(store=None, **changes):
+def make_tracker(store=None, utc_offset_hours=8, **changes):
     bus = SyncEventBus()
     store = InMemoryStateStore() if store is None else store
     settings = ObjectStatesSettings.model_validate({**SETTINGS, **changes})
-    tracker = ObjectStateTracker(settings, bus, store, device_id='pi', new_session_after_sec=300)
+    tracker = ObjectStateTracker(settings, bus, store, device_id='pi', new_session_after_sec=300,
+                                 clock=FakeClock(utc_offset_hours=utc_offset_hours))
     return tracker, bus, store
 
 
@@ -96,10 +96,16 @@ def record(ts, label, kind, state='PRESENT'):
 
 
 class BrokenStore(InMemoryStateStore):
-    """A store whose disk is full."""
+    """A store whose disk is full (until the test sets `full` to False)."""
+
+    def __init__(self):
+        super().__init__()
+        self.full = True
 
     def append(self, records):
-        raise sqlite3.OperationalError('database or disk is full')
+        if self.full:
+            raise sqlite3.OperationalError('database or disk is full')
+        super().append(records)
 
 
 class FlakyStore(InMemoryStateStore):
@@ -159,7 +165,25 @@ def test_events_go_to_the_bus_and_the_store():
     assert row.new_state == Phase.PRESENT
     assert row.prev_state == Phase.UNKNOWN
     assert (row.type, row.label, row.device_id, row.ts) == ('appeared', 'bottle', 'pi', event.ts)
-    assert re.fullmatch(r'[+-]\d\d:\d\d', row.timezone)
+    assert row.timezone == '+08:00'          # the clock's UTC offset
+
+
+def test_boxes_are_rounded_like_detections():
+    """A box keeps 0.1 px, like Detection.to_dict() and the rows saved before."""
+    tracker, bus, store = make_tracker()
+    feed(tracker, 1000, [[Detection('bottle', 0.6, BBox(300.04, 219.96, 340.04, 259.96))]] * SETTLE)
+    [event] = bus.of_type(ObjectStateChanged)
+    assert event.bbox == (300.0, 220.0, 340.0, 260.0)
+    [row] = store.changes(0)
+    assert row.bbox == (300.0, 220.0, 340.0, 260.0)
+
+
+@pytest.mark.parametrize('hours, text', [(0, '+00:00'), (-7, '-07:00'), (5.75, '+05:45'), (-3.5, '-03:30')])
+def test_each_row_says_the_clocks_utc_offset(hours, text):
+    tracker, _, store = make_tracker(utc_offset_hours=hours)
+    feed(tracker, 1000, [[o('bottle', 0.6)]] * SETTLE)
+    [row] = store.changes(0)
+    assert row.timezone == text
 
 
 def test_a_failing_store_does_not_hide_the_event(caplog):
@@ -180,9 +204,9 @@ def test_the_store_working_again_brings_back_the_traceback(caplog):
     tracker, bus, _ = make_tracker(store)
     with caplog.at_level(logging.ERROR):
         t = feed(tracker, 1000, [[o('bottle', 0.6)]] * SETTLE)      # fails: traceback
-        store.append = lambda records: None                           # works again
+        store.full = False                                            # works again
         t = feed(tracker, t, [[]] * 16)                               # removed is saved
-        del store.append                                              # fails again: traceback again
+        store.full = True                                             # fails again: traceback again
         feed(tracker, t, [[o('bottle', 0.6)]] * SETTLE)
     errors = [r for r in caplog.records if 'disk is full' in r.getMessage()]
     assert [bool(r.exc_info) for r in errors] == [True, True]
@@ -219,7 +243,9 @@ def test_snapshot_writes_one_row_per_known_object():
     for label, row in rows.items():
         assert row.ts == now
         assert row.prev_state == row.new_state == Phase(snap[label].state)
-        assert row.dwell_sec == pytest.approx(now - snap[label].since)
+        since = snap[label].since
+        assert since is not None
+        assert row.dwell_sec == pytest.approx(now - since)
         assert row.device_id == 'pi'
     assert store.changes(0) == [r for r in store.records if r.type != 'snapshot']     # snapshots aren't changes
 

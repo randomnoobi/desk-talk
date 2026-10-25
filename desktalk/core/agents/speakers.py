@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
+from desktalk.domain import LENS
 from desktalk.ports import Profiles
-
-LENS = 'lens'           # Lens, the camera's own character: speaks when no agent fits
 
 
 def speaker_for(habits: Iterable[str], member_ids: Sequence[str], profiles: Profiles) -> str:

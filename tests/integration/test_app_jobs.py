@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import json
 import time
+from typing import cast
 
-from desktalk.core.chat import prompts
 from desktalk.core.chat.tracker_actions import tracker_prompt
+from desktalk.core.chat.workers import LostItems
 from desktalk.domain import BBox, Detection, DetectorState, UploadInfo
 from tests.integration.app_kit import (
     CUP_FAR,
@@ -144,16 +145,16 @@ def test_lens_says_why_the_pis_own_detection_is_off(tmp_path):
 
 
 # ── small talk ───────────────────────────────────────────────────────
-def small_talk_ai():
-    """The fake AI, answering by what it's asked: a topic, each agent's line, and the director (one more
-    line, then stop)."""
+def small_talk_ai(words):
+    """The fake AI, answering by what it's asked (`words`: the small-talk prompts): a topic, each agent's
+    line, and the director (one more line, then stop)."""
     directed = []
 
     def reply(request):
         system = request['messages'][0]['content']
-        if system == prompts.TOPIC_SYSTEM:
+        if system == words.topic_system:
             return 'Who has been on this desk the longest?'
-        if system == prompts.DIRECTOR_SYSTEM:
+        if system == words.director_system:
             directed.append(request)
             return '{"continue": true}' if len(directed) == 1 else '{"continue": false}'
         if system.startswith('You are Computer'):
@@ -167,7 +168,7 @@ def small_talk_ai():
 def test_the_agents_make_small_talk_while_someone_is_at_the_desk(tmp_path):
     config = changed(desk_config(tmp_path, ai=True), 'reminders', warmup_min=1)
     config = changed(config, 'idle_chat', min_sec=30, max_sec=30)
-    rig = DeskRig(tmp_path, config=config, ai_reply=small_talk_ai())
+    rig = DeskRig(tmp_path, config=config, ai_reply=small_talk_ai(config.prompts.small_talk))
     rig.watch(70, LAPTOP, CUP_FAR, step=1.0)
     rig.messages()
     wait = rig.tick(rig.app.idle_chat)                    # the first round only sets when the chat starts
@@ -190,11 +191,11 @@ def test_keys_gone_a_while_get_a_message_and_an_answer_when_asked(tmp_path):
     rig.tick(rig.app.lost_items, after=alert_after)
     [said] = [m for m in rig.messages() if m.get('alert') == 'keys']
     assert said['character'] == 'lens' and "Keys: hasn't been seen for 15 min." in said['text']
-    assert rig.app.habits.today()['lost_alerts'] == 1
+    assert rig.app.habits.today(rig.clock.now())['lost_alerts'] == 1
     assert rig.app.lost_items.is_lost_query('have you seen my keys?')
     answer = rig.app.lost_items.answer('have you seen my keys?')
     assert 'Keys' in answer['text'] and 'minute' in answer['text'] and answer['cta']['action'] == 'captures'
-    assert rig.app.lost_items.sightings()['keys']['alerted'] is True
+    assert cast(LostItems, rig.app.lost_items).sightings()['keys']['alerted'] is True     # not in its interface
 
 
 # ── the daily recap ──────────────────────────────────────────────────
@@ -252,7 +253,7 @@ def test_a_reply_that_logs_a_sip_counts_it_on_the_habits_page(tmp_path):
     rig.watch(4, LAPTOP, CUP_FAR)
     reply = rig.app.generator.answer('cup', 'I just drank some water')
     assert reply['messages'] == [{'character': 'cup', 'text': 'Splash, nice one!'}]
-    assert rig.app.habits.today()['hydration']['sips'] == 1
+    assert rig.app.habits.today(rig.clock.now())['hydration']['sips'] == 1
     assert json.loads(json.dumps(rig.app.generator.live_context()))['summary']
 
 
@@ -260,5 +261,6 @@ def test_the_water_tracker_tells_the_ai_the_real_habit_numbers(tmp_path):
     rig = DeskRig(tmp_path)
     rig.app.habits.log('hydration', 'glass')
     now = rig.clock.now()
-    text = tracker_prompt('hydration', rig.app.habits.today(now), None, [], now, rig.config.chat)
+    text = tracker_prompt('hydration', rig.app.habits.today(now), None, [], now, rig.config.chat,
+                          words=rig.config.prompts.trackers)
     assert '240 ml of a 2400 ml goal' in text                # a glass, and the goal in config/protocols.yaml

@@ -6,6 +6,8 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from desktalk.domain import AgentProfile, DeskSnapshot, Nudge, ObjectSnapshot, StateChange
+from desktalk.util import in_hour_window
+from tests.fakes.clock import FakeClock
 
 
 class StaticRoster:
@@ -32,8 +34,15 @@ class FakeProfiles:
         return next((p for p in self.by_id.values() if label in p.labels), None)
 
     def mention_words(self) -> dict[str, str]:
-        words = {p.name.lower(): p.id for p in self.by_id.values()}
-        words.update({label: p.id for p in self.by_id.values() for label in p.labels})
+        """The same words as the real ProfileBook: id, name, nickname, object and labels (and a label's first
+        part before a /), lower case, first agent wins."""
+        words: dict[str, str] = {}
+        for p in self.by_id.values():
+            for word in [p.id, p.name, p.nickname, p.object, *p.labels]:
+                word = str(word or '').lower().strip()
+                if word:
+                    words.setdefault(word, p.id)
+                    words.setdefault(word.split('/')[0].strip(), p.id)
         return words
 
     def all(self) -> list[AgentProfile]:
@@ -120,8 +129,11 @@ class FakeRuleNudges:
 
 
 class FakePreferences:
-    def __init__(self, values: Mapping[str, Any] | None = None):
+    """`clock`: what quiet_now() reads the local hour from (UTC by default)."""
+
+    def __init__(self, values: Mapping[str, Any] | None = None, clock: FakeClock | None = None):
         self.values = dict(values or {})
+        self.clock = clock or FakeClock()
 
     def get(self, key: str) -> Any:
         return self.values.get(key)
@@ -132,6 +144,10 @@ class FakePreferences:
     def update(self, changes: Mapping[str, Any]) -> dict[str, Any]:
         self.values.update(changes)
         return dict(self.values)
+
+    def quiet_now(self, now: float) -> bool:
+        return bool(self.values.get('quiet_enabled')) and in_hour_window(
+            self.clock.local_hour(now), int(self.values['quiet_start_hour']), int(self.values['quiet_end_hour']))
 
 
 class FakeDeskStatus:

@@ -8,8 +8,8 @@ import pytest
 from desktalk.config import load_config
 from desktalk.core.agents.profiles import ProfileBook
 from desktalk.core.agents.roster import Roster
-from desktalk.desk_state import DeskState
-from desktalk.domain import AgentJoined, AgentLeft, Alert, BBox, Detection, DetectionEvent, Light
+from desktalk.core.desk import Scene
+from desktalk.domain import AgentJoined, AgentLeft, Alert, BBox, Detection, DetectionEvent, Light, SeenObject
 from desktalk.ports import RosterView
 from tests.fakes import InMemoryKeyValueStore, SyncEventBus
 
@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def config(tmp_path_factory):
     root = tmp_path_factory.mktemp('project')
     (root / 'config').mkdir()
-    for name in ('settings.yaml', 'agents.yaml', 'protocols.yaml'):
+    for name in ('settings.yaml', 'agents.yaml', 'protocols.yaml', 'prompts.yaml'):
         shutil.copy(ROOT / 'config' / name, root / 'config' / name)
     return load_config(root, environ={})
 
@@ -30,7 +30,7 @@ class Rig:
 
     def __init__(self, config, on_desk=None, **agent_settings):
         self.bus = SyncEventBus()
-        self.desk = DeskState()
+        self.desk = Scene()
         self.profiles = ProfileBook(config.agents_file, InMemoryKeyValueStore(), personality_max_chars=400)
         agents = config.agents.model_copy(update=agent_settings)
         self.roster = Roster(self.bus, self.profiles, self.desk, agents, config.presence, on_desk=on_desk)
@@ -66,14 +66,14 @@ def test_object_joins_and_leaves(config):
     t = r.run(1000.0, 4, d('laptop'), d('person'))           # 4 seconds at 3 pictures a second
     assert [(e.agent, e.name, e.label, e.conf) for e in r.joined()] == [('computer', 'Computer', 'laptop', 0.9)]
     assert r.joined()[0].ts == pytest.approx(1003.0)          # seen for 3 s (agents.join_after_sec)
-    assert r.roster.member_ids() == ['computer'] and r.roster.is_member('computer')
-    assert set(r.desk.objects) == {'computer'}                # person is ignored
+    assert r.roster.member_ids() == ['computer']
+    assert set(r.desk.members()) == {'computer'}                # person is ignored
     r.run(t, config.agents.leave_after_sec + 5, d('person'))  # 5 s longer than the wait, with no laptop
     assert [(e.agent, e.name, e.label) for e in r.left()] == [('computer', 'Computer', 'laptop')]
     left = r.left()[0]
     assert left.stayed_sec == pytest.approx(round(left.ts - 1003.0, 1))
     assert left.ts - t == pytest.approx(config.agents.leave_after_sec, abs=0.5)   # gone this long
-    assert r.roster.member_ids() == [] and r.desk.objects == {}
+    assert r.roster.member_ids() == [] and r.desk.members() == {}
     snap = r.roster.snapshot()
     assert snap[0]['id'] == 'computer' and snap[0]['on_desk'] is False and snap[0]['left_at'] == left.ts
 
@@ -158,13 +158,13 @@ def test_max_agents(config):
 def test_desk_objects_are_the_members_seen_just_now(config):
     r = Rig(config)
     t = r.run(100.0, 4, d('laptop', box=(10, 20, 30, 40)))
-    assert r.desk.objects == {'computer': {'class_name': 'laptop', 'bbox': [10.0, 20.0, 30.0, 40.0],
-                                           'center': [20.0, 30.0], 'conf': 0.9, 'cam': 0}}
-    assert r.desk.object_first_seen['computer'] == pytest.approx(103.0)
-    assert r.desk.object_last_seen['computer'] == pytest.approx(t - 1 / 3)
+    assert r.desk.members() == {'computer': SeenObject(label='laptop', box=(10.0, 20.0, 30.0, 40.0),
+                                                       center=(20.0, 30.0), confidence=0.9, cam=0)}
+    assert r.desk.first_seen('computer') == pytest.approx(103.0)
+    assert r.desk.last_seen('computer') == pytest.approx(t - 1 / 3)
     t = r.run(t, 3)                                            # out of sight 3 s: still a member...
     assert r.roster.member_ids() == ['computer']
-    assert r.desk.objects == {}                                # ...but not on the desk right now (2.5 s)
+    assert r.desk.members() == {}                                # ...but not on the desk right now (2.5 s)
 
 
 def test_camera_off_freezes_the_roster(config):

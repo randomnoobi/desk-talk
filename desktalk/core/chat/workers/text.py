@@ -4,7 +4,7 @@ Reading the AI's JSON answers, for the background chat jobs.
     json_in(reply)      the {...} object in an AI reply, or None
 
 Keeping a line to one speaker and hiding action tags use the chat's own helpers
-(desktalk/core/chat/context.py and tracker_actions.py).
+(desktalk/core/chat/replies.py and tracker_actions.py).
 """
 
 from __future__ import annotations

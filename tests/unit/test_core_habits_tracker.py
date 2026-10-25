@@ -14,16 +14,16 @@ import pytest
 from desktalk.config import load_config
 from desktalk.core.agents.profiles import ProfileBook
 from desktalk.core.habits.tracker import HabitTracker
-from desktalk.desk_state import DeskState
-from desktalk.domain import Alert, BBox, Detection, DetectionEvent, HabitEvent, Light
-from desktalk.ports import HabitsView
+from desktalk.domain import Alert, BBox, Detection, DetectionEvent, HabitEvent, Light, SeenObject
+from desktalk.ports import HabitLog, HabitsLifecycle, HabitsView
 from desktalk.util import at_time_today
-from tests.fakes import FakeClock, FakePreferences, InMemoryKeyValueStore, SyncEventBus
+from tests.fakes import FakeClock, FakeDeskScene, FakePreferences, InMemoryKeyValueStore, SyncEventBus
 
 ROOT = Path(__file__).resolve().parents[2]
 MIN = 60
 DAY = time.mktime((2026, 6, 15, 12, 0, 0, 0, 0, -1))
 DAY_KEY = 'habits/2026-06-15'
+LOCAL_OFFSET_HOURS = time.localtime(DAY).tm_gmtoff / 3600     # the clock's local time is this computer's
 DAY_FILE_KEYS = {'day', 'sips', 'water_ml', 'last_sip_ts', 'drinks', 'breaks', 'last_break_ts', 'break_log',
                  'longest_sit_sec', 'desk_sec', 'phone_free_sec', 'phone_on_desk_sec', 'best_phone_free_sec', 'food',
                  'sunlight_ts', 'sunlight_minutes', 'afternoon_light_ts', 'hourly_activity', 'objects_seen',
@@ -38,7 +38,7 @@ def at(hhmm, days_later=0):
 def config(tmp_path_factory):
     root = tmp_path_factory.mktemp('project')
     (root / 'config').mkdir()
-    for name in ('settings.yaml', 'agents.yaml', 'protocols.yaml'):
+    for name in ('settings.yaml', 'agents.yaml', 'protocols.yaml', 'prompts.yaml'):
         shutil.copy(ROOT / 'config' / name, root / 'config' / name)
     return load_config(root, environ={})
 
@@ -46,17 +46,18 @@ def config(tmp_path_factory):
 class Rig:
     """A habit tracker on a synchronous bus, fed made-up pictures (3 a second)."""
 
-    def __init__(self, config, store=None, phone_counts=True, protocols=None, prefs=None, **tracker_settings):
-        self.clock = FakeClock(start=at('09:00'))
+    def __init__(self, config, store=None, phone_counts=True, protocols=None, prefs=None, words=None,
+                 utc_offset_hours=LOCAL_OFFSET_HOURS, **tracker_settings):
+        self.clock = FakeClock(start=at('09:00'), utc_offset_hours=utc_offset_hours)
         self.bus = SyncEventBus()
         self.store = store if store is not None else InMemoryKeyValueStore()
         self.profiles = ProfileBook(config.agents_file, InMemoryKeyValueStore(), personality_max_chars=400)
         self.prefs = prefs or FakePreferences({'wake_time': '07:00', 'bed_time': '22:30'})
-        self.desk = DeskState()
+        self.desk = FakeDeskScene()
         self.tracker = HabitTracker(
             self.clock, self.bus, self.store, self.profiles, self.prefs, self.desk,
             protocols or config.protocols, config.habit_tracker.model_copy(update=tracker_settings),
-            config.presence, config.agents, phone_counts=phone_counts)
+            config.presence, config.agents, phone_counts=phone_counts, words=words or config.prompts.habits)
 
     def picture(self, *labels, person=True, light=None, conf=0.9):
         dets = tuple(Detection(label, conf, BBox(0, 0, 10, 10)) for label in labels)
@@ -82,8 +83,13 @@ def changed(section, **values):
     return section.model_copy(update=values)
 
 
-def test_it_is_a_habits_view(config):
-    assert isinstance(Rig(config).tracker, HabitsView)
+def test_it_is_a_habits_view_a_habit_log_and_a_habits_lifecycle(config):
+    tracker = Rig(config).tracker
+    assert isinstance(tracker, HabitsView) and isinstance(tracker, HabitLog) and isinstance(tracker, HabitsLifecycle)
+
+
+def test_saving_is_not_part_of_the_habits_view():
+    assert not hasattr(HabitsView, 'save') and hasattr(HabitsLifecycle, 'save')
 
 
 # ── hydration ─────────────────────────────────────────────────────────
@@ -377,7 +383,7 @@ def test_nudges_wait_after_being_sent(config):
 
 def test_rule_state_feeds_the_protocols(config):
     r = Rig(config)
-    r.desk.session_start = at('08:30')
+    r.desk.note_picture({}, at('08:30'), person=False, moved=False, new_session=True)
     r.run(5, 'cup', 'laptop')
     s = r.state(open_todos=['Essay'])
     assert s.at_desk and s.drink_on_desk and s.screen_on_desk and s.open_todos == ('Essay',)
@@ -394,7 +400,8 @@ def test_day_times_follow_the_preferences(config):
 
 def test_today_has_the_same_shape_as_before(config):
     r = Rig(config)
-    r.desk.objects = {'computer': {'class_name': 'laptop'}}     # the roster put Computer on the desk
+    laptop = SeenObject(label='laptop', box=(0, 0, 10, 10), center=(5, 5), confidence=0.9)
+    r.desk.set_members({'computer': laptop}, r.clock.now())     # the roster put Computer on the desk
     r.run(3, 'laptop')
     t = r.today()
     assert set(t) == {'day', 'times', 'hydration', 'breaks', 'phone_free', 'light', 'food', 'desk_sec',
@@ -543,3 +550,58 @@ def test_only_detection_events_are_handled(config):
     r = Rig(config)
     r.bus.publish(Alert(ts=1.0, kind='proximity'))
     assert r.bus.stats() == [{'name': 'habits', 'handled': 0, 'waiting': 0, 'dropped': 0, 'errors': 0}]
+
+
+# ── words, foods and the clock come from outside ──────────────────────
+def test_what_it_says_comes_from_prompts_yaml(config):
+    logged = config.prompts.habits.logged.model_copy(update={
+        'sip_seen': 'Gulp {sips}: {liters} L', 'break_button': 'Stretch!',
+        'food_seen_treat': 'Saw {a} {food}', 'phone_streak': '{minutes} focused minutes'})
+    words = config.prompts.habits.model_copy(update={'logged': logged})
+    phone = changed(config.protocols.phone_free, celebrate_every_min=1)
+    r = Rig(config, words=words, protocols=config.protocols.model_copy(update={'phone_free': phone}))
+    r.run(10, 'cup', 'donut')
+    r.run(8, 'donut')
+    r.run(5, 'cup', 'donut')
+    r.run(50, 'laptop')
+    r.tracker.log('breaks', 'break')
+    assert r.said('sip')[0].say == 'Gulp 1: 0.1 L'
+    assert r.said('logged')[0].say == 'Saw a donut'
+    assert r.said('streak')[0].say == '1 focused minutes'
+    assert r.said('break')[0].say == 'Stretch!'
+
+
+def test_the_settings_blanks_in_its_words_are_filled_in(config):
+    r = Rig(config)
+    r.tracker.log('hydration', 'glass')
+    goal_l = config.protocols.hydration.daily_goal_ml / 1000
+    assert r.said('sip')[0].say == f'Logged! About 0.2 of {goal_l:.1f} L today.'
+
+
+def test_healthy_foods_come_from_protocols_yaml(config):
+    food = changed(config.protocols.food, healthy=('donut',))
+    r = Rig(config, protocols=config.protocols.model_copy(update={'food': food}))
+    r.run(5, 'donut')
+    r.run(10)
+    r.run(5, 'apple')
+    healthy = {f['label']: f['healthy'] for f in r.today()['food']['entries']}
+    assert healthy == {'donut': True, 'apple': False}
+
+
+def test_desk_time_lands_in_the_clocks_local_hour(config):
+    r = Rig(config, utc_offset_hours=LOCAL_OFFSET_HOURS + 3)     # three hours ahead of this computer: 12:00
+    r.run(3, 'laptop')
+    assert r.today()['hourly_activity'][12] == pytest.approx(3, abs=1)
+
+
+def test_the_day_changes_on_the_clocks_local_day(config):
+    store = InMemoryKeyValueStore()
+    r = Rig(config, store=store, utc_offset_hours=LOCAL_OFFSET_HOURS + 15)   # 00:00 tomorrow there
+    assert r.today()['day'] == '2026-06-16'
+    r.tracker.log('hydration', 'glass')
+    assert store.data['habits/2026-06-16']['water_ml'] == 240
+
+
+def test_only_the_daily_counters_can_be_bumped(config):
+    with pytest.raises(ValueError, match='not a daily counter'):
+        Rig(config).tracker.bump('water_ml')

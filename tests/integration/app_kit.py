@@ -24,15 +24,17 @@ import cv2
 import numpy as np
 from pydantic import BaseModel
 
+from desktalk.adapters.camera import PiFrameSource
 from desktalk.bootstrap import DeskTalk, build
 from desktalk.config import AppConfig, load_config
 from desktalk.domain import BBox, Detection, UploadInfo
+from desktalk.ports import PictureInbox
 from desktalk.runtime.log_setup import HANDLER_NAME
 from tests.conftest import FakeAI
 from tests.fakes import FakeClock, FakeDetector, InMemoryKeyValueStore
 
 ROOT = Path(__file__).resolve().parents[2]
-CONFIG_FILES_IN_GIT = ('settings.yaml', 'protocols.yaml', 'agents.yaml')
+CONFIG_FILES_IN_GIT = ('settings.yaml', 'protocols.yaml', 'agents.yaml', 'prompts.yaml')
 SAFETY_RULES = json.loads((ROOT / 'config' / 'safety_rules.json').read_text())     # as committed
 PAIR_KEY = 'test-pair-key'
 AFTERNOON = time.mktime((2026, 10, 21, 13, 0, 0, 0, 0, -1))     # 1 pm local time, so the day is the same everywhere
@@ -43,6 +45,18 @@ CUP_NEAR = Detection('cup', 0.9, BBox(410, 250, 450, 320))      # inside the lap
 PERSON = Detection('person', 0.95, BBox(400, 0, 640, 300))
 VISION_ANSWER = '{"posture": "good", "face_screen_distance": "ok", "phone": "none", "attention": "screen"}'
 DESK_PICTURE_SIZE = (640, 480)          # width and height of the desk pictures the fake camera sends
+
+
+def inbox(app: DeskTalk) -> PictureInbox:
+    """The app's camera (the Pi or the phone), which the whole-app tests send pictures to by hand."""
+    assert isinstance(app.source, PictureInbox)
+    return app.source
+
+
+def pi_camera(app: DeskTalk) -> PiFrameSource:
+    """The app's camera when it is the Pi."""
+    assert isinstance(app.source, PiFrameSource)
+    return app.source
 
 
 def desk_jpeg(value: int = 140) -> bytes:
@@ -91,10 +105,11 @@ class DeskRig:
     None = no AI key at all. Other keyword arguments go to build()."""
 
     def __init__(self, tmp_path: Path, *, config: AppConfig | None = None, start: float = AFTERNOON,
-                 ai_reply: str | Callable[[Mapping[str, Any]], str] | None = None, ollama: bool = False,
+                 ai_reply: str | Exception | Callable[[Mapping[str, Any]], str] | None = None, ollama: bool = False,
                  **build_kw: Any):
         self.tmp_path = tmp_path
-        self.clock = FakeClock(start)
+        # The clock keeps this computer's own time zone, so its local hours match the times written above.
+        self.clock = FakeClock(start, utc_offset_hours=time.localtime(start).tm_gmtoff / 3600)
         self.config = config or desk_config(tmp_path, ai=ai_reply is not None, ollama=ollama)
         self.detector = FakeDetector()
         self.ai_clients: list[FakeAI] = []
@@ -133,7 +148,7 @@ class DeskRig:
 
     def picture(self, info: UploadInfo | None = None, jpeg: bytes | None = None) -> None:
         """One picture arrives (like a POST to /api/pi/frame) and the producer takes it."""
-        assert self.app.source.push(jpeg or self.jpeg, info)
+        assert inbox(self.app).push(jpeg or self.jpeg, info)
         self.app.producer.tick(self.clock.now())
         self._drain()
 

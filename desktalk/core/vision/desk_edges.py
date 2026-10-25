@@ -11,9 +11,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
+from desktalk.config.prompts import DeskCheckWords
 from desktalk.core.vision.findings import Findings, Thing
 from desktalk.core.vision.geometry import Point, Segment, box_segment_distance
-from desktalk.core.vision.rules import DeskRules
+from desktalk.core.vision.rules import standing_strip
+from desktalk.domain import DeskRules
 
 Size = tuple[float, float]           # picture width, height
 
@@ -79,7 +81,7 @@ def on_desk(p: Point, outline: Sequence[Point], size: Size) -> bool:
     return not outline or inside_outline(p, outline, size)
 
 
-def edge_risks(things: Mapping[str, Thing], rules: DeskRules, size: Size) -> Findings:
+def edge_risks(things: Mapping[str, Thing], rules: DeskRules, size: Size, *, words: DeskCheckWords) -> Findings:
     """Edge objects close to a real desk edge: closer than edge_danger_px is a danger, closer than
     edge_warn_px a warning."""
     found = Findings()
@@ -91,7 +93,7 @@ def edge_risks(things: Mapping[str, Thing], rules: DeskRules, size: Size) -> Fin
             continue
         # The bottom of the box, where the object stands. The camera looks at the desk at an angle, so the top
         # of a tall bottle can look like it's past the back edge even when it stands safely in the middle.
-        foot = rules.standing_strip(thing.box)
+        foot = standing_strip(thing.box, rules)
         base = ((foot[0] + foot[2]) / 2, foot[3])
         gap, seg = min((box_segment_distance(foot, e), e) for e in edges)
         if not inside_outline(base, rules.outline, size) and gap >= rules.edge_danger_px:
@@ -99,7 +101,7 @@ def edge_risks(things: Mapping[str, Thing], rules: DeskRules, size: Size) -> Fin
         side = edge_name(seg, size)
         if gap < rules.edge_danger_px:
             severity, kind = 'danger', 'edge_danger'
-            explanation = f'{thing.label} is right at the {side} edge of the desk and could fall off.'
+            explanation = words.edge.format(object=thing.label, side=side)
         elif gap < rules.edge_warn_px:
             severity, kind, explanation = 'warning', 'edge_warning', None
         else:

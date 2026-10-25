@@ -51,8 +51,3 @@ class PresenceTracker:
     def last_seen(self, key: Hashable) -> float | None:
         """When `key` was last in a picture (None if never)."""
         return self._last_seen.get(key)
-
-    def absent_for(self, key: Hashable, now: float) -> float | None:
-        """Seconds since `key` was last in a picture (None if never seen)."""
-        last = self._last_seen.get(key)
-        return None if last is None else now - last

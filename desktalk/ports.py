@@ -8,22 +8,35 @@ that the real version and the fake both pass.
 
 Change this file only on purpose: every part depends on it.
 
-DeskState (desktalk/desk_state.py, "the desk right now") is still shared directly for now:
-parts get it passed in, never through an `app` object.
+The desk right now is five small interfaces near the end of this file: LivePictures, DeskScene, SafetyBoard,
+CharacterMemory and PhotoAlbum (desktalk/core/desk/ has one class for each). The last section is what the
+web layer asks of the running app (desktalk/bootstrap.py → DeskTalk types its fields with these).
 """
 
 from __future__ import annotations
 
+import queue
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from desktalk.domain import (
     AgentProfile,
+    Box,
+    Danger,
+    DeskRules,
     DeskSnapshot,
     Detection,
     Event,
     Frame,
+    Gravity,
+    Light,
     Nudge,
+    Photo,
+    Picture,
+    SafetyNow,
+    SeenObject,
+    Size,
     StateChange,
     StateRecord,
     UploadInfo,
@@ -44,6 +57,19 @@ class Clock(Protocol):
 
     def sleep(self, seconds: float) -> None:
         """Wait. (Background jobs don't call this: the Supervisor does their waiting, so stopping is instant.)"""
+        ...
+
+    def local_hour(self, now: float) -> int:
+        """The hour (0-23) of the local time at `now` (seconds since 1970)."""
+        ...
+
+    def local_day(self, now: float) -> str:
+        """The local day at `now`, e.g. '2026-10-24' (the same day names the event log uses)."""
+        ...
+
+    def utc_offset_sec(self, now: float) -> float:
+        """How many seconds the local time at `now` is ahead of UTC (negative when behind): for the local time
+        helpers in desktalk/util.py (their utc_offset_sec)."""
         ...
 
 
@@ -117,6 +143,64 @@ class PictureInbox(Protocol):
         ...
 
 
+
+@runtime_checkable
+class PiUploads(Protocol):
+    """The Pi as the camera: what came with its pictures (Lens asks)."""
+
+    def latest_upload(self) -> tuple[UploadInfo, float] | None:
+        """What the Pi sent with its newest picture (health, its own clock time ...) and when that picture
+        arrived, on this computer's clock. None before the first picture."""
+        ...
+
+    def clock_off_sec(self) -> float | None:
+        """The Pi's clock minus this computer's (negative = behind), judged by its quickest recent picture
+        (detection time taken off). None before a picture that said when it was taken."""
+        ...
+
+
+@runtime_checkable
+class PiStatus(Protocol):
+    """The Pi as the camera: what the app's pages show about it (/api/live, /api/health)."""
+
+    def pi_info(self) -> dict[str, Any]:
+        """The newest picture's id (last_frame_id) and everything the Pi has said about itself."""
+        ...
+
+    def status(self) -> dict[str, Any]:
+        """pi_info() plus upload_format, detector (ok / busy / off), detector_reason, detect_ms, model and
+        clock_off_sec (seconds; negative = behind)."""
+        ...
+
+
+@runtime_checkable
+class PhoneCamera(Protocol):
+    """The phone as the camera: what Lens asks about it."""
+
+    def recent_gravity(self) -> Gravity | None:
+        """The phone's latest tilt reading, or None if it hasn't sent one lately."""
+        ...
+
+    @property
+    def stopped_by_user(self) -> bool:
+        """You pressed Stop on the phone (so the video stopping isn't a problem)."""
+        ...
+
+
+@runtime_checkable
+class PhoneControls(PhoneCamera, Protocol):
+    """The phone as the camera: what the phone page's routes tell it (/api/phone/frame, /api/phone/stop), and
+    its tilt when the desk corners are marked (/api/rules)."""
+
+    def set_motion(self, gravity: Gravity | None = None, rotation: int | None = None) -> None:
+        """How the phone was tilted and how far it turned the picture, sent with its newest picture.
+        None = it didn't say (the old value stays)."""
+        ...
+
+    def mark_stopped(self) -> None:
+        """You pressed Stop on the phone: not connected from now on (until the next picture)."""
+        ...
+
 # ── Events and storage ────────────────────────────────────────────────
 @runtime_checkable
 class EventBus(Protocol):
@@ -141,10 +225,25 @@ class EventBus(Protocol):
         """Per consumer: name, handled, waiting, dropped, errors."""
         ...
 
+    def close(self, timeout: float) -> list[str]:
+        """Stop handing out events (bootstrap, when the app stops): each consumer finishes what it has, waiting
+        up to `timeout` seconds. Returns the names of consumers still busy after that."""
+        ...
+
 
 @runtime_checkable
 class EventStore(Protocol):
     """The event log: one folder per day in data/events/ (see docs/ARCHITECTURE.md)."""
+
+    @property
+    def folder(self) -> Path:
+        """Where the days are kept (the Log page shows it)."""
+        ...
+
+    @property
+    def last_compaction(self) -> dict[str, Any] | None:
+        """What the last compact() did, with when (ts); None before the first."""
+        ...
 
     def write(self, event: Event) -> None:
         ...
@@ -208,9 +307,6 @@ class KeyValueStore(Protocol):
         ...
 
     def save(self, key: str, value: Any) -> None:
-        ...
-
-    def delete(self, key: str) -> None:
         ...
 
     def keys(self, prefix: str = '') -> list[str]:
@@ -334,7 +430,22 @@ class HabitsView(Protocol):
     def note_fired(self, nudge: Nudge, now: float) -> None:
         ...
 
+
+@runtime_checkable
+class HabitsLifecycle(Protocol):
+    """Saving today's habit numbers: only bootstrap calls this (every habit_tracker.save_check_every_sec, and at
+    shutdown). The parts that read or count habits use HabitsView."""
+
     def save(self, force: bool = False) -> None:
+        """Save today's numbers if they changed since the last save (always, with force)."""
+        ...
+
+
+@runtime_checkable
+class HabitLog(Protocol):
+    """The habit tracker's log(): what a chat action (a sip, a break ...) is written to."""
+
+    def log(self, habit: str, action: str, **details: Any) -> Any:
         ...
 
 
@@ -348,6 +459,16 @@ class ObjectStatesView(Protocol):
 
     def changes(self, since: float) -> list[StateChange]:
         """The changes after `since` (a change at exactly `since` is left out), oldest first."""
+        ...
+
+
+@runtime_checkable
+class ObjectStates(ObjectStatesView, Protocol):
+    """The object states as the app keeps them: what the rule engine and the desk status read, plus writing a
+    snapshot row of every object on the desk (only bootstrap calls this: the scheduler, and stop())."""
+
+    def save_snapshot(self, now: float) -> int:
+        """Write one snapshot row per object on the desk now; returns how many."""
         ...
 
 
@@ -374,6 +495,10 @@ class Preferences(Protocol):
         ...
 
     def update(self, changes: Mapping[str, Any]) -> dict[str, Any]:
+        ...
+
+    def quiet_now(self, now: float) -> bool:
+        """Quiet hours are on and `now` is inside them, by the local time."""
         ...
 
 
@@ -429,4 +554,442 @@ class LiveViewPainter(Protocol):
 
     def paint(self, picture: Any, detections: Sequence[Detection]) -> Any:
         """A new picture with the drawings; the one passed in is left as it was."""
+        ...
+
+
+# ── Pictures, photos and the desk rules ───────────────────────────────
+@runtime_checkable
+class PictureTools(Protocol):
+    """Everything core does to a picture (OpenCV in the real app), so core never imports cv2 itself.
+    Pictures are numpy arrays: BGR colour or one gray channel."""
+
+    def decode_jpeg(self, jpeg: bytes, *, gray: bool = False) -> Picture | None:
+        """The picture in a JPEG (gray = read it straight into one gray channel). None if it isn't one."""
+        ...
+
+    def encode_jpeg(self, picture: Picture, quality: int) -> bytes | None:
+        """The picture as a JPEG (`quality` 1-100). None if it can't be made (an empty picture)."""
+        ...
+
+    def size(self, picture: Picture) -> Size:
+        ...
+
+    def shrink(self, picture: Picture, width: int, height: int | None = None) -> Picture:
+        """A smaller copy `width` pixels wide; as tall as keeps its shape, unless `height` is given."""
+        ...
+
+    def to_gray(self, picture: Picture) -> Picture:
+        """A one-channel gray copy (a gray picture comes back as it is)."""
+        ...
+
+    def crop(self, picture: Picture, box: Box) -> Picture:
+        """The part of the picture inside `box` (pixels), cut to the picture's own edges."""
+        ...
+
+    def brightness(self, gray: Picture) -> float:
+        """Average brightness of a gray picture, 0-255."""
+        ...
+
+    def glare(self, gray: Picture, white_level: float) -> float:
+        """Share (0-1) of a gray picture's pixels at `white_level` or brighter."""
+        ...
+
+    def difference(self, a: Picture, b: Picture) -> float:
+        """How different two gray pictures look: the average change per pixel, 0-255.
+        Pictures of different sizes count as completely different (infinity)."""
+        ...
+
+    def sharpness(self, gray: Picture) -> float:
+        """How sharp a gray picture is (edges make it bigger; about 0 for a flat or very blurry one)."""
+        ...
+
+
+@runtime_checkable
+class PhotoTaker(Protocol):
+    """Keeps the live view picture as a photo for the chat and the Captures page (the proof photos)."""
+
+    def save(self, label: str, crop_boxes: Sequence[Box] = ()) -> str | None:
+        """Keep the newest live view picture, cropped around `crop_boxes` (if any). Returns the photo's id,
+        or None when there is no picture yet."""
+        ...
+
+
+@runtime_checkable
+class DeskLayout(Protocol):
+    """The desk corners marked in Settings (what Lens needs from the desk rules)."""
+
+    def has_outline(self) -> bool:
+        """The desk corners are marked (Settings)."""
+        ...
+
+    def reference_gravity(self) -> tuple[float, ...] | None:
+        """How the phone was tilted when the corners were marked (None if they aren't, or it wasn't the phone)."""
+        ...
+
+
+@runtime_checkable
+class DeskRulesView(DeskLayout, Protocol):
+    """The danger rules in use: config/settings.yaml → safety, with what the Settings page saved on top."""
+
+    @property
+    def current(self) -> DeskRules:
+        """The rules right now. A save swaps in new ones, so a reader never sees half a change."""
+        ...
+
+    @property
+    def loaded(self) -> bool:
+        """Rules were saved from the Settings page (otherwise only the built-in ones are used)."""
+        ...
+
+    def save(self, changes: Mapping[str, Any]) -> None:
+        """Replace these parts of the saved rules (danger_zones, edge_proximity, desk_outline ...); the rest
+        stays as it was. Takes effect at once."""
+        ...
+
+    def clean_outline(self, points: Any) -> list[list[float]]:
+        """Desk corners sent by the Settings page, each cut to 0-1 of the picture.
+        Raises ValueError (plain words) for something that isn't corners."""
+        ...
+
+    def for_settings_page(self) -> dict[str, Any]:
+        """What the Settings page shows: the saved rules, or the built-in ones where nothing was saved."""
+        ...
+
+
+# ── The desk right now ────────────────────────────────────────────────
+# Five small interfaces, one per kind of thing the desk knows. Each method does its own locking, so a caller
+# never holds a lock; a change that has to happen all at once is one method.
+@runtime_checkable
+class LivePictures(Protocol):
+    """The newest pictures for the live view, per camera (0 = the first camera)."""
+
+    def put(self, cam: int, plain: bytes, boxed: bytes | None, size: Size) -> None:
+        """A camera's newest picture as JPEGs: plain, and with the boxes drawn on (None = no boxed one)."""
+        ...
+
+    def plain(self, cam: int | None = None) -> bytes | None:
+        """The newest plain JPEG of `cam`; with no camera given, of the lowest-numbered camera that has one."""
+        ...
+
+    def boxed(self, cam: int | None = None) -> bytes | None:
+        """The newest JPEG with boxes of `cam`; with no camera given, of the lowest-numbered camera that has one."""
+        ...
+
+    def camera_numbers(self) -> list[int]:
+        """The cameras that have sent a picture, lowest first."""
+        ...
+
+    def size(self) -> Size:
+        """How big the newest picture is."""
+        ...
+
+    def set_light(self, brightness: float, lux: float | None) -> None:
+        ...
+
+    def newest_light(self) -> Light | None:
+        """The light in the newest analysed picture (None before the first)."""
+        ...
+
+
+@runtime_checkable
+class DeskScene(Protocol):
+    """What the camera sees on the desk right now. Everything that comes back is a copy."""
+
+    def set_members(self, members: Mapping[str, SeenObject], now: float) -> None:
+        """The agents in the chat that are in the picture just now (the roster), by agent id. Each one's first
+        sighting this session is kept, and its last sighting becomes `now`."""
+        ...
+
+    def note_picture(self, seen: Mapping[str, SeenObject], now: float, *, person: bool, moved: bool,
+                     new_session: bool) -> None:
+        """One analysed picture: the best box for each detector word in it, whether a person was in it and
+        whether things moved. new_session = the camera was off a while, so a new session starts now (one
+        also starts with the very first picture)."""
+        ...
+
+    def members(self) -> dict[str, SeenObject]:
+        """Agent id → its box, for the agents on the desk right now."""
+        ...
+
+    def seen(self) -> dict[str, SeenObject]:
+        """Every detector word in the newest analysed picture → its best box."""
+        ...
+
+    def first_seen(self, agent_id: str) -> float | None:
+        """When the agent was first on the desk this session."""
+        ...
+
+    def last_seen(self, agent_id: str) -> float | None:
+        ...
+
+    def person_seen_at(self) -> float | None:
+        ...
+
+    def last_motion(self) -> float | None:
+        """When things last moved in the picture."""
+        ...
+
+    def session_started_at(self) -> float | None:
+        """When the camera started watching this session (None before the first picture)."""
+        ...
+
+    def set_scan_labels(self, labels: Iterable[str]) -> None:
+        """What the last vision scan (lost items) saw; it also tags the proof photos."""
+        ...
+
+    def scan_labels(self) -> set[str]:
+        ...
+
+
+@runtime_checkable
+class SafetyBoard(Protocol):
+    """The dangers on the desk right now (written by the desk monitor), and the latest alerts."""
+
+    def report(self, state: str, dangers: Sequence[Danger], result: Mapping[str, Any] | None, now: float) -> None:
+        """The desk monitor's newest findings: SAFE or DANGEROUS, the dangers, and the analyzer's full result.
+        A danger counts from the first report it is in until a report without it."""
+        ...
+
+    def now(self) -> SafetyNow:
+        """The newest report (SafetyNow() before the first)."""
+        ...
+
+    def danger_since(self, pair: frozenset[str]) -> float | None:
+        """When the danger between these two words started (None if it isn't active)."""
+        ...
+
+    def note_alert(self, event: Mapping[str, Any], keep: int) -> None:
+        """An alert that went out, for the AI's context; only the newest `keep` are kept."""
+        ...
+
+    def recent_alerts(self, limit: int) -> list[dict[str, Any]]:
+        """The newest `limit` alerts, oldest first (none when limit is 0)."""
+        ...
+
+
+@runtime_checkable
+class CharacterMemory(Protocol):
+    """What the characters remember, and what the app told us about you (typing, tracker panels)."""
+
+    def remember(self, agent_id: str, text: str, keep: int) -> None:
+        """Something the agent said; only its newest `keep` lines are kept (none when keep is 0)."""
+        ...
+
+    def recent(self, agent_id: str) -> list[str]:
+        """What the agent said lately, oldest first."""
+        ...
+
+    def set_widget(self, agent_id: str, data: Mapping[str, Any]) -> None:
+        """The tracker panel data the app sent for an agent (the to-do list ...)."""
+        ...
+
+    def widget(self, agent_id: str) -> dict[str, Any] | None:
+        ...
+
+    def widgets(self) -> dict[str, dict[str, Any]]:
+        """Agent id → its tracker panel data, for every agent the app sent one for."""
+        ...
+
+    def note_widget_view(self, agent_id: str, action: str, now: float, keep: int) -> None:
+        """You opened (or used) an agent's tracker panel; only the newest `keep` are kept."""
+        ...
+
+    def widget_views_of(self, agent_id: str) -> list[dict[str, Any]]:
+        """The agent's panel views, oldest first: [{'ts', 'action'}]."""
+        ...
+
+    def note_user_activity(self, now: float) -> None:
+        """You typed or sent something (small talk waits)."""
+        ...
+
+    def user_active_at(self) -> float:
+        """When you last typed or sent something (0 before the first time)."""
+        ...
+
+    def set_vision_brief(self, text: str) -> None:
+        """The last posture check in a few words, for the AI's reminders."""
+        ...
+
+    def vision_brief(self) -> str:
+        ...
+
+
+@runtime_checkable
+class PhotoAlbum(Protocol):
+    """The proof photos, newest first. When it is full, the oldest photo goes."""
+
+    def add(self, jpeg: bytes, label: str, ts: float, *, char_ids: Sequence[str] = (), labels: Sequence[str] = (),
+            vlm_labels: Sequence[str] = ()) -> str:
+        """Keep a photo with its tags (see domain.Photo). Returns its new id."""
+        ...
+
+    def get(self, photo_id: str) -> Photo | None:
+        ...
+
+    def newest(self, limit: int) -> list[Photo]:
+        """The newest `limit` photos, newest first."""
+        ...
+
+
+# ── What the app's pages ask (the web layer) ──────────────────────────
+# desktalk/bootstrap.py → DeskTalk types its fields with these, so a route only sees what it may call.
+class _Closed:
+    def __repr__(self) -> str:
+        return 'CLOSED'
+
+
+CLOSED = _Closed()      # the last thing in a dropped page's chat queue: compare with `is` (see ChatFeed.subscribe)
+
+
+@runtime_checkable
+class ChatFeed(Protocol):
+    """The chat messages for open app pages (the MessageHub): /api/events and /api/messages/recent."""
+
+    def subscribe(self, on_put: Callable[[], None] | None = None) -> queue.Queue:
+        """A queue that gets every message from now on (one per open page), ending with CLOSED if the
+        page is dropped for not keeping up. on_put: called after each thing put in the queue."""
+        ...
+
+    def unsubscribe(self, q: queue.Queue) -> None:
+        ...
+
+    def recent(self) -> list[dict[str, Any]]:
+        """Recent chat lines and join / leave notes, oldest first."""
+        ...
+
+
+@runtime_checkable
+class ChatReplies(Protocol):
+    """The chat's answers to you (the message generator): /api/chat and the tracker panels."""
+
+    def answer(self, chat_id: str, message: str, history: Any = None, widget: Any = None) -> dict[str, Any]:
+        """The reply to your message in the group chat or a 1-on-1. Raises UnknownChat for an unknown agent."""
+        ...
+
+    def save_widget(self, pid: str, raw: Any) -> bool:
+        """Keep the to-do list the app sent for an agent's panel. False for an unknown agent or a bad list."""
+        ...
+
+    def note_panel_event(self, pid: str, action: Any) -> bool:
+        """You opened (or used) an agent's panel. False for an unknown agent."""
+        ...
+
+    def live_context(self, user_message: str = '') -> dict[str, Any]:
+        """The desk right now as the AI is told it (its 'summary' feeds the small talk)."""
+        ...
+
+
+@runtime_checkable
+class RosterList(RosterView, Protocol):
+    """Who's in the chat, for the app's agent list (/api/agents, /api/live)."""
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        """Agents in the chat now, plus ones that were here earlier, newest first."""
+        ...
+
+
+@runtime_checkable
+class CameraTips(Protocol):
+    """What Lens's camera checks tell the pages: the problems (/api/live) and a tip for the phone screen."""
+
+    def issues(self) -> list[dict[str, str]]:
+        """Current problems, most important first: [{key, title, fix}]."""
+        ...
+
+    def phone_tip(self) -> str | None:
+        """A few words to show on the phone screen itself, or None."""
+        ...
+
+    def forget(self, key: str) -> None:
+        """Drop a problem without a thank-you (e.g. the desk was just marked again)."""
+        ...
+
+
+@runtime_checkable
+class DetectionStats(PeriodicWorker, Protocol):
+    """The camera producer (a background job), and how detection on this computer is doing (/api/health)."""
+
+    @property
+    def pictures_analysed(self) -> int:
+        ...
+
+    @property
+    def last_detect_ms(self) -> float | None:
+        """How long the last detection took (None before the first)."""
+        ...
+
+    @property
+    def problem(self) -> str | None:
+        """What's wrong with detection right now, in plain words (None when it works)."""
+        ...
+
+
+@runtime_checkable
+class LostItemsView(PeriodicWorker, Protocol):
+    """"Have you seen my keys?" (a background job too): /api/chat asks it first, /api/live highlights the items."""
+
+    @property
+    def items(self) -> Mapping[str, Mapping[str, Any]]:
+        """Item id → its name, detector labels and words (settings → lost_items.items)."""
+        ...
+
+    def is_lost_query(self, text: str) -> bool:
+        ...
+
+    def answer(self, user_message: str) -> dict[str, Any]:
+        """The chat's reply: {'speaker', 'cta', 'text'}."""
+        ...
+
+
+@runtime_checkable
+class VisionHabitsView(PeriodicWorker, Protocol):
+    """The posture and nail biting checks (a background job too), for the Habits page."""
+
+    def summary(self) -> dict[str, int]:
+        """Today's slouching (seconds) and nail biting (times)."""
+        ...
+
+    def events(self) -> list[dict[str, Any]]:
+        """The habit log, newest first."""
+        ...
+
+    def latest(self) -> tuple[dict[str, Any], float]:
+        """The AI's last answer and when it came (({}, 0.0) before the first)."""
+        ...
+
+
+@runtime_checkable
+class HabitTracking(HabitsView, HabitLog, HabitsLifecycle, Protocol):
+    """The habit tracker as the app holds it: today's habits, the habit buttons (log), saving, and the day's
+    times (wake, bed, sunset ...) for /api/preferences."""
+
+    def day_times(self, now: float) -> Mapping[str, Any]:
+        ...
+
+
+@runtime_checkable
+class ScheduledJobs(PeriodicWorker, Protocol):
+    """The timed jobs (compacting and pruning the event log, saving habits), a background job itself."""
+
+    def status(self) -> list[dict[str, Any]]:
+        """One entry per job: name, every_sec, runs, last_run_at, last_error, next_run_at, next_in_sec."""
+        ...
+
+
+@runtime_checkable
+class Jobs(Protocol):
+    """Runs the background jobs, each in its own thread (the Supervisor)."""
+
+    def add(self, worker: PeriodicWorker, start_after: float = 0.0) -> None:
+        ...
+
+    def start(self) -> None:
+        ...
+
+    def stop(self, timeout: float) -> list[str]:
+        """Stop every job, waiting up to `timeout` seconds for each. Returns the names of jobs still busy."""
+        ...
+
+    def status(self) -> list[dict[str, Any]]:
+        """One entry per job: name, state, failures_in_row, total_failures, last_error, last_ok_at."""
         ...

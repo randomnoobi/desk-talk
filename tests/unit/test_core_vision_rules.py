@@ -5,12 +5,15 @@ import logging
 
 import pytest
 
-from desktalk.core.chat.workers import DeskLayout
-from desktalk.core.vision.rules import SafetyRules, Zone, make_rules
+from desktalk.core.vision.rules import SafetyRules, make_rules, standing_strip
+from desktalk.domain import Zone
+from desktalk.ports import DeskLayout
 from tests.fakes import InMemoryKeyValueStore
 from tests.unit.test_core_vision_kit import ROOT, app_config
 
-SAFETY = app_config().safety
+CONFIG = app_config()
+SAFETY = CONFIG.safety
+WORDS = CONFIG.prompts.desk_rules
 SAVED_FILE = json.loads((ROOT / 'config' / 'safety_rules.json').read_text())
 OUTLINE = [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9]]
 
@@ -40,8 +43,8 @@ def test_every_built_in_rule_keeps_the_value_the_old_code_had():
 
 def test_where_a_thing_stands_is_the_bottom_strip_of_its_box():
     rules = make_rules(SAFETY)                      # footprint_share 0.2, at least footprint_min_px 4
-    assert rules.standing_strip((0, 0, 10, 100)) == (0, 80, 10, 100)
-    assert rules.standing_strip((0, 0, 10, 10)) == (0, 6, 10, 10)
+    assert standing_strip((0, 0, 10, 100), rules) == (0, 80, 10, 100)
+    assert standing_strip((0, 0, 10, 10), rules) == (0, 6, 10, 10)
 
 
 def test_saved_zone_wins_over_the_built_in_one():
@@ -125,7 +128,7 @@ def test_camera_tilt_is_remembered_only_with_a_desk_outline():
 
 
 def test_the_rules_say_whether_the_desk_is_marked_and_how_the_phone_was_tilted_for_lens():
-    rules = SafetyRules(InMemoryKeyValueStore(), SAFETY)
+    rules = SafetyRules(InMemoryKeyValueStore(), SAFETY, words=WORDS)
     assert isinstance(rules, DeskLayout)
     assert not rules.has_outline() and rules.reference_gravity() is None
     rules.save({'desk_outline': OUTLINE, 'camera_reference': {'gravity': [0.1, -9.7, 0.4]}})
@@ -147,18 +150,18 @@ def test_saved_intruder_list_replaces_one_zone():
 
 # ── SafetyRules: the saved rules go through a KeyValueStore ──
 def test_rules_are_read_from_the_store():
-    rules = SafetyRules(InMemoryKeyValueStore({'safety_rules': SAVED_FILE}), SAFETY)
+    rules = SafetyRules(InMemoryKeyValueStore({'safety_rules': SAVED_FILE}), SAFETY, words=WORDS)
     assert rules.loaded and rules.current.zones['laptop'].expand == 134
 
 
 def test_without_saved_rules_the_built_in_ones_are_used():
-    rules = SafetyRules(InMemoryKeyValueStore(), SAFETY)
+    rules = SafetyRules(InMemoryKeyValueStore(), SAFETY, words=WORDS)
     assert not rules.loaded and rules.current.zones['laptop'].expand == 80
 
 
 def test_saving_merges_into_the_saved_rules_and_takes_effect_at_once():
     store = InMemoryKeyValueStore({'safety_rules': SAVED_FILE})
-    rules = SafetyRules(store, SAFETY)
+    rules = SafetyRules(store, SAFETY, words=WORDS)
     rules.save({'desk_outline': OUTLINE})
     assert rules.current.outline and rules.current.zones['laptop'].expand == 134
     assert store.data['safety_rules']['desk_outline'] == OUTLINE
@@ -166,24 +169,38 @@ def test_saving_merges_into_the_saved_rules_and_takes_effect_at_once():
 
 
 def test_the_first_save_makes_the_rules_loaded():
-    rules = SafetyRules(InMemoryKeyValueStore(), SAFETY)
+    rules = SafetyRules(InMemoryKeyValueStore(), SAFETY, words=WORDS)
     rules.save({'edge_proximity': {'danger_px': 10}})
     assert rules.loaded and rules.current.edge_danger_px == 10
 
 
 def test_the_store_key_can_be_chosen():
-    rules = SafetyRules(InMemoryKeyValueStore({'desk/rules': SAVED_FILE}), SAFETY, key='desk/rules')
+    rules = SafetyRules(InMemoryKeyValueStore({'desk/rules': SAVED_FILE}), SAFETY, words=WORDS, key='desk/rules')
     assert rules.loaded
 
 
 def test_outline_from_the_settings_page_is_cleaned():
-    rules = SafetyRules(InMemoryKeyValueStore(), SAFETY)
+    rules = SafetyRules(InMemoryKeyValueStore(), SAFETY, words=WORDS)
     assert rules.clean_outline([[-0.2, 0.123456], ['0.5', 1.7], [0.9, 0.9]]) == [[0.0, 0.1235], [0.5, 1.0], [0.9, 0.9]]
     assert rules.clean_outline([]) == []
 
 
+def test_too_few_corners_says_so_in_the_words_from_prompts_yaml():
+    safety = SAFETY.model_copy(update={'min_desk_corners': 4})
+    words = WORDS.model_copy(update={'too_few_corners': 'Need {corners}'})
+    rules = SafetyRules(InMemoryKeyValueStore(), safety, words=words)
+    with pytest.raises(ValueError, match='^Need 4$'):
+        rules.clean_outline(OUTLINE)
+    assert rules.clean_outline([*OUTLINE, [0.1, 0.9]]) == [*OUTLINE, [0.1, 0.9]]
+
+
+def test_a_saved_outline_needs_min_desk_corners():
+    assert make_rules(SAFETY, {'desk_outline': OUTLINE}).outline == tuple(map(tuple, OUTLINE))
+    assert make_rules(SAFETY.model_copy(update={'min_desk_corners': 4}), {'desk_outline': OUTLINE}).outline == ()
+
+
 def test_outline_keeps_at_most_max_desk_corners():
-    rules = SafetyRules(InMemoryKeyValueStore(), SAFETY)
+    rules = SafetyRules(InMemoryKeyValueStore(), SAFETY, words=WORDS)
     corners = [[i / 20, 0.5] for i in range(15)]
     assert len(rules.clean_outline(corners)) == SAFETY.max_desk_corners == 12
 
@@ -194,13 +211,13 @@ def test_outline_keeps_at_most_max_desk_corners():
     ([[0.1], [0.5, 0.5], [0.2, 0.2]], 'desk_outline must be a list of [x, y] points'),
 ])
 def test_bad_outline_says_what_is_wrong(points, says):
-    rules = SafetyRules(InMemoryKeyValueStore(), SAFETY)
+    rules = SafetyRules(InMemoryKeyValueStore(), SAFETY, words=WORDS)
     with pytest.raises(ValueError, match=says.replace('[', r'\[').replace(']', r'\]')):
         rules.clean_outline(points)
 
 
 def test_settings_page_sees_the_saved_rules():
-    page = SafetyRules(InMemoryKeyValueStore({'safety_rules': SAVED_FILE}), SAFETY).for_settings_page()
+    page = SafetyRules(InMemoryKeyValueStore({'safety_rules': SAVED_FILE}), SAFETY, words=WORDS).for_settings_page()
     assert page['loaded'] is True
     assert page['danger_zones'] == SAVED_FILE['danger_zones']
     assert page['edge_proximity'] == SAVED_FILE['edge_proximity']
@@ -208,7 +225,7 @@ def test_settings_page_sees_the_saved_rules():
 
 
 def test_settings_page_sees_the_built_in_rules_when_nothing_was_saved():
-    page = SafetyRules(InMemoryKeyValueStore(), SAFETY).for_settings_page()
+    page = SafetyRules(InMemoryKeyValueStore(), SAFETY, words=WORDS).for_settings_page()
     assert page['loaded'] is False
     # No base_share: the page doesn't show it but sends zones back as they are, so it would be saved
     # and a later change to it in settings.yaml would do nothing.
@@ -251,6 +268,7 @@ def test_the_analyzer_starts_and_runs_with_a_saved_history_length_below_1():
     """deque(maxlen=-1) raised on every picture, and again at startup."""
     from desktalk.core.vision.analyzer import DeskAnalyzer
 
-    rules = SafetyRules(InMemoryKeyValueStore({'safety_rules': {'temporal': {'history_length': -1}}}), SAFETY)
-    analyzer = DeskAnalyzer(rules)
+    rules = SafetyRules(InMemoryKeyValueStore({'safety_rules': {'temporal': {'history_length': -1}}}), SAFETY,
+                        words=WORDS)
+    analyzer = DeskAnalyzer(rules, words=app_config().prompts.desk_checks)
     assert analyzer.analyze({}, (640, 480), 1.0)['risk_level'] == 0

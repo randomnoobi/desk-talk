@@ -62,15 +62,6 @@ class BBox:
     def area(self) -> float:
         return self.width * self.height
 
-    def iou(self, other: BBox) -> float:
-        """How much two boxes overlap: 0 = not at all, 1 = the same box."""
-        w = min(self.x2, other.x2) - max(self.x1, other.x1)
-        h = min(self.y2, other.y2) - max(self.y1, other.y1)
-        if w <= 0 or h <= 0:
-            return 0.0
-        both = w * h
-        return both / (self.area + other.area - both)
-
     def clipped(self, width: float, height: float) -> BBox | None:
         """This box cut to a picture of the given size, or None if no part of it is inside."""
         x1, y1 = max(0.0, self.x1), max(0.0, self.y1)

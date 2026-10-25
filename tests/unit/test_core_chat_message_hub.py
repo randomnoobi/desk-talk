@@ -5,8 +5,8 @@ import queue
 
 import pytest
 
-from desktalk.core.chat.message_hub import CLOSED, MessageHub
-from desktalk.ports import Notifier
+from desktalk.core.chat.message_hub import MessageHub
+from desktalk.ports import CLOSED, Notifier
 from tests.contracts.notifier_contract import NotifierContract
 from tests.fakes import FakeClock
 

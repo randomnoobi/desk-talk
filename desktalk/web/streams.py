@@ -25,8 +25,7 @@ from collections.abc import AsyncIterator, Callable
 
 from starlette.requests import Request
 
-from desktalk.core.chat.message_hub import CLOSED, MessageHub
-from desktalk.ports import Clock
+from desktalk.ports import CLOSED, ChatFeed, Clock
 
 SSE_TYPE = 'text/event-stream; charset=utf-8'
 SSE_HEADERS = {'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'}
@@ -50,7 +49,7 @@ def mjpeg_part(jpeg: bytes) -> bytes:
             + jpeg + b'\r\n')
 
 
-def _let_go(hub: MessageHub, q: queue.Queue) -> None:
+def _let_go(hub: ChatFeed, q: queue.Queue) -> None:
     """Unsubscribe the page, then wake its stream if it's waiting (the hub puts nothing more in the queue)."""
     hub.unsubscribe(q)
     with contextlib.suppress(queue.Full):     # full: it isn't waiting, and it checks for the stop after each message
@@ -60,7 +59,7 @@ def _let_go(hub: MessageHub, q: queue.Queue) -> None:
 class LiveStreams:
     def __init__(self):
         self._lock = threading.Lock()
-        self._open: dict[queue.Queue, MessageHub] = {}
+        self._open: dict[queue.Queue, ChatFeed] = {}
         self._closing = threading.Event()
 
     @property
@@ -75,7 +74,7 @@ class LiveStreams:
         for q, hub in pages:
             _let_go(hub, q)
 
-    async def chat_messages(self, hub: MessageHub, *, retry_ms: int, keepalive_sec: float) -> AsyncIterator[str]:
+    async def chat_messages(self, hub: ChatFeed, *, retry_ms: int, keepalive_sec: float) -> AsyncIterator[str]:
         """The SSE body for one open page."""
         loop = asyncio.get_running_loop()
         arrived = asyncio.Event()

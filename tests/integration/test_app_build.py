@@ -3,15 +3,17 @@ which background jobs start() runs, and what stop() leaves behind."""
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import shutil
+import typing
 
 import pytest
 
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource
 from desktalk.adapters.storage import JsonFileStore
-from desktalk.bootstrap import build
+from desktalk.bootstrap import DeskTalk, build
 from desktalk.domain import AgentJoined
 from tests.fakes import FakeClock, FakeDetector, FakeFrameSource
 from tests.integration.app_kit import (
@@ -39,20 +41,38 @@ def build_quietly(config, tmp_path, **kw):
 def test_the_camera_is_the_one_the_settings_name(tmp_path, kind, cls):
     app = build_quietly(changed(desk_config(tmp_path), 'camera', source=kind), tmp_path)
     assert isinstance(app.source, cls) and app.source.kind == kind
-    assert app.pi_source is (app.source if kind == 'pi' else None)
-    assert app.phone_source is (app.source if kind == 'phone' else None)
+    assert app.pi_inbox is app.pi is (app.source if kind == 'pi' else None)
+    assert app.phone_inbox is app.phone is (app.source if kind == 'phone' else None)
 
 
 def test_a_camera_source_passed_in_is_used(tmp_path):
     source = FakeFrameSource('webcam')
     app = build_quietly(desk_config(tmp_path), tmp_path, source=source)
-    assert app.source is source and app.pi_source is None and app.phone_source is None
+    assert app.source is source
+    assert (app.pi_inbox, app.pi, app.phone_inbox, app.phone) == (None, None, None, None)
+
+
+@pytest.mark.parametrize('kind', ['pi', 'phone', 'webcam'])
+def test_every_part_has_the_interface_its_field_names(tmp_path, kind):
+    app = build_quietly(changed(desk_config(tmp_path), 'camera', source=kind), tmp_path)
+    hints = typing.get_type_hints(DeskTalk)
+    checked = []
+    for field in dataclasses.fields(DeskTalk):
+        value = getattr(app, field.name)
+        kinds = [k for k in typing.get_args(hints[field.name]) or [hints[field.name]] if k is not type(None)]
+        interfaces = [k for k in kinds if getattr(k, '_is_protocol', False)]
+        if value is None or not interfaces:
+            continue
+        assert any(isinstance(value, k) for k in interfaces), f'{field.name} is not a {interfaces}'
+        checked.append(field.name)
+    assert {'live_pictures', 'scene', 'safety_board', 'character_memory', 'photo_album', 'bus', 'event_log',
+            'hub', 'generator', 'habits', 'producer', 'supervisor'} <= set(checked)
 
 
 def test_the_phone_as_camera_never_counts_as_a_phone_on_the_desk(tmp_path):
     rig = DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'camera', source='phone'))
     rig.watch(4, LAPTOP)
-    assert rig.app.habits.today()['phone_free']['counted'] is False
+    assert rig.app.habits.today(rig.clock.now())['phone_free']['counted'] is False
 
 
 def test_the_pair_key_is_kept_in_the_pair_key_file(tmp_path):
@@ -83,12 +103,12 @@ def test_preferences_and_habits_saved_before_are_read_back(tmp_path):
     rig.app.habits.save(force=True)
     again = DeskRig(tmp_path)
     assert again.app.preferences.get('bed_time') == '22:15'
-    assert again.app.habits.today()['hydration']['water_ml'] == rig.config.habit_tracker.glass_ml
+    assert again.app.habits.today(again.clock.now())['hydration']['water_ml'] == rig.config.habit_tracker.glass_ml
 
 
 def test_the_danger_rules_come_from_the_config_store(tmp_path):
     rig = DeskRig(tmp_path)
-    assert rig.app.safety_rules.loaded and rig.app.analyzer.rules.zones['laptop'].expand == 134
+    assert rig.app.safety_rules.loaded and rig.app.safety_rules.current.zones['laptop'].expand == 134
     rig.app.safety_rules.save({'desk_outline': [[0, 0], [1, 0], [1, 0.8], [0, 0.8]]})
     assert rig.app.config_store.load('safety_rules')['desk_outline'][2] == [1, 0.8]
 
@@ -98,7 +118,7 @@ def test_without_a_config_store_the_rules_are_safety_rules_json_in_the_config_fo
     shutil.copy(ROOT / 'config' / 'safety_rules.json', config.root / 'config' / 'safety_rules.json')
     app = build_quietly(config, tmp_path)
     assert isinstance(app.config_store, JsonFileStore)
-    assert app.safety_rules.loaded and app.analyzer.rules.zones['laptop'].expand == 134
+    assert app.safety_rules.loaded and app.safety_rules.current.zones['laptop'].expand == 134
 
 
 def test_things_off_the_marked_desk_never_join(tmp_path):
@@ -134,7 +154,7 @@ def test_log_messages_go_to_the_log_folder(tmp_path):
         app = build_quietly(changed(desk_config(tmp_path), 'logging', level='INFO'), tmp_path,
                             set_up_logging=True)
         logging.getLogger('desktalk.test').info('hello from the test')
-        assert app.log_file == tmp_path / 'run' / 'data' / 'logs' / 'desktalk.log'
+        assert app.log_file is not None and app.log_file == tmp_path / 'run' / 'data' / 'logs' / 'desktalk.log'
         assert 'hello from the test' in app.log_file.read_text()
     finally:
         restore_logging(level)

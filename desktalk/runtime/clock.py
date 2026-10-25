@@ -1,18 +1,7 @@
-"""The real clock: the computer's own time."""
+"""The real clock: the computer's own time. It's the same one the Pi uses (shared/desktalk_shared/clock.py)."""
 
 from __future__ import annotations
 
-import time
+from desktalk_shared.clock import SystemClock
 
-
-class SystemClock:
-    """The real Clock (desktalk/ports.py). Tests use tests/fakes/FakeClock instead."""
-
-    def now(self) -> float:
-        return time.time()
-
-    def monotonic(self) -> float:
-        return time.monotonic()
-
-    def sleep(self, seconds: float) -> None:
-        time.sleep(seconds)
+__all__ = ['SystemClock']

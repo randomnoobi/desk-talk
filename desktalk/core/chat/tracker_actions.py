@@ -9,24 +9,19 @@ Trackers: the panel on top of an agent's 1-on-1 chat (config/agents.yaml → tra
     light       sunlight logged, room brightness  ┘
 
 The AI sees the tracker's numbers, and can change them with action tags like
-[LOG_SIP] or [ADD_TODO:Buy milk] in its reply.
+[LOG_SIP] or [ADD_TODO:Buy milk] in its reply. The wording is in config/prompts.yaml (trackers:).
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
-from typing import Any, Protocol
+from typing import Any
 
 from desktalk.config import ChatSettings
+from desktalk.config.prompts import TrackerPrompts
+from desktalk.ports import HabitLog
 from desktalk.util import clock_text
-
-
-class HabitLog(Protocol):
-    """The habit tracker's log(): what a chat action (a sip, a break ...) is written to."""
-
-    def log(self, habit: str, action: str, **details: Any) -> Any:
-        ...
 
 
 def normalize_todo(raw: Any, chat: ChatSettings) -> dict | None:
@@ -42,108 +37,75 @@ def normalize_todo(raw: Any, chat: ChatSettings) -> dict | None:
     return {'type': 'todo', 'items': items}
 
 
-def behavior_summary(views: Sequence[Mapping[str, Any]], now: float, chat: ChatSettings) -> str:
+def behavior_summary(views: Sequence[Mapping[str, Any]], now: float, chat: ChatSettings, *,
+                     words: TrackerPrompts) -> str:
     """A note when the user keeps opening the tracker panel."""
     recent = [e for e in views if e['ts'] > now - chat.panel_views_window_sec]
     count = sum(1 for e in recent if e.get('action') == 'view')
     if count < chat.panel_views_min:
         return ''
-    return (f'\nBEHAVIOR: The user opened this panel {count} time(s) in the last hour. '
-            'If nothing was completed or changed, gently point that out.')
+    return words.behavior.format(count=count)
 
 
 def tracker_prompt(tracker: str | None, habits_today: Mapping[str, Any], todo: Mapping[str, Any] | None,
-                   views: Sequence[Mapping[str, Any]], now: float, chat: ChatSettings) -> str:
-    """The tracker's data as a block for the AI."""
+                   views: Sequence[Mapping[str, Any]], now: float, chat: ChatSettings, *,
+                   words: TrackerPrompts, utc_offset_sec: float | None = None) -> str:
+    """The tracker's data as a block for the AI. `words` is config.prompts.trackers. `utc_offset_sec`: the local
+    time's offset from UTC for the times in it (the clock's; None = this computer's)."""
     if not tracker:
         return ''
-    extra = behavior_summary(views, now, chat)
+    t = words
+    extra = behavior_summary(views, now, chat, words=t)
     if tracker == 'todo':
         items = (todo or {}).get('items') or []
         if not items:
             return extra
-        lines = [f"- [{'x' if t.get('done') else ' '}] {t.get('text', '')}" for t in items]
-        return "\nUSER'S TO-DO LIST (prioritize open items, celebrate completed ones):\n" + '\n'.join(lines) + extra
+        lines = [f"- [{'x' if i.get('done') else ' '}] {i.get('text', '')}" for i in items]
+        return t.todo_list.format(items='\n'.join(lines)) + extra
     h = habits_today
     if tracker == 'breaks':
         b = h['breaks']
-        last = clock_text(b['last_break_ts']) if b['last_break_ts'] else 'none yet today'
-        return (f"\nUSER'S BREAKS: {b['count']} break(s) today, last one {last}. Sitting for "
-                f"{b['sitting_sec'] // 60} min right now. The book suggests a 5-minute walk every "
-                f"{b['sit_limit_min']} minutes of sitting." + extra)
+        last = (clock_text(b['last_break_ts'], utc_offset_sec=utc_offset_sec) if b['last_break_ts']
+                else t.breaks_none_yet)
+        return t.breaks.format(count=b['count'], last=last, sitting_min=b['sitting_sec'] // 60) + extra
     if tracker == 'hydration':
         w = h['hydration']
-        last = clock_text(w['last_sip_ts']) if w['last_sip_ts'] else 'none yet'
-        return (f"\nUSER'S WATER: about {w['water_ml']} ml of a {w['goal_ml']} ml goal ({w['sips']} sips), "
-                f"pace for now {w['pace_ml']} ml. Last sip: {last}. Encourage drinking water, earlier in the day "
-                f"is better. Celebrate hitting the goal." + extra)
+        last = clock_text(w['last_sip_ts'], utc_offset_sec=utc_offset_sec) if w['last_sip_ts'] else t.water_none_yet
+        return t.water.format(water_ml=w['water_ml'], goal_ml=w['goal_ml'], sips=w['sips'], pace_ml=w['pace_ml'],
+                              last=last) + extra
     if tracker == 'food':
         entries = h['food']['entries']
         if not entries:
-            return "\nUSER'S FOOD LOG: Empty today." + extra
+            return t.food_empty + extra
         healthy = [e['label'] for e in entries if e.get('healthy')]
         junk = [e['label'] for e in entries if not e.get('healthy')]
-        parts = ([f"Healthy: {', '.join(healthy)}"] if healthy else []) + \
-            ([f"Treats: {', '.join(junk)}"] if junk else [])
-        return (f"\nUSER'S FOOD LOG TODAY ({len(entries)} items): " + '; '.join(parts)
-                + '. Comment on their choices — praise healthy picks, gently tease treats.' + extra)
+        parts = ([t.food_healthy.format(labels=', '.join(healthy))] if healthy else []) + \
+            ([t.food_treats.format(labels=', '.join(junk))] if junk else [])
+        return t.food.format(count=len(entries), parts='; '.join(parts)) + extra
     if tracker == 'phone_free':
         p = h['phone_free']
         if not p['counted']:
-            return '\n(The phone is the camera today, so phone-free time is not counted.)'
-        on = 'ON the desk right now' if p['phone_on_desk'] else 'not on the desk right now'
-        return (f"\nPHONE-FREE TIME: {p['phone_free_sec'] // 60} min of desk time with no phone in sight today "
-                f"(goal {p['goal_min']} min), current streak {p['streak_sec'] // 60} min. The phone is {on}." + extra)
+            return t.phone_not_counted
+        where = t.phone_on_desk if p['phone_on_desk'] else t.phone_off_desk
+        return t.phone.format(free_min=p['phone_free_sec'] // 60, goal_min=p['goal_min'],
+                              streak_min=p['streak_sec'] // 60, where=where) + extra
     if tracker == 'light':
         light = h['light']
         if light.get('lux') is not None:
-            level = f"about {int(light['lux'])} lux"
+            level = t.light_lux.format(lux=int(light['lux']))
         elif light.get('brightness') is not None:
-            level = f"picture brightness {int(light['brightness'])}/255"
+            level = t.light_brightness.format(brightness=int(light['brightness']))
         else:
-            level = 'unknown'
-        sun = 'logged' if light['sunlight_ts'] else 'NOT logged yet'
-        return (f"\nLIGHT: morning sunlight {sun}; the room is {level} right now. Book: sunlight within an hour of "
-                f"waking, late-afternoon light before sunset, dim lights in the hour before bed." + extra)
+            level = t.light_unknown
+        sun = t.sunlight_logged if light['sunlight_ts'] else t.sunlight_not_logged
+        return t.light.format(sun=sun, level=level) + extra
     return extra
 
 
-ACTIONS = {
-    'todo': """
-ACTIONS — you MUST use these whenever the conversation implies it:
-- User wants to add/create/remember/track anything → you MUST include [ADD_TODO:task text] in your reply
-- User says a task is done/finished/completed → you MUST include [DONE_TODO:exact task text from the list] in your reply
-- User wants to remove/delete a task → you MUST include [DEL_TODO:exact task text] in your reply
-You can include multiple action tags in one reply.
-IMPORTANT: Write a short conversational reply AND the tag(s). Example: "Done, adding that! [ADD_TODO:Buy groceries]"
-If the user asks you to add something, you MUST include the [ADD_TODO:...] tag. Do NOT just talk about it.""",
-    'breaks': """
-ACTIONS — you MUST use these whenever the conversation implies it:
-- User says they took/are taking a break, stepped away, walked, stretched → you MUST include [LOG_BREAK] in your reply
-IMPORTANT: Write a short conversational reply AND the tag. Example: "Nice walk! [LOG_BREAK]"
-If the user mentions taking a break, you MUST include [LOG_BREAK]. Do NOT just talk about it.""",
-    'hydration': """
-ACTIONS — you MUST use these whenever the conversation implies it:
-- User says they drank water, had a sip → you MUST include [LOG_SIP] in your reply
-- User says they drank a full glass or bottle → you MUST include [LOG_GLASS] in your reply
-IMPORTANT: Write a short conversational reply AND the tag. Example: "Splash! That's the spirit. [LOG_SIP]"
-If the user mentions drinking water, you MUST include a tag. Do NOT just talk about it.""",
-    'food': """
-ACTIONS — you MUST use these whenever the conversation implies it:
-- User mentions eating something healthy (fruit, nuts, veggies, etc.) → you MUST include [LOG_SNACK_HEALTHY:food name]
-- User mentions eating something unhealthy (chips, candy, soda, etc.) → you MUST include [LOG_SNACK_JUNK:food name]
-IMPORTANT: Write a short conversational reply AND the tag. Example: "Ooh almonds, solid pick! [LOG_SNACK_HEALTHY:almonds]"
-If the user mentions eating something, you MUST include the tag. Do NOT just talk about it.""",  # noqa: E501
-    'light': """
-ACTIONS — you MUST use these whenever the conversation implies it:
-- User says they went outside / got sunlight / took a walk outside → you MUST include [LOG_SUNLIGHT:minutes] (a number; use 10 if unsure)
-IMPORTANT: Write a short conversational reply AND the tag. Example: "Sunshine! [LOG_SUNLIGHT:15]"
-""",  # noqa: E501
-}
-
-
-def action_instructions(tracker: str | None) -> str:
-    return ACTIONS.get(tracker or '', '')
+def action_instructions(tracker: str | None, *, words: TrackerPrompts) -> str:
+    """How the AI changes this tracker (its action tags); '' for an agent without one. `words` is
+    config.prompts.trackers."""
+    return words.actions.model_dump().get(tracker or '', '')
 
 
 def parse_actions(text: str, tracker: str | None, *, sunlight_default_min: float) -> tuple[str, list[dict]]:

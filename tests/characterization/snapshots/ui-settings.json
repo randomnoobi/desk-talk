@@ -1,0 +1,114 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "chat": {
+      "history_from_app": "number",
+      "message_max_chars": "number",
+      "todo_max_chars": "number",
+      "todo_max_items": "number"
+    },
+    "chat_reply_timeout_ms": "number",
+    "desk": {
+      "desk_border_share": "number",
+      "edge_proximity": {
+        "danger_px": "number",
+        "objects": [
+          "str"
+        ],
+        "warn_px": "number"
+      },
+      "max_desk_corners": "number",
+      "min_desk_corners": "number"
+    },
+    "habits": {
+      "breaks": {
+        "break_min": "number",
+        "enabled": "bool",
+        "meal_min_on_desk_min": "number",
+        "no_phone_on_breaks": "bool",
+        "repeat_after_min": "number",
+        "sit_limit_min": "number",
+        "walk_after_meal": "bool",
+        "walk_repeat_after_hours": "number",
+        "walk_window_after_meal_min": "number"
+      },
+      "evening_dim_before_bed_min": "number",
+      "food_label_max_chars": "number",
+      "glass_ml": "number",
+      "goal_window_hours": "number",
+      "morning_minutes": {
+        "clear": "number",
+        "overcast": "number",
+        "partly_cloudy": "number"
+      },
+      "morning_window_min": "number",
+      "stop_before_bed_hours": "number",
+      "sunlight_default_min": "number"
+    },
+    "lens_card": {
+      "about": "str",
+      "art": "str",
+      "color": "str",
+      "id": "str",
+      "name": "str"
+    },
+    "phone": {
+      "capture_height": "number",
+      "capture_width": "number",
+      "fps": "number",
+      "jpeg_quality": "number",
+      "max_side": "number",
+      "tilt_max": "number"
+    },
+    "pi": {
+      "compact_every_min": "number",
+      "delete_every_min": "number",
+      "fps": "number"
+    },
+    "quiet_hours": {
+      "enabled": "bool",
+      "end_hour": "number",
+      "start_hour": "number"
+    },
+    "web": {
+      "activity_ping_ms": "number",
+      "chat_kept": "number",
+      "chat_saved": "number",
+      "habit_log_shown": "number",
+      "left_chat_shown_min": "number",
+      "live_timeout_ms": "number",
+      "log_shown": "number",
+      "new_zone_px": "number",
+      "palette": [
+        "str"
+      ],
+      "photos_shown": "number",
+      "refresh_ms": {
+        "habits": "number",
+        "live": "number",
+        "log": "number",
+        "photos": "number"
+      },
+      "request_timeout_ms": "number",
+      "settings_sliders": {
+        "alert": {
+          "max": "number",
+          "min": "number"
+        },
+        "warn": {
+          "max": "number",
+          "min": "number"
+        },
+        "zone": {
+          "max": "number",
+          "min": "number"
+        }
+      },
+      "toast_ms": "number"
+    }
+  },
+  "request": "GET /api/ui_settings (main server, busy desk)"
+}

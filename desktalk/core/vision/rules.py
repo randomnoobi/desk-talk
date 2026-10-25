@@ -5,8 +5,8 @@ The built-in rules are config/settings.yaml → safety. What the Settings page s
 distances, the desk corners you marked ...) is kept in a KeyValueStore and laid on top, the same way
 config/safety_rules.json always was:
 
-    rules = SafetyRules(store, config.safety, liquids=profiles.labels_for_habit('hydration'),
-                        foods=profiles.labels_for_habit('food'))
+    rules = SafetyRules(store, config.safety, words=config.prompts.desk_rules,
+                        liquids=profiles.labels_for_habit('hydration'), foods=profiles.labels_for_habit('food'))
     rules.current.zones['laptop']          # Zone(expand=134, label='Spill / pressure zone', base_share=0.5)
     rules.save({'desk_outline': [[0.1, 0.2], [0.9, 0.2], [0.9, 0.95]]})
 
@@ -19,55 +19,21 @@ import logging
 import math
 import threading
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
 from typing import Any
 
 from desktalk.config import SafetySettings
+from desktalk.config.prompts import DeskRuleWords
 from desktalk.core.vision.geometry import Box, Point, footprint
+from desktalk.domain import DeskRules, Zone
 from desktalk.ports import KeyValueStore
 
 log = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class Zone:
-    """A danger zone around an object: the part of it that sits on the desk (the bottom `base_share` of its
-    box; 1.0 = the whole box), `expand` pixels wider on every side."""
-
-    expand: float
-    label: str
-    base_share: float = 1.0
-
-
-@dataclass(frozen=True, kw_only=True)
-class DeskRules:
-    outline: tuple[Point, ...]          # desk corners, 0-1 of the picture size; empty = not marked
-    reference_gravity: tuple[float, ...] | None   # how the phone was tilted when the desk was marked
-    edge_danger_px: float
-    edge_warn_px: float
-    edge_objects: frozenset[str]
-    zones: Mapping[str, Zone]
-    zone_intruders: Mapping[str, frozenset[str]]  # zone → the words that are a danger inside it
-    harmless_pairs: frozenset[frozenset[str]]
-    path_ratio: float
-    crowd_radius_px: float
-    crowd_min_objects: int
-    harmless_crowd: frozenset[str]
-    history_length: int
-    approach_min_frames: int
-    approach_rate: float
-    repeated_times: int
-    repeated_window_sec: float
-    risk_weights: Mapping[str, int]
-    risk_level_steps: tuple[int, ...]
-    desk_border_share: float
-    footprint_share: float
-    footprint_min_px: float
-
-    def standing_strip(self, box: Box) -> Box:
-        """About where a thing stands on the desk: the bottom footprint_share of its box, at least
-        footprint_min_px tall (the danger zones, the desk edges and the drawings all use this strip)."""
-        return footprint(box, self.footprint_share, self.footprint_min_px)
+def standing_strip(box: Box, rules: DeskRules) -> Box:
+    """About where a thing stands on the desk: the bottom rules.footprint_share of its box, at least
+    rules.footprint_min_px tall (the danger zones, the desk edges and the live view all use this strip)."""
+    return footprint(box, rules.footprint_share, rules.footprint_min_px)
 
 
 def _lower(words: Iterable[Any]) -> frozenset[str]:
@@ -142,14 +108,14 @@ def _zone_intruders(safety: SafetySettings, saved: Mapping, liquids, foods) -> d
     return out
 
 
-def _outline(saved: Mapping) -> tuple[Point, ...]:
+def _outline(saved: Mapping, min_corners: int) -> tuple[Point, ...]:
     corners = saved.get('desk_outline') or []
     try:
         points = tuple((float(x), float(y)) for x, y in corners)
     except (TypeError, ValueError):
         log.warning('Saved safety rules: desk_outline should be a list of [x, y] points (got %r)', corners)
         return ()
-    return points if len(points) >= 3 else ()
+    return points if len(points) >= min_corners else ()
 
 
 def make_rules(safety: SafetySettings, saved: Mapping | None = None, liquids: Iterable[str] = (),
@@ -163,7 +129,7 @@ def make_rules(safety: SafetySettings, saved: Mapping | None = None, liquids: It
     gravity = (saved.get('camera_reference') or {}).get('gravity')
     saved_objects = edge.get('objects')
     return DeskRules(
-        outline=_outline(saved),
+        outline=_outline(saved, safety.min_desk_corners),
         reference_gravity=tuple(gravity) if gravity and len(gravity) == 3 and saved.get('desk_outline') else None,
         edge_danger_px=_number(edge, 'edge_proximity', 'danger_px', safety.edge_proximity.danger_px),
         edge_warn_px=_number(edge, 'edge_proximity', 'warn_px', safety.edge_proximity.warn_px),
@@ -193,12 +159,14 @@ def make_rules(safety: SafetySettings, saved: Mapping | None = None, liquids: It
 
 
 class SafetyRules:
-    """The rules in use, kept up to date when the Settings page saves new ones."""
+    """The rules in use, kept up to date when the Settings page saves new ones. `words`: what it says when the
+    Settings page sends too few desk corners."""
 
-    def __init__(self, store: KeyValueStore, safety: SafetySettings, *, liquids: Iterable[str] = (),
-                 foods: Iterable[str] = (), key: str = 'safety_rules'):
+    def __init__(self, store: KeyValueStore, safety: SafetySettings, *, words: DeskRuleWords,
+                 liquids: Iterable[str] = (), foods: Iterable[str] = (), key: str = 'safety_rules'):
         self._store = store
         self._safety = safety
+        self._words = words
         self._liquids = frozenset(liquids)
         self._foods = frozenset(foods)
         self._key = key
@@ -239,14 +207,16 @@ class SafetyRules:
 
     def clean_outline(self, points: Any) -> list[list[float]]:
         """Desk corners sent by the Settings page, each cut to 0-1 of the picture, at most
-        safety.max_desk_corners of them. Raises ValueError (plain words) for something that isn't corners."""
+        safety.max_desk_corners of them. Raises ValueError (plain words) for something that isn't corners, or
+        fewer than safety.min_desk_corners."""
         try:
             corners = [[round(min(1.0, max(0.0, float(x))), 4), round(min(1.0, max(0.0, float(y))), 4)]
                        for x, y in (points or [])]
         except (TypeError, ValueError):
             raise ValueError('desk_outline must be a list of [x, y] points') from None
-        if corners and len(corners) < 3:
-            raise ValueError('Mark at least 3 corners of the desk')
+        fewest = self._safety.min_desk_corners
+        if corners and len(corners) < fewest:
+            raise ValueError(self._words.too_few_corners.format(corners=fewest))
         return corners[:self._safety.max_desk_corners]
 
     def for_settings_page(self) -> dict[str, Any]:

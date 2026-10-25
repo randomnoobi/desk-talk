@@ -100,9 +100,15 @@ The container's settings are in `.env` next to `compose.yaml`. After changing on
 |---|---|---|
 | `DETECTOR_PORT` | 8100 | the port, on the Pi's 127.0.0.1 only. Must match `pi.detector.url` in `config/settings.yaml` (the camera program gets it from there). |
 | `DETECTOR_MEMORY_LIMIT` | 2g | most memory the container may use; over it Docker restarts it instead of the Pi freezing |
-| `DETECTOR_MAX_PICTURE_MB` | 10 | biggest picture `/detect` accepts |
+| `DETECTOR_MAX_PICTURE_MB` | 10 | biggest picture `/detect` accepts (1 MB = 1024 × 1024 bytes) |
 | `DETECTOR_RETRY_FIRST_SEC` | 5 | wait before trying a model that failed to load again; doubles each time ... |
 | `DETECTOR_RETRY_MAX_SEC` | 300 | ... up to this |
+| `DETECTOR_HEALTH_INTERVAL` | 30s | how often Docker asks `/health` ... |
+| `DETECTOR_HEALTH_TIMEOUT` | 5s | ... how long one answer may take ... |
+| `DETECTOR_HEALTH_START_PERIOD` | 60s | ... how long after a start failed answers don't count yet (loading PyTorch is slow) ... |
+| `DETECTOR_HEALTH_RETRIES` | 3 | ... and how many failed answers in a row make it `unhealthy` |
+| `DETECTOR_LOG_FILE_SIZE` | 10m | start a new log file at this size (m = MB, 1024 × 1024 bytes) ... |
+| `DETECTOR_LOG_FILES` | 3 | ... and keep this many, so logs can't fill the SD card |
 
 Which model it runs comes from the camera program (`PUT /model`), not from here.
 

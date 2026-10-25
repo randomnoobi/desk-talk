@@ -6,26 +6,36 @@ camera moving or going quiet) what needs fixing, and says it as Lens. With the P
 also mentions a Pi that runs hot or slows itself down, a Pi clock that's off, and the Pi's own object
 detection being off because it failed (and why: this computer then detects instead). No AI is used, so Lens works even
 without a key. Everything Lens says is also published as a CameraNotice for the log.
-Nothing is said during quiet hours.
+Nothing is said during quiet hours (by the clock's local hour).
 
     lens = Lens(camera_health, source, desk_layout, preferences, notifier, bus, proof_photos, config.lens, config.pi,
-                phone=<the phone source, if it's the camera>, pi_uploads=<the Pi source, if it's the camera>)
+                clock=clock, phone=<the phone source, if it's the camera>,
+                pi_uploads=<the Pi source, if it's the camera>, prompts=config.prompts.lens,
+                preview_chars=config.logging.preview_chars)
     supervisor.add(lens, start_after=config.lens.check_every_sec)
 """
 
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any
 
 from desktalk.config import LensSettings, PiSettings
-from desktalk.core.agents.speakers import LENS
-from desktalk.core.chat.workers.needs import DeskLayout, PhoneCamera, PiUploads
-from desktalk.core.vision.proof_photos import ProofPhotos
-from desktalk.domain import CameraNotice, DetectorState, PiHealth, UploadInfo
-from desktalk.ports import CameraHealthView, EventBus, FrameSource, Notifier, Preferences
-from desktalk.util import in_hour_window
+from desktalk.config.prompts import LensPrompts
+from desktalk.core.habits.preferences import quiet_hours_now
+from desktalk.domain import LENS, CameraNotice, DetectorState, PiHealth, UploadInfo
+from desktalk.ports import (
+    CameraHealthView,
+    Clock,
+    DeskLayout,
+    EventBus,
+    FrameSource,
+    Notifier,
+    PhoneCamera,
+    PhotoTaker,
+    PiUploads,
+    Preferences,
+)
 from desktalk_shared.wire import OFF_ON_PURPOSE
 
 log = logging.getLogger(__name__)
@@ -38,13 +48,6 @@ FPS_KINDS = {'phone', 'pi'}                              # cameras whose picture
 UNDER_VOLTAGE_NOW = 0x1
 SLOWED_NOW = 0xE            # speed capped, slowed down, or soft temperature limit
 
-PI_FIXED = {
-    'pi_hot': 'The Raspberry Pi has cooled down and is running normally again. Thanks!',
-    'pi_power': 'The Raspberry Pi has enough power again. Thanks!',
-    'pi_clock': "The Raspberry Pi's clock matches this computer's again.",
-    'pi_detector': 'The Raspberry Pi is finding the objects itself again.',
-}
-
 
 def _flags(throttled: str) -> int:
     try:
@@ -54,10 +57,12 @@ def _flags(throttled: str) -> int:
 
 
 class _PiWatch:
-    """One Pi problem: said once it has lasted a while, repeated now and then, thanks once it's gone a while."""
+    """One Pi problem: said once it has lasted a while, repeated now and then, thanks once it's gone a while
+    (with `fixed`, the words for that)."""
 
-    def __init__(self, key: str, *, wait: float, repeat: float, fixed_after: float):
+    def __init__(self, key: str, fixed: str, *, wait: float, repeat: float, fixed_after: float):
         self.key = key
+        self._fixed = fixed
         self._wait, self._repeat, self._fixed_after = wait, repeat, fixed_after
         self._since: float | None = None        # when it started (None = not happening now)
         self._said_at: float | None = None
@@ -79,7 +84,7 @@ class _PiWatch:
                 self._gone_since = now
             if now - self._gone_since >= self._fixed_after:
                 self._open, self._gone_since = False, None
-                return {'key': self.key, 'kind': 'fixed', 'text': PI_FIXED[self.key]}
+                return {'key': self.key, 'kind': 'fixed', 'text': self._fixed}
         return None
 
     def forget(self) -> None:
@@ -94,11 +99,14 @@ class Lens:
     name = 'lens'
 
     def __init__(self, health: CameraHealthView, source: FrameSource, layout: DeskLayout, prefs: Preferences,
-                 notifier: Notifier, bus: EventBus, photos: ProofPhotos, settings: LensSettings,
-                 pi_settings: PiSettings,
-                 *, phone: PhoneCamera | None = None, pi_uploads: PiUploads | None = None):
+                 notifier: Notifier, bus: EventBus, photos: PhotoTaker, settings: LensSettings,
+                 pi_settings: PiSettings, *, clock: Clock, prompts: LensPrompts, preview_chars: int,
+                 phone: PhoneCamera | None = None, pi_uploads: PiUploads | None = None):
         """How long the Pi must be hot (or its clock off) before Lens says so: lens.wait_before_saying_sec.pi;
-        how long its own detection must be off: lens.wait_before_saying_sec.pi_detector."""
+        how long its own detection must be off: lens.wait_before_saying_sec.pi_detector. `prompts`:
+        config/prompts.yaml → lens (what Lens says about the Pi, and its photos' label). `preview_chars`:
+        settings → logging.preview_chars, the longest line quoted in the log. `clock` gives the local hour, for
+        quiet hours."""
         self._health = health
         self._source = source
         self._layout = layout
@@ -108,17 +116,23 @@ class Lens:
         self._photos = photos
         self._settings = settings
         self._pi_settings = pi_settings
+        self._clock = clock
+        self._words = prompts
+        self._preview_chars = preview_chars
         self._phone = phone
         self._pi = pi_uploads
         waits = settings.wait_before_saying_sec
         timing = {'repeat': settings.repeat_after_min * 60, 'fixed_after': settings.fixed_after_sec}
-        self._pi_watches = [_PiWatch(key, wait=waits.pi, **timing) for key in ('pi_hot', 'pi_power', 'pi_clock')]
-        self._pi_watches.append(_PiWatch('pi_detector', wait=waits.pi_detector, **timing))
+        fixed = prompts.pi_fixed
+        self._pi_watches = [_PiWatch('pi_hot', fixed.pi_hot, wait=waits.pi, **timing),
+                            _PiWatch('pi_power', fixed.pi_power, wait=waits.pi, **timing),
+                            _PiWatch('pi_clock', fixed.pi_clock, wait=waits.pi, **timing),
+                            _PiWatch('pi_detector', fixed.pi_detector, wait=waits.pi_detector, **timing)]
 
     def tick(self, now: float) -> float:
         source, phone = self._source, self._phone
         connected = source.connected
-        quiet = self._quiet_hours(now)
+        quiet = quiet_hours_now(self._prefs, now, self._clock)
         found = self._health.check(now, connected=connected, fps=source.fps if source.kind in FPS_KINDS else None,
                                    gravity=phone.recent_gravity() if phone else None,
                                    reference_gravity=self._layout.reference_gravity(),
@@ -136,8 +150,10 @@ class Lens:
         if latest is None:
             return []
         info, _ = latest
+        pi = self._pi
         texts = {'pi_hot': self._hot_text(info.health), 'pi_power': self._power_text(info.health),
-                 'pi_clock': self._clock_text(self._pi.clock_off_sec()), 'pi_detector': self._detector_text(info)}
+                 'pi_clock': self._clock_text(pi.clock_off_sec() if pi is not None else None),
+                 'pi_detector': self._detector_text(info)}
         off_on_purpose = info.detector is DetectorState.OFF and info.detector_reason in OFF_ON_PURPOSE
         said = []
         for watch in self._pi_watches:
@@ -150,54 +166,40 @@ class Lens:
     def _hot_text(self, health: PiHealth) -> str:
         temp = health.cpu_temp_c
         if temp is not None and temp >= self._pi_settings.hot_warning_c:
-            return (f'The Raspberry Pi is running hot ({temp:.0f}°C), so it may slow down. '
-                    f'Give it some air or a small fan.')
+            return self._words.pi_hot.format(temp=temp)
         flags = _flags(health.throttled)
         if flags & SLOWED_NOW and not flags & UNDER_VOLTAGE_NOW:
-            return "The Raspberry Pi is slowing itself down because it's too hot. Give it some air or a small fan."
+            return self._words.pi_slowed
         return ''
 
-    @staticmethod
-    def _power_text(health: PiHealth) -> str:
+    def _power_text(self, health: PiHealth) -> str:
         if _flags(health.throttled) & UNDER_VOLTAGE_NOW:
-            return ("The Raspberry Pi's power supply is too weak, so it's slowing itself down. "
-                    "The official Raspberry Pi power supply fixes this.")
+            return self._words.pi_power
         return ''
 
     def _clock_text(self, off: float | None) -> str:
         """`off`: the Pi's clock minus this computer's, as the Pi source judges it (negative = behind)."""
         if off is None or abs(off) <= self._pi_settings.clock_off_warning_sec:
             return ''
-        way = 'behind' if off < 0 else 'ahead of'
-        return (f"The Raspberry Pi's clock is {round(abs(off))} seconds {way} this computer's. "
-                f"I go by this computer's time, but turning on network time on the Pi fixes it: "
-                f"sudo timedatectl set-ntp true")
+        way = self._words.pi_clock_behind if off < 0 else self._words.pi_clock_ahead
+        return self._words.pi_clock.format(seconds=round(abs(off)), way=way)
 
-    @staticmethod
-    def _detector_text(info: UploadInfo) -> str:
+    def _detector_text(self, info: UploadInfo) -> str:
         """Only when the Pi's detector is off because something went wrong: not when it was turned off on
         purpose (--no-detector) or the Pi runs the old camera program, which has none."""
         if info.detector is not DetectorState.OFF or info.detector_reason in OFF_ON_PURPOSE:
             return ''
-        why = f': {info.detector_reason}' if info.detector_reason else ''
-        return (f"The Raspberry Pi isn't finding the objects itself right now{why}. "
-                f'This computer is doing it instead, so everything still works.')
+        why = self._words.pi_detector_why.format(reason=info.detector_reason) if info.detector_reason else ''
+        return self._words.pi_detector.format(why=why)
 
     # ── saying it ──
-    def _quiet_hours(self, now: float) -> bool:
-        prefs = self._prefs
-        if not prefs.get('quiet_enabled'):
-            return False
-        return in_hour_window(time.localtime(now).tm_hour, int(prefs.get('quiet_start_hour')),
-                              int(prefs.get('quiet_end_hour')))
-
     def _say(self, found: dict[str, Any], now: float) -> None:
         kind, text = found['kind'], found['text']
         message = {'type': 'group_message', 'character': LENS, 'text': text, 'lens': kind, 'toast': kind == 'problem'}
         if kind == 'problem' and found['key'] in PHOTO_KEYS:
-            photo = self._photos.save('Lens: camera view')
+            photo = self._photos.save(self._words.photo_label)
             if photo:
                 message['snapshot'] = photo
         self._notifier.send(message)
         self._bus.publish(CameraNotice(ts=now, key=found['key'], kind=kind, text=text))
-        log.info('Lens: %s', text[:90])
+        log.info('Lens: %s', text[:self._preview_chars])

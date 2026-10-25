@@ -1,7 +1,8 @@
 """
 ResilientChatModel: wraps any ChatModel so a slow, broken or out-of-quota AI never stalls Desk Talk.
 
-    model = ResilientChatModel(OpenAICompatibleChatModel(...), clock, config.llm, time_limit_sec=ai.time_limit_sec)
+    model = ResilientChatModel(OpenAICompatibleChatModel(...), clock, config.llm, time_limit_sec=ai.time_limit_sec,
+                               replies=config.prompts.replies)
 
 What it adds (numbers: config/settings.yaml → llm):
 - Calls are spaced at least min_interval_sec apart (protects free limits).
@@ -30,6 +31,7 @@ from typing import Any
 
 from desktalk.adapters.llm.errors import AIRefused
 from desktalk.config import LlmSettings
+from desktalk.config.prompts import AiErrors, Replies
 from desktalk.domain import AIUnavailable
 from desktalk.ports import ChatModel, Clock
 
@@ -38,15 +40,16 @@ log = logging.getLogger(__name__)
 CHAT, VISION = 'chat', 'vision'
 
 
-def _plain_errors(ask: Callable[[], str]) -> str:
-    """Run one try. A ChatModel should only raise AIUnavailable; anything else is turned into one here."""
+def _plain_errors(ask: Callable[[], str], max_chars: int, words: AiErrors) -> str:
+    """Run one try. A ChatModel should only raise AIUnavailable; anything else is turned into one here, its text
+    cut to `max_chars` letters (settings → llm.error_text_chars)."""
     try:
         return ask()
     except AIUnavailable:
         raise
     except Exception as exc:
         log.exception('The AI connection raised an unexpected error')
-        raise AIUnavailable(f'The AI returned an error: {str(exc)[:160]}') from exc
+        raise AIUnavailable(words.other.format(error=str(exc)[:max_chars])) from exc
 
 
 class _Breaker:
@@ -88,10 +91,13 @@ class _Breaker:
 
 
 class ResilientChatModel:
-    """A ChatModel (desktalk/ports.py) around another ChatModel."""
+    """A ChatModel (desktalk/ports.py) around another ChatModel. `replies`: config/prompts.yaml → replies (what it
+    says when the AI keeps failing or is resting after a rate limit)."""
 
-    def __init__(self, inner: ChatModel, clock: Clock, settings: LlmSettings, *, time_limit_sec: float | None = None):
+    def __init__(self, inner: ChatModel, clock: Clock, settings: LlmSettings, *, replies: Replies,
+                 time_limit_sec: float | None = None):
         self._inner = inner
+        self._words = replies.ai_errors
         self._clock = clock
         self._s = settings
         self._time_limit = {
@@ -132,8 +138,8 @@ class ResilientChatModel:
     def _problem_now(self, now: float) -> str | None:
         breaker = self._breakers[CHAT]
         if self._problem and breaker.is_open(now):
-            return (f'{self._problem} (It failed {breaker.failures} times in a row, so Desk Talk is leaving it '
-                    f'alone for {breaker.seconds_left(now)} seconds.)')
+            return self._words.left_alone.format(problem=self._problem, failures=breaker.failures,
+                                                 seconds=breaker.seconds_left(now))
         return self._problem
 
     # ── calls ──
@@ -155,7 +161,7 @@ class ResilientChatModel:
         rate_limit_retried = False
         for attempt in range(tries):
             try:
-                text = _plain_errors(ask)
+                text = _plain_errors(ask, self._s.error_text_chars, self._words)
             except AIUnavailable as err:
                 wait = self._wait_before_next_try(kind, err, attempt, background, rate_limit_retried)
                 elapsed = self._clock.monotonic() - started
@@ -177,13 +183,12 @@ class ResilientChatModel:
             shares_quota = kind == CHAT or not self.local_vision
             if background and shares_quota and self._resting_until is not None and now < self._resting_until:
                 minutes = max(1, round((self._resting_until - now) / 60))
-                raise AIUnavailable(f'{self.label} hit its usage limit, so background chatter is resting for '
-                                    f'about {minutes} more minute(s).', rate_limited=True)
+                raise AIUnavailable(self._words.resting.format(who=self.label, minutes=minutes), rate_limited=True)
             breaker = self._breakers[kind]
             was_open = breaker.open_until is not None
             if not breaker.let_in(now):
-                reason = self._problem_now(now) if kind == CHAT else 'Questions about pictures keep failing.'
-                raise AIUnavailable(reason or 'The AI keeps failing, so Desk Talk is leaving it alone for a while.')
+                reason = self._problem_now(now) if kind == CHAT else self._words.pictures_failing
+                raise AIUnavailable(reason or self._words.keeps_failing)
             return was_open
 
     def _wait_turn(self) -> None:

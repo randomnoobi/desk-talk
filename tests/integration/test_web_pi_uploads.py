@@ -29,8 +29,8 @@ def test_an_ok_upload_hands_the_pis_detections_to_the_app(tmp_path):
     assert reply.json() == {'ok': True, 'fps': 0.0, 'tip': None}     # one picture: no speed yet
     rig.app.producer.tick(rig.clock.now())
     assert rig.detector.calls == 0                                  # the Pi already found what's there
-    assert set(rig.app.desk.seen_labels) == {'laptop', 'person'}
-    status = rig.app.pi_source.status()
+    assert set(rig.app.scene.seen()) == {'laptop', 'person'}
+    status = rig.app.pi.status()
     assert (status['upload_format'], status['detector'], status['model']) == (2, 'ok', 'yolo26n_ncnn')
     assert (status['camera'], status['cpu_temp_c'], status['last_frame_id']) == ('picamera2', 61.5, 'pi-000001')
 
@@ -40,8 +40,7 @@ def test_a_busy_upload_only_reaches_the_live_view(tmp_path):
     assert pi_upload(web_client(rig.app), rig.jpeg, info(rig, DetectorState.BUSY)).status_code == 200
     rig.app.producer.tick(rig.clock.now())
     assert rig.app.producer.pictures_analysed == 0 and rig.detector.calls == 0
-    with rig.app.desk.lock:
-        assert rig.app.desk.raw_frames[0] == rig.jpeg
+    assert rig.app.live_pictures.plain(0) == rig.jpeg
 
 
 def test_an_off_upload_is_detected_on_this_computer(tmp_path):
@@ -50,8 +49,8 @@ def test_an_off_upload_is_detected_on_this_computer(tmp_path):
     upload = info(rig, DetectorState.OFF, reason='the detector container is not answering')
     assert pi_upload(web_client(rig.app), rig.jpeg, upload).status_code == 200
     rig.app.producer.tick(rig.clock.now())
-    assert rig.detector.calls == 1 and set(rig.app.desk.seen_labels) == {'laptop'}
-    assert rig.app.pi_source.status()['detector_reason'] == 'the detector container is not answering'
+    assert rig.detector.calls == 1 and set(rig.app.scene.seen()) == {'laptop'}
+    assert rig.app.pi.status()['detector_reason'] == 'the detector container is not answering'
 
 
 def test_an_old_pi_sends_format_1_headers(tmp_path):
@@ -60,9 +59,9 @@ def test_an_old_pi_sends_format_1_headers(tmp_path):
                'X-Pi-Camera': 'usb', 'X-Pi-Photos': '', 'X-Pi-Free-MB': '1234', 'X-Taken-At': str(rig.clock.now())}
     reply = web_client(rig.app).post('/api/pi/frame', content=rig.jpeg, headers=headers)
     assert reply.status_code == 200
-    upload, _ = rig.app.pi_source.latest_upload()
+    upload, _ = rig.app.source.latest_upload()
     assert (upload.version, upload.frame_id, upload.lux, upload.detector) == (1, 'pi-000042', 312.5, DetectorState.OFF)
-    assert rig.app.pi_source.pi_info() == {'last_frame_id': 'pi-000042', 'camera': 'usb', 'disk_free_mb': 1234}
+    assert rig.app.pi.pi_info() == {'last_frame_id': 'pi-000042', 'camera': 'usb', 'disk_free_mb': 1234}
 
 
 def test_an_upload_above_the_size_limit_is_refused_before_it_reaches_the_camera(tmp_path):
@@ -72,7 +71,7 @@ def test_an_upload_above_the_size_limit_is_refused_before_it_reaches_the_camera(
     reply = pi_upload(web_client(rig.app), too_big, info(rig, DetectorState.OFF))
     assert reply.status_code == 413
     assert '0.5 MB' in reply.json()['error']
-    assert rig.app.pi_source.pictures_received == 0
+    assert rig.app.source.pictures_received == 0
 
 
 def test_an_upload_with_a_newer_format_is_refused_with_what_to_do(tmp_path):
@@ -80,7 +79,7 @@ def test_an_upload_with_a_newer_format_is_refused_with_what_to_do(tmp_path):
     reply = pi_upload(web_client(rig.app), rig.jpeg, replace(info(rig, DetectorState.OFF), version=3))
     assert reply.status_code == 400
     assert 'Update Desk Talk on this computer' in reply.json()['error']
-    assert rig.app.pi_source.pictures_received == 0
+    assert rig.app.source.pictures_received == 0
 
 
 def test_an_upload_whose_picture_is_not_a_jpeg_is_refused(tmp_path):
@@ -93,7 +92,7 @@ def test_the_pairing_key_is_checked_before_the_upload_is_read(tmp_path):
     rig = DeskRig(tmp_path)
     reply = pi_upload(web_client(rig.app), rig.jpeg, info(rig, DetectorState.OFF), key='not-the-key')
     assert reply.status_code == 403 and 'Pairing key does not match' in reply.json()['error']
-    assert rig.app.pi_source.pictures_received == 0
+    assert rig.app.source.pictures_received == 0
 
 
 def test_uploads_are_refused_when_the_camera_is_not_the_pi(tmp_path):

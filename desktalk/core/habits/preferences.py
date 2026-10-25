@@ -1,5 +1,5 @@
 """
-Preferences: wake time, bedtime and quiet hours chosen in the app's Settings page.
+PreferencesFile: wake time, bedtime and quiet hours chosen in the app's Settings page.
 
 They win over config/protocols.yaml (schedule) and config/settings.yaml (reminders.quiet_hours),
 which give the starting values. Saved in the store under "preferences"
@@ -10,12 +10,11 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from collections.abc import Mapping
 from typing import Any
 
 from desktalk.config import QuietHours, Schedule
-from desktalk.ports import KeyValueStore
+from desktalk.ports import Clock, KeyValueStore
 from desktalk.ports import Preferences as PreferencesView
 from desktalk.util import in_hour_window, parse_hhmm
 
@@ -38,11 +37,12 @@ def _clean(key: str, value: Any) -> Any:
         raise ValueError(f'{key} must be an hour from 0 to 23 (got {value!r})') from None
 
 
-class Preferences:
+class PreferencesFile:
     """Implements the Preferences interface (desktalk/ports.py)."""
 
-    def __init__(self, store: KeyValueStore, schedule: Schedule, quiet_hours: QuietHours):
+    def __init__(self, store: KeyValueStore, schedule: Schedule, quiet_hours: QuietHours, *, clock: Clock):
         self._store = store
+        self._clock = clock                    # for quiet_now: the local hour
         self._lock = threading.Lock()          # the web server and the background jobs both read these
         self._data: dict[str, Any] = {
             'wake_time': schedule.wake_time,
@@ -81,10 +81,13 @@ class Preferences:
             self._data = out
         return dict(out)
 
+    def quiet_now(self, now: float) -> bool:
+        return quiet_hours_now(self, now, self._clock)
 
-def quiet_hours_now(prefs: PreferencesView, now: float) -> bool:
-    """Quiet hours are on and `now` (local time) is inside them; the window may wrap past midnight."""
+
+def quiet_hours_now(prefs: PreferencesView, now: float, clock: Clock) -> bool:
+    """Quiet hours are on and `now` (the clock's local time) is inside them; the window may wrap past midnight."""
     if not prefs.get('quiet_enabled'):
         return False
-    hour = time.localtime(now).tm_hour
+    hour = clock.local_hour(now)
     return in_hour_window(hour, int(prefs.get('quiet_start_hour')), int(prefs.get('quiet_end_hour')))

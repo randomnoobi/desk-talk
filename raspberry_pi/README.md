@@ -30,6 +30,13 @@ computer finds the objects itself. So the camera keeps going whatever happens to
 More detail: the camera program's [README](camera/README.md) (every flag) and the detector's
 [README](detector_service/README.md) (its API, settings and your own model files).
 
+The camera program's files, in `raspberry_pi/camera/`: `cli.py` reads the flags and the settings and starts
+it; `main.py` is the loop (take a picture, save it, ask the detector, send it); `workers.py` connects the
+parts and runs the ones with threads of their own (the detector worker, the uploader, the settings watcher,
+the watchdog and the cleaner), each starting again after a crash. The rest: `cameras.py`, `photo_store.py`,
+`cleaner.py`, `detector_client.py`, `uploader.py`, `health.py`, `watchdog.py`, `self_test.py`,
+`settings.py`, `net.py` and `clock.py`.
+
 ## What you need
 
 - A Raspberry Pi 4 or 5 with the camera module (or a USB webcam). 4 GB of memory or more is best; with
@@ -148,7 +155,7 @@ Useful flags (`python3 -m raspberry_pi.camera --help` lists them all):
 
 | Flag | What it does |
 |---|---|
-| `--camera` | `auto` (default), `picamera2` (camera module), `usb` / `usb:1` (USB webcam), `folder:<dir>` or `video:<file>` for testing |
+| `--camera` | `auto`, `picamera2` (camera module), `usb` / `usb:1` (USB webcam), `folder:<dir>` or `video:<file>` for testing. Without it: `pi.camera` in `config/settings.yaml` (`auto`) |
 | `--no-detector` | don't use the detector container; your computer detects every picture |
 | `--offline` | only take and save pictures; send nothing |
 | `--self-test` | check everything, then stop |
@@ -198,8 +205,13 @@ computer for its settings when it starts and again every minute (`pi.settings_ch
 If your computer can't be reached when it starts, the camera program uses the copy of `config/settings.yaml`
 on the Pi. Flags win over both.
 
-The container's own settings (its port, memory limit and retry waits) are in
-`raspberry_pi/detector_service/.env`. After changing one, run `docker compose up -d` again **on the Pi**, in
+Two `pi:` settings you may want: `pi.camera` picks the camera (`auto`, `picamera2`, `usb`, `usb:1` ...;
+the `--camera` flag beats it), and `pi.error_text_chars` is how much of a reply the Pi can't read goes in its
+log (200 letters).
+
+The container's own settings (its port, memory limit, retry waits, how often Docker checks its `/health`,
+and how big its log files get) are in `raspberry_pi/detector_service/.env`; the detector's
+[README](detector_service/README.md) lists them all. After changing one, run `docker compose up -d` again **on the Pi**, in
 `~/desk-talk/raspberry_pi/detector_service`. The port must match `pi.detector.url` on your computer.
 
 ## If something's wrong

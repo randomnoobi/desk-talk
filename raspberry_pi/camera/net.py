@@ -7,8 +7,6 @@ import json
 import urllib.error
 import urllib.request
 
-ERROR_TEXT_MAX = 200     # how much of a reply that isn't JSON goes into a message
-
 
 class NoAnswer(Exception):
     """Nothing answered: not running, unreachable, too slow, or it hung up. The text says which."""
@@ -31,12 +29,13 @@ def call(method: str, url: str, *, timeout: float, body: bytes | None = None,
         raise NoAnswer(_plain(exc, timeout)) from None
 
 
-def error_text(body: bytes) -> str:
-    """The reason in an error reply: FastAPI's {"detail": ...}, {"error": ...}, or the text itself."""
+def error_text(body: bytes, most_chars: int | None) -> str:
+    """The reason in an error reply: FastAPI's {"detail": ...}, {"error": ...}, or the text itself
+    (its first `most_chars` letters: pi.error_text_chars; None: all of it)."""
     try:
         data = json.loads(body)
     except ValueError:
-        return body.decode('utf-8', 'replace').strip()[:ERROR_TEXT_MAX]
+        return body.decode('utf-8', 'replace').strip()[:most_chars]
     if isinstance(data, dict):
         for key in ('detail', 'error', 'message'):
             if isinstance(data.get(key), str):
@@ -48,8 +47,8 @@ def computer_away(server: str, why: NoAnswer) -> str:
     return f'Cannot reach the computer at {server} ({why}). Is server.py running, and on the same Wi-Fi?'
 
 
-def computer_said_no(status: int, body: bytes) -> str:
-    return f'The computer said no ({status}): {error_text(body) or "it gave no reason"}'
+def computer_said_no(status: int, body: bytes, most_chars: int | None) -> str:
+    return f'The computer said no ({status}): {error_text(body, most_chars) or "it gave no reason"}'
 
 
 def _plain(exc: BaseException, timeout: float) -> str:

@@ -15,7 +15,7 @@ import numpy as np
 
 from desktalk.config import DetectorSettings
 from desktalk.domain import Detection, DetectorUnavailable
-from desktalk.runtime.errors import plain_error
+from desktalk.domain.errors import plain_error
 from desktalk_shared.ultralytics_results import detections_from_results
 
 log = logging.getLogger(__name__)

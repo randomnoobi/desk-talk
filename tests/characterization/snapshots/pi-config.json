@@ -6,6 +6,7 @@
   "json": {
     "camera_source": "str",
     "pi": {
+      "camera": "str",
       "camera_warmup_sec": "number",
       "clock_off_warning_sec": "number",
       "delete_every_min": "number",
@@ -22,6 +23,7 @@
         "url": "str",
         "wait_per_picture_sec": "number"
       },
+      "error_text_chars": "number",
       "fps": "number",
       "health_every_sec": "number",
       "height": "number",
