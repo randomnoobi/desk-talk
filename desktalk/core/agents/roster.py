@@ -12,9 +12,8 @@ AgentJoined / AgentLeft. Something seen long enough that may not join is "refuse
 sightings. Every join, leave and refusal is kept, with why, for the developer page's trace (ChatJoins). No
 pictures (camera off) means no events, so nobody leaves.
 
-One thing, one name. The detector sometimes gives one thing two names on the same box (a laptop that is also
-"book"). When two different names' boxes are at least agents.same_thing_overlap the same box, only the surer
-name counts, for both lists.
+One thing, one name: a second name the detector gave the same box never gets here (the producer leaves it out,
+desktalk/core/vision/one_name.py).
 
 On the desk. Everything the detector names (any agent, also one made up for an object without a block in
 agents.yaml, but never an ignored word), seen for agents.on_desk_after_sec at agents.on_desk_min_confidence or
@@ -35,7 +34,7 @@ from typing import Any
 
 from desktalk.config import AgentsSettings, PresenceSettings, SensitivityStep
 from desktalk.core.agents.presence import PresenceTracker
-from desktalk.core.vision.geometry import same_box_share
+from desktalk.core.agents.sensitivity import Slider, confidence_needed
 from desktalk.domain import AgentJoined, AgentLeft, ChatJoin, Detection, DetectionEvent, SeenObject
 from desktalk.ports import DeskScene, EventBus, Preferences, Profiles
 
@@ -65,7 +64,7 @@ class Roster:
         self._bus = bus
         self._profiles = profiles
         self._scene = scene
-        self._prefs = prefs
+        self._slider = Slider(agents, prefs)
         self._agents = agents
         self._can_join = set(agents.can_join)
         self._on_desk = on_desk
@@ -80,24 +79,9 @@ class Roster:
         self._desk_last: dict[str, tuple[float, Detection]] = {}    # id → its newest sighting on the desk
         self._joins: dict[str, deque[ChatJoin]] = {}         # detector word → its newest joins, leaves, refusals
         self._joins_kept = joins_kept
-        self._bad_steps: set[str] = set()                    # bad slider values already logged
         bus.subscribe('roster', self.on_detection, types=[DetectionEvent])
 
     # ── helpers ──
-    def _step(self) -> SensitivityStep:
-        """The slider's step; agents.sensitivity_default when the saved value is missing or not a step."""
-        steps = self._agents.sensitivity_steps
-        value = self._prefs.get('sensitivity')
-        if value is None:
-            return self._agents.default_step()
-        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < len(steps):
-            return steps[value]
-        if repr(value) not in self._bad_steps:
-            self._bad_steps.add(repr(value))
-            log.warning('The sensitivity preference %r is not one of the %d steps: using %s', value, len(steps),
-                        self._agents.default_step().name)
-        return self._agents.default_step()
-
     def _inside(self, det: Detection, width: int, height: int) -> bool | None:
         """The desk outline's answer for where the object touches the desk (None: no outline, or no size)."""
         if self._on_desk is None or not width:
@@ -105,23 +89,12 @@ class Roster:
         cx, _ = det.bbox.center
         return self._on_desk(cx, det.bbox.y2, width, height)
 
-    def _one_name_each(self, detections: Iterable[Detection]) -> list[Detection]:
-        """The detections without a second name for something a surer box already names."""
-        kept: list[Detection] = []
-        for det in sorted(detections, key=lambda x: x.confidence, reverse=True):
-            box = det.bbox.x1, det.bbox.y1, det.bbox.x2, det.bbox.y2
-            if not any(other.label != det.label and same_box_share(
-                    box, (other.bbox.x1, other.bbox.y1, other.bbox.x2, other.bbox.y2))
-                    >= self._agents.same_thing_overlap for other in kept):
-                kept.append(det)
-        return kept
-
     def _sightings(self, detections: Iterable[Detection], width: int, height: int,
                    step: SensitivityStep) -> tuple[dict[str, _Sighting], dict[str, Detection]]:
         """The best box per agent sure enough for the chat (by the step), and per agent sure enough for the desk."""
         chat: dict[str, _Sighting] = {}
         desk: dict[str, Detection] = {}
-        for det in self._one_name_each(detections):
+        for det in detections:
             prof = self._profiles.for_label(det.label)
             if prof is None:
                 continue
@@ -131,8 +104,8 @@ class Roster:
             sure_for_desk = det.confidence >= self._agents.on_desk_min_confidence
             if sure_for_desk and (prof.id not in desk or det.confidence > desk[prof.id].confidence):
                 desk[prof.id] = det
-            need = max(step.min_confidence, prof.min_confidence or 0)
-            if det.confidence >= need and (prof.id not in chat or det.confidence > chat[prof.id].det.confidence):
+            sure_for_chat = det.confidence >= confidence_needed(step, prof)
+            if sure_for_chat and (prof.id not in chat or det.confidence > chat[prof.id].det.confidence):
                 chat[prof.id] = _Sighting(det, inside)
         return chat, desk
 
@@ -154,7 +127,7 @@ class Roster:
     def on_detection(self, event: DetectionEvent) -> None:
         now = event.ts
         width, height = event.size
-        step = self._step()
+        step = self._slider.step()
         chat, desk = self._sightings(event.detections, width, height, step)
         joined, left = [], []
         with self._lock:

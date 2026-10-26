@@ -46,6 +46,7 @@ Your computer keeps YOLO too, for the phone and the webcam, and as the backup fo
       │                ok   → use the Pi's detections
       │                busy → live view only, no event
       │                off, or not the Pi → UltralyticsDetector on this computer
+      │              then one name per box (agents.same_thing_overlap)
       │ one DetectionEvent per analysed picture
       ▼
  EventStream   (each consumer has its own queue and thread)
@@ -69,10 +70,17 @@ Your computer keeps YOLO too, for the phone and the webcam, and as the backup fo
                 Lens through DesktopAlerts; IdleChat and DailySummary straight to the hub
 ```
 
+**One thing, one name.** The detector sometimes names one thing twice on nearly the same box (a laptop that is
+also "book"). Before the producer builds the `DetectionEvent`, two different names whose boxes are at least
+`agents.same_thing_overlap` the same box (shared area over the area both cover) count as one thing, and only the
+surer name is kept (`core/vision/one_name.py`). So everyone who listens, and Lens and the live view, see the same
+list. Words on the ignore list take no part. Each name left out is logged once per stretch, at debug level.
+
 **Who joins the chat.** Only the agents in `agents.can_join` (Computer, Cup, Phone, Snack, Book) join, once
 the camera has been sure enough of one for long enough. Both numbers are the sensitivity step you pick in the
 app (`agents.sensitivity_steps`, saved as `sensitivity` in `data/preferences.json`; an agent's own
-`min_confidence` counts only when it is stricter). Everything else the camera sees is still on the
+`min_confidence` counts only when it is stricter). The habits count a box by the same how-sure number, so a cup
+too weak for the chat counts no sips either. Everything else the camera sees is still on the
 **on-desk list** (`DeskScene.on_desk()`, with its own steady numbers, `agents.on_desk_after_sec` and
 `on_desk_min_confidence`), which the warnings, the live view's drawings and the app's "on the desk" list read.
 A warning about something that nobody in the chat can say comes from Lens ("Heads up: scissors next to the
@@ -104,9 +112,9 @@ reply only holds up the message generator's own queue, never the camera or the o
 | `desktalk/ports.py` | The interfaces between the parts (below). |
 | `desktalk/domain/` | Plain data, no files or network: `Detection`, `Frame`, the event classes, `AgentProfile`, `Nudge`, the desk right now (`SeenObject`, `SafetyNow`, `Photo`), the danger rules (`DeskRules`), names for pictures and shapes (`Picture`, `Box`, `Size`), day names, and the errors `DetectorUnavailable` / `AIUnavailable` with `plain_error`. |
 | `desktalk/core/desk/` | **The desk right now**, in five parts, each with its own lock inside its methods: `LiveView` (the newest live view pictures and the light), `Scene` (what the camera sees on the desk), `DangerBoard` (the dangers right now and the latest alerts), `Memories` (what the characters said, the tracker panels, when you last typed), `Album` (the proof photos). `WholeDesk` passes calls on to the five, for the parts that still ask for several desk interfaces in one object. |
-| `desktalk/core/vision/` | `producer.py` (pictures → detection events), the desk rules (`rules.py`, `danger_zones.py`, `desk_edges.py`, `risky_pairs.py`, `findings.py`, `geometry.py`, `analyzer.py`), `desk_monitor.py` (safety alerts), Lens's checks on the picture (`camera_health.py`, the front, with `camera_measure.py` for the numbers and `camera_problems.py` for when a problem starts and ends), `proof_photos.py`. No OpenCV here: pictures go through `PictureTools`. |
+| `desktalk/core/vision/` | `producer.py` (pictures → detection events), `one_name.py` (one name per box), the desk rules (`rules.py`, `danger_zones.py`, `desk_edges.py`, `risky_pairs.py`, `findings.py`, `geometry.py`, `analyzer.py`), `desk_monitor.py` (safety alerts), Lens's checks on the picture (`camera_health.py`, the front, with `camera_measure.py` for the numbers and `camera_problems.py` for when a problem starts and ends), `proof_photos.py`. No OpenCV here: pictures go through `PictureTools`. |
 | `desktalk/core/events/` | `EventStream`: publish / subscribe inside the program, a bounded queue and a thread per consumer. |
-| `desktalk/core/agents/` | `ProfileBook` (who each object becomes, from `config/agents.yaml`), `Roster` (who's in the chat, and the on-desk list), `PresenceTracker`. |
+| `desktalk/core/agents/` | `ProfileBook` (who each object becomes, from `config/agents.yaml`), `Roster` (who's in the chat, and the on-desk list), `PresenceTracker`, `Slider` (`sensitivity.py`: the sensitivity step in use and how sure a box must be, for the roster and the habits). |
 | `desktalk/core/object_states/` | `ObjectStateTracker`: detection events → a steady present / absent state for each kind of object (smoothing, then a small state machine), `object_state` events, and rows in the SQLite store. The person's state is the on/off switch for reminders and small talk. `TracePhotoTaker` (`trace_photos.py`, only when `dev.enabled`): a picture of an object with its box when it appears, when it joins the chat, and every `dev.trace_photo_every_sec` while it's there. |
 | `desktalk/core/habits/` | `habit_rules.py` (the book's rules as plain functions), `HabitTracker` (`tracker.py`, the front: the habit buttons and the reminders due), `habit_days.py` (`HabitDay`, one day's numbers, and `HabitDays`, which loads, saves and starts a new day), `habit_reader.py` (reading habits from the detection events), `HabitReminders`, `PreferencesFile` (wake time, bedtime, quiet hours, sensitivity), `TodoFile` (`todos.py`, the to-do list with due dates), `DeskStatusService`, sun times. The rule engine: `rule_engine.py` checks the rules in `config/protocols.yaml` → `rules` against the object states and the habits logged lately (`HabitEvent`), and `RuleRunner` (`rule_runner.py`) runs it once every `rule_engine.check_every_sec`, keeps the nudges that are due for the reminders, and checks whether each nudge worked (`rule_outcome`). |
 | `desktalk/core/chat/` | `MessageGenerator` (the front: events → messages, answering you), built from `alert_voice.py`, `nudge_voice.py`, `chat_answers.py` and `memory.py` (the only part that writes what the characters remember). `MessageHub` (messages → open app pages), `DesktopAlerts` (`desktop_alerts.py`: a `Notifier` around the hub that also pops warnings, reminders and camera-seen sips up as Mac notifications; the `notify` mark it reads never reaches the pages), `prompts.py` (fills in the blanks of the prompts in `config/prompts.yaml`), `names.py` (@mentions and who answers), `history.py`, `live_context.py` (what the AI is told about the desk), `replies.py`, `tracker_actions.py`. `workers/`: `IdleChat`, `LostItems` (with `lost_items_answers.py` and `lost_item_words.py`), `Lens`, `DailySummary`. |

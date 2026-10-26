@@ -42,6 +42,13 @@ def camera_settings(**changes) -> CameraSettings:
     return CameraSettings.model_validate({**data, **changes})
 
 
+def one_name_settings() -> dict:
+    """How the producer leaves out a second name for the same box: settings.yaml and agents.yaml's ignore list."""
+    overlap = yaml.safe_load((ROOT / 'config' / 'settings.yaml').read_text())['agents']['same_thing_overlap']
+    ignore = yaml.safe_load((ROOT / 'config' / 'agents.yaml').read_text())['ignore']
+    return {'same_thing_overlap': overlap, 'ignore_labels': ignore}
+
+
 def desk_picture(value=140, width=640, height=480):
     picture = np.full((height, width, 3), value, np.uint8)
     picture[::8] = 40                      # some texture, like a real desk
@@ -72,7 +79,8 @@ class RecordingSource(FakeFrameSource):
 class Rig:
     """A producer with fakes all around it."""
 
-    def __init__(self, kind='pi', detector=None, painter=None, new_session_after_sec=300.0, tools=TOOLS, **camera):
+    def __init__(self, kind='pi', detector=None, painter=None, new_session_after_sec=300.0, tools=TOOLS,
+                 same_thing_overlap=None, **camera):
         self.clock = FakeClock()
         self.source = RecordingSource(kind, self.clock)
         self.detector = detector if detector is not None else FakeDetector([LAPTOP, CUP])
@@ -80,9 +88,12 @@ class Rig:
         self.desk = FakeDesk()
         self.lens = FakePictureCheck()
         self.painter = painter if painter is not None else FakePainter()
+        one_name = one_name_settings()
+        if same_thing_overlap is not None:
+            one_name['same_thing_overlap'] = same_thing_overlap
         self.producer = DetectionProducer(self.source, self.detector, self.bus, self.desk, self.clock, self.lens,
                                           self.painter, camera_settings(**camera),
-                                          new_session_after_sec=new_session_after_sec, pictures=tools)
+                                          new_session_after_sec=new_session_after_sec, pictures=tools, **one_name)
 
     def picture(self, picture=None, info=None, jpeg=None):
         """A picture arrives from the camera; returns the wait tick() asks for."""
@@ -281,6 +292,41 @@ def test_the_desk_sees_the_best_box_of_each_label():
     }
 
 
+# ── one thing, one name ──────────────────────────────────────────────
+BIG_LAPTOP = Detection('laptop', 0.95, BBox(100, 50, 520, 400))
+BOOK_ON_LAPTOP = Detection('book', 0.52, BBox(100, 47, 552, 403))       # the detector's second name for it
+
+
+def test_a_second_name_for_the_same_box_never_goes_out():
+    rig = Rig(painter=MarkingPainter())
+    rig.picture(info=from_pi(DetectorState.OK, [BOOK_ON_LAPTOP, BIG_LAPTOP, CUP]))
+    [event] = rig.events()
+    assert event.detections == (BIG_LAPTOP, CUP)
+    assert set(rig.desk.seen()) == {'laptop', 'cup'}
+    assert rig.lens.samples[0][1] == [BIG_LAPTOP, CUP]
+    assert rig.painter.given == [[BIG_LAPTOP, CUP]]
+
+
+def test_a_second_name_is_left_out_when_detecting_here_too():
+    rig = Rig(kind='webcam', detector=FakeDetector([BIG_LAPTOP, BOOK_ON_LAPTOP]))
+    rig.picture()
+    assert rig.events()[0].detections == (BIG_LAPTOP,)
+
+
+def test_an_ignored_word_on_the_same_box_doesnt_knock_out_the_real_name():
+    tv = Detection('tv', 0.6, BBox(100, 50, 500, 300))
+    frame = Detection('picture/frame', 0.7, BBox(102, 50, 500, 302))      # on agents.yaml's ignore list
+    rig = Rig(detector=FakeDetector([tv, frame]), kind='webcam')
+    rig.picture()
+    assert rig.events()[0].detections == (tv, frame)
+
+
+def test_how_much_the_same_box_means_one_thing_comes_from_the_settings():
+    rig = Rig(kind='webcam', detector=FakeDetector([BIG_LAPTOP, BOOK_ON_LAPTOP]), same_thing_overlap=0.99)
+    rig.picture()
+    assert rig.events()[0].detections == (BIG_LAPTOP, BOOK_ON_LAPTOP)
+
+
 # ── the live view ────────────────────────────────────────────────────
 class MarkingPainter:
     """Paints the whole picture white and remembers the detections it was given."""
@@ -319,7 +365,7 @@ def test_another_camera_number_keeps_its_own_live_view():
     clock, source, desk = FakeClock(), FakeFrameSource('webcam'), FakeDesk()
     producer = DetectionProducer(source, FakeDetector([CUP]), SyncEventBus(), desk, clock, FakePictureCheck(),
                                  FakePainter(), camera_settings(), new_session_after_sec=300, camera_index=2,
-                                 pictures=TOOLS)
+                                 pictures=TOOLS, **one_name_settings())
     source.add(desk_picture())
     producer.tick(clock.now())
     assert desk.camera_numbers() == [2] and desk.boxed(2) and desk.boxed(0) is None
@@ -435,7 +481,7 @@ def test_a_pi_upload_goes_from_the_pi_source_through_the_producer():
     source = PiFrameSource(clock, camera_settings())
     detector = FakeDetector([LAPTOP])
     producer = DetectionProducer(source, detector, bus, desk, clock, FakePictureCheck(), FakePainter(),
-                                 camera_settings(), new_session_after_sec=300, pictures=TOOLS)
+                                 camera_settings(), new_session_after_sec=300, pictures=TOOLS, **one_name_settings())
     sent = jpeg_of(desk_picture())
     assert source.push(sent, from_pi(DetectorState.OK, [CUP], frame_id='pi-000042', lux=200.0))
     producer.tick(clock.now())

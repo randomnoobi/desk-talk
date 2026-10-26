@@ -8,6 +8,7 @@ A segment is two points: a line from one to the other.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 
 Box = tuple[float, float, float, float]
 Point = tuple[float, float]
@@ -40,6 +41,22 @@ def same_box_share(a: Box, b: Box) -> float:
     inner = (shared[2] - shared[0]) * (shared[3] - shared[1])
     covered = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inner
     return inner / covered if covered > 0 else 0.0
+
+
+def same_thing_drops(found: Sequence[tuple[str, float, Box]], overlap: float) -> dict[int, int]:
+    """One thing, one name. `found` is (name, how sure, box) for each box. When two different names' boxes are
+    at least `overlap` the same box (same_box_share), the less sure one is a second name for the same thing.
+    Returns the place in `found` of each second name → the place of the surer name it lost to."""
+    kept: list[int] = []
+    dropped: dict[int, int] = {}
+    for i in sorted(range(len(found)), key=lambda i: found[i][1], reverse=True):
+        name, _, box = found[i]
+        winner = next((k for k in kept if found[k][0] != name and same_box_share(box, found[k][2]) >= overlap), None)
+        if winner is None:
+            kept.append(i)
+        else:
+            dropped[i] = winner
+    return dropped
 
 
 def box_gap(a: Box, b: Box) -> float:

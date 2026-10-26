@@ -21,10 +21,11 @@ from typing import Any
 from desktalk.config import AgentsSettings, HabitTrackerSettings, HydrationRule, PresenceSettings, Protocols
 from desktalk.config.prompts import HabitNudges
 from desktalk.core.agents.presence import PresenceTracker
+from desktalk.core.agents.sensitivity import Slider, confidence_needed
 from desktalk.core.habits import habit_rules as P
 from desktalk.core.habits.habit_days import HabitDay, Said
 from desktalk.domain import BBox, Detection, DetectionEvent
-from desktalk.ports import Clock, DeskScene, Profiles
+from desktalk.ports import Clock, DeskScene, Preferences, Profiles
 from desktalk.util import a_or_an
 
 MIN = 60
@@ -33,14 +34,14 @@ MIN = 60
 class HabitReader:
     def __init__(self, clock: Clock, profiles: Profiles, scene: DeskScene, protocols: Protocols,
                  settings: HabitTrackerSettings, presence: PresenceSettings, agents: AgentsSettings,
-                 words: HabitNudges, *, phone_counts: bool):
+                 prefs: Preferences, words: HabitNudges, *, phone_counts: bool):
         self._clock = clock
         self._profiles = profiles
         self._scene = scene
         self._rules = protocols
         self._s = settings
         self._words = words
-        self._min_conf = agents.default_step().min_confidence
+        self._slider = Slider(agents, prefs)       # how sure a box must be follows the Settings page's slider
         self._user_window = presence.user_active_window_sec      # not the reminders' switch (the person's object state)
         self._phone_counts = phone_counts                          # off when the phone itself is the camera
         self._healthy = frozenset(protocols.food.healthy)
@@ -149,12 +150,13 @@ class HabitReader:
         return said
 
     def _best_per_label(self, event: DetectionEvent) -> dict[str, Detection]:
-        """Detector word → its surest box, for the words sure enough to count."""
+        """Detector word → its surest box, for the words sure enough to count (by the slider's step, or the
+        agent's own stricter min_confidence)."""
         best: dict[str, Detection] = {}
+        step = self._slider.step()
         for det in event.detections:
-            prof = self._profiles.for_label(det.label)
-            need = prof.min_confidence if (prof and prof.min_confidence is not None) else self._min_conf
-            if det.confidence >= need and (det.label not in best or det.confidence > best[det.label].confidence):
+            sure = det.confidence >= confidence_needed(step, self._profiles.for_label(det.label))
+            if sure and (det.label not in best or det.confidence > best[det.label].confidence):
                 best[det.label] = det
         return best
 

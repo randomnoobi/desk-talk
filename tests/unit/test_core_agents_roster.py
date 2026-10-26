@@ -287,36 +287,6 @@ def test_a_cup_follows_the_slider_like_everything_else(config):
     assert [e.agent for e in r.joined()] == ['cup']
 
 
-LAPTOP_BOX = (574, 183, 1094, 713)
-BOOK_ON_LAPTOP = (574, 180, 1126, 716)           # the detector's second name for the same laptop
-
-
-def test_a_second_name_for_the_same_thing_is_ignored(config):
-    r = Rig(config)
-    r.run(0.0, 30, d('laptop', 0.95, LAPTOP_BOX), d('book', 0.52, BOOK_ON_LAPTOP), size=(1280, 720))
-    assert [e.agent for e in r.joined()] == ['computer']
-    assert set(r.desk.on_desk()) == {'computer'}
-    assert r.roster.joins('book') == []
-
-
-def test_the_surer_name_wins(config):
-    r = Rig(config)
-    r.run(0.0, 30, d('laptop', 0.5, LAPTOP_BOX), d('book', 0.8, BOOK_ON_LAPTOP), size=(1280, 720))
-    assert [e.agent for e in r.joined()] == ['paper']
-
-
-def test_a_small_thing_on_a_big_thing_still_counts(config):
-    r = Rig(config)
-    r.run(0.0, 5, d('laptop', 0.95, LAPTOP_BOX), d('cell phone', 0.8, (700, 400, 780, 560)), size=(1280, 720))
-    assert sorted(e.agent for e in r.joined()) == ['computer', 'phone']
-
-
-def test_how_much_overlap_means_one_thing_comes_from_the_settings(config):
-    r = Rig(config, same_thing_overlap=0.99)       # these two boxes share about 0.94: two things now
-    r.run(0.0, 30, d('laptop', 0.95, LAPTOP_BOX), d('book', 0.52, BOOK_ON_LAPTOP), size=(1280, 720))
-    assert sorted(e.agent for e in r.joined()) == ['computer', 'paper']
-
-
 def test_general_confidence_comes_from_the_settings(config):
     r = Rig(config, min_confidence=0.2)
     r.run(0.0, 4, d('laptop', 0.3))

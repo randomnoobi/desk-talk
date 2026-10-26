@@ -478,6 +478,18 @@ def test_sensitivity_steps_load(project):
     assert (agents.on_desk_after_sec, agents.on_desk_min_confidence) == (3, 0.45)
 
 
+def test_same_thing_overlap_loads(project):
+    assert load_config(root=project, environ={}).agents.same_thing_overlap == 0.7
+
+
+@pytest.mark.parametrize('value', [0, -0.1, 1.5])
+def test_same_thing_overlap_must_be_more_than_0_and_at_most_1(project, value):
+    # 0 would make boxes that don't even touch one thing
+    write_local(project, f'agents:\n  same_thing_overlap: {value}\n')
+    with pytest.raises(ConfigError, match='same_thing_overlap'):
+        load_config(root=project, environ={})
+
+
 def test_the_default_sensitivity_must_be_one_of_the_steps(project):
     write_local(project, 'agents:\n  sensitivity_default: 5\n')
     with pytest.raises(ConfigError, match='sensitivity_default'):

@@ -157,6 +157,56 @@ def test_weak_detections_are_not_counted(config):
     assert not r.state().screen_on_desk
 
 
+def slider(step):
+    return FakePreferences({'wake_time': '07:00', 'bed_time': '22:30', 'sensitivity': step})
+
+
+def test_how_sure_a_box_must_be_follows_the_sensitivity_slider(config):
+    picky = Rig(config, prefs=slider(0))          # Picky wants 0.65
+    picky.run(5, 'cup', conf=0.46)
+    assert not picky.state().drink_on_desk
+    normal = Rig(config, prefs=slider(2))         # Normal wants 0.45
+    normal.run(5, 'cup', conf=0.46)
+    assert normal.state().drink_on_desk
+
+
+def test_a_slider_change_works_at_once(config):
+    r = Rig(config, prefs=slider(0))
+    r.run(5, 'cup', conf=0.46)
+    assert not r.state().drink_on_desk
+    r.prefs.values['sensitivity'] = 4
+    r.run(5, 'cup', conf=0.46)
+    assert r.state().drink_on_desk
+
+
+@pytest.mark.parametrize('bad', ['picky', 9, -1, True])
+def test_a_bad_slider_value_uses_the_default_step(config, bad):
+    r = Rig(config, prefs=slider(bad))            # the default step is Normal (0.45)
+    r.run(5, 'cup', conf=0.46)
+    assert r.state().drink_on_desk
+
+
+@pytest.fixture(scope='module')
+def strict_cup_config(tmp_path_factory):
+    """The real settings, with agents.yaml giving the cup a stricter min_confidence of its own (0.55)."""
+    root = tmp_path_factory.mktemp('strict')
+    (root / 'config').mkdir()
+    for name in ('settings.yaml', 'protocols.yaml', 'prompts.yaml'):
+        shutil.copy(ROOT / 'config' / name, root / 'config' / name)
+    agents = (ROOT / 'config' / 'agents.yaml').read_text()
+    agents = agents.replace('    tracker: hydration\n', '    tracker: hydration\n    min_confidence: 0.55\n', 1)
+    (root / 'config' / 'agents.yaml').write_text(agents)
+    return load_config(root, environ={})
+
+
+def test_an_agents_own_stricter_min_confidence_still_wins(strict_cup_config):
+    r = Rig(strict_cup_config, prefs=slider(4))   # Eager wants 0.35, the cup itself 0.55
+    r.run(5, 'cup', conf=0.5)
+    assert not r.state().drink_on_desk
+    r.run(5, 'cup', conf=0.6)
+    assert r.state().drink_on_desk
+
+
 # ── breaks and sitting ────────────────────────────────────────────────
 def test_break_when_away_five_minutes(config):
     r = Rig(config)
