@@ -110,7 +110,7 @@ def test_live_tab_shows_the_cup(page, tmp_path, dev_ui_folder):
         rules = server.config
         # After appear_sec + 1 seconds of the cup, it's PRESENT; the page may take poll_sec more to ask again.
         within_ms = (rules.object_states.appear_sec + 1 + rules.dev.poll_sec) * 1000
-        cup = live.get_by_role('group', name='cup', exact=True)
+        cup = live.get_by_role('button', name='cup', exact=True)    # the cup's card is a button that opens its trace
         expect(cup.get_by_text('PRESENT', exact=True)).to_be_visible(timeout=within_ms)
 
 
