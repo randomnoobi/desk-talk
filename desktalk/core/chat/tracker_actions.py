@@ -23,8 +23,16 @@ from typing import Any
 from desktalk.config import ChatSettings
 from desktalk.config.prompts import TrackerPrompts
 from desktalk.core.habits.todos import clean_due
-from desktalk.ports import HabitLog
+from desktalk.ports import HabitLog, TodoList
 from desktalk.util import clock_text
+
+
+def todo_panel(todos: TodoList, panel: Mapping[str, Any] | None) -> Mapping[str, Any] | None:
+    """The to-do list the AI is told about: the server's (TodoList) once it has one, so it is there after a
+    restart, when the page loads it and doesn't send it back; until then the panel the page sent."""
+    if not todos.has_list():
+        return panel
+    return {'items': [{'text': t.text, 'done': t.done, 'due': t.due} for t in todos.items()]}
 
 
 def normalize_todo(raw: Any, chat: ChatSettings) -> dict | None:

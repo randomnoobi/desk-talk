@@ -45,6 +45,7 @@ from desktalk.ports import (
     Profiles,
     RosterView,
     SafetyBoard,
+    TodoList,
 )
 
 __all__ = ['ChatDesk', 'MessageGenerator']
@@ -63,11 +64,12 @@ class MessageGenerator:
     greet_on_join, greet_again_after_min, invent_personality), sunlight_default_min (habit_tracker),
     reply_max_chars (longest AI reply kept), prompts (config/prompts.yaml), drink_labels (safety.liquids:
     the drinks when no agent speaks for hydration), preview_chars (logging: the longest reply quoted in
-    the log). local_model: the AI is a small model on this computer (Ollama), which gets shorter prompts
-    and fewer earlier messages."""
+    the log). todos: the server's to-do list, which the AI is told about. local_model: the AI is a small model
+    on this computer (Ollama), which gets shorter prompts and fewer earlier messages."""
 
     def __init__(self, model: ChatModel, notifier: Notifier, roster: RosterView, profiles: Profiles,
                  habits: HabitsView, desk: ChatDesk, clock: Clock, *, status: DeskStatus, habit_log: HabitLog,
+                 todos: TodoList,
                  llm: LlmSettings, chat: ChatSettings, agents: AgentsSettings, sunlight_default_min: float,
                  reply_max_chars: int, prompts: Prompts, drink_labels: Iterable[str], preview_chars: int,
                  local_model: bool = False, rng: random.Random | None = None):
@@ -86,11 +88,13 @@ class MessageGenerator:
         memory = ChatMemory(desk, keep=llm.memory_per_agent, reply_chars=chat.memory_reply_chars,
                             user_chars=chat.memory_user_chars, words=prompts.memory)
         self._alerts = AlertVoice(self._ai, profiles, desk, self.live_context, prompts.alert, chat, drink_labels)
-        self._nudges = NudgeVoice(self._ai, profiles, habits, desk, memory, clock, prompts, chat, local=local_model)
+        self._nudges = NudgeVoice(self._ai, profiles, habits, desk, memory, clock, prompts, chat, todos=todos,
+                                  local=local_model)
         self._answers = ChatAnswers(self._ai, model, notifier, roster, profiles, habits, desk, memory,
                                     TrackerPanels(desk, chat), clock, self.live_context, habit_log=habit_log,
-                                    words=prompts, llm=llm, chat=chat, sunlight_default_min=sunlight_default_min,
-                                    preview_chars=preview_chars, local=local_model,
+                                    todos=todos, words=prompts, llm=llm, chat=chat,
+                                    sunlight_default_min=sunlight_default_min, preview_chars=preview_chars,
+                                    local=local_model,
                                     most_speakers=agents.max_agents, rng=rng or random.Random())
 
     def subscribe_to(self, bus: EventBus) -> None:

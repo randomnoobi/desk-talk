@@ -20,15 +20,32 @@ from desktalk.core.chat.agent_ai import AgentAI
 from desktalk.core.chat.history import budget_history, sanitize_chat_history
 from desktalk.core.chat.memory import ChatMemory, TrackerPanels
 from desktalk.core.chat.names import group_speaker_order
-from desktalk.core.chat.tracker_actions import action_instructions, apply_habit_actions, parse_actions, tracker_prompt
+from desktalk.core.chat.tracker_actions import (
+    action_instructions,
+    apply_habit_actions,
+    parse_actions,
+    todo_panel,
+    tracker_prompt,
+)
 from desktalk.domain import AgentProfile, AIUnavailable, UnknownChat
-from desktalk.ports import CharacterMemory, ChatModel, Clock, HabitLog, HabitsView, Notifier, Profiles, RosterView
+from desktalk.ports import (
+    CharacterMemory,
+    ChatModel,
+    Clock,
+    HabitLog,
+    HabitsView,
+    Notifier,
+    Profiles,
+    RosterView,
+    TodoList,
+)
 
 log = logging.getLogger(__name__)
 
 
 class ChatAnswers:
     """`live_context(user_message)`: the desk right now for the AI. `desk`: the tracker panels are read from it.
+    `todos`: the server's to-do list (it wins over the panel the page sent).
     Settings: llm (chat_history_turns), chat, sunlight_default_min (habit_tracker), preview_chars (logging:
     the longest reply quoted in the log). `local`: the AI is a small model on this computer (Ollama), which
     gets shorter prompts and fewer earlier messages. `most_speakers`: the most agents that answer one group
@@ -36,7 +53,8 @@ class ChatAnswers:
 
     def __init__(self, ai: AgentAI, model: ChatModel, notifier: Notifier, roster: RosterView, profiles: Profiles,
                  habits: HabitsView, desk: CharacterMemory, memory: ChatMemory, panels: TrackerPanels, clock: Clock,
-                 live_context: Callable[[str], Mapping[str, Any]], *, habit_log: HabitLog, words: Prompts,
+                 live_context: Callable[[str], Mapping[str, Any]], *, habit_log: HabitLog, todos: TodoList,
+                 words: Prompts,
                  llm: LlmSettings, chat: ChatSettings, sunlight_default_min: float, preview_chars: int, local: bool,
                  most_speakers: int, rng: random.Random):
         self._ai = ai
@@ -51,6 +69,7 @@ class ChatAnswers:
         self._clock = clock
         self._live_context = live_context
         self._habit_log = habit_log
+        self._todos = todos
         self._words = words
         self._llm = llm
         self._chat = chat
@@ -139,7 +158,7 @@ class ChatAnswers:
         """Layer 1: who the agent is and its rules. Layer 2: the live desk. Layer 3: the conversation."""
         context = self._live_context(user_message)
         now = self._clock.now()
-        todo = self._desk.widget(a.id)
+        todo = todo_panel(self._todos, self._desk.widget(a.id))
         views = self._desk.widget_views_of(a.id)
         memory_lines = self._memory.recent(a.id)
         block = tracker_prompt(a.tracker, self._habits.today(now), todo, views, now, self._chat,

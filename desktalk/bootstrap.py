@@ -451,7 +451,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                            pictures=pictures, prompts=config.prompts.lost_items,
                            photos_kept=config.snapshots.max_kept, phone_is_camera=phone_is_camera)
     generator = MessageGenerator(model, feed, roster, profiles, habits, desk, clock, status=desk_status,
-                                 habit_log=habits, llm=config.llm, chat=config.chat, agents=config.agents,
+                                 habit_log=habits, todos=todos, llm=config.llm, chat=config.chat, agents=config.agents,
                                  sunlight_default_min=config.habit_tracker.sunlight_default_min,
                                  reply_max_chars=config.chat.reply_max_chars, prompts=config.prompts,
                                  drink_labels=config.safety.liquids, preview_chars=config.logging.preview_chars,

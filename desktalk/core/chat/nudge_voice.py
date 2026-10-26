@@ -12,18 +12,21 @@ from desktalk.core.chat import prompts
 from desktalk.core.chat.agent_ai import AgentAI
 from desktalk.core.chat.memory import ChatMemory
 from desktalk.core.chat.replies import looks_cut_off
-from desktalk.core.chat.tracker_actions import tracker_prompt
+from desktalk.core.chat.tracker_actions import todo_panel, tracker_prompt
 from desktalk.domain import AgentProfile, Nudge
-from desktalk.ports import CharacterMemory, Clock, HabitsView, Profiles
+from desktalk.ports import CharacterMemory, Clock, HabitsView, Profiles, TodoList
 
 
 class NudgeVoice:
-    """`desk`: the tracker panels are read from it. `local`: the AI is a small model on this computer (Ollama),
+    """`desk`: the tracker panels are read from it. `todos`: the server's to-do list (it wins over the panel).
+    `local`: the AI is a small model on this computer (Ollama),
     which gets the shorter prompt."""
 
     def __init__(self, ai: AgentAI, profiles: Profiles, habits: HabitsView, desk: CharacterMemory,
-                 memory: ChatMemory, clock: Clock, words: Prompts, chat: ChatSettings, *, local: bool):
+                 memory: ChatMemory, clock: Clock, words: Prompts, chat: ChatSettings, *, todos: TodoList,
+                 local: bool):
         self._ai = ai
+        self._todos = todos
         self._profiles = profiles
         self._habits = habits
         self._desk = desk
@@ -45,7 +48,7 @@ class NudgeVoice:
 
     def _ai_nudge(self, a: AgentProfile, nudge: Nudge) -> str | None:
         now = self._clock.now()
-        todo = self._desk.widget(a.id)
+        todo = todo_panel(self._todos, self._desk.widget(a.id))
         w = self._words
         block = tracker_prompt(a.tracker, self._habits.today(now), todo, [], now, self._chat, words=w.trackers,
                                utc_offset_sec=self._clock.utc_offset_sec(now), today=self._clock.local_day(now))

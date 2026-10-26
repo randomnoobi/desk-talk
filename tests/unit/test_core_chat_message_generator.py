@@ -8,7 +8,17 @@ import pytest
 
 from desktalk.config import load_config
 from desktalk.core.chat.message_generator import ChatDesk, MessageGenerator
-from desktalk.domain import AgentJoined, AgentLeft, AgentProfile, Alert, HabitEvent, Nudge, SeenObject, UnknownChat
+from desktalk.domain import (
+    AgentJoined,
+    AgentLeft,
+    AgentProfile,
+    Alert,
+    HabitEvent,
+    Nudge,
+    SeenObject,
+    Todo,
+    UnknownChat,
+)
 from desktalk.ports import ChatVoice
 from tests.fakes import (
     FakeCharacterMemory,
@@ -19,6 +29,7 @@ from tests.fakes import (
     FakeHabits,
     FakeProfiles,
     FakeSafetyBoard,
+    FakeTodoList,
     RecordingNotifier,
     StaticRoster,
     SyncEventBus,
@@ -79,7 +90,8 @@ class Rig:
     """A MessageGenerator built from fakes. `reply` / `fail` script the AI."""
 
     def __init__(self, reply='Hey! All good over here on the desk.', fail='', members=('computer', 'cup'),
-                 profiles=None, local_model=False, llm=None, chat=None, agents=None, camera_on=True, prompts=None):
+                 profiles=None, local_model=False, llm=None, chat=None, agents=None, camera_on=True, prompts=None,
+                 todos=None):
         self.clock = FakeClock()
         self.ai = FakeChatModel(reply=reply, fail=fail)
         self.notifier = RecordingNotifier(self.clock)
@@ -89,9 +101,11 @@ class Rig:
         self.desk = FakeChatDesk()
         self.status = FakeDeskStatus(connected=camera_on)
         self.habit_log = HabitLog()
+        self.todos = todos if todos is not None else FakeTodoList()
         self.gen = MessageGenerator(
             self.ai, self.notifier, self.roster, self.profiles, self.habits, self.desk, self.clock,
-            status=self.status, habit_log=self.habit_log, llm=llm or CONFIG.llm, chat=chat or CONFIG.chat,
+            status=self.status, habit_log=self.habit_log, todos=self.todos, llm=llm or CONFIG.llm,
+            chat=chat or CONFIG.chat,
             agents=agents or CONFIG.agents, sunlight_default_min=10, reply_max_chars=500,
             prompts=prompts or CONFIG.prompts, drink_labels=CONFIG.safety.liquids,
             preview_chars=CONFIG.logging.preview_chars, local_model=local_model, rng=random.Random(4))
@@ -587,6 +601,30 @@ def test_the_todo_list_sent_with_a_message_is_kept_and_used():
     r.gen.answer('paper', 'what is left?', widget={'type': 'todo', 'items': [{'text': 'Essay'}]})
     assert r.desk.widget('paper') == {'type': 'todo', 'items': [{'text': 'Essay', 'done': False}]}
     assert '- [ ] Essay' in asked(r)[0]['content']
+
+
+def restarted_with_an_essay_due():
+    """The server's to-do list after a restart: the page loaded it and, by design, never sent it back, so the
+    agent's panel in memory is empty."""
+    return Rig(reply='Your essay is due today!', profiles=[computer(), cup(), paper()],
+               todos=FakeTodoList(items=[Todo('Essay', due='2025-10-09'), Todo('Email Sam', done=True)]))
+
+
+def test_a_habit_reminder_is_told_the_servers_todo_list():
+    r = restarted_with_an_essay_due()
+    assert r.desk.widget('paper') is None
+    r.gen.phrase_nudge('paper', Nudge(habit='tasks', key='due_today', evidence='Essay is due today',
+                                      text='Your essay is due today.', repeat_after_sec=86400, tip=''))
+    system = r.ai.calls[0]['messages'][0]['content']
+    assert '- [ ] Essay (due 2025-10-09)' in system and '- [x] Email Sam' in system
+
+
+def test_an_answer_is_told_the_servers_todo_list_over_an_old_panel():
+    r = restarted_with_an_essay_due()
+    r.gen.save_widget('paper', {'type': 'todo', 'items': [{'text': 'Old list'}]})
+    r.gen.answer('paper', 'what is left?')
+    system = asked(r)[0]['content']
+    assert '- [ ] Essay (due 2025-10-09)' in system and 'Old list' not in system
 
 
 def test_a_one_on_one_with_the_ai_down_says_why():
