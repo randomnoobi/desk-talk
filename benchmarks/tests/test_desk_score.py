@@ -1,7 +1,16 @@
 import pytest
 import yaml
 
-from deskbench.desk_score import app_thresholds, found_kinds, missing_names, name_map, scene_scores, score
+from deskbench.desk_score import (
+    app_one_name,
+    app_thresholds,
+    found_kinds,
+    missing_names,
+    name_map,
+    one_name_each,
+    scene_scores,
+    score,
+)
 
 KINDS = {'phone': {'coco': ['cell phone'], 'objects365': ['Cell Phone'], 'words': ['cell phone']},
          'AirPods': {'coco': [], 'objects365': ['earphone'], 'words': ['earphone']}}
@@ -104,3 +113,37 @@ def test_app_thresholds_with_two_agents_use_the_first_override(tmp_path):
 def test_names_the_model_does_not_have_are_listed():
     kinds = {'food': {'objects365': ['Orange/Tangerine', 'Bread']}, 'phone': {'objects365': ['Cell Phone']}}
     assert missing_names(kinds, 'objects365', ['bread', 'cell phone', 'orange']) == ['orange/tangerine']
+
+
+def test_app_thresholds_keep_the_step_when_the_agents_own_is_laxer(tmp_path):
+    """The app counts an agent's own min_confidence only when it is stricter than the step."""
+    s, a = tmp_path / 'settings.yaml', tmp_path / 'agents.yaml'
+    s.write_text(yaml.safe_dump(STEPS))
+    a.write_text(yaml.safe_dump({'agents': {'cup': {'labels': ['cup'], 'min_confidence': 0.3}}}))
+    assert app_thresholds(s, a, {'water bottle': {'app_agent': 'cup'}}) == {'water bottle': 0.45}
+
+
+def test_boxes_are_read_with_the_names():
+    assert found_kinds([['cell phone', 0.9, 0, 0, 10, 10]], name_map(KINDS, 'coco'), 0.45) == {'phone'}
+
+
+LAPTOP = ['laptop', 0.95, 574, 183, 1094, 713]
+BOOK_ON_LAPTOP = ['book', 0.52, 574, 180, 1126, 716]
+
+
+def test_a_second_name_for_the_same_box_is_left_out_like_in_the_app():
+    assert one_name_each([BOOK_ON_LAPTOP, LAPTOP], 0.7, frozenset()) == [LAPTOP]
+    assert one_name_each([BOOK_ON_LAPTOP, LAPTOP], 0.99, frozenset()) == [BOOK_ON_LAPTOP, LAPTOP]
+
+
+def test_ignored_words_take_no_part_and_rows_without_a_box_are_kept():
+    frame = ['picture/frame', 0.99, 574, 183, 1094, 713]
+    old = ['cup', 0.6]                                   # saved by an older run, before boxes were kept
+    assert one_name_each([frame, LAPTOP, old], 0.7, frozenset({'picture/frame'})) == [frame, LAPTOP, old]
+
+
+def test_app_one_name_reads_the_overlap_and_the_ignore_list(tmp_path):
+    s, a = tmp_path / 'settings.yaml', tmp_path / 'agents.yaml'
+    s.write_text(yaml.safe_dump({'agents': {**STEPS['agents'], 'same_thing_overlap': 0.7}}))
+    a.write_text(yaml.safe_dump({'agents': {}, 'ignore': ['person', 'Picture/Frame']}))
+    assert app_one_name(s, a) == (0.7, frozenset({'person', 'picture/frame'}))

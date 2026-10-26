@@ -5,18 +5,28 @@ A kind's score = found rate × (1 − false alarms). The desk score is the avera
 the kinds, each counting the same. A kind with no pictures where it's there is left out
 for every model alike; a kind the model has no name for scores 0. See
 benchmarks/desk-test-design.md.
+
+Like the app, a second name a model gives the same box (a laptop also called "book") is left out first, by the
+app's own rule (desktalk/core/vision/geometry.py, settings → agents.same_thing_overlap).
 """
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import yaml
 
+REPO = Path(__file__).resolve().parents[2]
+sys.path.append(str(REPO))          # the app's own box maths (standard library only), so the rule is the same
+from desktalk.core.vision.geometry import same_thing_drops  # noqa: E402
+
+OneName = tuple[float, frozenset[str]]      # (agents.same_thing_overlap, agents.yaml's ignore list, lowercase)
+
 
 def app_thresholds(settings_path: Path, agents_path: Path, kinds: dict) -> dict[str, float]:
-    """How sure a model must be for the app to count each kind as seen (never reads settings.local.yaml): the agent's
-    own min_confidence, else the sensitivity step the app uses until its slider is moved."""
+    """How sure a model must be for the app to count each kind as seen (never reads settings.local.yaml): the
+    sensitivity step the app uses until its slider is moved, or the agent's own min_confidence when stricter."""
     app = yaml.safe_load(settings_path.read_text())['agents']
     default = float(app['sensitivity_steps'][app['sensitivity_default']]['min_confidence'])
     agents = yaml.safe_load(agents_path.read_text())['agents']
@@ -26,8 +36,25 @@ def app_thresholds(settings_path: Path, agents_path: Path, kinds: dict) -> dict[
         names = [names] if isinstance(names, str) else names        # a kind can be covered by more than one agent
         own = [agents.get(a, {}).get('min_confidence') for a in names]
         own = [c for c in own if c is not None]
-        out[name] = float(own[0]) if own else default
+        out[name] = max(default, float(own[0])) if own else default
     return out
+
+
+def app_one_name(settings_path: Path, agents_path: Path) -> OneName:
+    """The app's one-name-per-box rule: how much the same box two names must be, and the words that take no part."""
+    overlap = float(yaml.safe_load(settings_path.read_text())['agents']['same_thing_overlap'])
+    ignore = yaml.safe_load(agents_path.read_text()).get('ignore') or []
+    return overlap, frozenset(str(w).lower() for w in ignore)
+
+
+def one_name_each(detections: list[list], overlap: float, ignore: frozenset[str]) -> list[list]:
+    """A model's [name, confidence, x1, y1, x2, y2] rows without a second name for a box a surer name already has,
+    as the app does it. Ignored words take no part; rows without a box (saved by an older run) are kept."""
+    boxed = [i for i, d in enumerate(detections) if len(d) == 6 and str(d[0]).lower() not in ignore]
+    drops = same_thing_drops([(detections[i][0], detections[i][1], tuple(detections[i][2:6])) for i in boxed],
+                             overlap)
+    gone = {boxed[i] for i in drops}
+    return [d for i, d in enumerate(detections) if i not in gone]
 
 
 def name_map(kinds: dict, names: str) -> dict[str, str]:
@@ -41,10 +68,10 @@ def missing_names(kinds: dict, names: str, model_names: list[str]) -> list[str]:
     return [n for n in name_map(kinds, names) if n not in have]
 
 
-def found_kinds(detections: list[tuple[str, float]], names: dict[str, str],
-                threshold: dict[str, float] | float) -> set[str]:
+def found_kinds(detections: list[list], names: dict[str, str], threshold: dict[str, float] | float) -> set[str]:
+    """The kinds found in one picture's [name, confidence, box...] rows."""
     found = set()
-    for name, conf in detections:
+    for name, conf, *_ in detections:
         kind = names.get(name.lower())
         if kind and conf >= (threshold[kind] if isinstance(threshold, dict) else threshold):
             found.add(kind)
