@@ -5,6 +5,9 @@ TracePhotoTaker: keeps pictures of each object for the developer page's trace (c
     when it joins the chat       (an AgentJoined)                           why='joined'
     every dev.trace_photo_every_sec while it's there (PRESENT)              why='every'
 
+An object the object states brought back as PRESENT at startup (restore() publishes no change) gets its 'every'
+pictures too, counted from when the app started.
+
 Each picture is the newest plain camera picture, with the object's box and confidence from the newest picture
 that showed it (its most sure box there). Nothing is kept when there's no picture or no box yet. A failure is
 logged and never stops the next picture.
@@ -18,8 +21,8 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from desktalk.config import DevSettings
-from desktalk.domain import AgentJoined, Box, DetectionEvent, Event, ObjectStateChanged, TracePhoto
-from desktalk.ports import Clock, EventBus, LivePictures
+from desktalk.domain import AgentJoined, Box, DetectionEvent, Event, ObjectStateChanged, Phase, TracePhoto
+from desktalk.ports import Clock, EventBus, LivePictures, ObjectStatesView
 
 log = logging.getLogger(__name__)
 
@@ -44,13 +47,17 @@ class _Seen:
 
 class TracePhotoTaker:
     def __init__(self, bus: EventBus, pictures: LivePictures, files: PhotoKeeper, settings: DevSettings,
-                 clock: Clock):
+                 clock: Clock, *, states: ObjectStatesView):
         self._pictures = pictures
         self._files = files
         self._every_sec = settings.trace_photo_every_sec
         self._clock = clock
         self._seen: dict[str, _Seen] = {}           # label → its box in the newest picture that showed it
         self._last_photo: dict[str, float] = {}     # label → when its last picture was taken, while it's PRESENT
+        started = clock.now()
+        for label, seen in states.snapshot().objects.items():
+            if seen.state == Phase.PRESENT:
+                self._last_photo[label] = started       # brought back at startup: its 'every' pictures count from now
         bus.subscribe('trace-photos', self._on_event, types=[DetectionEvent, ObjectStateChanged, AgentJoined])
 
     def _on_event(self, event: Event) -> None:

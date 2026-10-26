@@ -10,9 +10,9 @@ from pathlib import Path
 
 from desktalk.config import AppConfig, DevSettings, load_config
 from desktalk.core.object_states.trace_photos import TracePhotoTaker
-from desktalk.domain import AgentJoined, BBox, Detection, DetectionEvent, ObjectStateChanged, Size
+from desktalk.domain import AgentJoined, BBox, Detection, DetectionEvent, ObjectSnapshot, ObjectStateChanged, Size
 from desktalk.domain.events import Light
-from tests.fakes import FakeClock, FakeLivePictures, FakeTracePhotos, SyncEventBus
+from tests.fakes import FakeClock, FakeLivePictures, FakeObjectStates, FakeTracePhotos, SyncEventBus
 
 ROOT = Path(__file__).resolve().parents[2]
 JPEG = b'\xff\xd8 the newest picture \xff\xd9'
@@ -30,7 +30,9 @@ def app_config() -> AppConfig:
 
 
 class Rig:
-    def __init__(self, plain: bytes | None = JPEG, settings: DevSettings | None = None):
+    def __init__(self, plain: bytes | None = JPEG, settings: DevSettings | None = None,
+                 states: tuple[tuple[str, str], ...] = ()):
+        """`states`: (label, state) pairs the object states start with, as restore() leaves them at startup."""
         self.bus = SyncEventBus()
         self.clock = FakeClock()
         self.pictures = FakeLivePictures()
@@ -38,7 +40,9 @@ class Rig:
             self.pictures.put(0, plain, None, Size(640, 480))
         self.photos = FakeTracePhotos(kept=50)
         self.settings = settings or app_config().dev
-        self.taker = TracePhotoTaker(self.bus, self.pictures, self.photos, self.settings, self.clock)
+        self.states = FakeObjectStates([ObjectSnapshot(label, state, 0.0) for label, state in states])
+        self.taker = TracePhotoTaker(self.bus, self.pictures, self.photos, self.settings, self.clock,
+                                     states=self.states)
 
     def see(self, *detections: Detection) -> None:
         self.bus.publish(DetectionEvent(ts=self.clock.now(), frame_id='pi-1', source='pi', size=(640, 480),
@@ -75,6 +79,17 @@ def test_photo_on_appear_and_join():
     assert first.size == (640, 480)
     assert rig.photos.jpeg(first.id) == JPEG
     assert photos[0].id != photos[1].id
+
+
+def test_an_object_brought_back_at_startup_gets_its_every_pictures():
+    """After a restart the object states bring the cup back as PRESENT without an 'appeared' change."""
+    rig = Rig(states=(('cup', 'PRESENT'), ('book', 'ABSENT')))
+    book = Detection('book', 0.9, BBox(300, 300, 400, 400))
+    rig.see(CUP, book)
+    assert rig.whys() == []
+    rig.clock.advance(rig.settings.trace_photo_every_sec)
+    rig.see(CUP, book)
+    assert rig.whys() == ['every'] and rig.whys('book') == []
 
 
 def test_a_box_from_before_it_was_removed_is_never_used_again():
@@ -145,7 +160,7 @@ def test_a_failing_keeper_is_only_logged(caplog):
             raise OSError('disk full')
 
     rig = Rig()
-    rig.taker = TracePhotoTaker(rig.bus, rig.pictures, Broken(), rig.settings, rig.clock)
+    rig.taker = TracePhotoTaker(rig.bus, rig.pictures, Broken(), rig.settings, rig.clock, states=rig.states)
     rig.see(CUP)
     rig.change('appeared')
     assert all(sub['errors'] == 0 for sub in rig.bus.stats())

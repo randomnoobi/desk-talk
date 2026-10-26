@@ -497,7 +497,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                                   words=config.prompts.dev, check_every_steps=dev.sql_check_every_steps)
         data_files = DataFolder(data_path(config.storage.folder), dev.file_preview_kb * 1024, words=config.prompts.dev)
         trace_photos = TracePhotoFiles(data_path(dev.trace_photos_folder), dev.trace_photos_kept)
-        TracePhotoTaker(bus, live_pictures, trace_photos, dev, clock)      # subscribes itself; the bus keeps it
+        TracePhotoTaker(bus, live_pictures, trace_photos, dev, clock, states=object_states)  # the bus keeps it
     else:
         test_runner = None
 
