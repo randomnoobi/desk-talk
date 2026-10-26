@@ -32,6 +32,16 @@ def overlap(a: Box, b: Box) -> Box | None:
     return None
 
 
+def same_box_share(a: Box, b: Box) -> float:
+    """How much two boxes are one box, 0 to 1: the area they share over the area they cover together."""
+    shared = overlap(a, b)
+    if shared is None:
+        return 0.0
+    inner = (shared[2] - shared[0]) * (shared[3] - shared[1])
+    covered = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inner
+    return inner / covered if covered > 0 else 0.0
+
+
 def box_gap(a: Box, b: Box) -> float:
     """How far apart two boxes are, in pixels: the larger of the side-to-side gap and the up-and-down
     gap (0 when they touch or overlap)."""

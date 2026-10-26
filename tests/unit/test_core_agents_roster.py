@@ -25,6 +25,19 @@ def config(tmp_path_factory):
     return load_config(root, environ={})
 
 
+@pytest.fixture(scope='module')
+def strict_cup_config(tmp_path_factory):
+    """The real settings, with agents.yaml giving the cup a stricter min_confidence of its own (0.55)."""
+    root = tmp_path_factory.mktemp('strict')
+    (root / 'config').mkdir()
+    for name in ('settings.yaml', 'protocols.yaml', 'prompts.yaml'):
+        shutil.copy(ROOT / 'config' / name, root / 'config' / name)
+    agents = (ROOT / 'config' / 'agents.yaml').read_text()
+    agents = agents.replace('    tracker: hydration\n', '    tracker: hydration\n    min_confidence: 0.55\n', 1)
+    (root / 'config' / 'agents.yaml').write_text(agents)
+    return load_config(root, environ={})
+
+
 class Rig:
     """A roster on a synchronous bus, fed made-up pictures."""
 
@@ -163,7 +176,6 @@ def test_slider_change_works_at_once(config):
 
 
 def test_weak_box_counts_at_eager_not_picky(config):
-    # the laptop has no min_confidence of its own (the cup's own 0.55 would win over both steps)
     eager = Rig(config, sensitivity=4)
     eager.run(0.0, 4, d('laptop', 0.4))
     assert [e.agent for e in eager.joined()] == ['computer']
@@ -172,7 +184,8 @@ def test_weak_box_counts_at_eager_not_picky(config):
     assert picky.joined() == []
 
 
-def test_profile_own_min_confidence_wins_when_stricter(config):
+def test_profile_own_min_confidence_wins_when_stricter(strict_cup_config):
+    config = strict_cup_config
     eager = Rig(config, sensitivity=4)                        # Eager wants 0.35, the cup itself 0.55
     eager.run(0.0, 10, d('cup', 0.5))
     assert eager.joined() == []
@@ -263,9 +276,45 @@ def test_only_the_newest_joins_are_kept(config):
 def test_weak_detections_dont_count(config):
     r = Rig(config)
     for i in range(15):
-        r.see(i / 3, d('cup', 0.5))           # cup needs 0.55 (agents.yaml)
-        r.see(i / 3, d('laptop', 0.3))        # below the Normal step's 0.45
+        r.see(i / 3, d('cup', 0.44), d('laptop', 0.3, box=(300, 300, 400, 400)))   # below the Normal step's 0.45
     assert r.joined() == []
+
+
+def test_a_cup_follows_the_slider_like_everything_else(config):
+    # the camera often sees a water bottle as a cup at about 0.46: enough for the Normal step
+    r = Rig(config)
+    r.run(0.0, 4, d('cup', 0.46))
+    assert [e.agent for e in r.joined()] == ['cup']
+
+
+LAPTOP_BOX = (574, 183, 1094, 713)
+BOOK_ON_LAPTOP = (574, 180, 1126, 716)           # the detector's second name for the same laptop
+
+
+def test_a_second_name_for_the_same_thing_is_ignored(config):
+    r = Rig(config)
+    r.run(0.0, 30, d('laptop', 0.95, LAPTOP_BOX), d('book', 0.52, BOOK_ON_LAPTOP), size=(1280, 720))
+    assert [e.agent for e in r.joined()] == ['computer']
+    assert set(r.desk.on_desk()) == {'computer'}
+    assert r.roster.joins('book') == []
+
+
+def test_the_surer_name_wins(config):
+    r = Rig(config)
+    r.run(0.0, 30, d('laptop', 0.5, LAPTOP_BOX), d('book', 0.8, BOOK_ON_LAPTOP), size=(1280, 720))
+    assert [e.agent for e in r.joined()] == ['paper']
+
+
+def test_a_small_thing_on_a_big_thing_still_counts(config):
+    r = Rig(config)
+    r.run(0.0, 5, d('laptop', 0.95, LAPTOP_BOX), d('cell phone', 0.8, (700, 400, 780, 560)), size=(1280, 720))
+    assert sorted(e.agent for e in r.joined()) == ['computer', 'phone']
+
+
+def test_how_much_overlap_means_one_thing_comes_from_the_settings(config):
+    r = Rig(config, same_thing_overlap=0.99)       # these two boxes share about 0.94: two things now
+    r.run(0.0, 30, d('laptop', 0.95, LAPTOP_BOX), d('book', 0.52, BOOK_ON_LAPTOP), size=(1280, 720))
+    assert sorted(e.agent for e in r.joined()) == ['computer', 'paper']
 
 
 def test_general_confidence_comes_from_the_settings(config):

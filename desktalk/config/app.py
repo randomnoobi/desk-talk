@@ -126,6 +126,7 @@ class AgentsSettings(_Section):
     can_join: Words                   # agent ids (config/agents.yaml) that may join the chat
     sensitivity_steps: Annotated[tuple[SensitivityStep, ...], Field(min_length=1)]   # from picky to eager
     sensitivity_default: Count        # the step used until the slider is moved (an index into sensitivity_steps)
+    same_thing_overlap: Fraction      # two names on this much the same box are one thing; the surer name counts
     on_desk_after_sec: ZeroOrMore     # the warnings' own "on the desk" list (the slider doesn't change these)
     on_desk_min_confidence: Fraction
     leave_after_sec: ZeroOrMore

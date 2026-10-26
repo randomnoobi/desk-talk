@@ -57,3 +57,10 @@ def test_footprint_is_the_bottom_strip_of_a_box():
 
 def test_footprint_of_a_short_box_is_at_least_min_px_tall():
     assert g.footprint((0, 0, 10, 10), share=0.2, min_px=4) == (0, 6, 10, 10)
+
+
+def test_same_box_share_is_how_much_two_boxes_are_one_box():
+    assert g.same_box_share((0, 0, 10, 10), (0, 0, 10, 10)) == pytest.approx(1.0)
+    assert g.same_box_share((0, 0, 10, 10), (5, 0, 15, 10)) == pytest.approx(50 / 150)
+    assert g.same_box_share((0, 0, 10, 10), (20, 20, 30, 30)) == 0.0
+    assert g.same_box_share((0, 0, 0, 0), (0, 0, 0, 0)) == 0.0          # no area: nothing shared

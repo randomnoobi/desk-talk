@@ -124,6 +124,9 @@ agents:
     - {name: Easy,    min_confidence: 0.40, join_after_sec: 2.5}
     - {name: Eager,   min_confidence: 0.35, join_after_sec: 2}
   sensitivity_default: 2      # the step used until you move the slider (0 is the first: 2 = Normal)
+  same_thing_overlap: 0.7     # two different names whose boxes are this much the same box (0-1: shared area over
+                              # the area both cover) are one thing named twice, like a laptop also called "book":
+                              # only the surer name counts, for the chat and for the warnings
   on_desk_after_sec: 3        # the warnings' own list of what's on the desk: seen this long = on the desk...
   on_desk_min_confidence: 0.45  # ...with a box at least this sure (the slider doesn't change these two)
   leave_after_sec: 120        # gone this long → "Cup left the chat" (same as the longest sip, so a sip never leaves)

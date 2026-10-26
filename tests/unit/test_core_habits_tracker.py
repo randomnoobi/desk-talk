@@ -149,9 +149,9 @@ def test_sip_counts_even_with_a_second_drink_on_the_desk(config):
 
 def test_weak_detections_are_not_counted(config):
     r = Rig(config)
-    r.run(5, 'cup', conf=0.5)       # a cup needs 0.55 (agents.yaml)
+    r.run(5, 'cup', conf=0.44)      # below the Normal sensitivity step's 0.45
     assert not r.state().drink_on_desk
-    r.run(5, 'cup', conf=0.6)
+    r.run(5, 'cup', conf=0.46)      # a water bottle the camera calls a cup, about this sure
     assert r.state().drink_on_desk
     r.run(5, 'laptop', conf=0.3)    # below the Normal sensitivity step's 0.45
     assert not r.state().screen_on_desk

@@ -121,7 +121,6 @@ agents:
     temperature: 0.75
     habits: [hydration]
     tracker: hydration
-    min_confidence: 0.55        # cups are often mistaken for other things
     too_close: "I'm just sitting here near {other}, but apparently that's a problem. Maybe move one of us?"
     hello: "Hi! I'm just a cup. Sitting. Very still. Drink me sometime?"
 

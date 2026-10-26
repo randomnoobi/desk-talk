@@ -45,7 +45,7 @@ def test_known_labels(book):
     assert book.for_label('cell phone').name == 'Phone'
     assert book.for_label('earphone').name == 'AirPods'
     assert book.for_label('Laptop').id == 'computer'           # the detector's case doesn't matter
-    assert book.for_label('cup').min_confidence == 0.55
+    assert book.for_label('cup').min_confidence is None        # the cup follows the slider like the rest
     assert book.for_label('laptop').min_confidence is None
     assert 'hydration' in book.for_label('mug').habits
     assert book.get('computer').nickname == 'Monty' and book.get('computer').fragile

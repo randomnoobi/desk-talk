@@ -12,6 +12,10 @@ AgentJoined / AgentLeft. Something seen long enough that may not join is "refuse
 sightings. Every join, leave and refusal is kept, with why, for the developer page's trace (ChatJoins). No
 pictures (camera off) means no events, so nobody leaves.
 
+One thing, one name. The detector sometimes gives one thing two names on the same box (a laptop that is also
+"book"). When two different names' boxes are at least agents.same_thing_overlap the same box, only the surer
+name counts, for both lists.
+
 On the desk. Everything the detector names (any agent, also one made up for an object without a block in
 agents.yaml, but never an ignored word), seen for agents.on_desk_after_sec at agents.on_desk_min_confidence or
 more. The slider doesn't change these. The danger warnings and the live view read this list.
@@ -31,6 +35,7 @@ from typing import Any
 
 from desktalk.config import AgentsSettings, PresenceSettings, SensitivityStep
 from desktalk.core.agents.presence import PresenceTracker
+from desktalk.core.vision.geometry import same_box_share
 from desktalk.domain import AgentJoined, AgentLeft, ChatJoin, Detection, DetectionEvent, SeenObject
 from desktalk.ports import DeskScene, EventBus, Preferences, Profiles
 
@@ -100,12 +105,23 @@ class Roster:
         cx, _ = det.bbox.center
         return self._on_desk(cx, det.bbox.y2, width, height)
 
+    def _one_name_each(self, detections: Iterable[Detection]) -> list[Detection]:
+        """The detections without a second name for something a surer box already names."""
+        kept: list[Detection] = []
+        for det in sorted(detections, key=lambda x: x.confidence, reverse=True):
+            box = det.bbox.x1, det.bbox.y1, det.bbox.x2, det.bbox.y2
+            if not any(other.label != det.label and same_box_share(
+                    box, (other.bbox.x1, other.bbox.y1, other.bbox.x2, other.bbox.y2))
+                    >= self._agents.same_thing_overlap for other in kept):
+                kept.append(det)
+        return kept
+
     def _sightings(self, detections: Iterable[Detection], width: int, height: int,
                    step: SensitivityStep) -> tuple[dict[str, _Sighting], dict[str, Detection]]:
         """The best box per agent sure enough for the chat (by the step), and per agent sure enough for the desk."""
         chat: dict[str, _Sighting] = {}
         desk: dict[str, Detection] = {}
-        for det in detections:
+        for det in self._one_name_each(detections):
             prof = self._profiles.for_label(det.label)
             if prof is None:
                 continue
