@@ -1,9 +1,11 @@
-// The Live tab: each object's state now, the list of changes, and how one object's pictures were
-// smoothed into that state (the view that shows a flickering object right away).
+// The Live tab: each object's state now, the list of changes, and one object's whole trace (click its card):
+// what happened to it and why, how its pictures were smoothed into that state (the view that shows a
+// flickering object right away), and the pictures kept of it.
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { getStates, getTrace, getTracedLabels, type DevSettings, type ObjectNow, type SmoothingStep,
-         type StateChange, type States } from '../api'
+import { getObjectTrace, getStates, getTrace, getTracedLabels, type DevSettings, type ObjectNow,
+         type ObjectTraceReply, type SmoothingStep, type StateChange, type States } from '../api'
 import { formatClock, formatSeconds } from '../format'
+import ObjectTrace from '../ObjectTrace'
 import SmoothingChart from '../SmoothingChart'
 import { ErrorLine, Pill, Table } from '../ui'
 import { countdown, isFlickering, keepRecent, mergeChanges, newestFirst, withPhases, type ChangeRow } from '../timeline'
@@ -43,22 +45,24 @@ function useStates(everyMs: number, keep: number) {
   }, everyMs)
 }
 
-/** The trace of the picked object. The reply says which object it's for, so an old reply isn't shown for a new pick. */
-function useTrace(picked: string | null, everyMs: number) {
+/** Something about the picked object, asked again every poll and at once on a new pick. The reply says which
+ *  object it's for, so an old reply isn't shown for a new pick. */
+function usePicked<T>(picked: string | null, everyMs: number, load: (label: string) => Promise<T>) {
   const pickedNow = useRef(picked)
   pickedNow.current = picked
-  const poll = usePoll<{ label: string | null, steps: SmoothingStep[] }>(async () => {
+  const poll = usePoll<{ label: string | null, data: T | null }>(async () => {
     const label = pickedNow.current
-    return { label, steps: label === null ? [] : await getTrace(label) }
+    return { label, data: label === null ? null : await load(label) }
   }, everyMs)
   const { refresh } = poll
   useEffect(() => { refresh() }, [picked, refresh])
   return poll
 }
 
-function NowCards(props: { states: States, now: number, flickerLimit: number, traced: string[],
+/** A card per object; the whole card is a button that opens its trace. */
+function NowCards(props: { states: States, now: number, flickerLimit: number, picked: string | null,
                            onPick: (label: string) => void }): JSX.Element {
-  const { states, now, flickerLimit, traced, onPick } = props
+  const { states, now, flickerLimit, picked, onPick } = props
   const labels = Object.keys(states.objects).sort()
   if (labels.length === 0) return <p className="muted">No objects seen yet.</p>
   return (
@@ -66,21 +70,17 @@ function NowCards(props: { states: States, now: number, flickerLimit: number, tr
       {labels.map(label => {
         const object = states.objects[label]
         return (
-          <div key={label} className="card" role="group" aria-label={label}>
-            <h3 className="mono" style={{ wordBreak: 'break-word' }}>{label}</h3>
-            <div className="row">
+          <button key={label} type="button" className="card object-card" aria-label={label}
+                  aria-pressed={picked === label} title="Show its trace" onClick={() => onPick(label)}>
+            <span className="object-name mono">{label}</span>
+            <span className="row">
               <StatePill state={object.state} />
               {isFlickering(states.changes, label, now, flickerLimit) && <Flickering limit={flickerLimit} />}
-            </div>
-            <p className="muted small" style={{ marginTop: 6 }}>
+            </span>
+            <span className="muted small">
               {object.since === null ? 'since: not known' : `for ${formatSeconds(now - object.since)}`}
-            </p>
-            {traced.includes(label) && (
-              <button type="button" className="btn" style={{ marginTop: 8 }} onClick={() => onPick(label)}>
-                Show its smoothing
-              </button>
-            )}
-          </div>
+            </span>
+          </button>
         )
       })}
     </div>
@@ -170,7 +170,18 @@ export default function Live(props: { settings: DevSettings }): JSX.Element {
   useEffect(() => {
     if (picked === null && labels.length > 0) setPicked(labels[0])
   }, [picked, labels])
-  const trace = useTrace(picked, everyMs)
+  const smoothing = usePicked<SmoothingStep[]>(picked, everyMs, getTrace)
+  const trace = usePicked<ObjectTraceReply>(picked, everyMs, getObjectTrace)
+  const panel = useRef<HTMLDivElement>(null)
+  // Every object the page knows of can be picked, also ones with no smoothing yet.
+  const choices = useMemo(
+    () => [...new Set([...labels, ...Object.keys(states.data?.objects ?? {})])].sort(),
+    [labels, states.data],
+  )
+  const pick = (label: string) => {
+    setPicked(label)
+    panel.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+  }
   const now = nowSec()
 
   return (
@@ -179,8 +190,9 @@ export default function Live(props: { settings: DevSettings }): JSX.Element {
         <h2>Now</h2>
         <ErrorLine error={states.error} />
         {states.data ? <NowCards states={states.data} now={now} flickerLimit={settings.flicker_flips_per_min}
-                                 traced={labels} onPick={setPicked} />
+                                 picked={picked} onPick={pick} />
                      : !states.error && <p className="muted">Asking for the object states…</p>}
+        <p className="muted small" style={{ marginTop: 10 }}>Click an object to see its whole trace below.</p>
       </div>
 
       <div className="card">
@@ -189,27 +201,32 @@ export default function Live(props: { settings: DevSettings }): JSX.Element {
         {states.data && <Changes states={states.data} now={now} flickerLimit={settings.flicker_flips_per_min} />}
       </div>
 
-      <div className="card">
+      <div className="card" ref={panel}>
         <div className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
-          <h2 style={{ marginBottom: 0 }}>Smoothing</h2>
+          <h2 style={{ marginBottom: 0 }}>{picked === null ? 'Object trace' : `Trace of ${picked}`}</h2>
           <div className="row">
             <label className="small muted" htmlFor="live-object">Object to show</label>
-            <select id="live-object" className="input" value={picked ?? ''} disabled={labels.length === 0}
+            <select id="live-object" className="input" value={picked ?? ''} disabled={choices.length === 0}
                     onChange={e => setPicked(e.target.value || null)}>
               {picked === null && <option value="">none yet</option>}
-              {picked !== null && !labels.includes(picked) && <option value={picked}>{picked}</option>}
-              {labels.map(l => <option key={l} value={l}>{l}</option>)}
+              {picked !== null && !choices.includes(picked) && <option value={picked}>{picked}</option>}
+              {choices.map(l => <option key={l} value={l}>{l}</option>)}
             </select>
           </div>
         </div>
-        <ErrorLine error={traced.error ?? trace.error} />
+        <ErrorLine error={traced.error ?? trace.error ?? smoothing.error} />
         {picked === null
           ? <p className="muted">No objects seen yet.</p>
-          : trace.data?.label !== picked
-            ? <p className="muted">Asking for {picked}'s pictures…</p>
-            : <Smoothing settings={settings} steps={trace.data.steps} />}
+          : trace.data?.label !== picked || trace.data.data === null
+            ? <p className="muted">Asking for {picked}'s trace…</p>
+            : <ObjectTrace
+                label={picked} settings={settings} trace={trace.data.data}
+                smoothing={smoothing.data?.label !== picked || smoothing.data.data === null
+                  ? <p className="muted">Asking for {picked}'s pictures…</p>
+                  : <Smoothing settings={settings} steps={smoothing.data.data} />} />}
         <p className="muted small" style={{ marginTop: 10 }}>
-          The last {settings.trace_pictures} pictures. The page asks for new numbers every {settings.poll_sec} s.
+          The smoothing shows the last {settings.trace_pictures} pictures. The page asks for new numbers every
+          {' '}{settings.poll_sec} s.
         </p>
       </div>
     </div>

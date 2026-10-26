@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import pytest
 
+from desktalk.adapters.storage.trace_photo_files import TracePhotoFiles
 from desktalk.domain import TracePhoto
 from desktalk.ports import TracePhotos
 from tests.fakes import FakeTracePhotos
@@ -69,3 +70,9 @@ def test_the_fake_keeps_only_the_newest_it_is_told_to():
     for n in range(3):
         fake.add(a_photo(f'p{n}', 100.0 + n), JPEG)
     assert [p.id for p in fake.photos('cup')] == ['p1', 'p2'] and fake.jpeg('p0') is None
+
+
+class TestTracePhotoFiles(TracePhotosContract):
+    @pytest.fixture
+    def trace_photos(self, tmp_path):
+        return TracePhotoFiles(tmp_path / 'trace_photos', kept=3)

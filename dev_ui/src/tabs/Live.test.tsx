@@ -1,7 +1,8 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getStates, getTrace, getTracedLabels, type DevSettings, type SmoothingStep, type States } from '../api'
+import { getObjectTrace, getStates, getTrace, getTracedLabels, type DevSettings, type SmoothingStep,
+         type States } from '../api'
 import Live from './Live'
 
 vi.mock('../api')
@@ -23,6 +24,8 @@ const settings: DevSettings = {
   output_keep_kb: 2000,
   flips_window_min: 10,
   table_counts_every_sec: 30,
+  trace_events_kept: 50,
+  trace_photos_kept: 6,
   object_states: { on_confidence: 0.5, off_confidence: 0.4, appear_sec: 3, gone_sec: 3, window_pictures: 5, vote_share: 0.5 },
 }
 
@@ -42,14 +45,15 @@ beforeEach(() => {
   vi.mocked(getStates).mockResolvedValue(states)
   vi.mocked(getTracedLabels).mockResolvedValue(['cup', 'pen/pencil'])
   vi.mocked(getTrace).mockResolvedValue([step({})])
+  vi.mocked(getObjectTrace).mockImplementation(async label => ({ label, timeline: [], photos: [] }))
 })
 
 describe('Live tab', () => {
   it('shows a PRESENT card for cup, and its appeared change', async () => {
     render(<Live settings={settings} />)
-    const card = await screen.findByRole('group', { name: 'cup' })
+    const card = await screen.findByRole('button', { name: 'cup' })
     expect(within(card).getByText('PRESENT')).toBeInTheDocument()
-    expect(within(screen.getByRole('group', { name: 'pen/pencil' })).getByText('ABSENT')).toBeInTheDocument()
+    expect(within(screen.getByRole('button', { name: 'pen/pencil' })).getByText('ABSENT')).toBeInTheDocument()
     expect(await screen.findByText('appeared')).toBeInTheDocument()
   })
 
@@ -81,9 +85,9 @@ describe('Live tab', () => {
       ...states, changes: flips.map((change, i) => ({ ts: now - 50 + i * 5, label: 'cup', change })),
     })
     render(<Live settings={settings} />)
-    const card = await screen.findByRole('group', { name: 'cup' })
+    const card = await screen.findByRole('button', { name: 'cup' })
     expect(await within(card).findByText('flickering')).toBeInTheDocument()
-    expect(within(screen.getByRole('group', { name: 'pen/pencil' })).queryByText('flickering')).not.toBeInTheDocument()
+    expect(within(screen.getByRole('button', { name: 'pen/pencil' })).queryByText('flickering')).not.toBeInTheDocument()
   })
 
   it('takes the flicker limit from settings', async () => {
@@ -92,7 +96,7 @@ describe('Live tab', () => {
       ...states, changes: flips.map((change, i) => ({ ts: now - 50 + i * 5, label: 'cup', change })),
     })
     render(<Live settings={{ ...settings, flicker_flips_per_min: 2 }} />)
-    const card = await screen.findByRole('group', { name: 'cup' })
+    const card = await screen.findByRole('button', { name: 'cup' })
     expect(await within(card).findByText('flickering')).toHaveAttribute('title', 'More than 2 flips in the last minute')
   })
 
@@ -102,5 +106,21 @@ describe('Live tab', () => {
     render(<Live settings={{ ...settings, sql_max_rows: 5 }} />)
     await screen.findAllByText('moved')
     expect(screen.getAllByText('moved')).toHaveLength(5)
+  })
+
+  it('opens the trace of an object when you click its card', async () => {
+    vi.mocked(getObjectTrace).mockImplementation(async label => ({
+      label,
+      timeline: [{ ts: now - 30, source: 'chat', kind: 'refused', confidence: 0.6, seen_for_sec: 4, on_desk: false,
+                   step: 'Normal', before: null, after: null }],
+      photos: [],
+    }))
+    render(<Live settings={settings} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'pen/pencil' }))
+    await waitFor(() => expect(getObjectTrace).toHaveBeenCalledWith('pen/pencil'))
+    const panel = await screen.findByRole('region', { name: 'Trace of pen/pencil' })
+    expect(await within(panel).findByText('refused: not on the chat list')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'pen/pencil' })).toHaveAttribute('aria-pressed', 'true')
+    expect(getTrace).toHaveBeenCalledWith('pen/pencil')
   })
 })
