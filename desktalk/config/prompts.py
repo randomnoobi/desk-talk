@@ -37,6 +37,8 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'alert.self_is_drink': ('self_label',),
     'alert.same_area': ('self_label', 'other_label'),
     'alert.heads_up': ('rule',),
+    'alert.lens_zone': ('intruder', 'target', 'zone'),
+    'alert.lens_edge': ('object',),
     'desk_rules.too_few_corners': ('corners',),
     'replies.ai_errors.rate_limit': ('who',),
     'replies.ai_errors.bad_key': ('who',),
@@ -79,6 +81,8 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'habit_reminder.system_short': (*_AGENT, 'habit_area', 'widget_block', 'evidence', 'book_tip'),
     'trackers.behavior': ('count',),
     'trackers.todo_list': ('items',),
+    'trackers.todo_today': ('weekday', 'day'),
+    'trackers.todo_due': ('due',),
     'trackers.breaks': ('count', 'last', 'sitting_min'),
     'trackers.water': ('water_ml', 'goal_ml', 'sips', 'pace_ml', 'last'),
     'trackers.food': ('count', 'parts'),
@@ -251,6 +255,8 @@ class AlertPrompts(_Section):
     unknown_other: str
     heads_up: str
     too_close: str
+    lens_zone: str
+    lens_edge: str
 
 
 class ChatPrompts(_Section):
@@ -335,7 +341,9 @@ class TrackerActions(_Section):
 class TrackerPrompts(_Section):
     actions: TrackerActions
     behavior: str
+    todo_today: str
     todo_list: str
+    todo_due: str
     breaks: str
     breaks_none_yet: str
     water: str

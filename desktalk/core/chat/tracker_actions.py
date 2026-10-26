@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
+from datetime import date
 from typing import Any
 
 from desktalk.config import ChatSettings
@@ -54,21 +55,33 @@ def behavior_summary(views: Sequence[Mapping[str, Any]], now: float, chat: ChatS
     return words.behavior.format(count=count)
 
 
+def _weekday(day: str) -> str:
+    """'Sunday' for '2026-10-25'; '' for a day that doesn't read."""
+    try:
+        return date.fromisoformat(day).strftime('%A')
+    except ValueError:
+        return ''
+
+
 def tracker_prompt(tracker: str | None, habits_today: Mapping[str, Any], todo: Mapping[str, Any] | None,
                    views: Sequence[Mapping[str, Any]], now: float, chat: ChatSettings, *,
-                   words: TrackerPrompts, utc_offset_sec: float | None = None) -> str:
+                   words: TrackerPrompts, utc_offset_sec: float | None = None, today: str | None = None) -> str:
     """The tracker's data as a block for the AI. `words` is config.prompts.trackers. `utc_offset_sec`: the local
-    time's offset from UTC for the times in it (the clock's; None = this computer's)."""
+    time's offset from UTC for the times in it (the clock's; None = this computer's). `today`: the clock's local
+    day ('2026-10-25'), which the to-do tracker tells the AI so it can turn "due Friday" into a date."""
     if not tracker:
         return ''
     t = words
     extra = behavior_summary(views, now, chat, words=t)
     if tracker == 'todo':
+        weekday = _weekday(today) if today else ''
+        head = t.todo_today.format(weekday=weekday, day=today) if weekday else ''
         items = (todo or {}).get('items') or []
         if not items:
-            return extra
-        lines = [f"- [{'x' if i.get('done') else ' '}] {i.get('text', '')}" for i in items]
-        return t.todo_list.format(items='\n'.join(lines)) + extra
+            return head + extra
+        lines = [f"- [{'x' if i.get('done') else ' '}] {i.get('text', '')}"
+                 + (t.todo_due.format(due=i['due']) if i.get('due') else '') for i in items]
+        return head + t.todo_list.format(items='\n'.join(lines)) + extra
     h = habits_today
     if tracker == 'breaks':
         b = h['breaks']

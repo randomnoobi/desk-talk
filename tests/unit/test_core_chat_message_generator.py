@@ -353,6 +353,50 @@ def test_a_cut_off_dramatic_or_wrong_speaker_ai_line_falls_back(reply):
     assert r.notifier.sent[0]['text'] == 'Cup is too close to my keyboard!'
 
 
+def lens_alert(**extra):
+    return Alert(ts=1.0, kind='proximity', agent='lens', extra={'follow_up': 0, 'snapshot': 'snap9', **extra})
+
+
+def test_lens_warns_about_something_in_a_zone_without_the_ai():
+    """Scissors by a phone, neither in the chat: Lens says it, in the detector's words, and it pops up."""
+    r = Rig(members=())
+    r.desk.set_on_desk({'phone': seen('cell phone', 200, 200, 300, 260), 'scissors': seen('scissors', 310, 220, 330, 250)},
+                       r.clock.now())
+    r.gen.on_alert(lens_alert(near='phone', intruder='scissors', rule_label='Screen scratch zone'))
+    [msg] = r.notifier.sent
+    assert (msg['character'], msg['alert'], msg['snapshot'], msg['notify']) == ('lens', 'proximity', 'snap9', 'warning')
+    assert msg['text'] == CONFIG.prompts.alert.lens_zone.format(intruder='scissors', target='cell phone',
+                                                                 zone='Screen scratch zone')
+    assert r.ai.calls == []
+
+
+def test_lens_warns_about_something_at_the_desk_edge():
+    r = Rig(members=())
+    r.desk.set_on_desk({'cup': seen('cup', 400, 480, 470, 570)}, r.clock.now())
+    r.gen.on_alert(lens_alert(object='cup', rule_label='Near front edge (6px)'))
+    assert r.notifier.sent[0]['text'] == CONFIG.prompts.alert.lens_edge.format(object='cup')
+
+
+def test_lens_warns_even_when_it_does_not_know_what_it_is_about():
+    r = Rig(members=())
+    r.gen.on_alert(lens_alert(near='phone', intruder='scissors', rule_label='Screen scratch zone'))
+    r.gen.on_alert(lens_alert())
+    texts = [m['text'] for m in r.notifier.sent]
+    unknown = CONFIG.prompts.alert.unknown_other
+    assert texts == [CONFIG.prompts.alert.lens_zone.format(intruder=unknown, target=unknown,
+                                                           zone='Screen scratch zone'),
+                     CONFIG.prompts.alert.too_close]
+
+
+def test_the_ai_is_told_the_detector_word_of_a_thing_on_the_desk_but_not_in_the_chat():
+    r = Rig(reply='That cup is a little close to my keyboard, could you scoot it back?', members=('computer',))
+    r.desk.set_members({'computer': seen('laptop', 200, 200, 400, 350)}, r.clock.now())
+    r.desk.set_on_desk({'computer': seen('laptop', 200, 200, 400, 350), 'cup': seen('mug', 410, 250, 450, 320)},
+                       r.clock.now())
+    r.gen.on_alert(proximity())
+    assert '"laptop" (you, Computer) and "mug" (other: Cup)' in r.ai.calls[0]['messages'][1]['content']
+
+
 def test_a_proximity_alert_for_an_unknown_agent_is_dropped():
     r = Rig()
     r.gen.on_alert(proximity(agent='ghost'))
@@ -518,6 +562,12 @@ def test_a_todo_action_goes_back_to_the_app():
     assert r.gen.answer('paper', 'remind me about my essay') == {
         'messages': [{'character': 'paper', 'text': 'On it!'}],
         'actions': [{'action': 'add_todo', 'text': 'Essay'}], 'habits_changed': False}
+
+
+def test_the_ai_knows_todays_date_for_due_dates():
+    r = Rig(reply='Got it, Friday it is! [ADD_TODO:Essay|2025-10-10]', profiles=[computer(), cup(), paper()])
+    r.gen.answer('paper', 'add my essay, due tomorrow')
+    assert 'Thursday 2025-10-09' in r.ai.calls[0]['messages'][0]['content']      # the FakeClock's day
 
 
 def test_the_todo_list_sent_with_a_message_is_kept_and_used():

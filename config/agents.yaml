@@ -26,7 +26,8 @@
 #    tracker      the panel on top of its 1-on-1 chat: hydration, breaks, food,
 #                 todo, phone_free, light
 #    fragile      true = when something risky comes close, this one complains
-#    min_confidence  how sure the detector must be (default: the sensitivity step, settings → agents.sensitivity_steps)
+#    min_confidence  how sure the detector must be for it to join the chat; used only when it is stricter than the
+#                 sensitivity step's own number (settings → agents.sensitivity_steps)
 #    too_close    what it says (without AI) when something gets too close; {other} = the other object
 #    hello        what it says when it joins
 # ════════════════════════════════════════════════════════════════════

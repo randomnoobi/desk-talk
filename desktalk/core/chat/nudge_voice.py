@@ -48,7 +48,7 @@ class NudgeVoice:
         todo = self._desk.widget(a.id)
         w = self._words
         block = tracker_prompt(a.tracker, self._habits.today(now), todo, [], now, self._chat, words=w.trackers,
-                               utc_offset_sec=self._clock.utc_offset_sec(now))
+                               utc_offset_sec=self._clock.utc_offset_sec(now), today=self._clock.local_day(now))
         system = prompts.habit_system(w.habit_reminder, a, prompts.habit_area(w.habit_areas, a), block,
                                       nudge.evidence, nudge.tip, short=self._local)
         text = self._ai.ask([{'role': 'system', 'content': system},

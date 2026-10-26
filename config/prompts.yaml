@@ -75,7 +75,7 @@ alert:
     GOOD examples (speak as the object, first person):
     - Cup: "I'm sitting a little too close to the laptop today — could you scoot me back?"
     - Computer: "That wine glass is making me nervous. A nudge away would help."
-    - Paper: "I don't love being under this cup — one wobble and I'm done for."
+    - Book: "I don't love being under this cup — one wobble and I'm done for."
     BAD: "Laptop screen is cracking under sharp keyboard pressure."
 
     Never mention being an AI. Never break character.
@@ -106,6 +106,10 @@ alert:
   # said when the AI can't help and the other object is not an agent
   heads_up: 'Heads up: {rule}. Could you move me back a bit?'
   too_close: Something is getting too close. Could you check the desk?
+  # said by Lens (no AI) when nothing in the chat can say it; {intruder}, {target} and {object} are the detector's
+  # words for the things, {zone} the danger zone's name
+  lens_zone: 'Heads up: {intruder} next to the {target} ({zone}). Could you move it away?'
+  lens_edge: 'Heads up: {object} right at the edge of the desk. Could you move it back?'
 
 # ── Chatting with you, in the group or 1-on-1 ───────────────────────
 chat:
@@ -117,7 +121,7 @@ chat:
 
     HOW YOU TALK:
     - Speak in first person as {name} ONLY. 1-2 SHORT sentences, like a quick text.
-    - Never write other objects' lines (no "Cup:", "Paper:", "Computer:") and never prefix your reply with your own name.
+    - Never write other objects' lines (no "Cup:", "Book:", "Computer:") and never prefix your reply with your own name.
     - Never mention being an AI, models, "YOLO"/"COCO", confidence %, or "risk level". Stay in character.
 
     STAYING GROUNDED:
@@ -305,10 +309,16 @@ trackers:
   behavior: |2-
 
     BEHAVIOR: The user opened this panel {count} time(s) in the last hour. If nothing was completed or changed, gently point that out.
+  # the to-do tracker starts with today's date (this computer's day), so "due Friday" becomes a real day
+  todo_today: |2-
+
+    TODAY IS {weekday} {day}. Work out "tomorrow", "Friday" or "next week" from this day.
   todo_list: |2-
 
     USER'S TO-DO LIST (prioritize open items, celebrate completed ones):
     {items}
+  # after a to-do that has a due date; {due} is the day, year-month-day
+  todo_due: ' (due {due})'
   breaks: |2-
 
     USER'S BREAKS: {count} break(s) today, last one {last}. Sitting for {sitting_min} min right now. The book suggests a {break_min}-minute walk every {sit_limit_min} minutes of sitting.

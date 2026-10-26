@@ -4,7 +4,8 @@ Alerts in an agent's voice: "the cup is getting close to me!"
 An alert that carries its own text (a pet, clutter, a lost item ...) is sent as written. A proximity
 alert is put into words by the AI, grounded in the detector's own words for both objects; when the AI
 can't help (or its line is cut off, dramatic or for another agent), the agent's own too_close line is used.
-A follow-up of the same alert replies to what was said before.
+A follow-up of the same alert replies to what was said before. When nothing in the chat can say it, Lens does,
+without the AI: "Heads up: scissors next to the cell phone".
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from desktalk.config.prompts import AlertPrompts
 from desktalk.core.chat import prompts
 from desktalk.core.chat.agent_ai import AgentAI
 from desktalk.core.chat.replies import looks_cut_off, response_violates_evidence
-from desktalk.domain import LENS, AgentProfile, Alert
+from desktalk.domain import LENS, AgentProfile, Alert, SeenObject
 from desktalk.ports import DeskScene, Profiles
 
 
@@ -50,6 +51,8 @@ class AlertVoice:
             if snapshot:
                 msg['snapshot'] = snapshot
             return msg
+        if pid == LENS:
+            return self._lens_alert(d)
         a = self._profiles.get(pid)
         if not a:
             return None
@@ -74,11 +77,35 @@ class AlertVoice:
         self._said_about[key] = {'character': pid, 'text': text}
         return msg
 
+    def _lens_alert(self, d: Mapping[str, Any]) -> dict[str, Any]:
+        """Lens's warning (it has no personality, so no AI): what is in which thing's zone, or at the desk edge."""
+        w = self._words
+        if d.get('intruder'):
+            text = w.lens_zone.format(intruder=self._label(d['intruder']), target=self._label(d.get('near') or ''),
+                                      zone=d.get('rule_label') or '')
+        elif d.get('object'):
+            text = w.lens_edge.format(object=self._label(d['object']))
+        else:
+            text = w.too_close
+        msg = {'type': 'group_message', 'character': LENS, 'text': text, 'alert': 'proximity'}
+        if d.get('snapshot'):
+            msg['snapshot'] = d['snapshot']
+        return msg
+
+    def _label(self, agent_id: str) -> str:
+        """The detector's word for a thing on the desk (in the chat or not)."""
+        seen = self._objects().get(agent_id)
+        return seen.label if seen else self._words.unknown_other
+
+    def _objects(self) -> dict[str, SeenObject]:
+        """Everything on the desk: the warnings' own list, and the chat's (which can see weaker boxes)."""
+        return {**self._scene.members(), **self._scene.on_desk()}
+
     def _describe(self, a: AgentProfile, d: Mapping[str, Any]) -> str:
         """The situation, in the detector's own words, so the AI doesn't invent spills or damage."""
         w = self._words
         other_id = d.get('near') or ''
-        objects = self._scene.members()
+        objects = self._objects()
         self_label = objects[a.id].label if a.id in objects else w.unknown_label
         other = self._profiles.get(other_id)
         other_label = objects[other_id].label if other_id in objects else w.unknown_label

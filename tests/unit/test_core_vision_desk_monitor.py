@@ -109,6 +109,31 @@ def test_scissors_near_phone_still_warns():
     assert alert.extra['rule_label'] == 'Screen scratch zone'
 
 
+def test_lens_says_which_thing_is_in_the_zone():
+    [alert] = Rig().look(T + 1000, knife_near_phone(), chat=())
+    assert alert.extra['intruder'] == 'scissors'
+
+
+CUP_BY_PHONE = (240, 265, 270, 300)           # under the phone, inside its scratch zone too
+
+
+def test_two_things_near_a_phone_not_in_the_chat_are_two_warnings_from_lens():
+    """Lens speaks about the phone both times: each thing in its zone gets its own warning (and its own wait)."""
+    rig = Rig()
+    agents = {**knife_near_phone(), 'cup': ('cup', CUP_BY_PHONE)}
+    alerts = rig.look(T + 1000, agents, chat=())
+    assert sorted((a.agent, a.extra['near'], a.extra['intruder']) for a in alerts) == [
+        (LENS, 'phone', 'cup'), (LENS, 'phone', 'scissors')]
+    assert rig.look(T + 1001, agents, chat=()) == []          # each one waits before it is said again
+
+
+def test_lens_says_which_thing_is_at_the_desk_edge():
+    rig = Rig(saved={'desk_outline': [[0, 0], [1, 0], [1, 0.8], [0, 0.8]]})
+    things = {'cup': ('cup', (400, 480, 470, 570)), 'phone': ('cell phone', (100, 480, 170, 570))}
+    alerts = rig.look(T + 1000, things, size=(960, 720), chat=())
+    assert sorted((a.agent, a.extra['object']) for a in alerts) == [(LENS, 'cup'), (LENS, 'phone')]
+
+
 def test_fragile_member_speaks():
     [alert] = Rig().look(T + 1000, knife_near_phone(), chat={'phone'})
     assert (alert.agent, alert.extra['near']) == ('phone', 'scissors')

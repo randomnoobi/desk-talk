@@ -96,15 +96,18 @@ class DeskMonitor:
                     continue
                 checked.add(frozenset((intruder, target)))
                 speaker, other = self._zone_speaker(intruder, target, chat)
+                said_by_lens = {'intruder': intruder} if speaker == LENS else {}    # Lens speaks about the target
                 self._proximity_alert(speaker, [things[intruder].box, things[target].box], now, near=other,
-                                      severity='high', rule_label=ev['zone_label'], depth_px=ev['depth_px'])
+                                      severity='high', rule_label=ev['zone_label'], depth_px=ev['depth_px'],
+                                      **said_by_lens)
                 dangers.append(Danger(pair=(ev['intruder_class'], ev['target_class']), label=ev['zone_label'],
                                       kind='zone_intrusion', depth_px=ev['depth_px']))
             elif ev['type'] == 'edge_danger':
                 agent = ev['object']
                 reason = self._words.edge_reason.format(edge=ev['edge'], distance=int(ev['distance_px']))
+                said_by_lens = {} if agent in chat else {'object': agent}
                 self._proximity_alert(agent if agent in chat else LENS, [things[agent].box], now, severity='medium',
-                                      rule_label=reason)
+                                      rule_label=reason, **said_by_lens)
                 dangers.append(Danger(pair=(ev['class'], 'desk_edge'),
                                       label=self._words.edge_danger.format(object=ev['class'], edge=ev['edge']),
                                       kind='edge_danger'))
@@ -125,9 +128,11 @@ class DeskMonitor:
     def _proximity_alert(self, speaker: str, crop_boxes: Sequence[Box], now: float, **details: Any) -> bool:
         """An alert from `speaker`, unless the same one went out lately. The wait starts at alerts.cooldown_sec
         and doubles with each repeat (up to alerts.cooldown_max_times that); a quiet spell of
-        alerts.reset_after_sec starts it over."""
+        alerts.reset_after_sec starts it over. Lens's alerts also name the thing they are about (`intruder` or
+        `object`), so two things by the same target are two alerts, each with its own wait."""
         s = self._settings
-        key = f'proximity_{speaker}_{details.get("near", "")}'
+        about = details.get('intruder') or details.get('object') or ''
+        key = f'proximity_{speaker}_{details.get("near", "")}' + (f'_{about}' if about else '')
         last = self._last_alert.get(key, 0)
         in_a_row = self._alerts_in_a_row.get(key, 0)
         if now - last > s.reset_after_sec:

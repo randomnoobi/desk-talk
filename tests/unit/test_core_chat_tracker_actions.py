@@ -164,6 +164,17 @@ def test_the_todo_tracker_lists_open_and_done_items(chat):
     assert 'TO-DO LIST' in text and '- [ ] Essay' in text and '- [x] Email' in text
 
 
+def test_the_todo_tracker_says_what_day_it_is_and_when_each_is_due(chat):
+    """So "due Friday" or "tomorrow" in the chat becomes a real date (the day is the clock's local day)."""
+    todo = {'items': [{'text': 'Essay', 'done': False, 'due': '2026-10-30'}, {'text': 'Email', 'done': False}]}
+    text = ta.tracker_prompt('todo', today(), todo, [], NOW, chat, words=WORDS, today='2026-10-25')
+    assert WORDS.todo_today.format(weekday='Sunday', day='2026-10-25') in text
+    assert '- [ ] Essay' + WORDS.todo_due.format(due='2026-10-30') in text
+    assert '- [ ] Email' in text and 'Email' + WORDS.todo_due.format(due='') not in text
+    empty = ta.tracker_prompt('todo', today(), None, [], NOW, chat, words=WORDS, today='2026-10-25')
+    assert 'Sunday 2026-10-25' in empty                  # an empty list still needs the day to add one
+
+
 def test_food_phone_and_light_trackers(chat):
     food = ta.tracker_prompt('food', today(food={'entries': [{'label': 'apple', 'healthy': True},
                                                              {'label': 'chips', 'healthy': False}]}),

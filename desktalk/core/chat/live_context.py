@@ -29,14 +29,17 @@ def build_live_context(scene: DeskScene, safety: SafetyBoard, *, profiles: Profi
     lines: list[str] = []
     detected_info: list[dict] = []
     mentioned: list[dict] = []
-    objects = scene.members()
+    members_seen = scene.members()
+    on_desk = scene.on_desk()                   # what the warnings see, in the chat or not
+    objects = {**on_desk, **members_seen}
     report = safety.now()
     dangers = [d.to_dict() for d in report.dangers]
     rel_result = report.result
     recent = safety.recent_alerts(chat.recent_events_kept)
     vision_seen = sorted(scene.scan_labels())
     session_start = scene.session_started_at()
-    others = [label for label in scene.seen() if not profiles.is_ignored(label)]
+    others = {label for label in [*scene.seen(), *(box.label for box in on_desk.values())]
+              if not profiles.is_ignored(label)}
 
     def on_desk_for(pid: str) -> str:
         first = scene.first_seen(pid)
@@ -44,7 +47,7 @@ def build_live_context(scene: DeskScene, safety: SafetyBoard, *, profiles: Profi
 
     if not camera_on:
         lines.append(w.camera_off)
-    if objects or members:
+    if members_seen or members:
         lines.append(w.members)
         for pid in members:
             p = profiles.get(pid)
