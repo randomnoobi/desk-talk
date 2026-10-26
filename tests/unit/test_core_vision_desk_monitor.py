@@ -5,7 +5,7 @@ import pytest
 from desktalk.core.vision.analyzer import DeskAnalyzer
 from desktalk.core.vision.desk_monitor import DeskMonitor
 from desktalk.core.vision.rules import SafetyRules
-from desktalk.domain import AgentProfile, Alert, BBox, Detection, DetectionEvent, Light
+from desktalk.domain import LENS, AgentProfile, Alert, BBox, Detection, DetectionEvent, Light
 from tests.fakes import FakeDeskStatus, FakeHabits, FakePhotoTaker, FakeProfiles, InMemoryKeyValueStore, SyncEventBus
 from tests.unit.test_core_vision_kit import FakeDesk, app_config, seen_object
 
@@ -20,6 +20,8 @@ AGENTS = [
     AgentProfile('snack', 'Snack', labels=['banana', 'apple'], habits=['food']),
     AgentProfile('paper', 'Paper', labels=['book'], habits=['tasks'], fragile=True),
     AgentProfile('plant', 'Plant', labels=['potted plant', 'flower', 'houseplant']),
+    AgentProfile('phone', 'Phone', labels=['cell phone'], habits=['phone_free'], fragile=True),
+    AgentProfile('scissors', 'Scissors', labels=['scissors', 'knife']),
 ]
 
 
@@ -43,23 +45,26 @@ class Rig:
                                    self.habits, self.status, self.photos, self.settings,
                                    words=words or prompts.desk_alerts)
 
-    def look(self, ts, agents=None, labels=(), size=(640, 480), confidence=0.9, box=(0, 0, 10, 10)):
-        """Returns the alerts this picture caused. The words in `labels` are seen at `confidence`, in `box`."""
+    def look(self, ts, agents=None, labels=(), size=(640, 480), confidence=0.9, box=(0, 0, 10, 10), chat=None):
+        """Returns the alerts this picture caused. `agents` are on the desk; the ones in `chat` (all of them when
+        it's None) are in the chat too. The words in `labels` are seen at `confidence`, in `box`."""
         agents = agents or {}
-        self.desk.set_members({a: seen_object(label, box) for a, (label, box) in agents.items()}, ts)
+        seen = {a: seen_object(label, box) for a, (label, box) in agents.items()}
+        self.desk.set_on_desk(seen, ts)
+        self.desk.set_members({a: o for a, o in seen.items() if chat is None or a in chat}, ts)
         found = [Detection(label, 0.9, BBox(*box)) for label, box in agents.values()]
         found += [Detection(label, confidence, BBox(*box)) for label in labels]
         self.bus.publish(DetectionEvent(ts=ts, frame_id=f'pi-{int(ts)}', source='pi', size=size,
                                         detections=tuple(found), person=False, light=Light(brightness=120)))
         return [e for e in self.bus.published if isinstance(e, Alert) and e.ts == ts]
 
-    def show_pet(self, ts, agents=None, labels=('cat',)):
+    def show_pet(self, ts, agents=None, labels=('cat',), chat=None):
         """The pets in `labels` are seen clearly in alerts.pet_min_pictures pictures in a row, a second
         apart, the last one at `ts`. Returns the alerts the last picture caused."""
         count = self.settings.pet_min_pictures
         for k in range(count - 1, 0, -1):
-            self.look(ts - k, agents, labels)
-        return self.look(ts, agents, labels)
+            self.look(ts - k, agents, labels, chat=chat)
+        return self.look(ts, agents, labels, chat=chat)
 
     def alerts(self):
         return self.bus.of_type(Alert)
@@ -87,6 +92,47 @@ def test_cup_in_the_laptop_zone_makes_the_fragile_laptop_speak_up():
         'follow_up': 0, 'near': 'cup', 'severity': 'high', 'rule_label': 'Spill / pressure zone', 'depth_px': 70}
     assert snap == 'photo-1' and rig.photos.saved == [('Proximity alert', (CUP_NEAR, LAPTOP))]
     assert rig.habits.bumps == [('danger_count', 1)]
+
+
+PHONE = (200, 200, 300, 260)
+KNIFE_NEAR = (310, 220, 330, 250)          # inside the phone's scratch zone
+
+
+def knife_near_phone():
+    return {'phone': ('cell phone', PHONE), 'scissors': ('knife', KNIFE_NEAR)}
+
+
+def test_scissors_near_phone_still_warns():
+    """Neither one is in the chat (scissors never join): the warning still goes out, from Lens."""
+    [alert] = Rig().look(T + 1000, knife_near_phone(), chat=())
+    assert (alert.kind, alert.agent, alert.extra['near']) == ('proximity', LENS, 'phone')
+    assert alert.extra['rule_label'] == 'Screen scratch zone'
+
+
+def test_fragile_member_speaks():
+    [alert] = Rig().look(T + 1000, knife_near_phone(), chat={'phone'})
+    assert (alert.agent, alert.extra['near']) == ('phone', 'scissors')
+
+
+def test_the_risky_thing_speaks_when_the_fragile_one_is_not_in_the_chat():
+    [alert] = Rig().look(T + 1000, cup_near_laptop(), chat={'cup'})
+    assert (alert.agent, alert.extra['near']) == ('cup', 'computer')
+
+
+def test_a_zone_owner_that_is_not_fragile_speaks_when_the_risky_thing_is_not_in_the_chat():
+    agents = [AgentProfile('computer', 'Computer', labels=['laptop']), *AGENTS[1:]]
+    [alert] = Rig(agents).look(T + 1000, cup_near_laptop(), chat={'computer'})
+    assert (alert.agent, alert.extra['near']) == ('computer', 'cup')
+
+
+def test_the_warnings_look_at_everything_on_the_desk_not_only_the_chat():
+    rig = Rig()
+    members = {'computer': seen_object('laptop', LAPTOP), 'cup': seen_object('cup', CUP_NEAR)}
+    rig.desk.set_members(members, T)               # in the chat, but not on the desk list: no warning
+    rig.desk.set_on_desk({}, T)
+    rig.bus.publish(DetectionEvent(ts=T + 1000, frame_id='pi-1', source='pi', size=(640, 480), detections=(),
+                                   person=False, light=Light(brightness=120)))
+    assert rig.alerts() == [] and rig.result()['risk_level'] == 0
 
 
 def test_when_the_zone_owner_is_not_fragile_the_risky_thing_speaks():
@@ -138,6 +184,12 @@ def test_something_at_the_desk_edge():
                                         'type': 'edge_danger'}]
 
 
+def test_something_not_in_the_chat_at_the_desk_edge_is_said_by_lens():
+    rig = Rig(saved={'desk_outline': [[0, 0], [1, 0], [1, 0.8], [0, 0.8]]})
+    [alert] = rig.look(T + 1000, {'cup': ('cup', (400, 480, 470, 570))}, size=(960, 720), chat=())
+    assert alert.agent == LENS and alert.extra['rule_label'] == 'Near front edge (6px)'
+
+
 def test_desk_edges_use_the_size_of_the_picture():
     rig = Rig(saved={'desk_outline': [[0, 0], [1, 0], [1, 0.8], [0, 0.8]]})
     # in a picture twice as tall, the front edge is far below the cup
@@ -187,6 +239,12 @@ def test_a_pet_near_the_desk():
 def test_a_pet_with_nothing_to_knock_over_and_nobody_fragile():
     [alert] = Rig().show_pet(T + 1000, {'cup2': ('remote', (10, 10, 50, 50))}, labels=['dog'])
     assert (alert.agent, alert.text) == ('lens', 'Dog detected near the desk! Careful!')
+
+
+def test_a_pet_is_said_by_lens_when_the_fragile_one_is_not_in_the_chat():
+    [alert] = Rig().show_pet(T + 1000, {'computer': ('laptop', LAPTOP), 'cup': ('cup', CUP_FAR)}, chat={'cup'})
+    assert alert.agent == LENS
+    assert alert.text == 'Cat detected near the desk! Cup could get knocked over! Careful!'
 
 
 def test_an_arm_close_to_the_camera_that_looks_a_bit_like_a_cat_is_not_a_pet():
@@ -287,6 +345,11 @@ def test_clutter_is_said_by_lens_when_the_tasks_agent_is_not_there():
     assert alert.agent == 'lens'
 
 
+def test_clutter_is_said_by_lens_when_the_tasks_agent_is_on_the_desk_but_not_in_the_chat():
+    [alert] = Rig().look(T + 1000, {'paper': ('book', (10, 10, 50, 50))}, labels=CLUTTER, chat=())
+    assert alert.agent == LENS
+
+
 def test_clutter_waits_until_the_camera_has_watched_a_while():
     assert Rig(warm=False).look(T + 1000, labels=CLUTTER) == []
 
@@ -310,6 +373,11 @@ def test_a_plant_on_the_desk_asks_for_water_once_a_day():
     assert alert.text == 'I can see a plant on the desk. Has it had any water today?'
     assert rig.look(T + 1000 + 86400, {'plant': ('potted plant', (10, 10, 50, 50))}) == []
     assert rig.look(T + 1000 + 86401, {'plant': ('potted plant', (10, 10, 50, 50))})
+
+
+def test_a_plant_on_the_desk_but_not_in_the_chat_is_mentioned_by_lens():
+    [alert] = Rig().look(T + 1000, {'plant': ('potted plant', (10, 10, 50, 50))}, chat=())
+    assert (alert.feature, alert.agent) == ('water_plants', LENS)
 
 
 @pytest.mark.parametrize('warm, said', [(True, ['lens']), (False, [])])
