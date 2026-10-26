@@ -79,6 +79,7 @@
       "end_hour": "number",
       "start_hour": "number"
     },
+    "sensitivity_default": "number",
     "sensitivity_steps": [
       {
         "join_after_sec": "number",

@@ -226,6 +226,7 @@ def test_ui_settings_has_sensitivity_steps(tmp_path):
     ui = web_client(rig.app).get('/api/ui_settings').json()
     assert [s['name'] for s in ui['sensitivity_steps']] == ['Picky', 'Careful', 'Normal', 'Easy', 'Eager']
     assert ui['sensitivity_steps'][0] == {'name': 'Picky', 'min_confidence': 0.65, 'join_after_sec': 10}
+    assert ui['sensitivity_default'] == c.agents.sensitivity_default == 2      # the page keeps no default of its own
     assert ui['list_sizes'] == {
         'on_desk_shown': 8, 'camera_issues_shown': 2, 'risk_lines_shown': 6, 'side_photos_shown': 6,
         'quote_chars': 90, 'toast_chars': 140, 'mention_max_chars': 12, 'counter_label_chars': 60}

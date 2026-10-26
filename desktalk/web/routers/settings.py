@@ -110,6 +110,7 @@ def ui_settings_from(c: AppConfig) -> UiSettings:
                                counter_label_chars=sizes.counter_label_chars),
         starter_todo=c.prompts.ui.starter_todo, starter_counters=list(c.prompts.ui.starter_counters),
         sensitivity_steps=[UiSensitivityStep(**step.model_dump()) for step in c.agents.sensitivity_steps],
+        sensitivity_default=c.agents.sensitivity_default,
         chat_reply_timeout_ms=min(most_ai_calls_per_message(c) * round(c.llm.longest_reply_sec() * MS)
                                   + web.request_timeout_ms, web.chat_reply_max_ms),
     )

@@ -264,6 +264,7 @@ class UiSettings(BaseModel):
     starter_todo: str                    # prompts.yaml → ui: what a new to-do list starts with...
     starter_counters: list[str]          # ...and the counters the Habits page starts with
     sensitivity_steps: list[UiSensitivityStep]
+    sensitivity_default: int             # the step used until the slider is moved (agents.sensitivity_default)
     # How long the page waits for a chat reply: as long as the server may keep trying the AI (llm.longest_reply_sec)
     # for each AI call one message can make (routers/settings.py: most_ai_calls_per_message), plus an ordinary
     # request's wait for the trip there and back.

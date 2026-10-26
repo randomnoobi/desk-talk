@@ -953,7 +953,7 @@ async function renderSettings() {
     wake_time: prefs.wake_time, bed_time: prefs.bed_time, quiet_enabled: !!prefs.quiet_enabled,
     quiet_start: hourText(prefs.quiet_start_hour ?? ui.quiet_hours.start_hour),
     quiet_end: hourText(prefs.quiet_end_hour ?? ui.quiet_hours.end_hour),
-    sensitivity: Math.min(steps.length - 1, Math.max(0, prefs.sensitivity ?? Math.floor((steps.length - 1) / 2))),
+    sensitivity: Math.min(steps.length - 1, Math.max(0, prefs.sensitivity ?? ui.sensitivity_default)),
   };
   const keepTyped = () => {
     if (!$('#wake-time')) return;
