@@ -6,9 +6,13 @@ from __future__ import annotations
 
 import pytest
 
-from desktalk.domain import ChatJoin
+from desktalk.core.agents.profiles import ProfileBook
+from desktalk.core.agents.roster import Roster
+from desktalk.core.desk import Scene
+from desktalk.domain import BBox, ChatJoin, Detection, DetectionEvent, Light
 from desktalk.ports import ChatJoins
-from tests.fakes import FakeChatJoins
+from tests.fakes import FakeChatJoins, FakePreferences, InMemoryKeyValueStore, SyncEventBus
+from tests.unit.test_core_vision_kit import app_config
 
 KINDS = {'joined', 'left', 'refused'}
 
@@ -73,3 +77,38 @@ def test_the_fake_keeps_what_is_added_in_time_order():
     fake.add(a_join('refused', 50.0, label='glasses', agent='glasses'))
     assert [j.kind for j in fake.joins('cup')] == ['joined', 'left']
     assert [j.kind for j in fake.joins('glasses')] == ['refused']
+
+
+def a_roster():
+    """The real roster (with the real settings and agents.yaml) on a synchronous bus, and a way to show it things."""
+    config = app_config()
+    bus = SyncEventBus()
+    profiles = ProfileBook(config.agents_file, InMemoryKeyValueStore(), personality_max_chars=400)
+    roster = Roster(bus, profiles, Scene(), config.agents, config.presence, FakePreferences(),
+                    joins_kept=config.dev.trace_events_kept)
+
+    def show(start: float, seconds: float, *labels: str) -> float:
+        """Pictures 3 a second with these detector words in them. Returns the time after the last one."""
+        n = int(seconds * 3)
+        for i in range(n):
+            ts = start + i / 3
+            bus.publish(DetectionEvent(ts=ts, frame_id=f'pi-{ts}', source='pi', size=(640, 480),
+                                       detections=tuple(Detection(label, 0.9, BBox(100, 100, 200, 200))
+                                                        for label in labels),
+                                       person=False, light=Light(brightness=120)))
+        return start + n / 3
+
+    return roster, show, config
+
+
+class TestRoster(ChatJoinsContract):
+    @pytest.fixture
+    def no_joins(self):
+        return a_roster()[0]
+
+    @pytest.fixture
+    def cup_came_and_went(self):
+        roster, show, config = a_roster()
+        t = show(100.0, 2 * config.agents.default_step().join_after_sec, 'cup')
+        show(t, config.agents.leave_after_sec + 5)
+        return roster

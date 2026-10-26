@@ -29,20 +29,23 @@ def blank():
     return np.full((480, 640, 3), 100, np.uint8)
 
 
-def on_desk(agents):
-    """A desk scene with `agents` (agent → (label, box)) in the chat."""
+def on_desk(agents, chat=None):
+    """A desk scene with `agents` (agent → (label, box)) on the desk; the ones in `chat` (all of them when it's
+    None) are in the chat too."""
     desk = FakeDeskScene()
-    desk.set_members({a: seen_object(label, box) for a, (label, box) in agents.items()}, 1000)
+    seen = {a: seen_object(label, box) for a, (label, box) in agents.items()}
+    desk.set_on_desk(seen, 1000)
+    desk.set_members({a: o for a, o in seen.items() if chat is None or a in chat}, 1000)
     return desk
 
 
 def things_on(desk):
-    return {a: Thing.from_seen(a, o) for a, o in desk.members().items()}
+    return {a: Thing.from_seen(a, o) for a, o in desk.on_desk().items()}
 
 
-def rig(agents=None, drawing=DRAWING):
+def rig(agents=None, drawing=DRAWING, chat=None):
     """A painter, with the analyzer having looked at `agents` (agent → (label, box)) once."""
-    desk = on_desk(agents or {})
+    desk = on_desk(agents or {}, chat)
     analyzer = DeskAnalyzer(SafetyRules(InMemoryKeyValueStore(), app_config().safety, words=RULE_WORDS), words=CHECKS)
     if agents:
         analyzer.analyze(things_on(desk), (640, 480), 1000)
@@ -84,6 +87,21 @@ def test_a_danger_zone_with_something_risky_in_it_is_drawn_red():
     assert pixel(painted, 120, 380) == RED          # the left side of the laptop's zone (80 px around it)
 
 
+def test_paints_on_desk_objects():
+    """Nothing is in the chat, but the warnings watch the laptop and the cup: the live view shows what they see."""
+    painter, _ = rig({'computer': ('laptop', LAPTOP), 'cup': ('cup', CUP_NEAR)}, chat=())
+    painted = painter.paint(blank(), [det('laptop', LAPTOP), det('cup', CUP_NEAR)])
+    assert pixel(painted, 120, 380) == RED          # the laptop's zone, with the cup in it
+    assert pixel(painted, 200, 300) == GREEN        # nobody in the chat: every box is green
+
+
+def test_the_chat_decides_the_box_colours_not_the_desk_list():
+    painter, _ = rig({'computer': ('laptop', LAPTOP), 'cup': ('cup', CUP_NEAR)}, chat={'cup'})
+    painted = painter.paint(blank(), [det('laptop', LAPTOP), det('cup', CUP_NEAR)])
+    assert pixel(painted, 410, 300) == GREEN and pixel(painted, 200, 300) == GREY
+    assert pixel(painted, 120, 380) == RED
+
+
 def test_only_where_the_risky_thing_stands_is_shaded():
     painter, _ = rig({'computer': ('laptop', LAPTOP), 'cup': ('cup', CUP_NEAR)})
     painted = painter.paint(blank(), [])
@@ -105,9 +123,9 @@ def test_no_overlays_before_the_desk_was_analysed():
     assert (painted == 100).all()
 
 
-def test_no_overlays_without_agents_in_the_chat():
+def test_no_overlays_with_nothing_on_the_desk():
     painter, desk = rig({'computer': ('laptop', LAPTOP), 'cup': ('cup', CUP_NEAR)})
-    desk.set_members({}, 1001)
+    desk.set_on_desk({}, 1001)                       # still in the chat, but the warnings see nothing now
     painted = painter.paint(blank(), [])
     assert (painted == 100).all()
 
@@ -149,7 +167,7 @@ def painted(*pictures, saved=None):
     analyzer = DeskAnalyzer(SafetyRules(InMemoryKeyValueStore({'safety_rules': saved} if saved else {}),
                                         app_config().safety, words=RULE_WORDS), words=CHECKS)
     for k, agents in enumerate(pictures):
-        desk.set_members({a: seen_object(label, box) for a, (label, box) in agents.items()}, 1000 + k)
+        desk.set_on_desk({a: seen_object(label, box) for a, (label, box) in agents.items()}, 1000 + k)
         analyzer.analyze(things_on(desk), (640, 480), 1000 + k)
     return DeskPainter(desk, MORE_PROFILES, analyzer, DRAWING).paint(blank(), [])
 
