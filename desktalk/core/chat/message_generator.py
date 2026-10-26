@@ -141,14 +141,17 @@ class MessageGenerator:
         if not ev.say or ev.quiet:
             return
         speaker = speaker_for((ev.habit,), self._roster.member_ids(), self._profiles)
-        self._notifier.send({'type': 'group_message', 'character': speaker, 'text': ev.say, 'habit': ev.habit})
+        message = {'type': 'group_message', 'character': speaker, 'text': ev.say, 'habit': ev.habit}
+        if ev.habit == 'hydration' and ev.action == 'sip' and ev.extra.get('how') == 'camera':
+            message['notify'] = 'sip'               # only a sip the camera saw also pops up on the desktop
+        self._notifier.send(message)
 
     def on_alert(self, ev: Event) -> None:
         if not isinstance(ev, Alert):
             return
         msg = self._alerts.message_for_alert(ev)
         if msg:
-            self._notifier.send(msg)
+            self._notifier.send({**msg, 'notify': 'warning'})
 
     # ════════════════════════════════════════════════════════════════
     #  Habit reminders and answering you

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import pytest
 
+from desktalk.adapters.notify.mac import MacNotifications, NoNotifications
+from desktalk.config import NotificationsSettings
 from desktalk.ports import DesktopNotifications
 from tests.fakes import FakeDesktopNotifications
 
@@ -33,6 +35,22 @@ class TestFakeDesktopNotifications(DesktopNotificationsContract):
     @pytest.fixture
     def notifications(self):
         return FakeDesktopNotifications()
+
+
+class TestMacNotifications(DesktopNotificationsContract):
+    @pytest.fixture
+    def notifications(self):
+        settings = NotificationsSettings.model_construct(enabled=True, warnings=True, reminders=True, sips=True,
+                                                         time_limit_sec=5.0, command='osascript')
+        mac = MacNotifications(settings, queue_size=4, runner=lambda args, **kwargs: None)     # shows nothing
+        yield mac
+        mac.close()
+
+
+class TestNoNotifications(DesktopNotificationsContract):
+    @pytest.fixture
+    def notifications(self):
+        return NoNotifications()
 
 
 def test_the_fake_remembers_what_it_showed():
