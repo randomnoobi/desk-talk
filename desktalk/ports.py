@@ -291,9 +291,9 @@ class ObjectStateStore(Protocol):
         `moved` rows are skipped: they don't change the state, and their `dwell_sec` isn't the time in the state."""
         ...
 
-    def changes(self, since: float) -> list[StateRecord]:
+    def changes(self, since: float, *, label: str | None = None) -> list[StateRecord]:
         """The `appeared`, `removed` and `moved` rows with `ts > since`, oldest first
-        (rows with the same `ts` in the order they were added)."""
+        (rows with the same `ts` in the order they were added). With `label`, only that object's rows."""
         ...
 
     def close(self) -> None:

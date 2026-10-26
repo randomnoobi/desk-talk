@@ -42,6 +42,12 @@ class StateStoreContract:
         store.append([at_since, after])
         assert store.changes(100.0) == [after]
 
+    def test_changes_of_one_object(self, store):
+        cup, bottle = a_record(100.0, label='cup'), a_record(101.0)
+        store.append([cup, bottle])
+        assert store.changes(0.0, label='cup') == [cup]
+        assert store.changes(0.0, label='pen') == []
+
     def test_latest_states_skip_moved_rows(self, store):
         appeared = a_record(100.0, dwell_sec=5.0)
         moved = a_record(110.0, type='moved', prev_state=Phase.PRESENT, new_state=Phase.PRESENT, dwell_sec=10.0)

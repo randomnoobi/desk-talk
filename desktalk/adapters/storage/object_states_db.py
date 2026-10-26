@@ -101,12 +101,13 @@ class SqliteStateStore:
                 ('moved', since)).fetchall()
         return {record.label: record for record in map(_record_of, rows)}      # later rows replace earlier ones
 
-    def changes(self, since: float) -> list[StateRecord]:
-        """The appeared / removed / moved rows after `since`, oldest first."""
+    def changes(self, since: float, *, label: str | None = None) -> list[StateRecord]:
+        """The appeared / removed / moved rows after `since` (only `label`'s, when given), oldest first."""
+        one = ' AND object = ?' if label is not None else ''
         with self._lock:
             rows = self._db.execute(
-                f'SELECT {_COLUMNS} FROM events WHERE type IN ({_CHANGE_LIST}) AND ts > ? ORDER BY ts, id',
-                (since,)).fetchall()
+                f'SELECT {_COLUMNS} FROM events WHERE type IN ({_CHANGE_LIST}) AND ts > ?{one} ORDER BY ts, id',
+                (since, label) if label is not None else (since,)).fetchall()
         return [_record_of(row) for row in rows]
 
     def close(self) -> None:

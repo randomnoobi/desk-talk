@@ -202,8 +202,9 @@ class InMemoryStateStore:
                 latest[record.label] = record
         return latest
 
-    def changes(self, since: float) -> list[StateRecord]:
-        return sorted((r for r in self.records if r.type in CHANGE_TYPES and r.ts > since), key=lambda r: r.ts)
+    def changes(self, since: float, *, label: str | None = None) -> list[StateRecord]:
+        return sorted((r for r in self.records if r.type in CHANGE_TYPES and r.ts > since
+                       and (label is None or r.label == label)), key=lambda r: r.ts)
 
     def close(self) -> None:
         self.closed = True

@@ -147,9 +147,10 @@ def dev_object_photo(app: App, photo_id: str) -> Response:
 @router.get('/api/dev/objects/{label:path}')
 def dev_object_trace(app: App, label: str) -> dict[str, Any]:
     """The changes since the camera's current run of pictures began (like the Live tab's list), the newest
-    settings → dev.trace_events_kept of them; the chat's own list is kept that short already."""
-    since = app.object_states.snapshot().watched_since or 0.0
-    changes = [r for r in app.state_store.changes(since) if r.label == label][-app.config.dev.trace_events_kept:]
+    settings → dev.trace_events_kept of them; the chat's own list is kept that short already. Before the first
+    picture since the app started there are none: the store's changes are all from earlier runs."""
+    since = app.object_states.snapshot().watched_since
+    changes = [] if since is None else app.state_store.changes(since, label=label)[-app.config.dev.trace_events_kept:]
     joins = app.chat_joins.joins(label) if app.chat_joins is not None else []
     timeline = sorted([*map(_state_row, changes), *map(_chat_row, joins)], key=lambda row: row['ts'])
     photos = app.trace_photos.photos(label) if app.trace_photos is not None else []

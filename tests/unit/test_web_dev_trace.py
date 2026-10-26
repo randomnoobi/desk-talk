@@ -50,7 +50,8 @@ def join(kind: str, ts: float, label: str = 'cup', **more: Any) -> ChatJoin:
 
 
 def client_for(records=(), joins=(), photos: FakeTracePhotos | None = None, *, no_parts: bool = False,
-               watched_since: float | None = None) -> TestClient:
+               watched_since: float | None = 1.0) -> TestClient:
+    """`watched_since`: when the camera's current run of pictures began (None = no pictures since the app started)."""
     store = InMemoryStateStore()
     store.append(list(records))
     desk = SimpleNamespace(config=app_config(), object_states=FakeObjectStates(watched_since=watched_since),
@@ -101,6 +102,14 @@ def test_only_the_newest_state_changes_since_the_camera_started():
     rows = client.get('/api/dev/objects/cup').json()['timeline']
     assert len(rows) == kept
     assert rows[0]['ts'] == 105.0 and rows[-1]['ts'] == 100.0 + kept + 4
+
+
+def test_before_the_first_picture_there_are_no_state_changes_from_old_runs():
+    """No pictures yet since the app started: the changes in the store are from earlier runs, so none is shown."""
+    store_rows = [record(100.0, 'appeared'), record(130.0, 'removed')]
+    rows = client_for(records=store_rows, joins=[join('joined', 105.0)], watched_since=None).get(
+        '/api/dev/objects/cup').json()['timeline']
+    assert [(row['source'], row['kind']) for row in rows] == [('chat', 'joined')]
 
 
 def test_a_word_with_a_slash_works():
