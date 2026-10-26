@@ -77,6 +77,19 @@ def test_photo_on_appear_and_join():
     assert photos[0].id != photos[1].id
 
 
+def test_a_box_from_before_it_was_removed_is_never_used_again():
+    rig = Rig()
+    rig.see(CUP)
+    rig.change('appeared')
+    rig.see()
+    rig.change('removed')
+    rig.join()                                  # a join with no new box seen since: no picture with the old box
+    assert rig.whys() == ['appeared']
+    rig.see(WEAK_CUP)
+    rig.join()
+    assert rig.photos.photos('cup')[-1].box == (400.0, 300.0, 420.0, 330.0)
+
+
 def test_every_photo_while_present():
     rig = Rig()
     every = rig.settings.trace_photo_every_sec

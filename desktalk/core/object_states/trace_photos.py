@@ -81,6 +81,7 @@ class TracePhotoTaker:
             self._take(event.label, 'appeared')
         elif event.change == 'removed':
             self._last_photo.pop(event.label, None)
+            self._seen.pop(event.label, None)                   # its old box must never land on a later picture
 
     def _take(self, label: str, why: str) -> None:
         seen = self._seen.get(label)

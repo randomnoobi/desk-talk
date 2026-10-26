@@ -52,6 +52,7 @@ class HydrationRule(_Section):
     sip_lift_share: Fraction          # lifted: its box rose more than this share of the picture's height
     sip_back_share: Fraction          # put back: within this share of the picture of where it rested
     sip_cover_share: Fraction         # this share of the desk vanishing at once = a covered camera
+    sip_cover_pictures: PositiveInt   # ...in this many pictures in a row
     remind_after_min: ZeroOrMore
     behind_by_ml: ZeroOrMore
     stop_before_bed_hours: ZeroOrMore

@@ -39,6 +39,9 @@ hydration:
   sip_back_share: 0.15        # put back = it rests again within this share of the picture of where it was
   sip_cover_share: 0.6        # when this share or more of what was on the desk vanishes in the same picture, the
                               # camera was covered: nothing in that gap is a sip
+  sip_cover_pictures: 2       # ...but only when it looks like that in this many pictures in a row (the detector
+                              # sometimes misses everything in one picture). No pictures at all for longer than
+                              # settings → presence.disappear_after_sec while the drink is up counts as covered too.
   remind_after_min: 45        # no sip for this long...
   behind_by_ml: 300           # ...and this far behind pace → nudge
   stop_before_bed_hours: 2    # "best to avoid a lot of water in the hours before bedtime"
@@ -114,7 +117,8 @@ tasks:
   remind_after_min: 120       # open to-dos with no due date → a check-in this often, naming a different one each time
   name_shown_chars: 60        # the check-in names one of your to-dos, cut to this many letters
   due_soon_days: 1            # a to-do due this many days from now gets "due tomorrow" (said once that day)
-  late_repeat_hours: 24       # a to-do past its due date gets a reminder this often until you tick it off
+  late_repeat_hours: 24       # a to-do past its due date gets a reminder each day until you tick it off (and again
+                              # after this many hours on the same day)
 
 # ── Your own rules ─────────────────────────────────────────────────
 # A rule watches the desk and nudges when its conditions are true. The hydration rule below is on

@@ -299,8 +299,8 @@ def food_nudges(s: RuleState, cfg: FoodRule, now: float, words: HabitNudges) -> 
 
 
 def task_nudges(s: RuleState, cfg: TasksRule, now: float, words: HabitNudges) -> list[Nudge]:
-    """To-dos with a due date: the day before (due_soon_days), on the day, and every late_repeat_hours while late,
-    by the desk's local day (s.today). Without one: a check-in every remind_after_min, naming the next open to-do
+    """To-dos with a due date: the day before (due_soon_days), on the day, and each day while late (again after
+    late_repeat_hours on the same day), by the desk's local day (s.today). Without one: a check-in every remind_after_min, naming the next open to-do
     each time (s.task_turn)."""
     todos = [t for t in s.open_todos if t.text and not t.done]
     if not cfg.enabled or not todos or not s.at_desk:
@@ -332,7 +332,7 @@ def _due_nudge(text: str, days_left: int, cfg: TasksRule, words: HabitNudges) ->
         kind, w, blanks, repeat = 'today', said.today, {'task': task}, DAY_SEC
     elif days_left < 0:
         late = -days_left
-        kind, w, repeat = 'late', said.late, cfg.late_repeat_hours * HOUR
+        kind, w, repeat = f'late.{late}', said.late, cfg.late_repeat_hours * HOUR     # a new key each day
         blanks = {'task': task, 'days': late, 'plural': 's' if late != 1 else ''}
     elif days_left == cfg.due_soon_days:
         kind, w, blanks, repeat = 'tomorrow', said.tomorrow, {'task': task}, DAY_SEC

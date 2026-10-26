@@ -55,7 +55,7 @@ class HabitReader:
         self._user_last_seen: float | None = None
         self._away_since: float | None = None
         self.sit_since: float | None = None
-        self._sip_watch = SipWatch(protocols.hydration)
+        self._sip_watch = SipWatch(protocols.hydration, stall_after_sec=presence.disappear_after_sec)
         self.food_since: float | None = None
         self.food_name = ''
         self.meal_done_ts: float | None = None
@@ -215,6 +215,8 @@ class _Drink:
     rested_at: float                # the last time it was seen resting there
     left_at: float | None = None    # once seen lifted: when it left its resting spot (None = resting)
     covered: bool = False           # the camera was covered since it last rested: this trip can't be a sip
+    covered_run: int = 0            # pictures in a row, while it's missing, that looked covered
+    seen_with: Set[str] = frozenset()   # everything in the last picture that showed it
 
 
 class SipWatch:
@@ -226,33 +228,46 @@ class SipWatch:
     `sip_gone_min_sec` and `sip_gone_max_sec` after it left. The camera may lose it while it's up in the hand.
     A drink that vanishes without being seen lifted (a hand over it) never counts. If the camera looks covered
     while a drink is missing (nothing in the picture, or `sip_cover_share` or more of the other things that were
-    there a picture ago vanished too), that trip can't be a sip.
+    there in the last picture that showed it are missing too) in `sip_cover_pictures` pictures in a row, that trip can't be a sip. Nor
+    can it when no picture came for longer than `stall_after_sec` while the drink was up.
 
     The resting spot only moves down (the camera's few pixels of wobble settle on the lowest), or to wherever the
     drink was slid when it is seen far from it without being lifted, so a slow lift can't drag it along."""
 
-    def __init__(self, rule: HydrationRule):
+    def __init__(self, rule: HydrationRule, *, stall_after_sec: float):
         self._rule = rule
+        self._stall_after = stall_after_sec
         self._drinks: dict[str, _Drink] = {}
-        self._before: Set[str] = frozenset()     # what the picture before showed
+        self._last_picture: float | None = None
 
     def update(self, labels: Set[str], drinks: Mapping[str, BBox], size: tuple[int, int], now: float) -> int:
         """One picture: every word sure enough in it, and the drinks' boxes. Returns how many sips it ends."""
         width, height = size
         lift_px = self._rule.sip_lift_share * height
         back_px = self._rule.sip_back_share * math.hypot(width, height)
+        stalled = self._last_picture is not None and now - self._last_picture > self._stall_after
+        self._last_picture = now
         for label, drink in self._drinks.items():
-            if label not in drinks and self._looks_covered(label, labels):
-                drink.covered = True
+            if stalled and drink.left_at is not None:
+                drink.covered = True                   # the camera stalled while it was up
+            if label in drinks:
+                drink.covered_run = 0
+            elif self._looks_covered(label, labels, drink.seen_with):
+                drink.covered_run += 1
+                if drink.covered_run >= self._rule.sip_cover_pictures:
+                    drink.covered = True
+            else:
+                drink.covered_run = 0
         sips = sum(self._seen(label, box.center, lift_px, back_px, now) for label, box in drinks.items())
-        self._before = frozenset(labels)
+        for label in drinks:
+            self._drinks[label].seen_with = frozenset(labels)
         return sips
 
-    def _looks_covered(self, label: str, labels: Set[str]) -> bool:
-        """`label` is missing from this picture: was the camera covered?"""
+    def _looks_covered(self, label: str, labels: Set[str], seen_with: Set[str]) -> bool:
+        """`label` is missing from this picture: does the camera look covered?"""
         if not labels:
             return True
-        others = self._before - {label}
+        others = seen_with - {label}
         return bool(others) and len(others - labels) / len(others) >= self._rule.sip_cover_share
 
     def _seen(self, label: str, center: tuple[float, float], lift_px: float, back_px: float, now: float) -> bool:

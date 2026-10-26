@@ -528,12 +528,24 @@ def test_due_in_a_few_days_says_nothing_yet(rules, words):
 def test_late_reminds_daily(rules, words):
     two_days_ago = CLOCK.local_day(at('12:00', -2))
     sent = run_days(rules, words, 3, Todo('essay', due=two_days_ago))
-    late = [(day, n) for day, n in sent if n.key == 'tasks.due.essay.late']
+    late = [(day, n) for day, n in sent if n.key.startswith('tasks.due.essay.late.')]
     assert len(late) == 3 and len({day for day, _ in late}) == 3           # one a day
     assert [n.text for _, n in late] == ['Your essay was due 2 days ago. Done? Tick it off.',
                                          'Your essay was due 3 days ago. Done? Tick it off.',
                                          'Your essay was due 4 days ago. Done? Tick it off.']
     assert late[0][1].repeat_after_sec == rules.tasks.late_repeat_hours * HOUR
+
+
+def test_late_is_said_every_day_even_when_yesterdays_was_late_in_the_evening(rules, words):
+    """Said at 21:00 one day, and you leave at 20:00 the next: that day still gets its reminder."""
+    essay = Todo('essay', due=CLOCK.local_day(at('12:00', -2)))
+    last_fire: dict[str, float] = {}
+    sent = []
+    for now in (at('21:00'), *(at('09:00', 1) + k * 10 * MIN for k in range(67))):     # 09:00 to 20:00 next day
+        for n in ready(P.task_nudges(task_state(now, essay), rules.tasks, now, words), last_fire, now):
+            sent.append(CLOCK.local_day(now))
+            last_fire[n.key] = now
+    assert sent == [CLOCK.local_day(at('21:00')), CLOCK.local_day(at('09:00', 1))]
 
 
 def test_one_day_late_has_no_plural(rules, words):

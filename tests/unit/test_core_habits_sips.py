@@ -135,6 +135,40 @@ def test_lifted_then_lost_then_covered_is_not_a_sip(config):
     assert d.sips() == 0
 
 
+def test_one_picture_that_looks_covered_while_the_cup_is_in_the_hand_is_still_a_sip(config):
+    """The detector misses everything in one picture (it happens): that alone is not a covered camera."""
+    d = Desk(config)
+    d.show(10, cup=CUP_DOWN, laptop=LAPTOP)
+    d.move(1, CUP_DOWN, CUP_UP, laptop=LAPTOP)
+    d.show(2, laptop=LAPTOP)                    # lost in the hand
+    d.picture({})                               # one picture with nothing sure enough in it
+    d.show(2, laptop=LAPTOP)
+    d.show(3, cup=CUP_DOWN, laptop=LAPTOP)
+    assert d.sips() == 1
+
+
+def test_how_many_pictures_in_a_row_make_a_covered_camera_comes_from_protocols_yaml(config):
+    d = Desk(config, sip_cover_pictures=1)
+    d.show(10, cup=CUP_DOWN, laptop=LAPTOP)
+    d.move(1, CUP_DOWN, CUP_UP, laptop=LAPTOP)
+    d.show(2, laptop=LAPTOP)
+    d.picture({})                               # now one such picture is enough
+    d.show(2, laptop=LAPTOP)
+    d.show(3, cup=CUP_DOWN, laptop=LAPTOP)
+    assert d.sips() == 0
+
+
+def test_no_pictures_for_a_while_during_a_lift_is_not_a_sip(config):
+    """The camera stalled while the cup was up: nobody knows what happened, so it doesn't count."""
+    d = Desk(config)
+    d.show(10, cup=CUP_DOWN, laptop=LAPTOP)
+    d.move(1, CUP_DOWN, CUP_UP, laptop=LAPTOP)
+    d.show(1, laptop=LAPTOP)
+    d.clock.advance(config.presence.disappear_after_sec + 1)   # no pictures at all
+    d.show(3, cup=CUP_DOWN, laptop=LAPTOP)
+    assert d.sips() == 0
+
+
 def test_lifted_never_back_is_no_sip(config):
     d = Desk(config)
     d.show(10, cup=CUP_DOWN, laptop=LAPTOP)
