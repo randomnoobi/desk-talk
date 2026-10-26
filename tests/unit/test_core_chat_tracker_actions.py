@@ -71,6 +71,25 @@ def test_other_agents_tags_are_hidden_not_applied():
     assert got == [] and clean == 'Splash! That counts.'
 
 
+def test_add_todo_tag_with_date():
+    clean, actions = ta.parse_actions('Added! [ADD_TODO:Essay|2026-10-30]', 'todo', sunlight_default_min=10)
+    assert clean == 'Added!'
+    assert actions == [{'action': 'add_todo', 'text': 'Essay', 'due': '2026-10-30'}]
+
+
+@pytest.mark.parametrize('tag', ['[ADD_TODO:Essay|next friday]', '[ADD_TODO:Essay|]', '[ADD_TODO:Essay|2026-02-30]',
+                                 '[ADD_TODO: Essay | 2026-13-01 ]'])
+def test_add_todo_tag_bad_date(tag):
+    clean, actions = ta.parse_actions(f'Added! {tag}', 'todo', sunlight_default_min=10)
+    assert clean == 'Added!'
+    assert actions == [{'action': 'add_todo', 'text': 'Essay'}]
+
+
+def test_add_todo_tag_date_with_spaces():
+    _, actions = ta.parse_actions('[ADD_TODO: Essay | 2026-10-30 ]', 'todo', sunlight_default_min=10)
+    assert actions == [{'action': 'add_todo', 'text': 'Essay', 'due': '2026-10-30'}]
+
+
 def test_leftover_tags_are_removed_but_other_brackets_stay():
     assert ta.strip_action_tags('Done [ADD_TODO:Essay] and [LOG_SUNLIGHT:10] ok [not a tag]') == \
         'Done and ok [not a tag]'
@@ -113,6 +132,14 @@ def test_the_todo_list_is_cleaned_and_cut_to_size(chat):
                                      'junk', {'text': 'three'}, {'text': 'four'}]}
     assert ta.normalize_todo(raw, chat) == {'type': 'todo', 'items': [
         {'text': 'x', 'done': False}, {'text': 'a very lon', 'done': True}]}
+
+
+def test_the_todo_list_keeps_real_due_dates(chat):
+    raw = {'type': 'todo', 'items': [{'text': 'Essay', 'due': '2026-10-30'}, {'text': 'Email', 'due': 'friday'},
+                                     {'text': 'Read', 'due': None}]}
+    assert ta.normalize_todo(raw, chat) == {'type': 'todo', 'items': [
+        {'text': 'Essay', 'done': False, 'due': '2026-10-30'}, {'text': 'Email', 'done': False},
+        {'text': 'Read', 'done': False}]}
 
 
 @pytest.mark.parametrize('raw', [None, 'todo', {'type': 'notes', 'items': []}])

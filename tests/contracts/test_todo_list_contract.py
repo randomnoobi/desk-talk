@@ -6,9 +6,10 @@ from __future__ import annotations
 
 import pytest
 
+from desktalk.core.habits.todos import TodoFile
 from desktalk.domain import HabitEvent, Todo
 from desktalk.ports import TodoList
-from tests.fakes import FakeClock, FakeTodoList, SyncEventBus
+from tests.fakes import FakeClock, FakeTodoList, InMemoryKeyValueStore, SyncEventBus
 
 NOW = 1_760_000_000.0
 
@@ -70,6 +71,13 @@ class TestFakeTodoList(TodoListContract):
     @pytest.fixture
     def todos(self, bus, clock):
         return FakeTodoList(bus)
+
+
+class TestTodoFile(TodoListContract):
+    @pytest.fixture
+    def todos(self, bus, clock):
+        return TodoFile(InMemoryKeyValueStore(), bus, clock, key='todos', max_items=20, max_chars=200,
+                        done_words='Nice, "{task}" is done!')
 
 
 def test_the_fake_needs_no_bus():

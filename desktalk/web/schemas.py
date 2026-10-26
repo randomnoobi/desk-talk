@@ -13,6 +13,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from desktalk.config import BreaksRule, EdgeProximity, MorningMinutes, PageRefresh, QuietHours, SettingsSliders
+from desktalk.domain import Todo
 
 
 class ChatMessage(BaseModel):
@@ -36,6 +37,34 @@ class PanelLists(BaseModel):
     """POST /api/chat_todos_sync: every agent's to-do list (agent id → list)."""
 
     by_chat: dict[str, Any] = {}
+
+
+class TodoItem(BaseModel):
+    """One to-do as the app shows it. `due`: a day like '2026-10-30', or None."""
+
+    text: str
+    done: bool = False
+    due: str | None = None
+
+
+class TodosReply(BaseModel):
+    """GET /api/todos: the list the server keeps. has_list is false until the app first sends one."""
+
+    has_list: bool
+    items: list[TodoItem]
+
+
+def todos_in(widget: Any) -> list[Todo] | None:
+    """The to-dos in a list the app sent ({'type': 'todo', 'items': [{text, done, due}]}), None if it isn't one.
+    Taken as they come (a list from an older page has no due dates); the TodoList cleans them."""
+    if not isinstance(widget, dict) or widget.get('type') != 'todo' or not isinstance(widget.get('items'), list):
+        return None
+    out = []
+    for item in widget['items']:
+        if isinstance(item, dict):
+            due = item.get('due')
+            out.append(Todo(str(item.get('text', '')), bool(item.get('done')), due if isinstance(due, str) else None))
+    return out
 
 
 class PanelEvent(BaseModel):

@@ -21,13 +21,15 @@ from dataclasses import dataclass
 
 from desktalk.config import BreaksRule, FoodRule, HydrationRule, LightRule, PhoneFreeRule, Protocols, TasksRule
 from desktalk.config.prompts import HabitNudges
-from desktalk.domain import Nudge
+from desktalk.core.habits.todos import parse_day
+from desktalk.domain import Nudge, Todo
 from desktalk.util import at_time_today, clock_text
 
 MIN = 60
 HOUR = 3600
 DAY_SEC = 86400
 MIDDAY = '12:00'     # a time far from midnight: a day on from it is always the next day, even when the clocks change
+TASK_CHECK_IN = 'tasks.open'    # the check-in naming an open to-do with no due date (the tracker rotates the name)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -56,7 +58,9 @@ class RuleState:
     bright_since: float | None = None
     dim_since: float | None = None
     screen_on_desk: bool = False
-    open_todos: tuple[str, ...] = ()
+    open_todos: tuple[Todo, ...] = ()
+    today: str = ''                         # the desk's local day, e.g. '2026-10-25' (Clock.local_day), for due dates
+    task_turn: int = 0                      # how many to-do check-ins went out: the next one names the one after
     utc_offset_sec: float | None = None     # the local time's offset from UTC (the clock's); None = this computer's
     utc_offset_at: Callable[[float], float] | None = None   # the offset at any time (Clock.utc_offset_sec); wins
                                             # over utc_offset_sec, so a bedtime after a clock change shows right
@@ -295,18 +299,47 @@ def food_nudges(s: RuleState, cfg: FoodRule, now: float, words: HabitNudges) -> 
 
 
 def task_nudges(s: RuleState, cfg: TasksRule, now: float, words: HabitNudges) -> list[Nudge]:
-    todos = [t for t in s.open_todos if t]
+    """To-dos with a due date: the day before (due_soon_days), on the day, and every late_repeat_hours while late,
+    by the desk's local day (s.today). Without one: a check-in every remind_after_min, naming the next open to-do
+    each time (s.task_turn)."""
+    todos = [t for t in s.open_todos if t.text and not t.done]
+    if not cfg.enabled or not todos or not s.at_desk:
+        return []
+    today = parse_day(s.today)
+    out = []
+    undated = []
+    for todo in todos:
+        due = parse_day(todo.due)
+        if due is None:
+            undated.append(todo)
+        elif today is not None:
+            out += _due_nudge(todo.text, (due - today).days, cfg, words)
     start = s.session_start
-    if not cfg.enabled or not todos or not start or not s.at_desk:
-        return []
     every = cfg.remind_after_min * MIN
-    if now - start < every:
+    if undated and start and now - start >= every:
+        task = undated[s.task_turn % len(undated)].text[:cfg.name_shown_chars]
+        w = words.tasks_open
+        out.append(Nudge('tasks', TASK_CHECK_IN, evidence=w.evidence.format(task=task), text=w.text.format(task=task),
+                         tip=w.tip, repeat_after_sec=every))
+    return out
+
+
+def _due_nudge(text: str, days_left: int, cfg: TasksRule, words: HabitNudges) -> list[Nudge]:
+    """The reminder for a to-do due in `days_left` days (negative = late), if there is one today."""
+    said = words.tasks_due
+    task = text[:cfg.name_shown_chars]
+    if days_left == 0:
+        kind, w, blanks, repeat = 'today', said.today, {'task': task}, DAY_SEC
+    elif days_left < 0:
+        late = -days_left
+        kind, w, repeat = 'late', said.late, cfg.late_repeat_hours * HOUR
+        blanks = {'task': task, 'days': late, 'plural': 's' if late != 1 else ''}
+    elif days_left == cfg.due_soon_days:
+        kind, w, blanks, repeat = 'tomorrow', said.tomorrow, {'task': task}, DAY_SEC
+    else:
         return []
-    n = len(todos)
-    blanks = {'count': n, 'plural': 's' if n != 1 else '', 'task': todos[0][:cfg.name_shown_chars]}
-    w = words.tasks_open
-    return [Nudge('tasks', 'tasks.open', evidence=w.evidence.format(**blanks), text=w.text.format(**blanks),
-                  tip=w.tip, repeat_after_sec=every)]
+    return [Nudge('tasks', f'tasks.due.{text}.{kind}', evidence=w.evidence.format(**blanks),
+                  text=w.text.format(**blanks), tip=w.tip, repeat_after_sec=repeat)]
 
 
 def candidate_nudges(state: RuleState, protocols: Protocols, now: float, words: HabitNudges) -> list[Nudge]:

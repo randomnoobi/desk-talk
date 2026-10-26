@@ -12,28 +12,23 @@ you've been seen for a few seconds (object_states.person_appear_sec) and off aft
 
 from __future__ import annotations
 
-from typing import Protocol
-
 from desktalk.config import RemindersSettings
 from desktalk.core.habits.preferences import quiet_hours_now
 from desktalk.domain import Phase, Todo
-from desktalk.ports import CharacterMemory, Clock, DeskScene, FrameSource, ObjectStatesView, Preferences
+from desktalk.ports import Clock, DeskScene, FrameSource, ObjectStatesView, Preferences, TodoList
 
 MIN = 60
 
 
-class SceneAndPanels(DeskScene, CharacterMemory, Protocol):
-    """What the status asks the desk: the scene (when the camera started) and the tracker panels the app sent
-    (the to-do list)."""
-
-
 class DeskStatusService:
-    """Implements the DeskStatus interface (desktalk/ports.py) from the desk, the camera, the preferences and
-    the object states. person_label: the detector's word for you (object_states.person_label)."""
+    """Implements the DeskStatus interface (desktalk/ports.py) from the desk, the camera, the preferences, the
+    object states and the to-do list the server keeps. person_label: the detector's word for you
+    (object_states.person_label)."""
 
-    def __init__(self, desk: SceneAndPanels, camera: FrameSource, prefs: Preferences, reminders: RemindersSettings,
-                 states: ObjectStatesView, *, person_label: str, clock: Clock):
+    def __init__(self, desk: DeskScene, camera: FrameSource, prefs: Preferences, reminders: RemindersSettings,
+                 states: ObjectStatesView, *, person_label: str, clock: Clock, todos: TodoList):
         self._desk = desk
+        self._todos = todos
         self._clock = clock
         self._camera = camera
         self._prefs = prefs
@@ -58,9 +53,5 @@ class DeskStatusService:
         return person is not None and person.state == Phase.PRESENT
 
     def open_todos(self) -> list[Todo]:
-        """Unfinished items on the to-do tracker(s) the app sent."""
-        todos: list[Todo] = []
-        for widget in self._desk.widgets().values():
-            if widget.get('type') == 'todo':
-                todos += [Todo(text=t.get('text', '')) for t in widget.get('items', []) if not t.get('done')]
-        return todos
+        """The unfinished to-dos on the list the server keeps, with their due dates."""
+        return [t for t in self._todos.items() if not t.done]

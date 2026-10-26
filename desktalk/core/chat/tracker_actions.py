@@ -1,7 +1,7 @@
 """
 Trackers: the panel on top of an agent's 1-on-1 chat (config/agents.yaml → tracker).
 
-    todo        your to-do list (kept in the browser, sent to the server for context)
+    todo        your to-do list, with optional due dates (the server keeps it: core/habits/todos.py)
     hydration   sips and water today              ┐
     breaks      breaks, minutes sitting           │ kept by the habit tracker
     food        what you ate                      │ on the server
@@ -9,7 +9,8 @@ Trackers: the panel on top of an agent's 1-on-1 chat (config/agents.yaml → tra
     light       sunlight logged, room brightness  ┘
 
 The AI sees the tracker's numbers, and can change them with action tags like
-[LOG_SIP] or [ADD_TODO:Buy milk] in its reply. The wording is in config/prompts.yaml (trackers:).
+[LOG_SIP] or [ADD_TODO:Buy milk] (or [ADD_TODO:Essay|2026-10-30] with a due date) in its reply.
+The wording is in config/prompts.yaml (trackers:).
 """
 
 from __future__ import annotations
@@ -20,12 +21,14 @@ from typing import Any
 
 from desktalk.config import ChatSettings
 from desktalk.config.prompts import TrackerPrompts
+from desktalk.core.habits.todos import clean_due
 from desktalk.ports import HabitLog
 from desktalk.util import clock_text
 
 
 def normalize_todo(raw: Any, chat: ChatSettings) -> dict | None:
-    """The to-do list sent by the app, cleaned up and cut to size (None if it isn't one)."""
+    """The to-do list sent by the app, cleaned up and cut to size (None if it isn't one). A due date is kept only
+    when it's a real day like 2026-10-30."""
     if not isinstance(raw, dict) or raw.get('type') != 'todo':
         return None
     items = []
@@ -33,7 +36,11 @@ def normalize_todo(raw: Any, chat: ChatSettings) -> dict | None:
         if isinstance(item, dict):
             text = str(item.get('text', ''))[:chat.todo_max_chars].strip()
             if text:
-                items.append({'text': text, 'done': bool(item.get('done'))})
+                kept = {'text': text, 'done': bool(item.get('done'))}
+                due = clean_due(item.get('due'))
+                if due:
+                    kept['due'] = due
+                items.append(kept)
     return {'type': 'todo', 'items': items}
 
 
@@ -114,7 +121,7 @@ def parse_actions(text: str, tracker: str | None, *, sunlight_default_min: float
     actions: list[dict] = []
     if tracker == 'todo':
         for m in re.finditer(r'\[ADD_TODO:(.+?)\]', text):
-            actions.append({'action': 'add_todo', 'text': m.group(1).strip()})
+            actions.append(_add_todo(m.group(1)))
         for m in re.finditer(r'\[DONE_TODO:(.+?)\]', text):
             actions.append({'action': 'done_todo', 'text': m.group(1).strip()})
         for m in re.finditer(r'\[DEL_TODO:(.+?)\]', text):
@@ -137,6 +144,16 @@ def parse_actions(text: str, tracker: str | None, *, sunlight_default_min: float
             minutes = int(m.group(1)) if m.group(1) else sunlight_default_min
             actions.append({'action': 'log_sunlight', 'minutes': minutes})
     return strip_action_tags(text), actions
+
+
+def _add_todo(tag: str) -> dict:
+    """[ADD_TODO:Essay|2026-10-30] → the to-do, with its due date when that's a real day (else none)."""
+    text, _, day = tag.partition('|')
+    action = {'action': 'add_todo', 'text': text.strip()}
+    due = clean_due(day.strip())
+    if due:
+        action['due'] = due
+    return action
 
 
 ACTION_TAG = re.compile(r'\[(?:LOG_[A-Z_]+|(?:ADD|DONE|DEL)_TODO)(?::[^\]]*)?\]')
