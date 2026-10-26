@@ -8,12 +8,14 @@ The app's real page (web_app/) in a headless Chromium, on the whole app on a rea
 
 from __future__ import annotations
 
+import json
 import re
 import time
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 from desktalk.domain import BBox, Detection
@@ -194,6 +196,7 @@ def test_every_page_opens_on_the_real_app(page, tmp_path, pictures):
         expect(tracker.get_by_role('button', name='+ Glass')).to_have_count(0)
         visit_every_page(page)
         expect(page.locator('#view-settings')).to_contain_text('Desk edges')
+        expect(page.locator('#view-settings')).to_contain_text('no Mac notifications')    # quiet hours mute them all
         page.locator('.page-link[data-view="habits"]').click()
         habits = page.locator('#view-habits')
         expect(habits).to_contain_text('desk warnings')
@@ -361,6 +364,8 @@ def test_sensitivity_slider_saves(page, tmp_path, pictures):
 
 
 SERVER_WITHIN_SEC = 5            # what the page sent reaches the server
+SETTLE_MS = 2_000                # long enough for the page to have sent anything it was going to send
+BACK_WITHIN_MS = 3_000           # well under web.refresh_ms.habits (15 s)
 POLL_SEC = 0.1
 
 
@@ -403,6 +408,69 @@ def test_todo_due_date_shown(page, tmp_path, pictures):
         expect(chat_link(page, BOOK_CHAT)).to_be_visible(timeout=JOIN_WITHIN_MS)
         chat_link(page, BOOK_CHAT).click()
         expect(page.locator('#tracker .todo li').filter(has_text='Essay')).to_contain_text('was due yesterday')
+
+
+def test_a_failed_todo_load_never_overwrites_the_servers_list(page, tmp_path, pictures):
+    """When GET /api/todos fails for a moment (a 500 here), the page must not send its own copy over the
+    server's list. (Only an old server with no such route, a 404, gets the browser's copy.)"""
+    kept = {'text': 'Server task', 'done': False, 'due': None}
+    with app_server(tmp_path, pictures=pictures, found={2: [BOOK]}) as server:
+        seeded = httpx.post(f'{server.url}/api/chat_todos_sync',
+                            json={'by_chat': {'paper': {'type': 'todo', 'items': [kept]}}})
+        assert seeded.is_success
+        sent: list[str] = []
+        page.on('request', lambda r: sent.append(r.url) if '/api/chat_todos' in r.url else None)
+        page.route('**/api/todos', lambda route: route.fulfill(status=500, body='busy'))
+        server.show(2)
+        open_app(page, server.url)
+        expect(chat_link(page, BOOK_CHAT)).to_be_visible(timeout=JOIN_WITHIN_MS)    # joining asks again
+        page.wait_for_timeout(SETTLE_MS)
+        assert sent == []
+        assert httpx.get(f'{server.url}/api/todos').json()['items'] == [kept]
+
+
+OLD_COUNTERS = {'day': date.today().isoformat(), 'items': [
+    {'label': 'Nail biting', 'count': 2}, {'label': 'Picked up phone', 'count': 1},
+    {'label': 'Slouching', 'count': 0}, {'label': 'Stretch', 'count': 3}]}
+
+
+def test_old_starter_counters_are_dropped_once(page):
+    """A browser that saved the old starter counters (Nail biting, Slouching) loses those two, keeps the rest,
+    and a "Slouching" you add yourself afterwards stays."""
+    page.add_init_script(f'''if (!localStorage.getItem('desktalk_habits_v2'))
+        localStorage.setItem('desktalk_habits_v2', {json.dumps(json.dumps(OLD_COUNTERS))});''')
+    page.goto((APP_FOLDER / 'index.html').as_uri(), wait_until='domcontentloaded')
+    expect(page.locator('#conn')).to_have_attribute('data-state', 'demo')
+    page.locator('.page-link[data-view="habits"]').click()
+    counters = page.locator('.counter-list li')
+    expect(counters).to_have_count(2)
+    expect(counters.first).to_contain_text('Picked up phone')
+    expect(counters.last).to_contain_text('Stretch')
+    expect(counters.last.locator('strong')).to_have_text('3')
+    page.get_by_label('New counter').fill('Slouching')
+    page.get_by_label('New counter').press('Enter')
+    expect(counters).to_have_count(3)
+    page.reload()
+    expect(page.locator('#conn')).to_have_attribute('data-state', 'demo')
+    page.locator('.page-link[data-view="habits"]').click()
+    expect(page.locator('.counter-list li')).to_have_count(3)
+    expect(page.locator('.counter-list')).to_contain_text('Slouching')
+
+
+def test_coming_back_to_the_tab_refreshes_at_once(page, tmp_path, pictures):
+    """While the tab is hidden the page stops asking; when you come back it asks at once, not at the next timer
+    (the habit numbers' timer is web.refresh_ms.habits, 15 s)."""
+    with running_app(tmp_path, pictures=pictures) as url:
+        open_app(page, url)
+        page.evaluate('''() => {
+            Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+            document.dispatchEvent(new Event('visibilitychange'));
+        }''')
+        with page.expect_request('**/api/habits/today', timeout=BACK_WITHIN_MS):
+            page.evaluate('''() => {
+                Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+                document.dispatchEvent(new Event('visibilitychange'));
+            }''')
 
 
 def test_event_log_shows_only_habits(page, tmp_path, pictures):
