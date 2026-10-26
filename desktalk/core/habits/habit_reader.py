@@ -1,7 +1,7 @@
 """
 HabitReader: reads the habits from the camera's DetectionEvents and writes them into today's HabitDay.
 
-    hydration   sips (the cup leaves the desk and comes back) → estimated water
+    hydration   sips (a drink is lifted, then put back where it was) → estimated water
     breaks      away from the desk break_min+ minutes (or the camera off that long); how long you've been sitting
     phone-free  desk time with no phone on the desk, and the current streak
     light       how bright the room is
@@ -13,14 +13,17 @@ which the habit rules look at. HabitTracker (tracker.py) owns it and holds the l
 
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping, Set
+from dataclasses import dataclass
 from typing import Any
 
-from desktalk.config import AgentsSettings, HabitTrackerSettings, PresenceSettings, Protocols
+from desktalk.config import AgentsSettings, HabitTrackerSettings, HydrationRule, PresenceSettings, Protocols
 from desktalk.config.prompts import HabitNudges
 from desktalk.core.agents.presence import PresenceTracker
 from desktalk.core.habits import habit_rules as P
 from desktalk.core.habits.habit_days import HabitDay, Said
-from desktalk.domain import DetectionEvent
+from desktalk.domain import BBox, Detection, DetectionEvent
 from desktalk.ports import Clock, DeskScene, Profiles
 from desktalk.util import a_or_an
 
@@ -52,7 +55,7 @@ class HabitReader:
         self._user_last_seen: float | None = None
         self._away_since: float | None = None
         self.sit_since: float | None = None
-        self._drink_gone_since: dict[str, float] = {}   # "drink:cup" → when it was last seen before leaving
+        self._sip_watch = SipWatch(protocols.hydration)
         self.food_since: float | None = None
         self.food_name = ''
         self.meal_done_ts: float | None = None
@@ -117,15 +120,17 @@ class HabitReader:
             if self.sit_since:
                 day.longest_sit_sec = max(day.longest_sit_sec, round(now - self.sit_since))
 
-        # Things on the desk, by habit. Drinks are also tracked one kind at a time
-        # ("drink:cup", "drink:bottle"), so picking up the mug counts even if a bottle stays.
-        labels = self._best_per_label(event)
+        # Things on the desk, by habit. Sips are watched one drink at a time (SipWatch), so picking up the mug
+        # counts even if a bottle stays.
+        best = self._best_per_label(event)
+        labels = {label: det.confidence for label, det in best.items()}
         seen = {cat for cat, words in self._cats.items() if words & set(labels)}
-        seen |= {f'drink:{label}' for label in labels if label in self._cats['drink']}
         appeared, gone = self._presence.update(seen, now)
         self.drink_on_desk = self._presence.is_present('drink')
         self.screen_on_desk = self._presence.is_present('screen')
-        said += self._sips(day, appeared, gone, now)
+        drinks = {label: det.bbox for label, det in best.items() if label in self._cats['drink']}
+        for _ in range(self._sip_watch.update(set(labels), drinks, event.size, now)):
+            said.append(log_sip(day, now, self._rules.hydration.ml_per_sip, 'camera', self._s, self._words))
         said += self._food(day, labels, appeared, gone, now)
         if self._phone_counts:
             said += self._phone(day, appeared, gone, at_desk, dt, now)
@@ -143,27 +148,15 @@ class HabitReader:
                 day.objects_seen.append(profile.name)
         return said
 
-    def _best_per_label(self, event: DetectionEvent) -> dict[str, float]:
-        """Detector word → its best confidence, for the words sure enough to count."""
-        best: dict[str, float] = {}
+    def _best_per_label(self, event: DetectionEvent) -> dict[str, Detection]:
+        """Detector word → its surest box, for the words sure enough to count."""
+        best: dict[str, Detection] = {}
         for det in event.detections:
             prof = self._profiles.for_label(det.label)
             need = prof.min_confidence if (prof and prof.min_confidence is not None) else self._min_conf
-            if det.confidence >= need and det.confidence > best.get(det.label, -1):
-                best[det.label] = det.confidence
+            if det.confidence >= need and (det.label not in best or det.confidence > best[det.label].confidence):
+                best[det.label] = det
         return best
-
-    def _sips(self, day: HabitDay, appeared: list[str], gone: list[str], now: float) -> list[Said]:
-        hyd = self._rules.hydration
-        for key in gone:
-            if key.startswith('drink:'):
-                self._drink_gone_since[key] = self._presence.last_seen(key) or now
-        out = []
-        for key in appeared:
-            since = self._drink_gone_since.pop(key, None) if key.startswith('drink:') else None
-            if since is not None and hyd.sip_gone_min_sec <= now - since <= hyd.sip_gone_max_sec:
-                out.append(log_sip(day, now, hyd.ml_per_sip, 'camera', self._s, self._words))
-        return out
 
     def _food(self, day: HabitDay, labels: dict[str, float], appeared: list[str], gone: list[str],
               now: float) -> list[Said]:
@@ -213,6 +206,81 @@ class HabitReader:
         day.add_break(now, mins, how, self._s.breaks_kept)
         return ('breaks', 'break', self._words.logged.break_seen.format(minutes=mins),
                 {'minutes': mins, 'how': how, 'count': day.breaks})
+
+
+@dataclass
+class _Drink:
+    """One kind of drink on the desk, as SipWatch sees it."""
+    rest: tuple[float, float]       # the middle of its box where it rests on the desk
+    rested_at: float                # the last time it was seen resting there
+    left_at: float | None = None    # once seen lifted: when it left its resting spot (None = resting)
+    covered: bool = False           # the camera was covered since it last rested: this trip can't be a sip
+
+
+class SipWatch:
+    """Spots sips from where each drink's box is (protocols.yaml → hydration).
+
+    A drink rests somewhere. It is lifted when the middle of its box rises more than `sip_lift_share` of the
+    picture's height above where it rests. A sip is counted when a lifted drink is next seen settled again
+    (not lifted, and within `sip_back_share` of the picture's diagonal of its resting spot), between
+    `sip_gone_min_sec` and `sip_gone_max_sec` after it left. The camera may lose it while it's up in the hand.
+    A drink that vanishes without being seen lifted (a hand over it) never counts. If the camera looks covered
+    while a drink is missing (nothing in the picture, or `sip_cover_share` or more of the other things that were
+    there a picture ago vanished too), that trip can't be a sip.
+
+    The resting spot only moves down (the camera's few pixels of wobble settle on the lowest), or to wherever the
+    drink was slid when it is seen far from it without being lifted, so a slow lift can't drag it along."""
+
+    def __init__(self, rule: HydrationRule):
+        self._rule = rule
+        self._drinks: dict[str, _Drink] = {}
+        self._before: Set[str] = frozenset()     # what the picture before showed
+
+    def update(self, labels: Set[str], drinks: Mapping[str, BBox], size: tuple[int, int], now: float) -> int:
+        """One picture: every word sure enough in it, and the drinks' boxes. Returns how many sips it ends."""
+        width, height = size
+        lift_px = self._rule.sip_lift_share * height
+        back_px = self._rule.sip_back_share * math.hypot(width, height)
+        for label, drink in self._drinks.items():
+            if label not in drinks and self._looks_covered(label, labels):
+                drink.covered = True
+        sips = sum(self._seen(label, box.center, lift_px, back_px, now) for label, box in drinks.items())
+        self._before = frozenset(labels)
+        return sips
+
+    def _looks_covered(self, label: str, labels: Set[str]) -> bool:
+        """`label` is missing from this picture: was the camera covered?"""
+        if not labels:
+            return True
+        others = self._before - {label}
+        return bool(others) and len(others - labels) / len(others) >= self._rule.sip_cover_share
+
+    def _seen(self, label: str, center: tuple[float, float], lift_px: float, back_px: float, now: float) -> bool:
+        drink = self._drinks.get(label)
+        if drink is None:
+            self._drinks[label] = _Drink(center, now)
+            return False
+        x, y = center
+        rest_x, rest_y = drink.rest
+        lifted = rest_y - y > lift_px                  # up in the picture is a smaller y
+        near = math.hypot(x - rest_x, y - rest_y) <= back_px
+        if drink.left_at is None:                      # resting
+            if lifted:
+                drink.left_at = drink.rested_at
+            else:
+                if y >= rest_y or not near:            # settled lower, or slid somewhere else
+                    drink.rest = center
+                drink.rested_at = now
+                drink.covered = False
+            return False
+        took = now - drink.left_at
+        if not lifted and near:                        # put back
+            self._drinks[label] = _Drink(center, now)
+            rule = self._rule
+            return not drink.covered and rule.sip_gone_min_sec <= took <= rule.sip_gone_max_sec
+        if took > self._rule.sip_gone_max_sec:         # away too long: it rests wherever it is now
+            self._drinks[label] = _Drink(center, now)
+        return False
 
 
 def log_sip(day: HabitDay, now: float, ml: float, how: str, settings: HabitTrackerSettings,

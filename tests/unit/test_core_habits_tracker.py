@@ -24,6 +24,7 @@ MIN = 60
 DAY = time.mktime((2026, 6, 15, 12, 0, 0, 0, 0, -1))
 DAY_KEY = 'habits/2026-06-15'
 LOCAL_OFFSET_HOURS = time.localtime(DAY).tm_gmtoff / 3600     # the clock's local time is this computer's
+CUP_UP = BBox(0, -80, 10, -70)          # the cup's box when it is lifted (80 px above where it rests)
 DAY_FILE_KEYS = {'day', 'sips', 'water_ml', 'last_sip_ts', 'drinks', 'breaks', 'last_break_ts', 'break_log',
                  'longest_sit_sec', 'desk_sec', 'phone_free_sec', 'phone_on_desk_sec', 'best_phone_free_sec', 'food',
                  'sunlight_ts', 'sunlight_minutes', 'afternoon_light_ts', 'hourly_activity', 'objects_seen',
@@ -59,14 +60,15 @@ class Rig:
             protocols or config.protocols, config.habit_tracker.model_copy(update=tracker_settings),
             config.presence, config.agents, phone_counts=phone_counts, words=words or config.prompts.habits)
 
-    def picture(self, *labels, person=True, light=None, conf=0.9):
-        dets = tuple(Detection(label, conf, BBox(0, 0, 10, 10)) for label in labels)
+    def picture(self, *labels, person=True, light=None, conf=0.9, boxes=None):
+        boxes = boxes or {}
+        dets = tuple(Detection(label, conf, boxes.get(label, BBox(0, 0, 10, 10))) for label in labels)
         self.bus.publish(DetectionEvent(ts=self.clock.now(), frame_id='f', source='pi', size=(640, 480),
                                         detections=dets, person=person, light=light or Light(brightness=120)))
 
-    def run(self, seconds, *labels, person=True, light=None, conf=0.9):
+    def run(self, seconds, *labels, person=True, light=None, conf=0.9, boxes=None):
         for _ in range(int(seconds * 3)):
-            self.picture(*labels, person=person, light=light, conf=conf)
+            self.picture(*labels, person=person, light=light, conf=conf, boxes=boxes)
             self.clock.advance(1 / 3)
 
     def said(self, action):
@@ -93,19 +95,28 @@ def test_saving_is_not_part_of_the_habits_view():
 
 
 # ── hydration ─────────────────────────────────────────────────────────
-def test_sip_when_the_cup_leaves_and_comes_back(config):
+def test_sip_when_the_cup_is_lifted_and_put_back(config):
     r = Rig(config)
     r.run(10, 'cup')
-    r.run(8)                       # cup picked up for 8 s
+    r.run(8, 'cup', boxes={'cup': CUP_UP})      # cup picked up for 8 s
     r.run(5, 'cup')
     sips = r.said('sip')
     assert len(sips) == 1 and sips[0].habit == 'hydration' and sips[0].say.startswith('Sip detected!')
     assert {k: sips[0].to_dict()[k] for k in ('ml', 'total_ml', 'how')} == {'ml': 80, 'total_ml': 80, 'how': 'camera'}
     assert r.today()['hydration']['sips'] == 1 and r.today()['hydration']['water_ml'] == 80
-    # gone 3 minutes (refill in the kitchen?): not a sip
-    r.run(180)
-    r.run(5, 'cup')
+    # lifted, then gone 3 minutes (refill in the kitchen?): not a sip
+    r.run(1, 'cup', 'laptop', boxes={'cup': CUP_UP})
+    r.run(180, 'laptop')
+    r.run(5, 'cup', 'laptop')
     assert r.today()['hydration']['sips'] == 1
+
+
+def test_gone_and_back_without_being_lifted_is_not_a_sip(config):
+    r = Rig(config)
+    r.run(10, 'cup', 'laptop')
+    r.run(8, 'laptop')              # a hand over the cup
+    r.run(5, 'cup', 'laptop')
+    assert r.today()['hydration']['sips'] == 0
 
 
 def test_a_short_flicker_is_not_a_sip(config):
@@ -120,10 +131,10 @@ def test_sip_times_and_size_come_from_protocols_yaml(config):
     hydration = changed(config.protocols.hydration, sip_gone_max_sec=5, ml_per_sip=50)
     r = Rig(config, protocols=config.protocols.model_copy(update={'hydration': hydration}))
     r.run(10, 'cup')
-    r.run(8)                        # 8 s is now too long for a sip
+    r.run(8, 'cup', boxes={'cup': CUP_UP})      # 8 s is now too long for a sip
     r.run(5, 'cup')
     assert r.today()['hydration']['sips'] == 0
-    r.run(3)                        # gone about 4 s in all: a sip
+    r.run(3, 'cup', boxes={'cup': CUP_UP})      # lifted about 3 s in all: a sip
     r.run(5, 'cup')
     assert r.today()['hydration']['water_ml'] == 50
 
@@ -131,7 +142,7 @@ def test_sip_times_and_size_come_from_protocols_yaml(config):
 def test_sip_counts_even_with_a_second_drink_on_the_desk(config):
     r = Rig(config)
     r.run(10, 'cup', 'bottle')
-    r.run(8, 'bottle')             # the mug is picked up; the water bottle stays
+    r.run(8, 'cup', 'bottle', boxes={'cup': CUP_UP})      # the mug is picked up; the water bottle stays
     r.run(5, 'cup', 'bottle')
     assert r.today()['hydration']['sips'] == 1
 
@@ -561,7 +572,7 @@ def test_what_it_says_comes_from_prompts_yaml(config):
     phone = changed(config.protocols.phone_free, celebrate_every_min=1)
     r = Rig(config, words=words, protocols=config.protocols.model_copy(update={'phone_free': phone}))
     r.run(10, 'cup', 'donut')
-    r.run(8, 'donut')
+    r.run(8, 'cup', 'donut', boxes={'cup': CUP_UP})
     r.run(5, 'cup', 'donut')
     r.run(50, 'laptop')
     r.tracker.log('breaks', 'break')
