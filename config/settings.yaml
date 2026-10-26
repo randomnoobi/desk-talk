@@ -198,6 +198,10 @@ alerts:
   clutter_cooldown_sec: 1800
   plant_water_every_sec: 86400
   cooldown_max_times: 8       # the wait between alerts about a pair stops doubling at this many times cooldown_sec
+  # Lens warns about things that aren't in the chat (a remote at the edge, scissors by the phone). After
+  # one such warning, its next one of the same kind (danger zone or desk edge) waits this long, so a few
+  # things near the edge don't make a burst of messages and pop-ups. Each thing still waits as above too.
+  lens_gap_sec: 60
   dangerous_from_risk: 2      # risk level (0-4) from which the desk shows as "dangerous"
   recent_kept: 30             # recent alerts remembered (the AI in the chat is told about the newest)
   pet_labels: [cat, dog]      # detector words for pets

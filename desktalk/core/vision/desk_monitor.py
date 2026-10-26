@@ -56,6 +56,8 @@ class DeskMonitor:
         # When each kind of alert last went out (0 = never) and how often in a row
         self._last_alert: dict[str, float] = {}
         self._alerts_in_a_row: dict[str, int] = {}
+        self._lens_last: dict[str, float] = {}          # when Lens last warned about each kind (zone, edge)
+        self._said_about: dict[str, float] = {}         # when Lens last warned about each thing
         self._pet_alerted: dict[str, float] = {}
         # For each pet, whether it was clearly seen in each of the last few pictures
         self._pet_seen: dict[str, deque[bool]] = {pet: deque(maxlen=alerts.pet_window_pictures)
@@ -86,10 +88,11 @@ class DeskMonitor:
     def _safety_alerts(self, result: Mapping[str, Any], things: Mapping[str, Thing], chat: set[str],
                        now: float) -> list[Danger]:
         """One alert per danger (backing off while it stays); returns the dangers for the app and the AI.
-        `chat` = the agents in the chat: only they (or Lens) speak."""
+        `chat` = the agents in the chat: only they (or Lens) speak. The thing said least lately goes first, so
+        when Lens has to space its warnings out, each thing gets its turn."""
         dangers: list[Danger] = []
         checked: set[frozenset[str]] = set()
-        for ev in result['risk_events']:
+        for ev in sorted(result['risk_events'], key=self._last_said):
             if ev['type'] == 'zone_intrusion':
                 intruder, target = ev['intruder'], ev['target']
                 if frozenset((intruder, target)) in checked:
@@ -113,6 +116,10 @@ class DeskMonitor:
                                       kind='edge_danger'))
         return dangers
 
+    def _last_said(self, ev: Mapping[str, Any]) -> float:
+        """When Lens last warned about the thing in this danger (0 = never)."""
+        return self._said_about.get(ev.get('intruder') or ev.get('object') or '', 0.0)
+
     def _zone_speaker(self, intruder: str, target: str, chat: set[str]) -> tuple[str, str]:
         """Who speaks about something in another thing's danger zone, and who it is near: the fragile target if
         it's in the chat, else the intruder, else the target, else Lens (about the target)."""
@@ -129,7 +136,9 @@ class DeskMonitor:
         """An alert from `speaker`, unless the same one went out lately. The wait starts at alerts.cooldown_sec
         and doubles with each repeat (up to alerts.cooldown_max_times that); a quiet spell of
         alerts.reset_after_sec starts it over. Lens's alerts also name the thing they are about (`intruder` or
-        `object`), so two things by the same target are two alerts, each with its own wait."""
+        `object`), so two things by the same target are two alerts, each with its own wait. Lens's next warning
+        of the same kind (danger zone or desk edge) about anything waits alerts.lens_gap_sec, so a few things
+        that aren't in the chat don't make a burst of messages and pop-ups."""
         s = self._settings
         about = details.get('intruder') or details.get('object') or ''
         key = f'proximity_{speaker}_{details.get("near", "")}' + (f'_{about}' if about else '')
@@ -140,6 +149,12 @@ class DeskMonitor:
         wait = s.cooldown_sec * min(2 ** in_a_row, s.cooldown_max_times)
         if last and now - last < wait:
             return False
+        lens_kind = ('zone' if 'intruder' in details else 'edge') if speaker == LENS and about else ''
+        if lens_kind and now - self._lens_last.get(lens_kind, float('-inf')) < s.lens_gap_sec:
+            return False
+        if lens_kind:
+            self._lens_last[lens_kind] = now
+            self._said_about[about] = now
         self._last_alert[key] = now
         self._alerts_in_a_row[key] = in_a_row + 1
         self._desk.note_alert({'time': now, 'type': 'proximity', 'character': speaker, 'near': details.get('near', ''),

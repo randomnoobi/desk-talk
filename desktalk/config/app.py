@@ -209,6 +209,7 @@ class AlertsSettings(_Section):
     clutter_cooldown_sec: ZeroOrMore
     plant_water_every_sec: PositiveNumber
     cooldown_max_times: PositiveNumber
+    lens_gap_sec: ZeroOrMore
     dangerous_from_risk: Annotated[int, Field(ge=0, le=4)]
     recent_kept: PositiveInt
     pet_labels: Words
