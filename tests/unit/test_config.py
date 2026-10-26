@@ -16,6 +16,7 @@ import yaml
 from pydantic import BaseModel, SecretStr, ValidationError
 
 from desktalk.config import ConfigError, load_config
+from desktalk.config.loader import RETIRED_SETTINGS
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_FILES = ('settings.yaml', 'agents.yaml', 'protocols.yaml', 'prompts.yaml')
@@ -400,6 +401,8 @@ def test_local_settings_with_every_old_key_still_loads(project):
     cfg = load_config(root=project, environ={})
     checked = 0
     for path, value in _leaves(yaml.safe_load(BEFORE_CLEANUP.read_text())):
+        if any(path[:len(gone)] == gone for gone in RETIRED_SETTINGS):     # left out, see the test below
+            continue
         assert _plain(_lookup(cfg, path)) == value, '.'.join(map(str, path))
         checked += 1
     assert checked > 300
@@ -461,3 +464,64 @@ def test_the_page_no_longer_has_a_first_check_wait():
     """The page stopped using web.first_check_timeout_ms, so the setting is gone (it only lived on the cleanup
     branch, so no settings.local.yaml has it)."""
     assert 'first_check_timeout_ms' not in type(load_config(environ={}, dotenv=Path('/nonexistent')).web).model_fields
+
+
+# ── the desk fixes (docs/superpowers/specs/2026-10-25-desk-fixes-design.md) ──
+def test_sensitivity_steps_load(project):
+    agents = load_config(root=project, environ={}).agents
+    assert [s.name for s in agents.sensitivity_steps] == ['Picky', 'Careful', 'Normal', 'Easy', 'Eager']
+    assert [(s.min_confidence, s.join_after_sec) for s in agents.sensitivity_steps] == [
+        (0.65, 10), (0.55, 5), (0.45, 3), (0.40, 2.5), (0.35, 2)]
+    assert agents.sensitivity_default == 2
+    assert agents.default_step().name == 'Normal'
+    assert agents.can_join == ('computer', 'cup', 'phone', 'snack', 'paper')
+    assert (agents.on_desk_after_sec, agents.on_desk_min_confidence) == (3, 0.45)
+
+
+def test_the_default_sensitivity_must_be_one_of_the_steps(project):
+    write_local(project, 'agents:\n  sensitivity_default: 5\n')
+    with pytest.raises(ConfigError, match='sensitivity_default'):
+        load_config(root=project, environ={})
+
+
+def test_notifications_section_loads(project):
+    n = load_config(root=project, environ={}).notifications
+    assert (n.enabled, n.warnings, n.reminders, n.sips) == (True, True, True, True)
+    assert (n.time_limit_sec, n.command) == (5, 'osascript')
+
+
+def test_hydration_sip_shares_load(project):
+    hydration = load_config(root=project, environ={}).protocols.hydration
+    assert (hydration.sip_lift_share, hydration.sip_back_share, hydration.sip_cover_share) == (0.08, 0.15, 0.6)
+
+
+def test_the_other_new_settings_load(project):
+    cfg = load_config(root=project, environ={})
+    tasks, dev, web = cfg.protocols.tasks, cfg.dev, cfg.web
+    assert (tasks.remind_after_min, tasks.due_soon_days, tasks.late_repeat_hours) == (120, 1, 24)
+    assert (dev.trace_photos_kept, dev.trace_photo_every_sec, dev.trace_photo_quality, dev.trace_events_kept) == (
+        6, 120, 80, 50)
+    assert dev.trace_photos_folder == Path('data/trace_photos')
+    assert (web.camera_note_after_sec, web.saved_note_sec, web.retry_start_sec) == (5, 4, 3)
+    sizes = web.list_sizes
+    assert (sizes.on_desk_shown, sizes.camera_issues_shown, sizes.risk_lines_shown, sizes.side_photos_shown) == (
+        8, 2, 6, 6)
+    assert (sizes.quote_chars, sizes.toast_chars, sizes.mention_max_chars, sizes.counter_label_chars) == (
+        90, 140, 12, 60)
+    assert cfg.habit_tracker.todos_key == 'todos'
+
+
+def test_the_posture_checks_and_the_old_join_settings_are_gone(project):
+    cfg = load_config(root=project, environ={})
+    assert 'vision_habits' not in type(cfg).model_fields
+    assert not {'join_after_sec', 'min_confidence'} & set(type(cfg.agents).model_fields)
+
+
+def test_settings_that_are_gone_are_dropped_from_your_own_file(project, caplog):
+    """An old settings.local.yaml may still set them; they're left out (with a note in the log), not an error."""
+    write_local(project, 'agents:\n  join_after_sec: 5\n  min_confidence: 0.5\n  max_agents: 7\n'
+                         'vision_habits:\n  every_sec: 30\n')
+    with caplog.at_level('WARNING'):
+        cfg = load_config(root=project, environ={})
+    assert cfg.agents.max_agents == 7
+    assert 'agents.join_after_sec' in caplog.text and 'vision_habits' in caplog.text

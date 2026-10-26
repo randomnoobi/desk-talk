@@ -114,7 +114,7 @@ def test_the_to_do_list_sent_by_the_app_is_kept_for_the_agent(tmp_path):
     client = web_client(rig.app)
     todo = {'type': 'todo', 'items': [{'text': 'Send the report', 'done': False}]}
     assert client.post('/api/chat_todos', json={'chat': 'paper', 'widget': todo}).json() == {'ok': True}
-    assert rig.app.desk_status.open_todos() == ['Send the report']
+    assert [t.text for t in rig.app.desk_status.open_todos()] == ['Send the report']
     bad = client.post('/api/chat_todos_sync', json={'by_chat': ['paper']})
     assert bad.status_code == 400 and 'by_chat' in bad.json()['error']
 
@@ -130,7 +130,7 @@ def test_habit_buttons_log_and_unknown_habits_are_refused(tmp_path):
     assert food['food']['entries'][0]['label'] == 'apple'
     nope = client.post('/api/habits/log', json={'habit': 'nope', 'action': 'x'})
     assert nope.status_code == 400 and 'nope' in nope.json()['error']
-    assert 'vision' in client.get('/api/habits/today').json()
+    assert 'vision' not in client.get('/api/habits/today').json()          # the posture checks are gone
 
 
 def test_preferences_change_and_the_old_names_still_work(tmp_path):
@@ -148,7 +148,7 @@ def test_preferences_change_and_the_old_names_still_work(tmp_path):
 
 def test_a_list_size_that_is_not_a_number_is_a_bad_request(tmp_path):
     client = web_client(DeskRig(tmp_path).app)
-    for path in ('/api/habit_log?limit=lots', '/api/log/events?limit=all', '/api/log/detections?limit=some'):
+    for path in ('/api/log/events?limit=all', '/api/log/detections?limit=some'):
         reply = client.get(path)
         assert reply.status_code == 400 and 'limit' in reply.json()['error'], path
 
@@ -364,4 +364,3 @@ def test_the_agents_lens_the_status_and_the_recent_messages_have_their_values(tm
     assert client.get('/api/agents').json()['lens']['name'] == 'Lens'
     assert client.get('/api/status').json()['agents'] == ['computer']
     assert client.get('/api/messages/recent').json()['messages'][0]['text'] == 'Computer joined the chat'
-    assert client.get('/api/habit_log').json()['summary']['breaks_today'] == 0

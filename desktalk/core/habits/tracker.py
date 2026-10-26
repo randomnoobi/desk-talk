@@ -23,7 +23,7 @@ from desktalk.core.habits import habit_rules as P
 from desktalk.core.habits.habit_days import HabitDays, Said
 from desktalk.core.habits.habit_reader import HabitReader, log_sip
 from desktalk.core.habits.sun_times import sun_times
-from desktalk.domain import DetectionEvent, Event, HabitEvent, Nudge
+from desktalk.domain import DetectionEvent, Event, HabitEvent, Nudge, Todo
 from desktalk.ports import Clock, DeskScene, EventBus, KeyValueStore, Preferences, Profiles
 
 MIN = 60
@@ -192,10 +192,11 @@ class HabitTracker:
                 utc_offset_at=self._clock.utc_offset_sec,
             )
 
-    def nudges(self, now: float, open_todos: Sequence[str]) -> list[Nudge]:
+    def nudges(self, now: float, open_todos: Sequence[Todo]) -> list[Nudge]:
         """The nudges that may go out now, best first: their reason is true and they weren't sent too recently.
         The least recently heard habit comes first."""
-        candidates = P.candidate_nudges(self.rule_state(now, open_todos), self._rules, now, self._words)
+        texts = [todo.text for todo in open_todos]
+        candidates = P.candidate_nudges(self.rule_state(now, texts), self._rules, now, self._words)
         with self._lock:
             last_fire = dict(self._last_fire)
         return P.ready_nudges(candidates, last_fire, now, day_of=self._clock.local_day)

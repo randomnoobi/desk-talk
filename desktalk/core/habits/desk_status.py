@@ -16,7 +16,7 @@ from typing import Protocol
 
 from desktalk.config import RemindersSettings
 from desktalk.core.habits.preferences import quiet_hours_now
-from desktalk.domain import Phase
+from desktalk.domain import Phase, Todo
 from desktalk.ports import CharacterMemory, Clock, DeskScene, FrameSource, ObjectStatesView, Preferences
 
 MIN = 60
@@ -57,10 +57,10 @@ class DeskStatusService:
         person = self._states.snapshot().objects.get(self._person_label)
         return person is not None and person.state == Phase.PRESENT
 
-    def open_todos(self) -> list[str]:
+    def open_todos(self) -> list[Todo]:
         """Unfinished items on the to-do tracker(s) the app sent."""
-        todos: list[str] = []
+        todos: list[Todo] = []
         for widget in self._desk.widgets().values():
             if widget.get('type') == 'todo':
-                todos += [t.get('text', '') for t in widget.get('items', []) if not t.get('done')]
+                todos += [Todo(text=t.get('text', '')) for t in widget.get('items', []) if not t.get('done')]
         return todos

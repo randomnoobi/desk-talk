@@ -69,6 +69,7 @@ class PreferenceChanges(BaseModel):
     quiet_enabled: Any = None
     quiet_start_hour: Any = None
     quiet_end_hour: Any = None
+    sensitivity: int | None = None       # a step of the sensitivity slider (settings → agents.sensitivity_steps)
     dnd_enabled: Any = None              # the old names, from the previous app version
     dnd_start_hour: Any = None
     dnd_end_hour: Any = None

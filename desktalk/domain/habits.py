@@ -1,4 +1,4 @@
-"""A habit reminder the Protocols rules (config/protocols.yaml) want to send."""
+"""A habit reminder the Protocols rules (config/protocols.yaml) want to send, and a to-do on your list."""
 
 from __future__ import annotations
 
@@ -30,3 +30,12 @@ class Nudge:
     def __post_init__(self):
         if not self.speakers:
             self.speakers = (self.habit,)
+
+
+@dataclass(frozen=True)
+class Todo:
+    """One to-do on your list (Book's panel). `due` is a day like 2026-10-30, or None for no due date."""
+
+    text: str
+    done: bool = False
+    due: str | None = None

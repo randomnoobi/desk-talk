@@ -178,7 +178,8 @@ desk:
   few_photos_warning: 15       # the report warns when a kind has fewer photos than this
   your_desk_gap: 0.15          # "does worse on your desk" when its score on Sam's photos is this much lower
   weak_score: 0.4             # the report says so in words when even the best model scores below this on a kind
-  # The app's own confidence rule (agents.min_confidence, and per-agent min_confidence) is read from these:
+  # The app's own confidence rule (agents.sensitivity_steps' default step, and per-agent min_confidence) is read
+  # from these:
   app_settings: config/settings.yaml
   app_agents: config/agents.yaml
   # ── Downloads (desk prepare) ──

@@ -1,7 +1,7 @@
 """
 WholeDesk: the five desk parts behind one object, for the parts that still ask for several desk interfaces
-at once (the producer, proof photos, the desk monitor, the desk status, lost items, the message generator and
-the vision checks). It keeps nothing itself: every call goes straight to the part that owns it, so it and the
+at once (the producer, proof photos, the desk monitor, the desk status, lost items and the message generator).
+It keeps nothing itself: every call goes straight to the part that owns it, so it and the
 parts are always the same desk. Once those parts ask for each interface on its own, this can go.
 """
 
@@ -57,6 +57,12 @@ class WholeDesk:
 
     def members(self) -> dict[str, SeenObject]:
         return self._scene.members()
+
+    def set_on_desk(self, objects: Mapping[str, SeenObject], now: float) -> None:
+        self._scene.set_on_desk(objects, now)
+
+    def on_desk(self) -> dict[str, SeenObject]:
+        return self._scene.on_desk()
 
     def seen(self) -> dict[str, SeenObject]:
         return self._scene.seen()
@@ -125,12 +131,6 @@ class WholeDesk:
 
     def user_active_at(self) -> float:
         return self._memory.user_active_at()
-
-    def set_vision_brief(self, text: str) -> None:
-        self._memory.set_vision_brief(text)
-
-    def vision_brief(self) -> str:
-        return self._memory.vision_brief()
 
     # ── PhotoAlbum ──
     def add(self, jpeg: bytes, label: str, ts: float, *, char_ids: Sequence[str] = (), labels: Sequence[str] = (),

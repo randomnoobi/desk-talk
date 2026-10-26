@@ -17,8 +17,7 @@ gets only the interfaces it asks for (desktalk/ports.py) and its own section of 
                                                    └─► MessageGenerator ──► MessageHub ──► open app pages
     Background jobs (Supervisor): the producer, the scheduler (compact and prune the event log, save the
     habits and the object states), the rule engine (the habit rules in protocols.yaml → rules), habit reminders,
-    Lens, small talk, lost items, the daily recap, vision habits, and the Ollama keep-alive when the chat runs
-    on Ollama.
+    Lens, small talk, lost items, the daily recap, and the Ollama keep-alive when the chat runs on Ollama.
 
 Tests build the same app with fakes through build()'s keyword arguments (see tests/integration/app_kit.py).
 """
@@ -47,7 +46,6 @@ from desktalk.core.chat.workers import (
     IdleChat,
     Lens,
     LostItems,
-    VisionHabits,
 )
 from desktalk.core.desk import Album, DangerBoard, LiveView, Memories, Scene, WholeDesk
 from desktalk.core.events import EventStream
@@ -68,6 +66,7 @@ from desktalk.ports import (
     CameraTips,
     CharacterMemory,
     ChatFeed,
+    ChatJoins,
     ChatModel,
     ChatReplies,
     Clock,
@@ -99,8 +98,9 @@ from desktalk.ports import (
     SafetyBoard,
     ScheduledJobs,
     TestRunner,
+    TodoList,
     TracedObjectStates,
-    VisionHabitsView,
+    TracePhotos,
 )
 from desktalk.runtime import Scheduler, Supervisor, SystemClock, plain_error, setup_logging
 
@@ -155,7 +155,6 @@ class DeskTalk:
     lens              the camera's own character (a background job)
     idle_chat         small talk between agents (a background job)
     lost_items        "have you seen my keys?": is_lost_query(), answer() and the items (/api/chat, /api/live)
-    vision_habits     posture and nail biting: summary(), events(), latest() (/api/habits)
     daily_summary     the end-of-day recap (a background job)
     scheduler         timed jobs (compacting and pruning the event log, saving habits and object states):
                       status() (/api/health)
@@ -168,6 +167,11 @@ class DeskTalk:
     databases         the developer page's read-only look inside the databases (/api/dev/db...)
     data_files        what's in the data folder, read-only (/api/dev/files...)
                       (these three are None when settings → dev.enabled is false)
+    chat_joins        each kind of object's chat joins, leaves and refusals: joins() (/api/dev/objects/...)
+    trace_photos      each kind of object's trace pictures: photos(), jpeg() (/api/dev/objects/...; None when
+                      settings → dev.enabled is false)
+    todos             the to-do list the server keeps: items(), replace(), has_list() (/api/todos, /api/chat_todos)
+                      (these three are None until they are built here)
     """
 
     config: AppConfig
@@ -208,7 +212,6 @@ class DeskTalk:
     lens: PeriodicWorker
     idle_chat: PeriodicWorker
     lost_items: LostItemsView
-    vision_habits: VisionHabitsView
     daily_summary: PeriodicWorker
     scheduler: ScheduledJobs
     supervisor: Jobs
@@ -218,6 +221,9 @@ class DeskTalk:
     test_runner: TestRunner | None = None
     databases: DatabaseBrowser | None = None
     data_files: DataFiles | None = None
+    chat_joins: ChatJoins | None = None
+    trace_photos: TracePhotos | None = None
+    todos: TodoList | None = None
 
     @property
     def source_kind(self) -> str:
@@ -236,7 +242,6 @@ class DeskTalk:
             (self.lost_items, c.lost_items.start_delay_sec),
             (self.lens, c.lens.check_every_sec),
             (self.daily_summary, c.daily_summary.start_delay_sec),
-            (self.vision_habits, c.vision_habits.start_delay_sec),
         ]
         if self.keepalive is not None:
             jobs.append((self.keepalive, c.llm.ollama_keepalive_start_sec))
@@ -362,7 +367,9 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     event_log = EventLog(data_path(config.event_log.folder), config.event_log, clock)
     bus.subscribe('event-log', event_log.write)          # first, so it logs events in the order they happen
     profiles = ProfileBook(config.agents_file, store, personality_max_chars=config.agents.personality_max_chars)
-    preferences = PreferencesFile(store, config.protocols.schedule, config.reminders.quiet_hours, clock=clock)
+    preferences = PreferencesFile(store, config.protocols.schedule, config.reminders.quiet_hours,
+                                  sensitivity_steps=len(config.agents.sensitivity_steps),
+                                  sensitivity_default=config.agents.sensitivity_default, clock=clock)
 
     # ── the camera, the desk rules and detection ──
     camera = Camera(source) if source is not None else make_camera(config, clock)
@@ -433,8 +440,6 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                          default_temperature=default_temperature, reply_max_chars=config.chat.reply_max_chars,
                          prompts=config.prompts.small_talk, memory_words=config.prompts.memory,
                          preview_chars=config.logging.preview_chars)
-    vision_habits = VisionHabits(vision, bus, desk, roster, profiles, desk_status, config.vision_habits, clock, photos,
-                                 prompts=config.prompts.vision)
     daily_summary = DailySummary(model, hub, roster, habits, store, config.daily_summary, config.llm.replies,
                                  default_temperature=default_temperature, clock=clock,
                                  prompts=config.prompts.daily_recap, preview_chars=config.logging.preview_chars)
@@ -472,6 +477,6 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         producer=producer, object_states=object_states, state_store=state_store, roster=roster,
         desk_status=desk_status, habits=habits, ai=ai, model=model, hub=hub, generator=generator,
         rule_runner=rule_runner, reminders=reminders, lens=lens, idle_chat=idle_chat,
-        lost_items=lost_items, vision_habits=vision_habits, daily_summary=daily_summary, scheduler=scheduler,
+        lost_items=lost_items, daily_summary=daily_summary, scheduler=scheduler,
         supervisor=supervisor, started_at=clock.now(), keepalive=ai.keepalive_worker(), log_file=log_file,
         test_runner=test_runner, databases=databases, data_files=data_files)

@@ -303,7 +303,7 @@ def task_nudges(s: RuleState, cfg: TasksRule, now: float, words: HabitNudges) ->
     if now - start < every:
         return []
     n = len(todos)
-    blanks = {'count': n, 'plural': 's' if n != 1 else '', 'first': todos[0][:cfg.name_shown_chars]}
+    blanks = {'count': n, 'plural': 's' if n != 1 else '', 'task': todos[0][:cfg.name_shown_chars]}
     w = words.tasks_open
     return [Nudge('tasks', 'tasks.open', evidence=w.evidence.format(**blanks), text=w.text.format(**blanks),
                   tip=w.tip, repeat_after_sec=every)]

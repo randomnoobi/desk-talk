@@ -76,7 +76,6 @@ def test_texts_with_blanks_keep_them_and_ready_texts_need_nothing(project):
         'SITUATION: cup near laptop')
     assert '{"visible":["label",...]}' in prompts.lost_items.scan.format(item_names='keys')
     assert '{"continue": true|false, "next": "<name>"}' in prompts.small_talk.director_system
-    assert prompts.vision.habit_scene.splitlines()[1].startswith('{"posture":')
 
 
 def test_a_blank_the_code_does_not_fill_in_names_the_text(project):
@@ -127,3 +126,36 @@ def test_settings_yaml_may_not_set_prompts(project):
     (project / 'config' / 'settings.local.yaml').write_text('prompts:\n  replies: {}\n')
     with pytest.raises(ConfigError, match='^config/settings.local.yaml: prompts is not a known setting'):
         load_config(root=project, environ={})
+
+
+def test_the_desk_fixes_wording_loads(project):
+    """The to-do due dates, the app page's starter list and counters, and the sip notification."""
+    prompts = load_config(root=project, environ={}).prompts
+    due = prompts.habits.tasks_due
+    assert due.tomorrow.text.format(task='essay') == 'Remember, your essay is due tomorrow.'
+    assert due.today.text.format(task='essay') == 'Your essay is due today.'
+    assert due.late.text.format(task='essay', days=1, plural='') == 'Your essay was due 1 day ago. Done? Tick it off.'
+    assert due.late.text.format(task='essay', days=3, plural='s').startswith('Your essay was due 3 days ago.')
+    assert all(words.evidence and words.tip for words in (due.tomorrow, due.today, due.late))
+    assert '"Essay"' in prompts.habits.tasks_open.text.format(task='Essay')
+    assert prompts.habits.logged.task_done.format(task='Essay') == 'Nice, "Essay" is done!'
+    assert '[ADD_TODO:Essay|2026-10-30]' in prompts.trackers.actions.todo
+    assert prompts.ui.starter_todo and prompts.ui.starter_counters == ('Picked up phone',)
+    assert prompts.notifications.sip_title == 'Sip logged'
+
+
+def test_the_desk_checks_say_plain_sentences(project):
+    """What "Heads up" shows: no pixels, percentages or picture counts."""
+    checks = load_config(root=project, environ={}).prompts.desk_checks
+    said = [checks.zone.format(intruder='cup', target='laptop', zone='spill zone', depth=34),
+            checks.approaching.format(a='cup', b='laptop', percent=12, pictures=5),
+            checks.repeated.format(intruder='cup', target='laptop', count=3, window=60),
+            checks.crowd.format(count=4, labels='cup, book'),
+            checks.in_between.format(middle='cup', a='book', b='laptop')]
+    for text in said:
+        assert 'px' not in text and '%' not in text and 'frames' not in text and '—' not in text, text
+
+
+def test_the_posture_check_wording_is_gone():
+    assert 'vision' not in Prompts.model_fields
+    assert 'signals' not in BLANKS['habit_reminder.system']

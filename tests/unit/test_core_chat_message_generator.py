@@ -341,14 +341,13 @@ def nudge():
 
 def test_the_ai_phrases_a_nudge_in_character():
     r = Rig(reply='Hey, 35 minutes of sitting! Walk five minutes, leave your phone.')
-    r.desk.set_vision_brief('posture=slouch')
     assert r.gen.phrase_nudge('computer', nudge()) == 'Hey, 35 minutes of sitting! Walk five minutes, leave your phone.'
     call = r.ai.calls[0]
     assert call['background'] and call['max_tokens'] == CONFIG.llm.replies.nudge.max_tokens
     assert call['temperature'] == 0.6                                # the agent's own
     system = call['messages'][0]['content']
     assert 'Protocols' in system and 'sitting for 35 minutes' in system and 'Walk 5 minutes every 30' in system
-    assert "USER'S BREAKS" in system and 'vision note: posture=slouch' in system
+    assert "USER'S BREAKS" in system and 'posture' not in system
     assert '[User said "habit reminder"] → [You replied] Hey, 35 minutes' in r.desk.recent('computer')[0]
 
 
@@ -620,13 +619,10 @@ def test_the_alert_grounding_and_fallbacks_come_from_prompts_yaml():
 
 
 def test_the_nudge_question_and_memory_lines_come_from_prompts_yaml():
-    words = with_words(habit_reminder={'ask': 'Nudge now.', 'vision_note': ' (eyes: {note})'},
-                       memory={'you_replied': '{user} -> {said}'})
+    words = with_words(habit_reminder={'ask': 'Nudge now.'}, memory={'you_replied': '{user} -> {said}'})
     r = Rig(prompts=words, reply='Hey, 35 minutes of sitting! Walk five minutes, leave your phone.')
-    r.desk.set_vision_brief('posture=slouch')
     r.gen.phrase_nudge('computer', nudge())
     assert r.ai.calls[0]['messages'][1]['content'] == 'Nudge now.'
-    assert '(eyes: posture=slouch)' in r.ai.calls[0]['messages'][0]['content']
     assert r.desk.recent('computer') == ['habit reminder -> Hey, 35 minutes of sitting! Walk five minutes, leave '
                                          'your phone.']
 

@@ -27,10 +27,10 @@ def test_a_follow_up_alert_sounds_more_worried_each_time():
 
 def test_a_reminder_with_no_reason_says_it_is_a_check_in_on_a_small_ai():
     cup = AgentProfile(id='cup', name='Cup', object='cup', personality='Bubbly.')
-    short = prompts.habit_system(P.habit_reminder, cup, 'Hydration', '', 'none', '', 'Drink water.', short=True)
+    short = prompts.habit_system(P.habit_reminder, cup, 'Hydration', '', '', 'Drink water.', short=True)
     assert 'WHY YOU ARE SPEAKING (true, mention it): routine check-in' in short
-    full = prompts.habit_system(P.habit_reminder, cup, 'Hydration', '', 'none', 'seen', 'Drink water.', short=False)
-    assert 'DESK SIGNALS (from camera rules): none' in full and 'Bubbly.' in full
+    full = prompts.habit_system(P.habit_reminder, cup, 'Hydration', '', 'seen', 'Drink water.', short=False)
+    assert 'mention it): seen' in full and 'Bubbly.' in full and 'SIGNALS' not in full
 
 
 def test_the_words_come_from_the_settings():

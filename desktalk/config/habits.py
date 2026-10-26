@@ -15,6 +15,7 @@ from pydantic import AfterValidator, BeforeValidator, Discriminator, Field, Tag,
 from desktalk.config.agents import Habit
 from desktalk.config.base import (
     ClockTime,
+    Count,
     Fraction,
     Latitude,
     Level,
@@ -48,6 +49,9 @@ class HydrationRule(_Section):
     ml_per_sip: PositiveNumber
     sip_gone_min_sec: ZeroOrMore
     sip_gone_max_sec: ZeroOrMore
+    sip_lift_share: Fraction          # lifted: its box rose more than this share of the picture's height
+    sip_back_share: Fraction          # put back: within this share of the picture of where it rested
+    sip_cover_share: Fraction         # this share of the desk vanishing at once = a covered camera
     remind_after_min: ZeroOrMore
     behind_by_ml: ZeroOrMore
     stop_before_bed_hours: ZeroOrMore
@@ -118,6 +122,8 @@ class TasksRule(_Section):
     enabled: bool
     remind_after_min: ZeroOrMore
     name_shown_chars: PositiveInt
+    due_soon_days: Count              # "due tomorrow" this many days before the due date
+    late_repeat_hours: PositiveNumber
 
 
 # ── The habit rules: protocols.yaml → rules ──

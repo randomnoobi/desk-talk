@@ -12,7 +12,7 @@ from tests.fakes import FakeDetector
 from tests.integration.app_kit import LAPTOP, PAIR_KEY, PERSON, desk_config, desk_jpeg, inbox
 
 JOBS = {'detection', 'scheduler', 'rule engine', 'habit reminders', 'idle chat', 'lost items', 'lens',
-        'daily recap', 'vision habits'}
+        'daily recap'}
 
 
 def wait_until(check, seconds: float) -> bool:

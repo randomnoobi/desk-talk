@@ -112,9 +112,21 @@ detector:
 
 # ── Agents joining and leaving the group chat ──────────────────────
 agents:
-  join_after_sec: 3           # seen this long → "Cup joined the chat"
+  can_join: [computer, cup, phone, snack, paper]   # only these agents (ids in agents.yaml) may join the chat. The
+                              # camera still sees everything else, for the warnings, lost items and the Habits page
+  # How picky joining the chat is. The Settings page's slider picks one of these steps, from picky to eager:
+  # min_confidence = how sure the detector must be (0-1), join_after_sec = seen this long → "Cup joined the chat".
+  # An agent with a higher min_confidence of its own in agents.yaml keeps it.
+  sensitivity_steps:
+    - {name: Picky,   min_confidence: 0.65, join_after_sec: 10}
+    - {name: Careful, min_confidence: 0.55, join_after_sec: 5}
+    - {name: Normal,  min_confidence: 0.45, join_after_sec: 3}
+    - {name: Easy,    min_confidence: 0.40, join_after_sec: 2.5}
+    - {name: Eager,   min_confidence: 0.35, join_after_sec: 2}
+  sensitivity_default: 2      # the step used until you move the slider (0 is the first: 2 = Normal)
+  on_desk_after_sec: 3        # the warnings' own list of what's on the desk: seen this long = on the desk...
+  on_desk_min_confidence: 0.45  # ...with a box at least this sure (the slider doesn't change these two)
   leave_after_sec: 120        # gone this long → "Cup left the chat" (same as the longest sip, so a sip never leaves)
-  min_confidence: 0.45        # weaker boxes don't count as "seen" (agents.yaml can raise it per object)
   only_on_desk: true          # once desk corners are marked, things off the desk can't join
   max_agents: 12              # most agents in the chat at once
   announce: true              # post "joined / left the chat" notes
@@ -139,7 +151,7 @@ object_states:
   gone_sec: 3                 # missing longer than this → removed
   move_fraction: 0.2          # center moved more than this share of the picture → moved
   no_move_labels: [person]    # things that move all the time: no "moved" events for them
-  # You (the person) are the on/off switch for reminders, idle chat and vision checks.
+  # You (the person) are the on/off switch for reminders and idle chat.
   person_label: person        # the detector's word for you
   person_appear_sec: 3        # seen longer than this → you're at the desk, reminders on
   person_gone_sec: 90         # missing longer than this → you're away, reminders pause
@@ -278,7 +290,7 @@ llm:
   openai_model: gpt-4o-mini
   groq_model: llama-3.3-70b-versatile
   ollama_model: llama3.2
-  vision_model: llava         # Ollama vision model for posture / lost items (ollama pull llava)
+  vision_model: llava         # Ollama vision model for lost items (ollama pull llava)
   min_interval_sec: 6         # at least this long between two AI calls (protects free limits)
   max_retries: 3
   pause_on_limit_sec: 600     # after a rate limit, background chatter rests this long
@@ -314,7 +326,7 @@ llm:
     lost_alert:    {max_tokens: 60, temperature: 0.7}    # "nobody has seen your keys in 15 minutes"
     lost_answer:   {max_tokens: 200, temperature: 0.35}  # answering "where are my keys?"
     daily_recap:   {max_tokens: 140, temperature: 0.7}
-    vision:        {max_tokens: 400, temperature: 0.2}   # questions about a picture (posture, lost items)
+    vision:        {max_tokens: 400, temperature: 0.2}   # questions about a picture (lost items)
 
 # ── What the AI is told in the chat ────────────────────────────────
 chat:
@@ -381,19 +393,6 @@ lost_items:
     keys:    {name: Keys,    labels: [key, remote],         alert_after_min: 15, words: [key, keys, keychain, keyring, fob]}
     wallet:  {name: Wallet,  labels: [wallet, handbag],     alert_after_min: 15, words: [wallet, purse, card, cards, bag, handbag]}
     airpods: {name: AirPods, labels: [earphone, earbuds],   alert_after_min: 15, words: [airpod, airpods, earbud, earbuds, earphone, earphones]}
-
-# ── Vision checks with Ollama (only when OLLAMA_URL is set) ───────
-vision_habits:
-  every_sec: 42               # posture / screen distance / phone-in-hand check
-  slouch_log_min_sec: 90      # shortest slouch worth logging
-  nail_log_cooldown_sec: 50
-  max_log_events: 120
-  start_delay_sec: 12
-  min_every_sec: 18           # every_sec is never shorter than this
-  repeat_after_sec:           # the same nudge again only after this long
-    too_close: 1200           # leaning close to the screen
-    slouch: 1500
-    phone: 1500               # phone in your hand
 
 # ── Lens (the camera's own character) ──────────────────────────────
 lens:
@@ -508,6 +507,7 @@ habit_tracker:
   sunlight_default_min: 10    # "I went outside" without saying how long
   afternoon_light_hours: 4    # sunlight logged this close to sunset counts as afternoon light
   food_label_max_chars: 60
+  todos_key: todos            # your to-do list is saved under this name in the data folder (data/todos.json)
 
 # ── Web server ──────────────────────────────────────────────────────
 web:
@@ -532,6 +532,14 @@ web:
     photos: 6                 # proof photos shown under the live view
     chat_kept: 200            # messages the page keeps in each chat (older ones drop off)...
     chat_saved: 60            # ...and saves in the browser for each chat, so a refresh keeps them
+    on_desk_shown: 8          # things listed under "On the desk"
+    camera_issues_shown: 2    # camera problems shown at once
+    risk_lines_shown: 6       # lines under "Heads up"
+    side_photos_shown: 6      # photos in the side panel
+    quote_chars: 90           # a quoted message is cut to this many letters
+    toast_chars: 140          # a pop-up note on the page is cut to this many letters
+    mention_max_chars: 12     # the longest @name the page looks for while you type
+    counter_label_chars: 60   # the longest name one of your own counters (Habits page) may have
   # The app page (web_app/), in thousandths of a second:
   refresh_ms:                 # how often the page asks for new...
     live: 1500                # ...camera status, agents and risks
@@ -546,6 +554,9 @@ web:
   activity_ping_ms: 3000      # while you type, the page tells the server at most this often (small talk waits)
   toast_ms: 4000              # how long a pop-up note stays
   left_chat_shown_min: 60     # a chat whose object left the desk stays in the chat list this long
+  camera_note_after_sec: 5    # "Camera connected / disconnected" only shows once the change has lasted this long
+  saved_note_sec: 4           # "Saved" on the Settings page goes away after this long
+  retry_start_sec: 3          # the page can't reach the server: it tries again after this long, doubling each time
   settings_sliders:           # the Settings page's sliders, in pixels: the lowest and highest each one goes
     zone:  {min: 10, max: 200}  # how far a danger zone's bubble reaches past its object
     warn:  {min: 20, max: 200}  # desk edges: "Warn at"
@@ -553,6 +564,17 @@ web:
   new_zone_px: 60             # a danger zone added on the Settings page starts with a bubble this big
   # The colors the page knows. Agents (agents.yaml) use the first eight; ink is the group chat's.
   palette: [cobalt, teal, tang, mustard, coral, plum, moss, slate, ink]
+
+# ── Mac notifications (only on a Mac) ───────────────────────────────
+# Desk Talk itself shows the Mac's own pop-up, so it comes whether or not an app page is open. Quiet hours (the
+# app's Settings page) mute them all. The first one may ask once to allow notifications from "Script Editor".
+notifications:
+  enabled: true               # false = no pop-ups at all
+  warnings: true              # danger warnings, and Lens saying the camera needs fixing
+  reminders: true             # water, breaks, phone-free time, light, screens, food and to-dos
+  sips: true                  # "Sip logged" when the camera saw you drink (not the buttons or the chat)
+  time_limit_sec: 5           # a pop-up that takes longer than this to show is given up on (it never holds up the chat)
+  command: osascript          # the Mac's built-in program that shows them
 
 # ── Logs ────────────────────────────────────────────────────────────
 logging:
@@ -597,6 +619,12 @@ dev:
   flicker_flips_per_min: 4      # the live tab calls an object "flickering" after more flips than this in a minute
   flips_window_min: 10          # the database tab's ready-made "flips per object" query looks back this far
   table_counts_every_sec: 30    # the database and storage tabs count rows and files again this often
+  # Each object's trace (click an object on the live tab): pictures with its box drawn on, and its chat joins
+  trace_photos_folder: data/trace_photos  # the pictures are kept here, one folder per kind of object
+  trace_photos_kept: 6          # only the newest this many pictures per kind of object are kept (older ones go)
+  trace_photo_every_sec: 120    # one when it appears, one when it joins the chat, and one this often while it's there
+  trace_photo_quality: 80       # JPEG quality of those pictures (1-100)
+  trace_events_kept: 50         # chat joins, leaves and refusals remembered per kind of object
   health:                       # when the system tab turns a number amber or red
     pi_cpu_warn_c: 70           # the Pi's CPU this hot (°C) turns amber...
     pi_cpu_bad_c: 80            # ...and this hot turns red

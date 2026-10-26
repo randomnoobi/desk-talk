@@ -17,3 +17,16 @@ class Size:
 
     width: int
     height: int
+
+
+@dataclass(frozen=True)
+class TracePhoto:
+    """A picture kept of one kind of object for the developer page's trace (the JPEG itself is kept apart)."""
+
+    id: str
+    label: str                                  # the detector's word, e.g. cup
+    ts: float                                   # when it was taken
+    why: str                                    # appeared | joined | every (one every dev.trace_photo_every_sec)
+    confidence: float                           # how sure the detector was of the box
+    box: Box                                    # the object's box in pixels
+    size: tuple[int, int]                       # the picture's width and height

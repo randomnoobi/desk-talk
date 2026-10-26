@@ -5,9 +5,11 @@ Plain data, no I/O: what the parts of Desk Talk pass to each other.
     Frame                  a picture from a camera, with what came with it
     Event and subclasses   what happened (DetectionEvent, AgentJoined, Alert, HabitEvent ...)
     AgentProfile, Nudge    a character, a habit reminder
+    ChatJoin, Todo         an object joining, leaving or refused by the chat; a to-do on your list
     LENS                   Lens's id: the camera's own character
     AIUnavailable ...      errors (and UnknownChat: a 1-on-1 chat with an agent that doesn't exist)
     Picture, Size, Box     a picture, how big it is, a box on it (Point, Gravity too)
+    TracePhoto             a picture kept of one kind of object for the developer page's trace
     DeskRules, Zone        the danger rules in use
     SeenObject, Danger,    the desk right now: what the camera sees, the dangers, a proof photo
     SafetyNow, Photo
@@ -21,7 +23,7 @@ Plain data, no I/O: what the parts of Desk Talk pass to each other.
                            data folder), and its errors RunAlreadyGoing and QueryRefused
 """
 
-from desktalk.domain.agents import HABITS, LENS, AgentProfile
+from desktalk.domain.agents import HABITS, LENS, AgentProfile, ChatJoin
 from desktalk.domain.camera import Frame
 from desktalk.domain.days import is_day
 from desktalk.domain.desk import Danger, Photo, SafetyNow, SeenObject
@@ -56,9 +58,9 @@ from desktalk.domain.events import (
     event_from_dict,
     new_event_id,
 )
-from desktalk.domain.habits import Nudge
+from desktalk.domain.habits import Nudge, Todo
 from desktalk.domain.object_states import CHANGE_TYPES, Phase, StateRecord
-from desktalk.domain.pictures import Box, Gravity, Picture, Point, Size
+from desktalk.domain.pictures import Box, Gravity, Picture, Point, Size, TracePhoto
 from desktalk.domain.rules import DeskSnapshot, HabitDone, ObjectSnapshot, RuleHistory, StateChange
 from desktalk_shared.detection import BBox, Detection, keep_inside
 from desktalk_shared.wire import DetectorState, PiHealth, UploadInfo
@@ -71,5 +73,5 @@ __all__ = [
     'ObjectStateChanged', 'Phase', 'Photo', 'Picture', 'PiHealth', 'plain_error', 'Point', 'RuleHistory', 'RuleOutcome',
     'SafetyNow', 'SeenObject', 'Size', 'StateChange', 'StateRecord', 'UnknownChat', 'UploadInfo', 'Zone',
     'DataFile', 'QueryRefused', 'QueryResult', 'RunAlreadyGoing', 'RunStatus', 'SmoothingStep', 'StepStatus',
-    'TableInfo', 'TestItem', 'TestOutcome',
+    'TableInfo', 'TestItem', 'TestOutcome', 'ChatJoin', 'Todo', 'TracePhoto',
 ]

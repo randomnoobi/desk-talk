@@ -32,7 +32,13 @@ class Rig:
         self.bus = SyncEventBus()
         self.desk = Scene()
         self.profiles = ProfileBook(config.agents_file, InMemoryKeyValueStore(), personality_max_chars=400)
+        # join_after_sec and min_confidence change the sensitivity step in use (settings → agents.sensitivity_steps)
+        step = {k: agent_settings.pop(k) for k in ('join_after_sec', 'min_confidence') if k in agent_settings}
         agents = config.agents.model_copy(update=agent_settings)
+        if step:
+            steps = list(agents.sensitivity_steps)
+            steps[agents.sensitivity_default] = agents.default_step().model_copy(update=step)
+            agents = agents.model_copy(update={'sensitivity_steps': tuple(steps)})
         self.roster = Roster(self.bus, self.profiles, self.desk, agents, config.presence, on_desk=on_desk)
 
     def see(self, ts, *dets, size=(640, 480)):
@@ -65,7 +71,7 @@ def test_object_joins_and_leaves(config):
     r = Rig(config)
     t = r.run(1000.0, 4, d('laptop'), d('person'))           # 4 seconds at 3 pictures a second
     assert [(e.agent, e.name, e.label, e.conf) for e in r.joined()] == [('computer', 'Computer', 'laptop', 0.9)]
-    assert r.joined()[0].ts == pytest.approx(1003.0)          # seen for 3 s (agents.join_after_sec)
+    assert r.joined()[0].ts == pytest.approx(1003.0)          # seen for 3 s (the Normal sensitivity step)
     assert r.roster.member_ids() == ['computer']
     assert set(r.desk.members()) == {'computer'}                # person is ignored
     r.run(t, config.agents.leave_after_sec + 5, d('person'))  # 5 s longer than the wait, with no laptop
@@ -104,7 +110,7 @@ def test_weak_detections_dont_count(config):
     r = Rig(config)
     for i in range(15):
         r.see(i / 3, d('cup', 0.5))           # cup needs 0.55 (agents.yaml)
-        r.see(i / 3, d('laptop', 0.3))        # below the general 0.45 (agents.min_confidence)
+        r.see(i / 3, d('laptop', 0.3))        # below the Normal step's 0.45
     assert r.joined() == []
 
 

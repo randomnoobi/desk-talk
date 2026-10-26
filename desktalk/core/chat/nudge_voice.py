@@ -1,7 +1,7 @@
 """
 Habit reminders in an agent's voice. The habit rules decide when a reminder is due (and give its reason
-and the book's tip); this asks the AI to say it as the agent, with the agent's tracker and the last
-posture check. When the AI can't help, the reminder's own ready-made text is used.
+and the book's tip); this asks the AI to say it as the agent, with the agent's tracker. When the AI can't
+help, the reminder's own ready-made text is used.
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ from desktalk.ports import CharacterMemory, Clock, HabitsView, Profiles
 
 
 class NudgeVoice:
-    """`desk`: the tracker panels and the last posture check are read from it. `local`: the AI is a small model
-    on this computer (Ollama), which gets the shorter prompt."""
+    """`desk`: the tracker panels are read from it. `local`: the AI is a small model on this computer (Ollama),
+    which gets the shorter prompt."""
 
     def __init__(self, ai: AgentAI, profiles: Profiles, habits: HabitsView, desk: CharacterMemory,
                  memory: ChatMemory, clock: Clock, words: Prompts, chat: ChatSettings, *, local: bool):
@@ -46,13 +46,11 @@ class NudgeVoice:
     def _ai_nudge(self, a: AgentProfile, nudge: Nudge) -> str | None:
         now = self._clock.now()
         todo = self._desk.widget(a.id)
-        vision_note = (self._desk.vision_brief() or '').strip()
         w = self._words
         block = tracker_prompt(a.tracker, self._habits.today(now), todo, [], now, self._chat, words=w.trackers,
                                utc_offset_sec=self._clock.utc_offset_sec(now))
-        signals = w.habit_reminder.vision_note.format(note=vision_note) if vision_note else w.habit_reminder.no_signals
         system = prompts.habit_system(w.habit_reminder, a, prompts.habit_area(w.habit_areas, a), block,
-                                      signals, nudge.evidence, nudge.tip, short=self._local)
+                                      nudge.evidence, nudge.tip, short=self._local)
         text = self._ai.ask([{'role': 'system', 'content': system},
                              {'role': 'user', 'content': w.habit_reminder.ask}],
                             'nudge', a, background=True)

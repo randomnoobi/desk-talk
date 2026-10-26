@@ -43,7 +43,7 @@ LAPTOP = Detection('laptop', 0.9, BBox(200, 200, 400, 350))
 CUP_FAR = Detection('cup', 0.9, BBox(560, 380, 600, 450))
 CUP_NEAR = Detection('cup', 0.9, BBox(410, 250, 450, 320))      # inside the laptop's spill zone
 PERSON = Detection('person', 0.95, BBox(400, 0, 640, 300))
-VISION_ANSWER = '{"posture": "good", "face_screen_distance": "ok", "phone": "none", "attention": "screen"}'
+VISION_ANSWER = '{"visible": []}'           # the lost-items scan's answer: nothing it knows
 DESK_PICTURE_SIZE = (640, 480)          # width and height of the desk pictures the fake camera sends
 
 

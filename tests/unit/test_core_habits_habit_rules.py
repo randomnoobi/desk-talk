@@ -454,9 +454,9 @@ def test_original_food_and_task_reminders(rules, words):
     assert P.food_nudges(day_state(now, food_since=now - 15 * MIN, food_name='donut'), rules.food, now, words) == []
     assert P.task_nudges(day_state(now, open_todos=()), rules.tasks, now, words) == []
     n = P.task_nudges(day_state(now, open_todos=('Essay',)), rules.tasks, now, words)
-    assert n[0].text.startswith('You still have 1 open task,') and n[0].repeat_after_sec == 40 * MIN
+    assert n[0].text.startswith('How about "Essay"') and n[0].repeat_after_sec == 120 * MIN
     two = P.task_nudges(day_state(now, open_todos=('Essay', '', 'Email')), rules.tasks, now, words)
-    assert two[0].text.startswith('You still have 2 open tasks, like "Essay"')
+    assert two[0].text.startswith('How about "Essay"')
 
 
 def test_food_repeat_comes_from_protocols_yaml(rules, words):
@@ -469,7 +469,7 @@ def test_how_much_of_a_task_name_is_shown_comes_from_protocols_yaml(rules, words
     now = at('14:00')
     s = day_state(now, open_todos=('Write the history essay about the river towns',))
     n = P.task_nudges(s, changed(rules.tasks, name_shown_chars=9), now, words)
-    assert 'like "Write the"' in n[0].text and '"Write the h' not in n[0].text
+    assert '"Write the"' in n[0].text and '"Write the h' not in n[0].text
 
 
 def test_task_check_in_waits_until_the_camera_has_watched_long_enough(rules, words):

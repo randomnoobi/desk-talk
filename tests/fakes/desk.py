@@ -46,6 +46,7 @@ class FakeLivePictures:
 class FakeDeskScene:
     def __init__(self):
         self._members: dict[str, SeenObject] = {}
+        self._on_desk: dict[str, SeenObject] = {}
         self._seen: dict[str, SeenObject] = {}
         self._first: dict[str, float] = {}
         self._last: dict[str, float] = {}
@@ -70,6 +71,12 @@ class FakeDeskScene:
 
     def members(self) -> dict[str, SeenObject]:
         return dict(self._members)
+
+    def set_on_desk(self, objects: Mapping[str, SeenObject], now: float) -> None:
+        self._on_desk = dict(objects)
+
+    def on_desk(self) -> dict[str, SeenObject]:
+        return dict(self._on_desk)
 
     def seen(self) -> dict[str, SeenObject]:
         return dict(self._seen)
@@ -126,7 +133,6 @@ class FakeCharacterMemory:
         self._widgets: dict[str, dict[str, Any]] = {}
         self._views: dict[str, list[dict[str, Any]]] = {}
         self._active_at = 0.0
-        self._brief = ''
 
     def remember(self, agent_id: str, text: str, keep: int) -> None:
         lines = [*self._said.get(agent_id, []), text]
@@ -157,12 +163,6 @@ class FakeCharacterMemory:
 
     def user_active_at(self) -> float:
         return self._active_at
-
-    def set_vision_brief(self, text: str) -> None:
-        self._brief = text
-
-    def vision_brief(self) -> str:
-        return self._brief
 
 
 class FakePhotoAlbum:

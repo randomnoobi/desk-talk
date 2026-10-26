@@ -53,14 +53,14 @@ PERSON = det('person', 400, 0, 640, 300, conf=0.95)
 # The tests the developer page's (fake) test runner finds.
 DEV_TESTS = [TestItem(DEV_TEST_ID, DEV_TEST_ID.split('::')[0], ()),
              TestItem('tests/unit/test_example.py::test_slow', 'tests/unit/test_example.py', ('slow',))]
-# What the fake vision AI says about the picture (the vision habit check asks it).
-SCENE = '{"posture": "good", "nail_biting": true, "phone": "none", "attention": "screen"}'
+# What the fake vision AI says about the picture (the lost-items scan asks it).
+SCENE = '{"visible": ["keys"]}'
 
 
 def fake_ai(request: dict) -> str:
     """The fake AI: answers in character, logs water or a to-do when asked, and describes pictures."""
     last = request['messages'][-1]['content']
-    if isinstance(last, list):                     # text + picture: a vision check
+    if isinstance(last, list):                     # text + picture: a vision scan
         return SCENE
     text = last.lower()
     if 'water' in text:
@@ -105,7 +105,7 @@ def desks(tmp_path):
         if name not in ('fresh', 'busy', 'no_ai', 'ai_down', 'phone'):
             raise ValueError(f'no desk called {name!r}')
         reply: Any = {'no_ai': None, 'ai_down': ConnectionError('Connection refused')}.get(name, fake_ai)
-        # ollama also gives the busy desk a (fake) vision AI, for the habit checks on pictures
+        # ollama also gives the busy desk a (fake) vision AI, for the lost-items scan of the pictures
         config = desk_config(tmp_path, ai=reply is not None, ollama=name == 'busy')
         shutil.copy(RULES_COPY, config.config_folder / 'safety_rules.json')
         if name == 'phone':
@@ -124,7 +124,6 @@ def desks(tmp_path):
         clock.advance(pinned - clock.now())
         if name == 'busy':
             assert desk.main.post('/api/pi/frame', data=PICTURE, headers=PI_HEADERS).status == 200
-            app.vision_habits.tick(clock.now())        # one round of the vision habit check
         if name == 'phone':
             assert links.phone_url == PHONE_URL
             assert desk.phone.post('/api/phone/frame', data=PICTURE, headers=PHONE_HEADERS).status == 200

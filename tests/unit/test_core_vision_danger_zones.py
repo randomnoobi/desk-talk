@@ -30,7 +30,7 @@ def test_cup_in_the_laptop_zone_is_a_danger():
                                   'target': 'computer', 'target_class': 'laptop',
                                   'zone_label': 'Spill / pressure zone', 'depth_px': 70, 'center_dist_px': 130.4,
                                   'zone_expand': 80}]
-    assert found.explanations == ["cup (hazard) in laptop's Spill / pressure zone — 70px"]
+    assert found.explanations == ["cup is in laptop's Spill / pressure zone."]
     assert found.relationships == [{'type': 'danger_zone', 'severity': 'danger', 'intruder': 'cup',
                                     'target': 'computer', 'depth_px': 70, 'zone_label': 'Spill / pressure zone'}]
 
@@ -145,7 +145,7 @@ def test_the_repeat_explanation_names_both_things():
     desk = things(('computer', 'laptop', LAPTOP), ('cup', 'cup', NEAR))
     found = dz.repeated_entries(desk, RULES, visits, 5, words=WORDS)
     assert found.risk_events == [{'type': 'repeated_intrusion', 'intruder': 'cup', 'target': 'computer', 'count': 3}]
-    assert found.explanations == ["cup entered laptop's zone 3 times in the last 60 s"]
+    assert found.explanations == ['cup keeps coming back close to laptop (3 times in the last minute or so).']
     assert found.relationships == [{'type': 'repeated_intrusion', 'severity': 'high', 'intruder': 'cup',
                                     'target': 'computer', 'count': 3}]
 

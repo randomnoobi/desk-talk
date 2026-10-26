@@ -53,3 +53,15 @@ class DeskSceneContract:
         assert scene.scan_labels() == {'keys', 'airpods'}
         scene.set_scan_labels(set())
         assert scene.scan_labels() == set()
+
+    def test_everything_on_the_desk_whether_or_not_it_is_in_the_chat(self, scene):
+        """on_desk() is the warnings' own list (every agent sure enough, chat or not); members() is the chat."""
+        assert scene.on_desk() == {}
+        scene.set_members({'cup': CUP}, 100.0)
+        scene.set_on_desk({'cup': CUP, 'keys': KEYS}, 100.0)
+        assert scene.on_desk() == {'cup': CUP, 'keys': KEYS}
+        assert scene.members() == {'cup': CUP}
+        scene.set_on_desk({'keys': KEYS}, 101.0)
+        assert scene.on_desk() == {'keys': KEYS} and scene.members() == {'cup': CUP}
+        scene.on_desk()['cup'] = CUP                                # a copy
+        assert scene.on_desk() == {'keys': KEYS}

@@ -14,7 +14,18 @@ from desktalk.core.desk import Album, DangerBoard, LiveView, Memories, Scene, Wh
 from desktalk.core.habits.desk_status import DeskStatusService
 from desktalk.core.habits.reminders import HabitReminders
 from desktalk.core.habits.tracker import HabitTracker
-from desktalk.domain import LENS, AgentProfile, BBox, Detection, DetectionEvent, Light, Nudge, NudgeSent, ObjectSnapshot
+from desktalk.domain import (
+    LENS,
+    AgentProfile,
+    BBox,
+    Detection,
+    DetectionEvent,
+    Light,
+    Nudge,
+    NudgeSent,
+    ObjectSnapshot,
+    Todo,
+)
 from desktalk.ports import PeriodicWorker
 from tests.fakes import (
     FakeChatVoice,
@@ -61,7 +72,7 @@ class Rig:
                  status=None, rule_nudges=()):
         self.habits = FakeHabits(nudges=nudges)
         self.rules = FakeRuleNudges(rule_nudges)
-        self.status = status or FakeDeskStatus(todos=['Essay'])
+        self.status = status or FakeDeskStatus(todos=[Todo('Essay')])
         self.roster = StaticRoster(members)
         self.profiles = FakeProfiles([COMPUTER, WATCH, CUP])
         self.voice = FakeChatVoice(voice_text)
@@ -152,7 +163,7 @@ def test_the_open_to_dos_go_to_the_rules(config):
     r.reminders = HabitReminders(r.habits, r.rules, r.status, r.roster, r.profiles, r.voice, r.notifier, r.bus,
                                  config.reminders)
     r.reminders.tick(NOON)
-    assert r.habits.asked_with == ['Essay']
+    assert r.habits.asked_with == [Todo('Essay')]
 
 
 def test_rule_nudge_is_said_and_noted(config):

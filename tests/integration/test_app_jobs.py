@@ -218,25 +218,20 @@ def picture_questions(rig):
             if isinstance(r['messages'][-1]['content'], list)]
 
 
-def test_with_ollama_the_vision_checks_look_at_the_desk_picture(tmp_path):
-    rig = DeskRig(tmp_path, ai_reply=lambda request: (VISION_ANSWER.replace('good', 'slouch')
+def test_with_ollama_the_lost_items_scan_looks_at_the_desk_picture(tmp_path):
+    rig = DeskRig(tmp_path, ai_reply=lambda request: (VISION_ANSWER
                                                       if isinstance(request['messages'][-1]['content'], list)
                                                       else 'Hey there!'), ollama=True)
     rig.watch(rig.config.object_states.person_appear_sec + 2, LAPTOP)     # long enough for you to count as here
-    rig.tick(rig.app.vision_habits)
-    answer, when = rig.app.vision_habits.latest()
-    assert answer['posture'] == 'slouch' and when == rig.clock.now()
-    assert picture_questions(rig) == [(OLLAMA_URL, rig.config.llm.vision_model)]
     rig.tick(rig.app.lost_items)
-    assert len(picture_questions(rig)) == 2                  # the lost-items scan looked too
+    assert picture_questions(rig) == [(OLLAMA_URL, rig.config.llm.vision_model)]
 
 
 def test_without_ollama_no_picture_goes_to_the_cloud_ai(tmp_path):
     rig = DeskRig(tmp_path, ai_reply='Hey there!')
     rig.watch(2, LAPTOP)
-    rig.tick(rig.app.vision_habits)
     rig.tick(rig.app.lost_items)
-    assert picture_questions(rig) == [] and rig.app.vision_habits.latest() == ({}, 0.0)
+    assert picture_questions(rig) == []
 
 
 def test_the_ollama_keep_alive_asks_ollama_something_tiny(tmp_path):

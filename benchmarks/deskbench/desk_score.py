@@ -15,8 +15,10 @@ import yaml
 
 
 def app_thresholds(settings_path: Path, agents_path: Path, kinds: dict) -> dict[str, float]:
-    """How sure a model must be for the app to count each kind as seen (never reads settings.local.yaml)."""
-    default = float(yaml.safe_load(settings_path.read_text())['agents']['min_confidence'])
+    """How sure a model must be for the app to count each kind as seen (never reads settings.local.yaml): the agent's
+    own min_confidence, else the sensitivity step the app uses until its slider is moved."""
+    app = yaml.safe_load(settings_path.read_text())['agents']
+    default = float(app['sensitivity_steps'][app['sensitivity_default']]['min_confidence'])
     agents = yaml.safe_load(agents_path.read_text())['agents']
     out = {}
     for name, kind in kinds.items():

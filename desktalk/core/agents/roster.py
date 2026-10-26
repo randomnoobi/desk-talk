@@ -1,9 +1,9 @@
 """
 The roster: who is in the group chat right now.
 
-It listens to DetectionEvents (about 3 a second). When an object has been seen for
-agents.join_after_sec, its agent joins ("Cup joined the chat"); when it has been missing for
-agents.leave_after_sec, it leaves ("Cup left the chat"). Both go back on the event bus as
+It listens to DetectionEvents (about 3 a second). When an object has been seen for the sensitivity
+step's join_after_sec (settings → agents.sensitivity_steps), its agent joins ("Cup joined the chat");
+when it has been missing for agents.leave_after_sec, it leaves ("Cup left the chat"). Both go back on the event bus as
 AgentJoined / AgentLeft. No pictures (camera off) means no events, so nobody leaves.
 
 It also tells the desk scene (DeskScene.set_members) which agents in the chat were in a picture just now
@@ -35,11 +35,12 @@ class Roster:
         self._bus = bus
         self._profiles = profiles
         self._scene = scene
-        self._min_conf = agents.min_confidence
+        step = agents.default_step()
+        self._min_conf = step.min_confidence
         self._only_on_desk = agents.only_on_desk
         self._max_agents = agents.max_agents
         self._on_desk = on_desk
-        self._presence = PresenceTracker(agents.join_after_sec, agents.leave_after_sec)
+        self._presence = PresenceTracker(step.join_after_sec, agents.leave_after_sec)
         self._fresh_sec = presence.disappear_after_sec       # "on the desk right now" for the scene
         self._lock = threading.Lock()                         # snapshot() is read from the web server's thread
         self._members: dict[str, dict] = {}      # id → {'joined_at', 'label', 'det', 'last_seen'}, in join order

@@ -14,6 +14,7 @@ class Scene:
     def __init__(self):
         self._lock = threading.Lock()
         self._members: dict[str, SeenObject] = {}     # agent id → its box (agents in the chat, in the picture)
+        self._on_desk: dict[str, SeenObject] = {}     # agent id → its box (everything on the desk, chat or not)
         self._seen: dict[str, SeenObject] = {}        # every detector word in the newest picture → its best box
         self._first_seen: dict[str, float] = {}       # agent id → first time this session
         self._last_seen: dict[str, float] = {}
@@ -43,6 +44,14 @@ class Scene:
     def members(self) -> dict[str, SeenObject]:
         with self._lock:
             return dict(self._members)
+
+    def set_on_desk(self, objects: Mapping[str, SeenObject], now: float) -> None:
+        with self._lock:
+            self._on_desk = dict(objects)
+
+    def on_desk(self) -> dict[str, SeenObject]:
+        with self._lock:
+            return dict(self._on_desk)
 
     def seen(self) -> dict[str, SeenObject]:
         with self._lock:

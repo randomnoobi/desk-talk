@@ -37,7 +37,6 @@ def detections(app: DeskTalk) -> dict[str, Any]:
     relationships = (app.safety_board.now().result or {}).get('relationships') or []
     vision_scan = sorted(app.scene.scan_labels())
     light = app.live_pictures.newest_light()
-    habit_check, habit_check_at = app.vision_habits.latest()
     agents = {}
     for pid, box in on_desk.items():
         profile = app.profiles.get(pid)
@@ -59,8 +58,8 @@ def detections(app: DeskTalk) -> dict[str, Any]:
     edges = [{'from': r.get('intruder'), 'to': r.get('target'), 'kind': 'danger_zone', 'label': r.get('zone_label', '')}
              for r in relationships if r.get('type') == 'danger_zone']
     return {'objects': agents, 'extras': extras, 'timestamp': app.clock.now(),
-            'frame': {'w': size.width, 'h': size.height}, 'relationship_edges': edges, 'vlm_habit': habit_check,
-            'vlm_habit_ts': habit_check_at, 'lost_vlm_labels': vision_scan, 'light': light.to_dict() if light else {}}
+            'frame': {'w': size.width, 'h': size.height}, 'relationship_edges': edges,
+            'lost_vlm_labels': vision_scan, 'light': light.to_dict() if light else {}}
 
 
 def safety(app: DeskTalk) -> dict[str, Any]:

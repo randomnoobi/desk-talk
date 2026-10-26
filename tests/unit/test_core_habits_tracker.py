@@ -142,7 +142,7 @@ def test_weak_detections_are_not_counted(config):
     assert not r.state().drink_on_desk
     r.run(5, 'cup', conf=0.6)
     assert r.state().drink_on_desk
-    r.run(5, 'laptop', conf=0.3)    # below the general 0.45 (agents.min_confidence)
+    r.run(5, 'laptop', conf=0.3)    # below the Normal sensitivity step's 0.45
     assert not r.state().screen_on_desk
 
 

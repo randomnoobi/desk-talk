@@ -272,3 +272,13 @@ class RecordingNotifier:
 
     def texts(self) -> list[str]:
         return [m.get('text', '') for m in self.sent]
+
+
+class FakeDesktopNotifications:
+    """Shows nothing: `shown` records each (title, text) it was asked to show, in order."""
+
+    def __init__(self):
+        self.shown: list[tuple[str, str]] = []
+
+    def show(self, title: str, text: str) -> None:
+        self.shown.append((title, text))

@@ -8,6 +8,7 @@ import pytest
 
 from desktalk.config import load_config
 from desktalk.core.habits.desk_status import DeskStatusService
+from desktalk.domain import Todo
 from desktalk.ports import DeskStatus as DeskStatusPort
 from tests.fakes import (
     FakeCharacterMemory,
@@ -121,4 +122,4 @@ def test_open_todos_come_from_the_to_do_tracker(config):
     r.desk.set_widget('paper', {'type': 'todo', 'items': [{'text': 'Essay', 'done': False},
                                                           {'text': 'Email', 'done': True}, {'text': 'Call mum'}]})
     r.desk.set_widget('cup', {'type': 'hydration', 'items': [{'text': 'not a task'}]})
-    assert r.status.open_todos() == ['Essay', 'Call mum']
+    assert r.status.open_todos() == [Todo('Essay'), Todo('Call mum')]

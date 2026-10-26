@@ -92,7 +92,7 @@ def test_all_lists_the_agents_from_the_file_and_the_ones_made_since(book):
 
 def test_habit_lookups(book):
     assert {'cup', 'bottle', 'mug'} <= book.labels_for_habit('hydration')
-    assert 'computer' in book.ids_for_habit('breaks') and 'watch' in book.ids_for_habit('breaks')
+    assert book.ids_for_habit('breaks') == ['computer']           # only Computer speaks for breaks
     assert book.ids_for_habit('no such habit') == []
 
 

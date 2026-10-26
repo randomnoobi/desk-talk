@@ -35,9 +35,7 @@
       "lost_vlm_labels": [],
       "objects": {},
       "relationship_edges": [],
-      "timestamp": "number",
-      "vlm_habit": {},
-      "vlm_habit_ts": "number"
+      "timestamp": "number"
     },
     "phone_mode": "bool",
     "pi_command": "str",

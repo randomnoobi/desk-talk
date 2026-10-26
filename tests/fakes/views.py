@@ -1,11 +1,14 @@
-"""Small stand-ins for what parts ask each other (roster, profiles, habits, preferences, desk status ...)."""
+"""Small stand-ins for what parts ask each other (roster, profiles, habits, preferences, desk status, the to-do
+list, the chat's joins ...)."""
 
 from __future__ import annotations
 
+import datetime
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from desktalk.domain import AgentProfile, DeskSnapshot, Nudge, ObjectSnapshot, StateChange
+from desktalk.domain import AgentProfile, ChatJoin, DeskSnapshot, HabitEvent, Nudge, ObjectSnapshot, StateChange, Todo
+from desktalk.ports import EventBus
 from desktalk.util import in_hour_window
 from tests.fakes.clock import FakeClock
 
@@ -79,7 +82,7 @@ class FakeHabits:
     def bump(self, key: str, amount: int = 1) -> None:
         self.bumps.append((key, amount))
 
-    def nudges(self, now: float, open_todos: Sequence[str]) -> list[Nudge]:
+    def nudges(self, now: float, open_todos: Sequence[Todo]) -> list[Nudge]:
         return list(self._nudges)
 
     def note_fired(self, nudge: Nudge, now: float) -> None:
@@ -153,7 +156,7 @@ class FakePreferences:
 class FakeDeskStatus:
     """Every answer is a plain attribute the test sets."""
 
-    def __init__(self, connected=True, warm=True, ready=True, active=True, todos: Sequence[str] = ()):
+    def __init__(self, connected=True, warm=True, ready=True, active=True, todos: Sequence[Todo] = ()):
         self.connected, self.is_warm, self.ready, self.active, self.todos = connected, warm, ready, active, list(todos)
 
     def camera_connected(self) -> bool:
@@ -168,8 +171,56 @@ class FakeDeskStatus:
     def user_active(self, now: float) -> bool:
         return self.active
 
-    def open_todos(self) -> list[str]:
+    def open_todos(self) -> list[Todo]:
         return list(self.todos)
+
+
+class FakeChatJoins:
+    """The chat's joins, leaves and refusals the test hands it (or add()s later), kept in time order."""
+
+    def __init__(self, joins: Sequence[ChatJoin] = ()):
+        self._joins: list[ChatJoin] = []
+        for join in joins:
+            self.add(join)
+
+    def add(self, join: ChatJoin) -> None:
+        self._joins = sorted([*self._joins, join], key=lambda j: j.ts)
+
+    def joins(self, label: str) -> list[ChatJoin]:
+        return [j for j in self._joins if j.label == label]
+
+
+def _a_day(due: str | None) -> str | None:
+    """The due date if it's a real day like 2026-10-30, else None (as the real to-do list keeps it)."""
+    try:
+        return datetime.date.fromisoformat(due).isoformat() if due and len(due) == len('2026-10-30') else None
+    except ValueError:
+        return None
+
+
+class FakeTodoList:
+    """A to-do list kept in memory. With a `bus`, ticking a to-do off publishes the same HabitEvent the real one
+    does (habit 'tasks', action 'done', extra {'task': text})."""
+
+    def __init__(self, bus: EventBus | None = None, items: Sequence[Todo] | None = None):
+        self._bus = bus
+        self._items: list[Todo] = list(items or [])
+        self._saved = items is not None
+
+    def items(self) -> list[Todo]:
+        return list(self._items)
+
+    def replace(self, items: Sequence[Todo], now: float) -> list[Todo]:
+        was_open = {t.text for t in self._items if not t.done}
+        self._items = [Todo(t.text, t.done, _a_day(t.due)) for t in items]
+        self._saved = True
+        for todo in self._items:
+            if todo.done and todo.text in was_open and self._bus is not None:
+                self._bus.publish(HabitEvent(ts=now, habit='tasks', action='done', extra={'task': todo.text}))
+        return list(self._items)
+
+    def has_list(self) -> bool:
+        return self._saved
 
 
 class FakeChatVoice:

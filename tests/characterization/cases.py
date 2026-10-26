@@ -5,7 +5,7 @@ Each Case is one request to one of the two web servers, on one of the ready-made
 
     fresh    nothing seen yet, no pictures; the AI works
     busy     the Pi has watched a laptop, a cup, keys, a book and a remote for 6 s with someone at the desk;
-             one Pi upload arrived; the vision AI noticed nail biting
+             one Pi upload arrived
     no_ai    like busy, but there is no AI key
     ai_down  like busy, but every AI call fails
     phone    the phone is the camera (camera.source: phone) and has sent one picture
@@ -212,9 +212,6 @@ CASES = [
     Case('habits-log-food', 'POST', '/api/habits/log', 200,
          json={'habit': 'food', 'action': 'food', 'label': 'apple', 'healthy': True}),
     Case('habits-log-unknown-habit', 'POST', '/api/habits/log', 400, json={'habit': 'nope', 'action': 'x'}),
-    Case('habit-log', 'GET', '/api/habit_log', 200),
-    Case('habit-log-one-category', 'GET', '/api/habit_log?category=posture_bad&limit=5', 200),
-    Case('habit-log-bad-limit', 'GET', '/api/habit_log?limit=lots', 400),     # the Flask server crashed: 500
     Case('preferences', 'GET', '/api/preferences', 200),
     Case('preferences-put', 'PUT', '/api/preferences', 200,
          json={'wake_time': '06:30', 'bed_time': '23:00', 'quiet_enabled': True}),

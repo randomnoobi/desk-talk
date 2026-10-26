@@ -11,29 +11,46 @@ from uvicorn import Server
 
 import desktalk.adapters.dev
 from desktalk.adapters.dev import pytest_report
+from desktalk.bootstrap import DeskTalk
 from desktalk.config import (
+    AgentsSettings,
     DevHealthLimits,
+    DevSettings,
+    HabitTrackerSettings,
     LensWaits,
+    ListSizes,
+    NotificationsSettings,
     RiskWeights,
-    VisionNudgeRepeats,
+    WebSettings,
 )
-from desktalk.config.habits import _ComputerZone
-from desktalk.config.prompts import ByCamera, HabitAreas
+from desktalk.config.habits import HydrationRule, TasksRule, _ComputerZone
+from desktalk.config.prompts import (
+    ByCamera,
+    HabitAreas,
+    HabitLogged,
+    HabitNudges,
+    NotificationWords,
+    Prompts,
+    TasksDue,
+    UiWords,
+)
 from desktalk.core.habits.habit_days import HabitDay
 from desktalk.core.habits.sun_times import SunTimes
 from desktalk.core.habits.tracker import DayTimes
-from desktalk.domain.dev import DataFile, QueryResult, RunStatus, SmoothingStep
+from desktalk.domain.agents import ChatJoin
+from desktalk.domain.dev import DataFile, QueryResult, RunStatus, SmoothingStep, TestOutcome
 from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent, NudgeSent
+from desktalk.ports import ChatJoins, DesktopNotifications, TodoList
 from desktalk.web.schemas import PhoneSettings, PreferenceChanges, UiPage, UiSettings
 from desktalk_shared.wire import PiHealth
 
 _ = (
     # Settings read by name with getattr (the risk score adds up each weight, Lens looks up each wait).
     RiskWeights.edge_warning, RiskWeights.zone_intrusion, RiskWeights.repeated_intrusion,
-    VisionNudgeRepeats.slouch,
     LensWaits.covered, LensWaits.dark, LensWaits.blurry,
     # Request fields read through model_dump().
     PreferenceChanges.quiet_enabled, PreferenceChanges.quiet_start_hour, PreferenceChanges.quiet_end_hour,
+    PreferenceChanges.sensitivity,
     PreferenceChanges.dnd_enabled, PreferenceChanges.dnd_start_hour, PreferenceChanges.dnd_end_hour,
     # Event and status fields the web page (web_app/app.js) reads from the JSON.
     AgentLeft.stayed_sec, Compaction.from_ts, PiHealth.last_cleanup_ts,
@@ -81,3 +98,24 @@ _developer_page = (
     RunStatus.output_end, SmoothingStep.votes_yes, SmoothingStep.votes_total, SmoothingStep.waiting_sec,
     QueryResult.truncated, QueryResult.took_ms, DataFile.modified,
 )
+
+# The desk fixes (docs/superpowers/specs/2026-10-25-desk-fixes-design.md): Task 1 of the plan adds these settings,
+# wording, plain data and interfaces; Tasks 2 to 9 use them (sips, who joins the chat, the trace, Mac notifications,
+# to-dos with due dates, the app page). Take a name off once its task uses it.
+_desk_fixes = (
+    AgentsSettings.can_join, AgentsSettings.on_desk_after_sec, AgentsSettings.on_desk_min_confidence,
+    HabitTrackerSettings.todos_key,
+    ListSizes.on_desk_shown, ListSizes.camera_issues_shown, ListSizes.risk_lines_shown, ListSizes.side_photos_shown,
+    ListSizes.quote_chars, ListSizes.toast_chars, ListSizes.mention_max_chars, ListSizes.counter_label_chars,
+    WebSettings.camera_note_after_sec, WebSettings.saved_note_sec, NotificationsSettings.warnings,
+    DevSettings.trace_photos_folder, DevSettings.trace_photos_kept, DevSettings.trace_photo_every_sec,
+    DevSettings.trace_photo_quality, DevSettings.trace_events_kept,
+    HydrationRule.sip_lift_share, HydrationRule.sip_back_share, HydrationRule.sip_cover_share,
+    TasksRule.due_soon_days, TasksRule.late_repeat_hours,
+    HabitLogged.task_done, TasksDue.tomorrow, TasksDue.late, HabitNudges.tasks_due, UiWords.starter_todo,
+    UiWords.starter_counters, NotificationWords.sip_title, Prompts.ui, Prompts.notifications,
+    DeskTalk.chat_joins, DeskTalk.trace_photos, ChatJoin.seen_for_sec, DesktopNotifications,
+    DesktopNotifications.show, TodoList.has_list, ChatJoins.joins,
+)
+# A test's result, sent to the developer page as JSON (dataclasses.asdict) and shown by dev_ui/ (the Checks tab).
+_ = TestOutcome.duration_sec
