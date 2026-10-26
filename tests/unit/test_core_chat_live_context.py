@@ -115,7 +115,8 @@ def test_things_on_the_desk_but_not_in_the_chat_are_seen_even_when_the_newest_pi
     scene.set_on_desk({'computer': box('laptop'), 'paper': box('notebook'), 'stapler': box('stapler')}, NOW)
     ctx = live((scene, safety), profiles, chat, members=('computer',), user_message='@paper?')
     assert 'ALSO IN THE PICTURE (not chatting): notebook, stapler' in ctx['summary']
-    assert ctx['mentioned_objects'][0]['status'].startswith('On desk') and 'notebook' in ctx['mentioned_objects'][0]['status']
+    status = ctx['mentioned_objects'][0]['status']
+    assert status.startswith('On desk') and 'notebook' in status
 
 
 def test_when_you_say_the_camera_is_wrong_the_ai_is_told_to_believe_you(profiles, chat):

@@ -300,8 +300,8 @@ def food_nudges(s: RuleState, cfg: FoodRule, now: float, words: HabitNudges) -> 
 
 def task_nudges(s: RuleState, cfg: TasksRule, now: float, words: HabitNudges) -> list[Nudge]:
     """To-dos with a due date: the day before (due_soon_days), on the day, and each day while late (again after
-    late_repeat_hours on the same day), by the desk's local day (s.today). Without one: a check-in every remind_after_min, naming the next open to-do
-    each time (s.task_turn)."""
+    late_repeat_hours on the same day), by the desk's local day (s.today). Without one: a check-in every
+    remind_after_min, naming the next open to-do each time (s.task_turn)."""
     todos = [t for t in s.open_todos if t.text and not t.done]
     if not cfg.enabled or not todos or not s.at_desk:
         return []

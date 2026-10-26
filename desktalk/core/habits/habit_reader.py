@@ -228,8 +228,9 @@ class SipWatch:
     `sip_gone_min_sec` and `sip_gone_max_sec` after it left. The camera may lose it while it's up in the hand.
     A drink that vanishes without being seen lifted (a hand over it) never counts. If the camera looks covered
     while a drink is missing (nothing in the picture, or `sip_cover_share` or more of the other things that were
-    there in the last picture that showed it are missing too) in `sip_cover_pictures` pictures in a row, that trip can't be a sip. Nor
-    can it when no picture came for longer than `stall_after_sec` while the drink was up.
+    there in the last picture that showed it are missing too) in `sip_cover_pictures` pictures in a row, that
+    trip can't be a sip. Nor can it when no picture came for longer than `stall_after_sec` while the drink was
+    up.
 
     The resting spot only moves down (the camera's few pixels of wobble settle on the lowest), or to wherever the
     drink was slid when it is seen far from it without being lifted, so a slow lift can't drag it along."""

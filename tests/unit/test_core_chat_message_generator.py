@@ -360,8 +360,8 @@ def lens_alert(**extra):
 def test_lens_warns_about_something_in_a_zone_without_the_ai():
     """Scissors by a phone, neither in the chat: Lens says it, in the detector's words, and it pops up."""
     r = Rig(members=())
-    r.desk.set_on_desk({'phone': seen('cell phone', 200, 200, 300, 260), 'scissors': seen('scissors', 310, 220, 330, 250)},
-                       r.clock.now())
+    r.desk.set_on_desk({'phone': seen('cell phone', 200, 200, 300, 260),
+                        'scissors': seen('scissors', 310, 220, 330, 250)}, r.clock.now())
     r.gen.on_alert(lens_alert(near='phone', intruder='scissors', rule_label='Screen scratch zone'))
     [msg] = r.notifier.sent
     assert (msg['character'], msg['alert'], msg['snapshot'], msg['notify']) == ('lens', 'proximity', 'snap9', 'warning')

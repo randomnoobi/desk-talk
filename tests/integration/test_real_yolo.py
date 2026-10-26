@@ -1,6 +1,7 @@
 """
 The real detector (the model in config/settings.yaml) inside the whole app built by bootstrap: real pictures go
-through the producer, and what the model finds joins the chat.
+through the producer, and what the model finds is on the desk (only the objects on agents.can_join would join
+the chat, and the sample pictures have none).
 
 Skipped when the model file isn't in models/ (uv run python scripts/download_models.py).
 """
@@ -44,9 +45,10 @@ def show(rig: DeskRig, name: str, seconds: float) -> None:
 
 
 def test_real_pictures_through_the_whole_app(rig):
-    show(rig, 'zidane.jpg', 4)             # two people and a tie: nothing that should join
-    show(rig, 'bus.jpg', 4)                # a bus: not ignored, so it joins as "Bus"
-    names = {a['name'] for a in rig.app.roster.snapshot() if a['on_desk']}
-    assert 'Bus' in names and 'Person' not in names and 'Tie' not in names
-    assert any(m['type'] == 'roster' and m['agent']['name'] == 'Bus' for m in rig.messages())
+    show(rig, 'zidane.jpg', 4)             # two people and a tie
+    show(rig, 'bus.jpg', 4)                # a bus: not ignored, so it is on the desk, but it can't join the chat
+    on_desk = {seen.label.lower() for seen in rig.app.scene.on_desk().values()}
+    assert 'bus' in on_desk and 'person' not in on_desk
+    assert rig.app.roster.member_ids() == []
+    assert not any(m['type'] == 'roster' for m in rig.messages())
     assert rig.app.live_pictures.boxed(0) and rig.app.live_pictures.plain(0)     # the live view pictures
