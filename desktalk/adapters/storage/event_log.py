@@ -180,8 +180,9 @@ class EventLog:
         """Days with a log, newest first."""
         return sorted((d.name for d in self._day_folders()), reverse=True)
 
-    def events(self, day: str, types: set[str] | None, limit: int) -> list[dict[str, Any]]:
-        """Up to `limit` non-picture events of a day, newest first; only `types` (e.g. {'alert'}) if given."""
+    def events(self, day: str, types: set[str] | None, limit: int | None) -> list[dict[str, Any]]:
+        """Up to `limit` (None = all) non-picture events of a day, newest first; only `types` (e.g. {'alert'})
+        if given."""
         d = self._day_folder(day)
         if d is None:
             return []

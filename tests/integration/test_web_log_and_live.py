@@ -113,6 +113,17 @@ def test_log_events_limit_counts_only_events_that_matter(tmp_path):
     assert len(log_events(rig)) == 5
 
 
+def test_log_events_never_count_the_pictures_waiting(tmp_path, monkeypatch):
+    """counts() reads the day's picture lines too: the Log page needs only the events."""
+    rig = DeskRig(tmp_path)
+    rig.app.event_log.write(sip(rig.clock.now()))
+
+    def no_counting(day):
+        raise AssertionError(f'the Log page counted the whole day {day}')
+    monkeypatch.setattr(rig.app.event_log, 'counts', no_counting)
+    assert [e['type'] for e in log_events(rig)] == ['habit']
+
+
 def test_alert_subtitle_plain(tmp_path):
     rig = DeskRig(tmp_path)
     now = rig.clock.now()

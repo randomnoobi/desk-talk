@@ -33,6 +33,7 @@ class EventStoreContract:
         day = self.day_of(TS)
         assert [e['type'] for e in store.events(day, {'alert'}, 10)] == ['alert']
         assert len(store.events(day, None, 3)) == 3
+        assert len(store.events(day, None, None)) == 6         # no limit: all of them
 
     def test_unknown_day_is_empty(self, store):
         assert store.events('1999-01-01', None, 10) == []

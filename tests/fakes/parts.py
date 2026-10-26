@@ -145,7 +145,7 @@ class InMemoryEventStore:
     def days(self) -> list[str]:
         return sorted(set(self._events) | set(self._detections), reverse=True)
 
-    def events(self, day: str, types: set[str] | None, limit: int) -> list[dict]:
+    def events(self, day: str, types: set[str] | None, limit: int | None) -> list[dict]:
         evs = [e for e in self._events.get(day, []) if not types or e['type'] in types]
         return list(reversed(evs))[:limit]
 

@@ -55,8 +55,7 @@ def plain_alert(event: dict[str, Any], app: DeskTalk) -> dict[str, Any]:
 def shown_events(app: DeskTalk, day: str, wanted: set[str], limit: int) -> list[dict[str, Any]]:
     # Asks for every event of those types, because some are left out below and the page should get `limit`
     # that matter.
-    on_that_day = app.event_log.counts(day)['events']
-    every = app.event_log.events(day, wanted, sum(on_that_day.get(t, 0) for t in wanted))
+    every = app.event_log.events(day, wanted, None)
     shown = [e for e in every if is_shown(e)][:limit]
     return [plain_alert(e, app) if e.get('type') == 'alert' else e for e in shown]
 

@@ -262,8 +262,8 @@ class EventStore(Protocol):
         """Days with a log, newest first (YYYY-MM-DD)."""
         ...
 
-    def events(self, day: str, types: set[str] | None, limit: int) -> list[dict[str, Any]]:
-        """Non-picture events of a day as dicts, newest first."""
+    def events(self, day: str, types: set[str] | None, limit: int | None) -> list[dict[str, Any]]:
+        """Non-picture events of a day as dicts, newest first (all of them when `limit` is None)."""
         ...
 
     def counts(self, day: str) -> dict[str, Any]:
