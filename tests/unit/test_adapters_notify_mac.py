@@ -131,3 +131,17 @@ def test_no_test_ever_runs_the_real_osascript(osascript_calls):
     mac.close()
     assert [args[0][0] for args, _ in osascript_calls] == ['osascript']
     osascript_calls.clear()         # caught on purpose here, so the guard lets this test pass
+
+
+def test_close_gives_up_when_the_queue_stays_full():
+    """A stuck osascript: close() waits time_limit_sec for room in the queue, then leaves the thread behind."""
+    quick = NotificationsSettings.model_construct(**{**SETTINGS.model_dump(), 'time_limit_sec': 0.1})
+    stuck = threading.Event()
+    mac = MacNotifications(quick, queue_size=1, runner=lambda args, **kwargs: stuck.wait(2))
+    mac.show('Cup', 'one')                      # taken by the thread, which is stuck on it
+    time.sleep(0.05)
+    mac.show('Cup', 'two')                      # fills the queue
+    started = time.monotonic()
+    mac.close()
+    assert time.monotonic() - started < 1
+    stuck.set()

@@ -7,13 +7,14 @@ import dataclasses
 import json
 import logging
 import shutil
+import sys
 import typing
 
 import pytest
 
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource
 from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser
-from desktalk.adapters.notify.mac import MacNotifications
+from desktalk.adapters.notify.mac import MAC_PLATFORM, MacNotifications, NoNotifications
 from desktalk.adapters.storage import JsonFileStore
 from desktalk.bootstrap import DeskTalk, build
 from desktalk.domain import AgentJoined
@@ -45,6 +46,16 @@ def build_quietly(config, tmp_path, **kw):
 def test_the_build_helper_never_makes_real_mac_pop_ups(tmp_path):
     app = build_quietly(desk_config(tmp_path), tmp_path)
     assert not isinstance(app.desktop, MacNotifications)
+
+
+def test_without_a_desktop_the_settings_pick_the_pop_ups(tmp_path):
+    """build() makes them from settings → notifications (tests/conftest.py keeps a real one from showing)."""
+    config = desk_config(tmp_path)
+    off = build_quietly(changed(config, 'notifications', enabled=False), tmp_path, desktop=None)
+    assert isinstance(off.desktop, NoNotifications)
+    on = build_quietly(config, tmp_path / 'on', desktop=None)
+    assert isinstance(on.desktop, MacNotifications if sys.platform == MAC_PLATFORM else NoNotifications)
+    on.stop()
 
 
 @pytest.mark.parametrize('kind, cls', [('pi', PiFrameSource), ('phone', PhoneFrameSource), ('webcam', WebcamSource)])

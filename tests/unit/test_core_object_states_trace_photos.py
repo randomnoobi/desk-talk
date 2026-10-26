@@ -165,3 +165,15 @@ def test_a_failing_keeper_is_only_logged(caplog):
     rig.change('appeared')
     assert all(sub['errors'] == 0 for sub in rig.bus.stats())
     assert 'disk full' in caplog.text
+
+
+def test_a_failing_camera_picture_is_only_logged(caplog):
+    rig = Rig()
+
+    def broken(cam=None):
+        raise RuntimeError('no camera')
+    rig.pictures.plain = broken
+    rig.see(CUP)
+    rig.change('appeared')
+    assert rig.whys() == [] and all(sub['errors'] == 0 for sub in rig.bus.stats())
+    assert 'Could not keep a trace picture' in caplog.text
