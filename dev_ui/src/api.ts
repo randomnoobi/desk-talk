@@ -88,6 +88,8 @@ export interface DevSettings {
   output_keep_kb: number           // settings → dev.output_keep_kb: how much of a run's printout the Checks tab keeps
   flips_window_min: number         // settings → dev.flips_window_min: how far back the ready-made "flips" query looks
   table_counts_every_sec: number   // settings → dev.table_counts_every_sec: the Database and Storage tabs count again this often
+  trace_events_kept: number        // settings → dev.trace_events_kept: an object's trace keeps this many changes and chat joins
+  trace_photos_kept: number        // settings → dev.trace_photos_kept: and this many pictures
   object_states: SmoothingSettings
 }
 
@@ -124,6 +126,37 @@ export interface SmoothingStep {
   phase: Phase
   heading: Phase | null            // where it's going while it waits
   waiting_sec: number | null
+}
+
+/** One thing that happened to an object (GET /api/dev/objects/{label}): a state change ('state') or a chat join,
+ *  leave or refusal ('chat'), with why. A value the server doesn't know is null. */
+export interface TraceRow {
+  ts: number
+  source: 'state' | 'chat'
+  kind: string                     // state: appeared, removed, moved; chat: joined, left, refused
+  confidence: number | null        // how sure the detector was (for a state change: the average while seen)
+  seen_for_sec: number | null      // how long it had been seen
+  on_desk: boolean | null          // inside the marked desk (a chat row's null: no desk corners marked)
+  step: string | null              // the sensitivity step in use (chat rows)
+  before: Phase | null             // the state before and after (state rows)
+  after: Phase | null
+}
+
+/** A picture kept of an object, with its box in the picture's own pixels. */
+export interface TracePhoto {
+  id: string
+  ts: number
+  why: 'appeared' | 'joined' | 'every'
+  confidence: number
+  box: [number, number, number, number]   // left, top, right, bottom
+  size: [number, number]                  // the picture's width, height
+}
+
+/** GET /api/dev/objects/{label}: everything that happened to one object, oldest first, and its pictures. */
+export interface ObjectTraceReply {
+  label: string
+  timeline: TraceRow[]
+  photos: TracePhoto[]
 }
 
 /** One test pytest found. `id` is pytest's node id, e.g. tests/unit/test_x.py::test_y. */
@@ -283,6 +316,12 @@ export const getTracedLabels = async () => (await getJSON<{ labels: string[] }>(
 /** The label goes in the query, so one with a slash (pen/pencil) works. Oldest picture first. */
 export const getTrace = async (label: string) =>
   (await getJSON<{ label: string, steps: SmoothingStep[] }>(`/api/dev/smoothing/trace?label=${q(label)}`)).steps
+
+/** One object's whole trace. The label is in the path; a slash in it (pen/pencil) is sent as %2F and still works. */
+export const getObjectTrace = (label: string) => getJSON<ObjectTraceReply>(`/api/dev/objects/${q(label)}`)
+
+/** Where one of an object's pictures is (a JPEG). */
+export const tracePhotoUrl = (id: string) => `/api/dev/objects/photo/${q(id)}`
 
 export const getTests = async () => (await getJSON<{ tests: TestItem[] }>('/api/dev/tests')).tests
 
