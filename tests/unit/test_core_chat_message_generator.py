@@ -236,6 +236,26 @@ def test_a_habit_updates_the_app_and_its_agent_says_it():
     assert (line['character'], line['text'], line['habit']) == ('cup', "Sip detected! That's 3 today.", 'hydration')
 
 
+def test_camera_sip_message_flagged():
+    r = Rig()
+    r.gen.on_habit(HabitEvent(ts=1.0, habit='hydration', action='sip', say='Sip detected!', extra={'how': 'camera'}))
+    assert r.sent(type='group_message')[0]['notify'] == 'sip'
+
+
+@pytest.mark.parametrize('how', ['button', 'chat'])
+def test_button_sip_not_flagged(how):
+    r = Rig()
+    r.gen.on_habit(HabitEvent(ts=1.0, habit='hydration', action='sip', say='Logged.', extra={'how': how}))
+    assert 'notify' not in r.sent(type='group_message')[0]
+
+
+def test_other_habits_are_not_flagged_as_sips():
+    r = Rig()
+    r.gen.on_habit(HabitEvent(ts=1.0, habit='breaks', action='break', say='Nice break.', extra={'how': 'camera'}))
+    r.gen.on_habit(HabitEvent(ts=1.0, habit='hydration', action='glass', say='A glass.', extra={'how': 'camera'}))
+    assert all('notify' not in m for m in r.sent(type='group_message'))
+
+
 def test_lens_speaks_for_a_habit_nobody_in_the_chat_has():
     r = Rig(members=('computer',))
     r.gen.on_habit(HabitEvent(ts=1.0, habit='hydration', action='sip', say='Sip detected!'))
@@ -259,6 +279,13 @@ def test_an_alert_with_its_own_text_is_sent_as_written():
     assert (msg['type'], msg['character'], msg['text'], msg['alert'], msg['snapshot']) == \
         ('group_message', 'cup', 'Cat detected near the desk!', 'pet_risk', 'snap1')
     assert r.ai.calls == []
+
+
+def test_alert_message_flagged():
+    r = Rig(reply='That cup is a little close to my keyboard, could you scoot it back?')
+    r.gen.on_alert(Alert(ts=1.0, kind='scenario', agent='cup', text='Cat detected near the desk!', feature='pet_risk'))
+    r.gen.on_alert(proximity())
+    assert [m['notify'] for m in r.notifier.sent] == ['warning', 'warning']
 
 
 def test_an_alert_from_nobody_known_comes_from_lens():

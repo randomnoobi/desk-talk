@@ -92,12 +92,18 @@ def test_a_nudge_is_said_by_an_agent_for_that_habit(config):
     assert wait == 30                                            # reminders.check_every_sec
     assert r.voice.asked == [('computer', SIT)]
     assert r.notifier.sent == [{'type': 'group_message', 'character': 'computer', 'text': 'Hey, stretch your legs!',
-                                'habit': 'breaks', 'toast': True, 'id': r.notifier.sent[0]['id'],
+                                'habit': 'breaks', 'toast': True, 'notify': 'reminder', 'id': r.notifier.sent[0]['id'],
                                 'ts': r.notifier.sent[0]['ts']}]
     assert r.habits.fired == [(SIT, NOON)]
     sent = r.bus.of_type(NudgeSent)
     assert [(e.ts, e.habit, e.rule, e.agent, e.evidence, e.text) for e in sent] == \
         [(NOON, 'breaks', 'breaks.sit', 'computer', 'At the desk for 34 minutes.', 'Hey, stretch your legs!')]
+
+
+def test_nudge_message_flagged(config):
+    r = Rig(config, members=('cup',))                                # Lens says it: also a reminder
+    r.reminders.tick(NOON)
+    assert r.notifier.sent[0]['notify'] == 'reminder'
 
 
 def test_the_nudge_s_own_words_when_the_agent_has_none(config):

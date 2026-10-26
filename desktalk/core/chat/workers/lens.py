@@ -196,6 +196,8 @@ class Lens:
     def _say(self, found: dict[str, Any], now: float) -> None:
         kind, text = found['kind'], found['text']
         message = {'type': 'group_message', 'character': LENS, 'text': text, 'lens': kind, 'toast': kind == 'problem'}
+        if kind == 'problem':
+            message['notify'] = 'warning'           # a warning also pops up on the desktop
         if kind == 'problem' and found['key'] in PHOTO_KEYS:
             photo = self._photos.save(self._words.photo_label)
             if photo:
