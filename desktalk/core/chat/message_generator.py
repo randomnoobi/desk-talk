@@ -27,6 +27,7 @@ from desktalk.core.chat import prompts as fill
 from desktalk.core.chat.agent_ai import AgentAI
 from desktalk.core.chat.alert_voice import AlertVoice
 from desktalk.core.chat.chat_answers import ChatAnswers
+from desktalk.core.chat.desktop_alerts import NOTIFY, REMINDER, WARNING
 from desktalk.core.chat.live_context import build_live_context
 from desktalk.core.chat.memory import ChatMemory, TrackerPanels
 from desktalk.core.chat.nudge_voice import NudgeVoice
@@ -151,7 +152,10 @@ class MessageGenerator:
             return
         msg = self._alerts.message_for_alert(ev)
         if msg:
-            self._notifier.send({**msg, 'notify': 'warning'})
+            # The clutter nudge and the plant reminder are reminders; every other alert (a danger, a pet, a lost
+            # item) is a warning. Each kind has its own switch in settings → notifications.
+            kind = REMINDER if ev.kind == 'scenario' and ev.scenario == 'reminders' else WARNING
+            self._notifier.send({**msg, NOTIFY: kind})
 
     # ════════════════════════════════════════════════════════════════
     #  Habit reminders and answering you

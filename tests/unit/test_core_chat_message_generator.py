@@ -288,6 +288,18 @@ def test_alert_message_flagged():
     assert [m['notify'] for m in r.notifier.sent] == ['warning', 'warning']
 
 
+def test_a_reminder_alert_pops_up_as_a_reminder_not_a_warning():
+    """The clutter nudge and the plant reminder follow the reminders switch; dangers follow the warnings one."""
+    r = Rig()
+    r.gen.on_alert(Alert(ts=1.0, kind='scenario', scenario='reminders', feature='organization', agent='cup',
+                         text='Lots of things on the desk.'))
+    r.gen.on_alert(Alert(ts=2.0, kind='scenario', scenario='reminders', feature='water_plants', agent='cup',
+                         text='Your plant may need water.'))
+    r.gen.on_alert(Alert(ts=3.0, kind='scenario', scenario='risk_detection', feature='pet_risk', agent='cup',
+                         text='Cat near the desk!'))
+    assert [m['notify'] for m in r.notifier.sent] == ['reminder', 'reminder', 'warning']
+
+
 def test_an_alert_from_nobody_known_comes_from_lens():
     r = Rig()
     r.gen.on_alert(Alert(ts=1.0, kind='scenario', agent='ghost', text='Too much clutter.', feature='organization'))
