@@ -17,6 +17,7 @@ import anyio
 import httpx
 import pytest
 
+from desktalk.adapters.notify.mac import MacNotifications
 from desktalk.adapters.storage.files import write_atomically
 from desktalk.bootstrap import build
 from desktalk.domain import DetectorState, UploadInfo
@@ -26,7 +27,7 @@ from desktalk.web.pairing import ensure_cert
 from raspberry_pi.camera import cli as camera_program
 from raspberry_pi.camera.clock import SystemClock as PiClock
 from raspberry_pi.camera.uploader import Uploader
-from tests.fakes import FakeDetector
+from tests.fakes import FakeDesktopNotifications, FakeDetector
 from tests.integration.app_kit import (
     LAPTOP,
     PAIR_KEY,
@@ -54,12 +55,17 @@ def wait_until(check, seconds: float = WAIT_SEC) -> bool:
 
 
 def real_desk(tmp_path, **changes):
-    """The whole app with the real clock (its background jobs run in threads), a fake detector and no AI."""
+    """The whole app with the real clock (its background jobs run in threads), a fake detector, no AI and no Mac
+    pop-ups."""
     config = desk_config(tmp_path)
     for where, values in changes.items():
         config = changed(config, where, **values)
     return build(config, clock=SystemClock(), detector=FakeDetector([LAPTOP, PERSON]), data_folder=tmp_path / 'run',
-                 pair_key=PAIR_KEY, set_up_logging=False)
+                 pair_key=PAIR_KEY, set_up_logging=False, desktop=FakeDesktopNotifications())
+
+
+def test_the_real_desk_never_makes_real_mac_pop_ups(tmp_path):
+    assert not isinstance(real_desk(tmp_path).desktop, MacNotifications)
 
 
 def uploader(url: str, key: str = PAIR_KEY) -> Uploader:

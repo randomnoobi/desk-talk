@@ -11,9 +11,25 @@ temporary folder with the fakes in tests/fakes/ and, when needed, the FakeAI bel
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
+import pytest
+
+from desktalk.adapters.notify import mac
+
+
+@pytest.fixture(autouse=True)
+def osascript_calls(monkeypatch):
+    """No test ever shows a real Mac pop-up: a MacNotifications made without its own runner (as build() makes one
+    from the settings in git) gets this recorder instead of the real osascript, and a test that reached it fails.
+    A test that means to reach it takes this fixture and empties the list."""
+    calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    monkeypatch.setattr(mac, 'subprocess', SimpleNamespace(run=lambda *args, **kw: calls.append((args, kw))))
+    yield calls
+    assert not calls, (f'a test tried to show {len(calls)} real Mac pop-up(s): pass build() a fake `desktop=` '
+                       '(tests.fakes.FakeDesktopNotifications)')
 
 
 class _Msg:

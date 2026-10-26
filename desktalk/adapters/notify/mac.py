@@ -33,14 +33,15 @@ def applescript_string(text: str) -> str:
 
 
 class MacNotifications:
-    """`runner` is subprocess.run (a test gives its own, so nothing really shows). `queue_size`: how many pop-ups
-    can wait for the background thread before new ones are dropped."""
+    """`runner` is subprocess.run when not given (a test gives its own, so nothing really shows; tests/conftest.py
+    makes sure of it). `queue_size`: how many pop-ups can wait for the background thread before new ones are
+    dropped."""
 
     def __init__(self, settings: NotificationsSettings, *, queue_size: int,
-                 runner: Callable[..., Any] = subprocess.run):
+                 runner: Callable[..., Any] | None = None):
         self._command = settings.command
         self._time_limit = settings.time_limit_sec
-        self._runner = runner
+        self._runner = runner if runner is not None else subprocess.run
         self._queue: queue.Queue[Any] = queue.Queue(maxsize=queue_size)
         self._logged_errors: set[str] = set()
         self._thread = threading.Thread(target=self._work, name='desktop notifications', daemon=True)
@@ -88,7 +89,7 @@ class NoNotifications:
 
 
 def make_notifications(settings: NotificationsSettings, platform: str, *, queue_size: int,
-                       runner: Callable[..., Any] = subprocess.run) -> MacNotifications | NoNotifications:
+                       runner: Callable[..., Any] | None = None) -> MacNotifications | NoNotifications:
     """The real notifications on a Mac when switched on; otherwise NoNotifications (saying so once if it's
     switched on but this isn't a Mac). `platform` is sys.platform."""
     if not settings.enabled:

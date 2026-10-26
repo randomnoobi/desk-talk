@@ -121,3 +121,13 @@ def test_a_mac_gets_the_real_one():
     mac = make_notifications(SETTINGS, 'darwin', queue_size=QUEUE, runner=Runner())
     assert isinstance(mac, MacNotifications)
     mac.close()
+
+
+def test_no_test_ever_runs_the_real_osascript(osascript_calls):
+    """The guard in tests/conftest.py: a MacNotifications made without a runner (as build() makes one) never
+    reaches the real osascript in a test. The call is caught here, and would fail any other test."""
+    mac = MacNotifications(SETTINGS, queue_size=QUEUE)
+    mac.show('Desk Talk', 'hello')
+    mac.close()
+    assert [args[0][0] for args, _ in osascript_calls] == ['osascript']
+    osascript_calls.clear()         # caught on purpose here, so the guard lets this test pass

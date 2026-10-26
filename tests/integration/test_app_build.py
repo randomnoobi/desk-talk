@@ -13,11 +13,12 @@ import pytest
 
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource
 from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser
+from desktalk.adapters.notify.mac import MacNotifications
 from desktalk.adapters.storage import JsonFileStore
 from desktalk.bootstrap import DeskTalk, build
 from desktalk.domain import AgentJoined
 from desktalk.ports import SmoothingTraceView
-from tests.fakes import FakeClock, FakeDetector, FakeFrameSource, FakeTestRunner
+from tests.fakes import FakeClock, FakeDesktopNotifications, FakeDetector, FakeFrameSource, FakeTestRunner
 from tests.integration.app_kit import (
     AFTERNOON,
     CUP_FAR,
@@ -33,13 +34,19 @@ from tests.integration.app_kit import (
 
 
 def build_quietly(config, tmp_path, **kw):
-    """build() with fakes and nothing written outside tmp_path (no log files, a fixed pair key)."""
+    """build() with fakes and nothing written outside tmp_path (no log files, a fixed pair key, no Mac pop-ups)."""
     kw = {'clock': FakeClock(AFTERNOON), 'detector': FakeDetector(), 'data_folder': tmp_path / 'run',
-          'pair_key': PAIR_KEY, 'set_up_logging': False, 'synchronous_events': True, **kw}
+          'pair_key': PAIR_KEY, 'set_up_logging': False, 'synchronous_events': True,
+          'desktop': FakeDesktopNotifications(), **kw}
     return build(config, **kw)
 
 
 # ── the camera ───────────────────────────────────────────────────────
+def test_the_build_helper_never_makes_real_mac_pop_ups(tmp_path):
+    app = build_quietly(desk_config(tmp_path), tmp_path)
+    assert not isinstance(app.desktop, MacNotifications)
+
+
 @pytest.mark.parametrize('kind, cls', [('pi', PiFrameSource), ('phone', PhoneFrameSource), ('webcam', WebcamSource)])
 def test_the_camera_is_the_one_the_settings_name(tmp_path, kind, cls):
     app = build_quietly(changed(desk_config(tmp_path), 'camera', source=kind), tmp_path)
