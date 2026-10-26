@@ -525,9 +525,7 @@ web:
   video_check_every_sec: 0.03 # how often the live video looks for a new picture
   photo_cache_sec: 3600       # how long the browser may keep a proof photo
   list_sizes:                 # how many entries the app's lists return: normally, and at most
-    habit_log:      {default: 40, max: 100}
     log_events:     {default: 200, max: 2000}
-    log_detections: {default: 30, max: 500}
     log: 150                  # events the Log page asks for
     photos: 6                 # proof photos shown under the live view
     chat_kept: 200            # messages the page keeps in each chat (older ones drop off)...

@@ -1,0 +1,23 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "items": [
+      {
+        "char_ids": [
+          "str"
+        ],
+        "id": "str",
+        "label": "str",
+        "labels": [
+          "str"
+        ],
+        "ts": "number",
+        "vlm_labels": []
+      }
+    ]
+  },
+  "request": "GET /api/snapshots?limit=1 (main server, busy desk)"
+}

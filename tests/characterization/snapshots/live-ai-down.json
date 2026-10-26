@@ -32,152 +32,44 @@
       }
     ],
     "ai": {
-      "label": "str",
       "problem": "str",
       "ready": "bool"
     },
     "camera": "bool",
     "camera_index": "number",
-    "camera_info": {
-      "connected": "bool",
-      "fps": "number",
-      "frames_received": "number",
-      "model": "str",
-      "pi": {
-        "last_frame_id": "str"
-      },
-      "source": "str",
-      "yolo_ms": "number"
-    },
     "camera_issues": [],
     "camera_source": "str",
     "detections": {
       "extras": [
         {
-          "bbox": [
-            "number"
-          ],
-          "confidence": "number",
-          "highlight": "bool",
           "ignored": "bool",
           "yolo_class": "str"
         }
       ],
-      "frame": {
-        "h": "number",
-        "w": "number"
-      },
-      "light": {
-        "brightness": "number",
-        "lux": "null"
-      },
-      "lost_vlm_labels": [],
       "objects": {
         "computer": {
-          "bbox": [
-            "number"
-          ],
-          "cam": "number",
-          "center": [
-            "number"
-          ],
           "class": "str",
-          "confidence": "number",
-          "icon": "str",
-          "name": "str"
+          "confidence": "number"
         },
         "cup": {
-          "bbox": [
-            "number"
-          ],
-          "cam": "number",
-          "center": [
-            "number"
-          ],
           "class": "str",
-          "confidence": "number",
-          "icon": "str",
-          "name": "str"
+          "confidence": "number"
         },
         "keys": {
-          "bbox": [
-            "number"
-          ],
-          "cam": "number",
-          "center": [
-            "number"
-          ],
           "class": "str",
-          "confidence": "number",
-          "icon": "str",
-          "name": "str"
+          "confidence": "number"
         },
         "paper": {
-          "bbox": [
-            "number"
-          ],
-          "cam": "number",
-          "center": [
-            "number"
-          ],
           "class": "str",
-          "confidence": "number",
-          "icon": "str",
-          "name": "str"
+          "confidence": "number"
         }
-      },
-      "relationship_edges": [
-        {
-          "from": "str",
-          "kind": "str",
-          "label": "str",
-          "to": "str"
-        }
-      ],
-      "timestamp": "number"
+      }
     },
-    "phone_mode": "bool",
     "pi_command": "str",
     "safety": {
-      "dangers": [
-        {
-          "depth_px": "number",
-          "label": "str",
-          "pair": [
-            "str"
-          ],
-          "type": "str"
-        }
-      ],
       "explanations": [
         "str"
-      ],
-      "relationships": [
-        {
-          "depth_px": "number",
-          "intruder": "str",
-          "severity": "str",
-          "target": "str",
-          "type": "str",
-          "zone_label": "str"
-        }
-      ],
-      "risk_events": [
-        {
-          "center_dist_px": "number",
-          "depth_px": "number",
-          "intruder": "str",
-          "intruder_class": "str",
-          "target": "str",
-          "target_class": "str",
-          "type": "str",
-          "zone_expand": "number",
-          "zone_label": "str"
-        }
-      ],
-      "risk_level": "number",
-      "rules_loaded": "bool",
-      "state": "str"
+      ]
     }
   },
   "request": "GET /api/live (main server, ai_down desk)"

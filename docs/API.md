@@ -4,7 +4,7 @@ Every web address (route) the Desk Talk servers answer, grouped by area: what it
 who is allowed to. The code is the source of truth; this page is a map of it. How the parts fit together
 is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-**62 routes in all: 50 on the main server (15 of them for the developer page), 9 on the phone camera's server, 3 on the detector service.**
+**58 routes in all: 46 on the main server (15 of them for the developer page), 9 on the phone camera's server, 3 on the detector service.**
 
 ## Three servers
 
@@ -97,13 +97,12 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
   until the first picture arrives. If the page goes away first, the reply is an empty 204.
 - `{camera}` is a whole number; the first camera is `0`.
 
-### Habits (5)
+### Habits (4)
 
 | Method | Path | What it does | Called by | Access |
 |---|---|---|---|---|
 | GET | `/api/habits/today` | Today's habits (water, breaks, light, phone, food) and the vision checks. | `web_app/app.js`, `tests/e2e/test_page.py` | anyone on the network |
 | POST | `/api/habits/log` | A habit button: a glass of water, a break, some sunlight, a snack. | `web_app/app.js` | anyone on the network |
-| GET | `/api/habit_log` | The vision habit timeline (posture, nail biting). `?category=` and `?limit=`. | `web_app/app.js` | anyone on the network |
 | GET | `/api/preferences` | Wake time, bedtime, quiet hours. | `web_app/app.js` | anyone on the network |
 | PUT | `/api/preferences` | Change them. Only the fields sent change. | `web_app/app.js` | anyone on the network |
 
@@ -113,7 +112,7 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
   ..., "quiet_end_hour": ...}`. The old names (`dnd_enabled`, `dnd_start_hour`, `dnd_end_hour`) still work.
   Replies `{"ok": true, "preferences": {...}}`; 400 for a value that isn't valid.
 
-### Event log (6)
+### Event log (3)
 
 All take `?day=2026-10-21` (today when left out, or when it isn't a date). Lists take `?limit=`: a whole
 number, kept between 1 and the most `web.list_sizes` allows; anything else is a 400.
@@ -122,10 +121,7 @@ number, kept between 1 and the most `web.list_sizes` allows; anything else is a 
 |---|---|---|---|---|
 | GET | `/api/log/days` | Days that have a log, newest first. | `web_app/app.js` | anyone on the network |
 | GET | `/api/log/events` | Joins, leaves, alerts, habits ... newest first. `?types=alert,habit`. | `web_app/app.js` | anyone on the network |
-| GET | `/api/log/presence` | What was on the desk when, as intervals. | `web_app/app.js` | anyone on the network |
-| GET | `/api/log/detections` | The per-picture lines that aren't compacted yet, newest first. | `web_app/app.js` | anyone on the network |
 | GET | `/api/log/status` | The log's folder, today's counts, the timed jobs, the event stream, the camera. | `web_app/app.js`; the developer page's System tab | anyone on the network |
-| POST | `/api/log/compact` | Compact the log now (per-picture lines become intervals). | `web_app/app.js` (the Log page's button) | anyone on the network |
 
 ### Settings (3)
 

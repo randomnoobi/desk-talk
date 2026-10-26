@@ -585,9 +585,7 @@ class ListSize(_Section):
 
 
 class ListSizes(_Section):
-    habit_log: ListSize
     log_events: ListSize
-    log_detections: ListSize
     log: PositiveInt              # these two: how many the app page asks for or shows
     photos: PositiveInt
     chat_kept: PositiveInt        # messages the page keeps per chat...

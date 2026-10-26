@@ -138,8 +138,12 @@ CASES = [
     Case('pi-frame-camera-is-phone', 'POST', '/api/pi/frame', 409, desk='phone', data=PICTURE, headers=PI_HEADERS),
     Case('live-after-pi-frame', 'GET', '/api/live', 200, desk='fresh',
          before=(Step('POST', '/api/pi/frame', data=PICTURE, headers=PI_HEADERS),),
-         values={'camera': True, 'camera_info.frames_received': 1, 'camera_info.pi.last_frame_id': 'pi-000042',
-                 'camera_info.pi.photos_stored': 42, 'camera_info.pi.disk_free_mb': 1234}),
+         values={'camera': True, 'camera_source': 'pi'}),
+    # What the Pi last said about itself is on the Log status now (the developer page reads it).
+    Case('log-status-after-pi-frame', 'GET', '/api/log/status', 200, desk='fresh',
+         before=(Step('POST', '/api/pi/frame', data=PICTURE, headers=PI_HEADERS),),
+         values={'camera.frames_received': 1, 'camera.pi.last_frame_id': 'pi-000042',
+                 'camera.pi.photos_stored': 42, 'camera.pi.disk_free_mb': 1234}),
 
     # ── Video and photos ──
     Case('video-feed-camera-0', 'GET', '/api/video_feed/0', 200, reply=MJPEG),
@@ -152,6 +156,7 @@ CASES = [
     Case('snapshot-unknown-id', 'GET', '/api/snapshot/nope', 404, reply=STATUS),
     Case('snapshots', 'GET', '/api/snapshots', 200),
     Case('snapshots-none-yet', 'GET', '/api/snapshots', 200, desk='fresh'),
+    Case('snapshots-newest-one', 'GET', '/api/snapshots?limit=1', 200),
 
     # ── Live status ──
     Case('live', 'GET', '/api/live', 200),
@@ -225,20 +230,12 @@ CASES = [
     Case('log-days', 'GET', '/api/log/days', 200, values={'today': '2026-10-21'}),
     Case('log-days-nothing-seen', 'GET', '/api/log/days', 200, desk='fresh'),
     Case('log-events', 'GET', '/api/log/events', 200),
-    Case('log-events-joins-only', 'GET', '/api/log/events?types=agent_joined&limit=2', 200),
+    Case('log-events-alerts-only', 'GET', '/api/log/events?types=alert&limit=2', 200),
     Case('log-events-other-day', 'GET', '/api/log/events?day=2026-10-20', 200, values={'day': '2026-10-20'}),
     Case('log-events-bad-day', 'GET', '/api/log/events?day=yesterday', 200, values={'day': '2026-10-21'}),
     Case('log-events-bad-limit', 'GET', '/api/log/events?limit=all', 400),     # the Flask server crashed: 500
-    Case('log-presence', 'GET', '/api/log/presence', 200),
-    Case('log-presence-nothing-seen', 'GET', '/api/log/presence', 200, desk='fresh'),
-    Case('log-detections', 'GET', '/api/log/detections?limit=1', 200),
-    Case('log-detections-nothing-seen', 'GET', '/api/log/detections', 200, desk='fresh'),
-    Case('log-detections-bad-limit', 'GET', '/api/log/detections?limit=some', 400),
     Case('log-status', 'GET', '/api/log/status', 200),
     Case('log-status-nothing-seen', 'GET', '/api/log/status', 200, desk='fresh'),
-    Case('log-compact', 'POST', '/api/log/compact', 200),
-    Case('log-status-after-compact', 'GET', '/api/log/status', 200, before=(Step('POST', '/api/log/compact'),),
-         values={'today.pictures_waiting': 0}),
 
     # ── Settings ──
     Case('rules', 'GET', '/api/rules', 200),
