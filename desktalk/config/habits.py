@@ -47,13 +47,15 @@ class HydrationRule(_Section):
     daily_goal_ml: ZeroOrMore
     goal_window_hours: PositiveNumber
     ml_per_sip: PositiveNumber
-    sip_gone_min_sec: ZeroOrMore
-    sip_gone_max_sec: ZeroOrMore
+    sip_gone_min_sec: ZeroOrMore      # from its last picture resting to resting again: at least this long...
+    sip_gone_max_sec: ZeroOrMore      # ...and at most this
     sip_lift_share: Fraction          # lifted: its box rose more than this share of the picture's height
-    sip_back_share: Fraction          # put back: within this share of the picture of where it rested
+    sip_back_share: Fraction          # back: within this share of the picture of where it rested
     sip_cover_share: Fraction         # this share of the desk vanishing at once = a covered camera
     sip_cover_pictures: PositiveInt   # ...in this many pictures in a row
-    sip_stall_sec: PositiveNumber     # no picture for longer than this while it's lifted = the camera stalled
+    sip_stall_sec: PositiveNumber     # no picture for longer than this while it's up or missing = the camera stalled
+    sip_hand_labels: Words            # the detector's words for a hand or arm
+    sip_hand_share: Fraction          # one over its spot in this share of the pictures it was missing = no sip
     remind_after_min: ZeroOrMore
     behind_by_ml: ZeroOrMore
     stop_before_bed_hours: ZeroOrMore

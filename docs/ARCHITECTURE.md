@@ -88,10 +88,13 @@ cell phone"). The roster also keeps the newest `dev.trace_events_kept` joins, le
 kind of object, with why (`ChatJoins`, for the developer page).
 
 **Sips.** A sip counts when a drink is lifted (its box rises more than `hydration.sip_lift_share` of the
-picture) and then put back where it rested, between `sip_gone_min_sec` and `sip_gone_max_sec` later. A hand
-over the cup, a cup taken away, or a covered camera (`sip_cover_share` of the desk vanishing for
-`sip_cover_pictures` pictures in a row, or no pictures for longer than `sip_stall_sec` while it
-was up) is no sip (`SipWatch` in `core/habits/habit_reader.py`).
+picture), or goes missing from the pictures, and then rests again where it was (within `sip_back_share`),
+between `sip_gone_min_sec` and `sip_gone_max_sec` after it was last seen resting. The second way is for a camera
+that looks down with the bottle at the picture's edge: drinking takes it straight out of the picture. A hand
+over the cup (a box named in `sip_hand_labels` over its resting spot in `sip_hand_share` or more of the pictures
+it was missing), a cup taken away, or a covered camera (`sip_cover_share` of the desk vanishing for
+`sip_cover_pictures` pictures in a row, or no pictures for longer than `sip_stall_sec` while it was up or
+missing) is no sip (`SipWatch` in `core/habits/habit_reader.py`).
 
 **To-dos.** `TodoFile` (`core/habits/todos.py`, saved as `data/todos.json`) keeps the to-do list the app and the
 chat send, with due dates. The reminders read it through the desk status: the day before, on the day, each day

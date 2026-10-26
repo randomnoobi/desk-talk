@@ -508,6 +508,13 @@ def test_hydration_sip_shares_load(project):
     assert hydration.sip_cover_pictures == 2
 
 
+def test_hydration_hand_settings_load(project):
+    hydration = load_config(root=project, environ={}).protocols.hydration
+    assert hydration.sip_hand_labels == ('person',)
+    assert hydration.sip_hand_share == 0.5
+    assert (hydration.sip_gone_min_sec, hydration.sip_gone_max_sec) == (2, 120)
+
+
 def test_the_other_new_settings_load(project):
     cfg = load_config(root=project, environ={})
     tasks, dev, web = cfg.protocols.tasks, cfg.dev, cfg.web

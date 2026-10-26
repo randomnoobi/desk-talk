@@ -31,20 +31,30 @@ hydration:
   daily_goal_ml: 2400         # "about 80 ounces ... across the first ten hours of the day"
   goal_window_hours: 10       # the first ten hours after waking
   ml_per_sip: 80              # a guess for one pick-up of the cup (the camera can't see how much)
-  # A sip counts only when the camera sees the drink lifted, then put back where it was. A hand over the cup or a
-  # covered camera isn't a sip.
-  sip_gone_min_sec: 3         # from lifting it to putting it back takes at least this long...
+  # A sip counts when the camera sees either of these, and the drink then rests again where it was:
+  #   lifted: the drink rises in the picture, then is put back.
+  #   gone and back: the drink goes missing, then comes back. A camera that looks down with the bottle at the
+  #   top edge of the picture never sees it rise: drinking takes it straight out of the picture.
+  # Neither counts when the camera was covered or stalled meanwhile, and "gone and back" doesn't count when a
+  # hand was over the drink's spot most of the time it was missing (a hand over the cup isn't a sip).
+  sip_gone_min_sec: 2         # from the last picture of it resting to it resting again takes at least this long...
+                              # (the user's quickest real drink took 2.7 s; shorter than this is the detector
+                              # missing it for a picture or two)
   sip_gone_max_sec: 120       # ...and at most this (taken away longer = not a sip)
   sip_lift_share: 0.08        # lifted = its box rises more than this share of the picture's height
-  sip_back_share: 0.15        # put back = it rests again within this share of the picture of where it was
+  sip_back_share: 0.15        # back = it rests again within this share of the picture of where it was
   sip_cover_share: 0.6        # when this share or more of what was on the desk vanishes in the same picture, the
                               # camera was covered: nothing in that gap is a sip
   sip_cover_pictures: 2       # ...but only when it looks like that in this many pictures in a row (the detector
                               # sometimes misses everything in one picture)
-  sip_stall_sec: 10           # no picture at all for longer than this while the drink is up = the camera stalled,
-                              # and that trip isn't a sip. The Pi's detector can take a few seconds for one picture
-                              # when it's busy, so this is several pictures' worth, and still far below
-                              # sip_gone_max_sec.
+  sip_stall_sec: 10           # no picture at all for longer than this while the drink is up or missing = the
+                              # camera stalled, and that trip isn't a sip. The Pi's detector can take a few seconds
+                              # for one picture when it's busy, so this is several pictures' worth, and still far
+                              # below sip_gone_max_sec.
+  sip_hand_labels: [person]   # the detector's words for a hand or arm. A picture where the drink is missing and
+                              # one of these boxes holds the middle of its resting spot = a hand over it...
+  sip_hand_share: 0.5         # ...and when this share or more of the pictures it was missing look like that, it
+                              # was a hand over the drink, not a drink: no sip
   remind_after_min: 45        # no sip for this long...
   behind_by_ml: 300           # ...and this far behind pace → nudge
   stop_before_bed_hours: 2    # "best to avoid a lot of water in the hours before bedtime"

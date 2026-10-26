@@ -111,12 +111,20 @@ def test_sip_when_the_cup_is_lifted_and_put_back(config):
     assert r.today()['hydration']['sips'] == 1
 
 
-def test_gone_and_back_without_being_lifted_is_not_a_sip(config):
+def test_gone_and_back_under_a_hand_is_not_a_sip(config):
     r = Rig(config)
     r.run(10, 'cup', 'laptop')
-    r.run(8, 'laptop')              # a hand over the cup
+    r.run(8, 'laptop', 'person')    # a hand over the cup (every box here is the same box)
     r.run(5, 'cup', 'laptop')
     assert r.today()['hydration']['sips'] == 0
+
+
+def test_gone_and_back_with_nothing_over_it_is_a_sip(config):
+    r = Rig(config)
+    r.run(10, 'cup', 'laptop')
+    r.run(4, 'laptop')              # picked up straight out of the picture
+    r.run(5, 'cup', 'laptop')
+    assert r.today()['hydration']['sips'] == 1
 
 
 def test_a_short_flicker_is_not_a_sip(config):
