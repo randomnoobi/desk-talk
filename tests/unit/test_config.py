@@ -508,10 +508,10 @@ def test_hydration_sip_shares_load(project):
     assert hydration.sip_cover_pictures == 2
 
 
-def test_hydration_hand_settings_load(project):
+def test_hydration_moved_setting_loads_and_the_hand_rule_is_gone(project):
     hydration = load_config(root=project, environ={}).protocols.hydration
-    assert hydration.sip_hand_labels == ('person',)
-    assert hydration.sip_hand_share == 0.5
+    assert hydration.sip_moved_share == 0.01
+    assert not hasattr(hydration, 'sip_hand_labels') and not hasattr(hydration, 'sip_hand_share')
     assert (hydration.sip_gone_min_sec, hydration.sip_gone_max_sec) == (2, 120)
 
 
