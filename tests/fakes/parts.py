@@ -149,12 +149,6 @@ class InMemoryEventStore:
         evs = [e for e in self._events.get(day, []) if not types or e['type'] in types]
         return list(reversed(evs))[:limit]
 
-    def presence(self, day: str, include_live: bool = True) -> list[dict]:
-        return []
-
-    def recent_detections(self, day: str, limit: int) -> list[dict]:
-        return list(reversed(self._detections.get(day, [])))[:limit]
-
     def counts(self, day: str) -> dict:
         by_type: dict[str, int] = {}
         for e in self._events.get(day, []):

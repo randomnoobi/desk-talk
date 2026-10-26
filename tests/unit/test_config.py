@@ -487,20 +487,21 @@ def test_the_default_sensitivity_must_be_one_of_the_steps(project):
 def test_notifications_section_loads(project):
     n = load_config(root=project, environ={}).notifications
     assert (n.enabled, n.warnings, n.reminders, n.sips) == (True, True, True, True)
-    assert (n.time_limit_sec, n.command) == (5, 'osascript')
+    assert (n.time_limit_sec, n.command, n.queue_size) == (5, 'osascript', 20)
 
 
 def test_hydration_sip_shares_load(project):
     hydration = load_config(root=project, environ={}).protocols.hydration
     assert (hydration.sip_lift_share, hydration.sip_back_share, hydration.sip_cover_share) == (0.08, 0.15, 0.6)
+    assert hydration.sip_cover_pictures == 2
 
 
 def test_the_other_new_settings_load(project):
     cfg = load_config(root=project, environ={})
     tasks, dev, web = cfg.protocols.tasks, cfg.dev, cfg.web
     assert (tasks.remind_after_min, tasks.due_soon_days, tasks.late_repeat_hours) == (120, 1, 24)
-    assert (dev.trace_photos_kept, dev.trace_photo_every_sec, dev.trace_photo_quality, dev.trace_events_kept) == (
-        6, 120, 80, 50)
+    assert (dev.trace_photos_kept, dev.trace_photo_every_sec, dev.trace_events_kept) == (6, 120, 50)
+    assert 'trace_photo_quality' not in type(dev).model_fields        # the photos are the camera's JPEG as it is
     assert dev.trace_photos_folder == Path('data/trace_photos')
     assert (web.camera_note_after_sec, web.saved_note_sec, web.retry_start_sec) == (5, 4, 3)
     sizes = web.list_sizes
@@ -525,3 +526,12 @@ def test_settings_that_are_gone_are_dropped_from_your_own_file(project, caplog):
         cfg = load_config(root=project, environ={})
     assert cfg.agents.max_agents == 7
     assert 'agents.join_after_sec' in caplog.text and 'vision_habits' in caplog.text
+
+
+def test_the_event_log_lists_and_the_photo_quality_that_went_are_dropped_from_your_own_file(project, caplog):
+    write_local(project, 'web:\n  list_sizes:\n    habit_log: 40\n    log_detections: 30\n    toast_chars: 99\n'
+                         'dev:\n  trace_photo_quality: 70\n')
+    with caplog.at_level('WARNING'):
+        cfg = load_config(root=project, environ={})
+    assert cfg.web.list_sizes.toast_chars == 99
+    assert all(word in caplog.text for word in ('habit_log', 'log_detections', 'trace_photo_quality'))

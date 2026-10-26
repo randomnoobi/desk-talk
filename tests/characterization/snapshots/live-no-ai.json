@@ -7,7 +7,7 @@
     "agents": [
       {
         "about": "str",
-        "art": "null|str",
+        "art": "str",
         "auto": "bool",
         "color": "str",
         "confidence": "number",
@@ -28,7 +28,7 @@
         "nickname": "str",
         "object": "str",
         "on_desk": "bool",
-        "tracker": "null|str"
+        "tracker": "str"
       }
     ],
     "ai": {
@@ -45,25 +45,7 @@
           "ignored": "bool",
           "yolo_class": "str"
         }
-      ],
-      "objects": {
-        "computer": {
-          "class": "str",
-          "confidence": "number"
-        },
-        "cup": {
-          "class": "str",
-          "confidence": "number"
-        },
-        "keys": {
-          "class": "str",
-          "confidence": "number"
-        },
-        "paper": {
-          "class": "str",
-          "confidence": "number"
-        }
-      }
+      ]
     },
     "pi_command": "str",
     "safety": {

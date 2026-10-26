@@ -1,0 +1,18 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "ok": "bool",
+    "preferences": {
+      "bed_time": "str",
+      "quiet_enabled": "bool",
+      "quiet_end_hour": "number",
+      "quiet_start_hour": "number",
+      "sensitivity": "number",
+      "wake_time": "str"
+    }
+  },
+  "request": "PUT /api/preferences (main server, busy desk)"
+}

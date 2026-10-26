@@ -28,7 +28,7 @@ from desktalk.bootstrap import DeskTalk, build
 from desktalk.domain import BBox, Detection, TestItem
 from desktalk.web.pairing import Links
 from tests.conftest import FakeAI
-from tests.fakes import FakeClock, FakeDetector, FakeTestRunner
+from tests.fakes import FakeClock, FakeDesktopNotifications, FakeDetector, FakeTestRunner
 from tests.integration.app_kit import changed, desk_config, inbox
 
 from .cases import DEV_TEST_ID, PAIR_KEY, PHONE_HEADERS, PHONE_URL, PI_HEADERS, PICTURE
@@ -114,7 +114,7 @@ def desks(tmp_path):
         detector = FakeDetector()
         app = build(config, clock=clock, detector=detector, data_folder=tmp_path / 'run', pair_key=PAIR_KEY,
                     synchronous_events=True, set_up_logging=False,
-                    test_runner=FakeTestRunner(DEV_TESTS, clock=clock),
+                    test_runner=FakeTestRunner(DEV_TESTS, clock=clock), desktop=FakeDesktopNotifications(),
                     client_factory=None if reply is None else lambda **kw: FakeAI(reply=reply, **kw))
         phone_port = config.camera.phone_port if name == 'phone' else None    # its server runs only then
         links = Links(COMPUTER_ADDRESS, config.web.port, app.pair_key, phone_port=phone_port)

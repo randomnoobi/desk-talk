@@ -7,7 +7,7 @@
     "agents": [
       {
         "about": "str",
-        "art": "null|str",
+        "art": "str",
         "auto": "bool",
         "color": "str",
         "confidence": "number",
@@ -28,7 +28,7 @@
         "nickname": "str",
         "object": "str",
         "on_desk": "bool",
-        "tracker": "null|str"
+        "tracker": "str"
       }
     ],
     "lens": {

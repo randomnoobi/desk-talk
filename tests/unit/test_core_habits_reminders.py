@@ -37,6 +37,7 @@ from tests.fakes import (
     FakePreferences,
     FakeProfiles,
     FakeRuleNudges,
+    FakeTodoList,
     InMemoryKeyValueStore,
     RecordingNotifier,
     StaticRoster,
@@ -225,13 +226,14 @@ class Desk:
         prefs = FakePreferences({'wake_time': '07:00', 'bed_time': '22:30', 'quiet_enabled': False,
                                  'quiet_start_hour': 22, 'quiet_end_hour': 7})
         self.profiles = ProfileBook(config.agents_file, InMemoryKeyValueStore(), personality_max_chars=400)
-        self.roster = Roster(self.bus, self.profiles, self.desk, config.agents, config.presence)
+        self.roster = Roster(self.bus, self.profiles, self.desk, config.agents, config.presence, prefs,
+                             joins_kept=config.dev.trace_events_kept)
         self.habits = HabitTracker(self.clock, self.bus, InMemoryKeyValueStore(), self.profiles, prefs, self.desk,
                                    config.protocols, config.habit_tracker, config.presence, config.agents,
                                    phone_counts=True, words=config.prompts.habits)
         states = FakeObjectStates([ObjectSnapshot('person', 'PRESENT', start)])     # someone at the desk
         self.status = DeskStatusService(self.desk, self.camera, prefs, config.reminders, states,
-                                        person_label='person', clock=self.clock)
+                                        person_label='person', clock=self.clock, todos=FakeTodoList())
         self.voice = FakeChatVoice('35 minutes of sitting! Walk five minutes, leave your phone.')
         self.notifier = RecordingNotifier(self.clock)
         self.reminders = HabitReminders(self.habits, FakeRuleNudges(), self.status, self.roster, self.profiles,

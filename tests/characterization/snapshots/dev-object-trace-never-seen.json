@@ -1,0 +1,12 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "label": "str",
+    "photos": [],
+    "timeline": []
+  },
+  "request": "GET /api/dev/objects/pen%2Fpencil (main server, busy desk)"
+}

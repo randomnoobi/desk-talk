@@ -67,6 +67,8 @@ WRONG_KEY = {'X-Desk-Key': 'not-the-key'}
 
 TODO_LIST = {'type': 'todo', 'items': [{'text': 'Send the report', 'done': False},
                                        {'text': 'Water the plant', 'done': True}]}
+DATED_TODOS = {'type': 'todo', 'items': [{'text': 'Essay', 'done': False, 'due': '2026-10-30'},
+                                         {'text': 'Call mum', 'done': False, 'due': 'next friday'}]}  # a bad date
 OUTLINE = [[0, 0.5], [1, 0.5], [1, 1], [0, 1]]
 # The developer page (/api/dev/..., only from this computer): the test its fake runner knows, and the pages that
 # may ask (the server's own and the Vite dev server's, settings → web.port and dev.vite_port as in git).
@@ -206,6 +208,11 @@ CASES = [
     Case('chat-todos-unknown-chat', 'POST', '/api/chat_todos', 400, json={'chat': 'nobody', 'widget': TODO_LIST}),
     Case('chat-todos-sync', 'POST', '/api/chat_todos_sync', 200, json={'by_chat': {'paper': TODO_LIST}}),
     Case('chat-todos-sync-bad-payload', 'POST', '/api/chat_todos_sync', 400, json={'by_chat': ['paper']}),
+    Case('todos', 'GET', '/api/todos', 200, desk='fresh', values={'has_list': False, 'items': []}),
+    Case('todos-after-sync', 'GET', '/api/todos', 200,
+         before=(Step('POST', '/api/chat_todos_sync', {'by_chat': {'paper': DATED_TODOS}}),),
+         values={'has_list': True, 'items': [{'text': 'Essay', 'done': False, 'due': '2026-10-30'},
+                                             {'text': 'Call mum', 'done': False, 'due': None}]}),
     Case('widget-event', 'POST', '/api/widget_event', 200, json={'chat': 'cup', 'action': 'view'}),
     Case('widget-event-unknown-chat', 'POST', '/api/widget_event', 400, json={'chat': 'nobody', 'action': 'view'}),
 
@@ -221,6 +228,9 @@ CASES = [
     Case('preferences-put', 'PUT', '/api/preferences', 200,
          json={'wake_time': '06:30', 'bed_time': '23:00', 'quiet_enabled': True}),
     Case('preferences-put-bad-time', 'PUT', '/api/preferences', 400, json={'wake_time': 'noon'}),
+    Case('preferences-put-sensitivity', 'PUT', '/api/preferences', 200, json={'sensitivity': 0},
+         values={'preferences.sensitivity': 0}),
+    Case('preferences-put-bad-sensitivity', 'PUT', '/api/preferences', 400, json={'sensitivity': 'abc'}),
     Case('preferences-put-old-names', 'PUT', '/api/preferences', 200, json={'dnd_enabled': True, 'dnd_start_hour': 21},
          values={'preferences.quiet_enabled': True, 'preferences.quiet_start_hour': 21}),
     Case('preferences-after-put', 'GET', '/api/preferences', 200,
@@ -267,6 +277,10 @@ CASES = [
     Case('dev-smoothing-trace-never-seen', 'GET', '/api/dev/smoothing/trace?label=pen%2Fpencil', 200,
          values={'label': 'pen/pencil', 'steps': []}),
     Case('dev-smoothing-trace-no-label', 'GET', '/api/dev/smoothing/trace', 400),
+    Case('dev-object-trace', 'GET', '/api/dev/objects/cup', 200, values={'label': 'cup'}),
+    Case('dev-object-trace-never-seen', 'GET', '/api/dev/objects/pen%2Fpencil', 200,
+         values={'label': 'pen/pencil', 'timeline': [], 'photos': []}),
+    Case('dev-object-photo-gone', 'GET', '/api/dev/objects/photo/nope', 404, reply=STATUS),
     Case('dev-tests', 'GET', '/api/dev/tests', 200, desk='fresh'),
     Case('dev-run-check', 'POST', '/api/dev/runs', 200, desk='fresh', json={'check': True},
          values={'run_id': 'run-1'}),

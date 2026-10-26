@@ -34,33 +34,35 @@ can share one agent: `laptop`, `keyboard`, `mouse` and `tv` are all **Computer**
 | Computer (Monty) | laptop, keyboard, mouse, tv | breaks, screens | breaks |
 | Cup (Glug) | cup, bottle, mug, wine glass | hydration | hydration |
 | Snack (Munch) | banana, apple, pizza, chips… | food | food |
-| Paper (Sheets) | book, notepaper, folder | tasks | to-do list |
+| Book (Sheets) | book, notepaper, folder | tasks | to-do list |
 | Phone (Buzz) | cell phone | phone-free time | phone-free |
 | Lamp | lamp | light | light |
 | AirPods, Headphones, Keys, Cable (Zip), Sprout, Pen, Watch, Glasses, Scissors, Power Bank (Surge) | … | | |
 
-**Anything else** (a stapler, a candle…) still joins, using the `default` block. If
-an AI is connected, it invents a one-line personality the first time
-(`agents.invent_personality`, at most `agents.personality_max_chars` letters), saved in
-`data/learned_personalities.json`.
+**Only Computer, Cup, Phone, Snack and Book join the chat** (`agents.can_join` in `config/settings.yaml`),
+once the camera is sure enough of one for long enough: the Sensitivity slider in the app's Settings picks the
+step (`agents.sensitivity_steps`). Everything else (glasses, scissors, keys, a stapler…) is turned away, and
+the developer page's trace says so. It still counts for the desk warnings: the roster keeps a second list of
+everything on the desk (`DeskScene.on_desk()`), and the warnings read that one.
 
 **Lens** is always there: it's the camera (`Lens`, `desktalk/core/chat/workers/lens.py`).
 It speaks about the camera view (dark, blurry, the Pi stopped sending), about the Pi
-itself (running hot, its clock off, its own detector off), and says habit reminders
-when no agent that speaks for that habit is on the desk. Lens never uses the AI.
+itself (running hot, its clock off, its own detector off), says habit reminders
+when no agent that speaks for that habit is on the desk, and gives the desk warnings nobody in the chat can
+give ("Heads up: scissors next to the cell phone"). Lens never uses the AI.
 
 ## When agents talk
 
 | Trigger | Who speaks | Code |
 |---|---|---|
 | Joins the chat | that agent (hello) | `Roster` → `AgentJoined` → `MessageGenerator.on_roster` |
-| Something risky enters a danger zone | the fragile one (Computer, Paper, Phone) or the intruder | `DeskMonitor` → `Alert` → `MessageGenerator.on_alert` |
-| Near a marked desk edge | that agent | same |
+| Something risky enters a danger zone | the fragile one (Computer, Book, Phone) or the intruder, if in the chat; else Lens | `DeskMonitor` → `Alert` → `MessageGenerator.on_alert` |
+| Near a marked desk edge | that agent if in the chat, else Lens | same |
 | Sip, break, food spotted, phone-free streak | an agent for that habit, or Lens | `HabitTracker` → `HabitEvent` → `MessageGenerator.on_habit` |
 | A Protocols reminder is due | an agent for that habit, or Lens | `HabitReminders` (words from `MessageGenerator.phrase_nudge`) |
 | You write in the group | @mentioned agents, the one you name, or a random one on the desk | `POST /api/chat` → `MessageGenerator.answer` |
 | You write 1-on-1 | that agent | `POST /api/chat` → `MessageGenerator.answer` |
-| "Have you seen my keys?" | Paper if on the desk, else Lens | `LostItems.answer` |
+| "Have you seen my keys?" | Book if on the desk, else Lens | `LostItems.answer` |
 | A tracked item has been gone a while | Lens | `LostItems` → `Alert` → `MessageGenerator.on_alert` |
 | Every 12–25 min, 2+ agents on the desk | a small-talk round | `IdleChat` |
 | 9 pm | a random agent: the daily recap | `DailySummary` |
@@ -68,9 +70,10 @@ when no agent that speaks for that habit is on the desk. Lens never uses the AI.
 Every message goes out through the **message hub** (`MessageHub`,
 `desktalk/core/chat/message_hub.py`) to every open app page, over Server-Sent Events
 (`GET /api/events`). The hub also keeps the recent messages for a page that opens later
-(`GET /api/messages/recent`).
+(`GET /api/messages/recent`). Warnings, habit reminders and the sips the camera saw first pass through
+`DesktopAlerts`, which also shows them as Mac notifications (settings → `notifications`).
 
-`HabitReminders`, `Lens`, `IdleChat`, `LostItems`, `DailySummary` and `VisionHabits` are
+`HabitReminders`, `Lens`, `IdleChat`, `LostItems` and `DailySummary` are
 background jobs (`PeriodicWorker`s) run by the Supervisor: if one round fails (say, the AI
 returns something broken), it's logged and the job carries on a little later, instead of
 going quiet until the next restart. The background chat jobs are in

@@ -40,9 +40,13 @@ MOVED_ENV = ('CAMERA_SOURCE', 'CAMERA_INDICES', 'PIPELINE_CAMERA', 'EVENT_COOLDO
              'DISAPPEAR_FRAMES', 'REMINDER_WARMUP_MIN', 'HABIT_MIN_GAP_SEC', 'IDLE_CHAT_MIN_SEC')
 # Settings that are gone. Your own settings.local.yaml may still have them, so they're left out (with a note in the
 # log) instead of stopping startup. agents.join_after_sec and agents.min_confidence became agents.sensitivity_steps;
-# vision_habits went with the posture checks.
+# vision_habits went with the posture checks; web.list_sizes.habit_log / log_detections went with the Event log's
+# detections list and the vision habit timeline; dev.trace_photo_quality was never used (the trace pictures are
+# the camera's own JPEG).
 RETIRED_SETTINGS: tuple[tuple[str, ...], ...] = (('agents', 'join_after_sec'), ('agents', 'min_confidence'),
-                                                 ('vision_habits',))
+                                                 ('vision_habits',), ('web', 'list_sizes', 'habit_log'),
+                                                 ('web', 'list_sizes', 'log_detections'),
+                                                 ('dev', 'trace_photo_quality'))
 
 log = logging.getLogger(__name__)
 

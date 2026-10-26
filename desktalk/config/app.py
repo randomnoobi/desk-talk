@@ -662,6 +662,7 @@ class NotificationsSettings(_Section):
     sips: bool
     time_limit_sec: PositiveNumber
     command: str                      # the program that shows them (the Mac's osascript)
+    queue_size: PositiveInt           # pop-ups that can wait to be shown (more are dropped)
 
 
 class LoggingSettings(_Section):
@@ -716,7 +717,6 @@ class DevSettings(_Section):
     trace_photos_folder: Path
     trace_photos_kept: PositiveInt
     trace_photo_every_sec: PositiveNumber
-    trace_photo_quality: JpegQuality
     trace_events_kept: PositiveInt
     health: DevHealthLimits
 

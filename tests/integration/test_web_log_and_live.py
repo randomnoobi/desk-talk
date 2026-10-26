@@ -12,8 +12,10 @@ import pytest
 from desktalk.domain import (
     AgentJoined,
     Alert,
+    BBox,
     CameraNotice,
     Compaction,
+    Detection,
     DetectionEvent,
     HabitEvent,
     Light,
@@ -163,13 +165,21 @@ def test_live_reply_has_only_page_fields(tmp_path):
     live = web_client(rig.app).get('/api/live?qr=1').json()
     assert set(live) == {'camera', 'camera_source', 'camera_index', 'agents', 'detections', 'safety',
                          'camera_issues', 'ai', 'pi_command'}
-    assert set(live['detections']) == {'objects', 'extras'}
-    assert set(live['detections']['objects']['computer']) == {'class', 'confidence'}
-    assert live['detections']['objects']['computer']['class'] == 'laptop'
+    assert set(live['detections']) == {'extras'}
     assert set(live['safety']) == {'explanations'}
     assert set(live['ai']) == {'ready', 'problem'}
     for extra in live['detections']['extras']:
         assert set(extra) == {'yolo_class', 'ignored'}
+
+
+def test_live_lists_what_is_on_the_desk_but_not_in_the_chat(tmp_path):
+    """The page's "on the desk" list: the chat's members (from `agents`) plus everything else the warnings see."""
+    rig = DeskRig(tmp_path)
+    rig.watch(4, LAPTOP, CUP_FAR, Detection('scissors', 0.9, BBox(30, 400, 80, 450)))
+    rig.watch(0.5, LAPTOP, CUP_FAR)                  # the scissors are missed in the newest pictures
+    live = web_client(rig.app).get('/api/live').json()
+    assert live['detections']['extras'] == [{'yolo_class': 'scissors', 'ignored': False}]
+    assert {a['id'] for a in live['agents'] if a['on_desk']} == {'computer', 'cup'}
 
 
 def test_live_on_a_phone_camera_has_the_phone_link_and_no_other_extras(tmp_path):
@@ -217,3 +227,4 @@ def test_ui_settings_leaves_out_what_the_page_no_longer_reads(tmp_path):
     ui = web_client(DeskRig(tmp_path).app).get('/api/ui_settings').json()
     assert 'habit_log_shown' not in ui['web']
     assert 'compact_every_min' not in ui['pi']
+    assert not {'sunlight_default_min', 'glass_ml', 'goal_window_hours'} & set(ui['habits'])

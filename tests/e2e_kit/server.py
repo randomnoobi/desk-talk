@@ -37,7 +37,7 @@ from desktalk.web.app import create_app
 from desktalk.web.serve import ServerThread, server_config
 from desktalk_shared.wire import DETECTOR_TURNED_OFF, DetectorState, UploadInfo, encode_upload
 from tests.conftest import FakeAI
-from tests.fakes import FakeDetector, InMemoryKeyValueStore
+from tests.fakes import FakeDesktopNotifications, FakeDetector, InMemoryKeyValueStore
 from tests.integration.app_kit import PAIR_KEY, SAFETY_RULES, desk_config
 from tests.integration.web_kit import THIS_COMPUTER, links_for
 
@@ -123,7 +123,8 @@ class AppServer:
 
         self.app = build(self.config, detector=self.detector, client_factory=client_factory,
                          data_folder=self.tmp_path / 'run', pair_key=PAIR_KEY, set_up_logging=False,
-                         config_store=InMemoryKeyValueStore({'safety_rules': SAFETY_RULES}))
+                         config_store=InMemoryKeyValueStore({'safety_rules': SAFETY_RULES}),
+                         desktop=FakeDesktopNotifications())       # no real Mac pop-ups from the tests
         web = create_app(self.app, links_for(self.app))
         self._server = ServerThread(server_config(web, host=THIS_COMPUTER, port=self.port, lifespan='on'), name='e2e')
         self._server.start()

@@ -14,8 +14,7 @@
     "camera_issues": [],
     "camera_source": "str",
     "detections": {
-      "extras": [],
-      "objects": {}
+      "extras": []
     },
     "pi_command": "str",
     "safety": {

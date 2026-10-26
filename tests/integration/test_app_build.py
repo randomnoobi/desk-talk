@@ -27,6 +27,7 @@ from tests.integration.app_kit import (
     DeskRig,
     changed,
     desk_config,
+    event_log_file,
     restore_logging,
 )
 
@@ -193,8 +194,8 @@ def test_the_scheduler_compacts_the_log_and_saves_the_habits(tmp_path):
                      'save object states': rig.config.object_states.snapshot_every_sec}
     rig.tick(rig.app.scheduler, after=rig.config.event_log.compact_every_min * 60)
     day = rig.app.event_log.days()[0]
-    assert rig.app.event_log.recent_detections(day, 10) == []
-    assert {i['label'] for i in rig.app.event_log.presence(day, include_live=False)} == {'laptop', 'person'}
+    assert event_log_file(rig.app).recent_detections(day, 10) == []
+    assert {i['label'] for i in event_log_file(rig.app).presence(day, include_live=False)} == {'laptop', 'person'}
     assert rig.app.store.load('habits/2026-10-21')['day'] == '2026-10-21'
 
 
@@ -204,8 +205,8 @@ def test_stop_saves_the_habits_compacts_the_log_and_closes_the_event_stream(tmp_
     assert rig.app.stop(timeout=1) == []
     day = rig.app.event_log.days()[0]
     assert rig.app.store.load('habits/2026-10-21')['objects_seen'] == ['Computer']
-    assert rig.app.event_log.recent_detections(day, 10) == []
-    assert {i['label'] for i in rig.app.event_log.presence(day, include_live=False)} == {'laptop', 'person'}
+    assert event_log_file(rig.app).recent_detections(day, 10) == []
+    assert {i['label'] for i in event_log_file(rig.app).presence(day, include_live=False)} == {'laptop', 'person'}
     joined = len(rig.app.event_log.events(day, {'agent_joined'}, 10))
     rig.app.bus.publish(AgentJoined(ts=rig.clock.now(), agent='cup', name='Cup', label='cup', conf=0.9))
     assert len(rig.app.event_log.events(day, {'agent_joined'}, 10)) == joined      # closed: nothing more is logged

@@ -40,7 +40,7 @@ def test_live_shows_the_agents_the_detections_and_the_pi_command_on_this_compute
     rig.watch(4, LAPTOP)
     live = web_client(rig.app).get('/api/live').json()
     assert [a['id'] for a in live['agents'] if a['on_desk']] == ['computer']
-    assert live['detections']['objects']['computer']['class'] == 'laptop'
+    assert live['detections']['extras'] == []                # the laptop is in the chat, so not an extra
     assert live['pi_command'] == f'python3 -m raspberry_pi.camera --server http://192.168.1.20:5000 --key {PAIR_KEY}'
     assert 'pi_command' not in web_client(rig.app, from_ip=ON_THE_WIFI).get('/api/live').json()
 
@@ -204,7 +204,6 @@ def test_ui_settings_reply(tmp_path):
     assert ui['web']['new_zone_px'] == 60
     assert ui['chat'] == {'message_max_chars': 1200, 'history_from_app': 10, 'todo_max_items': 20,
                           'todo_max_chars': 200}
-    assert ui['habits']['sunlight_default_min'] == 10
     assert ui['habits']['morning_minutes'] == {'clear': 10, 'partly_cloudy': 20, 'overcast': 30}
     assert ui['habits']['breaks']['sit_limit_min'] == c.protocols.breaks.sit_limit_min
     assert (ui['habits']['morning_window_min'], ui['habits']['evening_dim_before_bed_min'],

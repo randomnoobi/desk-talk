@@ -35,6 +35,7 @@ from tests.integration.app_kit import (
     changed,
     desk_config,
     desk_jpeg,
+    event_log_file,
     inbox,
     pi_camera,
 )
@@ -89,7 +90,7 @@ def test_the_camera_programs_uploads_reach_the_server_in_each_detector_state(tmp
         app.producer.tick(rig.clock.now())
     assert (pi.sent, pi.failed) == (3, 0)
     day = app.event_log.days()[0]
-    events = list(reversed(app.event_log.recent_detections(day, 10)))
+    events = list(reversed(event_log_file(app).recent_detections(day, 10)))
     assert [(e['frame_id'], e['detected_on']) for e in events] == [('pi-000001', 'pi'), ('pi-000003', 'computer')]
     assert rig.detector.calls == 1                       # only the off picture was detected here
     assert pi_camera(app).status()['detector'] == 'off'
@@ -124,7 +125,7 @@ def test_the_camera_program_gets_its_settings_from_the_server_and_its_pictures_g
     assert (upload.version, upload.detector) == (2, DetectorState.OFF)
     assert upload.detector_reason == 'detection on the Pi is turned off (--no-detector)'
     day = app.event_log.days()[0]
-    assert {i['label'] for i in app.event_log.presence(day)} == {'laptop', 'person'}
+    assert {i['label'] for i in event_log_file(app).presence(day)} == {'laptop', 'person'}
 
 
 # ── starting and stopping ────────────────────────────────────────────

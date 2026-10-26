@@ -6,10 +6,11 @@ from __future__ import annotations
 import threading
 import time
 
+from desktalk.adapters.notify import MacNotifications
 from desktalk.bootstrap import build
 from desktalk.runtime import SystemClock
 from tests.fakes import FakeDetector
-from tests.integration.app_kit import LAPTOP, PAIR_KEY, PERSON, desk_config, desk_jpeg, inbox
+from tests.integration.app_kit import LAPTOP, PAIR_KEY, PERSON, desk_config, desk_jpeg, event_log_file, inbox
 
 JOBS = {'detection', 'scheduler', 'rule engine', 'habit reminders', 'idle chat', 'lost items', 'lens',
         'daily recap'}
@@ -27,8 +28,11 @@ def wait_until(check, seconds: float) -> bool:
 def test_start_runs_every_job_in_its_own_thread_and_stop_ends_them_quickly(tmp_path):
     config = desk_config(tmp_path)
     threads_before = set(threading.enumerate())
+    shown: list[list[str]] = []                 # the Mac pop-ups' own thread runs, but nothing really pops up
+    desktop = MacNotifications(config.notifications, queue_size=config.notifications.queue_size,
+                               runner=lambda command, **_: shown.append(command))
     app = build(config, clock=SystemClock(), detector=FakeDetector([LAPTOP, PERSON]), data_folder=tmp_path / 'run',
-                pair_key=PAIR_KEY, set_up_logging=False)
+                pair_key=PAIR_KEY, set_up_logging=False, desktop=desktop)
     app.start()
     try:
         assert {job['name'] for job in app.supervisor.status()} == JOBS
@@ -37,7 +41,7 @@ def test_start_runs_every_job_in_its_own_thread_and_stop_ends_them_quickly(tmp_p
         assert wait_until(lambda: app.producer.pictures_analysed == 1, seconds=5)
         assert app.bus.wait_idle(timeout=5)
         day = app.event_log.days()[0]
-        assert [e['detected_obj'][0]['label'] for e in app.event_log.recent_detections(day, 10)] == ['laptop']
+        assert [e['detected_obj'][0]['label'] for e in event_log_file(app).recent_detections(day, 10)] == ['laptop']
     finally:
         started = time.monotonic()
         still_running = app.stop(timeout=5)
@@ -45,6 +49,7 @@ def test_start_runs_every_job_in_its_own_thread_and_stop_ends_them_quickly(tmp_p
     assert still_running == []
     assert took < config.camera.wait_for_picture_sec + 1          # the producer finishes waiting for a picture
     assert {job['state'] for job in app.supervisor.status()} == {'stopped'}
-    assert [t.name for t in threading.enumerate() if t not in threads_before] == []      # jobs and event consumers
+    # jobs, event consumers and the pop-ups' thread
+    assert [t.name for t in threading.enumerate() if t not in threads_before] == []
     assert app.store.load(f'habits/{day}')['day'] == day
-    assert app.event_log.recent_detections(day, 10) == []            # compacted at stop
+    assert event_log_file(app).recent_detections(day, 10) == []            # compacted at stop

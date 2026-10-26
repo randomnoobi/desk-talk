@@ -44,6 +44,8 @@ EVERY_ROUTE: list[tuple[str, str, Any]] = [
     ('POST', '/api/dev/db/object_states/query', {'sql': 'SELECT 1'}),
     ('GET', '/api/dev/files', None),
     ('GET', '/api/dev/files/preview?path=preferences.json', None),
+    ('GET', '/api/dev/objects/cup', None),
+    ('GET', '/api/dev/objects/photo/nope', None),
 ]
 
 

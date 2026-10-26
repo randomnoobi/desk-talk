@@ -37,16 +37,13 @@
       },
       "evening_dim_before_bed_min": "number",
       "food_label_max_chars": "number",
-      "glass_ml": "number",
-      "goal_window_hours": "number",
       "morning_minutes": {
         "clear": "number",
         "overcast": "number",
         "partly_cloudy": "number"
       },
       "morning_window_min": "number",
-      "stop_before_bed_hours": "number",
-      "sunlight_default_min": "number"
+      "stop_before_bed_hours": "number"
     },
     "lens_card": {
       "about": "str",

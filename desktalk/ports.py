@@ -266,13 +266,6 @@ class EventStore(Protocol):
         """Non-picture events of a day as dicts, newest first."""
         ...
 
-    def presence(self, day: str, include_live: bool = True) -> list[dict[str, Any]]:
-        """What was on the desk when, as intervals."""
-        ...
-
-    def recent_detections(self, day: str, limit: int) -> list[dict[str, Any]]:
-        ...
-
     def counts(self, day: str) -> dict[str, Any]:
         ...
 

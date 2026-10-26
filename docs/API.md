@@ -4,7 +4,7 @@ Every web address (route) the Desk Talk servers answer, grouped by area: what it
 who is allowed to. The code is the source of truth; this page is a map of it. How the parts fit together
 is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-**58 routes in all: 46 on the main server (15 of them for the developer page), 9 on the phone camera's server, 3 on the detector service.**
+**61 routes in all: 49 on the main server (17 of them for the developer page), 9 on the phone camera's server, 3 on the detector service.**
 
 ## Three servers
 
@@ -52,7 +52,7 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 |---|---|---|---|---|
 | GET | `/api/health` | How every part is doing in one reply: background jobs, timed jobs, event consumers, camera, what the Pi said lately, detection, the AI. | The developer page's System and Storage tabs (`dev_ui/src/api.ts`). People `curl` it ([raspberry_pi/README.md](../raspberry_pi/README.md)); `tests/e2e/test_full_stack.py` | anyone on the network |
 
-### Chat (8)
+### Chat (9)
 
 | Method | Path | What it does | Called by | Access |
 |---|---|---|---|---|
@@ -61,7 +61,8 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 | GET | `/api/messages/recent` | The last messages, for a page that just opened. | `web_app/app.js` | anyone on the network |
 | POST | `/api/activity` | "I'm typing", so the small talk holds off. Empty reply (204). | `web_app/app.js` (a ping while you type, and a beacon when the page closes) | anyone on the network |
 | POST | `/api/chat` | Your message, to the group or to one agent. Replies with the answers. | `web_app/app.js` | anyone on the network |
-| POST | `/api/chat_todos` | Save one agent's to-do list. | `web_app/app.js` | anyone on the network |
+| GET | `/api/todos` | The to-do list the server keeps, with due dates. The app loads it when it opens (the server's copy wins). | `web_app/app.js` | anyone on the network |
+| POST | `/api/chat_todos` | Save one agent's to-do list (for Book, also the server's list). | `web_app/app.js` | anyone on the network |
 | POST | `/api/chat_todos_sync` | Save every agent's to-do list at once. | `web_app/app.js` | anyone on the network |
 | POST | `/api/widget_event` | "I opened (or used) this agent's panel." | `web_app/app.js` | anyone on the network |
 
@@ -72,13 +73,18 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
   "widget": {...}}`. Replies `{"messages": [...]}`. 400 for an empty message or an unknown chat.
 - `POST /api/chat_todos`: `{"chat": "<agent id>", "widget": {...}}`. `/api/chat_todos_sync`:
   `{"by_chat": {"<agent id>": {...}}}`. `/api/widget_event`: `{"chat": "<agent id>", "action": "view"}`.
-  All three reply `{"ok": true}`.
+  All three reply `{"ok": true}`. A to-do list is `{"type": "todo", "items": [{"text", "done", "due"}]}`;
+  `due` is a day like `"2026-10-30"` or left out. For the agent with the to-do panel (Book), the list also
+  becomes the server's list: a bad due date is dropped (the to-do stays), and a to-do that was open and is now
+  done is logged as a `habit` event (`tasks` / `done`).
+- `GET /api/todos`: `{"has_list": bool, "items": [{"text", "done", "due"}]}`; `due` is `"YYYY-MM-DD"` or
+  null. `has_list` is false until a list was first saved.
 
 ### Live (2)
 
 | Method | Path | What it does | Called by | Access |
 |---|---|---|---|---|
-| GET | `/api/live` | Everything the desk cam panel needs in one request: camera, what is on the desk, dangers, the agents, the AI. The app asks every 1.5 s. `?qr=1` adds the phone link's QR code. | `web_app/app.js`, `tests/e2e/` | anyone on the network; the Pi command, the phone link and the QR code **this computer only** |
+| GET | `/api/live` | Only what the desk cam panel shows, in one request (the app asks every 1.5 s): `camera`, `camera_source`, `camera_index`, `agents`, `detections.extras` (the other things on the desk, not in the chat: `[{"yolo_class", "ignored"}]`), `safety.explanations` (the "Heads up" sentences), `camera_issues`, `ai: {ready, problem}`, and `phone: {url, qr_svg}` or `pi_command`. `?qr=1` adds the phone link's QR code. | `web_app/app.js`, `tests/e2e/` | anyone on the network; the Pi command, the phone link and the QR code **this computer only** |
 | GET | `/api/status` | A short summary: running, camera, agents, safety state, uptime. | `web_app/app.js` (once, when the page starts) | anyone on the network |
 
 ### Video and proof photos (6)
@@ -90,7 +96,7 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 | GET | `/api/video_feed_raw` | The same, for the camera that is sending. MJPEG. | Nothing in the code. [benchmarks/README.md](../benchmarks/README.md) tells people to open it | anyone on the network |
 | GET | `/api/latest_frame_raw/{camera}` | The newest plain picture, once (JPEG). 404 before the first. | `web_app/app.js`; mentioned in `benchmarks/README.md` | anyone on the network |
 | GET | `/api/snapshot/{photo_id}` | One proof photo (JPEG). 404 if it's gone. | `web_app/app.js` | anyone on the network |
-| GET | `/api/snapshots` | The proof photos kept, newest first. | `web_app/app.js` | anyone on the network |
+| GET | `/api/snapshots` | The proof photos kept, newest first. `?limit=N` for only the newest N (1 to `snapshots.max_kept`; not a whole number is a 400). | `web_app/app.js` | anyone on the network |
 
 - The video feeds are `multipart/x-mixed-replace; boundary=frame`: one JPEG part after another, sent when
   the picture changes and again every `web.video_resend_sec`. Nothing at all is sent, not even headers,
@@ -101,15 +107,17 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 | Method | Path | What it does | Called by | Access |
 |---|---|---|---|---|
-| GET | `/api/habits/today` | Today's habits (water, breaks, light, phone, food) and the vision checks. | `web_app/app.js`, `tests/e2e/test_page.py` | anyone on the network |
-| POST | `/api/habits/log` | A habit button: a glass of water, a break, some sunlight, a snack. | `web_app/app.js` | anyone on the network |
-| GET | `/api/preferences` | Wake time, bedtime, quiet hours. | `web_app/app.js` | anyone on the network |
+| GET | `/api/habits/today` | Today's habits (water, breaks, light, phone, food). | `web_app/app.js`, `tests/e2e/test_page.py` | anyone on the network |
+| POST | `/api/habits/log` | A habit button: a sip, a break, some sunlight, a snack. | `web_app/app.js` | anyone on the network |
+| GET | `/api/preferences` | Wake time, bedtime, quiet hours, and the sensitivity step. | `web_app/app.js` | anyone on the network |
 | PUT | `/api/preferences` | Change them. Only the fields sent change. | `web_app/app.js` | anyone on the network |
 
 - `POST /api/habits/log`: `{"habit": "hydration", "action": "glass", ...}`. Any other field (`ml`,
   `minutes`, `label` ...) goes to the tracker. 400 for an unknown habit.
 - `PUT /api/preferences`: `{"wake_time": "06:30", "bed_time": ..., "quiet_enabled": ..., "quiet_start_hour":
-  ..., "quiet_end_hour": ...}`. The old names (`dnd_enabled`, `dnd_start_hour`, `dnd_end_hour`) still work.
+  ..., "quiet_end_hour": ..., "sensitivity": 2}`. `sensitivity` is the step of `agents.sensitivity_steps`,
+  0 (Picky) to 4 (Eager); a number past either end is kept at that end, and anything else is a 400. The old
+  names (`dnd_enabled`, `dnd_start_hour`, `dnd_end_hour`) still work.
   Replies `{"ok": true, "preferences": {...}}`; 400 for a value that isn't valid.
 
 ### Event log (3)
@@ -119,9 +127,9 @@ number, kept between 1 and the most `web.list_sizes` allows; anything else is a 
 
 | Method | Path | What it does | Called by | Access |
 |---|---|---|---|---|
-| GET | `/api/log/days` | Days that have a log, newest first. | `web_app/app.js` | anyone on the network |
-| GET | `/api/log/events` | Joins, leaves, alerts, habits ... newest first. `?types=alert,habit`. | `web_app/app.js` | anyone on the network |
-| GET | `/api/log/status` | The log's folder, today's counts, the timed jobs, the event stream, the camera. | `web_app/app.js`; the developer page's System tab | anyone on the network |
+| GET | `/api/log/days` | `{"days", "today"}`: the days that have a log, newest first (at most `event_log.keep_days`), and today. | `web_app/app.js` | anyone on the network |
+| GET | `/api/log/events` | Only the events that matter to you, newest first: sips, breaks, food, finished to-dos, sunlight (`habit`), reminders (`nudge`), warnings (`alert`, with a plain `subtitle` like "near Computer") and camera problems (`camera`). `?types=habit,nudge,alert,camera` picks some of those four (others are ignored); `?limit=` counts only these. | `web_app/app.js` | anyone on the network |
+| GET | `/api/log/status` | The log's folder, today's counts, the timed jobs, the event stream, the camera. | the developer page's System tab | anyone on the network |
 
 ### Settings (3)
 
@@ -129,7 +137,7 @@ number, kept between 1 and the most `web.list_sizes` allows; anything else is a 
 |---|---|---|---|---|
 | GET | `/api/rules` | The danger rules and the desk corners, plus the objects a zone can be set for. | `web_app/app.js` | anyone on the network |
 | PUT | `/api/rules` | Change some of them. When the desk corners are marked, it also notes how the phone was tilted. | `web_app/app.js` | anyone on the network |
-| GET | `/api/ui_settings` | The numbers and words the app page uses (refresh times, limits, Lens's card ...), so the page keeps no copies of its own. | `web_app/app.js` (on start), `tests/e2e/test_page.py` | anyone on the network |
+| GET | `/api/ui_settings` | The numbers and words the app page uses (refresh times, waits, list sizes, the sensitivity steps, the starter to-do and counters, Lens's card ...), so the page keeps no copies of its own. | `web_app/app.js` (on start), `tests/e2e/test_page.py` | anyone on the network |
 
 - `PUT /api/rules`: `{"danger_zones": ..., "edge_proximity": ..., "chain_reaction": ..., "temporal": ...,
   "desk_outline": [[x, y], ...]}`. Only the parts sent change; each corner is 0 to 1 of the picture. An
@@ -154,7 +162,7 @@ The Pi's camera program (`raspberry_pi/camera/`) is the only caller. Both routes
 - Errors: 400 not a JPEG or a bad `info`, 403 wrong key, 409 `camera.source` is not `pi`, 413 bigger than
   `web.pi_upload_max_mb`.
 
-### Developer page (this computer only) (15)
+### Developer page (this computer only) (17)
 
 The routes behind the developer page (`dev_ui/`, see [its README](../dev_ui/README.md)), in
 `desktalk/web/routers/dev.py`. They are only there when `dev.enabled` is on in `config/settings.yaml`;
@@ -167,6 +175,8 @@ is the developer page, through `dev_ui/src/api.ts`; the tab that uses each one i
 | GET | `/api/dev/states` | Each object's state now, and the changes since `?since=<time>`. | Live tab | this computer and its own page only |
 | GET | `/api/dev/smoothing` | The objects that have a smoothing trace. | Live tab | this computer and its own page only |
 | GET | `/api/dev/smoothing/trace` | What the smoothing made of one object's last pictures, oldest first. `?label=pen%2Fpencil` (a query, so a label with a slash works); an object never seen gives an empty list, not an error. | Live tab | this computer and its own page only |
+| GET | `/api/dev/objects/{label}` | One kind of object's whole trace: its state changes since the camera started and its chat joins, leaves and refusals (with why), oldest first, and its trace pictures. `pen%2Fpencil` works for a word with a slash; an object never seen gives empty lists. | Live tab | this computer and its own page only |
+| GET | `/api/dev/objects/photo/{photo_id}` | One trace picture (JPEG). 404 when it's gone, or with the developer page off. | Live tab | this computer and its own page only |
 | GET | `/api/dev/tests` | Every test the Checks tab lists (`dev.collect_markers`), slow ones marked. | Checks tab | this computer and its own page only |
 | POST | `/api/dev/runs` | Start a run: every step in `dev.checks`, or some tests by id. One run at a time. | Checks tab | this computer and its own page only |
 | GET | `/api/dev/runs/{run_id}` | How a run is going: its steps, each finished test, and the printout after `?from=<offset>`. | Checks tab, while a run goes | this computer and its own page only |
@@ -182,13 +192,19 @@ is the developer page, through `dev_ui/src/api.ts`; the tab that uses each one i
 - Every `/api/dev` route turns away other computers and other web pages with 403 and `{"error": ...}`
   (the wording is in `config/prompts.yaml` under `dev:`), before anything runs.
 - `GET /api/dev/settings`: `{"poll_sec", "checks": [names], "health": {...}, "trace_pictures",
-  "sql_max_rows", "data_folder", "object_states": {"on_confidence", "off_confidence", "appear_sec",
+  "trace_events_kept", "trace_photos_kept", "sql_max_rows", "data_folder", "object_states": {"on_confidence", "off_confidence", "appear_sec",
   "gone_sec", "window_pictures", "vote_share"}}`.
 - `GET /api/dev/states`: `{"objects": {label: {"state", "since"}}, "watched_since", "changes": [{"ts",
   "label", "change"}]}`.
 - `GET /api/dev/smoothing`: `{"labels": [...]}`. `/api/dev/smoothing/trace`: `{"label", "steps": [...]}`;
   each step has `ts`, `conf`, `box_seen`, `votes_yes`, `votes_total`, `seen`, `center`, `phase`, `heading`
   and `waiting_sec`.
+- `GET /api/dev/objects/{label}`: `{"label", "timeline": [{"ts", "source": "state" | "chat", "kind",
+  "confidence", "seen_for_sec", "on_desk", "step", "before", "after"}], "photos": [{"id", "ts", "why",
+  "confidence", "box": [x1, y1, x2, y2], "size": [width, height]}]}`. State rows are the newest
+  `dev.trace_events_kept` changes (`kind` = appeared / removed / moved, `before` / `after` the states); chat rows
+  are `joined`, `left` or `refused`, with the sensitivity step's name. `why` is `appeared`, `joined` or `every`
+  (one every `dev.trace_photo_every_sec`); only the newest `dev.trace_photos_kept` pictures are kept.
 - `GET /api/dev/tests`: `{"tests": [{"id", "file", "markers"}]}`. The `id` is pytest's, e.g.
   `tests/unit/test_x.py::test_y`.
 - `POST /api/dev/runs`: `{"check": true}` or `{"tests": [ids]}`. Replies `{"run_id"}`. 409 `{"error": "A run
@@ -286,6 +302,10 @@ boxes; `latest_frame_raw` is what is left)
 
 `GET /api/video_feed_raw` without a camera number was on the plan too, but stayed because the benchmarks
 README tells people to open it.
+
+The desk fixes ([design](superpowers/specs/2026-10-25-desk-fixes-design.md)) took away the ones only the old
+Event log page and the posture checks used: `GET /api/habit_log` · `GET /api/log/presence` ·
+`GET /api/log/detections` · `POST /api/log/compact` (the scheduler still compacts the log by itself).
 
 ## Adding a route
 

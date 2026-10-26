@@ -198,13 +198,10 @@ class UiChat(BaseModel):
 
 
 class UiHabits(BaseModel):
-    """The habit buttons and the Protocols numbers the Habits page shows."""
+    """The habit numbers the app page shows."""
 
-    sunlight_default_min: float          # settings → habit_tracker
-    glass_ml: float
-    food_label_max_chars: int
-    goal_window_hours: float             # protocols.yaml → hydration
-    stop_before_bed_hours: float
+    food_label_max_chars: int            # settings → habit_tracker
+    stop_before_bed_hours: float         # protocols.yaml → hydration
     morning_minutes: MorningMinutes      # protocols.yaml → light
     morning_window_min: float
     evening_dim_before_bed_min: float

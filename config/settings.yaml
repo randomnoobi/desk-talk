@@ -573,6 +573,7 @@ notifications:
   sips: true                  # "Sip logged" when the camera saw you drink (not the buttons or the chat)
   time_limit_sec: 5           # a pop-up that takes longer than this to show is given up on (it never holds up the chat)
   command: osascript          # the Mac's built-in program that shows them
+  queue_size: 20              # how many pop-ups can wait to be shown; any more are dropped (and that is logged)
 
 # ── Logs ────────────────────────────────────────────────────────────
 logging:
@@ -621,7 +622,6 @@ dev:
   trace_photos_folder: data/trace_photos  # the pictures are kept here, one folder per kind of object
   trace_photos_kept: 6          # only the newest this many pictures per kind of object are kept (older ones go)
   trace_photo_every_sec: 120    # one when it appears, one when it joins the chat, and one this often while it's there
-  trace_photo_quality: 80       # JPEG quality of those pictures (1-100)
   trace_events_kept: 50         # chat joins, leaves and refusals remembered per kind of object
   health:                       # when the system tab turns a number amber or red
     pi_cpu_warn_c: 70           # the Pi's CPU this hot (°C) turns amber...

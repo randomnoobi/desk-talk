@@ -29,6 +29,8 @@
     "poll_sec": "number",
     "sql_max_rows": "number",
     "table_counts_every_sec": "number",
+    "trace_events_kept": "number",
+    "trace_photos_kept": "number",
     "trace_pictures": "number",
     "web_port": "number"
   },

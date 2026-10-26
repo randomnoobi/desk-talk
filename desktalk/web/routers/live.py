@@ -2,7 +2,7 @@
 What the desk looks like right now:
 
     GET  /api/live         what the app page's desk cam panel shows, in one request (the app asks every 1.5 s):
-                           the camera, the characters and what they were seen as, the other things seen, the
+                           the camera, the characters, the other things on the desk, the
                            "Heads up" sentences, camera problems, the AI's state and the Pi / phone links
     GET  /api/status       a short summary
 """
@@ -30,23 +30,12 @@ def camera_info(app: DeskTalk) -> dict[str, Any]:
 
 
 def detections(app: DeskTalk) -> dict[str, Any]:
-    """The characters on the desk (what each was seen as) and the other things the camera sees."""
-    on_desk = app.scene.members()
-    seen = app.scene.seen()
-    agents = {}
-    for pid, box in on_desk.items():
-        if app.profiles.get(pid):
-            agents[pid] = {'class': box.label, 'confidence': round(box.confidence, 2)}
-    agent_labels = {box.label for box in on_desk.values()}
+    """The other things on the desk: what the warnings see (the scene's on-desk list) that isn't in the chat, by
+    the detector's word, surest first. The chat's members come in `agents`."""
     members = set(app.roster.member_ids())
-    for label in seen:              # e.g. a mouse is part of Computer
-        profile = app.profiles.for_label(label)
-        if profile and profile.id in members:
-            agent_labels.add(label)
-    extras = sorted(((label, box.confidence) for label, box in seen.items() if label not in agent_labels),
-                    key=lambda x: -x[1])
-    return {'objects': agents,
-            'extras': [{'yolo_class': label, 'ignored': app.profiles.is_ignored(label)} for label, _ in extras]}
+    others = sorted((box for pid, box in app.scene.on_desk().items() if pid not in members),
+                    key=lambda box: -box.confidence)
+    return {'extras': [{'yolo_class': box.label, 'ignored': app.profiles.is_ignored(box.label)} for box in others]}
 
 
 def safety(app: DeskTalk) -> dict[str, Any]:

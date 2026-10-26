@@ -51,8 +51,10 @@ More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Characters
 
-Nobody is in the chat at first. When the camera has seen something for 3 seconds it joins;
-when it's been gone 45 seconds it leaves. These objects have their own personalities
+Nobody is in the chat at first. Only Computer, Cup, Phone, Snack and Book can join
+(`agents.can_join` in `config/settings.yaml`). One joins once the camera is sure enough of it for long enough,
+which is the **Sensitivity** slider in Settings: from Picky (65% sure, for 10 seconds) to Eager (35%, 2 seconds);
+Normal is 45% for 3 seconds. It leaves when it's been gone 2 minutes. These objects have their own personalities
 (`config/agents.yaml`):
 
 | Character | Objects | Personality | Looks after |
@@ -60,18 +62,25 @@ when it's been gone 45 seconds it leaves. These objects have their own personali
 | **Computer** (Monty) | laptop, keyboard, mouse, monitor | Fragile, anxious, emotional center of the desk | breaks, screens at night |
 | **Cup** (Glug) | cup, mug, bottle, glass | Innocent, unaware of its own danger | water |
 | **Snack** (Munch) | fruit, pizza, chips… | Hedonistic and unapologetic | food log |
-| **Paper** (Sheets) | book, notepaper, folder | Gentle, anxious, loves other papers | to-do list, lost items |
+| **Book** (Sheets) | book, notepaper, folder | Gentle, anxious, loves other papers | to-do list, lost items |
 | **Phone** (Buzz) | cell phone | Charismatic, attention-seeking | phone-free time |
 | **Lamp** | lamp | Warm, a morning person | sunlight, dim evenings |
 | **AirPods, Headphones, Keys, Cable (Zip), Sprout, Pen, Watch, Glasses, Scissors, Power Bank (Surge)** | | | |
 
-**Anything else** the detector finds joins too (a stapler becomes "Stapler"), and the AI
-invents a personality for it. People, chairs and the desk itself never join.
+**Everything else** (the glasses, scissors, keys, a stapler ...) never joins the chat, but the desk warnings
+still watch it: scissors next to the phone get a "Heads up" from Lens even when the phone isn't in the chat.
+People, chairs and the desk itself are never counted at all.
 
 **Lens** is the camera. It speaks up when the view needs fixing (too dark, glare, blurry,
 covered, something cut off, the Pi stopped sending pictures) and says thanks when it's fixed.
 It also tells you when the Pi runs hot, when its clock is off, and when the Pi's own detector is off
-(your computer then does the detecting). It doesn't use the AI.
+(your computer then does the detecting), and it gives the desk warnings that nobody in the chat can give.
+It doesn't use the AI.
+
+**Mac notifications**: warnings, habit reminders and the sips the camera sees also pop up as the Mac's own
+notifications, so you see them with the app page closed. They come through the Mac's built-in `osascript`
+(macOS may ask once to allow notifications from "Script Editor"), wait during your quiet hours, and each kind can
+be switched off in the `notifications:` section of `config/settings.yaml`. On other systems nothing pops up.
 
 ## Character Relationships
 
@@ -93,7 +102,7 @@ It also tells you when the Pi runs hot, when its clock is off, and when the Pi's
      knock! │    │   (Munch)   │              │
             │    └─────────────┘              │ crush!
      ┌──────┴──────┐                   ┌──────┴──────┐
-     │    CABLE    │                   │    PAPER    │
+     │    CABLE    │                   │    BOOK     │
      │    (Zip)    │←── drag ─────────→│  (Sheets)   │
      └──────┬──────┘                   └─────────────┘
             │ pull!
@@ -122,7 +131,7 @@ It also tells you when the Pi runs hot, when its clock is off, and when the Pi's
 | Nearby Object | Relationship | Severity |
 |---------------|-------------|----------|
 | Laptop (Monty) | **Critical spill risk** — doesn't understand why everyone panics | 🔴 Critical |
-| Paper (Sheets) | Water damage — fragile material | 🟡 High |
+| Book (Sheets) | Water damage — fragile material | 🟡 High |
 | Cable (Zip) | Knock-over trigger! | 🔴 Critical |
 | Phone (Buzz) | Distracted placement nearby | 🟠 Medium |
 | Snack (Munch) | Attracts hands → instability | 🟠 Medium |
@@ -146,12 +155,12 @@ It also tells you when the Pi runs hot, when its clock is off, and when the Pi's
 |---------------|-------------|----------|
 | Laptop (Monty) | Crumb contamination on keyboard | 🟡 High |
 | Cup (Glug) | Increases hand movement near liquids | 🟠 Medium |
-| Paper (Sheets) | Oil/grease stains | 🟠 Medium |
+| Book (Sheets) | Oil/grease stains | 🟠 Medium |
 | Phone (Buzz) | Encourages eating while scrolling | 🔵 Low |
 
 > **Example:** "Life's too short to worry about crumbs."
 
-#### Paper / Homework (Sheets) — Gentle & Vulnerable
+#### Book / Homework (Sheets) — Gentle & Vulnerable
 
 | Nearby Object | Relationship | Severity |
 |---------------|-------------|----------|
@@ -169,7 +178,7 @@ It also tells you when the Pi runs hot, when its clock is off, and when the Pi's
 | Cup (Glug) | **Knock-over risk** — denies involvement | 🔴 Critical |
 | Laptop (Monty) | Sudden tug damage | 🟡 High |
 | Phone (Buzz) | Pull-off-desk risk | 🟠 Medium |
-| Paper (Sheets) | Dragging items | 🟠 Medium |
+| Book (Sheets) | Dragging items | 🟠 Medium |
 | Power Bank (Surge) | Pulling motion risk | 🟠 Medium |
 
 > **Example:** "I didn't touch anything… I just got pulled."
@@ -179,7 +188,7 @@ It also tells you when the Pi runs hot, when its clock is off, and when the Pi's
 | Nearby Object | Relationship | Severity |
 |---------------|-------------|----------|
 | Laptop (Monty) | **Pressure and heat** — oblivious to the damage | 🟡 High |
-| Paper (Sheets) | Crushing risk | 🟡 High |
+| Book (Sheets) | Crushing risk | 🟡 High |
 | Cable (Zip) | Pulling motion — could fall off desk | 🟠 Medium |
 
 > **Example:** "I'm not doing anything."
@@ -205,13 +214,18 @@ All numbers are in `config/protocols.yaml`, with the chapter each one comes from
 
 | Habit | What the book says | What the desk does |
 |---|---|---|
-| **Water** (Nutrition Protocol 2) | 18–24 oz on waking; ~80 oz (2.4 L) in the first 10 hours; less in the hours before bed | A sip counts when the cup leaves the desk and comes back. Nudges when you're behind pace and haven't sipped in 45 min; quiet in the 2 hours before bed. |
+| **Water** (Nutrition Protocol 2) | 18–24 oz on waking; ~80 oz (2.4 L) in the first 10 hours; less in the hours before bed | A sip counts when the drink is lifted, then put back where it was (a hand over the cup or a covered camera isn't a sip). Nudges when you're behind pace and haven't sipped in 45 min; quiet in the 2 hours before bed. |
 | **Breaks** (Exercise Protocol 1, Learning Protocol 5) | Walk 5 min for every 30 min sitting; 5–10 min after meals; no phone during breaks | Counts sitting time; a break logs itself when you're away 5 min. Nudges after 30 min, and after food leaves the desk. |
 | **Light, day and night** (Sleep 1–3, Light 1–3, Sleep 14) | Sunlight within an hour of waking (10/20/30 min clear/cloudy/overcast); light before sunset; dim lights and no screens in the last hour before bed | Asks about morning sunlight, reminds before sunset, notices a bright room at night (the Pi camera measures lux) or a dim room in the day, and says "screens off" an hour before bed. |
 | **Phone-free time** (Learning Protocol 1) | Put your phone away; even having it nearby costs focus | Tracks phone-free desk time and streaks; nudges when the phone sits on the desk while you work, and in the last hour before bed. |
 
 Set your wake time and bedtime in the app (Settings → Your day). The Habits page shows
-today's numbers and has buttons for what the camera can't see (a glass of water, going outside).
+today's numbers and has buttons for what the camera can't see (a sip, a break, going outside).
+
+**To-dos** are Book's list. You can give one a due date (in the app, or in the chat: "add my essay, due
+Friday"). Book reminds you the day before, on the day, and each day it's late; a to-do with no date gets a
+check-in every 2 hours, naming a different one each time. Desk Talk keeps the list itself (`data/todos.json`),
+and ticking one off shows in the Event log.
 
 ---
 
@@ -222,12 +236,12 @@ One window, three columns:
 1. **Chats (left)**: "The desk" group chat, then everyone who's on the desk (green dot) and
    anyone who left earlier. Habits, Event log, Captures and Settings sit underneath.
 2. **Conversation (middle)**: join / leave notes, colored bubbles, proof photos, @mentions.
-   Each 1-on-1 chat has its tracker on top (Cup's water, Computer's breaks, Paper's to-do list…).
+   Each 1-on-1 chat has its tracker on top (Cup's water, Computer's breaks, Book's to-do list…).
 3. **Desk cam (right)**: the live picture with boxes, who's on the desk, current risks, proof photos.
    Until the camera connects it shows the command to run on the Pi.
 
-**Event log** page: a timeline of what was on the desk today, the events (joins, leaves,
-alerts, habits, reminders, camera problems), and what one picture's event looks like.
+**Event log** page: what happened each day, newest first: sips, breaks, food, finished to-dos, sunlight,
+reminders, warnings and camera problems, with filters for habits, reminders and warnings.
 
 **Desk edges**: in Settings, tap the corners of your desk on the camera picture. Then only
 things on the desk can join the chat, and things near a real edge get a warning.
@@ -338,6 +352,7 @@ Areas of `config/settings.yaml` that came with the new design:
 | `event_stream` | how many events may wait per consumer before old picture events are dropped |
 | `web` | the web server: port, upload size limits, live updates, and the app page's refresh times, waits and list sizes (the page asks for them at `GET /api/ui_settings`) |
 | `drawing` | the boxes and desk drawings on the live view: colors, line widths, writing sizes, how see-through |
+| `notifications` | the Mac's own pop-ups: on or off, which kinds (warnings, reminders, sips), how long one may take to show |
 | `logging` | the log file in `data/logs/` |
 | `storage` | where preferences, habit days and learned personalities are kept (`data/`) |
 
@@ -391,7 +406,9 @@ check everything with it). It has five tabs:
 - **Checks**: one button that runs the fast tests, the lint, the type check, the dead code check and the page's
   own tests, and every test on its own (or a whole file or folder), with the printout as it runs.
 - **Live**: each object's state (present, absent), the changes as they happen, and a chart of how the
-  smoothing turned the last pictures into that state, so you can see why something flickers.
+  smoothing turned the last pictures into that state, so you can see why something flickers. Click an object
+  for its whole trace: when it joined the chat, left or was turned away (and why: how sure, how long, the
+  sensitivity), its state changes, and a few pictures of it with its box (kept in `data/trace_photos/`).
 - **System**: how the Pi is doing (pictures a second, temperature, disk, its detector) and every part on
   this computer (background jobs, timed jobs, the event stream, detection, the AI).
 - **Database**: the tables in the SQLite databases, and a box to run a query that only reads.

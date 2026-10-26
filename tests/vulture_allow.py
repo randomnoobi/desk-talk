@@ -12,33 +12,21 @@ from uvicorn import Server
 import desktalk.adapters.dev
 from desktalk.adapters.dev import pytest_report
 from desktalk.adapters.storage.event_log import EventLog
-from desktalk.bootstrap import DeskTalk
 from desktalk.config import (
-    AgentsSettings,
     DevHealthLimits,
-    DevSettings,
-    HabitTrackerSettings,
     LensWaits,
-    NotificationsSettings,
     RiskWeights,
 )
-from desktalk.config.habits import HydrationRule, TasksRule, _ComputerZone
+from desktalk.config.habits import _ComputerZone
 from desktalk.config.prompts import (
     ByCamera,
     HabitAreas,
-    HabitLogged,
-    HabitNudges,
-    NotificationWords,
-    Prompts,
-    TasksDue,
 )
 from desktalk.core.habits.habit_days import HabitDay
 from desktalk.core.habits.sun_times import SunTimes
 from desktalk.core.habits.tracker import DayTimes
-from desktalk.domain.agents import ChatJoin
 from desktalk.domain.dev import DataFile, QueryResult, RunStatus, SmoothingStep, TestOutcome
 from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent, NudgeSent
-from desktalk.ports import ChatJoins, DesktopNotifications, EventStore, TodoList
 from desktalk.web.schemas import PhoneSettings, PreferenceChanges, UiPage, UiSettings
 from desktalk_shared.wire import PiHealth
 
@@ -97,23 +85,7 @@ _developer_page = (
     QueryResult.truncated, QueryResult.took_ms, DataFile.modified,
 )
 
-# The desk fixes (docs/superpowers/specs/2026-10-25-desk-fixes-design.md): Task 1 of the plan adds these settings,
-# wording, plain data and interfaces; Tasks 2 to 9 use them (sips, who joins the chat, the trace, Mac notifications,
-# to-dos with due dates, the app page). Take a name off once its task uses it.
-_desk_fixes = (
-    AgentsSettings.can_join, AgentsSettings.on_desk_after_sec, AgentsSettings.on_desk_min_confidence,
-    HabitTrackerSettings.todos_key,
-    NotificationsSettings.warnings,
-    DevSettings.trace_photos_folder, DevSettings.trace_photos_kept, DevSettings.trace_photo_every_sec,
-    DevSettings.trace_photo_quality, DevSettings.trace_events_kept,
-    HydrationRule.sip_lift_share, HydrationRule.sip_back_share, HydrationRule.sip_cover_share,
-    TasksRule.due_soon_days, TasksRule.late_repeat_hours,
-    HabitLogged.task_done, TasksDue.tomorrow, TasksDue.late, HabitNudges.tasks_due,
-    NotificationWords.sip_title, Prompts.notifications,
-    DeskTalk.chat_joins, DeskTalk.trace_photos, ChatJoin.seen_for_sec, DesktopNotifications,
-    DesktopNotifications.show, TodoList.has_list, ChatJoins.joins,
-)
-# The event log's own tests (compaction) read the pictures it hasn't compacted yet. No route sends them any more.
-_ = (EventLog.recent_detections, EventStore.recent_detections)
+# The event log's own tests and the whole-app tests read the pictures it hasn't compacted yet (no route sends them).
+_ = EventLog.recent_detections
 # A test's result, sent to the developer page as JSON (dataclasses.asdict) and shown by dev_ui/ (the Checks tab).
 _ = TestOutcome.duration_sec
