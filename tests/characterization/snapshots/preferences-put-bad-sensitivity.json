@@ -6,5 +6,5 @@
   "json": {
     "error": "str"
   },
-  "request": "GET /api/log/detections?limit=some (main server, busy desk)"
+  "request": "PUT /api/preferences (main server, busy desk)"
 }

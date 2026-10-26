@@ -13,6 +13,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from desktalk.config import BreaksRule, EdgeProximity, MorningMinutes, PageRefresh, QuietHours, SettingsSliders
+from desktalk.domain import Todo
 
 
 class ChatMessage(BaseModel):
@@ -36,6 +37,34 @@ class PanelLists(BaseModel):
     """POST /api/chat_todos_sync: every agent's to-do list (agent id → list)."""
 
     by_chat: dict[str, Any] = {}
+
+
+class TodoItem(BaseModel):
+    """One to-do as the app shows it. `due`: a day like '2026-10-30', or None."""
+
+    text: str
+    done: bool = False
+    due: str | None = None
+
+
+class TodosReply(BaseModel):
+    """GET /api/todos: the list the server keeps. has_list is false until the app first sends one."""
+
+    has_list: bool
+    items: list[TodoItem]
+
+
+def todos_in(widget: Any) -> list[Todo] | None:
+    """The to-dos in a list the app sent ({'type': 'todo', 'items': [{text, done, due}]}), None if it isn't one.
+    Taken as they come (a list from an older page has no due dates); the TodoList cleans them."""
+    if not isinstance(widget, dict) or widget.get('type') != 'todo' or not isinstance(widget.get('items'), list):
+        return None
+    out = []
+    for item in widget['items']:
+        if isinstance(item, dict):
+            due = item.get('due')
+            out.append(Todo(str(item.get('text', '')), bool(item.get('done')), due if isinstance(due, str) else None))
+    return out
 
 
 class PanelEvent(BaseModel):
@@ -69,6 +98,7 @@ class PreferenceChanges(BaseModel):
     quiet_enabled: Any = None
     quiet_start_hour: Any = None
     quiet_end_hour: Any = None
+    sensitivity: int | None = None       # a step of the sensitivity slider (settings → agents.sensitivity_steps)
     dnd_enabled: Any = None              # the old names, from the previous app version
     dnd_start_hour: Any = None
     dnd_end_hour: Any = None
@@ -145,9 +175,11 @@ class UiPage(BaseModel):
     live_timeout_ms: int
     activity_ping_ms: int
     toast_ms: int
+    camera_note_after_sec: float         # the "camera connected / disconnected" note waits this long first
+    saved_note_sec: float                # "Saved" goes away after this long
+    retry_start_sec: float               # a server that is slow to start: the first wait before asking again
     log_shown: int                       # web.list_sizes.log
     photos_shown: int                    # web.list_sizes.photos
-    habit_log_shown: int                 # web.list_sizes.habit_log.default
     chat_kept: int                       # web.list_sizes.chat_kept: messages kept per chat...
     chat_saved: int                      # ...and saved in the browser (web.list_sizes.chat_saved)
     left_chat_shown_min: float           # a chat whose object left stays in the list this long
@@ -166,13 +198,10 @@ class UiChat(BaseModel):
 
 
 class UiHabits(BaseModel):
-    """The habit buttons and the Protocols numbers the Habits page shows."""
+    """The habit numbers the app page shows."""
 
-    sunlight_default_min: float          # settings → habit_tracker
-    glass_ml: float
-    food_label_max_chars: int
-    goal_window_hours: float             # protocols.yaml → hydration
-    stop_before_bed_hours: float
+    food_label_max_chars: int            # settings → habit_tracker
+    stop_before_bed_hours: float         # protocols.yaml → hydration
     morning_minutes: MorningMinutes      # protocols.yaml → light
     morning_window_min: float
     evening_dim_before_bed_min: float
@@ -191,7 +220,27 @@ class UiDesk(BaseModel):
 class UiPi(BaseModel):
     fps: float
     delete_every_min: float
-    compact_every_min: float             # settings → event_log: how often pictures become intervals
+
+
+class UiListSizes(BaseModel):
+    """settings → web.list_sizes: how many things the page lists, and how long its texts may be."""
+
+    on_desk_shown: int
+    camera_issues_shown: int
+    risk_lines_shown: int
+    side_photos_shown: int
+    quote_chars: int
+    toast_chars: int
+    mention_max_chars: int
+    counter_label_chars: int
+
+
+class UiSensitivityStep(BaseModel):
+    """One step of the sensitivity slider (settings → agents.sensitivity_steps)."""
+
+    name: str
+    min_confidence: float
+    join_after_sec: float
 
 
 class UiLensCard(BaseModel):
@@ -211,6 +260,11 @@ class UiSettings(BaseModel):
     pi: UiPi
     phone: PhoneSettings
     lens_card: UiLensCard
+    list_sizes: UiListSizes
+    starter_todo: str                    # prompts.yaml → ui: what a new to-do list starts with...
+    starter_counters: list[str]          # ...and the counters the Habits page starts with
+    sensitivity_steps: list[UiSensitivityStep]
+    sensitivity_default: int             # the step used until the slider is moved (agents.sensitivity_default)
     # How long the page waits for a chat reply: as long as the server may keep trying the AI (llm.longest_reply_sec)
     # for each AI call one message can make (routers/settings.py: most_ai_calls_per_message), plus an ordinary
     # request's wait for the trip there and back.

@@ -55,11 +55,6 @@
       "sunrise_ts": "null",
       "sunset_ts": "number",
       "wake_ts": "number"
-    },
-    "vision": {
-      "nail_biting_count_today": "number",
-      "ongoing_slouch_seconds": "number",
-      "posture_bad_seconds_today": "number"
     }
   },
   "request": "GET /api/habits/today (main server, busy desk)"

@@ -10,6 +10,7 @@
     "quiet_end_hour": "number",
     "quiet_now": "bool",
     "quiet_start_hour": "number",
+    "sensitivity": "number",
     "sunset_ts": "number",
     "wake_time": "str"
   },

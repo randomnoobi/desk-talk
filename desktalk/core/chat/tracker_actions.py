@@ -1,7 +1,7 @@
 """
 Trackers: the panel on top of an agent's 1-on-1 chat (config/agents.yaml → tracker).
 
-    todo        your to-do list (kept in the browser, sent to the server for context)
+    todo        your to-do list, with optional due dates (the server keeps it: core/habits/todos.py)
     hydration   sips and water today              ┐
     breaks      breaks, minutes sitting           │ kept by the habit tracker
     food        what you ate                      │ on the server
@@ -9,23 +9,35 @@ Trackers: the panel on top of an agent's 1-on-1 chat (config/agents.yaml → tra
     light       sunlight logged, room brightness  ┘
 
 The AI sees the tracker's numbers, and can change them with action tags like
-[LOG_SIP] or [ADD_TODO:Buy milk] in its reply. The wording is in config/prompts.yaml (trackers:).
+[LOG_SIP] or [ADD_TODO:Buy milk] (or [ADD_TODO:Essay|2026-10-30] with a due date) in its reply.
+The wording is in config/prompts.yaml (trackers:).
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
+from datetime import date
 from typing import Any
 
 from desktalk.config import ChatSettings
 from desktalk.config.prompts import TrackerPrompts
-from desktalk.ports import HabitLog
+from desktalk.core.habits.todos import clean_due
+from desktalk.ports import HabitLog, TodoList
 from desktalk.util import clock_text
 
 
+def todo_panel(todos: TodoList, panel: Mapping[str, Any] | None) -> Mapping[str, Any] | None:
+    """The to-do list the AI is told about: the server's (TodoList) once it has one, so it is there after a
+    restart, when the page loads it and doesn't send it back; until then the panel the page sent."""
+    if not todos.has_list():
+        return panel
+    return {'items': [{'text': t.text, 'done': t.done, 'due': t.due} for t in todos.items()]}
+
+
 def normalize_todo(raw: Any, chat: ChatSettings) -> dict | None:
-    """The to-do list sent by the app, cleaned up and cut to size (None if it isn't one)."""
+    """The to-do list sent by the app, cleaned up and cut to size (None if it isn't one). A due date is kept only
+    when it's a real day like 2026-10-30."""
     if not isinstance(raw, dict) or raw.get('type') != 'todo':
         return None
     items = []
@@ -33,7 +45,11 @@ def normalize_todo(raw: Any, chat: ChatSettings) -> dict | None:
         if isinstance(item, dict):
             text = str(item.get('text', ''))[:chat.todo_max_chars].strip()
             if text:
-                items.append({'text': text, 'done': bool(item.get('done'))})
+                kept = {'text': text, 'done': bool(item.get('done'))}
+                due = clean_due(item.get('due'))
+                if due:
+                    kept['due'] = due
+                items.append(kept)
     return {'type': 'todo', 'items': items}
 
 
@@ -47,21 +63,33 @@ def behavior_summary(views: Sequence[Mapping[str, Any]], now: float, chat: ChatS
     return words.behavior.format(count=count)
 
 
+def _weekday(day: str) -> str:
+    """'Sunday' for '2026-10-25'; '' for a day that doesn't read."""
+    try:
+        return date.fromisoformat(day).strftime('%A')
+    except ValueError:
+        return ''
+
+
 def tracker_prompt(tracker: str | None, habits_today: Mapping[str, Any], todo: Mapping[str, Any] | None,
                    views: Sequence[Mapping[str, Any]], now: float, chat: ChatSettings, *,
-                   words: TrackerPrompts, utc_offset_sec: float | None = None) -> str:
+                   words: TrackerPrompts, utc_offset_sec: float | None = None, today: str | None = None) -> str:
     """The tracker's data as a block for the AI. `words` is config.prompts.trackers. `utc_offset_sec`: the local
-    time's offset from UTC for the times in it (the clock's; None = this computer's)."""
+    time's offset from UTC for the times in it (the clock's; None = this computer's). `today`: the clock's local
+    day ('2026-10-25'), which the to-do tracker tells the AI so it can turn "due Friday" into a date."""
     if not tracker:
         return ''
     t = words
     extra = behavior_summary(views, now, chat, words=t)
     if tracker == 'todo':
+        weekday = _weekday(today) if today else ''
+        head = t.todo_today.format(weekday=weekday, day=today) if weekday else ''
         items = (todo or {}).get('items') or []
         if not items:
-            return extra
-        lines = [f"- [{'x' if i.get('done') else ' '}] {i.get('text', '')}" for i in items]
-        return t.todo_list.format(items='\n'.join(lines)) + extra
+            return head + extra
+        lines = [f"- [{'x' if i.get('done') else ' '}] {i.get('text', '')}"
+                 + (t.todo_due.format(due=i['due']) if i.get('due') else '') for i in items]
+        return head + t.todo_list.format(items='\n'.join(lines)) + extra
     h = habits_today
     if tracker == 'breaks':
         b = h['breaks']
@@ -114,7 +142,7 @@ def parse_actions(text: str, tracker: str | None, *, sunlight_default_min: float
     actions: list[dict] = []
     if tracker == 'todo':
         for m in re.finditer(r'\[ADD_TODO:(.+?)\]', text):
-            actions.append({'action': 'add_todo', 'text': m.group(1).strip()})
+            actions.append(_add_todo(m.group(1)))
         for m in re.finditer(r'\[DONE_TODO:(.+?)\]', text):
             actions.append({'action': 'done_todo', 'text': m.group(1).strip()})
         for m in re.finditer(r'\[DEL_TODO:(.+?)\]', text):
@@ -137,6 +165,16 @@ def parse_actions(text: str, tracker: str | None, *, sunlight_default_min: float
             minutes = int(m.group(1)) if m.group(1) else sunlight_default_min
             actions.append({'action': 'log_sunlight', 'minutes': minutes})
     return strip_action_tags(text), actions
+
+
+def _add_todo(tag: str) -> dict:
+    """[ADD_TODO:Essay|2026-10-30] → the to-do, with its due date when that's a real day (else none)."""
+    text, _, day = tag.partition('|')
+    action = {'action': 'add_todo', 'text': text.strip()}
+    due = clean_due(day.strip())
+    if due:
+        action['due'] = due
+    return action
 
 
 ACTION_TAG = re.compile(r'\[(?:LOG_[A-Z_]+|(?:ADD|DONE|DEL)_TODO)(?::[^\]]*)?\]')

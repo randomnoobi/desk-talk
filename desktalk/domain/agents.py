@@ -43,3 +43,17 @@ class AgentProfile:
 
     def hello_text(self) -> str:
         return (self.hello or '').format(object=self.object or self.name)
+
+
+@dataclass(frozen=True)
+class ChatJoin:
+    """One time an object joined the chat, left it, or was refused (the developer page's trace says why)."""
+
+    agent: str                 # the agent's id (computer, cup ...)
+    label: str                 # the detector's word for what was seen (laptop, cup ...)
+    kind: str                  # joined | left | refused (seen long enough, but not on settings → agents.can_join)
+    ts: float
+    confidence: float          # how sure the detector was
+    seen_for_sec: float        # how long it had been seen
+    on_desk: bool | None       # inside the marked desk (None = no desk corners marked)
+    step: str                  # the sensitivity step in use (settings → agents.sensitivity_steps), e.g. Normal

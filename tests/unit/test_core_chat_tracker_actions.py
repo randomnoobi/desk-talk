@@ -71,6 +71,25 @@ def test_other_agents_tags_are_hidden_not_applied():
     assert got == [] and clean == 'Splash! That counts.'
 
 
+def test_add_todo_tag_with_date():
+    clean, actions = ta.parse_actions('Added! [ADD_TODO:Essay|2026-10-30]', 'todo', sunlight_default_min=10)
+    assert clean == 'Added!'
+    assert actions == [{'action': 'add_todo', 'text': 'Essay', 'due': '2026-10-30'}]
+
+
+@pytest.mark.parametrize('tag', ['[ADD_TODO:Essay|next friday]', '[ADD_TODO:Essay|]', '[ADD_TODO:Essay|2026-02-30]',
+                                 '[ADD_TODO: Essay | 2026-13-01 ]'])
+def test_add_todo_tag_bad_date(tag):
+    clean, actions = ta.parse_actions(f'Added! {tag}', 'todo', sunlight_default_min=10)
+    assert clean == 'Added!'
+    assert actions == [{'action': 'add_todo', 'text': 'Essay'}]
+
+
+def test_add_todo_tag_date_with_spaces():
+    _, actions = ta.parse_actions('[ADD_TODO: Essay | 2026-10-30 ]', 'todo', sunlight_default_min=10)
+    assert actions == [{'action': 'add_todo', 'text': 'Essay', 'due': '2026-10-30'}]
+
+
 def test_leftover_tags_are_removed_but_other_brackets_stay():
     assert ta.strip_action_tags('Done [ADD_TODO:Essay] and [LOG_SUNLIGHT:10] ok [not a tag]') == \
         'Done and ok [not a tag]'
@@ -115,6 +134,14 @@ def test_the_todo_list_is_cleaned_and_cut_to_size(chat):
         {'text': 'x', 'done': False}, {'text': 'a very lon', 'done': True}]}
 
 
+def test_the_todo_list_keeps_real_due_dates(chat):
+    raw = {'type': 'todo', 'items': [{'text': 'Essay', 'due': '2026-10-30'}, {'text': 'Email', 'due': 'friday'},
+                                     {'text': 'Read', 'due': None}]}
+    assert ta.normalize_todo(raw, chat) == {'type': 'todo', 'items': [
+        {'text': 'Essay', 'done': False, 'due': '2026-10-30'}, {'text': 'Email', 'done': False},
+        {'text': 'Read', 'done': False}]}
+
+
 @pytest.mark.parametrize('raw', [None, 'todo', {'type': 'notes', 'items': []}])
 def test_anything_but_a_todo_list_is_ignored(chat, raw):
     assert ta.normalize_todo(raw, chat) is None
@@ -135,6 +162,17 @@ def test_the_todo_tracker_lists_open_and_done_items(chat):
     todo = {'items': [{'text': 'Essay', 'done': False}, {'text': 'Email', 'done': True}]}
     text = ta.tracker_prompt('todo', today(), todo, [], NOW, chat, words=WORDS)
     assert 'TO-DO LIST' in text and '- [ ] Essay' in text and '- [x] Email' in text
+
+
+def test_the_todo_tracker_says_what_day_it_is_and_when_each_is_due(chat):
+    """So "due Friday" or "tomorrow" in the chat becomes a real date (the day is the clock's local day)."""
+    todo = {'items': [{'text': 'Essay', 'done': False, 'due': '2026-10-30'}, {'text': 'Email', 'done': False}]}
+    text = ta.tracker_prompt('todo', today(), todo, [], NOW, chat, words=WORDS, today='2026-10-25')
+    assert WORDS.todo_today.format(weekday='Sunday', day='2026-10-25') in text
+    assert '- [ ] Essay' + WORDS.todo_due.format(due='2026-10-30') in text
+    assert '- [ ] Email' in text and 'Email' + WORDS.todo_due.format(due='') not in text
+    empty = ta.tracker_prompt('todo', today(), None, [], NOW, chat, words=WORDS, today='2026-10-25')
+    assert 'Sunday 2026-10-25' in empty                  # an empty list still needs the day to add one
 
 
 def test_food_phone_and_light_trackers(chat):

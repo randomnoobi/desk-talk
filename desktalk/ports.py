@@ -11,7 +11,7 @@ Change this file only on purpose: every part depends on it.
 The desk right now is five small interfaces near the end of this file: LivePictures, DeskScene, SafetyBoard,
 CharacterMemory and PhotoAlbum (desktalk/core/desk/ has one class for each). The last sections are what the
 web layer asks of the running app (desktalk/bootstrap.py → DeskTalk types its fields with these), and the
-developer page's tools (tests, smoothing, the database, the data folder).
+developer page's tools (tests, smoothing, each object's trace, the database, the data folder).
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from typing import Any, Protocol, runtime_checkable
 from desktalk.domain import (
     AgentProfile,
     Box,
+    ChatJoin,
     Danger,
     DataFile,
     DeskRules,
@@ -46,6 +47,8 @@ from desktalk.domain import (
     StateRecord,
     TableInfo,
     TestItem,
+    Todo,
+    TracePhoto,
     UploadInfo,
 )
 
@@ -259,15 +262,8 @@ class EventStore(Protocol):
         """Days with a log, newest first (YYYY-MM-DD)."""
         ...
 
-    def events(self, day: str, types: set[str] | None, limit: int) -> list[dict[str, Any]]:
-        """Non-picture events of a day as dicts, newest first."""
-        ...
-
-    def presence(self, day: str, include_live: bool = True) -> list[dict[str, Any]]:
-        """What was on the desk when, as intervals."""
-        ...
-
-    def recent_detections(self, day: str, limit: int) -> list[dict[str, Any]]:
+    def events(self, day: str, types: set[str] | None, limit: int | None) -> list[dict[str, Any]]:
+        """Non-picture events of a day as dicts, newest first (all of them when `limit` is None)."""
         ...
 
     def counts(self, day: str) -> dict[str, Any]:
@@ -295,9 +291,9 @@ class ObjectStateStore(Protocol):
         `moved` rows are skipped: they don't change the state, and their `dwell_sec` isn't the time in the state."""
         ...
 
-    def changes(self, since: float) -> list[StateRecord]:
+    def changes(self, since: float, *, label: str | None = None) -> list[StateRecord]:
         """The `appeared`, `removed` and `moved` rows with `ts > since`, oldest first
-        (rows with the same `ts` in the order they were added)."""
+        (rows with the same `ts` in the order they were added). With `label`, only that object's rows."""
         ...
 
     def close(self) -> None:
@@ -369,6 +365,16 @@ class Notifier(Protocol):
 
 
 @runtime_checkable
+class DesktopNotifications(Protocol):
+    """The computer's own pop-up notifications (the Mac's, through osascript): warnings, reminders and sips reach
+    you even when no app page is in front."""
+
+    def show(self, title: str, text: str) -> None:
+        """Show one pop-up. Never raises and never waits for it: a failure is only logged."""
+        ...
+
+
+@runtime_checkable
 class ChatVoice(Protocol):
     """How a character puts things into words (the message generator)."""
 
@@ -430,11 +436,31 @@ class HabitsView(Protocol):
         """Count something that happened (an alert, a lost item found ...)."""
         ...
 
-    def nudges(self, now: float, open_todos: Sequence[str]) -> list[Nudge]:
+    def nudges(self, now: float, open_todos: Sequence[Todo]) -> list[Nudge]:
         """The reminders ready to send now, best first (ones sent too recently are left out)."""
         ...
 
     def note_fired(self, nudge: Nudge, now: float) -> None:
+        ...
+
+
+@runtime_checkable
+class TodoList(Protocol):
+    """The to-do list the server keeps (data/, settings → habit_tracker.todos_key), with due dates. Its copy wins:
+    the app page loads it when it opens, and only sends its own browser copy while has_list() is false."""
+
+    def items(self) -> list[Todo]:
+        """The to-dos in list order ([] before the first save)."""
+        ...
+
+    def replace(self, items: Sequence[Todo], now: float) -> list[Todo]:
+        """Keep this list instead of the old one, and save it. A due date that isn't a real day like 2026-10-30
+        is dropped (the to-do stays). Publishes a HabitEvent(habit='tasks', action='done', extra={'task': text})
+        for each to-do that was open before and is done now. Returns the list as it was kept."""
+        ...
+
+    def has_list(self) -> bool:
+        """A list was saved at least once (False until the first replace())."""
         ...
 
 
@@ -539,7 +565,8 @@ class DeskStatus(Protocol):
         """You're at the desk: the person's object state is PRESENT."""
         ...
 
-    def open_todos(self) -> list[str]:
+    def open_todos(self) -> list[Todo]:
+        """The to-dos not done yet, in list order."""
         ...
 
 
@@ -715,7 +742,16 @@ class DeskScene(Protocol):
         ...
 
     def members(self) -> dict[str, SeenObject]:
-        """Agent id → its box, for the agents on the desk right now."""
+        """Agent id → its box, for the agents in the chat that are on the desk right now."""
+        ...
+
+    def set_on_desk(self, objects: Mapping[str, SeenObject], now: float) -> None:
+        """Everything on the desk just now, by agent id, whether or not it's in the chat (the roster writes it, with
+        its own waits: settings → agents.on_desk_*). The danger warnings and the live view's boxes read it."""
+        ...
+
+    def on_desk(self) -> dict[str, SeenObject]:
+        """Agent id → its box, for everything on the desk right now, whether or not it's in the chat."""
         ...
 
     def seen(self) -> dict[str, SeenObject]:
@@ -813,13 +849,6 @@ class CharacterMemory(Protocol):
         """When you last typed or sent something (0 before the first time)."""
         ...
 
-    def set_vision_brief(self, text: str) -> None:
-        """The last posture check in a few words, for the AI's reminders."""
-        ...
-
-    def vision_brief(self) -> str:
-        ...
-
 
 @runtime_checkable
 class PhotoAlbum(Protocol):
@@ -887,6 +916,16 @@ class ChatReplies(Protocol):
 
 
 @runtime_checkable
+class ChatJoins(Protocol):
+    """Each kind of object's chat joins, leaves and refusals, with why (the roster): the developer page's trace."""
+
+    def joins(self, label: str) -> list[ChatJoin]:
+        """The newest ones (settings → dev.trace_events_kept) for a detector word, oldest first; [] for one never
+        seen."""
+        ...
+
+
+@runtime_checkable
 class RosterList(RosterView, Protocol):
     """Who's in the chat, for the app's agent list (/api/agents, /api/live)."""
 
@@ -945,23 +984,6 @@ class LostItemsView(PeriodicWorker, Protocol):
 
     def answer(self, user_message: str) -> dict[str, Any]:
         """The chat's reply: {'speaker', 'cta', 'text'}."""
-        ...
-
-
-@runtime_checkable
-class VisionHabitsView(PeriodicWorker, Protocol):
-    """The posture and nail biting checks (a background job too), for the Habits page."""
-
-    def summary(self) -> dict[str, int]:
-        """Today's slouching (seconds) and nail biting (times)."""
-        ...
-
-    def events(self) -> list[dict[str, Any]]:
-        """The habit log, newest first."""
-        ...
-
-    def latest(self) -> tuple[dict[str, Any], float]:
-        """The AI's last answer and when it came (({}, 0.0) before the first)."""
         ...
 
 
@@ -1083,6 +1105,20 @@ class SmoothingTraceView(Protocol):
 
     def trace(self, label: str) -> list[SmoothingStep]:
         """Oldest first; [] for a label never seen."""
+        ...
+
+
+@runtime_checkable
+class TracePhotos(Protocol):
+    """The pictures kept of each kind of object for the developer page's trace: one when it appears, one when it
+    joins the chat, and one every so often while it's there (settings → dev.trace_*). Only the newest few are kept."""
+
+    def photos(self, label: str) -> list[TracePhoto]:
+        """The pictures kept of a detector word, oldest first; [] for one never photographed."""
+        ...
+
+    def jpeg(self, photo_id: str) -> bytes | None:
+        """The picture itself; None when it's gone (only the newest are kept)."""
         ...
 
 

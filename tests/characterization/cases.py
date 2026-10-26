@@ -5,7 +5,7 @@ Each Case is one request to one of the two web servers, on one of the ready-made
 
     fresh    nothing seen yet, no pictures; the AI works
     busy     the Pi has watched a laptop, a cup, keys, a book and a remote for 6 s with someone at the desk;
-             one Pi upload arrived; the vision AI noticed nail biting
+             one Pi upload arrived
     no_ai    like busy, but there is no AI key
     ai_down  like busy, but every AI call fails
     phone    the phone is the camera (camera.source: phone) and has sent one picture
@@ -67,6 +67,8 @@ WRONG_KEY = {'X-Desk-Key': 'not-the-key'}
 
 TODO_LIST = {'type': 'todo', 'items': [{'text': 'Send the report', 'done': False},
                                        {'text': 'Water the plant', 'done': True}]}
+DATED_TODOS = {'type': 'todo', 'items': [{'text': 'Essay', 'done': False, 'due': '2026-10-30'},
+                                         {'text': 'Call mum', 'done': False, 'due': 'next friday'}]}  # a bad date
 OUTLINE = [[0, 0.5], [1, 0.5], [1, 1], [0, 1]]
 # The developer page (/api/dev/..., only from this computer): the test its fake runner knows, and the pages that
 # may ask (the server's own and the Vite dev server's, settings → web.port and dev.vite_port as in git).
@@ -138,8 +140,12 @@ CASES = [
     Case('pi-frame-camera-is-phone', 'POST', '/api/pi/frame', 409, desk='phone', data=PICTURE, headers=PI_HEADERS),
     Case('live-after-pi-frame', 'GET', '/api/live', 200, desk='fresh',
          before=(Step('POST', '/api/pi/frame', data=PICTURE, headers=PI_HEADERS),),
-         values={'camera': True, 'camera_info.frames_received': 1, 'camera_info.pi.last_frame_id': 'pi-000042',
-                 'camera_info.pi.photos_stored': 42, 'camera_info.pi.disk_free_mb': 1234}),
+         values={'camera': True, 'camera_source': 'pi'}),
+    # What the Pi last said about itself is on the Log status now (the developer page reads it).
+    Case('log-status-after-pi-frame', 'GET', '/api/log/status', 200, desk='fresh',
+         before=(Step('POST', '/api/pi/frame', data=PICTURE, headers=PI_HEADERS),),
+         values={'camera.frames_received': 1, 'camera.pi.last_frame_id': 'pi-000042',
+                 'camera.pi.photos_stored': 42, 'camera.pi.disk_free_mb': 1234}),
 
     # ── Video and photos ──
     Case('video-feed-camera-0', 'GET', '/api/video_feed/0', 200, reply=MJPEG),
@@ -152,6 +158,7 @@ CASES = [
     Case('snapshot-unknown-id', 'GET', '/api/snapshot/nope', 404, reply=STATUS),
     Case('snapshots', 'GET', '/api/snapshots', 200),
     Case('snapshots-none-yet', 'GET', '/api/snapshots', 200, desk='fresh'),
+    Case('snapshots-newest-one', 'GET', '/api/snapshots?limit=1', 200),
 
     # ── Live status ──
     Case('live', 'GET', '/api/live', 200),
@@ -201,6 +208,11 @@ CASES = [
     Case('chat-todos-unknown-chat', 'POST', '/api/chat_todos', 400, json={'chat': 'nobody', 'widget': TODO_LIST}),
     Case('chat-todos-sync', 'POST', '/api/chat_todos_sync', 200, json={'by_chat': {'paper': TODO_LIST}}),
     Case('chat-todos-sync-bad-payload', 'POST', '/api/chat_todos_sync', 400, json={'by_chat': ['paper']}),
+    Case('todos', 'GET', '/api/todos', 200, desk='fresh', values={'has_list': False, 'items': []}),
+    Case('todos-after-sync', 'GET', '/api/todos', 200,
+         before=(Step('POST', '/api/chat_todos_sync', {'by_chat': {'paper': DATED_TODOS}}),),
+         values={'has_list': True, 'items': [{'text': 'Essay', 'done': False, 'due': '2026-10-30'},
+                                             {'text': 'Call mum', 'done': False, 'due': None}]}),
     Case('widget-event', 'POST', '/api/widget_event', 200, json={'chat': 'cup', 'action': 'view'}),
     Case('widget-event-unknown-chat', 'POST', '/api/widget_event', 400, json={'chat': 'nobody', 'action': 'view'}),
 
@@ -212,13 +224,13 @@ CASES = [
     Case('habits-log-food', 'POST', '/api/habits/log', 200,
          json={'habit': 'food', 'action': 'food', 'label': 'apple', 'healthy': True}),
     Case('habits-log-unknown-habit', 'POST', '/api/habits/log', 400, json={'habit': 'nope', 'action': 'x'}),
-    Case('habit-log', 'GET', '/api/habit_log', 200),
-    Case('habit-log-one-category', 'GET', '/api/habit_log?category=posture_bad&limit=5', 200),
-    Case('habit-log-bad-limit', 'GET', '/api/habit_log?limit=lots', 400),     # the Flask server crashed: 500
     Case('preferences', 'GET', '/api/preferences', 200),
     Case('preferences-put', 'PUT', '/api/preferences', 200,
          json={'wake_time': '06:30', 'bed_time': '23:00', 'quiet_enabled': True}),
     Case('preferences-put-bad-time', 'PUT', '/api/preferences', 400, json={'wake_time': 'noon'}),
+    Case('preferences-put-sensitivity', 'PUT', '/api/preferences', 200, json={'sensitivity': 0},
+         values={'preferences.sensitivity': 0}),
+    Case('preferences-put-bad-sensitivity', 'PUT', '/api/preferences', 400, json={'sensitivity': 'abc'}),
     Case('preferences-put-old-names', 'PUT', '/api/preferences', 200, json={'dnd_enabled': True, 'dnd_start_hour': 21},
          values={'preferences.quiet_enabled': True, 'preferences.quiet_start_hour': 21}),
     Case('preferences-after-put', 'GET', '/api/preferences', 200,
@@ -228,20 +240,12 @@ CASES = [
     Case('log-days', 'GET', '/api/log/days', 200, values={'today': '2026-10-21'}),
     Case('log-days-nothing-seen', 'GET', '/api/log/days', 200, desk='fresh'),
     Case('log-events', 'GET', '/api/log/events', 200),
-    Case('log-events-joins-only', 'GET', '/api/log/events?types=agent_joined&limit=2', 200),
+    Case('log-events-alerts-only', 'GET', '/api/log/events?types=alert&limit=2', 200),
     Case('log-events-other-day', 'GET', '/api/log/events?day=2026-10-20', 200, values={'day': '2026-10-20'}),
     Case('log-events-bad-day', 'GET', '/api/log/events?day=yesterday', 200, values={'day': '2026-10-21'}),
     Case('log-events-bad-limit', 'GET', '/api/log/events?limit=all', 400),     # the Flask server crashed: 500
-    Case('log-presence', 'GET', '/api/log/presence', 200),
-    Case('log-presence-nothing-seen', 'GET', '/api/log/presence', 200, desk='fresh'),
-    Case('log-detections', 'GET', '/api/log/detections?limit=1', 200),
-    Case('log-detections-nothing-seen', 'GET', '/api/log/detections', 200, desk='fresh'),
-    Case('log-detections-bad-limit', 'GET', '/api/log/detections?limit=some', 400),
     Case('log-status', 'GET', '/api/log/status', 200),
     Case('log-status-nothing-seen', 'GET', '/api/log/status', 200, desk='fresh'),
-    Case('log-compact', 'POST', '/api/log/compact', 200),
-    Case('log-status-after-compact', 'GET', '/api/log/status', 200, before=(Step('POST', '/api/log/compact'),),
-         values={'today.pictures_waiting': 0}),
 
     # ── Settings ──
     Case('rules', 'GET', '/api/rules', 200),
@@ -273,6 +277,10 @@ CASES = [
     Case('dev-smoothing-trace-never-seen', 'GET', '/api/dev/smoothing/trace?label=pen%2Fpencil', 200,
          values={'label': 'pen/pencil', 'steps': []}),
     Case('dev-smoothing-trace-no-label', 'GET', '/api/dev/smoothing/trace', 400),
+    Case('dev-object-trace', 'GET', '/api/dev/objects/cup', 200, values={'label': 'cup'}),
+    Case('dev-object-trace-never-seen', 'GET', '/api/dev/objects/pen%2Fpencil', 200,
+         values={'label': 'pen/pencil', 'timeline': [], 'photos': []}),
+    Case('dev-object-photo-gone', 'GET', '/api/dev/objects/photo/nope', 404, reply=STATUS),
     Case('dev-tests', 'GET', '/api/dev/tests', 200, desk='fresh'),
     Case('dev-run-check', 'POST', '/api/dev/runs', 200, desk='fresh', json={'check': True},
          values={'run_id': 'run-1'}),

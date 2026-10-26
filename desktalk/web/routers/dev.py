@@ -7,6 +7,10 @@ only for this computer, from the server's own page or the Vite dev server's (Dev
     GET  /api/dev/smoothing                 the objects with a smoothing trace
     GET  /api/dev/smoothing/trace?label=    one object's last pictures of smoothing, oldest first ([] for one
                                             never seen; the label is a query parameter, so pen/pencil works)
+    GET  /api/dev/objects/<label>           one object's whole trace: its state changes since the camera
+                                            started and its chat joins, leaves and refusals (oldest first,
+                                            each with why), and the pictures kept of it (pen/pencil works too)
+    GET  /api/dev/objects/photo/<id>        one of those pictures (a JPEG); 404 once it's gone
     GET  /api/dev/tests                     every test pytest finds
     POST /api/dev/runs                      {"check": true} or {"tests": [ids]} → {run_id}; 409 while a run is
                                             going, 400 for a test that isn't in the list
@@ -27,9 +31,9 @@ import math
 from dataclasses import asdict
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 
-from desktalk.domain import QueryRefused, RunAlreadyGoing
+from desktalk.domain import ChatJoin, Phase, QueryRefused, RunAlreadyGoing, StateRecord
 from desktalk.ports import DatabaseBrowser, DataFiles, TestRunner
 from desktalk.web.deps import App, DevOnly
 from desktalk.web.schemas import QueryRequest, RunRequest
@@ -90,6 +94,8 @@ def dev_settings(app: App) -> dict[str, Any]:
         'output_keep_kb': dev.output_keep_kb,
         'flips_window_min': dev.flips_window_min,
         'table_counts_every_sec': dev.table_counts_every_sec,
+        'trace_events_kept': dev.trace_events_kept,
+        'trace_photos_kept': dev.trace_photos_kept,
     }
 
 
@@ -111,6 +117,46 @@ def dev_smoothing(app: App) -> dict[str, Any]:
 @router.get('/api/dev/smoothing/trace')
 def dev_smoothing_trace(app: App, label: str) -> dict[str, Any]:
     return {'label': label, 'steps': [asdict(step) for step in app.object_states.trace(label)]}
+
+
+def _state_row(record: StateRecord) -> dict[str, Any]:
+    """One object state change on the trace's timeline. `seen_for_sec` is how long it had been seen, so only a
+    change out of PRESENT has one (its dwell_sec is the time it was PRESENT)."""
+    seen_for = record.dwell_sec if record.prev_state == Phase.PRESENT else None
+    return {'ts': record.ts, 'source': 'state', 'kind': record.type, 'confidence': record.conf_avg,
+            'seen_for_sec': seen_for, 'on_desk': None, 'step': None, 'before': str(record.prev_state),
+            'after': str(record.new_state)}
+
+
+def _chat_row(join: ChatJoin) -> dict[str, Any]:
+    """One chat join, leave or refusal on the trace's timeline."""
+    return {'ts': join.ts, 'source': 'chat', 'kind': join.kind, 'confidence': join.confidence,
+            'seen_for_sec': join.seen_for_sec, 'on_desk': join.on_desk, 'step': join.step, 'before': None,
+            'after': None}
+
+
+# Before the trace route: its {label:path} would take "photo/<id>" too.
+@router.get('/api/dev/objects/photo/{photo_id}')
+def dev_object_photo(app: App, photo_id: str) -> Response:
+    jpeg = app.trace_photos.jpeg(photo_id) if app.trace_photos is not None else None
+    if jpeg is None:
+        raise HTTPException(404)                 # only the newest are kept, or the developer page is off
+    return Response(jpeg, media_type='image/jpeg')
+
+
+@router.get('/api/dev/objects/{label:path}')
+def dev_object_trace(app: App, label: str) -> dict[str, Any]:
+    """The changes since the camera's current run of pictures began (like the Live tab's list), the newest
+    settings → dev.trace_events_kept of them; the chat's own list is kept that short already. Before the first
+    picture since the app started there are none: the store's changes are all from earlier runs."""
+    since = app.object_states.snapshot().watched_since
+    changes = [] if since is None else app.state_store.changes(since, label=label)[-app.config.dev.trace_events_kept:]
+    joins = app.chat_joins.joins(label) if app.chat_joins is not None else []
+    timeline = sorted([*map(_state_row, changes), *map(_chat_row, joins)], key=lambda row: row['ts'])
+    photos = app.trace_photos.photos(label) if app.trace_photos is not None else []
+    return {'label': label, 'timeline': timeline,
+            'photos': [{'id': p.id, 'ts': p.ts, 'why': p.why, 'confidence': p.confidence, 'box': list(p.box),
+                        'size': list(p.size)} for p in photos]}
 
 
 @router.get('/api/dev/tests')

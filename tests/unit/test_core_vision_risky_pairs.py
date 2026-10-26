@@ -27,7 +27,7 @@ def test_a_thing_on_the_path_between_a_danger_pair_is_a_chain():
     assert found.risk_events == [{'type': 'chain_reaction', 'chain': ['cup', 'mouse', 'computer'],
                                   'mediator': 'mouse', 'mediator_class': 'mouse', 'endpoints': ['cup', 'laptop'],
                                   'distance_to_path': 0.0}]
-    assert found.explanations == ['mouse lies between cup and laptop — chain reaction risk']
+    assert found.explanations == ['mouse is between cup and laptop, so bumping one could knock over the others.']
     assert found.relationships == [{'type': 'chain_reaction', 'severity': 'high',
                                     'chain': ['cup', 'mouse', 'computer']}]
 
@@ -58,7 +58,7 @@ def test_a_pair_in_the_same_place_has_no_path():
 def test_three_things_close_together_are_a_crowd():
     found = rp.crowds(desk(at('cup', 100, 100), at('bottle', 150, 100), at('apple', 100, 150)), RULES, words=WORDS)
     assert found.risk_events == [{'type': 'crowd', 'cluster': ['apple', 'bottle', 'cup'], 'count': 3}]
-    assert found.explanations == ['3 objects crowded together (apple, bottle, cup) — instability risk']
+    assert found.explanations == ['3 things are crowded together (apple, bottle, cup) and could tip over.']
     assert found.relationships == [{'type': 'crowd', 'severity': 'warning', 'cluster': ['apple', 'bottle', 'cup']}]
 
 
@@ -91,7 +91,7 @@ def test_things_getting_closer_are_noticed():
     found = rp.approaching(now, before, RULES, words=WORDS)
     assert found.risk_events == [{'type': 'approaching', 'object_a': 'cup', 'object_b': 'apple', 'old_dist': 100.0,
                                   'new_dist': 80.0, 'rate_pct': 20.0}]
-    assert found.explanations == ['cup moving toward apple (20% closer in 8 frames)']
+    assert found.explanations == ['cup is moving toward apple.']
     assert found.relationships == [{'type': 'approaching', 'severity': 'warning', 'from': 'cup', 'to': 'apple',
                                     'rate_pct': 20.0}]
 

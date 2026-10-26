@@ -39,7 +39,6 @@
     "tests/unit/test_core_producer.py",
     "tests/unit/test_core_workers_lens.py",
     "tests/unit/test_core_workers_lost_items.py",
-    "tests/unit/test_core_workers_vision_habits.py",
     "tests/unit/test_domain.py",
     "tests/unit/test_llm_openai_compatible.py",
     "tests/unit/test_shared_wire.py"

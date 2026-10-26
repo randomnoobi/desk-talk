@@ -9,10 +9,22 @@ from __future__ import annotations
 from typing import cast
 
 from desktalk.domain import BBox, Detection, DetectionEvent, DetectorState, UploadInfo
-from tests.integration.app_kit import CUP_FAR, CUP_NEAR, LAPTOP, PERSON, DeskRig, desk_jpeg, inbox, pi_camera
+from tests.integration.app_kit import (
+    CUP_FAR,
+    CUP_NEAR,
+    LAPTOP,
+    PERSON,
+    DeskRig,
+    desk_jpeg,
+    event_log_file,
+    inbox,
+    pi_camera,
+)
 
 STAPLER = Detection('stapler', 0.9, BBox(100, 100, 160, 140))
 CAT = Detection('cat', 0.9, BBox(0, 300, 150, 470))
+CUP_SIDE = Detection('cup', 0.9, BBox(560, 250, 600, 320))       # level with CUP_NEAR, out of the laptop's zone
+CUP_UP = Detection('cup', 0.9, BBox(410, 170, 450, 240))         # CUP_NEAR lifted towards your mouth
 
 
 def test_objects_join_the_chat_warn_log_a_sip_and_leave(tmp_path):
@@ -20,7 +32,7 @@ def test_objects_join_the_chat_warn_log_a_sip_and_leave(tmp_path):
     app = rig.app
 
     # 1. A laptop and a cup appear: both join after 3 seconds and say hello.
-    rig.watch(4, LAPTOP, CUP_FAR)
+    rig.watch(4, LAPTOP, CUP_SIDE)
     msgs = rig.messages()
     roster = [m for m in msgs if m['type'] == 'roster']
     assert {(m['agent']['id'], m['action']) for m in roster} == {('computer', 'joined'), ('cup', 'joined')}
@@ -28,16 +40,17 @@ def test_objects_join_the_chat_warn_log_a_sip_and_leave(tmp_path):
     assert {m['character'] for m in msgs if m.get('hello')} == {'computer', 'cup'}
     assert set(app.roster.member_ids()) == set(app.scene.members()) == {'computer', 'cup'}
 
-    # 2. The cup slides next to the laptop: Computer (fragile) warns, with a proof photo.
+    # 2. The cup slides along the desk next to the laptop: Computer (fragile) warns, with a proof photo.
     rig.watch(2, LAPTOP, CUP_NEAR)
     alerts = [m for m in rig.messages() if m.get('alert') == 'proximity']
     assert alerts and alerts[0]['character'] == 'computer'
     assert 'Cup' in alerts[0]['text'] and app.photo_album.get(alerts[0]['snapshot'])
     assert app.habits.today(rig.clock.now())['danger_count'] >= 1
 
-    # 3. The cup is picked up for 8 seconds and put back: a sip.
-    rig.watch(8, LAPTOP)
-    rig.watch(3, LAPTOP, CUP_FAR)
+    # 3. The cup is lifted, drunk from and put back: a sip.
+    rig.watch(1, LAPTOP, CUP_UP)
+    rig.watch(4, LAPTOP)
+    rig.watch(3, LAPTOP, CUP_NEAR)
     sips = [m for m in rig.messages() if m.get('habit') == 'hydration' and m['type'] == 'group_message']
     assert sips and 'Sip detected' in sips[0]['text'] and sips[0]['character'] == 'cup'
     assert app.habits.today(rig.clock.now())['hydration']['sips'] == 1
@@ -50,26 +63,29 @@ def test_objects_join_the_chat_warn_log_a_sip_and_leave(tmp_path):
 
     # 5. The event log has every picture, then compaction turns them into intervals.
     day = app.event_log.days()[0]
-    raw = app.event_log.recent_detections(day, 10_000)
+    raw = event_log_file(app).recent_detections(day, 10_000)
     assert len(raw) == len({e['frame_id'] for e in raw}) > 150
     types = [e['type'] for e in app.event_log.events(day, None, 1000)]
     assert types.count('agent_joined') == 2 and types.count('agent_left') == 1
     assert 'alert' in types and 'habit' in types
     assert app.event_log.compact(rig.clock.now())['frames'] == len(raw)
-    intervals = app.event_log.presence(day, include_live=False)
+    intervals = event_log_file(app).presence(day, include_live=False)
     cups = [i for i in intervals if i['label'] == 'cup']
     laptops = [i for i in intervals if i['label'] == 'laptop']
-    assert len(laptops) == 1 and len(cups) == 2           # the cup was away for 8 s, then gone
+    assert len(laptops) == 1 and len(cups) == 2           # the cup was away for 4 s, then gone
     assert laptops[0]['interval'][1] - laptops[0]['interval'][0] > 60
 
 
-def test_an_unknown_object_gets_a_personality_from_the_ai(tmp_path):
+def test_an_unknown_object_never_joins_and_gets_no_personality(tmp_path):
+    """Only the objects on settings → agents.can_join join the chat, so the AI is never asked to make one up."""
     rig = DeskRig(tmp_path, ai_reply='A tiny bodybuilder who holds papers together and brags about it.')
     rig.watch(4, STAPLER)
+    assert rig.app.roster.member_ids() == []
+    assert not any(m['type'] == 'roster' for m in rig.messages())
     profile = rig.app.profiles.get('stapler')
-    assert profile and profile.learned and 'bodybuilder' in profile.personality
-    assert any(m['type'] == 'roster' and m['agent']['name'] == 'Stapler' for m in rig.messages())
-    assert 'bodybuilder' in rig.app.store.load('learned_personalities')['stapler']
+    assert profile is None or not profile.learned
+    assert rig.app.store.load('learned_personalities') is None
+    assert all(not client.requests for client in rig.ai_clients)
 
 
 def test_a_pet_near_the_desk_gets_a_warning(tmp_path):
@@ -114,7 +130,7 @@ def pi_pictures(rig: DeskRig, seconds: float, state: DetectorState, *found: Dete
 
 
 def detection_events(rig: DeskRig) -> list[dict]:
-    return list(reversed(rig.app.event_log.recent_detections(rig.app.event_log.days()[0], 10_000)))
+    return list(reversed(event_log_file(rig.app).recent_detections(rig.app.event_log.days()[0], 10_000)))
 
 
 def test_ok_pictures_use_the_pis_own_detections(tmp_path):

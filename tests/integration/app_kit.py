@@ -25,13 +25,14 @@ import numpy as np
 from pydantic import BaseModel
 
 from desktalk.adapters.camera import PiFrameSource
+from desktalk.adapters.storage import EventLog
 from desktalk.bootstrap import DeskTalk, build
 from desktalk.config import AppConfig, load_config
 from desktalk.domain import BBox, Detection, UploadInfo
 from desktalk.ports import PictureInbox
 from desktalk.runtime.log_setup import HANDLER_NAME
 from tests.conftest import FakeAI
-from tests.fakes import FakeClock, FakeDetector, InMemoryKeyValueStore
+from tests.fakes import FakeClock, FakeDesktopNotifications, FakeDetector, InMemoryKeyValueStore
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_FILES_IN_GIT = ('settings.yaml', 'protocols.yaml', 'agents.yaml', 'prompts.yaml')
@@ -43,7 +44,7 @@ LAPTOP = Detection('laptop', 0.9, BBox(200, 200, 400, 350))
 CUP_FAR = Detection('cup', 0.9, BBox(560, 380, 600, 450))
 CUP_NEAR = Detection('cup', 0.9, BBox(410, 250, 450, 320))      # inside the laptop's spill zone
 PERSON = Detection('person', 0.95, BBox(400, 0, 640, 300))
-VISION_ANSWER = '{"posture": "good", "face_screen_distance": "ok", "phone": "none", "attention": "screen"}'
+VISION_ANSWER = '{"visible": []}'           # the lost-items scan's answer: nothing it knows
 DESK_PICTURE_SIZE = (640, 480)          # width and height of the desk pictures the fake camera sends
 
 
@@ -57,6 +58,13 @@ def pi_camera(app: DeskTalk) -> PiFrameSource:
     """The app's camera when it is the Pi."""
     assert isinstance(app.source, PiFrameSource)
     return app.source
+
+
+def event_log_file(app: DeskTalk) -> EventLog:
+    """The app's event log as the files it is: the tests read the pictures it hasn't compacted yet, and its
+    intervals, which no route sends."""
+    assert isinstance(app.event_log, EventLog)
+    return app.event_log
 
 
 def desk_jpeg(value: int = 140) -> bytes:
@@ -102,7 +110,7 @@ def desk_config(tmp_path: Path, *, ai: bool = False, ollama: bool = False) -> Ap
 
 class DeskRig:
     """The whole app, driven by hand. ai_reply: what the fake AI says (a string or a function of the request);
-    None = no AI key at all. Other keyword arguments go to build()."""
+    None = no AI key at all. Other keyword arguments go to build(). The Mac pop-ups go to `desktop` (nothing shows)."""
 
     def __init__(self, tmp_path: Path, *, config: AppConfig | None = None, start: float = AFTERNOON,
                  ai_reply: str | Exception | Callable[[Mapping[str, Any]], str] | None = None, ollama: bool = False,
@@ -113,6 +121,7 @@ class DeskRig:
         self.config = config or desk_config(tmp_path, ai=ai_reply is not None, ollama=ollama)
         self.detector = FakeDetector()
         self.ai_clients: list[FakeAI] = []
+        self.desktop = FakeDesktopNotifications()
 
         def client_factory(**kw: Any) -> FakeAI:
             self.ai_clients.append(FakeAI(reply=ai_reply if ai_reply is not None else chatty_ai, **kw))
@@ -120,7 +129,7 @@ class DeskRig:
 
         kw: dict[str, Any] = {'detector': self.detector, 'client_factory': client_factory,
                               'data_folder': tmp_path / 'run', 'pair_key': PAIR_KEY, 'synchronous_events': True,
-                              'set_up_logging': False,
+                              'set_up_logging': False, 'desktop': self.desktop,
                               'config_store': InMemoryKeyValueStore({'safety_rules': SAFETY_RULES})}
         kw.update(build_kw)
         self.app: DeskTalk = build(self.config, clock=self.clock, **kw)

@@ -12,10 +12,12 @@ from tests.fakes.dev import (
     FakeDataFiles,
     FakeSmoothingTrace,
     FakeTestRunner,
+    FakeTracePhotos,
     smoothing_step,
 )
 from tests.fakes.parts import (
     FakeChatModel,
+    FakeDesktopNotifications,
     FakeDetector,
     FakeFrameSource,
     InMemoryEventStore,
@@ -26,6 +28,7 @@ from tests.fakes.parts import (
 )
 from tests.fakes.views import (
     FakeCameraHealth,
+    FakeChatJoins,
     FakeChatVoice,
     FakeDeskStatus,
     FakeHabits,
@@ -35,6 +38,7 @@ from tests.fakes.views import (
     FakePreferences,
     FakeProfiles,
     FakeRuleNudges,
+    FakeTodoList,
     StaticRoster,
 )
 from tests.fakes.vision import FakeDeskRules, FakePhotoTaker, FakePictureTools, plain_desk_rules
@@ -46,5 +50,5 @@ __all__ = [
     'FakeObjectStates', 'FakePainter', 'FakePhone', 'FakePhotoAlbum', 'FakePhotoTaker', 'FakePi', 'FakePictureCheck',
     'FakePictureTools', 'FakePreferences', 'FakeProfiles', 'FakeRuleNudges', 'FakeSafetyBoard', 'InMemoryEventStore',
     'InMemoryKeyValueStore', 'InMemoryStateStore', 'RecordingNotifier', 'StaticRoster', 'SyncEventBus',
-    'plain_desk_rules',
+    'plain_desk_rules', 'FakeChatJoins', 'FakeDesktopNotifications', 'FakeTodoList', 'FakeTracePhotos',
 ]

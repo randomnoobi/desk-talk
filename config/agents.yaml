@@ -6,9 +6,10 @@
 #  object has been gone a while: "<name> left the chat".
 #  (Timings: config/settings.yaml → agents.)
 #
-#  Objects that have a block below get that name and personality.
-#  Anything else the detector finds (scissors, a stapler...) still joins,
-#  using the `default` block, and the AI invents a personality for it.
+#  Only the agents listed in config/settings.yaml → agents.can_join may
+#  join the chat (Computer, Cup, Phone, Snack and Book). The camera still
+#  sees everything else, for the warnings and lost items. The other blocks
+#  below stay, so letting one join again is one word in that list.
 #
 #  Add or change a character: copy a block and edit it.
 #    labels       the detector's words for this object (one agent can cover several)
@@ -25,7 +26,8 @@
 #    tracker      the panel on top of its 1-on-1 chat: hydration, breaks, food,
 #                 todo, phone_free, light
 #    fragile      true = when something risky comes close, this one complains
-#    min_confidence  how sure the detector must be (default: settings → agents.min_confidence)
+#    min_confidence  how sure the detector must be for it to join the chat; used only when it is stricter than the
+#                 sensitivity step's own number (settings → agents.sensitivity_steps)
 #    too_close    what it says (without AI) when something gets too close; {other} = the other object
 #    hello        what it says when it joins
 # ════════════════════════════════════════════════════════════════════
@@ -92,7 +94,7 @@ agents:
     icon: "💻"
     art: art/computer.svg
     color: cobalt
-    about: Anxious. Watches your screen breaks, posture, and anything near the keyboard.
+    about: Anxious. Watches your screen breaks and anything near the keyboard.
     personality: >-
       Fragile and anxious, the emotional center of the desk. Highly self-aware, monitors
       surroundings constantly. Expresses discomfort through subtle physical metaphors
@@ -143,7 +145,7 @@ agents:
     hello: "Snack has arrived. You're welcome."
 
   paper:
-    name: Paper
+    name: Book
     nickname: Sheets
     labels: [book, notepaper, folder, notebook, paper]
     icon: "📄"
@@ -232,7 +234,6 @@ agents:
       Warm and glowing, a morning person. Cares a lot about daylight in the morning and
       soft, dim light at night, and gets a bit bossy about it.
     temperature: 0.7
-    habits: [light]
     tracker: light
 
   plant:
@@ -263,7 +264,6 @@ agents:
     personality: >-
       Punctual and slightly smug. Always knows exactly how long you have been sitting.
     temperature: 0.6
-    habits: [breaks]
 
   glasses:
     name: Glasses
@@ -300,11 +300,11 @@ relationships:
   - between: [cup, computer]
     risk: Cup or bottle close to Computer, possible spill risk.
   - between: [cup, paper]
-    risk: Cup or liquid near Paper, water damage risk.
+    risk: Cup or liquid near Book, water damage risk.
   - between: [snack, computer]
     risk: Snack near Computer, possible crumbs near the keyboard.
   - between: [snack, paper]
-    risk: Snack near Paper, oil or grease stain risk.
+    risk: Snack near Book, oil or grease stain risk.
   - between: [snack, cup]
     risk: Snack near Cup, more hand movement near liquid.
   - between: [cup, phone]

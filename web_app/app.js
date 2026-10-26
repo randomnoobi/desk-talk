@@ -5,7 +5,7 @@
    Agents aren't fixed: when the camera sees an object it joins the chat,
    and when it's gone a while it leaves. Without a server it runs as a demo.
    Its numbers (refresh times, limits, the habit rules ...) come from the
-   server: GET /api/ui_settings, i.e. config/settings.yaml on the computer.
+   server: GET /api/ui_settings.
    ============================================ */
 'use strict';
 
@@ -22,9 +22,14 @@ const FIRST_CHECK_MS = 4000;
 const MS = 1000;               // thousandths of a second in a second
 const MINUTE = 60;             // seconds
 const HOUR = 3600;             // seconds
-const ML_PER_OZ = 29.57;
+const DAY_MS = 24 * HOUR * MS;
 const PERCENT = 100;
-const LEVEL_MAX = 255;         // a picture's brightness runs from 0 to this
+
+/** How many of something the page shows (settings → web.list_sizes). Missing (an older server): no limit. */
+const size = (name) => (ui?.list_sizes || ui?.web?.list_sizes || {})[name];
+const maxLength = (n) => (n ? ` maxlength="${n}"` : '');
+/** 'pen/pencil' → 'pen': the first of the detector's words for a thing. */
+const plainLabel = (label) => String(label || '').split('/')[0].trim();
 
 // ————— Who can talk —————
 const GROUP = {
@@ -66,10 +71,22 @@ function duration(minutes) {
   if (minutes > MINUTE && minutes % MINUTE === 0) return `${minutes / MINUTE} hours`;
   return `${minutes} minutes`;
 }
+const seconds = (sec) => `${+sec} second${+sec === 1 ? '' : 's'}`;
+/** '2026-10-30' → that day at midnight, here. */
+function localDay(day) {
+  const [y, m, d] = String(day).split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+/** Whole days from today to `day` ('YYYY-MM-DD'): 0 today, 1 tomorrow, -1 yesterday. */
+function daysFromToday(day) {
+  return Math.round((localDay(day) - localDay(todayKey())) / DAY_MS);
+}
+const dayName = (day) => localDay(day).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 
-/** fetch → JSON, with a timeout (an ordinary request's, from the settings). Throws on network errors and non-2xx.
- * The first check, which fetches the settings, passes its own (FIRST_CHECK_MS). */
-async function api(path, { method = 'GET', body, timeout = ui?.web.request_timeout_ms } = {}) {
+/** fetch → JSON, with a timeout (an ordinary request's, from the settings). Throws on network errors and non-2xx
+ * (then the error's `status` is the reply's status). The first check, which fetches the settings, passes its own
+ * (FIRST_CHECK_MS). */
+async function api(path, { method = 'GET', body, timeout = ui?.web?.request_timeout_ms } = {}) {
   const ctl = new AbortController();
   const t = timeout ? setTimeout(() => ctl.abort(), timeout) : null;
   try {
@@ -79,7 +96,7 @@ async function api(path, { method = 'GET', body, timeout = ui?.web.request_timeo
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,
     });
-    if (!res.ok) throw new Error(`${path} → ${res.status}`);
+    if (!res.ok) throw Object.assign(new Error(`${path} → ${res.status}`), { status: res.status });
     return res.status === 204 ? null : await res.json();
   } finally {
     clearTimeout(t);
@@ -96,13 +113,26 @@ const storage = {
   },
 };
 
+/** Put `html` in `box`, unless it's already there. With `poll` (a timed refresh, not something you did), also
+ * leave it alone while you're typing in it: one of its boxes has the focus or some text. True when it was drawn. */
+const drawn = new WeakMap();
+function paint(box, html, poll = false) {
+  if (drawn.get(box) === html) return false;
+  if (poll && $$('input:not([type="checkbox"]):not([type="range"]), select', box)
+    .some((i) => i === document.activeElement || (i.tagName === 'INPUT' && i.value))) return false;
+  box.innerHTML = html;
+  drawn.set(box, html);
+  return true;
+}
+
 // ————— State —————
 const state = {
   live: false,          // the Python server answered when the page opened (otherwise: the demo)
   offline: false,       // ...but can't be reached right now
-  cameraSource: 'pi',   // pi | phone | webcam (config/settings.yaml)
-  phoneMode: false,
+  cameraSource: 'pi',   // pi | phone | webcam
   camOk: false,         // pictures are arriving right now
+  camNoted: false,      // what the last "Camera connected / disconnected" note said...
+  camSince: 0,          // ...and since when (ms) camOk has been what it is now
   camIndex: 0,
   feed: 'analysis',     // 'analysis' (boxes) or 'clean'
   phone: null,          // { url, qr_svg } for phone pairing
@@ -112,10 +142,13 @@ const state = {
   agents: {},           // agent id → profile + on_desk / joined_at / left_at
   messages: { group: [] },
   unread: { group: 0 },
+  waiting: {},          // chat id → replies still on their way (the typing dots stay until they're in)
+  typing: null,         // { char, chat }: whose typing dots show
   habits: null,         // /api/habits/today
-  habitFilter: 'all',
+  habitsFailed: false,  // the last time the page asked for them, it got no answer
   logFilter: 'all',
-  logDay: null,
+  logDay: null,         // the day the Event log shows; null = today (the server's)
+  logDays: null,        // GET /api/log/days: { days, today }
   snapshotIds: null,
   seen: new Set(),      // message ids already shown (replies can arrive twice)
   aiText: '',
@@ -141,6 +174,7 @@ function avatar(a, size = 36, cls = '') {
 
 // ————— Chat history (kept in this browser so a refresh doesn't wipe the chats) —————
 const HISTORY_KEY = 'desktalk_chats_v2';
+const CLEARED_KEY = 'desktalk_chats_cleared_v1';    // when you last pressed "Clear all chats" (ms)
 let historyTimer = null;
 function saveHistory() {
   if (!state.live) return;            // the demo never saves
@@ -164,28 +198,99 @@ function loadHistory() {
   }
 }
 
-// ————— To-do list (kept in the browser, sent to the server so Paper knows) —————
+// ————— To-do list (Book's panel). The server keeps it (GET /api/todos) and its copy wins; this browser keeps
+// one too, sent to the server only while the server has none yet. —————
 const TODO_KEY = 'desktalk_todo_v1';
-const todo = storage.load(TODO_KEY, null) || { type: 'todo', items: [{ text: 'Pick one top priority for the next hour', done: false }] };
+let todo = null;
+// Where the list stands with the server:
+//   'server'  it keeps one, and its copy wins (ours is never sent over it)
+//   'none'    it has none yet: ours is sent once
+//   'old'     an older server with no GET /api/todos (it said 404): ours is sent, as before
+//   'unknown' the last ask failed (no answer, or a server error): nothing is sent, and the page asks again later
+let todoOnServer = 'unknown';
+const SEND_OURS = ['none', 'old'];
+const cleanTodo = (i) => ({ text: String(i?.text ?? ''), done: !!i?.done, due: typeof i?.due === 'string' && i.due ? i.due : null });
+function loadTodoCopy() {
+  const saved = storage.load(TODO_KEY, null);
+  todo = Array.isArray(saved?.items)
+    ? { type: 'todo', items: saved.items.map(cleanTodo) }
+    : { type: 'todo', items: ui.starter_todo ? [cleanTodo({ text: ui.starter_todo })] : [] };
+}
+const todoAgents = () => agentIds().filter((id) => state.agents[id].tracker === 'todo');
 function todoChanged(id) {
   storage.save(TODO_KEY, todo);
   if (state.view === 'chat' && state.chat === id) renderTracker();
-  if (state.live) api('/api/chat_todos', { method: 'POST', body: { chat: id, widget: todo } }).catch(() => {});
+  if (state.live) {
+    api('/api/chat_todos', { method: 'POST', body: { chat: id, widget: todo } })
+      .then(() => { if (todoOnServer === 'none') todoOnServer = 'server'; }, () => {});
+  }
 }
+/** Send this browser's list, only when the server has none (or is too old to keep one): its copy wins. */
 function syncTodos() {
-  const byChat = Object.fromEntries(agentIds().filter((id) => state.agents[id].tracker === 'todo').map((id) => [id, todo]));
-  if (state.live && Object.keys(byChat).length) api('/api/chat_todos_sync', { method: 'POST', body: { by_chat: byChat } }).catch(() => {});
+  if (!state.live || !SEND_OURS.includes(todoOnServer)) return;
+  const byChat = Object.fromEntries(todoAgents().map((id) => [id, todo]));
+  if (!Object.keys(byChat).length) return;
+  api('/api/chat_todos_sync', { method: 'POST', body: { by_chat: byChat } })
+    .then(() => { if (todoOnServer === 'none') todoOnServer = 'server'; }, () => {});
+}
+/** The server's list, when it has one; otherwise this browser's goes to it. When the ask fails, nothing is sent
+ * (a passing error must never wipe the server's list); refreshHabits asks again. */
+async function loadTodos() {
+  if (!state.live) return;
+  let r;
+  try {
+    r = await api('/api/todos');
+  } catch (err) {
+    todoOnServer = err?.status === 404 ? 'old' : 'unknown';
+    syncTodos();
+    return;
+  }
+  if (r?.has_list && Array.isArray(r.items)) {
+    todoOnServer = 'server';
+    todo.items = r.items.map(cleanTodo);
+    storage.save(TODO_KEY, todo);
+    if (state.view === 'chat' && who(state.chat).tracker === 'todo') renderTracker(true);
+  } else {
+    todoOnServer = 'none';
+    syncTodos();
+  }
+}
+/** 'due today', 'was due 2 days ago', 'due Fri, Oct 30' ... and whether it's late. */
+function dueText(item) {
+  if (!item.due) return null;
+  const n = daysFromToday(item.due);
+  if (Number.isNaN(n)) return null;
+  if (n === 0) return { text: 'due today', late: false };
+  if (n === 1) return { text: 'due tomorrow', late: false };
+  if (n === -1) return { text: 'was due yesterday', late: !item.done };
+  if (n < 0) return { text: `was due ${-n} days ago`, late: !item.done };
+  return { text: `due ${dayName(item.due)}`, late: false };
 }
 
-// ————— Custom habit counters (Habits page) —————
+// ————— Your own counters (Habits page) —————
 const HABIT_KEY = 'desktalk_habits_v2';
-const counters = (() => {
+// The starter counters an older version of the page added (posture and nail biting are gone). A browser that
+// saved them loses these two once (`tidied`), and keeps every counter you added; one you add again later stays.
+const OLD_STARTER_COUNTERS = ['Nail biting', 'Slouching'];
+let counters = null;
+function loadCounters() {
   const saved = storage.load(HABIT_KEY, null);
-  if (saved && saved.day === todayKey() && Array.isArray(saved.items)) return saved;
-  const labels = saved?.items?.map((i) => i.label) || ['Nail biting', 'Picked up phone', 'Slouching'];
-  return { day: todayKey(), items: labels.map((label) => ({ label, count: 0 })) };
-})();
+  const items = Array.isArray(saved?.items) ? saved.items : null;
+  const kept = items && !saved.tidied ? items.filter((i) => !OLD_STARTER_COUNTERS.includes(i.label)) : items;
+  if (kept && saved.day === todayKey()) counters = { day: saved.day, items: kept, tidied: true };
+  else {
+    const labels = kept ? kept.map((i) => i.label) : [...(ui.starter_counters || [])];
+    counters = { day: todayKey(), items: labels.map((label) => ({ label, count: 0 })), tidied: true };
+  }
+  if (items && !saved.tidied) saveCounters();
+}
 const saveCounters = () => storage.save(HABIT_KEY, counters);
+/** They start again from 0 each day (also when the page stays open past midnight). */
+function countersForToday() {
+  if (counters.day === todayKey()) return;
+  counters = { day: todayKey(), items: counters.items.map((c) => ({ label: c.label, count: 0 })), tidied: true };
+  saveCounters();
+}
 
 // ————— Agents joining and leaving —————
 function upsertAgent(a) {
@@ -215,7 +320,7 @@ function rosterEvent(d) {
   if (!d.quiet) {
     addMessage('group', { id: d.id, time: d.ts ? d.ts * MS : Date.now(), system: joined ? 'joined' : 'left', agent: d.agent.id, text: d.text || `${d.agent.name} ${joined ? 'joined' : 'left'} the chat` });
   }
-  if (joined && d.agent.tracker === 'todo') syncTodos();
+  if (joined && d.agent.tracker === 'todo') loadTodos();
   renderChatList();
   if (state.view === 'chat' && state.chat === d.agent.id) renderChatHead();
 }
@@ -235,8 +340,7 @@ function chatOrder() {
 }
 
 function renderChatList() {
-  const list = $('#chat-list');
-  list.innerHTML = chatOrder().map((id) => {
+  paint($('#chat-list'), chatOrder().map((id) => {
     const c = who(id);
     const msgs = state.messages[id] || [];
     const last = msgs.findLast((m) => !m.note);
@@ -253,7 +357,7 @@ function renderChatList() {
         <span class="chat-link-preview">${esc(preview)}</span></span>
       ${unread ? `<span class="badge" aria-label="${unread} unread">${unread > 9 ? '9+' : unread}</span>` : '<span></span>'}
     </button>`;
-  }).join('');
+  }).join(''));
 }
 
 function renderPageLinks() {
@@ -308,8 +412,8 @@ function openPage(view) {
   $$('.view').forEach((v) => { v.hidden = v.id !== `view-${view}`; });
   renderChatList();
   renderPageLinks();
-  if (view === 'habits') renderHabits();
-  if (view === 'log') renderLog();
+  if (view === 'habits') { renderHabits(); if (state.live) refreshHabits(); }
+  if (view === 'log') { state.logDays = null; renderLog(); }
   if (view === 'captures') renderCaptures();
   if (view === 'settings') renderSettings();
 }
@@ -346,11 +450,11 @@ function messageHtml(m, chatId) {
   if (m.mine) return `<div class="msg mine"><div class="msg-body"><div class="bubble">${formatText(m.text)}</div></div></div>`;
   const c = who(m.char);
   const quote = m.replyTo && m.replyTo.text
-    ? `<div class="quote" style="--quote-color:${colorVar(who(m.replyTo.character).color)}">${esc(who(m.replyTo.character).name)}: ${esc(m.replyTo.text.slice(0, QUOTE_CHARS))}</div>`
+    ? `<div class="quote" style="--quote-color:${colorVar(who(m.replyTo.character).color)}">${esc(who(m.replyTo.character).name)}: ${esc(m.replyTo.text.slice(0, size('quote_chars')))}</div>`
     : '';
   // Photos live on the server; after a restart old ones may be gone, so hide broken ones.
   const photo = m.snapshot && state.live
-    ? `<img src="/api/snapshot/${esc(m.snapshot)}" alt="Photo from the desk cam" data-photo="/api/snapshot/${esc(m.snapshot)}" loading="lazy" onerror="this.remove()">`
+    ? `<button type="button" class="photo-btn" data-photo="/api/snapshot/${esc(m.snapshot)}" aria-label="Open the photo from the desk cam"><img src="/api/snapshot/${esc(m.snapshot)}" alt="Photo from the desk cam" loading="lazy" onerror="this.parentElement.remove()"></button>`
     : '';
   const cta = m.cta && m.cta.action === 'captures'
     ? `<button type="button" class="btn-quiet msg-cta" data-open="captures">${esc(m.cta.label || 'Desk captures')}</button>`
@@ -371,10 +475,11 @@ function renderMessages() {
   const box = $('#messages');
   const list = state.messages[state.chat] || [];
   const c = who(state.chat);
-  const empty = list.some((m) => !m.note)
+  const empty = list.some((m) => !m.note) || state.typing?.chat === state.chat
     ? ''
     : `<div class="empty">${avatar(c, 132)}<p>${esc(c.empty || `${c.name} hasn't said anything yet. Say hi!`)}</p></div>`;
   box.innerHTML = list.map((m) => messageHtml(m, state.chat)).join('') + empty;
+  drawTyping();
   box.scrollTop = box.scrollHeight;
 }
 
@@ -391,8 +496,10 @@ function addMessage(chatId, msg) {
   if (visible) {
     const box = $('#messages');
     if (!msg.note) box.querySelector('.empty')?.remove();
-    hideTyping();
-    box.insertAdjacentHTML('beforeend', messageHtml(list.at(-1), chatId));
+    const html = messageHtml(list.at(-1), chatId);
+    const dots = $('#typing');                // someone is still typing: their dots stay at the bottom
+    if (dots) dots.insertAdjacentHTML('beforebegin', html);
+    else box.insertAdjacentHTML('beforeend', html);
     box.scrollTop = box.scrollHeight;
   } else if (!msg.mine && !msg.note) {
     state.unread[chatId] += 1;
@@ -404,26 +511,33 @@ function addMessage(chatId, msg) {
   if (!msg.note) saveHistory();
 }
 
+/** Typing dots for `charId` in `chatId`, until hideTyping (when that reply is in). */
 function showTyping(charId, chatId) {
-  hideTyping();
-  if (state.view !== 'chat' || state.chat !== chatId) return;
-  const c = who(charId);
+  state.typing = { char: charId, chat: chatId };
+  if (state.view === 'chat' && state.chat === chatId) $('#messages').querySelector('.empty')?.remove();
+  drawTyping();
+}
+function drawTyping() {
+  $('#typing')?.remove();
+  const t = state.typing;
+  if (!t || state.view !== 'chat' || state.chat !== t.chat) return;
+  const c = who(t.char);
   const box = $('#messages');
-  box.querySelector('.empty')?.remove();
   box.insertAdjacentHTML('beforeend', `<div class="msg" id="typing" style="--tint:${tintVar(c.color)}">
     <span class="msg-art">${avatar(c, 36)}</span>
     <div class="bubble typing" aria-label="${esc(c.name)} is typing"><i></i><i></i><i></i></div></div>`);
   box.scrollTop = box.scrollHeight;
 }
-function hideTyping() { $('#typing')?.remove(); }
+function hideTyping(chatId) {
+  if (chatId && state.typing?.chat !== chatId) return;
+  state.typing = null;
+  $('#typing')?.remove();
+}
 
-// How much text the page shows in a quoted reply and in a pop-up note (they're cut to fit the box).
-const QUOTE_CHARS = 90;
-const TOAST_CHARS = 140;
 let toastTimer = null;
 function toast(character, text) {
   const el = $('#toast');
-  el.innerHTML = `${character ? avatar(character, 32) : ''}<span>${esc(text.slice(0, TOAST_CHARS))}</span>`;
+  el.innerHTML = `${character ? avatar(character, 32) : ''}<span>${esc(text.slice(0, size('toast_chars')))}</span>`;
   el.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.hidden = true; }, ui.web.toast_ms);
@@ -444,6 +558,7 @@ async function send(text) {
   const chatId = state.chat;
   addMessage(chatId, { mine: true, text });
   if (!state.live) return demoReply(chatId, text);
+  state.waiting[chatId] = (state.waiting[chatId] || 0) + 1;
   showTyping(chatId === 'group' ? 'group' : chatId, chatId);
   let res = null;
   try {
@@ -453,17 +568,21 @@ async function send(text) {
       body: { chat: chatId, message: text, recent_messages: historyFor(chatId), widget: who(chatId).tracker === 'todo' ? todo : undefined },
     });
   } catch {
-    hideTyping();
-    addMessage(chatId, { note: true, text: 'Could not reach the server. Is python server.py still running?' });
+    res = null;
+  } finally {
+    state.waiting[chatId] -= 1;
+    if (!state.waiting[chatId]) hideTyping(chatId);
+  }
+  if (!res) {
+    addMessage(chatId, { note: true, text: 'Couldn’t reach Desk Talk. Is it still running on this computer?' });
     return;
   }
-  hideTyping();
-  for (const r of res?.messages || []) {
+  for (const r of res.messages || []) {
     addMessage(chatId, { id: r.id, char: r.character || chatId, text: r.text, replyTo: r.reply_to, cta: r.cta });
   }
-  if (res?.actions?.length && chatId !== 'group') applyTodoActions(chatId, res.actions);
-  if (res?.habits_changed) refreshHabits();
-  if (res?.error && !(res.messages || []).length) addMessage(chatId, { note: true, text: res.error });
+  if (res.actions?.length && chatId !== 'group') applyTodoActions(chatId, res.actions);
+  if (res.habits_changed) refreshHabits();
+  if (res.error && !(res.messages || []).length) addMessage(chatId, { note: true, text: res.error });
 }
 
 /** The AI can change the to-do list (habit counts are changed on the server). */
@@ -472,7 +591,7 @@ function applyTodoActions(id, actions) {
   for (const a of actions) {
     const text = (a.text || '').toLowerCase();
     if (a.action === 'add_todo' && a.text && todo.items.length < ui.chat.todo_max_items) {
-      todo.items.push({ text: a.text.slice(0, ui.chat.todo_max_chars), done: false }); changed = true;
+      todo.items.push(cleanTodo({ text: a.text.slice(0, ui.chat.todo_max_chars), due: a.due })); changed = true;
     } else if (a.action === 'done_todo' && text) {
       const item = todo.items.find((i) => !i.done && i.text.toLowerCase().includes(text));
       if (item) { item.done = true; changed = true; }
@@ -487,7 +606,6 @@ function applyTodoActions(id, actions) {
 // ————— @mentions —————
 let mentionStart = -1;
 let mentionIndex = 0;
-const MENTION_MAX_CHARS = 12;     // longer than this after an @ and you're not typing a name any more
 
 function mentionMatches(query) {
   const q = query.toLowerCase();
@@ -504,7 +622,8 @@ function updateMentions() {
   const at = before.lastIndexOf('@');
   const query = at >= 0 ? before.slice(at + 1) : '';
   const box = $('#mentions');
-  if (at < 0 || (at > 0 && before[at - 1] !== ' ') || /\s/.test(query) || query.length > MENTION_MAX_CHARS) {
+  // Longer than mention_max_chars after an @ and you're not typing a name any more.
+  if (at < 0 || (at > 0 && before[at - 1] !== ' ') || /\s/.test(query) || query.length > size('mention_max_chars')) {
     box.hidden = true; mentionStart = -1; return;
   }
   const ids = mentionMatches(query);
@@ -529,15 +648,23 @@ function insertMention(id) {
 }
 
 // ————— Habits data (from the server's habit tracker) —————
-const HABIT_NAMES = { hydration: 'Water', breaks: 'Breaks', light: 'Light', phone_free: 'Phone-free', screens: 'Screens', food: 'Food', tasks: 'Tasks' };
+const HABIT_NAMES = { hydration: 'Water', breaks: 'Breaks', light: 'Light', phone_free: 'Phone-free', screens: 'Screens', food: 'Food', tasks: 'To-dos' };
 let habitsTimer = null;
 async function refreshHabits() {
+  if (state.live && todoOnServer === 'unknown') loadTodos();      // the last ask for the to-do list failed
   if (!state.live) { state.habits = state.habits || demoHabits(); }
   else {
-    try { state.habits = await api('/api/habits/today'); } catch { return; }
+    try {
+      state.habits = await api('/api/habits/today');
+      state.habitsFailed = false;
+    } catch {
+      state.habitsFailed = true;
+      if (state.view === 'habits') renderHabits(true);
+      return;
+    }
   }
-  if (state.view === 'chat' && who(state.chat).tracker) renderTracker();
-  if (state.view === 'habits') renderHabits();
+  if (state.view === 'chat' && who(state.chat).tracker) renderTracker(true);
+  if (state.view === 'habits') renderHabits(true);
 }
 function refreshHabitsSoon() {
   clearTimeout(habitsTimer);
@@ -546,132 +673,104 @@ function refreshHabitsSoon() {
 async function logHabit(habit, action, extra = {}) {
   if (!state.live) {
     demoLog(habit, action, extra);
-    refreshHabits();
+    if (state.view === 'chat') renderTracker();
+    if (state.view === 'habits') renderHabits();
     return;
   }
   try {
     state.habits = await api('/api/habits/log', { method: 'POST', body: { habit, action, ...extra } });
+    state.habitsFailed = false;
   } catch {
-    toast(null, 'Could not save that. Is the server running?');
+    toast(null, 'Couldn’t save that. Is Desk Talk still running?');
     return;
   }
   if (state.view === 'chat') renderTracker();
   if (state.view === 'habits') renderHabits();
 }
+/** A button with data-log="habit:action" or "habit:action:minutes". */
+function logFromButton(btn) {
+  const [habit, action, minutes] = btn.dataset.log.split(':');
+  logHabit(habit, action, minutes ? { minutes: +minutes } : {});
+}
 
-function bar(value, goal, pace) {
+function bar(value, goal, pace, what) {
   const pct = Math.max(0, Math.min(PERCENT, (value / Math.max(1, goal)) * PERCENT));
   const pacePct = pace != null ? Math.max(0, Math.min(PERCENT, (pace / Math.max(1, goal)) * PERCENT)) : null;
-  return `<div class="bar" role="img" aria-label="${Math.round(pct)} percent"><i style="width:${pct}%"></i>${pacePct != null ? `<b style="left:${pacePct}%" title="Where the pace says you should be now"></b>` : ''}</div>`;
+  return `<div class="bar" role="img" aria-label="${esc(what)}: ${Math.round(pct)} percent of the way"><i style="width:${pct}%"></i>${pacePct != null ? `<b style="left:${pacePct}%" title="Where the pace says you should be now"></b>` : ''}</div>`;
 }
 
 // ————— Trackers (panel on top of an agent's 1-on-1 chat) —————
-function renderTracker() {
-  const box = $('#tracker');
-  const id = state.chat;
-  const a = who(id);
-  const kind = id === 'group' ? null : a.tracker;
-  if (!kind) { box.hidden = true; return; }
-  box.hidden = false;
-  box.style.setProperty('--tint', tintVar(a.color));
-  const h = state.habits;
-
+// Drawn again when the habit numbers come in (`poll`): then a panel you're typing in is left alone.
+// The buttons are wired once, in wirePanels().
+const PANELS = ['todo', 'hydration', 'breaks', 'food', 'phone_free'];
+/** The panel's html, or null while the habit numbers it shows haven't come in yet. */
+function trackerHtml(kind, h) {
   if (kind === 'todo') {
-    box.innerHTML = `
-      <ul class="todo">${todo.items.map((item, i) => `<li>
-        <label><input type="checkbox" data-i="${i}" ${item.done ? 'checked' : ''}><span class="${item.done ? 'done' : ''}">${esc(item.text)}</span></label>
-        <button type="button" class="x" data-del="${i}" aria-label="Remove ${esc(item.text)}">×</button></li>`).join('')}</ul>
-      <form class="inline-add"><input type="text" maxlength="${ui.chat.todo_max_chars}" placeholder="Add a task" aria-label="New task"><button type="submit" class="btn-quiet">Add</button></form>`;
-    box.querySelectorAll('input[type="checkbox"]').forEach((cb) => cb.addEventListener('change', () => {
-      todo.items[+cb.dataset.i].done = cb.checked; todoChanged(id);
-    }));
-    box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => {
-      todo.items.splice(+b.dataset.del, 1); todoChanged(id);
-    }));
-    box.querySelector('form').addEventListener('submit', (e) => {
-      e.preventDefault();
-      const v = e.target.querySelector('input').value.trim();
-      if (!v) return;
-      todo.items.push({ text: v.slice(0, ui.chat.todo_max_chars), done: false });
-      todoChanged(id);
-      $('#tracker input[type="text"]')?.focus();
-    });
-    return;
+    const items = todo.items.map((item, i) => {
+      const due = dueText(item);
+      return `<li class="${due?.late ? 'late' : ''}">
+        <label><input type="checkbox" data-todo="${i}" ${item.done ? 'checked' : ''}><span class="${item.done ? 'done' : ''}">${esc(item.text)}</span></label>
+        ${due ? `<span class="due">${esc(due.text)}</span>` : ''}
+        <button type="button" class="x" data-todo-del="${i}" aria-label="Remove ${esc(item.text)}">×</button></li>`;
+    }).join('');
+    return `<ul class="todo">${items}</ul>
+      <form class="inline-add" id="todo-add"><input type="text"${maxLength(ui.chat.todo_max_chars)} placeholder="Add a task" aria-label="New task">
+        <input type="date" class="due-box" aria-label="Due date (optional)" title="Due date (optional)"><button type="submit" class="btn-quiet">Add</button></form>
+      <p class="tracker-note">Give a task a date and Book reminds you the day before, on the day, and while it’s late.</p>`;
   }
-  if (!h) { box.innerHTML = '<p class="muted">Loading…</p>'; refreshHabits(); return; }
+  if (!h) return null;
 
   if (kind === 'hydration') {
     const w = h.hydration;
-    box.innerHTML = `<div class="tracker-row">
+    return `<div class="tracker-row">
         <div class="stat"><strong>${liters(w.water_ml)}</strong><span>of ${liters(w.goal_ml)} today · ${w.sips} sips</span></div>
-        <div class="tracker-grow">${bar(w.water_ml, w.goal_ml, w.pace_ml)}<span class="tracker-note">Pace for now: ${liters(w.pace_ml)}</span></div>
-        <button type="button" class="btn-quiet" data-log="sip">+ Sip</button>
-        <button type="button" class="btn-quiet" data-log="glass">+ Glass</button>
+        <div class="tracker-grow">${bar(w.water_ml, w.goal_ml, w.pace_ml, 'Water today')}<span class="tracker-note">Pace for now: ${liters(w.pace_ml)}</span></div>
+        <button type="button" class="btn-quiet" data-log="hydration:sip">+ Sip</button>
       </div>
-      <p class="tracker-note">${w.last_sip_ts ? `Last sip ${agoText(w.last_sip_ts)}. ` : ''}A sip counts when the cup leaves the desk and comes back (about ${w.ml_per_sip} ml). <em>Protocols</em>: ${Math.round(w.on_waking_ml / ML_PER_OZ)} oz right after waking, then about ${liters(w.goal_ml)} in the first ${ui.habits.goal_window_hours} hours.</p>`;
-    box.querySelector('[data-log="sip"]').addEventListener('click', () => logHabit('hydration', 'sip'));
-    box.querySelector('[data-log="glass"]').addEventListener('click', () => logHabit('hydration', 'glass'));
-    return;
+      <p class="tracker-note">${w.last_sip_ts ? `Last sip ${agoText(w.last_sip_ts)}. ` : ''}A sip counts when you lift the cup off the desk and put it back.</p>`;
   }
 
   if (kind === 'breaks') {
     const b = h.breaks;
-    const v = h.vision || {};
-    box.innerHTML = `<div class="tracker-row">
+    return `<div class="tracker-row">
         <div class="tracker-stats">
           <div class="stat"><strong>${b.count}</strong><span>breaks today</span></div>
           <div class="stat"><strong>${mins(b.sitting_sec)}</strong><span>min sitting now (of ${b.sit_limit_min})</span></div>
-          <div class="stat"><strong>${state.live ? mins(v.posture_bad_seconds_today) : '–'}</strong><span>min slouching</span></div>
         </div>
-        <button type="button" class="btn-quiet" id="log-break">Log a break</button>
+        <button type="button" class="btn-quiet" data-log="breaks:break">Log a break</button>
       </div>
-      <p class="tracker-note">${b.last_break_ts ? `Last break ${agoText(b.last_break_ts)}. ` : ''}Breaks log themselves when you leave the desk for ${ui.habits.breaks.break_min} minutes. <em>Protocols</em>: walk ${ui.habits.breaks.break_min} minutes for every ${b.sit_limit_min} minutes of sitting, without your phone. <a class="link" data-open="habits">Habits</a></p>`;
-    $('#log-break').addEventListener('click', () => logHabit('breaks', 'break'));
-    return;
+      <p class="tracker-note">${b.last_break_ts ? `Last break ${agoText(b.last_break_ts)}. ` : ''}Breaks log themselves when you leave the desk for ${ui.habits.breaks.break_min} minutes. <button type="button" class="link" data-open="habits">Habits</button></p>`;
   }
 
   if (kind === 'food') {
     const entries = h.food.entries || [];
-    box.innerHTML = `<div class="pills">${entries.map((e, i) => `<span class="pill ${e.healthy ? 'healthy' : 'treat'}">${esc(e.label)}<button type="button" data-del="${i}" aria-label="Remove ${esc(e.label)}">×</button></span>`).join('') || '<span class="muted">Nothing logged yet today.</span>'}</div>
-      <form class="inline-add"><input type="text" maxlength="${ui.habits.food_label_max_chars}" placeholder="What did you eat?" aria-label="Food name">
-        <button type="submit" class="btn-quiet" data-healthy="1">Healthy</button><button type="button" class="btn-quiet" data-healthy="0">Treat</button></form>`;
-    const add = (healthy) => {
-      const input = box.querySelector('input');
-      const label = input.value.trim().slice(0, ui.habits.food_label_max_chars);
-      if (!label) { input.focus(); return; }
-      logHabit('food', 'food', { label, healthy });
-    };
-    box.querySelector('form').addEventListener('submit', (e) => { e.preventDefault(); add(true); });
-    box.querySelector('[data-healthy="0"]').addEventListener('click', () => add(false));
-    box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => logHabit('food', 'remove', { index: +b.dataset.del })));
-    return;
+    return `<div class="pills">${entries.map((e, i) => `<span class="pill ${e.healthy ? 'healthy' : 'treat'}">${esc(e.label)}<button type="button" data-food-del="${i}" aria-label="Remove ${esc(e.label)}">×</button></span>`).join('') || '<span class="muted">Nothing logged yet today.</span>'}</div>
+      <form class="inline-add" id="food-add"><input type="text"${maxLength(ui.habits.food_label_max_chars)} placeholder="What did you eat?" aria-label="Food name">
+        <button type="submit" class="btn-quiet">Healthy</button><button type="button" class="btn-quiet" data-treat>Treat</button></form>
+      <p class="tracker-note">Type what you ate, then say if it was healthy or a treat.</p>`;
   }
 
-  if (kind === 'phone_free') {
-    const p = h.phone_free;
-    box.innerHTML = p.counted ? `<div class="tracker-row">
+  const p = h.phone_free;
+  return p.counted ? `<div class="tracker-row">
         <div class="stat"><strong>${mins(p.phone_free_sec)} min</strong><span>phone-free desk time (goal ${p.goal_min})</span></div>
-        <div class="tracker-grow">${bar(mins(p.phone_free_sec), p.goal_min)}</div>
+        <div class="tracker-grow">${bar(mins(p.phone_free_sec), p.goal_min, null, 'Phone-free time today')}</div>
         <div class="stat"><strong>${mins(p.streak_sec)}</strong><span>min streak</span></div>
       </div>
-      <p class="tracker-note">${p.phone_on_desk ? 'The phone is on the desk right now.' : 'No phone on the desk right now.'} <em>Protocols</em>: put your phone away while you focus; even having it nearby costs attention.</p>`
-      : '<p class="tracker-note">The phone is the camera right now, so phone-free time isn’t counted.</p>';
-    return;
-  }
+      <p class="tracker-note">${p.phone_on_desk ? 'The phone is on the desk right now.' : 'No phone on the desk right now.'} Keep it out of sight while you focus.</p>`
+    : '<p class="tracker-note">The phone is the camera right now, so phone-free time isn’t counted.</p>';
+}
 
-  if (kind === 'light') {
-    const l = h.light;
-    const sun = ui.habits.sunlight_default_min;
-    const level = l.lux != null ? `${Math.round(l.lux)} lux` : (l.brightness != null ? `${Math.round(l.brightness)}/${LEVEL_MAX}` : '–');
-    box.innerHTML = `<div class="tracker-row">
-        <div class="stat"><strong>${l.sunlight_ts ? '✓' : '–'}</strong><span>morning sunlight</span></div>
-        <div class="stat"><strong>${level}</strong><span>room light now</span></div>
-        <div class="stat"><strong>${clock(h.times.sunset_ts)}</strong><span>sunset</span></div>
-        <button type="button" class="btn-quiet" data-sun="${sun}">I got sunlight</button>
-      </div>
-      <p class="tracker-note"><em>Protocols</em>: ${morningLight()}, some again before sunset, and dim lights in the last ${duration(ui.habits.evening_dim_before_bed_min)} before bed.</p>`;
-    box.querySelector('[data-sun]').addEventListener('click', () => logHabit('light', 'sunlight', { minutes: sun }));
-  }
+function renderTracker(poll = false) {
+  const box = $('#tracker');
+  const id = state.chat;
+  const a = who(id);
+  const kind = id === 'group' ? null : a.tracker;
+  if (!PANELS.includes(kind)) { box.hidden = true; return; }      // no panel (the light panel went with Lamp)
+  const html = trackerHtml(kind, state.habits);
+  box.hidden = false;
+  box.style.setProperty('--tint', tintVar(a.color));
+  if (html === null) { paint(box, '<p class="muted">Loading…</p>'); refreshHabits(); return; }
+  paint(box, html, poll);
 }
 
 /** 'sunlight within an hour of waking (10 min clear, 20 cloudy, 30 overcast)', from protocols.yaml → light. */
@@ -681,50 +780,51 @@ function morningLight(extra = '') {
 }
 
 // ————— Habits page —————
-// Your own counters live only in this browser, so their label length is the page's own.
-const COUNTER_LABEL_CHARS = 60;
-async function renderHabits() {
+const SKIES = [['clear', 'Clear sky'], ['partly_cloudy', 'Cloudy'], ['overcast', 'Overcast']];
+function renderHabits(poll = false) {
   const page = $('#view-habits');
-  if (!state.habits) await refreshHabits();
-  const h = state.habits || demoHabits();
-  const vdata = state.live ? await api(`/api/habit_log?category=${state.habitFilter}&limit=${ui.web.habit_log_shown}`).catch(() => null) : null;
-  const v = h.vision || {};
-  const events = vdata?.events || [];
+  const head = '<header><h1 class="page-title">Habits</h1>';
+  const h = state.live ? state.habits : (state.habits || demoHabits());
+  if (!h || state.habitsFailed) {
+    paint(page, `${head}</header>${state.habitsFailed
+      ? '<p class="muted">Couldn’t load today’s habits. <button type="button" class="link" data-retry="habits">Try again</button></p>'
+      : '<p class="muted">Loading…</p>'}`, poll);
+    return;
+  }
+  countersForToday();
   const w = h.hydration; const b = h.breaks; const p = h.phone_free; const l = h.light;
-  const level = l.lux != null ? `${Math.round(l.lux)} lux` : (l.brightness != null ? `brightness ${Math.round(l.brightness)}/${LEVEL_MAX}` : 'no reading yet');
   const rules = ui.habits;
-  const sunButtons = [['clear', 'Got'], ['partly_cloudy', ''], ['overcast', '']].map(([sky, before]) => {
+  const sunButtons = SKIES.map(([sky, name]) => {
     const n = rules.morning_minutes[sky];
-    return `<button class="btn-quiet" data-log="light:sunlight:${n}">${before ? `${before} ` : ''}${n} min</button>`;
+    return `<button type="button" class="btn-quiet" data-log="light:sunlight:${n}">${name}, ${n} min</button>`;
   }).join('');
-  page.innerHTML = `
-    <header><h1 class="page-title">Habits</h1>
-      <p class="page-intro">Four habits from Andrew Huberman's <em>Protocols</em>, checked by the desk camera. Your day: up at ${clock(h.times.wake_ts)}, bed at ${clock(h.times.bed_ts)} (<a class="link" data-open="settings">change</a>).</p></header>
+  paint(page, `${head}
+      <p class="page-intro">Four everyday habits, partly checked by the desk camera. Your day: up at ${clock(h.times.wake_ts)}, bed at ${clock(h.times.bed_ts)} (<button type="button" class="link" data-open="settings">change</button>).</p></header>
     <section class="protocols">
       <article class="habit-card" style="--tint:var(--teal-tint)">
         <h2>Water</h2>
         <p class="big">${liters(w.water_ml)} <small>of ${liters(w.goal_ml)}</small></p>
-        ${bar(w.water_ml, w.goal_ml, w.pace_ml)}
-        <p class="hint">${w.sips} sips. Pace for now: ${liters(w.pace_ml)}. About ${liters(w.on_waking_ml)} right after waking, then a glass about every waking hour; less in the ${duration(rules.stop_before_bed_hours * MINUTE)} before bed.</p>
-        <div class="row"><button class="btn-quiet" data-log="hydration:sip">+ Sip</button><button class="btn-quiet" data-log="hydration:glass">+ Glass</button></div>
+        ${bar(w.water_ml, w.goal_ml, w.pace_ml, 'Water today')}
+        <p class="hint">${w.sips} sips. Pace for now: ${liters(w.pace_ml)}. About ${liters(w.on_waking_ml)} right after waking, then a glass about every waking hour; less in the ${duration(rules.stop_before_bed_hours * MINUTE)} before bed. A sip counts when you lift the cup off the desk and put it back.</p>
+        <div class="row"><button type="button" class="btn-quiet" data-log="hydration:sip">+ Sip</button></div>
       </article>
       <article class="habit-card" style="--tint:var(--cobalt-tint)">
         <h2>Breaks</h2>
         <p class="big">${b.count} <small>breaks today</small></p>
-        ${bar(mins(b.sitting_sec), b.sit_limit_min)}
+        ${bar(mins(b.sitting_sec), b.sit_limit_min, null, 'Sitting time before the next break')}
         <p class="hint">Sitting for ${mins(b.sitting_sec)} min now; longest stretch today ${mins(b.longest_sit_sec)} min. Walk ${rules.breaks.break_min} minutes for every ${b.sit_limit_min} minutes of sitting${rules.breaks.walk_after_meal ? ', and a short walk after meals' : ''}. Leave the phone behind.</p>
-        <div class="row"><button class="btn-quiet" data-log="breaks:break">Log a break</button></div>
+        <div class="row"><button type="button" class="btn-quiet" data-log="breaks:break">Log a break</button></div>
       </article>
       <article class="habit-card" style="--tint:var(--mustard-tint)">
         <h2>Light</h2>
         <p class="big">${l.sunlight_ts ? 'Sunlight ✓' : 'No sunlight yet'}</p>
-        <p class="hint">Room right now: ${esc(level)}. Sunset ${clock(h.times.sunset_ts)}. Morning ${morningLight('; not through a window')}, late-afternoon light before sunset, and dim lights in the last ${duration(rules.evening_dim_before_bed_min)} before bed.</p>
+        <p class="hint">${l.afternoon_light_ts ? 'Afternoon light ✓. ' : ''}Sunset ${clock(h.times.sunset_ts)}. Morning ${morningLight('; not through a window')}, late-afternoon light before sunset, and dim lights for ${duration(rules.evening_dim_before_bed_min)} before bed.</p>
         <div class="row">${sunButtons}</div>
       </article>
       <article class="habit-card" style="--tint:var(--coral-tint)">
         <h2>Phone-free</h2>
         ${p.counted ? `<p class="big">${mins(p.phone_free_sec)} min <small>of ${p.goal_min}</small></p>
-        ${bar(mins(p.phone_free_sec), p.goal_min)}
+        ${bar(mins(p.phone_free_sec), p.goal_min, null, 'Phone-free time today')}
         <p class="hint">Desk time with no phone in sight. Streak now ${mins(p.streak_sec)} min, best ${mins(p.best_sec)} min. ${p.phone_on_desk ? 'The phone is on the desk.' : ''} Even a phone in the same room pulls at your focus; an hour before bed, put it away.</p>`
         : '<p class="hint">The phone is the camera right now, so this isn’t counted. Use the Raspberry Pi camera to track phone-free time.</p>'}
       </article>
@@ -732,189 +832,110 @@ async function renderHabits() {
     <section><h2>Today</h2>
       <div class="today">
         <div class="stat"><strong>${mins(h.desk_sec)}</strong><span>minutes at the desk</span></div>
-        <div class="stat"><strong>${h.danger_count}</strong><span>near-spill alerts</span></div>
-        <div class="stat"><strong>${state.live ? (v.nail_biting_count_today ?? 0) : '–'}</strong><span>nail biting</span></div>
+        <div class="stat"><strong>${h.danger_count}</strong><span>desk warnings</span></div>
         <div class="stat"><strong>${(h.food.entries || []).length}</strong><span>foods logged</span></div>
       </div></section>
     <section><h2>Your own counters</h2>
-      <p class="hint">Tap + whenever it happens. They reset every morning.</p>
+      <p class="hint">Tap + whenever it happens. They reset at midnight.</p>
       <ul class="counter-list">${counters.items.map((c, i) => `<li><span>${esc(c.label)}</span>
-        <button type="button" class="round" data-dec="${i}" aria-label="Minus one">−</button><strong>${c.count}</strong>
-        <button type="button" class="round" data-inc="${i}" aria-label="Plus one">+</button>
+        <button type="button" class="round" data-dec="${i}" aria-label="One less: ${esc(c.label)}">−</button><strong>${c.count}</strong>
+        <button type="button" class="round" data-inc="${i}" aria-label="One more: ${esc(c.label)}">+</button>
         <button type="button" class="round" data-del="${i}" aria-label="Remove ${esc(c.label)}">×</button></li>`).join('')}</ul>
-      <form class="inline-add" id="add-habit" style="max-width:520px"><input type="text" maxlength="${COUNTER_LABEL_CHARS}" placeholder="Something else to count" aria-label="New counter"><button type="submit" class="btn-quiet">Add</button></form></section>
-    <section><h2>Camera log</h2>
-      <div class="chips" role="group" aria-label="Filter">${[['all', 'Everything'], ['posture_bad', 'Posture'], ['nail_biting', 'Nail biting']]
-        .map(([k, label]) => `<button type="button" class="chip" data-filter="${k}" aria-pressed="${state.habitFilter === k}">${label}</button>`).join('')}</div>
-      ${events.length ? `<ul class="log">${events.map((ev) => `<li><time>${clock(ev.ts || 0)}</time>
-          ${ev.snapshot_id ? `<img src="/api/snapshot/${esc(ev.snapshot_id)}" alt="" data-photo="/api/snapshot/${esc(ev.snapshot_id)}">` : ''}
-          <p>${esc(ev.title || '')}${ev.detail ? `<small>${esc(ev.detail)}</small>` : ''}</p></li>`).join('')}</ul>`
-        : `<p class="muted">${state.live ? 'Nothing yet. Posture and nail-biting entries appear here when Ollama vision is set up.' : 'Run the server to see what the camera notices.'}</p>`}
-    </section>`;
-
-  page.querySelectorAll('[data-log]').forEach((btn) => btn.addEventListener('click', () => {
-    const [habit, action, minutes] = btn.dataset.log.split(':');
-    logHabit(habit, action, minutes ? { minutes: +minutes } : {});
-  }));
-  page.querySelectorAll('[data-inc],[data-dec],[data-del]').forEach((btn) => btn.addEventListener('click', () => {
-    const i = +(btn.dataset.inc ?? btn.dataset.dec ?? btn.dataset.del);
-    if (btn.dataset.inc) counters.items[i].count += 1;
-    if (btn.dataset.dec) counters.items[i].count = Math.max(0, counters.items[i].count - 1);
-    if (btn.dataset.del) counters.items.splice(i, 1);
-    saveCounters(); renderHabits();
-  }));
-  $('#add-habit').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const val = e.target.querySelector('input').value.trim();
-    if (!val) return;
-    counters.items.push({ label: val.slice(0, COUNTER_LABEL_CHARS), count: 0 });
-    saveCounters(); renderHabits();
-  });
-  page.querySelectorAll('[data-filter]').forEach((btn) => btn.addEventListener('click', () => {
-    state.habitFilter = btn.dataset.filter; renderHabits();
-  }));
+      <form class="inline-add" id="add-habit" style="max-width:520px"><input type="text"${maxLength(size('counter_label_chars'))} placeholder="Something else to count" aria-label="New counter"><button type="submit" class="btn-quiet">Add</button></form></section>`, poll);
 }
 
 // ————— Event log page —————
+// Only what you'd care about: your habits, reminders and warnings (the server leaves out the rest).
 const LOG_FILTERS = [
-  ['all', 'Everything', null],
-  ['agents', 'Joins & leaves', 'agent_joined,agent_left'],
-  ['alerts', 'Alerts', 'alert'],
-  ['habits', 'Habits', 'habit,nudge'],
-  ['camera', 'Camera', 'camera,compaction'],
+  ['all', 'Everything', 'habit,nudge,alert,camera'],
+  ['habits', 'Habits', 'habit'],
+  ['reminders', 'Reminders', 'nudge'],
+  ['warnings', 'Warnings', 'alert,camera'],
 ];
+/** [who, what happened, a plain subtitle], or null for an event the page doesn't show. */
 function eventLine(e) {
   const a = e.agent ? who(e.agent) : null;
   const cam = lens();
   switch (e.type) {
-    case 'agent_joined': return [a || cam, `${e.name} joined the chat`, `seen as “${e.label}” (${Math.round((e.conf || 0) * PERCENT)}%)`];
-    case 'agent_left': return [a || cam, `${e.name} left the chat`, `was here ${mins(e.stayed_sec)} min`];
-    case 'alert': return [a || cam, e.text || `${who(e.agent).name}: ${e.rule_label || 'too close'}`, e.kind === 'proximity' ? `near ${who(e.near).name || ''}` : (e.feature || '')];
-    case 'habit': return [cam, e.say || `${e.habit}: ${e.action}`, HABIT_NAMES[e.habit] || e.habit];
-    case 'nudge': return [a || cam, e.text, `reminder · ${e.evidence || ''}`];
-    case 'camera': return [cam, e.text, e.kind];
-    case 'compaction': return [cam, `Compacted ${e.frames} pictures into ${e.intervals} intervals`, e.from ? `${clock(e.from)} to ${clock(e.to)}` : ''];
-    default: return [cam, e.type, ''];
+    case 'alert': return [a || cam, e.text || `${who(e.agent).name} is too close to something`, e.subtitle || ''];
+    case 'habit': return e.action ? [cam, e.say || `${HABIT_NAMES[e.habit] || 'A habit'} logged`, HABIT_NAMES[e.habit] || ''] : null;
+    case 'nudge': return e.text ? [a || cam, e.text, 'Reminder'] : null;
+    case 'camera': return e.text ? [cam, e.text, 'Camera'] : null;
+    default: return null;
   }
 }
-/** One detection event as JSON, one object per line (like a line of detections.jsonl, but readable). */
-function compactEvent(e) {
-  const objs = (e.detected_obj || []).map((o) => `    ${JSON.stringify({ label: o.label, center: o.center, conf: o.conf })}`);
-  return `{
-  "type": "detection", "ts": ${e.ts}, "frame_id": ${JSON.stringify(e.frame_id)}, "source": ${JSON.stringify(e.source)},
-  "detected_obj": [
-${objs.join(',\n')}
-  ],
-  "light": ${JSON.stringify(e.light || {})}
-}`;
-}
-const TIMELINE_ROWS = 14;                                         // things shown, the longest on the desk first
-const TIMELINE_STEPS = [1, 5, 15, 30, 60, 120, 180].map((m) => m * MINUTE);   // time marks: the first that gives...
-const TIMELINE_MARKS = 8;                                         // ...at most this many
-function timelineHtml(intervals, dayStart, dayEnd) {
-  const byLabel = {};
-  for (const iv of intervals) (byLabel[iv.label] = byLabel[iv.label] || []).push(iv);
-  const labels = Object.keys(byLabel).sort((x, y) => byLabel[y].reduce((s, i) => s + i.interval[1] - i.interval[0], 0)
-    - byLabel[x].reduce((s, i) => s + i.interval[1] - i.interval[0], 0)).slice(0, TIMELINE_ROWS);
-  if (!labels.length) return '<p class="muted">Nothing on the desk yet today.</p>';
-  const span = Math.max(MINUTE, dayEnd - dayStart);
-  const step = TIMELINE_STEPS.find((s) => span / s <= TIMELINE_MARKS) || 4 * HOUR;
-  const ticks = [];
-  for (let t = Math.ceil(dayStart / step) * step; t < dayEnd; t += step) ticks.push(t);
-  return `<div class="timeline">
-    ${labels.map((lab) => `<div class="tl-row"><span class="tl-label">${esc(lab)}</span><div class="tl-track">${byLabel[lab].map((iv) => {
-      const left = ((iv.interval[0] - dayStart) / span) * PERCENT;
-      const width = Math.max(0.4, ((iv.interval[1] - iv.interval[0]) / span) * PERCENT);
-      return `<i style="left:${left}%;width:${width}%" title="${esc(lab)}: ${clock(iv.interval[0])} – ${clock(iv.interval[1])} (${iv.frames} pictures)"></i>`;
-    }).join('')}</div></div>`).join('')}
-    <div class="tl-row tl-axis"><span class="tl-label"></span><div class="tl-track">${ticks.map((t) => `<span style="left:${((t - dayStart) / span) * PERCENT}%">${clock(t)}</span>`).join('')}</div></div>
-  </div>`;
-}
-async function renderLog() {
+async function renderLog(poll = false) {
   const page = $('#view-log');
-  const intro = 'Everything the camera turned into events, saved on this computer in <code>data/events/</code>.';
+  const head = `<header><h1 class="page-title">Event log</h1>
+    <p class="page-intro">What happened at your desk: sips, breaks, food, to-dos ticked off, reminders and warnings.</p></header>`;
   if (!state.live) {
-    page.innerHTML = `<header><h1 class="page-title">Event log</h1><p class="page-intro">${intro}</p></header>
-      <p class="muted">Run the server to start the event log.</p>`;
+    paint(page, `${head}<p class="muted">Start Desk Talk on this computer to keep an event log.</p>`);
     return;
   }
-  const { fps, compact_every_min: compactMin, delete_every_min: deleteMin } = ui.pi;
-  const head = `<header><h1 class="page-title">Event log</h1>
-    <p class="page-intro">${intro} The camera takes ${fps} pictures a second; each one becomes a detection event, and every ${compactMin} minutes those are compacted into “on the desk from … to …” intervals. The pictures themselves stay on the Raspberry Pi${deleteMin ? ` and are deleted every ${deleteMin} minutes` : ''}.</p></header>`;
   const filter = LOG_FILTERS.find((f) => f[0] === state.logFilter) || LOG_FILTERS[0];
-  const dayQ = state.logDay ? `day=${state.logDay}&` : '';
-  const [days, status, evs, pres, det] = await Promise.all([
-    api('/api/log/days').catch(() => null),
-    api('/api/log/status').catch(() => null),
-    api(`/api/log/events?${dayQ}limit=${ui.web.log_shown}${filter[2] ? `&types=${filter[2]}` : ''}`).catch(() => null),
-    api(`/api/log/presence?${dayQ}`).catch(() => null),
-    api(`/api/log/detections?${dayQ}limit=1`).catch(() => null),
-  ]);
-  const day = evs?.day || todayKey();
-  const intervals = pres?.intervals || [];
-  const nowS = Date.now() / MS;
-  const first = intervals.length ? Math.min(...intervals.map((i) => i.interval[0])) : nowS - HOUR;
-  const last = intervals.length ? Math.max(...intervals.map((i) => i.interval[1])) : nowS;
-  const cam = status?.camera || {};
-  const pi = cam.pi || {};
-  const lc = status?.last_compaction;
-  const lastDet = det?.detections?.[0];
-  page.innerHTML = `${head}
-    <section class="log-status">
-      <div class="stat"><strong>${cam.connected ? `${cam.fps}/s` : 'off'}</strong><span>${esc(cam.source || '')} camera</span></div>
-      <div class="stat"><strong>${status?.today?.pictures_waiting ?? 0}</strong><span>picture events waiting to compact</span></div>
-      <div class="stat"><strong>${lc ? agoText(lc.ts) : '–'}</strong><span>last compaction${lc && lc.frames ? ` (${lc.frames} → ${lc.intervals})` : ''}</span></div>
-      ${cam.source === 'pi' ? `<div class="stat"><strong>${pi.photos_stored ?? '–'}</strong><span>pictures on the Pi${pi.last_cleanup_ts ? `, cleaned ${agoText(pi.last_cleanup_ts)}` : ''}${pi.disk_free_mb != null ? `, ${pi.disk_free_mb} MB free` : ''}</span></div>` : ''}
-      <button type="button" class="btn-quiet" id="compact-now">Compact now</button>
-    </section>
-    <section><h2>On the desk ${day === todayKey() ? 'today' : esc(day)}</h2>
-      <div class="chips" role="group" aria-label="Day">${(days?.days || [day]).slice(0, 7).map((d) => `<button type="button" class="chip" data-day="${esc(d)}" aria-pressed="${d === day}">${d === todayKey() ? 'Today' : esc(d.slice(5))}</button>`).join('')}</div>
-      ${timelineHtml(intervals, first - MINUTE, Math.max(last + MINUTE, day === todayKey() ? nowS : last + MINUTE))}</section>
-    <section><h2>Events</h2>
-      <div class="chips" role="group" aria-label="Filter">${LOG_FILTERS.map(([k, label]) => `<button type="button" class="chip" data-filter="${k}" aria-pressed="${state.logFilter === k}">${label}</button>`).join('')}</div>
-      ${(evs?.events || []).length ? `<ul class="log events">${evs.events.map((e) => {
-        const [a, title, sub] = eventLine(e);
-        return `<li><time>${clock(e.ts)}</time>${avatar(a, 28)}<p>${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ''}</p></li>`;
-      }).join('')}</ul>` : '<p class="muted">No events yet.</p>'}</section>
-    ${lastDet ? `<section><h2>The newest picture's event</h2><p class="hint">What one of the ${fps}-a-second detection events looks like in <code>detections.jsonl</code>.</p>
-      <pre class="json">${esc(compactEvent(lastDet))}</pre></section>` : ''}`;
-  $('#compact-now').addEventListener('click', async () => {
-    const r = await api('/api/log/compact', { method: 'POST' }).catch(() => null);
-    toast(null, r ? `Compacted ${r.frames} pictures into ${r.intervals} intervals` : 'Could not compact');
-    renderLog();
-  });
-  page.querySelectorAll('[data-filter]').forEach((b) => b.addEventListener('click', () => { state.logFilter = b.dataset.filter; renderLog(); }));
-  page.querySelectorAll('[data-day]').forEach((b) => b.addEventListener('click', () => { state.logDay = b.dataset.day; renderLog(); }));
+  const dayQ = state.logDay ? `day=${encodeURIComponent(state.logDay)}&` : '';
+  let evs = null;
+  try { evs = await api(`/api/log/events?${dayQ}limit=${ui.web.log_shown}&types=${filter[2]}`); } catch { /* says so below */ }
+  // The day chips: asked for when the page opens, and again when the server's day moved on (past midnight).
+  if (evs && (!state.logDays || (!state.logDay && evs.day !== state.logDays.today))) {
+    state.logDays = await api('/api/log/days').catch(() => state.logDays);
+  }
+  if (state.view !== 'log') return;
+  const today = state.logDays?.today || evs?.day || todayKey();
+  const days = [today, ...(state.logDays?.days || []).filter((d) => d !== today)];
+  const chip = (d) => {
+    const isToday = d === today;
+    const pressed = isToday ? !state.logDay || state.logDay === today : state.logDay === d;
+    return `<button type="button" class="chip" data-day="${isToday ? '' : esc(d)}" aria-pressed="${pressed}">${isToday ? 'Today' : esc(dayName(d))}</button>`;
+  };
+  const lines = (evs?.events || []).map((e) => [e, eventLine(e)]).filter(([, line]) => line);
+  const list = !evs
+    ? '<p class="muted">Couldn’t load the event log. <button type="button" class="link" data-retry="log">Try again</button></p>'
+    : lines.length ? `<ul class="log events">${lines.map(([e, [a, title, sub]]) => `<li><time>${clock(e.ts)}</time>${avatar(a, 28)}<p>${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ''}</p></li>`).join('')}</ul>`
+      : '<p class="muted">Nothing yet.</p>';
+  paint(page, `${head}
+    <section>
+      <div class="chips" role="group" aria-label="Day">${days.map(chip).join('')}</div>
+      <div class="chips" role="group" aria-label="Show">${LOG_FILTERS.map(([k, label]) => `<button type="button" class="chip" data-filter="${k}" aria-pressed="${state.logFilter === k}">${label}</button>`).join('')}</div>
+      ${list}</section>`, poll);
 }
 
 // ————— Captures page —————
-async function renderCaptures() {
+async function renderCaptures(poll = false) {
   const page = $('#view-captures');
   const head = `<header><h1 class="page-title">Captures</h1>
-    <p class="page-intro">Photos the desk cam saved: proof for alerts, and snapshots when easy-to-lose things show up.</p></header>`;
-  if (!state.live) { page.innerHTML = `${head}<p class="muted">Run the server to collect desk photos.</p>`; return; }
-  const data = await api('/api/snapshots').catch(() => null);
-  const items = data?.items || [];
-  page.innerHTML = head + (items.length
-    ? `<div class="gallery">${items.map((it) => `<button type="button" data-photo="/api/snapshot/${esc(it.id)}">
+    <p class="page-intro">Photos the desk cam took: proof for warnings, and pictures of easy-to-lose things when they show up. They’re kept until Desk Talk restarts.</p></header>`;
+  if (!state.live) { paint(page, `${head}<p class="muted">Start Desk Talk on this computer to collect desk photos.</p>`); return; }
+  let items = null;
+  try { items = (await api('/api/snapshots')).items || []; } catch { /* says so below */ }
+  if (state.view !== 'captures') return;
+  const when = (ts) => new Date((ts || 0) * MS).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  paint(page, head + (items === null
+    ? '<p class="muted">Couldn’t load photos. <button type="button" class="link" data-retry="captures">Try again</button></p>'
+    : items.length
+      ? `<div class="gallery">${items.map((it) => `<button type="button" data-photo="/api/snapshot/${esc(it.id)}">
         <img src="/api/snapshot/${esc(it.id)}" alt="" loading="lazy">
-        <strong>${esc(it.label || 'Capture')}</strong><span>${new Date((it.ts || 0) * MS).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</span></button>`).join('')}</div>`
-    : '<p class="muted">No photos yet. They appear when something gets too close, or when your phone, keys, or wallet show up.</p>');
+        <strong>${esc(it.label || 'Capture')}</strong><span>${when(it.ts)}</span></button>`).join('')}</div>`
+      : '<p class="muted">No photos yet. They appear when something gets too close, or when your phone, keys, or wallet show up.</p>'), poll);
 }
 
 // ————— Settings page —————
 // The sliders' ranges and where a new danger zone's slider starts come from ui.web.settings_sliders and
-// ui.web.new_zone_px (settings → web).
+// ui.web.new_zone_px (settings → web). The sensitivity steps come from ui.sensitivity_steps (settings → agents).
+const hourText = (h) => `${String(h).padStart(2, '0')}:00`;
+/** 'Picky: an object joins the chat once the camera is 65% sure of it and has seen it for 10 seconds.' */
+const stepWords = (s) => `${s.name}: an object joins the chat once the camera is ${Math.round(s.min_confidence * PERCENT)}% sure of it and has seen it for ${seconds(s.join_after_sec)}.`;
+let savedTimer = null;
 async function renderSettings() {
   const page = $('#view-settings');
   const head = `<header><h1 class="page-title">Settings</h1>
-    <p class="page-intro">Your day, how close is too close, and when the desk should stay quiet. Everything else is in <code>config/settings.yaml</code>.</p></header>`;
-  if (!state.live) { page.innerHTML = `${head}<p class="muted">Settings are saved by the server. Run python server.py to change them.</p>`; return; }
+    <p class="page-intro">Your day, who joins the chat, how close is too close, and when the desk should stay quiet.</p></header>`;
+  if (!state.live) { page.innerHTML = `${head}<p class="muted">Settings are saved by Desk Talk on your computer. Start it to change them.</p>`; return; }
   let rules; let prefs;
   try {
     [rules, prefs] = await Promise.all([api('/api/rules'), api('/api/preferences')]);
   } catch {
-    page.innerHTML = `${head}<p class="muted">Could not load settings from the server.</p>`;
+    page.innerHTML = `${head}<p class="muted">Couldn’t load the settings. <button type="button" class="link" data-open="settings">Try again</button></p>`;
     return;
   }
   const zones = { ...(rules.danger_zones || {}) };
@@ -926,24 +947,48 @@ async function renderSettings() {
   let picSize = null;
   const sliders = ui.web.settings_sliders;
   const newZonePx = ui.web.new_zone_px;
-  const range = (name, value, { min, max }) => `<label class="range"><input type="range" name="${name}" min="${min}" max="${max}" value="${value}"><output>${value} px</output></label>`;
+  const steps = ui.sensitivity_steps || [];
+  // What you set but haven't saved yet: kept when the page is drawn again (adding or removing a danger zone).
+  const draft = {
+    wake_time: prefs.wake_time, bed_time: prefs.bed_time, quiet_enabled: !!prefs.quiet_enabled,
+    quiet_start: hourText(prefs.quiet_start_hour ?? ui.quiet_hours.start_hour),
+    quiet_end: hourText(prefs.quiet_end_hour ?? ui.quiet_hours.end_hour),
+    sensitivity: Math.min(steps.length - 1, Math.max(0, prefs.sensitivity ?? ui.sensitivity_default)),
+  };
+  const keepTyped = () => {
+    if (!$('#wake-time')) return;
+    draft.wake_time = $('#wake-time').value;
+    draft.bed_time = $('#bed-time').value;
+    draft.quiet_enabled = $('#dnd-on').checked;
+    draft.quiet_start = $('#dnd-start').value;
+    draft.quiet_end = $('#dnd-end').value;
+    if ($('#sensitivity')) draft.sensitivity = +$('#sensitivity').value;
+  };
+  const range = (name, value, { min, max }, label) => `<span class="range"><input type="range" name="${name}" min="${min}" max="${max}" value="${value}" aria-label="${esc(label)}"></span>`;
 
   const draw = () => {
     page.innerHTML = `${head}
     <section><h2>Your day</h2>
       <p class="hint">The habit reminders are timed from these: water right after waking, sunlight in the first hour, dim lights and no screens in the last hour before bed.</p>
       <div class="form-rows">
-        <div class="field"><span>I wake up at</span><input type="time" id="wake-time" value="${esc(prefs.wake_time)}"></div>
-        <div class="field"><span>I go to bed at</span><input type="time" id="bed-time" value="${esc(prefs.bed_time)}"></div>
+        <label class="field"><span>I wake up at</span><input type="time" id="wake-time" value="${esc(draft.wake_time)}"></label>
+        <label class="field"><span>I go to bed at</span><input type="time" id="bed-time" value="${esc(draft.bed_time)}"></label>
       </div></section>
+    ${steps.length ? `<section><h2>Who joins the chat</h2>
+      <p class="hint">How sure the camera must be about an object, and how long it must see it, before the object joins the chat. Pickier means fewer false visitors; eager means things join sooner.</p>
+      <div class="form-rows">
+        <label class="field"><span>Sensitivity</span><span class="range"><input type="range" id="sensitivity" min="0" max="${steps.length - 1}" step="1" value="${draft.sensitivity}" aria-valuetext="${esc(steps[draft.sensitivity].name)}"><output id="sensitivity-name">${esc(steps[draft.sensitivity].name)}</output></span></label>
+        <p class="range-ends"><span>${esc(steps[0].name)}</span><span>${esc(steps.at(-1).name)}</span></p>
+        <p class="hint" id="sensitivity-says" role="status">${esc(stepWords(steps[draft.sensitivity]))}</p>
+      </div></section>` : ''}
     <section><h2>Danger zones</h2>
-      <p class="hint">Each object gets an invisible bubble around it. When something risky enters the bubble (a cup near the laptop), the desk speaks up.</p>
+      <p class="hint">Each object gets an invisible bubble around it. When something risky enters the bubble (a cup near the laptop), the desk speaks up. Slide right for a bigger bubble.</p>
       <div class="form-rows">${Object.entries(zones).map(([cls, z]) => `<div class="zone" data-zone="${esc(cls)}">
-          <strong>${esc(cls)}</strong>
-          <input type="text" name="label" value="${esc(z.label || '')}" aria-label="Name for the ${esc(cls)} zone">
-          ${range('expand', z.expand || newZonePx, sliders.zone)}
-          <button type="button" class="round" data-remove aria-label="Remove ${esc(cls)} zone">×</button></div>`).join('') || '<p class="muted">No zones yet.</p>'}
-        <form class="inline-add" id="add-zone"><select aria-label="Object">${(rules.available_objects || []).filter((o) => !zones[o]).map((o) => `<option>${esc(o)}</option>`).join('')}</select>
+          <strong>${esc(plainLabel(cls))}</strong>
+          <input type="text" name="label" value="${esc(z.label || '')}" aria-label="Name for the ${esc(plainLabel(cls))} zone">
+          ${range('expand', z.expand || newZonePx, sliders.zone, `Bubble size around the ${plainLabel(cls)}`)}
+          <button type="button" class="round" data-remove aria-label="Remove the ${esc(plainLabel(cls))} zone">×</button></div>`).join('') || '<p class="muted">No zones yet.</p>'}
+        <form class="inline-add" id="add-zone"><select aria-label="Object for a new danger zone">${(rules.available_objects || []).filter((o) => !zones[o]).map((o) => `<option value="${esc(o)}">${esc(plainLabel(o))}</option>`).join('')}</select>
           <button type="submit" class="btn-quiet">Add zone</button></form>
       </div></section>
     <section><h2>Desk edges</h2>
@@ -959,72 +1004,100 @@ async function renderSettings() {
           <span class="muted" id="edge-status" role="status"></span>
         </div>
       </div>
+      <p class="hint">How near the edge something may get: a warning first, then an alert when it’s nearer still. Slide right to speak up sooner.</p>
       <div class="form-rows">
-        <div class="field"><span>Warn at</span>${range('warn_px', edge.warn_px, sliders.warn)}</div>
-        <div class="field"><span>Alert at</span>${range('danger_px', edge.danger_px, sliders.alert)}</div>
+        <label class="field"><span>Warn at</span>${range('warn_px', edge.warn_px, sliders.warn, 'Warn at')}</label>
+        <label class="field"><span>Alert at</span>${range('danger_px', edge.danger_px, sliders.alert, 'Alert at')}</label>
       </div></section>
     <section><h2>Quiet hours</h2>
-      <p class="hint">Habit reminders wait until quiet hours end. Safety alerts still come through.</p>
+      <p class="hint">During quiet hours there are no Mac notifications at all, warnings included, and habit reminders wait until they end. Warnings still show in the chat.</p>
       <div class="form-rows">
-        <label class="check"><input type="checkbox" id="dnd-on" ${prefs.quiet_enabled ? 'checked' : ''}> Use quiet hours</label>
-        <div class="field"><span>From</span><input type="number" id="dnd-start" min="0" max="23" value="${prefs.quiet_start_hour ?? ui.quiet_hours.start_hour}"><span>to</span><input type="number" id="dnd-end" min="0" max="23" value="${prefs.quiet_end_hour ?? ui.quiet_hours.end_hour}"><span class="muted">(24-hour clock)</span></div>
+        <label class="check"><input type="checkbox" id="dnd-on" ${draft.quiet_enabled ? 'checked' : ''}> Use quiet hours</label>
+        <div class="field"><label for="dnd-start">From</label><input type="time" id="dnd-start" step="3600" value="${esc(draft.quiet_start)}"><label for="dnd-end">to</label><input type="time" id="dnd-end" step="3600" value="${esc(draft.quiet_end)}"></div>
       </div></section>
     <div class="save-row"><button type="button" class="btn" id="save-settings">Save settings</button><span class="saved" id="saved" role="status"></span></div>
-    ${state.cameraSource === 'pi' && state.piCommand ? `<section><h2>Raspberry Pi camera</h2>
-      <p class="hint">On the Pi, in the desk-talk folder, run:</p><pre class="json">${esc(state.piCommand)}</pre></section>` : ''}
     <section><h2>Chats</h2>
       <p class="hint">Your chats are saved in this browser so they survive a refresh.</p>
       <button type="button" class="btn-quiet" id="clear-chats">Clear all chats</button></section>`;
 
-    page.querySelectorAll('.range input').forEach((r) => r.addEventListener('input', () => {
-      r.nextElementSibling.textContent = `${r.value} px`;
+    $('#sensitivity')?.addEventListener('input', (e) => {
+      const s = steps[+e.target.value];
+      e.target.setAttribute('aria-valuetext', s.name);
+      $('#sensitivity-name').textContent = s.name;
+      $('#sensitivity-says').textContent = stepWords(s);
+    });
+    page.querySelectorAll('.range input[name]').forEach((r) => r.addEventListener('input', () => {
       const z = r.closest('.zone');
-      if (z) zones[z.dataset.zone].expand = +r.value;
-      else edge[r.name] = +r.value;
+      if (z) { zones[z.dataset.zone].expand = +r.value; return; }
+      edge[r.name] = +r.value;
+      // "Warn at" is never nearer the edge than "Alert at".
+      const warn = page.querySelector('.range input[name="warn_px"]');
+      if (r.name === 'warn_px' && edge.warn_px < edge.danger_px) { edge.warn_px = edge.danger_px; r.value = edge.danger_px; }
+      if (r.name === 'danger_px' && edge.danger_px > edge.warn_px) { edge.warn_px = edge.danger_px; warn.value = edge.danger_px; }
     }));
     page.querySelectorAll('.zone input[name="label"]').forEach((inp) => inp.addEventListener('input', () => {
       zones[inp.closest('.zone').dataset.zone].label = inp.value;
     }));
     page.querySelectorAll('[data-remove]').forEach((b) => b.addEventListener('click', () => {
-      delete zones[b.closest('.zone').dataset.zone]; draw();
+      keepTyped(); delete zones[b.closest('.zone').dataset.zone]; draw();
     }));
     $('#add-zone')?.addEventListener('submit', (e) => {
       e.preventDefault();
       const cls = e.target.querySelector('select').value;
-      if (cls) { zones[cls] = { expand: newZonePx, label: `${cls} zone` }; draw(); }
+      if (cls) { keepTyped(); zones[cls] = { expand: newZonePx, label: `${plainLabel(cls)} zone` }; draw(); }
     });
     wireEdgeEditor();
     $('#clear-chats').addEventListener('click', () => {
+      if (!window.confirm('Clear every chat on this page? This can’t be undone.')) return;
       for (const id of Object.keys(state.messages)) { state.messages[id] = []; state.unread[id] = 0; }
       storage.save(HISTORY_KEY, null);
+      storage.save(CLEARED_KEY, Date.now());     // so the server's recent messages don't bring them back
       renderChatList();
       toast(null, 'Chats cleared');
     });
-    $('#save-settings').addEventListener('click', async () => {
-      const out = $('#saved');
-      out.className = 'saved'; out.textContent = 'Saving…';
-      if (outline.length && outline.length < ui.desk.min_desk_corners) {
-        out.className = 'saved error'; out.textContent = `Tap at least ${ui.desk.min_desk_corners} corners of the desk, or press Clear.`;
-        return;
-      }
-      try {
-        const body = { danger_zones: zones, edge_proximity: { ...edge } };
-        if (outlineChanged) body.desk_outline = outline;
-        await api('/api/rules', { method: 'PUT', body });
-        outlineChanged = false;
-        prefs = (await api('/api/preferences', { method: 'PUT', body: {
-          wake_time: $('#wake-time').value, bed_time: $('#bed-time').value,
-          quiet_enabled: $('#dnd-on').checked,
-          quiet_start_hour: +$('#dnd-start').value || 0,
-          quiet_end_hour: +$('#dnd-end').value || 0,
-        } })).preferences;
-        out.textContent = 'Saved';
-        refreshHabits();
-      } catch {
-        out.className = 'saved error'; out.textContent = 'Not saved. Check that the server is running and the times look like 07:30.';
-      }
-    });
+    $('#save-settings').addEventListener('click', save);
   };
+
+  const say = (text, error = false) => {
+    const out = $('#saved');
+    clearTimeout(savedTimer);
+    out.className = error ? 'saved error' : 'saved';
+    out.textContent = text;
+    if (text === 'Saved' && ui.web.saved_note_sec) savedTimer = setTimeout(() => { out.textContent = ''; }, ui.web.saved_note_sec * MS);
+  };
+  const why = (err) => {
+    if (err?.status >= 400 && err.status < 500) return 'Check what you typed and try again.';
+    return err?.status ? 'Desk Talk had a problem. Try again in a moment.' : 'Is Desk Talk still running?';
+  };
+
+  async function save() {
+    keepTyped();
+    if (outline.length && outline.length < ui.desk.min_desk_corners) {
+      say(`Tap at least ${ui.desk.min_desk_corners} corners of the desk, or press Clear.`, true); return;
+    }
+    if (!draft.wake_time || !draft.bed_time) { say('Pick a time to wake up and a time to go to bed.', true); return; }
+    if (!draft.quiet_start || !draft.quiet_end) { say('Pick a start and an end for quiet hours.', true); return; }
+    say('Saving…');
+    const failed = [];
+    let problem = null;
+    try {
+      const body = { danger_zones: zones, edge_proximity: { ...edge } };
+      if (outlineChanged) body.desk_outline = outline;
+      await api('/api/rules', { method: 'PUT', body });
+      outlineChanged = false;
+    } catch (err) { failed.push('the danger zones and desk edges'); problem = err; }
+    try {
+      const body = {
+        wake_time: draft.wake_time, bed_time: draft.bed_time, quiet_enabled: draft.quiet_enabled,
+        quiet_start_hour: +draft.quiet_start.slice(0, 2), quiet_end_hour: +draft.quiet_end.slice(0, 2),
+      };
+      if (steps.length) body.sensitivity = draft.sensitivity;
+      prefs = (await api('/api/preferences', { method: 'PUT', body })).preferences;
+      refreshHabits();
+    } catch (err) { failed.push(steps.length ? 'your day, sensitivity and quiet hours' : 'your day and quiet hours'); problem = err; }
+    if (failed.length) say(`Couldn’t save ${failed.join(' or ')}. ${why(problem)}`, true);
+    else say('Saved');
+  }
 
   // ——— Desk edge editor: tap corners on the camera picture ———
   const SNAP = ui.desk.desk_border_share;     // a tap this close to the picture's side goes onto the side
@@ -1064,7 +1137,7 @@ async function renderSettings() {
     if (img) {
       const ready = () => { picSize = { w: img.naturalWidth || 4, h: img.naturalHeight || 3 }; drawOutline(); };
       if (img.complete && img.naturalWidth) ready(); else img.addEventListener('load', ready, { once: true });
-      img.addEventListener('error', () => { $('#edge-status').textContent = 'Could not load the camera picture. Try New picture.'; });
+      img.addEventListener('error', () => { $('#edge-status').textContent = 'Couldn’t load the camera picture. Try New picture.'; });
       $('#edge-pic').addEventListener('click', (e) => {
         if (startOver) { outline = []; startOver = false; }
         if (outline.length >= ui.desk.max_desk_corners) return;
@@ -1091,23 +1164,32 @@ async function renderSettings() {
 function feedUrl() {
   return `/api/${state.feed === 'clean' ? 'video_feed_raw' : 'video_feed'}/${state.camIndex}`;
 }
+/** On a narrow screen the desk cam is a panel you open; the live video only loads while you can see it. */
+const camShown = () => getComputedStyle($('#cam')).visibility !== 'hidden';
+let videoShown = null;
+function openCam(on) {
+  $('#cam').classList.toggle('open', on);
+  $('#cam-toggle').setAttribute('aria-expanded', String(on));
+  renderCamStage();
+}
 
 function renderCamStage() {
   const stage = $('#cam-stage');
   $('#cam-caption')?.remove();
+  videoShown = camShown();
   stage.classList.toggle('is-pairing', state.live && !state.camOk && state.cameraSource !== 'webcam');
-  stage.classList.toggle('has-video', state.live && state.camOk);
+  stage.classList.toggle('has-video', state.live && state.camOk && videoShown);
   if (!state.live) {
     stage.innerHTML = '<img class="scene" src="art/desk-scene.svg" alt="Illustration of the desk characters">';
-    stage.insertAdjacentHTML('afterend', '<p class="cam-caption" id="cam-caption">This is a demo. Run the server and start the camera to see your real desk.</p>');
+    stage.insertAdjacentHTML('afterend', '<p class="cam-caption" id="cam-caption">This is a demo. Start Desk Talk on this computer and turn on the camera to see your real desk.</p>');
     return;
   }
   if (state.camOk) {
-    stage.innerHTML = `<img src="${feedUrl()}" alt="Live view of your desk">`;
+    stage.innerHTML = videoShown ? `<img src="${feedUrl()}" alt="Live view of your desk">` : '';
     return;
   }
   if (state.cameraSource === 'webcam') {
-    stage.innerHTML = '<p class="cam-caption">No webcam found. Check the terminal running server.py for tips.</p>';
+    stage.innerHTML = '<p class="cam-caption">No webcam found. Check that one is plugged in, then restart Desk Talk.</p>';
     return;
   }
   if (state.cameraSource === 'pi') {
@@ -1117,8 +1199,9 @@ function renderCamStage() {
         <li>Put the Pi on the same Wi-Fi as this computer.</li>
         <li>On the Pi, in the desk-talk folder, run:</li>
       </ol>
-      <pre class="json pi-cmd">${esc(state.piCommand || 'python3 -m raspberry_pi.camera --server … --key … (printed by server.py)')}</pre>
-      ${state.piCommand ? '<button type="button" class="btn-quiet" id="copy-pi">Copy command</button>' : ''}
+      ${state.piCommand
+        ? `<pre class="json pi-cmd">${esc(state.piCommand)}</pre><button type="button" class="btn-quiet" id="copy-pi">Copy command</button>`
+        : '<p class="muted">Open this page on the computer running Desk Talk to see the command.</p>'}
       <p class="pair-url">It takes ${ui.pi.fps} pictures a second${ui.pi.delete_every_min ? `, keeps them on the Pi, and deletes them every ${ui.pi.delete_every_min} minutes` : ' and keeps them on the Pi'}.</p></div>`;
     $('#copy-pi')?.addEventListener('click', () => {
       navigator.clipboard?.writeText(state.piCommand).then(() => toast(null, 'Copied'), () => {});
@@ -1135,54 +1218,48 @@ function renderCamStage() {
         <li>Tap <b>Start camera</b> and point it at your desk.</li>
       </ol>
       <p class="pair-url">${esc(p.url)}</p></div>`
-    : '<div class="pair"><h3>Starting the phone link…</h3><p class="muted">If this does not change, check the terminal running server.py.</p></div>';
+    : '<div class="pair"><h3>Starting the phone link…</h3><p class="muted">If this doesn’t change, restart Desk Talk.</p></div>';
 }
 
 function renderOnDesk(det) {
   const list = $('#on-desk');
   const here = agentIds().filter((id) => state.agents[id].on_desk);
+  const agentLine = (id) => `<li style="--tint:${tintVar(state.agents[id].color)}">${avatar(state.agents[id], 26)}${esc(state.agents[id].name)}</li>`;
   if (!state.live) {
-    list.innerHTML = here.map((id) => `<li style="--tint:${tintVar(state.agents[id].color)}">${avatar(state.agents[id], 26)}${esc(state.agents[id].name)}</li>`).join('')
-      || '<li class="extra">Nobody yet</li>';
+    paint(list, here.map(agentLine).join('') || '<li class="extra">Nobody yet</li>');
     return;
   }
-  const objs = det?.objects || {};
-  const extras = (det?.extras || []).filter((e) => !e.ignored).slice(0, 8);
-  if (!here.length && !extras.length) {
-    list.innerHTML = `<li class="extra">${state.camOk ? 'Nothing recognized yet' : 'Waiting for the camera'}</li>`;
-    return;
-  }
-  list.innerHTML = here.map((id) => {
-    const a = state.agents[id];
-    const o = objs[id];
-    return `<li style="--tint:${tintVar(a.color)}" title="${o ? `Detected as ${esc(o.class)}` : ''}">${avatar(a, 26)}${esc(a.name)}${o ? ` <small>${Math.round((o.confidence || 0) * PERCENT)}%</small>` : ''}</li>`;
-  }).join('') + extras.map((e) => `<li class="extra" title="Seen, not in the chat yet">${esc(e.yolo_class)}</li>`).join('');
+  const extras = [...new Set((det?.extras || []).filter((e) => !e.ignored).map((e) => plainLabel(e.yolo_class)))];
+  const lines = [...here.map(agentLine), ...extras.map((e) => `<li class="extra" title="Seen, not in the chat">${esc(e)}</li>`)];
+  paint(list, lines.slice(0, size('on_desk_shown')).join('')
+    || `<li class="extra">${state.camOk ? 'Nothing recognized yet' : 'Waiting for the camera'}</li>`);
 }
 
 function renderRisks(safety, cameraIssues) {
   const list = $('#risks');
-  if (!state.live) { list.innerHTML = '<li>Cup is a little close to Computer.</li>'; return; }
-  const lens = (cameraIssues || []).slice(0, 2).map((i) => `<li class="lens-issue">
+  if (!state.live) { paint(list, '<li>Cup is a little close to Computer.</li>'); return; }
+  const issues = (cameraIssues || []).slice(0, size('camera_issues_shown')).map((i) => `<li class="lens-issue">
       ${avatar(lens(), 30)}<span><strong>${esc(i.title)}.</strong> ${esc(i.fix)}</span></li>`);
-  const lines = (safety?.explanations || []).slice(0, 6).map((l) => `<li>${esc(l)}</li>`);
-  const html = [...lens, ...lines].join('') || `<li class="calm">${state.camOk ? 'All calm on the desk.' : 'Nothing to report yet.'}</li>`;
-  if (list.innerHTML !== html) list.innerHTML = html;
+  const lines = (safety?.explanations || []).slice(0, size('risk_lines_shown')).map((l) => `<li>${esc(l)}</li>`);
+  paint(list, [...issues, ...lines].join('') || `<li class="calm">${state.camOk ? 'All calm on the desk.' : 'Nothing to report yet.'}</li>`);
 }
 
 async function renderProofs() {
   const box = $('#proofs');
-  if (!state.live) { box.innerHTML = '<p class="muted" style="grid-column:1/-1">Proof photos from alerts show up here.</p>'; return; }
-  const data = await api('/api/snapshots').catch(() => null);
-  const items = (data?.items || []).slice(0, ui.web.photos_shown);
+  if (!state.live) { paint(box, '<p class="muted" style="grid-column:1/-1">Proof photos from warnings show up here.</p>'); return; }
+  const shown = size('side_photos_shown') ?? ui.web.photos_shown;
+  const data = await api(`/api/snapshots${shown ? `?limit=${shown}` : ''}`).catch(() => null);
+  if (!data) return;                      // keep what's there; the slow timer asks again
+  const items = (data.items || []).slice(0, shown);
   const ids = items.map((i) => i.id).join(',');
   if (ids === state.snapshotIds) return;
   state.snapshotIds = ids;
-  box.innerHTML = items.length
-    ? items.map((it) => `<img src="/api/snapshot/${esc(it.id)}" alt="${esc(it.label || 'Desk photo')}" title="${esc(it.label || '')}" data-photo="/api/snapshot/${esc(it.id)}" loading="lazy">`).join('')
-    : '<p class="muted" style="grid-column:1/-1">None yet. Photos are saved when something gets too close.</p>';
+  paint(box, items.length
+    ? items.map((it) => `<button type="button" class="proof" data-photo="/api/snapshot/${esc(it.id)}" aria-label="${esc(it.label || 'Desk photo')}" title="${esc(it.label || '')}"><img src="/api/snapshot/${esc(it.id)}" alt="" loading="lazy"></button>`).join('')
+    : '<p class="muted" style="grid-column:1/-1">None yet. Photos are saved when something gets too close.</p>');
 }
 
-/** One request every web.refresh_ms.live: camera status, agents, detections, and risks together. When the server
+/** One request every web.refresh_ms.live: camera status, agents, things seen, and risks together. When the server
  * can't be reached the page says so, and it keeps asking until the server is back. */
 async function pollLive() {
   let d;
@@ -1196,20 +1273,25 @@ async function pollLive() {
   showOffline(false);
   const wasOk = state.camOk;
   state.cameraSource = d.camera_source || state.cameraSource;
-  state.phoneMode = d.phone_mode;
-  state.camOk = d.camera;
-  state.camIndex = d.camera_index ?? 0;
+  state.camOk = !!d.camera;
+  state.camIndex = d.camera_index ?? state.camIndex;
   if (d.pi_command && d.pi_command !== state.piCommand) { state.piCommand = d.pi_command; if (!state.camOk) renderCamStage(); }
-  if (d.phone && (d.phone.url || d.phone.qr_svg)) state.phone = { ...state.phone, ...d.phone };
+  // The QR code is only sent when asked for (?qr=1): keep the one we have when the reply has none.
+  if (d.phone) state.phone = { url: d.phone.url || state.phone?.url || '', qr_svg: d.phone.qr_svg || state.phone?.qr_svg || null };
   if (state.camOk !== wasOk) {
+    state.camSince = Date.now();
     renderCamStage();
     renderConn();
-    toast(null, state.camOk ? 'Camera connected' : 'Camera disconnected');
   } else if (!state.camOk && state.phone && !$('#cam-stage .pair-qr') && state.phone.qr_svg) {
     renderCamStage();
   }
+  // "Camera connected / disconnected" only once the change has lasted web.camera_note_after_sec.
+  if (state.camOk !== state.camNoted && Date.now() - state.camSince >= (ui.web.camera_note_after_sec || 0) * MS) {
+    state.camNoted = state.camOk;
+    toast(null, state.camOk ? 'Camera connected' : 'Camera disconnected');
+  }
   syncAgents(d.agents);
-  renderOnDesk(d.detections);
+  renderOnDesk({ extras: d.detections?.extras ?? d.extras });
   renderRisks(d.safety, d.camera_issues);
   renderAi(d.ai);
 }
@@ -1222,13 +1304,16 @@ function showOffline(on) {
   el.textContent = on ? 'Can’t reach Desk Talk. Trying again…' : '';
   el.hidden = !on;
   renderConn();
-  if (!on) renderCamStage();          // the live video stopped with the server: start it again
+  if (!on) {
+    renderCamStage();          // the live video stopped with the server: start it again
+    loadRecentMessages();      // messages sent while the page was cut off
+  }
 }
 
 function renderAi(ai) {
   if (!ai) return;
   let text = '';
-  if (!ai.ready) text = 'The characters need an AI to chat. Add a key to .env (GEMINI_API_KEY is free) or set OLLAMA_URL, then restart the server.';
+  if (!ai.ready) text = 'The characters need an AI to chat. Set one up on this computer (the README says how), then restart Desk Talk.';
   else if (ai.problem) text = ai.problem;
   if (text === state.aiText) return;
   state.aiText = text;
@@ -1238,12 +1323,14 @@ function renderAi(ai) {
 }
 
 // ————— Live connection —————
-/** Messages and join / leave notes from before this page opened (the server keeps the newest few: chat.recent_kept). */
+/** Messages and join / leave notes from before this page opened, or sent while it was cut off (the server keeps
+ * the newest few: chat.recent_kept). Ones from before "Clear all chats" stay cleared. */
 async function loadRecentMessages() {
   for (const list of Object.values(state.messages)) for (const m of list) if (m.id) state.seen.add(m.id);
   let recent = [];
   try { recent = (await api('/api/messages/recent')).messages || []; } catch { return; }
-  for (const d of recent) handleServerMessage(d, true);
+  const cleared = storage.load(CLEARED_KEY, 0);
+  for (const d of recent) if (!cleared || (d.ts || 0) * MS > cleared) handleServerMessage(d, true);
 }
 
 function handleServerMessage(d, old = false) {
@@ -1271,6 +1358,9 @@ function handleServerMessage(d, old = false) {
 
 function listenForEvents() {
   const es = new EventSource('/api/events');
+  let broken = false;
+  es.onerror = () => { broken = true; };
+  es.onopen = () => { if (broken) { broken = false; loadRecentMessages(); } };     // back: catch up on what we missed
   es.onmessage = (e) => {
     let d;
     try { d = JSON.parse(e.data); } catch { return; }
@@ -1279,23 +1369,33 @@ function listenForEvents() {
 }
 
 /** Run `job` again and again, waiting `ms()` between the end of one run and the start of the next (read each time,
- * so settings that changed while the server was away count). */
+ * so settings that changed while the server was away count). Skipped while the page's tab is hidden; when you
+ * come back to the tab, every job runs once at once (see wire()). */
+const timedJobs = [];
 function repeat(ms, job) {
+  timedJobs.push(job);
   const next = async () => {
-    try { await job(); } finally { setTimeout(next, ms()); }
+    try { if (!document.hidden) await job(); } finally { setTimeout(next, ms()); }
   };
   setTimeout(next, ms());
+}
+function catchUp() {
+  if (document.hidden) return;
+  for (const job of timedJobs) Promise.resolve().then(job).catch(() => {});
 }
 
 async function startLive(status) {
   state.live = true;
   loadHistory();
+  loadTodoCopy();
+  loadCounters();
+  if (ui.chat?.message_max_chars) $('#input').maxLength = ui.chat.message_max_chars;
   state.cameraSource = status.camera_source || 'pi';
-  state.phoneMode = !!status.phone_mode;
   state.camOk = !!status.camera;
+  state.camNoted = state.camOk;
   state.camIndex = status.camera_indices?.[0] ?? 0;
   try { syncAgents((await api('/api/agents')).agents); } catch { /* the poll will catch up */ }
-  syncTodos();
+  loadTodos();
   listenForEvents();
   await loadRecentMessages();
   renderConn();
@@ -1305,33 +1405,39 @@ async function startLive(status) {
   refreshHabits();
   repeat(() => ui.web.refresh_ms.habits, refreshHabits);
   renderProofs();
-  repeat(() => ui.web.refresh_ms.photos, renderProofs);
-  repeat(() => ui.web.refresh_ms.log, async () => { if (state.view === 'log') await renderLog(); });
+  repeat(() => ui.web.refresh_ms.photos, async () => {
+    await renderProofs();
+    if (state.view === 'captures') await renderCaptures(true);
+  });
+  repeat(() => ui.web.refresh_ms.log, async () => { if (state.view === 'log') await renderLog(true); });
   renderAi({ ready: !!status.llm });
 }
 
 // ————— Demo (no server, e.g. GitHub Pages) —————
 // Everything below is the demo's made-up story. The numbers in it are only for the story: the real app takes its
 // numbers from the server (GET /api/ui_settings).
-const DEMO_HOW_TO_RUN = 'Run python server.py on this computer and open http://localhost:5000 to use your real desk.';
-// The settings the demo needs to tell its story (in the real app: config/settings.yaml and protocols.yaml).
+const DEMO_HOW_TO_RUN = 'Start Desk Talk on this computer and open the address it shows to use your real desk.';
+// The settings the demo needs to tell its story (in the real app they come from the server).
 const DEMO_UI = {
   web: {
     toast_ms: 4000, chat_kept: 200, chat_saved: 60, left_chat_shown_min: 60,
+    retry_start_sec: 3,       // how soon the demo asks again whether Desk Talk is there (then twice as long each time)
     palette: ['cobalt', 'teal', 'tang', 'mustard', 'coral', 'plum', 'moss', 'slate', 'ink'],
   },
   chat: { todo_max_chars: 200 },
   habits: {
-    sunlight_default_min: 10, glass_ml: 240, food_label_max_chars: 60, goal_window_hours: 10, stop_before_bed_hours: 2,
+    food_label_max_chars: 60, stop_before_bed_hours: 2,
     morning_minutes: { clear: 10, partly_cloudy: 20, overcast: 30 }, morning_window_min: 60, evening_dim_before_bed_min: 60,
     breaks: { break_min: 5, walk_after_meal: true },
   },
+  starter_todo: 'Pick one top priority for the next hour',
+  starter_counters: ['Picked up phone'],
 };
 const DEMO_AGENTS = [
-  { id: 'computer', name: 'Computer', art: 'art/computer.svg', color: 'cobalt', tracker: 'breaks', about: 'Anxious. Watches your screen breaks, posture, and anything near the keyboard.', labels: ['laptop'] },
+  { id: 'computer', name: 'Computer', art: 'art/computer.svg', color: 'cobalt', tracker: 'breaks', about: 'Anxious. Watches your screen breaks and anything near the keyboard.', labels: ['laptop'] },
   { id: 'cup', name: 'Cup', art: 'art/cup.svg', color: 'teal', tracker: 'hydration', about: 'Completely innocent. Counts your sips and insists it is nowhere near the laptop.', labels: ['cup'] },
   { id: 'snack', name: 'Snack', art: 'art/snack.svg', color: 'tang', tracker: 'food', about: 'Lives for flavor. Logs what you eat and does not care about crumbs.', labels: ['pizza'] },
-  { id: 'paper', name: 'Paper', art: 'art/paper.svg', color: 'mustard', tracker: 'todo', about: 'A gentle worrier. Keeps your to-do list and remembers where things went.', labels: ['book'] },
+  { id: 'paper', name: 'Book', art: 'art/paper.svg', color: 'mustard', tracker: 'todo', about: 'A gentle worrier. Keeps your to-do list and remembers where things went.', labels: ['book'] },
 ];
 let demoPlayed = false;
 const DEMO_SCRIPT = [
@@ -1348,15 +1454,15 @@ function demoHabits() {
     hydration: { sips: 9, water_ml: 720, goal_ml: 2400, on_waking_ml: 600, pace_ml: 1200, last_sip_ts: now - 1500, ml_per_sip: 80 },
     breaks: { count: 3, last_break_ts: now - 2400, sitting_sec: 34 * MINUTE, longest_sit_sec: 51 * MINUTE, sit_limit_min: 30, log: [] },
     phone_free: { counted: true, phone_free_sec: 64 * MINUTE, phone_on_desk_sec: 10 * MINUTE, streak_sec: 22 * MINUTE, best_sec: 41 * MINUTE, phone_on_desk: false, goal_min: 120 },
-    light: { sunlight_ts: now - 4 * HOUR, afternoon_light_ts: null, sunlight_minutes: 10, lux: 310, brightness: 120 },
+    light: { sunlight_ts: now - 4 * HOUR, afternoon_light_ts: null, sunlight_minutes: 10 },
     food: { entries: [{ label: 'apple', healthy: true }, { label: 'chips', healthy: false }] },
-    desk_sec: 3 * HOUR, danger_count: 2, lost_alerts: 0, hourly_activity: [], objects_seen: [], vision: {},
+    desk_sec: 3 * HOUR, danger_count: 2, lost_alerts: 0, hourly_activity: [], objects_seen: [],
   };
 }
 function demoLog(habit, action, extra) {
   const h = state.habits || demoHabits();
   const now = Date.now() / MS;
-  if (habit === 'hydration') { h.hydration.sips += 1; h.hydration.water_ml += action === 'glass' ? ui.habits.glass_ml : h.hydration.ml_per_sip; h.hydration.last_sip_ts = now; }
+  if (habit === 'hydration') { h.hydration.sips += 1; h.hydration.water_ml += h.hydration.ml_per_sip; h.hydration.last_sip_ts = now; }
   if (habit === 'breaks') { h.breaks.count += 1; h.breaks.sitting_sec = 0; h.breaks.last_break_ts = now; }
   if (habit === 'light') h.light.sunlight_ts = now;
   if (habit === 'food' && action === 'food') h.food.entries.push({ label: extra.label, healthy: !!extra.healthy });
@@ -1366,7 +1472,7 @@ function demoLog(habit, action, extra) {
 async function playDemoOnce() {
   if (demoPlayed || state.live) return;
   demoPlayed = true;
-  addMessage('group', { note: true, text: 'Demo. With the server running, objects your camera sees join this chat.' });
+  addMessage('group', { note: true, text: 'Demo. With Desk Talk running, objects your camera sees join this chat.' });
   for (const a of DEMO_AGENTS) {
     await sleep(500);
     upsertAgent({ ...a, on_desk: true, joined_at: Date.now() / MS });
@@ -1377,6 +1483,7 @@ async function playDemoOnce() {
     await sleep(900);
     showTyping(id, 'group');
     await sleep(900 + text.length * 12);
+    hideTyping('group');
     addMessage('group', { char: id, text });
   }
 }
@@ -1384,6 +1491,8 @@ async function playDemoOnce() {
 function startDemo() {
   state.live = false;
   ui = DEMO_UI;
+  loadTodoCopy();
+  loadCounters();
   state.habits = demoHabits();
   renderConn();
   renderCamStage();
@@ -1399,10 +1508,83 @@ async function demoReply(chatId, text) {
   if (!id) return;
   showTyping(id, chatId);
   await sleep(1100);
-  addMessage(chatId, { char: id, text: `I'm only a demo right now. Run the server and I'll actually see your desk.` });
+  hideTyping(chatId);
+  addMessage(chatId, { char: id, text: 'I’m only a demo right now. Start Desk Talk and I’ll actually see your desk.' });
 }
 
 // ————— Wiring —————
+/** The buttons in the panels and pages that are drawn again and again: wired once, here. */
+function wirePanels() {
+  const tracker = $('#tracker');
+  tracker.addEventListener('change', (e) => {
+    const cb = e.target.closest('[data-todo]');
+    if (cb) { todo.items[+cb.dataset.todo].done = cb.checked; todoChanged(state.chat); }
+  });
+  tracker.addEventListener('click', (e) => {
+    const del = e.target.closest('[data-todo-del]');
+    if (del) { todo.items.splice(+del.dataset.todoDel, 1); todoChanged(state.chat); return; }
+    const log = e.target.closest('[data-log]');
+    if (log) { logFromButton(log); return; }
+    const food = e.target.closest('[data-food-del]');
+    if (food) { logHabit('food', 'remove', { index: +food.dataset.foodDel }); return; }
+    if (e.target.closest('[data-treat]')) addFood(false);
+  });
+  tracker.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (e.target.id === 'food-add') { addFood(true); return; }
+    if (e.target.id !== 'todo-add') return;
+    const text = e.target.querySelector('input[type="text"]').value.trim();
+    if (!text) return;
+    const due = e.target.querySelector('input[type="date"]').value || null;
+    todo.items.push(cleanTodo({ text: text.slice(0, ui.chat.todo_max_chars), due }));
+    todoChanged(state.chat);
+    $('#tracker input[type="text"]')?.focus();
+  });
+  function addFood(healthy) {
+    const input = tracker.querySelector('#food-add input');
+    const label = input.value.trim().slice(0, ui.habits.food_label_max_chars);
+    if (!label) { input.focus(); return; }
+    logHabit('food', 'food', { label, healthy });
+  }
+
+  const habits = $('#view-habits');
+  habits.addEventListener('click', (e) => {
+    const log = e.target.closest('[data-log]');
+    if (log) { logFromButton(log); return; }
+    const btn = e.target.closest('[data-inc],[data-dec],[data-del]');
+    if (btn) {
+      const i = +(btn.dataset.inc ?? btn.dataset.dec ?? btn.dataset.del);
+      if (btn.dataset.inc) counters.items[i].count += 1;
+      if (btn.dataset.dec) counters.items[i].count = Math.max(0, counters.items[i].count - 1);
+      if (btn.dataset.del) counters.items.splice(i, 1);
+      saveCounters(); renderHabits();
+    }
+  });
+  habits.addEventListener('submit', (e) => {
+    if (e.target.id !== 'add-habit') return;
+    e.preventDefault();
+    const val = e.target.querySelector('input').value.trim();
+    if (!val) return;
+    counters.items.push({ label: val.slice(0, size('counter_label_chars')), count: 0 });
+    saveCounters(); renderHabits();
+  });
+
+  $('#view-log').addEventListener('click', (e) => {
+    const filter = e.target.closest('[data-filter]');
+    if (filter) { state.logFilter = filter.dataset.filter; renderLog(); return; }
+    const day = e.target.closest('[data-day]');
+    if (day) { state.logDay = day.dataset.day || null; renderLog(); }
+  });
+
+  document.addEventListener('click', (e) => {
+    const retry = e.target.closest('[data-retry]');
+    if (!retry) return;
+    if (retry.dataset.retry === 'habits') refreshHabits();
+    if (retry.dataset.retry === 'log') renderLog();
+    if (retry.dataset.retry === 'captures') renderCaptures();
+  });
+}
+
 function wire() {
   // Until the first check is done (live or demo), clicks and the chat box do nothing: their handlers read the
   // settings (ui). Meanwhile the corner says "Connecting…" (index.html).
@@ -1414,6 +1596,7 @@ function wire() {
     if (b) openChat(b.dataset.chat);
   });
   $$('.page-link').forEach((b) => b.addEventListener('click', () => b.dataset.view && openPage(b.dataset.view)));
+  wirePanels();
 
   document.addEventListener('click', (e) => {
     const open = e.target.closest('[data-open]');
@@ -1470,32 +1653,48 @@ function wire() {
     $$('.seg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
     if (state.live && state.camOk) renderCamStage();
   }));
-  $('#cam-toggle').addEventListener('click', () => $('#cam').classList.add('open'));
-  $('#cam-close').addEventListener('click', () => $('#cam').classList.remove('open'));
+  $('#cam-toggle').addEventListener('click', () => openCam(true));
+  $('#cam-close').addEventListener('click', () => openCam(false));
+  document.addEventListener('visibilitychange', catchUp);
+  window.addEventListener('resize', () => { if (ui && state.live && camShown() !== videoShown) renderCamStage(); });
   $('#conn').addEventListener('click', () => {
     if (!state.live) toast(null, `Demo mode. ${DEMO_HOW_TO_RUN}`);
-    else if (!state.camOk) $('#cam').classList.add('open');
+    else if (!state.camOk) openCam(true);
   });
 }
 
-/** Is Desk Talk's server there? Its settings and status, or null (opened from a file, or from GitHub Pages). */
+/** Is Desk Talk's server there? { settings, status }, or null (opened from a file, or from GitHub Pages). */
 async function firstCheck() {
   if (!location.protocol.startsWith('http')) return null;
   try {
     const wait = { timeout: FIRST_CHECK_MS };
     const [settings, status] = await Promise.all([api('/api/ui_settings', wait), api('/api/status', wait)]);
-    ui = settings;
-    return status;
+    return { settings, status };
   } catch {
     return null;
   }
 }
 
+/** The demo keeps asking (after `sec`, then twice as long each time): a server that was slow to start still gets
+ * its page. When it answers, the page starts again, live. */
+function askAgainLater(sec) {
+  if (!location.protocol.startsWith('http') || !sec) return;
+  setTimeout(async () => {
+    if (await firstCheck()) location.reload();
+    else askAgainLater(sec * 2);
+  }, sec * MS);
+}
+
 async function init() {
   wire();
-  const status = await firstCheck();
-  if (status) await startLive(status);
-  else startDemo();
+  const found = await firstCheck();
+  if (found) {
+    ui = found.settings;
+    await startLive(found.status);
+  } else {
+    startDemo();
+    askAgainLater(ui.web.retry_start_sec);
+  }
   openChat('group');
 }
 

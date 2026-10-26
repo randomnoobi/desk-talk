@@ -20,13 +20,7 @@
       "yolo_ms": "number"
     },
     "folder": "str",
-    "last_compaction": {
-      "frames": "number",
-      "from": "number",
-      "intervals": "number",
-      "to": "number",
-      "ts": "number"
-    },
+    "last_compaction": "null",
     "scheduler": [
       {
         "every_sec": "number",
@@ -46,14 +40,9 @@
       }
     ],
     "today": {
-      "events": {
-        "agent_joined": "number",
-        "alert": "number",
-        "compaction": "number",
-        "object_state": "number"
-      },
+      "events": {},
       "pictures_waiting": "number"
     }
   },
-  "request": "GET /api/log/status (main server, busy desk)"
+  "request": "GET /api/log/status (main server, fresh desk)"
 }

@@ -10,6 +10,7 @@
       "quiet_enabled": "bool",
       "quiet_end_hour": "number",
       "quiet_start_hour": "number",
+      "sensitivity": "number",
       "wake_time": "str"
     }
   },

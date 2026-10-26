@@ -15,11 +15,9 @@ from desktalk.config import (
     LensWaits,
     LostItemsSettings,
     PiSettings,
-    VisionHabitsSettings,
-    VisionNudgeRepeats,
     load_config,
 )
-from desktalk.core.chat.workers import DailySummary, IdleChat, Lens, LostItems, VisionHabits
+from desktalk.core.chat.workers import DailySummary, IdleChat, Lens, LostItems
 from desktalk.ports import PeriodicWorker
 from desktalk.runtime import GuardedWorker
 from tests.fakes import (
@@ -90,14 +88,10 @@ def all_workers(clock):
         DailySummary(ai, notifier, roster, FakeHabits(), InMemoryKeyValueStore(), DailySummarySettings(
             hour=21, start_delay_sec=120, check_every_sec=60, objects_listed=8), REPLIES, default_temperature=0.8,
             clock=clock, prompts=WORDS.daily_recap, preview_chars=120),
-        VisionHabits(None, bus, desk, roster, profiles, status, VisionHabitsSettings(
-            every_sec=42, slouch_log_min_sec=90, nail_log_cooldown_sec=50, max_log_events=120, start_delay_sec=12,
-            min_every_sec=18, repeat_after_sec=VisionNudgeRepeats(too_close=1200, slouch=1500, phone=1500)), clock,
-            photos, prompts=WORDS.vision),
     ]
 
 
-@pytest.mark.parametrize('index', range(5), ids=['idle chat', 'lost items', 'lens', 'daily recap', 'vision habits'])
+@pytest.mark.parametrize('index', range(4), ids=['idle chat', 'lost items', 'lens', 'daily recap'])
 def test_the_job_runs_under_the_supervisors_guard(index):
     clock = FakeClock()
     worker = all_workers(clock)[index]

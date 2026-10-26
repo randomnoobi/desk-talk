@@ -145,15 +145,9 @@ class InMemoryEventStore:
     def days(self) -> list[str]:
         return sorted(set(self._events) | set(self._detections), reverse=True)
 
-    def events(self, day: str, types: set[str] | None, limit: int) -> list[dict]:
+    def events(self, day: str, types: set[str] | None, limit: int | None) -> list[dict]:
         evs = [e for e in self._events.get(day, []) if not types or e['type'] in types]
         return list(reversed(evs))[:limit]
-
-    def presence(self, day: str, include_live: bool = True) -> list[dict]:
-        return []
-
-    def recent_detections(self, day: str, limit: int) -> list[dict]:
-        return list(reversed(self._detections.get(day, [])))[:limit]
 
     def counts(self, day: str) -> dict:
         by_type: dict[str, int] = {}
@@ -208,8 +202,9 @@ class InMemoryStateStore:
                 latest[record.label] = record
         return latest
 
-    def changes(self, since: float) -> list[StateRecord]:
-        return sorted((r for r in self.records if r.type in CHANGE_TYPES and r.ts > since), key=lambda r: r.ts)
+    def changes(self, since: float, *, label: str | None = None) -> list[StateRecord]:
+        return sorted((r for r in self.records if r.type in CHANGE_TYPES and r.ts > since
+                       and (label is None or r.label == label)), key=lambda r: r.ts)
 
     def close(self) -> None:
         self.closed = True
@@ -272,3 +267,13 @@ class RecordingNotifier:
 
     def texts(self) -> list[str]:
         return [m.get('text', '') for m in self.sent]
+
+
+class FakeDesktopNotifications:
+    """Shows nothing: `shown` records each (title, text) it was asked to show, in order."""
+
+    def __init__(self):
+        self.shown: list[tuple[str, str]] = []
+
+    def show(self, title: str, text: str) -> None:
+        self.shown.append((title, text))

@@ -139,9 +139,9 @@ def test_a_zone_saved_on_the_settings_page_is_checked_like_the_built_in_ones():
     result = an.analyze(things(('mouse', 'mouse', (300, 300, 340, 330)), ('cup', 'cup', (350, 300, 380, 340))),
                         SIZE, now=1)
     [event] = result['risk_events']
-    assert (event['type'], event['target'], event['intruder'], event['zone_label']) == (
-        'zone_intrusion', 'mouse', 'cup', 'Mouse zone')
-    assert result['explanations'] == ["cup (hazard) in mouse's Mouse zone — 30px"]
+    assert (event['type'], event['target'], event['intruder'], event['zone_label'], event['depth_px']) == (
+        'zone_intrusion', 'mouse', 'cup', 'Mouse zone', 30)
+    assert result['explanations'] == ["cup is in mouse's Mouse zone."]
 
 
 def test_how_many_pictures_back_to_compare_can_be_saved():

@@ -9,7 +9,7 @@
         "action": "str",
         "agent": {
           "about": "str",
-          "art": "null|str",
+          "art": "str",
           "auto": "bool",
           "color": "str",
           "fragile": "bool",
@@ -26,7 +26,7 @@
           "nickname": "str",
           "object": "str",
           "on_desk": "bool",
-          "tracker": "null|str"
+          "tracker": "str"
         },
         "id": "str",
         "quiet": "bool",

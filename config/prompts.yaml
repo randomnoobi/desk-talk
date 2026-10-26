@@ -75,7 +75,7 @@ alert:
     GOOD examples (speak as the object, first person):
     - Cup: "I'm sitting a little too close to the laptop today — could you scoot me back?"
     - Computer: "That wine glass is making me nervous. A nudge away would help."
-    - Paper: "I don't love being under this cup — one wobble and I'm done for."
+    - Book: "I don't love being under this cup — one wobble and I'm done for."
     BAD: "Laptop screen is cracking under sharp keyboard pressure."
 
     Never mention being an AI. Never break character.
@@ -106,6 +106,10 @@ alert:
   # said when the AI can't help and the other object is not an agent
   heads_up: 'Heads up: {rule}. Could you move me back a bit?'
   too_close: Something is getting too close. Could you check the desk?
+  # said by Lens (no AI) when nothing in the chat can say it; {intruder}, {target} and {object} are the detector's
+  # words for the things, {zone} the danger zone's name
+  lens_zone: 'Heads up: {intruder} next to the {target} ({zone}). Could you move it away?'
+  lens_edge: 'Heads up: {object} right at the edge of the desk. Could you move it back?'
 
 # ── Chatting with you, in the group or 1-on-1 ───────────────────────
 chat:
@@ -117,7 +121,7 @@ chat:
 
     HOW YOU TALK:
     - Speak in first person as {name} ONLY. 1-2 SHORT sentences, like a quick text.
-    - Never write other objects' lines (no "Cup:", "Paper:", "Computer:") and never prefix your reply with your own name.
+    - Never write other objects' lines (no "Cup:", "Book:", "Computer:") and never prefix your reply with your own name.
     - Never mention being an AI, models, "YOLO"/"COCO", confidence %, or "risk level". Stay in character.
 
     STAYING GROUNDED:
@@ -238,14 +242,12 @@ habit_reminder:
     PERSONALITY: {personality}
     YOUR HABIT FOCUS: {habit_area}
     {widget_block}
-    DESK SIGNALS (from camera rules): {signals}
     WHY YOU ARE SPEAKING (true, seen by the camera, mention it): {evidence}
     WHAT HELPS (from the book Protocols by Andrew Huberman): {book_tip}
 
     RULES:
     - One or two short sentences, max 30 words. Mention WHY YOU ARE SPEAKING so the nudge has a reason.
-    - Include the actionable tip in your own words (numbers are fine).
-    - You may reference DESK SIGNALS if it fits — do not invent facts.
+    - Include the actionable tip in your own words (numbers are fine). Do not invent facts.
     - Do not rename your character or others. No confidence percentages or "sensor" talk.
     - Be creative and in-character. Vary your messages.
     - Never mention being an AI.
@@ -262,9 +264,6 @@ habit_reminder:
     RULES: ONE or two short sentences, max 30 words. Mention why you're speaking. Include the actionable tip. Stay in character.
   # said when the rule gave no reason
   no_evidence: routine check-in
-  # {signals} in system: the last posture check, or no_signals
-  vision_note: '; vision note: {note}'
-  no_signals: none
   # the message the AI answers
   ask: Send a quick habit reminder right now.
 
@@ -276,6 +275,7 @@ trackers:
 
       ACTIONS — you MUST use these whenever the conversation implies it:
       - User wants to add/create/remember/track anything → you MUST include [ADD_TODO:task text] in your reply
+      - If it has a due date, put the day after a | as year-month-day: [ADD_TODO:Essay|2026-10-30] (no date = leave it out)
       - User says a task is done/finished/completed → you MUST include [DONE_TODO:exact task text from the list] in your reply
       - User wants to remove/delete a task → you MUST include [DEL_TODO:exact task text] in your reply
       You can include multiple action tags in one reply.
@@ -309,10 +309,16 @@ trackers:
   behavior: |2-
 
     BEHAVIOR: The user opened this panel {count} time(s) in the last hour. If nothing was completed or changed, gently point that out.
+  # the to-do tracker starts with today's date (this computer's day), so "due Friday" becomes a real day
+  todo_today: |2-
+
+    TODAY IS {weekday} {day}. Work out "tomorrow", "Friday" or "next week" from this day.
   todo_list: |2-
 
     USER'S TO-DO LIST (prioritize open items, celebrate completed ones):
     {items}
+  # after a to-do that has a due date; {due} is the day, year-month-day
+  todo_due: ' (due {due})'
   breaks: |2-
 
     USER'S BREAKS: {count} break(s) today, last one {last}. Sitting for {sitting_min} min right now. The book suggests a {break_min}-minute walk every {sit_limit_min} minutes of sitting.
@@ -416,9 +422,28 @@ habits:
     tip: Keep food away from the keyboard and papers.
   unknown_snack: snack
   tasks_open:
-    evidence: The user has {count} open task{plural} on their list, starting with "{first}".
-    text: You still have {count} open task{plural}, like "{first}". Want to pick one for the next 30 minutes?
+    evidence: '"{task}" is still open on the user''s to-do list.'
+    text: How about "{task}" for the next 30 minutes? It's still on your list.
     tip: Pick one task and focus on it for a set block of time.
+  # a to-do with a due date: the day before, on the day, and once a day while it's late. {days} is how many days
+  # late, {plural} is "s" when that's more than one
+  tasks_due:
+    soon:                     # each day from tasks.due_soon_days before (protocols.yaml), while 2+ days are left
+      evidence: '"{task}" on the user''s to-do list is due in {days} days.'
+      text: 'Heads up: your {task} is due in {days} days.'
+      tip: Split it into small steps and do the first one today.
+    tomorrow:
+      evidence: '"{task}" on the user''s to-do list is due tomorrow.'
+      text: Remember, your {task} is due tomorrow.
+      tip: Plan a block of time for it today, so tomorrow is calm.
+    today:
+      evidence: '"{task}" on the user''s to-do list is due today.'
+      text: Your {task} is due today.
+      tip: Start with it now, while you're fresh, and put everything else aside.
+    late:
+      evidence: '"{task}" on the user''s to-do list was due {days} day{plural} ago and is still open.'
+      text: Your {task} was due {days} day{plural} ago. Done? Tick it off.
+      tip: If it's done, tick it off. If not, pick one small step for the next 30 minutes.
   # What the habit tracker says when it logs something: seen by the camera, or a button / the chat
   logged:
     sip_seen: 'Sip detected! That''s {sips} today (about {liters} of {daily_goal_l} L). Keep it up!'
@@ -434,6 +459,8 @@ habits:
     # {when} in sunlight
     sunlight_morning: morning
     sunlight_afternoon: late-afternoon
+    # you ticked off a to-do on the list
+    task_done: Nice, "{task}" is done!
 
 # ── Inventing a personality for an object without its own block in agents.yaml ───
 personality:
@@ -603,33 +630,6 @@ daily_recap:
     lost: 'Lost-object alerts: {count}.'
     objects: 'Objects seen today: {objects}.'
 
-# ── Looking at a picture: posture, screen distance, phone in hand (Ollama) ───
-vision:
-  habit_scene: |
-    You are analyzing a single desk webcam frame. Reply ONLY with valid JSON (no markdown, no prose):
-    {{"posture":"good|slouch|unknown","face_screen_distance":"ok|too_close|far|unknown","phone":"none|on_desk|in_hand","attention":"screen|phone|away|unknown","nail_biting":false,"nails_hand_to_mouth":false,"break_suggestion":false}}
-    Definitions:
-    - too_close: face fills unusually large part of frame or appears within arm's length of the screen.
-    - phone in_hand: user clearly holding a phone. on_desk: phone resting on surface. none: not visible.
-    - slouch: shoulders hunched or head far forward vs neutral.
-    - nail_biting: true only if fingers/hand are clearly at the mouth in a biting/nibbling pose.
-    - nails_hand_to_mouth: true if hand is at mouth (nails/cuticles) even when ambiguous — use sparingly; prefer nail_biting when clear.
-    - break_suggestion: true only if the user looks visibly fatigued (from this single frame — usually false).
-  # what the agent says after the camera saw it a while (settings → vision_habits)
-  nudges:
-    too_close: You've been leaning really close to my screen for a bit. Could you sit back a little? Your eyes will thank you.
-    slouch: The camera has seen you slouching for a couple of minutes. Quick reset? Shoulders back, chin level.
-    phone: I keep seeing your phone in your hand. If you're trying to focus, maybe put it in another room for 20 minutes?
-  # the Habits page's vision log: a title, a line about it and the photo's label
-  log:
-    slouch_title: Poor posture ~{minutes} min
-    slouch_detail: The desk camera saw a slouched stretch until your posture looked neutral again.
-    slouch_left_detail: The desk camera saw a slouched stretch until you left the desk.
-    slouch_photo: 'Posture: ~{minutes}m slouch'
-    nails_title: Nail biting noticed
-    nails_detail: The vision check saw nail biting, or a hand at your mouth near your nails.
-    nails_photo: 'Habit: nail biting'
-
 # ── Lens, the camera's own character ────────────────────────────────
 lens:
   # Lens in the app's chat list
@@ -753,13 +753,27 @@ photos:
 
 # ── What the desk checks found, in words (RELATIONSHIP INSIGHTS for the chat's AI) ───
 # {a}, {b}, {object} ... are the detector's words for the things
+# Plain sentences: the app page's "Heads up" shows them too, so no pixels, percentages or picture counts.
 desk_checks:
   edge: '{object} is right at the {side} edge of the desk and could fall off.'
-  zone: "{intruder} (hazard) in {target}'s {zone} — {depth}px"
-  repeated: "{intruder} entered {target}'s zone {count} times in the last {window:g} s"
-  in_between: '{middle} lies between {a} and {b} — chain reaction risk'
-  crowd: '{count} objects crowded together ({labels}) — instability risk'
-  approaching: '{a} moving toward {b} ({percent}% closer in {pictures} frames)'
+  zone: "{intruder} is in {target}'s {zone}."
+  repeated: '{intruder} keeps coming back close to {target} ({count} times in the last minute or so).'
+  in_between: '{middle} is between {a} and {b}, so bumping one could knock over the others.'
+  crowd: '{count} things are crowded together ({labels}) and could tip over.'
+  approaching: '{a} is moving toward {b}.'
+
+# ── The app page's ready-made lists (web_app/, read through GET /api/ui_settings) ───
+ui:
+  # the to-do the list starts with, the first time the app opens
+  starter_todo: Pick one top priority for the next hour
+  # the counters the Habits page starts with ("Your own counters": you can add your own)
+  starter_counters: [Picked up phone]
+
+# ── The Mac's own pop-up notifications (settings → notifications) ───
+# A warning or reminder pops up with the character's name as its title and its message as the text.
+notifications:
+  # the title of the pop-up when the camera saw you drink
+  sip_title: Sip logged
 
 # ── The developer page's server messages (http://localhost:5000/dev/, settings → dev) ───
 dev:

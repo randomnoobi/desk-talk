@@ -4,7 +4,8 @@
     "access-control-allow-origin": "*"
   },
   "json": {
-    "error": "str"
+    "has_list": "bool",
+    "items": []
   },
-  "request": "GET /api/habit_log?limit=lots (main server, busy desk)"
+  "request": "GET /api/todos (main server, fresh desk)"
 }

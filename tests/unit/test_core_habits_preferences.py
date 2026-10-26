@@ -14,7 +14,7 @@ from tests.fakes import FakeClock, FakePreferences, InMemoryKeyValueStore
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULTS = {'wake_time': '07:00', 'bed_time': '22:30', 'quiet_enabled': False, 'quiet_start_hour': 22,
-            'quiet_end_hour': 7}
+            'quiet_end_hour': 7, 'sensitivity': 2}
 
 
 @pytest.fixture(scope='module')
@@ -32,7 +32,9 @@ def store():
 
 
 def prefs_from(config, store, clock=None):
-    return PreferencesFile(store, config.protocols.schedule, config.reminders.quiet_hours, clock=clock or FakeClock())
+    return PreferencesFile(store, config.protocols.schedule, config.reminders.quiet_hours,
+                           sensitivity_steps=len(config.agents.sensitivity_steps),
+                           sensitivity_default=config.agents.sensitivity_default, clock=clock or FakeClock())
 
 
 def test_it_is_a_preferences_view(config, store):
@@ -48,7 +50,7 @@ def test_defaults_come_from_protocols_and_settings(config, store):
 def test_defaults_follow_the_config_files(config, store):
     schedule = config.protocols.schedule.model_copy(update={'wake_time': '06:15'})
     quiet = config.reminders.quiet_hours.model_copy(update={'enabled': True, 'start_hour': 21})
-    p = PreferencesFile(store, schedule, quiet, clock=FakeClock())
+    p = PreferencesFile(store, schedule, quiet, sensitivity_steps=5, sensitivity_default=2, clock=FakeClock())
     assert p.get('wake_time') == '06:15' and p.get('quiet_enabled') is True and p.get('quiet_start_hour') == 21
 
 
@@ -56,7 +58,7 @@ def test_changes_are_saved_and_validated(config, store):
     p = prefs_from(config, store)
     out = p.update({'wake_time': '6:45', 'bed_time': '23:15', 'quiet_enabled': 1, 'quiet_start_hour': 25})
     expected = {'wake_time': '06:45', 'bed_time': '23:15', 'quiet_enabled': True, 'quiet_start_hour': 1,
-                'quiet_end_hour': 7}
+                'quiet_end_hour': 7, 'sensitivity': 2}
     assert out == expected
     assert store.data == {'preferences': expected}             # data/preferences.json, as before
     again = prefs_from(config, store)
@@ -109,7 +111,7 @@ def test_preferences_file_from_before_still_loads(config):
                                                    'quiet_start_hour': 23, 'quiet_end_hour': 8, 'old_thing': 1}})
     p = prefs_from(config, store)
     assert p.all() == {'wake_time': '08:00', 'bed_time': '00:30', 'quiet_enabled': True, 'quiet_start_hour': 23,
-                       'quiet_end_hour': 8}
+                       'quiet_end_hour': 8, 'sensitivity': 2}
 
 
 def test_a_broken_saved_value_falls_back_to_the_default(config, caplog):
@@ -173,3 +175,33 @@ def test_the_fake_preferences_follow_the_same_quiet_hours_rule():
     assert prefs.quiet_now(local(23)) and not prefs.quiet_now(local(12))
     there = FakePreferences(prefs.values, clock=FakeClock(utc_offset_hours=11))
     assert there.quiet_now(1_781_524_800.0)
+
+
+# ── how picky joining the chat is (the Settings page's slider: settings → agents.sensitivity_steps) ──
+def test_sensitivity_defaults_to_middle(config, store):
+    assert prefs_from(config, store).get('sensitivity') == config.agents.sensitivity_default == 2
+
+
+def test_sensitivity_clamped(config, store):
+    p = prefs_from(config, store)
+    assert p.update({'sensitivity': 9})['sensitivity'] == 4
+    assert p.update({'sensitivity': -3})['sensitivity'] == 0
+    assert p.update({'sensitivity': '3'})['sensitivity'] == 3
+    assert prefs_from(config, store).get('sensitivity') == 3                # saved
+
+
+def test_sensitivity_bad_value_raises_value_error(config, store):
+    p = prefs_from(config, store)
+    for bad in ('abc', [1], float('inf'), float('nan')):
+        with pytest.raises(ValueError, match='sensitivity'):
+            p.update({'sensitivity': bad})
+    assert p.get('sensitivity') == 2 and store.data == {}
+
+
+@pytest.mark.parametrize('saved', ['abc', None, [2], 99, -1])
+def test_a_saved_sensitivity_that_is_missing_or_wrong_still_loads(config, saved):
+    """An old data/preferences.json (no sensitivity), or one edited by hand: the default step, or the nearest."""
+    store = InMemoryKeyValueStore({'preferences': {'wake_time': '08:00', 'sensitivity': saved}})
+    expected = {99: 4, -1: 0}.get(saved, 2) if not isinstance(saved, list) else 2
+    assert prefs_from(config, store).get('sensitivity') == expected
+    assert prefs_from(config, InMemoryKeyValueStore({'preferences': {'wake_time': '08:00'}})).get('sensitivity') == 2

@@ -1,6 +1,6 @@
 """Stand-ins for the developer page's tools (desktalk/ports.py: TestRunner, DatabaseBrowser, DataFiles,
-SmoothingTraceView). They pass the same contracts as the real ones (tests/contracts/dev_contracts.py), but run
-nothing, open no file and need no tracker."""
+SmoothingTraceView, TracePhotos). They pass the same contracts as the real ones (tests/contracts/dev_contracts.py
+and test_trace_photos_contract.py), but run nothing, open no file and need no tracker."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from desktalk.domain import (
     TableInfo,
     TestItem,
     TestOutcome,
+    TracePhoto,
 )
 from tests.fakes.clock import FakeClock
 
@@ -193,3 +194,26 @@ class FakeSmoothingTrace:
 
     def trace(self, label: str) -> list[SmoothingStep]:
         return list(self.steps.get(label, []))
+
+
+class FakeTracePhotos:
+    """Each object's trace pictures, in memory: add(photo, jpeg) keeps one, and only the newest `kept` per kind of
+    object stay (like the real files)."""
+
+    def __init__(self, kept: int = 6):
+        self._kept = kept
+        self._photos: dict[str, list[TracePhoto]] = {}
+        self._jpegs: dict[str, bytes] = {}
+
+    def add(self, photo: TracePhoto, jpeg: bytes) -> None:
+        photos = sorted([*self._photos.get(photo.label, []), photo], key=lambda p: p.ts)
+        for gone in photos[:-self._kept]:
+            self._jpegs.pop(gone.id, None)
+        self._photos[photo.label] = photos[-self._kept:]
+        self._jpegs[photo.id] = jpeg
+
+    def photos(self, label: str) -> list[TracePhoto]:
+        return list(self._photos.get(label, []))
+
+    def jpeg(self, photo_id: str) -> bytes | None:
+        return self._jpegs.get(photo_id)

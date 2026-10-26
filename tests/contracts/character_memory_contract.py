@@ -13,7 +13,6 @@ class CharacterMemoryContract:
         assert memory.widget('cup') is None and memory.widgets() == {}
         assert memory.widget_views_of('cup') == []
         assert memory.user_active_at() == 0.0
-        assert memory.vision_brief() == ''
 
     def test_only_the_newest_things_an_agent_said_are_kept(self, memory):
         for n in range(4):
@@ -37,7 +36,3 @@ class CharacterMemoryContract:
     def test_when_you_last_typed(self, memory):
         memory.note_user_activity(1234.5)
         assert memory.user_active_at() == 1234.5
-
-    def test_the_last_posture_check(self, memory):
-        memory.set_vision_brief('posture=bad')
-        assert memory.vision_brief() == 'posture=bad'

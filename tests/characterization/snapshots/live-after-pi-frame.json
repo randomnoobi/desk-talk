@@ -6,53 +6,19 @@
   "json": {
     "agents": [],
     "ai": {
-      "label": "str",
       "problem": "null",
       "ready": "bool"
     },
     "camera": "bool",
     "camera_index": "number",
-    "camera_info": {
-      "connected": "bool",
-      "fps": "number",
-      "frames_received": "number",
-      "model": "str",
-      "pi": {
-        "camera": "str",
-        "disk_free_mb": "number",
-        "last_cleanup_ts": "number",
-        "last_frame_id": "str",
-        "photos_stored": "number"
-      },
-      "source": "str",
-      "yolo_ms": "number"
-    },
     "camera_issues": [],
     "camera_source": "str",
     "detections": {
-      "extras": [],
-      "frame": {
-        "h": "number",
-        "w": "number"
-      },
-      "light": {},
-      "lost_vlm_labels": [],
-      "objects": {},
-      "relationship_edges": [],
-      "timestamp": "number",
-      "vlm_habit": {},
-      "vlm_habit_ts": "number"
+      "extras": []
     },
-    "phone_mode": "bool",
     "pi_command": "str",
     "safety": {
-      "dangers": [],
-      "explanations": [],
-      "relationships": [],
-      "risk_events": [],
-      "risk_level": "number",
-      "rules_loaded": "bool",
-      "state": "str"
+      "explanations": []
     }
   },
   "request": "GET /api/live (main server, fresh desk)"

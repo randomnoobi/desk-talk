@@ -16,7 +16,6 @@ class Memories:
         self._widgets: dict[str, dict[str, Any]] = {}         # agent id → tracker data sent by the app (to-do list)
         self._views: dict[str, list[dict[str, Any]]] = {}     # agent id → [{'ts', 'action'}]
         self._user_active_at = 0.0                            # you typing / sending → small talk waits
-        self._vision_brief = ''                               # the last posture check in a few words
 
     def remember(self, agent_id: str, text: str, keep: int) -> None:
         with self._lock:
@@ -56,11 +55,3 @@ class Memories:
     def user_active_at(self) -> float:
         with self._lock:
             return self._user_active_at
-
-    def set_vision_brief(self, text: str) -> None:
-        with self._lock:
-            self._vision_brief = text
-
-    def vision_brief(self) -> str:
-        with self._lock:
-            return self._vision_brief

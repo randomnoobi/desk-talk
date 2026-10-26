@@ -56,12 +56,12 @@ def reanchor(p: ChatPrompts, a: AgentProfile) -> str:
 
 
 # ── Habit reminders (the habit rules decide WHEN; this phrases it) ──
-def habit_system(p: HabitReminderPrompts, a: AgentProfile, habit_area: str, widget_block: str, signals: str,
+def habit_system(p: HabitReminderPrompts, a: AgentProfile, habit_area: str, widget_block: str,
                  evidence: str, book_tip: str, short: bool) -> str:
     if short:
         return p.system_short.format(**_agent(a), habit_area=habit_area, widget_block=widget_block,
                                      evidence=evidence or p.no_evidence, book_tip=book_tip)
-    return p.system.format(**_agent(a), habit_area=habit_area, widget_block=widget_block, signals=signals,
+    return p.system.format(**_agent(a), habit_area=habit_area, widget_block=widget_block,
                            evidence=evidence, book_tip=book_tip)
 
 

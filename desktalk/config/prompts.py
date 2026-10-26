@@ -37,6 +37,8 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'alert.self_is_drink': ('self_label',),
     'alert.same_area': ('self_label', 'other_label'),
     'alert.heads_up': ('rule',),
+    'alert.lens_zone': ('intruder', 'target', 'zone'),
+    'alert.lens_edge': ('object',),
     'desk_rules.too_few_corners': ('corners',),
     'replies.ai_errors.rate_limit': ('who',),
     'replies.ai_errors.bad_key': ('who',),
@@ -75,11 +77,12 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'live_context.off_desk': ('ago',),
     'memory.you_said': ('said',),
     'memory.you_replied': ('user', 'said'),
-    'habit_reminder.system': (*_AGENT, 'habit_area', 'widget_block', 'signals', 'evidence', 'book_tip'),
+    'habit_reminder.system': (*_AGENT, 'habit_area', 'widget_block', 'evidence', 'book_tip'),
     'habit_reminder.system_short': (*_AGENT, 'habit_area', 'widget_block', 'evidence', 'book_tip'),
-    'habit_reminder.vision_note': ('note',),
     'trackers.behavior': ('count',),
     'trackers.todo_list': ('items',),
+    'trackers.todo_today': ('weekday', 'day'),
+    'trackers.todo_due': ('due',),
     'trackers.breaks': ('count', 'last', 'sitting_min'),
     'trackers.water': ('water_ml', 'goal_ml', 'sips', 'pace_ml', 'last'),
     'trackers.food': ('count', 'parts'),
@@ -117,8 +120,17 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'habits.phone_focus.text': ('minutes',),
     'habits.food_sitting.evidence': ('food', 'minutes'),
     'habits.food_sitting.text': ('food', 'minutes'),
-    'habits.tasks_open.evidence': ('count', 'plural', 'first'),
-    'habits.tasks_open.text': ('count', 'plural', 'first'),
+    'habits.tasks_open.evidence': ('task',),
+    'habits.tasks_open.text': ('task',),
+    'habits.tasks_due.soon.evidence': ('task', 'days'),
+    'habits.tasks_due.soon.text': ('task', 'days'),
+    'habits.tasks_due.tomorrow.evidence': ('task',),
+    'habits.tasks_due.tomorrow.text': ('task',),
+    'habits.tasks_due.today.evidence': ('task',),
+    'habits.tasks_due.today.text': ('task',),
+    'habits.tasks_due.late.evidence': ('task', 'days', 'plural'),
+    'habits.tasks_due.late.text': ('task', 'days', 'plural'),
+    'habits.logged.task_done': ('task',),
     'habits.logged.sip_seen': ('sips', 'liters'),
     'habits.logged.sip_button': ('liters',),
     'habits.logged.break_seen': ('minutes',),
@@ -167,8 +179,6 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'daily_recap.facts.dangers': ('count',),
     'daily_recap.facts.lost': ('count',),
     'daily_recap.facts.objects': ('objects',),
-    'vision.log.slouch_title': ('minutes',),
-    'vision.log.slouch_photo': ('minutes',),
     'desk_alerts.pet': ('pet', 'knock'),
     'desk_alerts.pet_knock': ('names',),
     'desk_alerts.clutter': ('count',),
@@ -247,6 +257,8 @@ class AlertPrompts(_Section):
     unknown_other: str
     heads_up: str
     too_close: str
+    lens_zone: str
+    lens_edge: str
 
 
 class ChatPrompts(_Section):
@@ -317,8 +329,6 @@ class HabitReminderPrompts(_Section):
     system: str
     system_short: str
     no_evidence: str
-    vision_note: str
-    no_signals: str
     ask: str
 
 
@@ -333,7 +343,9 @@ class TrackerActions(_Section):
 class TrackerPrompts(_Section):
     actions: TrackerActions
     behavior: str
+    todo_today: str
     todo_list: str
+    todo_due: str
     breaks: str
     breaks_none_yet: str
     water: str
@@ -377,6 +389,17 @@ class HabitLogged(_Section):
     sunlight: str
     sunlight_morning: str
     sunlight_afternoon: str
+    task_done: str
+
+
+class TasksDue(_Section):
+    """A to-do with a due date: a few days before (protocols → tasks.due_soon_days), the day before, on the day,
+    and while it's late."""
+
+    soon: NudgeWords
+    tomorrow: NudgeWords
+    today: NudgeWords
+    late: NudgeWords
 
 
 class HabitNudges(_Section):
@@ -405,6 +428,7 @@ class HabitNudges(_Section):
     food_sitting: NudgeWords
     unknown_snack: str
     tasks_open: NudgeWords
+    tasks_due: TasksDue
     logged: HabitLogged
 
 
@@ -483,30 +507,6 @@ class DailyRecapPrompts(_Section):
     user: str
     plain: str
     facts: RecapFacts
-
-
-class VisionNudges(_Section):
-    too_close: str
-    slouch: str
-    phone: str
-
-
-class VisionLog(_Section):
-    """The Habits page's vision log."""
-
-    slouch_title: str
-    slouch_detail: str
-    slouch_left_detail: str
-    slouch_photo: str
-    nails_title: str
-    nails_detail: str
-    nails_photo: str
-
-
-class VisionPrompts(_Section):
-    habit_scene: str
-    nudges: VisionNudges
-    log: VisionLog
 
 
 class DeskAlertWords(_Section):
@@ -639,6 +639,19 @@ class CameraPrompts(_Section):
     edge_tip: str
 
 
+class UiWords(_Section):
+    """The app page's ready-made lists (sent with GET /api/ui_settings)."""
+
+    starter_todo: str
+    starter_counters: Words
+
+
+class NotificationWords(_Section):
+    """The Mac's own pop-up notifications."""
+
+    sip_title: str
+
+
 class DevWords(_Section):
     """The developer page's server messages (desktalk/web/routers/dev.py and the parts behind it)."""
 
@@ -675,13 +688,14 @@ class Prompts(_Section):
     small_talk: SmallTalkPrompts
     lost_items: LostItemsPrompts
     daily_recap: DailyRecapPrompts
-    vision: VisionPrompts
     lens: LensPrompts
     camera: CameraPrompts
     desk_alerts: DeskAlertWords
     desk_rules: DeskRuleWords
     photos: PhotoWords
     desk_checks: DeskCheckWords
+    ui: UiWords
+    notifications: NotificationWords
     dev: DevWords
 
 

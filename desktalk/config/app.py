@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 
 from desktalk.config.agents import AgentsFile
 from desktalk.config.base import (
@@ -114,10 +114,21 @@ class DetectorSettings(_Section):
     rect: bool
 
 
-class AgentsSettings(_Section):
-    join_after_sec: ZeroOrMore
-    leave_after_sec: ZeroOrMore
+class SensitivityStep(_Section):
+    """One step of the Settings page's sensitivity slider: how sure, and for how long, before an object joins."""
+
+    name: str
     min_confidence: Fraction
+    join_after_sec: ZeroOrMore
+
+
+class AgentsSettings(_Section):
+    can_join: Words                   # agent ids (config/agents.yaml) that may join the chat
+    sensitivity_steps: Annotated[tuple[SensitivityStep, ...], Field(min_length=1)]   # from picky to eager
+    sensitivity_default: Count        # the step used until the slider is moved (an index into sensitivity_steps)
+    on_desk_after_sec: ZeroOrMore     # the warnings' own "on the desk" list (the slider doesn't change these)
+    on_desk_min_confidence: Fraction
+    leave_after_sec: ZeroOrMore
     only_on_desk: bool
     max_agents: PositiveInt
     announce: bool
@@ -125,6 +136,17 @@ class AgentsSettings(_Section):
     greet_again_after_min: ZeroOrMore
     invent_personality: bool
     personality_max_chars: PositiveInt
+
+    @model_validator(mode='after')
+    def _default_is_a_step(self):
+        if self.sensitivity_default >= len(self.sensitivity_steps):
+            raise ValueError(f'sensitivity_default ({self.sensitivity_default}) must be the number of one of the '
+                             f'{len(self.sensitivity_steps)} sensitivity_steps (0 is the first)')
+        return self
+
+    def default_step(self) -> SensitivityStep:
+        """The sensitivity step used until the Settings page's slider is moved."""
+        return self.sensitivity_steps[self.sensitivity_default]
 
 
 class PresenceSettings(_Section):
@@ -187,6 +209,7 @@ class AlertsSettings(_Section):
     clutter_cooldown_sec: ZeroOrMore
     plant_water_every_sec: PositiveNumber
     cooldown_max_times: PositiveNumber
+    lens_gap_sec: ZeroOrMore
     dangerous_from_risk: Annotated[int, Field(ge=0, le=4)]
     recent_kept: PositiveInt
     pet_labels: Words
@@ -406,22 +429,6 @@ class LostItemsSettings(_Section):
         return 2 * len(self.items) + 1
 
 
-class VisionNudgeRepeats(_Section):
-    too_close: ZeroOrMore
-    slouch: ZeroOrMore
-    phone: ZeroOrMore
-
-
-class VisionHabitsSettings(_Section):
-    every_sec: PositiveNumber
-    slouch_log_min_sec: ZeroOrMore
-    nail_log_cooldown_sec: ZeroOrMore
-    max_log_events: PositiveInt
-    start_delay_sec: ZeroOrMore
-    min_every_sec: PositiveNumber
-    repeat_after_sec: VisionNudgeRepeats
-
-
 class StorageSettings(_Section):
     folder: Path
 
@@ -569,6 +576,7 @@ class HabitTrackerSettings(_Section):
     sunlight_default_min: PositiveNumber
     afternoon_light_hours: ZeroOrMore
     food_label_max_chars: PositiveInt
+    todos_key: str                    # the to-do list's name in the data folder's store
 
 
 class ListSize(_Section):
@@ -578,13 +586,19 @@ class ListSize(_Section):
 
 
 class ListSizes(_Section):
-    habit_log: ListSize
     log_events: ListSize
-    log_detections: ListSize
     log: PositiveInt              # these two: how many the app page asks for or shows
     photos: PositiveInt
     chat_kept: PositiveInt        # messages the page keeps per chat...
     chat_saved: PositiveInt       # ...and saves in the browser
+    on_desk_shown: PositiveInt    # these: how many things the app page shows, and how long its texts may be
+    camera_issues_shown: PositiveInt
+    risk_lines_shown: PositiveInt
+    side_photos_shown: PositiveInt
+    quote_chars: PositiveInt
+    toast_chars: PositiveInt
+    mention_max_chars: PositiveInt
+    counter_label_chars: PositiveInt
 
 
 class SliderRange(_Section):
@@ -632,9 +646,24 @@ class WebSettings(_Section):
     activity_ping_ms: PositiveInt
     toast_ms: PositiveInt
     left_chat_shown_min: ZeroOrMore
+    camera_note_after_sec: ZeroOrMore
+    saved_note_sec: PositiveNumber
+    retry_start_sec: PositiveNumber
     settings_sliders: SettingsSliders
     new_zone_px: PositiveInt
     palette: Words
+
+
+class NotificationsSettings(_Section):
+    """The Mac's own pop-up notifications (desktalk/adapters/notify/): which kinds, and how they're shown."""
+
+    enabled: bool
+    warnings: bool
+    reminders: bool
+    sips: bool
+    time_limit_sec: PositiveNumber
+    command: str                      # the program that shows them (the Mac's osascript)
+    queue_size: PositiveInt           # pop-ups that can wait to be shown (more are dropped)
 
 
 class LoggingSettings(_Section):
@@ -686,6 +715,10 @@ class DevSettings(_Section):
     flicker_flips_per_min: Count
     flips_window_min: PositiveNumber
     table_counts_every_sec: PositiveNumber
+    trace_photos_folder: Path
+    trace_photos_kept: PositiveInt
+    trace_photo_every_sec: PositiveNumber
+    trace_events_kept: PositiveInt
     health: DevHealthLimits
 
 
@@ -723,13 +756,13 @@ class AppConfig(_Section):
     chat: ChatSettings
     idle_chat: IdleChatSettings
     lost_items: LostItemsSettings
-    vision_habits: VisionHabitsSettings
     lens: LensSettings
     daily_summary: DailySummarySettings
     snapshots: SnapshotsSettings
     drawing: DrawingSettings
     habit_tracker: HabitTrackerSettings
     web: WebSettings
+    notifications: NotificationsSettings
     logging: LoggingSettings
     storage: StorageSettings
     dev: DevSettings

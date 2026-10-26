@@ -23,7 +23,7 @@ from desktalk.core.habits import habit_rules as P
 from desktalk.core.habits.habit_days import HabitDays, Said
 from desktalk.core.habits.habit_reader import HabitReader, log_sip
 from desktalk.core.habits.sun_times import sun_times
-from desktalk.domain import DetectionEvent, Event, HabitEvent, Nudge
+from desktalk.domain import DetectionEvent, Event, HabitEvent, Nudge, Todo
 from desktalk.ports import Clock, DeskScene, EventBus, KeyValueStore, Preferences, Profiles
 
 MIN = 60
@@ -57,6 +57,7 @@ class HabitTracker:
         self._reader = HabitReader(clock, profiles, desk, protocols, settings, presence, agents, words,
                                    phone_counts=phone_counts)
         self._last_fire: dict[str, float] = {}          # nudge key / 'habit:<name>' → when it was sent
+        self._task_turn = 0                     # to-do check-ins sent: the next one names the to-do after
         bus.subscribe('habits', self._on_event, types=[DetectionEvent])
 
     # ── storage ──
@@ -164,12 +165,14 @@ class HabitTracker:
         with self._lock:
             self._last_fire[nudge.key] = now
             self._last_fire[f'habit:{nudge.habit}'] = now
+            if nudge.key == P.TASK_CHECK_IN:
+                self._task_turn += 1
             self._days.today.bump('nudges_sent')
             self._days.changed()
 
     # ── reading ──
-    def rule_state(self, now: float, open_todos: Sequence[str] = ()) -> P.RuleState:
-        """The snapshot the Protocols rules look at."""
+    def rule_state(self, now: float, open_todos: Sequence[Todo] = ()) -> P.RuleState:
+        """The snapshot the Protocols rules look at. Due dates go by the clock's local day."""
         t = self.day_times(now)
         session_start = self._desk.session_started_at()
         with self._lock:
@@ -188,11 +191,12 @@ class HabitTracker:
                 lux=r.light.get('lux'), brightness=r.light.get('brightness'),
                 bright_since=r.bright_since, dim_since=r.dim_since,
                 screen_on_desk=r.screen_on_desk,
-                open_todos=tuple(open_todos), utc_offset_sec=self._clock.utc_offset_sec(now),
+                open_todos=tuple(open_todos), today=self._clock.local_day(now), task_turn=self._task_turn,
+                utc_offset_sec=self._clock.utc_offset_sec(now),
                 utc_offset_at=self._clock.utc_offset_sec,
             )
 
-    def nudges(self, now: float, open_todos: Sequence[str]) -> list[Nudge]:
+    def nudges(self, now: float, open_todos: Sequence[Todo]) -> list[Nudge]:
         """The nudges that may go out now, best first: their reason is true and they weren't sent too recently.
         The least recently heard habit comes first."""
         candidates = P.candidate_nudges(self.rule_state(now, open_todos), self._rules, now, self._words)

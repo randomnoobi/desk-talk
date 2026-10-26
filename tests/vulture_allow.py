@@ -11,18 +11,21 @@ from uvicorn import Server
 
 import desktalk.adapters.dev
 from desktalk.adapters.dev import pytest_report
+from desktalk.adapters.storage.event_log import EventLog
 from desktalk.config import (
     DevHealthLimits,
     LensWaits,
     RiskWeights,
-    VisionNudgeRepeats,
 )
 from desktalk.config.habits import _ComputerZone
-from desktalk.config.prompts import ByCamera, HabitAreas
+from desktalk.config.prompts import (
+    ByCamera,
+    HabitAreas,
+)
 from desktalk.core.habits.habit_days import HabitDay
 from desktalk.core.habits.sun_times import SunTimes
 from desktalk.core.habits.tracker import DayTimes
-from desktalk.domain.dev import DataFile, QueryResult, RunStatus, SmoothingStep
+from desktalk.domain.dev import DataFile, QueryResult, RunStatus, SmoothingStep, TestOutcome
 from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent, NudgeSent
 from desktalk.web.schemas import PhoneSettings, PreferenceChanges, UiPage, UiSettings
 from desktalk_shared.wire import PiHealth
@@ -30,15 +33,15 @@ from desktalk_shared.wire import PiHealth
 _ = (
     # Settings read by name with getattr (the risk score adds up each weight, Lens looks up each wait).
     RiskWeights.edge_warning, RiskWeights.zone_intrusion, RiskWeights.repeated_intrusion,
-    VisionNudgeRepeats.slouch,
     LensWaits.covered, LensWaits.dark, LensWaits.blurry,
     # Request fields read through model_dump().
     PreferenceChanges.quiet_enabled, PreferenceChanges.quiet_start_hour, PreferenceChanges.quiet_end_hour,
+    PreferenceChanges.sensitivity,
     PreferenceChanges.dnd_enabled, PreferenceChanges.dnd_start_hour, PreferenceChanges.dnd_end_hour,
     # Event and status fields the web page (web_app/app.js) reads from the JSON.
     AgentLeft.stayed_sec, Compaction.from_ts, PiHealth.last_cleanup_ts,
-    # Written to the picture log to show where the detector ran (pi or computer); the Log tab's
-    # /api/log/detections sends it, and the tests check it to tell a Pi detection from one done here.
+    # Written to the picture log to show where the detector ran (pi or computer); the tests check it to tell a Pi
+    # detection from one done here.
     DetectionEvent.detected_on,
     # Written with every habit reminder; the rule engine (PR #6) reads it.
     NudgeSent.rule,
@@ -57,7 +60,7 @@ _ = (
     # Reply fields the phone page (phone_camera/camera.js) and the app page (web_app/app.js) read from the JSON
     # of GET /api/phone/config and GET /api/ui_settings.
     PhoneSettings.max_side, PhoneSettings.tilt_max, PhoneSettings.capture_width, PhoneSettings.capture_height,
-    UiPage.log_shown, UiPage.photos_shown, UiPage.habit_log_shown,
+    UiPage.log_shown, UiPage.photos_shown,
     UiSettings.lens_card, UiSettings.chat_reply_timeout_ms,
     # tzinfo methods the datetime module calls on the rules' "local" time zone (desktalk/config/habits.py).
     _ComputerZone.dst, _ComputerZone.fromutc,
@@ -81,3 +84,8 @@ _developer_page = (
     RunStatus.output_end, SmoothingStep.votes_yes, SmoothingStep.votes_total, SmoothingStep.waiting_sec,
     QueryResult.truncated, QueryResult.took_ms, DataFile.modified,
 )
+
+# The event log's own tests and the whole-app tests read the pictures it hasn't compacted yet (no route sends them).
+_ = EventLog.recent_detections
+# A test's result, sent to the developer page as JSON (dataclasses.asdict) and shown by dev_ui/ (the Checks tab).
+_ = TestOutcome.duration_sec

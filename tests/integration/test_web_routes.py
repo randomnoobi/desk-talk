@@ -40,8 +40,7 @@ def test_live_shows_the_agents_the_detections_and_the_pi_command_on_this_compute
     rig.watch(4, LAPTOP)
     live = web_client(rig.app).get('/api/live').json()
     assert [a['id'] for a in live['agents'] if a['on_desk']] == ['computer']
-    assert live['detections']['objects']['computer']['class'] == 'laptop'
-    assert live['camera_info']['frames_received'] == 12
+    assert live['detections']['extras'] == []                # the laptop is in the chat, so not an extra
     assert live['pi_command'] == f'python3 -m raspberry_pi.camera --server http://192.168.1.20:5000 --key {PAIR_KEY}'
     assert 'pi_command' not in web_client(rig.app, from_ip=ON_THE_WIFI).get('/api/live').json()
 
@@ -114,7 +113,7 @@ def test_the_to_do_list_sent_by_the_app_is_kept_for_the_agent(tmp_path):
     client = web_client(rig.app)
     todo = {'type': 'todo', 'items': [{'text': 'Send the report', 'done': False}]}
     assert client.post('/api/chat_todos', json={'chat': 'paper', 'widget': todo}).json() == {'ok': True}
-    assert rig.app.desk_status.open_todos() == ['Send the report']
+    assert [t.text for t in rig.app.desk_status.open_todos()] == ['Send the report']
     bad = client.post('/api/chat_todos_sync', json={'by_chat': ['paper']})
     assert bad.status_code == 400 and 'by_chat' in bad.json()['error']
 
@@ -130,7 +129,7 @@ def test_habit_buttons_log_and_unknown_habits_are_refused(tmp_path):
     assert food['food']['entries'][0]['label'] == 'apple'
     nope = client.post('/api/habits/log', json={'habit': 'nope', 'action': 'x'})
     assert nope.status_code == 400 and 'nope' in nope.json()['error']
-    assert 'vision' in client.get('/api/habits/today').json()
+    assert 'vision' not in client.get('/api/habits/today').json()          # the posture checks are gone
 
 
 def test_preferences_change_and_the_old_names_still_work(tmp_path):
@@ -148,35 +147,21 @@ def test_preferences_change_and_the_old_names_still_work(tmp_path):
 
 def test_a_list_size_that_is_not_a_number_is_a_bad_request(tmp_path):
     client = web_client(DeskRig(tmp_path).app)
-    for path in ('/api/habit_log?limit=lots', '/api/log/events?limit=all', '/api/log/detections?limit=some'):
-        reply = client.get(path)
-        assert reply.status_code == 400 and 'limit' in reply.json()['error'], path
-
-
-def test_list_sizes_are_kept_within_the_settings(tmp_path):
-    rig = DeskRig(tmp_path)
-    rig.watch(4, LAPTOP)
-    client = web_client(rig.app)
-    assert len(client.get('/api/log/detections?limit=100000').json()['detections']) == 12
-    assert len(client.get('/api/log/detections?limit=-5').json()['detections']) == 1
+    reply = client.get('/api/log/events?limit=all')
+    assert reply.status_code == 400 and 'limit' in reply.json()['error']
 
 
 # ── the event log ────────────────────────────────────────────────────
-def test_the_event_log_routes_read_and_compact_the_log(tmp_path):
+def test_the_event_log_routes_read_the_log_and_say_how_it_is(tmp_path):
     rig = DeskRig(tmp_path)
     rig.watch(5, LAPTOP)
     client = web_client(rig.app)
     today = client.get('/api/log/days').json()['today']
     assert client.get('/api/log/days').json()['days'] == [today]
-    assert {i['label'] for i in client.get('/api/log/presence').json()['intervals']} == {'laptop', 'person'}
-    joined = client.get('/api/log/events?types=agent_joined').json()['events']
-    assert [e['agent'] for e in joined] == ['computer']
-    assert client.get('/api/log/detections?limit=1').json()['detections'][0]['type'] == 'detection'
+    assert client.get('/api/log/events?types=agent_joined').json()['events'] == []       # joins aren't shown
     status = client.get('/api/log/status').json()
     assert status['today']['pictures_waiting'] == 15
     assert {'every_sec', 'last_error', 'name', 'next_in_sec', 'runs'} == set(status['scheduler'][0])
-    assert client.post('/api/log/compact').json()['frames'] == 15
-    assert client.get('/api/log/status').json()['today']['pictures_waiting'] == 0
 
 
 def test_a_day_that_is_not_a_date_reads_today_instead(tmp_path):
@@ -185,7 +170,7 @@ def test_a_day_that_is_not_a_date_reads_today_instead(tmp_path):
     client = web_client(rig.app)
     today = client.get('/api/log/days').json()['today']
     for day in ('yesterday', '../a-bc-de', '2026-10-2x'):
-        assert client.get(f'/api/log/presence?day={day}').json()['day'] == today, day
+        assert client.get(f'/api/log/events?day={day}').json()['day'] == today, day
 
 
 # ── settings ─────────────────────────────────────────────────────────
@@ -211,7 +196,7 @@ def test_ui_settings_reply(tmp_path):
     ui = web_client(rig.app).get('/api/ui_settings').json()
     assert ui['web']['refresh_ms'] == {'live': 1500, 'habits': 15000, 'photos': 10000, 'log': 20000}
     assert (ui['web']['request_timeout_ms'], ui['web']['toast_ms'], ui['web']['activity_ping_ms']) == (8000, 4000, 3000)
-    assert (ui['web']['log_shown'], ui['web']['photos_shown'], ui['web']['habit_log_shown']) == (150, 6, 40)
+    assert (ui['web']['log_shown'], ui['web']['photos_shown']) == (150, 6)
     assert ui['web']['palette'][-1] == 'ink'
     assert (ui['web']['chat_kept'], ui['web']['chat_saved'], ui['web']['left_chat_shown_min']) == (200, 60, 60)
     assert ui['web']['settings_sliders'] == {'zone': {'min': 10, 'max': 200}, 'warn': {'min': 20, 'max': 200},
@@ -219,7 +204,6 @@ def test_ui_settings_reply(tmp_path):
     assert ui['web']['new_zone_px'] == 60
     assert ui['chat'] == {'message_max_chars': 1200, 'history_from_app': 10, 'todo_max_items': 20,
                           'todo_max_chars': 200}
-    assert ui['habits']['sunlight_default_min'] == 10
     assert ui['habits']['morning_minutes'] == {'clear': 10, 'partly_cloudy': 20, 'overcast': 30}
     assert ui['habits']['breaks']['sit_limit_min'] == c.protocols.breaks.sit_limit_min
     assert (ui['habits']['morning_window_min'], ui['habits']['evening_dim_before_bed_min'],
@@ -227,7 +211,7 @@ def test_ui_settings_reply(tmp_path):
     assert ui['desk']['edge_proximity']['danger_px'] == 35 and ui['desk']['max_desk_corners'] == 12
     assert ui['desk']['desk_border_share'] == 0.03 and ui['desk']['min_desk_corners'] == 3
     assert ui['quiet_hours'] == {'enabled': False, 'start_hour': 22, 'end_hour': 7}
-    assert ui['pi'] == {'fps': 3, 'delete_every_min': 10, 'compact_every_min': 10}
+    assert ui['pi'] == {'fps': 3, 'delete_every_min': 10}
     assert ui['phone'] == {'fps': 3, 'max_side': 960, 'jpeg_quality': 70, 'tilt_max': 50,
                            'capture_width': 1280, 'capture_height': 720}
     assert ui['lens_card'] == {'id': 'lens', 'name': 'Lens', 'art': 'art/lens.svg', 'color': 'coral',
@@ -293,6 +277,9 @@ REMOVED_ROUTES = (
     ('GET', '/api/context'), ('GET', '/api/daily_stats'), ('GET', '/api/habit_policy'), ('PUT', '/api/habit_policy'),
     ('GET', '/api/detections'), ('GET', '/api/safety'), ('POST', '/api/safety'), ('GET', '/api/scenarios'),
     ('GET', '/api/phone/info'), ('GET', '/api/video_feed'), ('GET', '/api/latest_frame/0'),
+    # Taken out in the 2026-10 desk fixes: the app page no longer shows them.
+    ('GET', '/api/habit_log'), ('GET', '/api/log/presence'), ('GET', '/api/log/detections'),
+    ('POST', '/api/log/compact'),
 )
 
 
@@ -364,4 +351,3 @@ def test_the_agents_lens_the_status_and_the_recent_messages_have_their_values(tm
     assert client.get('/api/agents').json()['lens']['name'] == 'Lens'
     assert client.get('/api/status').json()['agents'] == ['computer']
     assert client.get('/api/messages/recent').json()['messages'][0]['text'] == 'Computer joined the chat'
-    assert client.get('/api/habit_log').json()['summary']['breaks_today'] == 0

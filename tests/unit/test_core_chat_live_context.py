@@ -108,6 +108,17 @@ def test_mentioned_objects_get_their_status(profiles, chat):
     assert paperless['mentioned_objects'][0]['status'] == 'Not detected this session'
 
 
+def test_things_on_the_desk_but_not_in_the_chat_are_seen_even_when_the_newest_picture_missed_them(profiles, chat):
+    scene, safety = empty_desk()
+    scene.note_picture({'laptop': box('laptop')}, NOW, person=False, moved=False, new_session=True)
+    scene.set_members({'computer': box('laptop')}, NOW)
+    scene.set_on_desk({'computer': box('laptop'), 'paper': box('notebook'), 'stapler': box('stapler')}, NOW)
+    ctx = live((scene, safety), profiles, chat, members=('computer',), user_message='@paper?')
+    assert 'ALSO IN THE PICTURE (not chatting): notebook, stapler' in ctx['summary']
+    status = ctx['mentioned_objects'][0]['status']
+    assert status.startswith('On desk') and 'notebook' in status
+
+
 def test_when_you_say_the_camera_is_wrong_the_ai_is_told_to_believe_you(profiles, chat):
     assert 'USER IS PUSHING BACK' in live(busy_desk(), profiles, chat, user_message="that's not a cup")['summary']
     assert 'USER IS PUSHING BACK' not in live(busy_desk(), profiles, chat, user_message='hello')['summary']

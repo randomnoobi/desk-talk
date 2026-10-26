@@ -15,7 +15,7 @@ import pytest
 
 from desktalk.config import load_config
 from desktalk.core.habits import habit_rules as P
-from desktalk.domain import Nudge
+from desktalk.domain import Nudge, Todo
 from desktalk.util import at_time_today
 from tests.fakes import FakeClock
 
@@ -453,10 +453,11 @@ def test_original_food_and_task_reminders(rules, words):
     assert n[0].key == f'food.sitting.{int(now - 25 * MIN)}' and n[0].repeat_after_sec == 6 * HOUR
     assert P.food_nudges(day_state(now, food_since=now - 15 * MIN, food_name='donut'), rules.food, now, words) == []
     assert P.task_nudges(day_state(now, open_todos=()), rules.tasks, now, words) == []
-    n = P.task_nudges(day_state(now, open_todos=('Essay',)), rules.tasks, now, words)
-    assert n[0].text.startswith('You still have 1 open task,') and n[0].repeat_after_sec == 40 * MIN
-    two = P.task_nudges(day_state(now, open_todos=('Essay', '', 'Email')), rules.tasks, now, words)
-    assert two[0].text.startswith('You still have 2 open tasks, like "Essay"')
+    n = P.task_nudges(day_state(now, open_todos=(Todo('Essay'),)), rules.tasks, now, words)
+    assert n[0].text.startswith('How about "Essay"') and n[0].repeat_after_sec == 120 * MIN
+    two = P.task_nudges(day_state(now, open_todos=(Todo('Essay'), Todo(''), Todo('Email'))), rules.tasks, now,
+                        words)
+    assert two[0].text.startswith('How about "Essay"')
 
 
 def test_food_repeat_comes_from_protocols_yaml(rules, words):
@@ -467,16 +468,150 @@ def test_food_repeat_comes_from_protocols_yaml(rules, words):
 
 def test_how_much_of_a_task_name_is_shown_comes_from_protocols_yaml(rules, words):
     now = at('14:00')
-    s = day_state(now, open_todos=('Write the history essay about the river towns',))
+    s = day_state(now, open_todos=(Todo('Write the history essay about the river towns'),))
     n = P.task_nudges(s, changed(rules.tasks, name_shown_chars=9), now, words)
-    assert 'like "Write the"' in n[0].text and '"Write the h' not in n[0].text
+    assert '"Write the"' in n[0].text and '"Write the h' not in n[0].text
 
 
 def test_task_check_in_waits_until_the_camera_has_watched_long_enough(rules, words):
     now = at('14:00')
-    s = day_state(now, open_todos=('Essay',), session_start=now - 30 * MIN)
+    s = day_state(now, open_todos=(Todo('Essay'),), session_start=now - 30 * MIN)
     assert P.task_nudges(s, rules.tasks, now, words) == []
-    assert P.task_nudges(day_state(now, open_todos=('Essay',), at_desk=False), rules.tasks, now, words) == []
+    away = day_state(now, open_todos=(Todo('Essay'),), at_desk=False)
+    assert P.task_nudges(away, rules.tasks, now, words) == []
+
+
+# ── to-dos with due dates, and the check-in without one ────────────
+def task_state(now, *todos, **kw):
+    """Today's state with these open to-dos, the local day filled in as the tracker does (CLOCK.local_day)."""
+    return day_state(now, open_todos=tuple(todos), today=CLOCK.local_day(now), **kw)
+
+
+def run_days(rules, words, days, *todos, every=10 * MIN, start='09:00', end='21:00'):
+    """Ask the to-do rule every `every` while at the desk from `start` to `end`, each day, and send what's ready
+    (as the reminders do). Returns the nudges sent."""
+    sent, last_fire = [], {}
+    for day in range(days):
+        now = at(start, day)
+        while now <= at(end, day):
+            for n in ready(P.task_nudges(task_state(now, *todos), rules.tasks, now, words), last_fire, now):
+                sent.append((CLOCK.local_day(now), n))
+                last_fire[n.key] = now
+                last_fire[f'habit:{n.habit}'] = now
+            now += every
+    return sent
+
+
+def test_due_tomorrow_reminds_once(rules, words):
+    tomorrow = CLOCK.local_day(at('12:00', 1))
+    sent = run_days(rules, words, 1, Todo('essay', due=tomorrow))
+    due = [n for _, n in sent if n.key.startswith('tasks.due.')]
+    assert [n.key for n in due] == ['tasks.due.essay.tomorrow']
+    assert due[0].text == 'Remember, your essay is due tomorrow.'
+    assert due[0].evidence == '"essay" on the user\'s to-do list is due tomorrow.'
+    assert due[0].habit == 'tasks' and due[0].repeat_after_sec == 24 * HOUR
+
+
+def test_due_today_reminds(rules, words):
+    now = at('14:00')
+    n = P.task_nudges(task_state(now, Todo('essay', due=CLOCK.local_day(now))), rules.tasks, now, words)
+    assert [(x.key, x.text, x.repeat_after_sec) for x in n] == [
+        ('tasks.due.essay.today', 'Your essay is due today.', 24 * HOUR)]
+
+
+def test_due_in_a_few_days_says_nothing_yet(rules, words):
+    now = at('14:00')
+    later = CLOCK.local_day(at('12:00', 3))
+    assert P.task_nudges(task_state(now, Todo('essay', due=later)), rules.tasks, now, words) == []
+
+
+def test_late_reminds_daily(rules, words):
+    two_days_ago = CLOCK.local_day(at('12:00', -2))
+    sent = run_days(rules, words, 3, Todo('essay', due=two_days_ago))
+    late = [(day, n) for day, n in sent if n.key.startswith('tasks.due.essay.late.')]
+    assert len(late) == 3 and len({day for day, _ in late}) == 3           # one a day
+    assert [n.text for _, n in late] == ['Your essay was due 2 days ago. Done? Tick it off.',
+                                         'Your essay was due 3 days ago. Done? Tick it off.',
+                                         'Your essay was due 4 days ago. Done? Tick it off.']
+    assert late[0][1].repeat_after_sec == rules.tasks.late_repeat_hours * HOUR
+
+
+def test_late_is_said_every_day_even_when_yesterdays_was_late_in_the_evening(rules, words):
+    """Said at 21:00 one day, and you leave at 20:00 the next: that day still gets its reminder."""
+    essay = Todo('essay', due=CLOCK.local_day(at('12:00', -2)))
+    last_fire: dict[str, float] = {}
+    sent = []
+    for now in (at('21:00'), *(at('09:00', 1) + k * 10 * MIN for k in range(67))):     # 09:00 to 20:00 next day
+        for n in ready(P.task_nudges(task_state(now, essay), rules.tasks, now, words), last_fire, now):
+            sent.append(CLOCK.local_day(now))
+            last_fire[n.key] = now
+    assert sent == [CLOCK.local_day(at('21:00')), CLOCK.local_day(at('09:00', 1))]
+
+
+def test_one_day_late_has_no_plural(rules, words):
+    now = at('14:00')
+    yesterday = CLOCK.local_day(at('12:00', -1))
+    n = P.task_nudges(task_state(now, Todo('essay', due=yesterday)), rules.tasks, now, words)
+    assert n[0].text == 'Your essay was due 1 day ago. Done? Tick it off.'
+
+
+def test_due_soon_days_comes_from_protocols_yaml(rules, words):
+    """With due_soon_days 3 the reminders start three days before: "in 3 days", "in 2 days", then "tomorrow"
+    the day before, each said once that day."""
+    in_three = CLOCK.local_day(at('12:00', 3))
+    three_days = rules.model_copy(update={'tasks': changed(rules.tasks, due_soon_days=3)})
+    sent = run_days(three_days, words, 3, Todo('essay', due=in_three))
+    due = [(day, n) for day, n in sent if n.key.startswith('tasks.due.')]
+    assert [day for day, _ in due] == [CLOCK.local_day(at('12:00', k)) for k in range(3)]       # one a day
+    assert [n.key for _, n in due] == ['tasks.due.essay.soon.3', 'tasks.due.essay.soon.2', 'tasks.due.essay.tomorrow']
+    assert [n.text for _, n in due] == ['Heads up: your essay is due in 3 days.',
+                                        'Heads up: your essay is due in 2 days.',
+                                        'Remember, your essay is due tomorrow.']
+    assert due[0][1].evidence == '"essay" on the user\'s to-do list is due in 3 days.'
+
+
+def test_done_todo_no_reminder(rules, words):
+    now = at('14:00')
+    today = CLOCK.local_day(now)
+    s = task_state(now, Todo('essay', done=True, due=today), Todo('email', done=True))
+    assert P.task_nudges(s, rules.tasks, now, words) == []
+
+
+def test_due_reminders_wait_while_nobody_is_at_the_desk(rules, words):
+    now = at('14:00')
+    s = task_state(now, Todo('essay', due=CLOCK.local_day(now)), at_desk=False)
+    assert P.task_nudges(s, rules.tasks, now, words) == []
+
+
+def test_a_bad_due_date_counts_as_none(rules, words):
+    now = at('14:00')
+    n = P.task_nudges(task_state(now, Todo('essay', due='someday')), rules.tasks, now, words)
+    assert [x.key for x in n] == ['tasks.open']
+
+
+def test_check_in_every_two_hours(rules, words):
+    start = at('09:00')
+    s = task_state(start + 119 * MIN, Todo('essay'), session_start=start)
+    assert P.task_nudges(s, rules.tasks, start + 119 * MIN, words) == []
+    s = task_state(start + 120 * MIN, Todo('essay'), session_start=start)
+    n = P.task_nudges(s, rules.tasks, start + 120 * MIN, words)
+    assert [(x.key, x.repeat_after_sec) for x in n] == [('tasks.open', 120 * MIN)]
+
+
+def test_no_due_rotates_names(rules, words):
+    now = at('14:00')
+    todos = (Todo('a'), Todo('b'), Todo('c'))
+    named = [P.task_nudges(task_state(now, *todos, task_turn=turn), rules.tasks, now, words)[0].text
+             for turn in range(4)]
+    assert [t.split('"')[1] for t in named] == ['a', 'b', 'c', 'a']
+
+
+def test_the_check_in_names_only_to_dos_without_a_due_date(rules, words):
+    now = at('14:00')
+    later = CLOCK.local_day(at('12:00', 5))
+    n = P.task_nudges(task_state(now, Todo('essay', due=later), Todo('email')), rules.tasks, now, words)
+    assert [x.text.split('"')[1] for x in n] == ['email']
+    assert P.task_nudges(task_state(now, Todo('essay', due=later)), rules.tasks, now, words) == []
 
 
 @pytest.mark.parametrize('section, rule, extra', [
@@ -486,7 +621,7 @@ def test_task_check_in_waits_until_the_camera_has_watched_long_enough(rules, wor
     ('light', P.screen_nudges, {'screen_on_desk': True}),
     ('phone_free', P.phone_nudges, {'phone_on_desk_since': at('12:00')}),
     ('food', P.food_nudges, {'food_since': at('12:00'), 'food_name': 'donut'}),
-    ('tasks', P.task_nudges, {'open_todos': ('Essay',)}),
+    ('tasks', P.task_nudges, {'open_todos': (Todo('Essay'),)}),
 ])
 def test_a_switched_off_habit_never_nudges(rules, words, section, rule, extra):
     now = at('13:00') if rule is not P.screen_nudges else at('22:00')
@@ -531,8 +666,8 @@ def test_a_once_a_day_nudge_also_waits_its_repeat_time_after_midnight():
 def test_candidate_nudges_runs_every_rule(rules, words):
     now = at('13:00')
     s = day_state(now, water_ml=0, last_sip_ts=now - 2 * HOUR, sit_since=now - 40 * MIN,
-                  phone_on_desk_since=now - 10 * MIN, open_todos=('x',), food_since=now - HOUR, food_name='donut',
-                  lux=30, dim_since=now - HOUR)
+                  phone_on_desk_since=now - 10 * MIN, open_todos=(Todo('x'),), food_since=now - HOUR,
+                  food_name='donut', lux=30, dim_since=now - HOUR)
     habits = {n.habit for n in P.candidate_nudges(s, rules, now, words)}
     assert habits == {'hydration', 'breaks', 'light', 'phone_free', 'food', 'tasks'}
     late = at('22:00')

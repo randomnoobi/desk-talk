@@ -7,17 +7,19 @@ import dataclasses
 import json
 import logging
 import shutil
+import sys
 import typing
 
 import pytest
 
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource
 from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser
+from desktalk.adapters.notify.mac import MAC_PLATFORM, MacNotifications, NoNotifications
 from desktalk.adapters.storage import JsonFileStore
 from desktalk.bootstrap import DeskTalk, build
 from desktalk.domain import AgentJoined
 from desktalk.ports import SmoothingTraceView
-from tests.fakes import FakeClock, FakeDetector, FakeFrameSource, FakeTestRunner
+from tests.fakes import FakeClock, FakeDesktopNotifications, FakeDetector, FakeFrameSource, FakeTestRunner
 from tests.integration.app_kit import (
     AFTERNOON,
     CUP_FAR,
@@ -27,18 +29,35 @@ from tests.integration.app_kit import (
     DeskRig,
     changed,
     desk_config,
+    event_log_file,
     restore_logging,
 )
 
 
 def build_quietly(config, tmp_path, **kw):
-    """build() with fakes and nothing written outside tmp_path (no log files, a fixed pair key)."""
+    """build() with fakes and nothing written outside tmp_path (no log files, a fixed pair key, no Mac pop-ups)."""
     kw = {'clock': FakeClock(AFTERNOON), 'detector': FakeDetector(), 'data_folder': tmp_path / 'run',
-          'pair_key': PAIR_KEY, 'set_up_logging': False, 'synchronous_events': True, **kw}
+          'pair_key': PAIR_KEY, 'set_up_logging': False, 'synchronous_events': True,
+          'desktop': FakeDesktopNotifications(), **kw}
     return build(config, **kw)
 
 
 # ── the camera ───────────────────────────────────────────────────────
+def test_the_build_helper_never_makes_real_mac_pop_ups(tmp_path):
+    app = build_quietly(desk_config(tmp_path), tmp_path)
+    assert not isinstance(app.desktop, MacNotifications)
+
+
+def test_without_a_desktop_the_settings_pick_the_pop_ups(tmp_path):
+    """build() makes them from settings → notifications (tests/conftest.py keeps a real one from showing)."""
+    config = desk_config(tmp_path)
+    off = build_quietly(changed(config, 'notifications', enabled=False), tmp_path, desktop=None)
+    assert isinstance(off.desktop, NoNotifications)
+    on = build_quietly(config, tmp_path / 'on', desktop=None)
+    assert isinstance(on.desktop, MacNotifications if sys.platform == MAC_PLATFORM else NoNotifications)
+    on.stop()
+
+
 @pytest.mark.parametrize('kind, cls', [('pi', PiFrameSource), ('phone', PhoneFrameSource), ('webcam', WebcamSource)])
 def test_the_camera_is_the_one_the_settings_name(tmp_path, kind, cls):
     app = build_quietly(changed(desk_config(tmp_path), 'camera', source=kind), tmp_path)
@@ -174,7 +193,6 @@ def test_start_runs_every_background_job_after_its_first_wait(tmp_path):
         'lost items': config.lost_items.start_delay_sec,
         'lens': config.lens.check_every_sec,
         'daily recap': config.daily_summary.start_delay_sec,
-        'vision habits': config.vision_habits.start_delay_sec,
     }
 
 
@@ -194,8 +212,8 @@ def test_the_scheduler_compacts_the_log_and_saves_the_habits(tmp_path):
                      'save object states': rig.config.object_states.snapshot_every_sec}
     rig.tick(rig.app.scheduler, after=rig.config.event_log.compact_every_min * 60)
     day = rig.app.event_log.days()[0]
-    assert rig.app.event_log.recent_detections(day, 10) == []
-    assert {i['label'] for i in rig.app.event_log.presence(day, include_live=False)} == {'laptop', 'person'}
+    assert event_log_file(rig.app).recent_detections(day, 10) == []
+    assert {i['label'] for i in event_log_file(rig.app).presence(day, include_live=False)} == {'laptop', 'person'}
     assert rig.app.store.load('habits/2026-10-21')['day'] == '2026-10-21'
 
 
@@ -205,8 +223,8 @@ def test_stop_saves_the_habits_compacts_the_log_and_closes_the_event_stream(tmp_
     assert rig.app.stop(timeout=1) == []
     day = rig.app.event_log.days()[0]
     assert rig.app.store.load('habits/2026-10-21')['objects_seen'] == ['Computer']
-    assert rig.app.event_log.recent_detections(day, 10) == []
-    assert {i['label'] for i in rig.app.event_log.presence(day, include_live=False)} == {'laptop', 'person'}
+    assert event_log_file(rig.app).recent_detections(day, 10) == []
+    assert {i['label'] for i in event_log_file(rig.app).presence(day, include_live=False)} == {'laptop', 'person'}
     joined = len(rig.app.event_log.events(day, {'agent_joined'}, 10))
     rig.app.bus.publish(AgentJoined(ts=rig.clock.now(), agent='cup', name='Cup', label='cup', conf=0.9))
     assert len(rig.app.event_log.events(day, {'agent_joined'}, 10)) == joined      # closed: nothing more is logged

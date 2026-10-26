@@ -104,6 +104,22 @@ def test_lens_says_the_camera_problem_in_the_chat_and_logs_it():
     assert [(n.key, n.kind, n.text, n.ts) for n in notice] == [('lost', 'problem', LOST['text'], rig.clock.now())]
 
 
+def test_lens_problem_flagged_fixed_not():
+    rig = Rig([LOST, {'key': 'dark', 'kind': 'fixed', 'text': 'Much better, thanks for the light!'}])
+    rig.tick()
+    problem, fixed = rig.notifier.sent
+    assert problem['notify'] == 'warning' and 'notify' not in fixed
+
+
+def test_a_pi_problem_is_flagged_as_a_warning():
+    pi = PiReports()
+    rig = Rig(pi=pi)
+    pi.picture(rig.clock.now(), temp=80.0)
+    rig.tick()
+    rig.tick(after=15)
+    assert [m['notify'] for m in rig.notifier.sent] == ['warning']
+
+
 def test_a_thank_you_is_not_a_pop_up():
     rig = Rig([{'key': 'dark', 'kind': 'fixed', 'text': 'Much better, thanks for the light!'}])
     rig.tick()

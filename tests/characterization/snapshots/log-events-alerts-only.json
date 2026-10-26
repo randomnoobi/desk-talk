@@ -1,0 +1,28 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "day": "str",
+    "events": [
+      {
+        "agent": "str",
+        "depth_px": "number",
+        "follow_up": "number",
+        "id": "str",
+        "kind": "str",
+        "near": "str",
+        "rule_label": "str",
+        "scenario": "str",
+        "severity": "str",
+        "snapshot": "str",
+        "subtitle": "str",
+        "text": "str",
+        "ts": "number",
+        "type": "str"
+      }
+    ]
+  },
+  "request": "GET /api/log/events?types=alert&limit=2 (main server, busy desk)"
+}

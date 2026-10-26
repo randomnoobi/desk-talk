@@ -14,7 +14,18 @@ from desktalk.core.desk import Album, DangerBoard, LiveView, Memories, Scene, Wh
 from desktalk.core.habits.desk_status import DeskStatusService
 from desktalk.core.habits.reminders import HabitReminders
 from desktalk.core.habits.tracker import HabitTracker
-from desktalk.domain import LENS, AgentProfile, BBox, Detection, DetectionEvent, Light, Nudge, NudgeSent, ObjectSnapshot
+from desktalk.domain import (
+    LENS,
+    AgentProfile,
+    BBox,
+    Detection,
+    DetectionEvent,
+    Light,
+    Nudge,
+    NudgeSent,
+    ObjectSnapshot,
+    Todo,
+)
 from desktalk.ports import PeriodicWorker
 from tests.fakes import (
     FakeChatVoice,
@@ -26,6 +37,7 @@ from tests.fakes import (
     FakePreferences,
     FakeProfiles,
     FakeRuleNudges,
+    FakeTodoList,
     InMemoryKeyValueStore,
     RecordingNotifier,
     StaticRoster,
@@ -61,7 +73,7 @@ class Rig:
                  status=None, rule_nudges=()):
         self.habits = FakeHabits(nudges=nudges)
         self.rules = FakeRuleNudges(rule_nudges)
-        self.status = status or FakeDeskStatus(todos=['Essay'])
+        self.status = status or FakeDeskStatus(todos=[Todo('Essay')])
         self.roster = StaticRoster(members)
         self.profiles = FakeProfiles([COMPUTER, WATCH, CUP])
         self.voice = FakeChatVoice(voice_text)
@@ -81,12 +93,18 @@ def test_a_nudge_is_said_by_an_agent_for_that_habit(config):
     assert wait == 30                                            # reminders.check_every_sec
     assert r.voice.asked == [('computer', SIT)]
     assert r.notifier.sent == [{'type': 'group_message', 'character': 'computer', 'text': 'Hey, stretch your legs!',
-                                'habit': 'breaks', 'toast': True, 'id': r.notifier.sent[0]['id'],
+                                'habit': 'breaks', 'toast': True, 'notify': 'reminder', 'id': r.notifier.sent[0]['id'],
                                 'ts': r.notifier.sent[0]['ts']}]
     assert r.habits.fired == [(SIT, NOON)]
     sent = r.bus.of_type(NudgeSent)
     assert [(e.ts, e.habit, e.rule, e.agent, e.evidence, e.text) for e in sent] == \
         [(NOON, 'breaks', 'breaks.sit', 'computer', 'At the desk for 34 minutes.', 'Hey, stretch your legs!')]
+
+
+def test_nudge_message_flagged(config):
+    r = Rig(config, members=('cup',))                                # Lens says it: also a reminder
+    r.reminders.tick(NOON)
+    assert r.notifier.sent[0]['notify'] == 'reminder'
 
 
 def test_the_nudge_s_own_words_when_the_agent_has_none(config):
@@ -152,7 +170,7 @@ def test_the_open_to_dos_go_to_the_rules(config):
     r.reminders = HabitReminders(r.habits, r.rules, r.status, r.roster, r.profiles, r.voice, r.notifier, r.bus,
                                  config.reminders)
     r.reminders.tick(NOON)
-    assert r.habits.asked_with == ['Essay']
+    assert r.habits.asked_with == [Todo('Essay')]
 
 
 def test_rule_nudge_is_said_and_noted(config):
@@ -208,13 +226,14 @@ class Desk:
         prefs = FakePreferences({'wake_time': '07:00', 'bed_time': '22:30', 'quiet_enabled': False,
                                  'quiet_start_hour': 22, 'quiet_end_hour': 7})
         self.profiles = ProfileBook(config.agents_file, InMemoryKeyValueStore(), personality_max_chars=400)
-        self.roster = Roster(self.bus, self.profiles, self.desk, config.agents, config.presence)
+        self.roster = Roster(self.bus, self.profiles, self.desk, config.agents, config.presence, prefs,
+                             joins_kept=config.dev.trace_events_kept)
         self.habits = HabitTracker(self.clock, self.bus, InMemoryKeyValueStore(), self.profiles, prefs, self.desk,
                                    config.protocols, config.habit_tracker, config.presence, config.agents,
                                    phone_counts=True, words=config.prompts.habits)
         states = FakeObjectStates([ObjectSnapshot('person', 'PRESENT', start)])     # someone at the desk
         self.status = DeskStatusService(self.desk, self.camera, prefs, config.reminders, states,
-                                        person_label='person', clock=self.clock)
+                                        person_label='person', clock=self.clock, todos=FakeTodoList())
         self.voice = FakeChatVoice('35 minutes of sitting! Walk five minutes, leave your phone.')
         self.notifier = RecordingNotifier(self.clock)
         self.reminders = HabitReminders(self.habits, FakeRuleNudges(), self.status, self.roster, self.profiles,

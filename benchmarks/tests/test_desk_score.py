@@ -70,9 +70,14 @@ def test_name_map_leaves_out_kinds_without_names():
     assert name_map(KINDS, 'coco') == {'cell phone': 'phone'}
 
 
+STEPS = {'agents': {'sensitivity_steps': [{'name': 'Picky', 'min_confidence': 0.65},
+                                          {'name': 'Normal', 'min_confidence': 0.45}], 'sensitivity_default': 1}}
+
+
 def test_app_thresholds_use_agent_override(tmp_path):
+    """The app's own rule: the agent's min_confidence, else the sensitivity step used until the slider is moved."""
     s, a = tmp_path / 'settings.yaml', tmp_path / 'agents.yaml'
-    s.write_text(yaml.safe_dump({'agents': {'min_confidence': 0.45}}))
+    s.write_text(yaml.safe_dump(STEPS))
     a.write_text(yaml.safe_dump({'agents': {'cup': {'labels': ['bottle'], 'min_confidence': 0.55},
                                             'phone': {'labels': ['cell phone']}}}))
     kinds = {'water bottle': {'app_agent': 'cup'}, 'phone': {'app_agent': 'phone'}, 'trash': {}}
@@ -90,7 +95,7 @@ def test_scene_scores_need_enough_pictures():
 
 def test_app_thresholds_with_two_agents_use_the_first_override(tmp_path):
     s, a = tmp_path / 'settings.yaml', tmp_path / 'agents.yaml'
-    s.write_text(yaml.safe_dump({'agents': {'min_confidence': 0.45}}))
+    s.write_text(yaml.safe_dump(STEPS))
     a.write_text(yaml.safe_dump({'agents': {'earbuds': {'labels': ['earbuds']},
                                             'headphones': {'labels': ['headphones'], 'min_confidence': 0.6}}}))
     assert app_thresholds(s, a, {'AirPods': {'app_agent': ['earbuds', 'headphones']}}) == {'AirPods': 0.6}

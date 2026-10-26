@@ -5,7 +5,7 @@ The live view and the proof photos:
     GET /api/video_feed_raw[/<camera>]    headers, until there's a first picture. _raw: the plain picture
     GET /api/latest_frame_raw/<camera>    the newest plain picture, once (404 before the first)
     GET /api/snapshot/<id>                one proof photo (404 if it's gone)
-    GET /api/snapshots                    the proof photos kept, newest first
+    GET /api/snapshots                    the proof photos kept, newest first; ?limit=N for just the newest N
 """
 
 from __future__ import annotations
@@ -17,7 +17,8 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse
 
 from desktalk.bootstrap import DeskTalk
-from desktalk.web.deps import App, Streams, camera_index
+from desktalk.config import ListSize
+from desktalk.web.deps import App, Streams, camera_index, list_size
 from desktalk.web.streams import MJPEG_TYPE, NO_CACHE, VIDEO_HEADERS, LiveStreams
 
 JPEG = 'image/jpeg'
@@ -82,6 +83,7 @@ def snapshot(photo_id: str, app: App) -> Response:
 
 
 @router.get('/api/snapshots')
-def snapshots(app: App) -> dict[str, Any]:
+def snapshots(app: App, limit: str | None = None) -> dict[str, Any]:
     every_photo = app.config.snapshots.max_kept       # the album never keeps more
-    return {'items': [photo.to_dict() for photo in app.photo_album.newest(every_photo)]}
+    size = list_size(limit, ListSize(default=every_photo, max=every_photo))
+    return {'items': [photo.to_dict() for photo in app.photo_album.newest(size)]}

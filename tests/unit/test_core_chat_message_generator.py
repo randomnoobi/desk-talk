@@ -8,7 +8,17 @@ import pytest
 
 from desktalk.config import load_config
 from desktalk.core.chat.message_generator import ChatDesk, MessageGenerator
-from desktalk.domain import AgentJoined, AgentLeft, AgentProfile, Alert, HabitEvent, Nudge, SeenObject, UnknownChat
+from desktalk.domain import (
+    AgentJoined,
+    AgentLeft,
+    AgentProfile,
+    Alert,
+    HabitEvent,
+    Nudge,
+    SeenObject,
+    Todo,
+    UnknownChat,
+)
 from desktalk.ports import ChatVoice
 from tests.fakes import (
     FakeCharacterMemory,
@@ -19,6 +29,7 @@ from tests.fakes import (
     FakeHabits,
     FakeProfiles,
     FakeSafetyBoard,
+    FakeTodoList,
     RecordingNotifier,
     StaticRoster,
     SyncEventBus,
@@ -79,7 +90,8 @@ class Rig:
     """A MessageGenerator built from fakes. `reply` / `fail` script the AI."""
 
     def __init__(self, reply='Hey! All good over here on the desk.', fail='', members=('computer', 'cup'),
-                 profiles=None, local_model=False, llm=None, chat=None, agents=None, camera_on=True, prompts=None):
+                 profiles=None, local_model=False, llm=None, chat=None, agents=None, camera_on=True, prompts=None,
+                 todos=None):
         self.clock = FakeClock()
         self.ai = FakeChatModel(reply=reply, fail=fail)
         self.notifier = RecordingNotifier(self.clock)
@@ -89,9 +101,11 @@ class Rig:
         self.desk = FakeChatDesk()
         self.status = FakeDeskStatus(connected=camera_on)
         self.habit_log = HabitLog()
+        self.todos = todos if todos is not None else FakeTodoList()
         self.gen = MessageGenerator(
             self.ai, self.notifier, self.roster, self.profiles, self.habits, self.desk, self.clock,
-            status=self.status, habit_log=self.habit_log, llm=llm or CONFIG.llm, chat=chat or CONFIG.chat,
+            status=self.status, habit_log=self.habit_log, todos=self.todos, llm=llm or CONFIG.llm,
+            chat=chat or CONFIG.chat,
             agents=agents or CONFIG.agents, sunlight_default_min=10, reply_max_chars=500,
             prompts=prompts or CONFIG.prompts, drink_labels=CONFIG.safety.liquids,
             preview_chars=CONFIG.logging.preview_chars, local_model=local_model, rng=random.Random(4))
@@ -236,6 +250,26 @@ def test_a_habit_updates_the_app_and_its_agent_says_it():
     assert (line['character'], line['text'], line['habit']) == ('cup', "Sip detected! That's 3 today.", 'hydration')
 
 
+def test_camera_sip_message_flagged():
+    r = Rig()
+    r.gen.on_habit(HabitEvent(ts=1.0, habit='hydration', action='sip', say='Sip detected!', extra={'how': 'camera'}))
+    assert r.sent(type='group_message')[0]['notify'] == 'sip'
+
+
+@pytest.mark.parametrize('how', ['button', 'chat'])
+def test_button_sip_not_flagged(how):
+    r = Rig()
+    r.gen.on_habit(HabitEvent(ts=1.0, habit='hydration', action='sip', say='Logged.', extra={'how': how}))
+    assert 'notify' not in r.sent(type='group_message')[0]
+
+
+def test_other_habits_are_not_flagged_as_sips():
+    r = Rig()
+    r.gen.on_habit(HabitEvent(ts=1.0, habit='breaks', action='break', say='Nice break.', extra={'how': 'camera'}))
+    r.gen.on_habit(HabitEvent(ts=1.0, habit='hydration', action='glass', say='A glass.', extra={'how': 'camera'}))
+    assert all('notify' not in m for m in r.sent(type='group_message'))
+
+
 def test_lens_speaks_for_a_habit_nobody_in_the_chat_has():
     r = Rig(members=('computer',))
     r.gen.on_habit(HabitEvent(ts=1.0, habit='hydration', action='sip', say='Sip detected!'))
@@ -259,6 +293,25 @@ def test_an_alert_with_its_own_text_is_sent_as_written():
     assert (msg['type'], msg['character'], msg['text'], msg['alert'], msg['snapshot']) == \
         ('group_message', 'cup', 'Cat detected near the desk!', 'pet_risk', 'snap1')
     assert r.ai.calls == []
+
+
+def test_alert_message_flagged():
+    r = Rig(reply='That cup is a little close to my keyboard, could you scoot it back?')
+    r.gen.on_alert(Alert(ts=1.0, kind='scenario', agent='cup', text='Cat detected near the desk!', feature='pet_risk'))
+    r.gen.on_alert(proximity())
+    assert [m['notify'] for m in r.notifier.sent] == ['warning', 'warning']
+
+
+def test_a_reminder_alert_pops_up_as_a_reminder_not_a_warning():
+    """The clutter nudge and the plant reminder follow the reminders switch; dangers follow the warnings one."""
+    r = Rig()
+    r.gen.on_alert(Alert(ts=1.0, kind='scenario', scenario='reminders', feature='organization', agent='cup',
+                         text='Lots of things on the desk.'))
+    r.gen.on_alert(Alert(ts=2.0, kind='scenario', scenario='reminders', feature='water_plants', agent='cup',
+                         text='Your plant may need water.'))
+    r.gen.on_alert(Alert(ts=3.0, kind='scenario', scenario='risk_detection', feature='pet_risk', agent='cup',
+                         text='Cat near the desk!'))
+    assert [m['notify'] for m in r.notifier.sent] == ['reminder', 'reminder', 'warning']
 
 
 def test_an_alert_from_nobody_known_comes_from_lens():
@@ -326,6 +379,50 @@ def test_a_cut_off_dramatic_or_wrong_speaker_ai_line_falls_back(reply):
     assert r.notifier.sent[0]['text'] == 'Cup is too close to my keyboard!'
 
 
+def lens_alert(**extra):
+    return Alert(ts=1.0, kind='proximity', agent='lens', extra={'follow_up': 0, 'snapshot': 'snap9', **extra})
+
+
+def test_lens_warns_about_something_in_a_zone_without_the_ai():
+    """Scissors by a phone, neither in the chat: Lens says it, in the detector's words, and it pops up."""
+    r = Rig(members=())
+    r.desk.set_on_desk({'phone': seen('cell phone', 200, 200, 300, 260),
+                        'scissors': seen('scissors', 310, 220, 330, 250)}, r.clock.now())
+    r.gen.on_alert(lens_alert(near='phone', intruder='scissors', rule_label='Screen scratch zone'))
+    [msg] = r.notifier.sent
+    assert (msg['character'], msg['alert'], msg['snapshot'], msg['notify']) == ('lens', 'proximity', 'snap9', 'warning')
+    assert msg['text'] == CONFIG.prompts.alert.lens_zone.format(intruder='scissors', target='cell phone',
+                                                                 zone='Screen scratch zone')
+    assert r.ai.calls == []
+
+
+def test_lens_warns_about_something_at_the_desk_edge():
+    r = Rig(members=())
+    r.desk.set_on_desk({'cup': seen('cup', 400, 480, 470, 570)}, r.clock.now())
+    r.gen.on_alert(lens_alert(object='cup', rule_label='Near front edge (6px)'))
+    assert r.notifier.sent[0]['text'] == CONFIG.prompts.alert.lens_edge.format(object='cup')
+
+
+def test_lens_warns_even_when_it_does_not_know_what_it_is_about():
+    r = Rig(members=())
+    r.gen.on_alert(lens_alert(near='phone', intruder='scissors', rule_label='Screen scratch zone'))
+    r.gen.on_alert(lens_alert())
+    texts = [m['text'] for m in r.notifier.sent]
+    unknown = CONFIG.prompts.alert.unknown_other
+    assert texts == [CONFIG.prompts.alert.lens_zone.format(intruder=unknown, target=unknown,
+                                                           zone='Screen scratch zone'),
+                     CONFIG.prompts.alert.too_close]
+
+
+def test_the_ai_is_told_the_detector_word_of_a_thing_on_the_desk_but_not_in_the_chat():
+    r = Rig(reply='That cup is a little close to my keyboard, could you scoot it back?', members=('computer',))
+    r.desk.set_members({'computer': seen('laptop', 200, 200, 400, 350)}, r.clock.now())
+    r.desk.set_on_desk({'computer': seen('laptop', 200, 200, 400, 350), 'cup': seen('mug', 410, 250, 450, 320)},
+                       r.clock.now())
+    r.gen.on_alert(proximity())
+    assert '"laptop" (you, Computer) and "mug" (other: Cup)' in r.ai.calls[0]['messages'][1]['content']
+
+
 def test_a_proximity_alert_for_an_unknown_agent_is_dropped():
     r = Rig()
     r.gen.on_alert(proximity(agent='ghost'))
@@ -341,14 +438,13 @@ def nudge():
 
 def test_the_ai_phrases_a_nudge_in_character():
     r = Rig(reply='Hey, 35 minutes of sitting! Walk five minutes, leave your phone.')
-    r.desk.set_vision_brief('posture=slouch')
     assert r.gen.phrase_nudge('computer', nudge()) == 'Hey, 35 minutes of sitting! Walk five minutes, leave your phone.'
     call = r.ai.calls[0]
     assert call['background'] and call['max_tokens'] == CONFIG.llm.replies.nudge.max_tokens
     assert call['temperature'] == 0.6                                # the agent's own
     system = call['messages'][0]['content']
     assert 'Protocols' in system and 'sitting for 35 minutes' in system and 'Walk 5 minutes every 30' in system
-    assert "USER'S BREAKS" in system and 'vision note: posture=slouch' in system
+    assert "USER'S BREAKS" in system and 'posture' not in system
     assert '[User said "habit reminder"] → [You replied] Hey, 35 minutes' in r.desk.recent('computer')[0]
 
 
@@ -494,11 +590,41 @@ def test_a_todo_action_goes_back_to_the_app():
         'actions': [{'action': 'add_todo', 'text': 'Essay'}], 'habits_changed': False}
 
 
+def test_the_ai_knows_todays_date_for_due_dates():
+    r = Rig(reply='Got it, Friday it is! [ADD_TODO:Essay|2025-10-10]', profiles=[computer(), cup(), paper()])
+    r.gen.answer('paper', 'add my essay, due tomorrow')
+    assert 'Thursday 2025-10-09' in r.ai.calls[0]['messages'][0]['content']      # the FakeClock's day
+
+
 def test_the_todo_list_sent_with_a_message_is_kept_and_used():
     r = Rig(profiles=[computer(), cup(), paper()])
     r.gen.answer('paper', 'what is left?', widget={'type': 'todo', 'items': [{'text': 'Essay'}]})
     assert r.desk.widget('paper') == {'type': 'todo', 'items': [{'text': 'Essay', 'done': False}]}
     assert '- [ ] Essay' in asked(r)[0]['content']
+
+
+def restarted_with_an_essay_due():
+    """The server's to-do list after a restart: the page loaded it and, by design, never sent it back, so the
+    agent's panel in memory is empty."""
+    return Rig(reply='Your essay is due today!', profiles=[computer(), cup(), paper()],
+               todos=FakeTodoList(items=[Todo('Essay', due='2025-10-09'), Todo('Email Sam', done=True)]))
+
+
+def test_a_habit_reminder_is_told_the_servers_todo_list():
+    r = restarted_with_an_essay_due()
+    assert r.desk.widget('paper') is None
+    r.gen.phrase_nudge('paper', Nudge(habit='tasks', key='due_today', evidence='Essay is due today',
+                                      text='Your essay is due today.', repeat_after_sec=86400, tip=''))
+    system = r.ai.calls[0]['messages'][0]['content']
+    assert '- [ ] Essay (due 2025-10-09)' in system and '- [x] Email Sam' in system
+
+
+def test_an_answer_is_told_the_servers_todo_list_over_an_old_panel():
+    r = restarted_with_an_essay_due()
+    r.gen.save_widget('paper', {'type': 'todo', 'items': [{'text': 'Old list'}]})
+    r.gen.answer('paper', 'what is left?')
+    system = asked(r)[0]['content']
+    assert '- [ ] Essay (due 2025-10-09)' in system and 'Old list' not in system
 
 
 def test_a_one_on_one_with_the_ai_down_says_why():
@@ -620,13 +746,10 @@ def test_the_alert_grounding_and_fallbacks_come_from_prompts_yaml():
 
 
 def test_the_nudge_question_and_memory_lines_come_from_prompts_yaml():
-    words = with_words(habit_reminder={'ask': 'Nudge now.', 'vision_note': ' (eyes: {note})'},
-                       memory={'you_replied': '{user} -> {said}'})
+    words = with_words(habit_reminder={'ask': 'Nudge now.'}, memory={'you_replied': '{user} -> {said}'})
     r = Rig(prompts=words, reply='Hey, 35 minutes of sitting! Walk five minutes, leave your phone.')
-    r.desk.set_vision_brief('posture=slouch')
     r.gen.phrase_nudge('computer', nudge())
     assert r.ai.calls[0]['messages'][1]['content'] == 'Nudge now.'
-    assert '(eyes: posture=slouch)' in r.ai.calls[0]['messages'][0]['content']
     assert r.desk.recent('computer') == ['habit reminder -> Hey, 35 minutes of sitting! Walk five minutes, leave '
                                          'your phone.']
 

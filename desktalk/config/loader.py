@@ -6,6 +6,7 @@ pydantic's errors into one plain sentence each, naming the file and the setting.
 from __future__ import annotations
 
 import difflib
+import logging
 import os
 import types
 import typing
@@ -37,6 +38,17 @@ ENV_OVERRIDES = {
 # Old .env settings that moved to config/settings.yaml (startup shows a hint if they're set).
 MOVED_ENV = ('CAMERA_SOURCE', 'CAMERA_INDICES', 'PIPELINE_CAMERA', 'EVENT_COOLDOWN', 'APPEAR_FRAMES',
              'DISAPPEAR_FRAMES', 'REMINDER_WARMUP_MIN', 'HABIT_MIN_GAP_SEC', 'IDLE_CHAT_MIN_SEC')
+# Settings that are gone. Your own settings.local.yaml may still have them, so they're left out (with a note in the
+# log) instead of stopping startup. agents.join_after_sec and agents.min_confidence became agents.sensitivity_steps;
+# vision_habits went with the posture checks; web.list_sizes.habit_log / log_detections went with the Event log's
+# detections list and the vision habit timeline; dev.trace_photo_quality was never used (the trace pictures are
+# the camera's own JPEG).
+RETIRED_SETTINGS: tuple[tuple[str, ...], ...] = (('agents', 'join_after_sec'), ('agents', 'min_confidence'),
+                                                 ('vision_habits',), ('web', 'list_sizes', 'habit_log'),
+                                                 ('web', 'list_sizes', 'log_detections'),
+                                                 ('dev', 'trace_photo_quality'))
+
+log = logging.getLogger(__name__)
 
 
 Loc = tuple[str | int, ...]          # where a setting is, e.g. ('camera', 'fps')
@@ -246,6 +258,18 @@ def _problem(err: Mapping[str, Any], sources: _Sources) -> str:
     return f'{file}: {_dotted(shown)} must be {_describe(*_field_at(loc))} (got {_got(err["input"])})'
 
 
+def _drop_retired(data: dict) -> None:
+    """Leave out the settings in RETIRED_SETTINGS, saying so in the log."""
+    for path in RETIRED_SETTINGS:
+        section = data
+        for key in path[:-1]:
+            section = section.get(key) if isinstance(section, dict) else None
+        if isinstance(section, dict) and path[-1] in section:
+            del section[path[-1]]
+            log.warning('Settings: %s is no longer used, so it was left out (remove it from your settings.local.yaml)',
+                        '.'.join(path))
+
+
 def load_config(root: Path | None = None, environ: Mapping[str, str] | None = None,
                 dotenv: Path | None = None) -> AppConfig:
     """Build the config from <root>/config/ and <root>/.env. Tests pass a temp folder and environ={}.
@@ -267,6 +291,7 @@ def load_config(root: Path | None = None, environ: Mapping[str, str] | None = No
     data = read('settings.yaml')
     if (config_dir / 'settings.local.yaml').is_file():
         _merge(data, read('settings.local.yaml'))
+    _drop_retired(data)
     problems = [_unknown(sources.last((key,)), (key,), (key,)) for key in data if key in _NOT_FROM_SETTINGS]
     data['protocols'] = read('protocols.yaml', ('protocols',))
     data['agents_file'] = read('agents.yaml', ('agents_file',))

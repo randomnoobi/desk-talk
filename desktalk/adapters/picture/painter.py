@@ -1,7 +1,8 @@
 """
 The live view with boxes ("Boxes" in the app), drawn with OpenCV: every detection box, green for the agents in
 the chat and grey for the rest, plus the desk overlays from the desk analyzer's latest result (desk edges,
-danger zones, chains, crowds, things moving, the risk badge).
+danger zones, chains, crowds, things moving, the risk badge). The overlays are drawn for everything on the desk
+(DeskScene.on_desk), in the chat or not, because that is what the warnings look at.
 
 Every colour, line width, text size, see-through amount, trail, dash, arrow tip and circle size comes from
 settings → drawing. Colours are [blue, green, red] (OpenCV's order). Only where each piece of writing sits next
@@ -63,13 +64,13 @@ class DeskPainter:
 
     def paint(self, picture: Any, detections: Sequence[Detection]) -> Any:
         out = picture.copy()
-        members = self._desk.members()
-        agent_labels = {o.label for o in members.values()}
+        agent_labels = {o.label for o in self._desk.members().values()}
         self._pen.boxes(out, detections, highlight=agent_labels or None)
-        if not members:
+        on_desk = self._desk.on_desk()        # what the warnings look at, in the chat or not
+        if not on_desk:
             return out
-        names = {agent: p.name for agent in members if (p := self._profiles.get(agent))}
-        things = {agent: Thing.from_seen(agent, o) for agent, o in members.items()}
+        names = {agent: p.name for agent in on_desk if (p := self._profiles.get(agent))}
+        things = {agent: Thing.from_seen(agent, o) for agent, o in on_desk.items()}
         try:
             self._pen.overlays(out, things, names, self._analyzer.latest, self._analyzer.rules,
                                self._analyzer.history())

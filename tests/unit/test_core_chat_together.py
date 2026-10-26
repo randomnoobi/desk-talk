@@ -13,7 +13,7 @@ from desktalk.core.chat.message_generator import MessageGenerator
 from desktalk.core.chat.message_hub import MessageHub
 from desktalk.domain import AgentJoined, AgentProfile, AIUnavailable
 from tests.conftest import FakeAI
-from tests.fakes import FakeClock, FakeDeskStatus, FakeHabits, FakeProfiles, StaticRoster, SyncEventBus
+from tests.fakes import FakeClock, FakeDeskStatus, FakeHabits, FakeProfiles, FakeTodoList, StaticRoster, SyncEventBus
 from tests.unit.test_core_chat_message_generator import FakeChatDesk
 
 CONFIG = load_config(environ={}, dotenv=Path('/nonexistent'))
@@ -46,7 +46,8 @@ def build(reply):
     hub = MessageHub(clock, recent_kept=CONFIG.chat.recent_kept, queue_size=CONFIG.web.live_queue_size)
     habit_log = HabitLog()
     gen = MessageGenerator(model, hub, StaticRoster(['cup']), FakeProfiles([CUP]), FakeHabits(TODAY), FakeChatDesk(),
-                           clock, status=FakeDeskStatus(), habit_log=habit_log, llm=llm, chat=CONFIG.chat,
+                           clock, status=FakeDeskStatus(), habit_log=habit_log, todos=FakeTodoList(), llm=llm,
+                           chat=CONFIG.chat,
                            agents=CONFIG.agents, sunlight_default_min=CONFIG.habit_tracker.sunlight_default_min,
                            reply_max_chars=500, prompts=CONFIG.prompts, drink_labels=CONFIG.safety.liquids,
                            preview_chars=CONFIG.logging.preview_chars, local_model=ai.is_local, rng=random.Random(0))
