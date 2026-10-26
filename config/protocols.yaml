@@ -40,8 +40,11 @@ hydration:
   sip_cover_share: 0.6        # when this share or more of what was on the desk vanishes in the same picture, the
                               # camera was covered: nothing in that gap is a sip
   sip_cover_pictures: 2       # ...but only when it looks like that in this many pictures in a row (the detector
-                              # sometimes misses everything in one picture). No pictures at all for longer than
-                              # settings → presence.disappear_after_sec while the drink is up counts as covered too.
+                              # sometimes misses everything in one picture)
+  sip_stall_sec: 10           # no picture at all for longer than this while the drink is up = the camera stalled,
+                              # and that trip isn't a sip. The Pi's detector can take a few seconds for one picture
+                              # when it's busy, so this is several pictures' worth, and still far below
+                              # sip_gone_max_sec.
   remind_after_min: 45        # no sip for this long...
   behind_by_ml: 300           # ...and this far behind pace → nudge
   stop_before_bed_hours: 2    # "best to avoid a lot of water in the hours before bedtime"

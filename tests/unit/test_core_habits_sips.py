@@ -158,15 +158,32 @@ def test_how_many_pictures_in_a_row_make_a_covered_camera_comes_from_protocols_y
     assert d.sips() == 0
 
 
-def test_no_pictures_for_a_while_during_a_lift_is_not_a_sip(config):
-    """The camera stalled while the cup was up: nobody knows what happened, so it doesn't count."""
-    d = Desk(config)
+def sip_with_a_gap(d: Desk, gap_sec: float) -> int:
+    """The cup is lifted, and while it's up the next picture comes `gap_sec` after the one before (a slow or
+    stuck camera). Returns the sips counted."""
     d.show(10, cup=CUP_DOWN, laptop=LAPTOP)
     d.move(1, CUP_DOWN, CUP_UP, laptop=LAPTOP)
     d.show(1, laptop=LAPTOP)
-    d.clock.advance(config.presence.disappear_after_sec + 1)   # no pictures at all
+    d.clock.advance(gap_sec - 1 / PER_SEC)      # show() already moved the clock on by one picture
     d.show(3, cup=CUP_DOWN, laptop=LAPTOP)
-    assert d.sips() == 0
+    return d.sips()
+
+
+def test_no_pictures_for_a_while_during_a_lift_is_not_a_sip(config):
+    """The camera stalled while the cup was up: nobody knows what happened, so it doesn't count."""
+    assert sip_with_a_gap(Desk(config), config.protocols.hydration.sip_stall_sec + 0.5) == 0
+
+
+def test_a_slow_detector_still_counts_the_sip(config):
+    """The Pi's detector can take a few seconds a picture: a gap up to hydration.sip_stall_sec isn't a stall."""
+    stall = config.protocols.hydration.sip_stall_sec
+    assert stall > config.presence.disappear_after_sec          # its own number, not the presence one
+    assert sip_with_a_gap(Desk(config), stall) == 1
+    assert sip_with_a_gap(Desk(config), 5) == 1
+
+
+def test_the_stall_limit_comes_from_protocols_yaml(config):
+    assert sip_with_a_gap(Desk(config, sip_stall_sec=4), 5) == 0
 
 
 def test_lifted_never_back_is_no_sip(config):

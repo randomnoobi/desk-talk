@@ -55,7 +55,7 @@ class HabitReader:
         self._user_last_seen: float | None = None
         self._away_since: float | None = None
         self.sit_since: float | None = None
-        self._sip_watch = SipWatch(protocols.hydration, stall_after_sec=presence.disappear_after_sec)
+        self._sip_watch = SipWatch(protocols.hydration)
         self.food_since: float | None = None
         self.food_name = ''
         self.meal_done_ts: float | None = None
@@ -229,15 +229,14 @@ class SipWatch:
     A drink that vanishes without being seen lifted (a hand over it) never counts. If the camera looks covered
     while a drink is missing (nothing in the picture, or `sip_cover_share` or more of the other things that were
     there in the last picture that showed it are missing too) in `sip_cover_pictures` pictures in a row, that
-    trip can't be a sip. Nor can it when no picture came for longer than `stall_after_sec` while the drink was
-    up.
+    trip can't be a sip. Nor can it when no picture came for longer than `sip_stall_sec` while the drink was up.
 
     The resting spot only moves down (the camera's few pixels of wobble settle on the lowest), or to wherever the
     drink was slid when it is seen far from it without being lifted, so a slow lift can't drag it along."""
 
-    def __init__(self, rule: HydrationRule, *, stall_after_sec: float):
+    def __init__(self, rule: HydrationRule):
         self._rule = rule
-        self._stall_after = stall_after_sec
+        self._stall_after = rule.sip_stall_sec
         self._drinks: dict[str, _Drink] = {}
         self._last_picture: float | None = None
 

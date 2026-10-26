@@ -82,7 +82,7 @@ kind of object, with why (`ChatJoins`, for the developer page).
 **Sips.** A sip counts when a drink is lifted (its box rises more than `hydration.sip_lift_share` of the
 picture) and then put back where it rested, between `sip_gone_min_sec` and `sip_gone_max_sec` later. A hand
 over the cup, a cup taken away, or a covered camera (`sip_cover_share` of the desk vanishing for
-`sip_cover_pictures` pictures in a row, or no pictures for longer than `presence.disappear_after_sec` while it
+`sip_cover_pictures` pictures in a row, or no pictures for longer than `sip_stall_sec` while it
 was up) is no sip (`SipWatch` in `core/habits/habit_reader.py`).
 
 **To-dos.** `TodoFile` (`core/habits/todos.py`, saved as `data/todos.json`) keeps the to-do list the app and the
