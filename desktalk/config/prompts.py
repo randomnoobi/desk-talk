@@ -122,6 +122,8 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'habits.food_sitting.text': ('food', 'minutes'),
     'habits.tasks_open.evidence': ('task',),
     'habits.tasks_open.text': ('task',),
+    'habits.tasks_due.soon.evidence': ('task', 'days'),
+    'habits.tasks_due.soon.text': ('task', 'days'),
     'habits.tasks_due.tomorrow.evidence': ('task',),
     'habits.tasks_due.tomorrow.text': ('task',),
     'habits.tasks_due.today.evidence': ('task',),
@@ -391,8 +393,10 @@ class HabitLogged(_Section):
 
 
 class TasksDue(_Section):
-    """A to-do with a due date: the day before, on the day, and while it's late."""
+    """A to-do with a due date: a few days before (protocols → tasks.due_soon_days), the day before, on the day,
+    and while it's late."""
 
+    soon: NudgeWords
     tomorrow: NudgeWords
     today: NudgeWords
     late: NudgeWords

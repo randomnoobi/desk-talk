@@ -428,6 +428,10 @@ habits:
   # a to-do with a due date: the day before, on the day, and once a day while it's late. {days} is how many days
   # late, {plural} is "s" when that's more than one
   tasks_due:
+    soon:                     # each day from tasks.due_soon_days before (protocols.yaml), while 2+ days are left
+      evidence: '"{task}" on the user''s to-do list is due in {days} days.'
+      text: 'Heads up: your {task} is due in {days} days.'
+      tip: Split it into small steps and do the first one today.
     tomorrow:
       evidence: '"{task}" on the user''s to-do list is due tomorrow.'
       text: Remember, your {task} is due tomorrow.

@@ -556,10 +556,18 @@ def test_one_day_late_has_no_plural(rules, words):
 
 
 def test_due_soon_days_comes_from_protocols_yaml(rules, words):
-    now = at('14:00')
-    in_two = CLOCK.local_day(at('12:00', 2))
-    n = P.task_nudges(task_state(now, Todo('essay', due=in_two)), changed(rules.tasks, due_soon_days=2), now, words)
-    assert [x.key for x in n] == ['tasks.due.essay.tomorrow']
+    """With due_soon_days 3 the reminders start three days before: "in 3 days", "in 2 days", then "tomorrow"
+    the day before, each said once that day."""
+    in_three = CLOCK.local_day(at('12:00', 3))
+    three_days = rules.model_copy(update={'tasks': changed(rules.tasks, due_soon_days=3)})
+    sent = run_days(three_days, words, 3, Todo('essay', due=in_three))
+    due = [(day, n) for day, n in sent if n.key.startswith('tasks.due.')]
+    assert [day for day, _ in due] == [CLOCK.local_day(at('12:00', k)) for k in range(3)]       # one a day
+    assert [n.key for _, n in due] == ['tasks.due.essay.soon.3', 'tasks.due.essay.soon.2', 'tasks.due.essay.tomorrow']
+    assert [n.text for _, n in due] == ['Heads up: your essay is due in 3 days.',
+                                        'Heads up: your essay is due in 2 days.',
+                                        'Remember, your essay is due tomorrow.']
+    assert due[0][1].evidence == '"essay" on the user\'s to-do list is due in 3 days.'
 
 
 def test_done_todo_no_reminder(rules, words):

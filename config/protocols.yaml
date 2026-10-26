@@ -116,7 +116,8 @@ tasks:
   enabled: true
   remind_after_min: 120       # open to-dos with no due date → a check-in this often, naming a different one each time
   name_shown_chars: 60        # the check-in names one of your to-dos, cut to this many letters
-  due_soon_days: 1            # a to-do due this many days from now gets "due tomorrow" (said once that day)
+  due_soon_days: 1            # a to-do gets a reminder each day from this many days before it is due: "due in N days",
+                              # then "due tomorrow" the day before (each said once that day; 1 = only the day before)
   late_repeat_hours: 24       # a to-do past its due date gets a reminder each day until you tick it off (and again
                               # after this many hours on the same day)
 

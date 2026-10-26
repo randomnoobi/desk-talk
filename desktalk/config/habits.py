@@ -123,7 +123,7 @@ class TasksRule(_Section):
     enabled: bool
     remind_after_min: ZeroOrMore
     name_shown_chars: PositiveInt
-    due_soon_days: Count              # "due tomorrow" this many days before the due date
+    due_soon_days: Count              # reminders start this many days before the due date ("due tomorrow" at 1)
     late_repeat_hours: PositiveNumber
 
 
