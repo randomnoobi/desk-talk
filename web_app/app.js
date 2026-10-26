@@ -202,7 +202,13 @@ function loadHistory() {
 // one too, sent to the server only while the server has none yet. —————
 const TODO_KEY = 'desktalk_todo_v1';
 let todo = null;
-let todoOnServer = null;      // true: the server has the list; false: not yet (send ours once); null: can't tell
+// Where the list stands with the server:
+//   'server'  it keeps one, and its copy wins (ours is never sent over it)
+//   'none'    it has none yet: ours is sent once
+//   'old'     an older server with no GET /api/todos (it said 404): ours is sent, as before
+//   'unknown' the last ask failed (no answer, or a server error): nothing is sent, and the page asks again later
+let todoOnServer = 'unknown';
+const SEND_OURS = ['none', 'old'];
 const cleanTodo = (i) => ({ text: String(i?.text ?? ''), done: !!i?.done, due: typeof i?.due === 'string' && i.due ? i.due : null });
 function loadTodoCopy() {
   const saved = storage.load(TODO_KEY, null);
@@ -214,28 +220,38 @@ const todoAgents = () => agentIds().filter((id) => state.agents[id].tracker === 
 function todoChanged(id) {
   storage.save(TODO_KEY, todo);
   if (state.view === 'chat' && state.chat === id) renderTracker();
-  if (state.live) api('/api/chat_todos', { method: 'POST', body: { chat: id, widget: todo } }).then(() => { todoOnServer = true; }, () => {});
+  if (state.live) {
+    api('/api/chat_todos', { method: 'POST', body: { chat: id, widget: todo } })
+      .then(() => { if (todoOnServer === 'none') todoOnServer = 'server'; }, () => {});
+  }
 }
-/** Send this browser's list, unless the server already keeps one (then its copy wins). */
+/** Send this browser's list, only when the server has none (or is too old to keep one): its copy wins. */
 function syncTodos() {
-  if (!state.live || todoOnServer) return;
+  if (!state.live || !SEND_OURS.includes(todoOnServer)) return;
   const byChat = Object.fromEntries(todoAgents().map((id) => [id, todo]));
   if (!Object.keys(byChat).length) return;
   api('/api/chat_todos_sync', { method: 'POST', body: { by_chat: byChat } })
-    .then(() => { if (todoOnServer === false) todoOnServer = true; }, () => {});
+    .then(() => { if (todoOnServer === 'none') todoOnServer = 'server'; }, () => {});
 }
-/** The server's list, when it has one; otherwise this browser's goes to it. */
+/** The server's list, when it has one; otherwise this browser's goes to it. When the ask fails, nothing is sent
+ * (a passing error must never wipe the server's list); refreshHabits asks again. */
 async function loadTodos() {
   if (!state.live) return;
   let r;
-  try { r = await api('/api/todos'); } catch { todoOnServer = null; syncTodos(); return; }
+  try {
+    r = await api('/api/todos');
+  } catch (err) {
+    todoOnServer = err?.status === 404 ? 'old' : 'unknown';
+    syncTodos();
+    return;
+  }
   if (r?.has_list && Array.isArray(r.items)) {
-    todoOnServer = true;
+    todoOnServer = 'server';
     todo.items = r.items.map(cleanTodo);
     storage.save(TODO_KEY, todo);
     if (state.view === 'chat' && who(state.chat).tracker === 'todo') renderTracker(true);
   } else {
-    todoOnServer = false;
+    todoOnServer = 'none';
     syncTodos();
   }
 }
@@ -253,18 +269,26 @@ function dueText(item) {
 
 // ————— Your own counters (Habits page) —————
 const HABIT_KEY = 'desktalk_habits_v2';
+// The starter counters an older version of the page added (posture and nail biting are gone). A browser that
+// saved them loses these two once (`tidied`), and keeps every counter you added; one you add again later stays.
+const OLD_STARTER_COUNTERS = ['Nail biting', 'Slouching'];
 let counters = null;
 function loadCounters() {
   const saved = storage.load(HABIT_KEY, null);
-  if (saved && saved.day === todayKey() && Array.isArray(saved.items)) { counters = saved; return; }
-  const labels = Array.isArray(saved?.items) ? saved.items.map((i) => i.label) : [...(ui.starter_counters || [])];
-  counters = { day: todayKey(), items: labels.map((label) => ({ label, count: 0 })) };
+  const items = Array.isArray(saved?.items) ? saved.items : null;
+  const kept = items && !saved.tidied ? items.filter((i) => !OLD_STARTER_COUNTERS.includes(i.label)) : items;
+  if (kept && saved.day === todayKey()) counters = { day: saved.day, items: kept, tidied: true };
+  else {
+    const labels = kept ? kept.map((i) => i.label) : [...(ui.starter_counters || [])];
+    counters = { day: todayKey(), items: labels.map((label) => ({ label, count: 0 })), tidied: true };
+  }
+  if (items && !saved.tidied) saveCounters();
 }
 const saveCounters = () => storage.save(HABIT_KEY, counters);
 /** They start again from 0 each day (also when the page stays open past midnight). */
 function countersForToday() {
   if (counters.day === todayKey()) return;
-  counters = { day: todayKey(), items: counters.items.map((c) => ({ label: c.label, count: 0 })) };
+  counters = { day: todayKey(), items: counters.items.map((c) => ({ label: c.label, count: 0 })), tidied: true };
   saveCounters();
 }
 
@@ -627,6 +651,7 @@ function insertMention(id) {
 const HABIT_NAMES = { hydration: 'Water', breaks: 'Breaks', light: 'Light', phone_free: 'Phone-free', screens: 'Screens', food: 'Food', tasks: 'To-dos' };
 let habitsTimer = null;
 async function refreshHabits() {
+  if (state.live && todoOnServer === 'unknown') loadTodos();      // the last ask for the to-do list failed
   if (!state.live) { state.habits = state.habits || demoHabits(); }
   else {
     try {
@@ -985,7 +1010,7 @@ async function renderSettings() {
         <label class="field"><span>Alert at</span>${range('danger_px', edge.danger_px, sliders.alert, 'Alert at')}</label>
       </div></section>
     <section><h2>Quiet hours</h2>
-      <p class="hint">Habit reminders wait until quiet hours end. Safety alerts still come through.</p>
+      <p class="hint">During quiet hours there are no Mac notifications at all, warnings included, and habit reminders wait until they end. Warnings still show in the chat.</p>
       <div class="form-rows">
         <label class="check"><input type="checkbox" id="dnd-on" ${draft.quiet_enabled ? 'checked' : ''}> Use quiet hours</label>
         <div class="field"><label for="dnd-start">From</label><input type="time" id="dnd-start" step="3600" value="${esc(draft.quiet_start)}"><label for="dnd-end">to</label><input type="time" id="dnd-end" step="3600" value="${esc(draft.quiet_end)}"></div>
@@ -1040,7 +1065,10 @@ async function renderSettings() {
     out.textContent = text;
     if (text === 'Saved' && ui.web.saved_note_sec) savedTimer = setTimeout(() => { out.textContent = ''; }, ui.web.saved_note_sec * MS);
   };
-  const why = (err) => (err?.status ? 'Check what you typed and try again.' : 'Is Desk Talk still running?');
+  const why = (err) => {
+    if (err?.status >= 400 && err.status < 500) return 'Check what you typed and try again.';
+    return err?.status ? 'Desk Talk had a problem. Try again in a moment.' : 'Is Desk Talk still running?';
+  };
 
   async function save() {
     keepTyped();
@@ -1341,12 +1369,19 @@ function listenForEvents() {
 }
 
 /** Run `job` again and again, waiting `ms()` between the end of one run and the start of the next (read each time,
- * so settings that changed while the server was away count). Skipped while the page's tab is hidden. */
+ * so settings that changed while the server was away count). Skipped while the page's tab is hidden; when you
+ * come back to the tab, every job runs once at once (see wire()). */
+const timedJobs = [];
 function repeat(ms, job) {
+  timedJobs.push(job);
   const next = async () => {
     try { if (!document.hidden) await job(); } finally { setTimeout(next, ms()); }
   };
   setTimeout(next, ms());
+}
+function catchUp() {
+  if (document.hidden) return;
+  for (const job of timedJobs) Promise.resolve().then(job).catch(() => {});
 }
 
 async function startLive(status) {
@@ -1620,6 +1655,7 @@ function wire() {
   }));
   $('#cam-toggle').addEventListener('click', () => openCam(true));
   $('#cam-close').addEventListener('click', () => openCam(false));
+  document.addEventListener('visibilitychange', catchUp);
   window.addEventListener('resize', () => { if (ui && state.live && camShown() !== videoShown) renderCamStage(); });
   $('#conn').addEventListener('click', () => {
     if (!state.live) toast(null, `Demo mode. ${DEMO_HOW_TO_RUN}`);
