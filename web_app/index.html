@@ -40,14 +40,14 @@
             <h1 id="chat-name">The desk</h1>
             <p id="chat-about"></p>
           </div>
-          <button type="button" class="btn-quiet cam-toggle" id="cam-toggle" aria-controls="cam">Desk cam</button>
+          <button type="button" class="btn-quiet cam-toggle" id="cam-toggle" aria-controls="cam" aria-expanded="false">Desk cam</button>
         </header>
         <div class="tracker" id="tracker" hidden></div>
         <div class="messages" id="messages" aria-live="polite"></div>
         <p class="ai-banner" id="ai-banner" role="status" hidden></p>
         <form class="composer" id="composer" autocomplete="off">
           <div class="mentions" id="mentions" role="listbox" hidden></div>
-          <input type="text" id="input" maxlength="500" placeholder="Message the desk" aria-label="Message">
+          <input type="text" id="input" placeholder="Message the desk" aria-label="Message">
           <button type="submit" class="send" aria-label="Send">
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 12h13M12 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
