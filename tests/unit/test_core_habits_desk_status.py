@@ -17,6 +17,7 @@ from tests.fakes import (
     FakeFrameSource,
     FakeObjectStates,
     FakePreferences,
+    FakeTodoList,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -52,9 +53,10 @@ class Rig:
         self.camera.connected = True
         self.prefs = FakePreferences({'quiet_enabled': quiet, 'quiet_start_hour': 11, 'quiet_end_hour': 13})
         self.states = FakeObjectStates()
+        self.todos = FakeTodoList()
         self.status = DeskStatusService(self.desk, self.camera, self.prefs,
                                         config.reminders.model_copy(update=reminders), self.states,
-                                        person_label=person_label, clock=CLOCK)
+                                        person_label=person_label, clock=CLOCK, todos=self.todos)
 
 
 def test_it_is_a_desk_status(config):
@@ -116,10 +118,14 @@ def test_the_persons_word_comes_from_the_settings(config):
     assert r.status.user_active(NOON)
 
 
-def test_open_todos_come_from_the_to_do_tracker(config):
+def test_open_todos_come_from_the_to_do_list(config):
     r = Rig(config)
     assert r.status.open_todos() == []
-    r.desk.set_widget('paper', {'type': 'todo', 'items': [{'text': 'Essay', 'done': False},
-                                                          {'text': 'Email', 'done': True}, {'text': 'Call mum'}]})
-    r.desk.set_widget('cup', {'type': 'hydration', 'items': [{'text': 'not a task'}]})
-    assert r.status.open_todos() == [Todo('Essay'), Todo('Call mum')]
+    r.todos.replace([Todo('Essay', due='2026-06-20'), Todo('Email', done=True), Todo('Call mum')], NOON)
+    assert r.status.open_todos() == [Todo('Essay', due='2026-06-20'), Todo('Call mum')]
+
+
+def test_the_app_panels_no_longer_count(config):
+    r = Rig(config)
+    r.desk.set_widget('paper', {'type': 'todo', 'items': [{'text': 'Essay', 'done': False}]})
+    assert r.status.open_todos() == []
