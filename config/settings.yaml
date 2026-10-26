@@ -275,7 +275,9 @@ reminders:
   warmup_min: 15              # no reminders until the camera has watched this long
   min_gap_sec: 600            # at least this long between any two reminders
   check_every_sec: 30
-  quiet_hours:                # habit reminders wait; safety alerts still come through
+  # In quiet hours habit reminders wait and no Mac pop-up shows (warnings too); safety warnings still show
+  # in the chat.
+  quiet_hours:
     enabled: false
     start_hour: 22            # 24-hour clock
     end_hour: 7
@@ -571,7 +573,7 @@ web:
 # Desk Talk itself shows the Mac's own pop-up, so it comes whether or not an app page is open. Quiet hours (the
 # app's Settings page) mute them all. The first one may ask once to allow notifications from "Script Editor".
 notifications:
-  enabled: true               # false = no pop-ups at all
+  enabled: true               # false = no pop-ups at all (and none show in quiet hours: reminders → quiet_hours)
   warnings: true              # danger warnings, and Lens saying the camera needs fixing
   reminders: true             # water, breaks, phone-free time, light, screens, food and to-dos
   sips: true                  # "Sip logged" when the camera saw you drink (not the buttons or the chat)
