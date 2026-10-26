@@ -55,6 +55,16 @@
       "id": "str",
       "name": "str"
     },
+    "list_sizes": {
+      "camera_issues_shown": "number",
+      "counter_label_chars": "number",
+      "mention_max_chars": "number",
+      "on_desk_shown": "number",
+      "quote_chars": "number",
+      "risk_lines_shown": "number",
+      "side_photos_shown": "number",
+      "toast_chars": "number"
+    },
     "phone": {
       "capture_height": "number",
       "capture_width": "number",
@@ -64,7 +74,6 @@
       "tilt_max": "number"
     },
     "pi": {
-      "compact_every_min": "number",
       "delete_every_min": "number",
       "fps": "number"
     },
@@ -73,11 +82,22 @@
       "end_hour": "number",
       "start_hour": "number"
     },
+    "sensitivity_steps": [
+      {
+        "join_after_sec": "number",
+        "min_confidence": "number",
+        "name": "str"
+      }
+    ],
+    "starter_counters": [
+      "str"
+    ],
+    "starter_todo": "str",
     "web": {
       "activity_ping_ms": "number",
+      "camera_note_after_sec": "number",
       "chat_kept": "number",
       "chat_saved": "number",
-      "habit_log_shown": "number",
       "left_chat_shown_min": "number",
       "live_timeout_ms": "number",
       "log_shown": "number",
@@ -93,6 +113,8 @@
         "photos": "number"
       },
       "request_timeout_ms": "number",
+      "retry_start_sec": "number",
+      "saved_note_sec": "number",
       "settings_sliders": {
         "alert": {
           "max": "number",

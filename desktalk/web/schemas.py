@@ -146,9 +146,11 @@ class UiPage(BaseModel):
     live_timeout_ms: int
     activity_ping_ms: int
     toast_ms: int
+    camera_note_after_sec: float         # the "camera connected / disconnected" note waits this long first
+    saved_note_sec: float                # "Saved" goes away after this long
+    retry_start_sec: float               # a server that is slow to start: the first wait before asking again
     log_shown: int                       # web.list_sizes.log
     photos_shown: int                    # web.list_sizes.photos
-    habit_log_shown: int                 # web.list_sizes.habit_log.default
     chat_kept: int                       # web.list_sizes.chat_kept: messages kept per chat...
     chat_saved: int                      # ...and saved in the browser (web.list_sizes.chat_saved)
     left_chat_shown_min: float           # a chat whose object left stays in the list this long
@@ -192,7 +194,27 @@ class UiDesk(BaseModel):
 class UiPi(BaseModel):
     fps: float
     delete_every_min: float
-    compact_every_min: float             # settings → event_log: how often pictures become intervals
+
+
+class UiListSizes(BaseModel):
+    """settings → web.list_sizes: how many things the page lists, and how long its texts may be."""
+
+    on_desk_shown: int
+    camera_issues_shown: int
+    risk_lines_shown: int
+    side_photos_shown: int
+    quote_chars: int
+    toast_chars: int
+    mention_max_chars: int
+    counter_label_chars: int
+
+
+class UiSensitivityStep(BaseModel):
+    """One step of the sensitivity slider (settings → agents.sensitivity_steps)."""
+
+    name: str
+    min_confidence: float
+    join_after_sec: float
 
 
 class UiLensCard(BaseModel):
@@ -212,6 +234,10 @@ class UiSettings(BaseModel):
     pi: UiPi
     phone: PhoneSettings
     lens_card: UiLensCard
+    list_sizes: UiListSizes
+    starter_todo: str                    # prompts.yaml → ui: what a new to-do list starts with...
+    starter_counters: list[str]          # ...and the counters the Habits page starts with
+    sensitivity_steps: list[UiSensitivityStep]
     # How long the page waits for a chat reply: as long as the server may keep trying the AI (llm.longest_reply_sec)
     # for each AI call one message can make (routers/settings.py: most_ai_calls_per_message), plus an ordinary
     # request's wait for the trip there and back.

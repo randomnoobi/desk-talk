@@ -11,6 +11,7 @@ from uvicorn import Server
 
 import desktalk.adapters.dev
 from desktalk.adapters.dev import pytest_report
+from desktalk.adapters.storage.event_log import EventLog
 from desktalk.bootstrap import DeskTalk
 from desktalk.config import (
     AgentsSettings,
@@ -18,10 +19,8 @@ from desktalk.config import (
     DevSettings,
     HabitTrackerSettings,
     LensWaits,
-    ListSizes,
     NotificationsSettings,
     RiskWeights,
-    WebSettings,
 )
 from desktalk.config.habits import HydrationRule, TasksRule, _ComputerZone
 from desktalk.config.prompts import (
@@ -32,7 +31,6 @@ from desktalk.config.prompts import (
     NotificationWords,
     Prompts,
     TasksDue,
-    UiWords,
 )
 from desktalk.core.habits.habit_days import HabitDay
 from desktalk.core.habits.sun_times import SunTimes
@@ -40,7 +38,7 @@ from desktalk.core.habits.tracker import DayTimes
 from desktalk.domain.agents import ChatJoin
 from desktalk.domain.dev import DataFile, QueryResult, RunStatus, SmoothingStep, TestOutcome
 from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent, NudgeSent
-from desktalk.ports import ChatJoins, DesktopNotifications, TodoList
+from desktalk.ports import ChatJoins, DesktopNotifications, EventStore, TodoList
 from desktalk.web.schemas import PhoneSettings, PreferenceChanges, UiPage, UiSettings
 from desktalk_shared.wire import PiHealth
 
@@ -54,8 +52,8 @@ _ = (
     PreferenceChanges.dnd_enabled, PreferenceChanges.dnd_start_hour, PreferenceChanges.dnd_end_hour,
     # Event and status fields the web page (web_app/app.js) reads from the JSON.
     AgentLeft.stayed_sec, Compaction.from_ts, PiHealth.last_cleanup_ts,
-    # Written to the picture log to show where the detector ran (pi or computer); the Log tab's
-    # /api/log/detections sends it, and the tests check it to tell a Pi detection from one done here.
+    # Written to the picture log to show where the detector ran (pi or computer); the tests check it to tell a Pi
+    # detection from one done here.
     DetectionEvent.detected_on,
     # Written with every habit reminder; the rule engine (PR #6) reads it.
     NudgeSent.rule,
@@ -74,7 +72,7 @@ _ = (
     # Reply fields the phone page (phone_camera/camera.js) and the app page (web_app/app.js) read from the JSON
     # of GET /api/phone/config and GET /api/ui_settings.
     PhoneSettings.max_side, PhoneSettings.tilt_max, PhoneSettings.capture_width, PhoneSettings.capture_height,
-    UiPage.log_shown, UiPage.photos_shown, UiPage.habit_log_shown,
+    UiPage.log_shown, UiPage.photos_shown,
     UiSettings.lens_card, UiSettings.chat_reply_timeout_ms,
     # tzinfo methods the datetime module calls on the rules' "local" time zone (desktalk/config/habits.py).
     _ComputerZone.dst, _ComputerZone.fromutc,
@@ -105,17 +103,17 @@ _developer_page = (
 _desk_fixes = (
     AgentsSettings.can_join, AgentsSettings.on_desk_after_sec, AgentsSettings.on_desk_min_confidence,
     HabitTrackerSettings.todos_key,
-    ListSizes.on_desk_shown, ListSizes.camera_issues_shown, ListSizes.risk_lines_shown, ListSizes.side_photos_shown,
-    ListSizes.quote_chars, ListSizes.toast_chars, ListSizes.mention_max_chars, ListSizes.counter_label_chars,
-    WebSettings.camera_note_after_sec, WebSettings.saved_note_sec, NotificationsSettings.warnings,
+    NotificationsSettings.warnings,
     DevSettings.trace_photos_folder, DevSettings.trace_photos_kept, DevSettings.trace_photo_every_sec,
     DevSettings.trace_photo_quality, DevSettings.trace_events_kept,
     HydrationRule.sip_lift_share, HydrationRule.sip_back_share, HydrationRule.sip_cover_share,
     TasksRule.due_soon_days, TasksRule.late_repeat_hours,
-    HabitLogged.task_done, TasksDue.tomorrow, TasksDue.late, HabitNudges.tasks_due, UiWords.starter_todo,
-    UiWords.starter_counters, NotificationWords.sip_title, Prompts.ui, Prompts.notifications,
+    HabitLogged.task_done, TasksDue.tomorrow, TasksDue.late, HabitNudges.tasks_due,
+    NotificationWords.sip_title, Prompts.notifications,
     DeskTalk.chat_joins, DeskTalk.trace_photos, ChatJoin.seen_for_sec, DesktopNotifications,
     DesktopNotifications.show, TodoList.has_list, ChatJoins.joins,
 )
+# The event log's own tests (compaction) read the pictures it hasn't compacted yet. No route sends them any more.
+_ = (EventLog.recent_detections, EventStore.recent_detections)
 # A test's result, sent to the developer page as JSON (dataclasses.asdict) and shown by dev_ui/ (the Checks tab).
 _ = TestOutcome.duration_sec
