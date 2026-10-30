@@ -453,6 +453,8 @@ class LensWaits(_Section):
 class LensSettings(_Section):
     sample_every_sec: PositiveNumber
     covered_below: Level
+    covered_detail_below: ZeroOrMore
+    covered_by_box_share: Annotated[float, Field(gt=0, le=1)]
     dark_below: Level
     glare_above: Fraction
     blur_below: ZeroOrMore

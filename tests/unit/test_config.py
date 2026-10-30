@@ -368,6 +368,7 @@ NEW_SETTINGS = {
         ('pi', 'camera'), ('pi', 'error_text_chars'), ('llm', 'error_log_chars'), ('safety', 'min_desk_corners'),
         ('web', 'settings_sliders', 'zone'), ('web', 'settings_sliders', 'warn'), ('web', 'settings_sliders', 'alert'),
         ('web', 'new_zone_px'), ('lens', 'trusted_gravity'),
+        ('lens', 'covered_detail_below'), ('lens', 'covered_by_box_share'),
         # the developer page (docs/plans/2026-10-24-developer-ui-plan.md)
         ('object_states', 'trace_pictures'), ('dev', 'enabled'), ('dev', 'ui_folder'), ('dev', 'vite_port'),
         ('dev', 'poll_sec'), ('dev', 'checks'), ('dev', 'test_command'), ('dev', 'collect_markers'),
@@ -555,3 +556,17 @@ def test_the_event_log_lists_and_the_photo_quality_that_went_are_dropped_from_yo
         cfg = load_config(root=project, environ={})
     assert cfg.web.list_sizes.toast_chars == 99
     assert all(word in caplog.text for word in ('habit_log', 'log_detections', 'trace_photo_quality'))
+
+
+def test_the_blocked_camera_settings_load(project):
+    lens = load_config(root=project, environ={}).lens
+    assert (lens.covered_detail_below, lens.covered_by_box_share) == (6, 0.7)
+
+
+@pytest.mark.parametrize('text', ['covered_detail_below: -1', 'covered_by_box_share: 0',
+                                  'covered_by_box_share: 1.5'])
+def test_the_blocked_camera_settings_are_checked(project, text):
+    # a share of 0 would call every picture with anything in it blocked
+    write_local(project, f'lens:\n  {text}\n')
+    with pytest.raises(ConfigError, match=text.split(':')[0]):
+        load_config(root=project, environ={})

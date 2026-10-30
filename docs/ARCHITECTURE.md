@@ -87,6 +87,13 @@ A warning about something that nobody in the chat can say comes from Lens ("Head
 cell phone"). The roster also keeps the newest `dev.trace_events_kept` joins, leaves and refusals for each
 kind of object, with why (`ChatJoins`, for the developer page).
 
+**Camera problems.** Lens's checks on the picture (`core/vision/camera_problems.py`) find: lost video, covered,
+dark, glare, blurry, bumped, nothing recognized, something cut off, slow video. Covered (the app says "Camera is
+blocked") is any of three: the picture is nearly black (`lens.covered_below`), it has almost no detail at any
+brightness, like white paper or a hand on the lens (`lens.covered_detail_below`), or one box that isn't a person
+or in the ignore list (the desk, furniture) covers more than `lens.covered_by_box_share` of the picture, like a
+book held up to the lens. While covered, the dark, glare, blurry, empty and cut-off checks are not trusted.
+
 **Sips.** A sip counts when a drink is lifted (its box rises more than `hydration.sip_lift_share` of the
 picture) and then put back where it rested, or goes missing from the pictures and then comes back near where it
 was (within `sip_back_share`) but moved: its box's middle more than `sip_moved_share` of the picture's diagonal

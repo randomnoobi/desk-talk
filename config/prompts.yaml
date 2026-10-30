@@ -660,7 +660,7 @@ lens:
 camera:
   # what Lens says in the group chat when the camera needs fixing
   problems:
-    covered: Everything just went black. Is something covering my lens, or did the camera get turned away?
+    covered: I can't see the desk anymore. Is something in front of my lens, or did the camera get turned away?
     dark: It's too dark for me to see the desk well. Could you turn on a lamp?
     glare: Something really bright is shining into my camera. Can you angle me away from the window or lamp?
     blurry: Everything looks blurry to me. Could you wipe my lens, or move me back a little so I can focus?
@@ -696,8 +696,8 @@ camera:
       title: No video from the phone
       fix: Keep the phone unlocked with the Desk Talk page open.
     covered:
-      title: Camera is covered
-      fix: Check nothing is on the lens and the camera is facing the desk.
+      title: Camera is blocked
+      fix: Move whatever is in front of the lens, and point the camera at the desk.
     dark:
       title: Too dark
       fix: Turn on a lamp near the desk.
