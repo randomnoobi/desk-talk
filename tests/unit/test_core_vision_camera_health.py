@@ -111,6 +111,12 @@ def test_a_plain_cover_at_any_brightness_is_covered_not_glare_or_blurry(picture)
     assert run(health(), 30, picture) == ['covered:problem']
 
 
+def test_a_dim_plain_picture_is_dark_not_covered():
+    """A dim evening desk with little contrast has little detail too, but it is too dark, not a blocked lens."""
+    dim = np.full((360, 480, 3), 30, np.uint8)       # between covered_below (12) and dark_below (45)
+    assert run(health(), 30, dim) == ['dark:problem']
+
+
 def test_how_little_detail_counts_as_covered_comes_from_the_settings():
     assert run(health(lens=LENS.model_copy(update={'covered_detail_below': 0})), 13, FLAT) == ['blurry:problem']
 

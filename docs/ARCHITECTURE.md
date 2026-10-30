@@ -96,8 +96,9 @@ each kind of object, with why (`ChatJoins`, for each object's story).
 
 **Camera problems.** Lens's checks on the picture (`core/vision/camera_problems.py`) find: lost video, covered,
 dark, glare, blurry, bumped, nothing recognized, something cut off, slow video. Covered (the app says "Camera is
-blocked") is any of three: the picture is nearly black (`lens.covered_below`), it has almost no detail at any
-brightness, like white paper or a hand on the lens (`lens.covered_detail_below`), or one box that isn't a person
+blocked") is any of three: the picture is nearly black (`lens.covered_below`), it has almost no detail and
+isn't dark, like white paper or a hand on the lens (`lens.covered_detail_below`; a dim plain picture stays
+dark), or one box that isn't a person
 or in the ignore list (the desk, furniture) covers more than `lens.covered_by_box_share` of the picture, like a
 book held up to the lens. While covered, the dark, glare, blurry, empty and cut-off checks are not trusted.
 

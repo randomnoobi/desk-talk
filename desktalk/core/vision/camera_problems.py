@@ -156,7 +156,9 @@ class CameraProblems:
     def _picture_problems(self, now: float, reading: Reading, seen: Seen, raw: dict[str, Detail]) -> None:
         lens = self._lens
         b = reading.brightness
-        if b < lens.covered_below or reading.sharpness < lens.covered_detail_below or self._one_thing_fills(seen):
+        # a plain picture only counts as covered when it isn't dark too: a dim evening desk is plain, but too dark
+        plain = reading.sharpness < lens.covered_detail_below and b >= lens.dark_below
+        if b < lens.covered_below or plain or self._one_thing_fills(seen):
             raw['covered'] = {}
         elif b < lens.dark_below:
             raw['dark'] = {}
