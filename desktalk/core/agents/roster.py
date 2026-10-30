@@ -7,7 +7,9 @@ The chat. Only agents on settings → agents.can_join may join. The Settings pag
 (Preferences 'sensitivity', read again with every picture so a change works at once) picks one of
 agents.sensitivity_steps: how sure the detector must be (or the agent's own min_confidence in agents.yaml, when
 that is stricter) and how long the object must be seen. Then its agent joins ("Cup joined the chat"); when it
-has been missing for agents.leave_after_sec, it leaves ("Cup left the chat"). Both go back on the event bus as
+has been missing for agents.leave_after_sec times the step's `steady`, it leaves ("Cup left the chat"). A new
+thing (an agent made up for an object without its own block in agents.yaml) needs a surer box and a longer wait:
+agents.new_things. Both go back on the event bus as
 AgentJoined / AgentLeft. Something seen long enough that may not join is "refused", once per stretch of
 sightings. Every join, leave and refusal is kept, with why, for the developer page's trace (ChatJoins). No
 pictures (camera off) means no events, so nobody leaves.
@@ -46,13 +48,15 @@ OnDesk = Callable[[float, float, int, int], bool | None]
 
 
 class _Sighting:
-    """The best box for one agent in one picture, and whether it was inside the marked desk."""
+    """The best box for one agent in one picture, whether it was inside the marked desk, and whether the agent is
+    a new thing (made up for an object without its own block in agents.yaml)."""
 
-    __slots__ = ('det', 'inside')
+    __slots__ = ('det', 'inside', 'new')
 
-    def __init__(self, det: Detection, inside: bool | None):
+    def __init__(self, det: Detection, inside: bool | None, new: bool):
         self.det = det
         self.inside = inside
+        self.new = new
 
 
 class Roster:
@@ -69,7 +73,7 @@ class Roster:
         self._can_join = set(agents.can_join)
         self._on_desk = on_desk
         step = agents.default_step()
-        self._presence = PresenceTracker(step.join_after_sec, agents.leave_after_sec)     # the chat
+        self._presence = PresenceTracker(step.join_after_sec, agents.leave_wait(step))     # the chat
         self._desk = PresenceTracker(agents.on_desk_after_sec, presence.disappear_after_sec)   # on the desk
         self._fresh_sec = presence.disappear_after_sec       # "in a picture just now" for the scene
         self._lock = threading.Lock()                         # snapshot() is read from the web server's thread
@@ -104,9 +108,9 @@ class Roster:
             sure_for_desk = det.confidence >= self._agents.on_desk_min_confidence
             if sure_for_desk and (prof.id not in desk or det.confidence > desk[prof.id].confidence):
                 desk[prof.id] = det
-            sure_for_chat = det.confidence >= confidence_needed(step, prof)
+            sure_for_chat = det.confidence >= confidence_needed(step, prof, self._agents.new_things)
             if sure_for_chat and (prof.id not in chat or det.confidence > chat[prof.id].det.confidence):
-                chat[prof.id] = _Sighting(det, inside)
+                chat[prof.id] = _Sighting(det, inside, prof.auto)
         return chat, desk
 
     def _keep(self, join: ChatJoin) -> None:
@@ -132,11 +136,14 @@ class Roster:
         joined, left = [], []
         with self._lock:
             self._presence.appear_sec = float(step.join_after_sec)       # the slider works at once
+            self._presence.gone_sec = self._agents.leave_wait(step)
+            new_wait = step.join_after_sec + self._agents.new_things.extra_wait_sec
             for pid in chat:
                 last = self._presence.last_seen(pid)
                 if last is None or now - last > self._presence.gone_sec:
                     self._stretch_start[pid] = now
-            appeared, gone = self._presence.update(chat.keys(), now)
+            appeared, gone = self._presence.update(chat.keys(), now,
+                                                   waits={pid: new_wait for pid, seen in chat.items() if seen.new})
             for pid, seen in chat.items():
                 if pid in self._members:
                     self._members[pid].update(det=seen.det, last_seen=now, inside=seen.inside)

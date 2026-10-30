@@ -78,6 +78,10 @@ def _cell(value: Any) -> Any:
 def dev_settings(app: App) -> dict[str, Any]:
     config = app.config
     dev, states = config.dev, config.object_states
+    # The waits the tracker uses now: the sensitivity slider's step stretches them (a new thing waits
+    # agents.new_things.extra_wait_sec longer to appear than this).
+    step = config.agents.step_at(app.preferences.get('sensitivity')) or config.agents.default_step()
+    appear_sec, gone_sec, _ = states.steady_rules(step.steady)
     return {
         'poll_sec': dev.poll_sec,
         'checks': [check.name for check in dev.checks],
@@ -86,7 +90,7 @@ def dev_settings(app: App) -> dict[str, Any]:
         'sql_max_rows': dev.sql_max_rows,
         'data_folder': str(config.resolve(config.storage.folder)),
         'object_states': {'on_confidence': states.on_confidence, 'off_confidence': states.off_confidence,
-                          'appear_sec': states.appear_sec, 'gone_sec': states.gone_sec,
+                          'appear_sec': appear_sec, 'gone_sec': gone_sec,
                           'window_pictures': states.window_pictures, 'vote_share': states.vote_share},
         'disconnect_after_sec': config.camera.disconnect_after_sec,
         'web_port': config.web.port,

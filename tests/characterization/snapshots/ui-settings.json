@@ -80,11 +80,13 @@
       "start_hour": "number"
     },
     "sensitivity_default": "number",
+    "sensitivity_intro": "str",
     "sensitivity_steps": [
       {
         "join_after_sec": "number",
         "min_confidence": "number",
-        "name": "str"
+        "name": "str",
+        "says": "str"
       }
     ],
     "starter_counters": [

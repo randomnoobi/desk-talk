@@ -106,6 +106,18 @@ def test_settings_give_the_page_its_numbers(rig):
     assert settings['flicker_flips_per_min'] == config.dev.flicker_flips_per_min
 
 
+def test_the_smoothing_waits_are_the_ones_the_sensitivity_slider_has_now(rig):
+    """The page draws the waits the tracker uses: object_states.appear_sec and gone_sec times the step's steady."""
+    client, states = web_client(rig.app), rig.config.object_states
+    normal = client.get('/api/dev/settings').json()['object_states']
+    assert (normal['appear_sec'], normal['gone_sec']) == (states.appear_sec, states.gone_sec)
+    rig.app.preferences.update({'sensitivity': 0})
+    picky_steady = rig.config.agents.sensitivity_steps[0].steady
+    picky = client.get('/api/dev/settings').json()['object_states']
+    assert (picky['appear_sec'], picky['gone_sec']) == (states.appear_sec * picky_steady,
+                                                        states.gone_sec * picky_steady)
+
+
 def test_states_show_objects_and_changes(rig):
     states = web_client(rig.app).get('/api/dev/states?since=0').json()
     assert states['objects']['cup']['state'] == 'PRESENT'

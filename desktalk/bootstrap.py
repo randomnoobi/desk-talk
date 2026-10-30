@@ -412,7 +412,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                                  ignore_labels=config.agents_file.ignore)
     state_store = SqliteStateStore(data_path(config.object_states.database))
     object_states = ObjectStateTracker(config.object_states, bus, state_store, device_id=source.kind,
-                                       new_session_after_sec=config.protocols.breaks.break_min * MINUTE, clock=clock)
+                                       new_session_after_sec=config.protocols.breaks.break_min * MINUTE, clock=clock,
+                                       agents=config.agents, prefs=preferences, profiles=profiles)
     object_states.restore(clock.now())
 
     # ── the consumers of detection events (each subscribes itself, in this order) ──

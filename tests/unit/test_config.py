@@ -377,6 +377,9 @@ NEW_SETTINGS = {
         ('dev', 'health', 'pi_disk_warn_mb'), ('dev', 'health', 'detect_warn_ms'),
         ('dev', 'flicker_flips_per_min'), ('dev', 'sql_check_every_steps'), ('dev', 'collect_timeout_sec'),
         ('dev', 'flips_window_min'), ('dev', 'table_counts_every_sec'),
+        # the sensitivity slider's bar for new things
+        ('agents', 'new_things', 'extra_confidence'), ('agents', 'new_things', 'extra_wait_sec'),
+        ('agents', 'new_things', 'max_confidence'),
     ],
     'protocols.yaml': [('food', 'healthy')],
 }
@@ -477,6 +480,53 @@ def test_sensitivity_steps_load(project):
     assert agents.default_step().name == 'Normal'
     assert agents.can_join == ('computer', 'cup', 'phone', 'snack', 'paper')
     assert (agents.on_desk_after_sec, agents.on_desk_min_confidence) == (3, 0.45)
+
+
+def test_each_sensitivity_step_has_a_steadiness_and_normal_keeps_todays_waits(project):
+    agents = load_config(root=project, environ={}).agents
+    assert [s.steady for s in agents.sensitivity_steps] == [2.0, 1.5, 1.0, 0.75, 0.5]
+    assert agents.default_step().steady == 1.0
+
+
+@pytest.mark.parametrize('value', [0, -0.5])
+def test_steady_must_be_more_than_0(project, value):
+    write_local(project, 'agents:\n  sensitivity_default: 0\n  sensitivity_steps:\n'
+                         f'    - {{name: Odd, min_confidence: 0.5, join_after_sec: 1, steady: {value}}}\n')
+    with pytest.raises(ConfigError, match='steady'):
+        load_config(root=project, environ={})
+
+
+def test_the_steadiness_scales_the_object_states_waits_and_the_move_share(project):
+    states = load_config(root=project, environ={}).object_states
+    assert states.steady_rules(1.0) == (states.appear_sec, states.gone_sec, states.move_fraction)
+    appear, gone, move = states.steady_rules(2.0)
+    assert (appear, gone) == (states.appear_sec * 2, states.gone_sec * 2)
+    assert move == pytest.approx(states.move_fraction * 2)
+
+
+def test_the_steadiness_scales_the_chat_leave_wait(project):
+    agents = load_config(root=project, environ={}).agents
+    assert agents.leave_wait(agents.default_step()) == agents.leave_after_sec
+    assert agents.leave_wait(agents.sensitivity_steps[0]) == agents.leave_after_sec * 2
+
+
+@pytest.mark.parametrize('value, name', [(0, 'Picky'), (4, 'Eager'), (5, None), (-1, None), ('picky', None),
+                                         (True, None), (None, None), (1.0, None)])
+def test_a_slider_value_names_its_step(project, value, name):
+    step = load_config(root=project, environ={}).agents.step_at(value)
+    assert (step.name if step else None) == name
+
+
+def test_new_things_settings_load(project):
+    new = load_config(root=project, environ={}).agents.new_things
+    assert (new.extra_confidence, new.extra_wait_sec, new.max_confidence) == (0.15, 2, 0.95)
+
+
+def test_a_new_things_bar_is_higher_but_never_above_its_most_and_never_lower(project):
+    new = load_config(root=project, environ={}).agents.new_things
+    assert new.bar(0.45) == pytest.approx(0.60)
+    assert new.bar(0.9) == 0.95                       # capped at max_confidence...
+    assert new.bar(0.97) == 0.97                      # ...which never lowers a bar already above it
 
 
 def test_same_thing_overlap_loads(project):

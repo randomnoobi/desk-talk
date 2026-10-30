@@ -211,6 +211,58 @@ def test_bad_sensitivity_uses_default(config, bad):
     assert weak.joined() == []
 
 
+def test_the_leave_wait_follows_the_sliders_steadiness(config):
+    """agents.leave_after_sec times the step's steady: Picky (2.0) waits twice as long, Eager (0.5) half."""
+    leave = config.agents.leave_after_sec
+    for sensitivity, steady in ((0, 2.0), (2, 1.0), (4, 0.5)):
+        r = Rig(config, sensitivity=sensitivity)
+        t = r.run(0.0, 11, d('laptop'))
+        r.run(t, leave * steady + 5)
+        assert r.left()[0].ts - t == pytest.approx(leave * steady, abs=0.5)
+
+
+def test_moving_the_slider_changes_the_leave_wait_at_once(config):
+    leave = config.agents.leave_after_sec
+    r = Rig(config, sensitivity=2)
+    t = r.run(0.0, 4, d('laptop'))
+    r.prefs.update({'sensitivity': 4})                        # Eager: gone half as long is enough
+    r.run(t, leave / 2 + 2)
+    assert r.left()[0].ts - t == pytest.approx(leave / 2, abs=0.5)
+
+
+def test_a_new_thing_waits_longer_to_join(config):
+    """An object without its own block in agents.yaml waits agents.new_things.extra_wait_sec more."""
+    extra = config.agents.new_things.extra_wait_sec
+    r = Rig(config, can_join=('stapler', 'cup'))
+    r.seen_until(0.0, 3 + extra + 1, d('stapler'), d('cup', box=(300, 300, 350, 350)))
+    joined = {e.agent: e.ts for e in r.joined()}
+    assert joined['cup'] == pytest.approx(3.0)                # Normal's 3 s
+    assert joined['stapler'] == pytest.approx(3.0 + extra)
+    assert r.roster.joins('stapler')[-1].seen_for_sec == pytest.approx(3.0 + extra)
+
+
+def test_a_new_thing_needs_a_surer_box_to_join(config):
+    new = config.agents.new_things
+    normal = config.agents.default_step().min_confidence
+    between = round(normal + new.extra_confidence / 2, 3)     # enough for a cup, not for something new
+    r = Rig(config, can_join=('stapler', 'cup'))
+    r.run(0.0, 10, d('stapler', between), d('cup', between, box=(300, 300, 350, 350)))
+    assert [e.agent for e in r.joined()] == ['cup']
+    r.run(10.0, 10, d('stapler', normal + new.extra_confidence + 0.01))
+    assert [e.agent for e in r.joined()] == ['cup', 'stapler']
+
+
+def test_a_new_things_wait_and_bar_follow_the_slider(config):
+    new = config.agents.new_things
+    picky = config.agents.sensitivity_steps[0]
+    r = Rig(config, sensitivity=0, can_join=('stapler',))
+    r.run(0.0, 30, d('stapler', picky.min_confidence + 0.01))      # sure enough for a known thing only
+    assert r.joined() == []
+    sure = min(picky.min_confidence + new.extra_confidence, new.max_confidence) + 0.01
+    r.seen_until(40.0, 40.0 + picky.join_after_sec + new.extra_wait_sec, d('stapler', sure))
+    assert first_join_ts(r) == pytest.approx(40.0 + picky.join_after_sec + new.extra_wait_sec)
+
+
 def test_on_desk_list_has_non_chat_objects(config):
     r = Rig(config)
     r.seen_until(0.0, 2.9, d('scissors'))

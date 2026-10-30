@@ -114,17 +114,28 @@ detector:
 agents:
   can_join: [computer, cup, phone, snack, paper]   # only these agents (ids in agents.yaml) may join the chat. The
                               # camera still sees everything else, for the warnings, lost items and the Habits page
-  # How picky joining the chat is. The Settings page's slider picks one of these steps, from picky to eager:
+  # How picky the app is about what it sees. The Settings page's slider picks one of these steps, from picky to
+  # eager, and a change works at once:
   # min_confidence = how sure the detector must be (0-1), join_after_sec = seen this long → "Cup joined the chat".
   # An agent with a higher min_confidence of its own in agents.yaml keeps it. The habits (sips, phone-free time,
   # food) count a box by the same min_confidence; join_after_sec is for the chat only.
+  # steady = how much to stretch the waits that keep flicker (a box flashing on and off, or jumping about) from
+  # counting: object_states.appear_sec, gone_sec and move_fraction (not the person's waits), and leave_after_sec
+  # below are multiplied by it. 1 = as written, 2 = twice as long (and a box must move twice as far to count as
+  # moved), 0.5 = half. More than 0. Below 1, a very long sip can make the cup leave the chat and join again.
   sensitivity_steps:
-    - {name: Picky,   min_confidence: 0.65, join_after_sec: 10}
-    - {name: Careful, min_confidence: 0.55, join_after_sec: 5}
-    - {name: Normal,  min_confidence: 0.45, join_after_sec: 3}
-    - {name: Easy,    min_confidence: 0.40, join_after_sec: 2.5}
-    - {name: Eager,   min_confidence: 0.35, join_after_sec: 2}
+    - {name: Picky,   min_confidence: 0.65, join_after_sec: 10,  steady: 2.0}
+    - {name: Careful, min_confidence: 0.55, join_after_sec: 5,   steady: 1.5}
+    - {name: Normal,  min_confidence: 0.45, join_after_sec: 3,   steady: 1.0}
+    - {name: Easy,    min_confidence: 0.40, join_after_sec: 2.5, steady: 0.75}
+    - {name: Eager,   min_confidence: 0.35, join_after_sec: 2,   steady: 0.5}
   sensitivity_default: 2      # the step used until you move the slider (0 is the first: 2 = Normal)
+  # New things: an object with no block of its own in agents.yaml (the app makes up its character). The detector
+  # is wrong about these more often, so on top of the slider's step they need:
+  new_things:
+    extra_confidence: 0.15    # a box this much surer than the step's min_confidence (Normal 0.45 → 0.60)...
+    max_confidence: 0.95      # ...but never more than this (a bar already higher stays as it is)
+    extra_wait_sec: 2         # and seen this much longer before they join the chat or count as appeared
   same_thing_overlap: 0.7     # two different names whose boxes are this much the same box (more than 0, up to 1:
                               # shared area over the area both cover) are one thing named twice, like a laptop
                               # also called "book": only the surer name counts, everywhere in the app. Words on
@@ -133,7 +144,8 @@ agents:
                               # on top of the other (a big book on a closed laptop), count as one: raise this if so
   on_desk_after_sec: 3        # the warnings' own list of what's on the desk: seen this long = on the desk...
   on_desk_min_confidence: 0.45  # ...with a box at least this sure (the slider doesn't change these two)
-  leave_after_sec: 120        # gone this long → "Cup left the chat" (same as the longest sip, so a sip never leaves)
+  leave_after_sec: 120        # gone this long → "Cup left the chat" (same as the longest sip, so a sip never leaves).
+                              # Times the slider step's steady: Picky 240, Eager 60
   only_on_desk: true          # once desk corners are marked, things off the desk can't join
   max_agents: 12              # most agents in the chat at once
   announce: true              # post "joined / left the chat" notes
@@ -154,6 +166,8 @@ object_states:
   off_confidence: 0.4         # once on, "seen" stays on until the box drops below this
   window_pictures: 5          # the last this many pictures vote on "seen"
   vote_share: 0.5             # more than this share of the votes must say yes
+  # The next three are for the Normal step: the sensitivity slider multiplies them by its step's steady
+  # (agents.sensitivity_steps), and a new thing waits agents.new_things.extra_wait_sec longer to appear
   appear_sec: 3               # seen longer than this → appeared
   gone_sec: 3                 # missing longer than this → removed
   move_fraction: 0.2          # center moved more than this share of the picture → moved
