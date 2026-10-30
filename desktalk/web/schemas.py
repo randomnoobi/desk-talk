@@ -241,6 +241,7 @@ class UiSensitivityStep(BaseModel):
     name: str
     min_confidence: float
     join_after_sec: float
+    says: str                            # what the step does, in words (prompts.yaml → ui.sensitivity_step)
 
 
 class UiLensCard(BaseModel):
@@ -264,6 +265,7 @@ class UiSettings(BaseModel):
     starter_todo: str                    # prompts.yaml → ui: what a new to-do list starts with...
     starter_counters: list[str]          # ...and the counters the Habits page starts with
     sensitivity_steps: list[UiSensitivityStep]
+    sensitivity_intro: str               # prompts.yaml → ui.sensitivity_intro: what the slider covers
     sensitivity_default: int             # the step used until the slider is moved (agents.sensitivity_default)
     # How long the page waits for a chat reply: as long as the server may keep trying the AI (llm.longest_reply_sec)
     # for each AI call one message can make (routers/settings.py: most_ai_calls_per_message), plus an ordinary

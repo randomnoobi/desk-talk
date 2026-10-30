@@ -341,9 +341,11 @@ def test_heads_up_shows_camera_problems(page, tmp_path, pictures):
 
 
 def test_sensitivity_slider_saves(page, tmp_path, pictures):
-    """The Settings page's sensitivity slider shows the step's name and its two numbers, and saves the step."""
+    """The Settings page's sensitivity slider shows the step's name and what it does (the server's words, with its
+    numbers), and saves the step."""
     with running_app(tmp_path, pictures=pictures) as url:
-        steps = page.request.get(f'{url}/api/ui_settings').json()['sensitivity_steps']
+        ui = page.request.get(f'{url}/api/ui_settings').json()
+        steps = ui['sensitivity_steps']
         picky = steps[0]
         open_app(page, url)
         page.locator('.page-link[data-view="settings"]').click()
@@ -354,6 +356,8 @@ def test_sensitivity_slider_saves(page, tmp_path, pictures):
         expect(says).to_contain_text(picky['name'])
         expect(says).to_contain_text(f"{round(picky['min_confidence'] * 100)}%")
         expect(says).to_contain_text(f"{picky['join_after_sec']:g} seconds")
+        expect(says).to_have_text(picky['says'])
+        expect(page.get_by_text(ui['sensitivity_intro'])).to_be_visible()
         page.get_by_role('button', name='Save settings').click()
         expect(page.locator('#saved')).to_have_text('Saved')
         assert page.request.get(f'{url}/api/preferences').json()['sensitivity'] == 0

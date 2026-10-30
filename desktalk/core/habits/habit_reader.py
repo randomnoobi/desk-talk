@@ -49,6 +49,7 @@ class HabitReader:
         self._s = settings
         self._words = words
         self._slider = Slider(agents, prefs)       # how sure a box must be follows the Settings page's slider
+        self._new_things = agents.new_things        # ...and new things need a surer box
         self._user_window = presence.user_active_window_sec      # not the reminders' switch (the person's object state)
         self._phone_counts = phone_counts                          # off when the phone itself is the camera
         self._healthy = frozenset(protocols.food.healthy)
@@ -170,7 +171,7 @@ class HabitReader:
         return best
 
     def _sure(self, det: Detection, step: SensitivityStep) -> bool:
-        return det.confidence >= confidence_needed(step, self._profiles.for_label(det.label))
+        return det.confidence >= confidence_needed(step, self._profiles.for_label(det.label), self._new_things)
 
     def _food(self, day: HabitDay, labels: dict[str, float], appeared: list[str], gone: list[str],
               now: float) -> list[Said]:

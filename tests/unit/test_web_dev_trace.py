@@ -20,7 +20,7 @@ from desktalk.domain import ChatJoin, Phase, StateRecord
 from desktalk.web.deps import dev_only
 from desktalk.web.routers import dev
 from tests.contracts.test_trace_photos_contract import JPEG, a_photo
-from tests.fakes import FakeChatJoins, FakeObjectStates, FakeTracePhotos, InMemoryStateStore
+from tests.fakes import FakeChatJoins, FakeObjectStates, FakePreferences, FakeTracePhotos, InMemoryStateStore
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -56,7 +56,8 @@ def client_for(records=(), joins=(), photos: FakeTracePhotos | None = None, *, n
     store.append(list(records))
     desk = SimpleNamespace(config=app_config(), object_states=FakeObjectStates(watched_since=watched_since),
                            state_store=store, chat_joins=None if no_parts else FakeChatJoins(joins),
-                           trace_photos=None if no_parts else (photos or FakeTracePhotos()))
+                           trace_photos=None if no_parts else (photos or FakeTracePhotos()),
+                           preferences=FakePreferences())
     web = FastAPI()
     web.include_router(dev.router)
     web.dependency_overrides[dev_only] = lambda: None

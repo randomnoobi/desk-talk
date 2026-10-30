@@ -54,8 +54,12 @@ More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 Nobody is in the chat at first. Only Computer, Cup, Phone, Snack and Book can join
 (`agents.can_join` in `config/settings.yaml`). One joins once the camera is sure enough of it for long enough,
 which is the **Sensitivity** slider in Settings: from Picky (65% sure, for 10 seconds) to Eager (35%, 2 seconds);
-Normal is 45% for 3 seconds. It leaves when it's been gone 2 minutes. These objects have their own personalities
-(`config/agents.yaml`):
+Normal is 45% for 3 seconds. It leaves when it's been gone 2 minutes. The same slider sets how much flicker
+(things flashing on and off, boxes jumping about) is let through: Picky waits twice as long before something
+counts as put down, taken away or moved, or leaves the chat, and Eager half as long (each step's `steady`).
+Something new, with no character of its own, needs a surer box and a longer wait at every step
+(`agents.new_things`: at Normal, 60% sure instead of 45%, and 2 seconds longer). The Settings page says what each step does, with its numbers.
+These objects have their own personalities (`config/agents.yaml`):
 
 | Character | Objects | Personality | Looks after |
 |-----------|---------|-------------|-------------|

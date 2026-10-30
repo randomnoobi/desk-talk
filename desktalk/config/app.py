@@ -115,17 +115,33 @@ class DetectorSettings(_Section):
 
 
 class SensitivityStep(_Section):
-    """One step of the Settings page's sensitivity slider: how sure, and for how long, before an object joins."""
+    """One step of the Settings page's sensitivity slider: how sure, and for how long, before an object joins, and
+    how much to stretch the waits that keep flicker from counting (`steady`, 1 = as written)."""
 
     name: str
     min_confidence: Fraction
     join_after_sec: ZeroOrMore
+    steady: PositiveNumber
+
+
+class NewThingsSettings(_Section):
+    """What an object with no block of its own in agents.yaml needs on top of the slider's step."""
+
+    extra_confidence: Fraction
+    max_confidence: Fraction
+    extra_wait_sec: ZeroOrMore
+
+    def bar(self, needed: float) -> float:
+        """How sure a box of a new thing must be, when a known one would need `needed`: higher by
+        extra_confidence, but not above max_confidence (a bar already above it stays as it is)."""
+        return max(needed, min(needed + self.extra_confidence, self.max_confidence))
 
 
 class AgentsSettings(_Section):
     can_join: Words                   # agent ids (config/agents.yaml) that may join the chat
     sensitivity_steps: Annotated[tuple[SensitivityStep, ...], Field(min_length=1)]   # from picky to eager
     sensitivity_default: Count        # the step used until the slider is moved (an index into sensitivity_steps)
+    new_things: NewThingsSettings     # objects without their own block in agents.yaml need more
     same_thing_overlap: Annotated[float, Field(gt=0, le=1)]   # two names on this much the same box are one thing
     on_desk_after_sec: ZeroOrMore     # the warnings' own "on the desk" list (the slider doesn't change these)
     on_desk_min_confidence: Fraction
@@ -148,6 +164,16 @@ class AgentsSettings(_Section):
     def default_step(self) -> SensitivityStep:
         """The sensitivity step used until the Settings page's slider is moved."""
         return self.sensitivity_steps[self.sensitivity_default]
+
+    def step_at(self, value: object) -> SensitivityStep | None:
+        """The step a saved slider value (Preferences 'sensitivity') points at; None when it isn't one."""
+        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < len(self.sensitivity_steps):
+            return self.sensitivity_steps[value]
+        return None
+
+    def leave_wait(self, step: SensitivityStep) -> float:
+        """How long an agent must be gone before it leaves the chat, at this step."""
+        return self.leave_after_sec * step.steady
 
 
 class PresenceSettings(_Section):
@@ -174,6 +200,11 @@ class ObjectStatesSettings(_Section):
     restore_max_age_sec: PositiveNumber
     database: Path
     trace_pictures: PositiveInt
+
+    def steady_rules(self, steady: float) -> tuple[float, float, float]:
+        """(appear_sec, gone_sec, move_fraction) for an object (not the person) at a sensitivity step's `steady`:
+        each multiplied by it, so a pickier step waits longer and needs a bigger move."""
+        return self.appear_sec * steady, self.gone_sec * steady, self.move_fraction * steady
 
 
 class SupervisorSettings(_Section):

@@ -64,7 +64,8 @@ export interface HealthLimits {
   detect_warn_ms: number
 }
 
-/** settings → object_states: the numbers the smoothing chart draws its lines at. */
+/** settings → object_states: the numbers the smoothing chart draws its lines at. appear_sec and gone_sec are the
+ *  waits in use now: the sensitivity slider's step stretches them (a new thing waits a little longer to appear). */
 export interface SmoothingSettings {
   on_confidence: number
   off_confidence: number

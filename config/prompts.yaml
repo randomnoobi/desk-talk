@@ -768,6 +768,22 @@ ui:
   starter_todo: Pick one top priority for the next hour
   # the counters the Habits page starts with ("Your own counters": you can add your own)
   starter_counters: [Picked up phone]
+  # the Settings page: what the sensitivity slider covers (settings → agents.sensitivity_steps)
+  sensitivity_intro: >-
+    How sure the camera must be about an object, and how long it must see it, before the object joins the chat or
+    counts as put down. Pickier means fewer false visitors and less flicker (things flashing on and off, boxes
+    jumping about); eager means things show up sooner. Something new, with no character of its own, always needs a
+    bit more.
+  # what one step of the slider does, under the slider: {name} is the step, {sure} how sure the camera must be (a
+  # percent), {join_sec} how long before the object joins the chat, {appear_sec} and {gone_sec} how long before it
+  # counts as put down or taken away, {move_percent} how far it must move to count as moved (a percent of the
+  # picture), {leave_min} how long it must be gone before it leaves the chat, and {new_sure} and {new_join_sec}
+  # the same as {sure} and {join_sec} for something new
+  sensitivity_step: >-
+    {name}: an object joins the chat once the camera is {sure}% sure of it and has seen it for {join_sec} seconds.
+    It counts as put down after {appear_sec} seconds in view, taken away after {gone_sec} seconds out of view, and
+    moved when it shifts {move_percent}% of the picture. It leaves the chat after {leave_min} min out of view.
+    Something new needs {new_sure}% and {new_join_sec} seconds.
 
 # ── The Mac's own pop-up notifications (settings → notifications) ───
 # A warning or reminder pops up with the character's name as its title and its message as the text.

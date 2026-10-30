@@ -198,6 +198,8 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'camera.problems.cutoff': ('object', 'side', 'hint'),
     'camera.problems.slow': ('fps',),
     'camera.cutoff_title': ('object', 'side'),
+    'ui.sensitivity_step': ('name', 'sure', 'join_sec', 'appear_sec', 'gone_sec', 'move_percent', 'leave_min',
+                            'new_sure', 'new_join_sec'),
     'dev.outside_data_folder': ('path',),
     'dev.is_a_folder': ('path',),
     'dev.no_such_file': ('path',),
@@ -644,6 +646,8 @@ class UiWords(_Section):
 
     starter_todo: str
     starter_counters: Words
+    sensitivity_intro: str            # the Settings page: what the sensitivity slider covers...
+    sensitivity_step: str             # ...and what one step does (blanks in BLANKS)
 
 
 class NotificationWords(_Section):

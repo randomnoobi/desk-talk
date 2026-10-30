@@ -71,7 +71,6 @@ function duration(minutes) {
   if (minutes > MINUTE && minutes % MINUTE === 0) return `${minutes / MINUTE} hours`;
   return `${minutes} minutes`;
 }
-const seconds = (sec) => `${+sec} second${+sec === 1 ? '' : 's'}`;
 /** '2026-10-30' → that day at midnight, here. */
 function localDay(day) {
   const [y, m, d] = String(day).split('-').map(Number);
@@ -921,15 +920,14 @@ async function renderCaptures(poll = false) {
 
 // ————— Settings page —————
 // The sliders' ranges and where a new danger zone's slider starts come from ui.web.settings_sliders and
-// ui.web.new_zone_px (settings → web). The sensitivity steps come from ui.sensitivity_steps (settings → agents).
+// ui.web.new_zone_px (settings → web). The sensitivity steps come from ui.sensitivity_steps (settings → agents),
+// each with what it does in words (`says`), and what the slider covers from ui.sensitivity_intro (prompts.yaml → ui).
 const hourText = (h) => `${String(h).padStart(2, '0')}:00`;
-/** 'Picky: an object joins the chat once the camera is 65% sure of it and has seen it for 10 seconds.' */
-const stepWords = (s) => `${s.name}: an object joins the chat once the camera is ${Math.round(s.min_confidence * PERCENT)}% sure of it and has seen it for ${seconds(s.join_after_sec)}.`;
 let savedTimer = null;
 async function renderSettings() {
   const page = $('#view-settings');
   const head = `<header><h1 class="page-title">Settings</h1>
-    <p class="page-intro">Your day, who joins the chat, how close is too close, and when the desk should stay quiet.</p></header>`;
+    <p class="page-intro">Your day, how picky the camera is, how close is too close, and when the desk should stay quiet.</p></header>`;
   if (!state.live) { page.innerHTML = `${head}<p class="muted">Settings are saved by Desk Talk on your computer. Start it to change them.</p>`; return; }
   let rules; let prefs;
   try {
@@ -974,12 +972,12 @@ async function renderSettings() {
         <label class="field"><span>I wake up at</span><input type="time" id="wake-time" value="${esc(draft.wake_time)}"></label>
         <label class="field"><span>I go to bed at</span><input type="time" id="bed-time" value="${esc(draft.bed_time)}"></label>
       </div></section>
-    ${steps.length ? `<section><h2>Who joins the chat</h2>
-      <p class="hint">How sure the camera must be about an object, and how long it must see it, before the object joins the chat. Pickier means fewer false visitors; eager means things join sooner.</p>
+    ${steps.length ? `<section><h2>How picky the camera is</h2>
+      <p class="hint">${esc(ui.sensitivity_intro)}</p>
       <div class="form-rows">
         <label class="field"><span>Sensitivity</span><span class="range"><input type="range" id="sensitivity" min="0" max="${steps.length - 1}" step="1" value="${draft.sensitivity}" aria-valuetext="${esc(steps[draft.sensitivity].name)}"><output id="sensitivity-name">${esc(steps[draft.sensitivity].name)}</output></span></label>
         <p class="range-ends"><span>${esc(steps[0].name)}</span><span>${esc(steps.at(-1).name)}</span></p>
-        <p class="hint" id="sensitivity-says" role="status">${esc(stepWords(steps[draft.sensitivity]))}</p>
+        <p class="hint" id="sensitivity-says" role="status">${esc(steps[draft.sensitivity].says)}</p>
       </div></section>` : ''}
     <section><h2>Danger zones</h2>
       <p class="hint">Each object gets an invisible bubble around it. When something risky enters the bubble (a cup near the laptop), the desk speaks up. Slide right for a bigger bubble.</p>
@@ -1024,7 +1022,7 @@ async function renderSettings() {
       const s = steps[+e.target.value];
       e.target.setAttribute('aria-valuetext', s.name);
       $('#sensitivity-name').textContent = s.name;
-      $('#sensitivity-says').textContent = stepWords(s);
+      $('#sensitivity-says').textContent = s.says;
     });
     page.querySelectorAll('.range input[name]').forEach((r) => r.addEventListener('input', () => {
       const z = r.closest('.zone');
