@@ -19,6 +19,7 @@ const SETTINGS: DevSettings = {
   trace_events_kept: 50,
   trace_photos_kept: 6,
   object_states: { on_confidence: 0.5, off_confidence: 0.3, appear_sec: 2, gone_sec: 5, window_pictures: 5, vote_share: 0.6 },
+  scenarios: { countdown_default_sec: 5, countdown_max_sec: 600, waiting_max: 10 },
 }
 
 // A fake server: /api/dev/settings answers while `up` is true; everything else is a 404, so the tabs'
@@ -41,7 +42,7 @@ async function wait(ms: number) {
 }
 
 describe('App', () => {
-  it('shows the five tabs once the settings are in, and switches between them', async () => {
+  it('shows the six tabs once the settings are in, and switches between them', async () => {
     vi.useFakeTimers()
     window.location.hash = ''
     fakeServer()
@@ -49,7 +50,7 @@ describe('App', () => {
     await wait(0)
 
     const names = screen.getAllByRole('tab').map(t => t.textContent)
-    expect(names).toEqual(['Checks', 'Live', 'System', 'Database', 'Storage'])
+    expect(names).toEqual(['Checks', 'Live', 'System', 'Database', 'Storage', 'Demo'])
     expect(screen.getByRole('tab', { name: 'Checks' })).toHaveAttribute('aria-selected', 'true')
 
     fireEvent.click(screen.getByRole('tab', { name: 'Database' }))
@@ -70,7 +71,7 @@ describe('App', () => {
     server.up = true
     await wait(FIRST_TRY_AGAIN_MS)
     expect(screen.queryByText(/Can't reach Desk Talk/)).not.toBeInTheDocument()
-    expect(screen.getAllByRole('tab')).toHaveLength(5)
+    expect(screen.getAllByRole('tab')).toHaveLength(6)
   })
 
   it('keeps the tabs and shows the bar when the server goes away later', async () => {
@@ -81,6 +82,6 @@ describe('App', () => {
     server.up = false
     await wait(SETTINGS.poll_sec * 1000)
     expect(screen.getByText(/Can't reach Desk Talk, trying again/)).toBeInTheDocument()
-    expect(screen.getAllByRole('tab')).toHaveLength(5)
+    expect(screen.getAllByRole('tab')).toHaveLength(6)
   })
 })
