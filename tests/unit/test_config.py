@@ -562,6 +562,14 @@ def test_hydration_sip_shares_load(project):
     assert hydration.sip_cover_pictures == 2
 
 
+def test_hydration_same_drink_overlap_loads_and_must_be_more_than_0(project):
+    assert load_config(root=project, environ={}).protocols.hydration.sip_same_drink_overlap == 0.7
+    rules = project / 'config' / 'protocols.yaml'
+    rules.write_text(rules.read_text().replace('sip_same_drink_overlap: 0.7', 'sip_same_drink_overlap: 0', 1))
+    with pytest.raises(ConfigError, match='sip_same_drink_overlap'):
+        load_config(root=project, environ={})
+
+
 def test_hydration_moved_setting_loads_and_the_hand_rule_is_gone(project):
     hydration = load_config(root=project, environ={}).protocols.hydration
     assert hydration.sip_moved_share == 0.007

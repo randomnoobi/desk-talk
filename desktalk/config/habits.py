@@ -56,6 +56,8 @@ class HydrationRule(_Section):
     sip_cover_share: Fraction         # this share of the desk vanishing at once = a covered camera
     sip_cover_pictures: PositiveInt   # ...in this many pictures in a row
     sip_stall_sec: PositiveNumber     # no picture for longer than this while it's up or missing = the camera stalled
+    # while a drink is missing, another drink word's box this much the same box is the same drink renamed
+    sip_same_drink_overlap: Annotated[float, Field(gt=0, le=1)]
     remind_after_min: ZeroOrMore
     behind_by_ml: ZeroOrMore
     stop_before_bed_hours: ZeroOrMore

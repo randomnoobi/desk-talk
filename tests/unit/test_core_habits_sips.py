@@ -227,16 +227,39 @@ def test_how_far_it_must_come_back_moved_comes_from_protocols_yaml(config, moved
     assert d.sips() == sips
 
 
-@pytest.mark.parametrize('nudge', [0, 15])
+@pytest.mark.parametrize('nudge', [0, 6])
 def test_a_drink_whose_word_switches_and_back_is_no_sip(config, nudge):
     """Looking down, the detector often calls the same bottle "cup", then "bottle", then "cup" again. While it's
-    "bottle" it is still there, even if it was nudged meanwhile."""
+    "bottle" it is still there, even if it was nudged a little meanwhile (6 px: more than a sip's move, but still
+    nearly the same box, 0.74 of it)."""
     d = Desk(config)
     d.show(10, cup=CUP_DOWN, laptop=LAPTOP)
     d.show(3, bottle=shifted(CUP_DOWN, dx=nudge), laptop=LAPTOP)
     d.show(5, cup=shifted(CUP_DOWN, dx=nudge), laptop=LAPTOP)
     d.show(3, bottle=shifted(CUP_DOWN, dx=nudge), laptop=LAPTOP)
     d.show(5, cup=shifted(CUP_DOWN, dx=nudge), laptop=LAPTOP)
+    assert d.sips() == 0
+
+
+BOTTLE_BEHIND = BBox(300, 300, 340, 400)     # a bottle at the back of the desk
+MUG_IN_FRONT = BBox(280, 330, 380, 450)      # a mug in front of it: its box holds the bottle's middle (0.21 the same)
+
+
+def test_a_sip_from_a_bottle_behind_a_mug_counts(config):
+    """The bottle leaves straight out of the picture and comes back 30 px off. The mug's box covers the bottle's
+    middle all the while, but it is another drink, not the bottle under another word."""
+    d = Desk(config)
+    d.show(10, bottle=BOTTLE_BEHIND, cup=MUG_IN_FRONT, laptop=LAPTOP)
+    d.show(4, cup=MUG_IN_FRONT, laptop=LAPTOP)
+    d.show(5, bottle=shifted(BOTTLE_BEHIND, dx=30), cup=MUG_IN_FRONT, laptop=LAPTOP)
+    assert d.sips() == 1
+
+
+def test_how_much_the_same_box_another_drink_word_must_be_comes_from_the_settings(config):
+    d = Desk(config, sip_same_drink_overlap=0.2)            # now the mug's box counts as the bottle renamed
+    d.show(10, bottle=BOTTLE_BEHIND, cup=MUG_IN_FRONT, laptop=LAPTOP)
+    d.show(4, cup=MUG_IN_FRONT, laptop=LAPTOP)
+    d.show(5, bottle=shifted(BOTTLE_BEHIND, dx=30), cup=MUG_IN_FRONT, laptop=LAPTOP)
     assert d.sips() == 0
 
 

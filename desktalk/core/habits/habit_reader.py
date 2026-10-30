@@ -32,6 +32,7 @@ from desktalk.core.agents.presence import PresenceTracker
 from desktalk.core.agents.sensitivity import Slider, confidence_needed
 from desktalk.core.habits import habit_rules as P
 from desktalk.core.habits.habit_days import HabitDay, Said
+from desktalk.core.vision.geometry import same_box_share
 from desktalk.domain import BBox, Detection, DetectionEvent
 from desktalk.ports import Clock, DeskScene, Preferences, Profiles
 from desktalk.util import a_or_an
@@ -257,8 +258,9 @@ class SipWatch:
         bigger or smaller around the same middle.
     With `sip_needs_person` on, a sip also needs a person in at least one picture from the one after it last
     rested to the one where it rests again: with nobody at the desk, nobody drank.
-    A picture where a box of another drink word holds the middle of its resting spot doesn't count as missing:
-    looking down, the detector often switches the same bottle between "bottle" and "cup".
+    A picture where a box of another drink word is nearly the box where it rested (`sip_same_drink_overlap`)
+    doesn't count as missing: looking down, the detector often switches the same bottle between "bottle" and
+    "cup". A box that only covers its spot is another drink nearby (a mug in front of the bottle).
     If the camera looks covered while a drink is missing (nothing in the picture, or `sip_cover_share` or more of
     the other things that were there in the last picture that showed it are missing too) in `sip_cover_pictures`
     pictures in a row, that trip can't be a sip. Nor can it when no picture came for longer than `sip_stall_sec`
@@ -312,7 +314,7 @@ class SipWatch:
 
     def _missing(self, drink: _Drink, label: str, labels: Set[str], others: Sequence[BBox], now: float) -> None:
         """This picture doesn't show `drink`."""
-        if drink.left_at is None and any(_holds(box, drink.rest.center) for box in others):
+        if drink.left_at is None and any(self._same_drink(drink.rest, box) for box in others):
             drink.settle(drink.rest, now)              # still there, under another drink word
             drink.covered_run = 0
             return
@@ -323,6 +325,11 @@ class SipWatch:
                 drink.covered = True
         else:
             drink.covered_run = 0
+
+    def _same_drink(self, rest: BBox, other: BBox) -> bool:
+        """Is another drink word's box nearly the box where this drink rested (the same drink renamed), not just
+        another drink nearby whose box covers its spot?"""
+        return same_box_share(_box(rest), _box(other)) >= self._rule.sip_same_drink_overlap
 
     def _forgotten(self, drink: _Drink, now: float) -> bool:
         """Missing for longer than any sip takes: it was taken away."""
@@ -385,9 +392,8 @@ def _pair(rests: Sequence[BBox], boxes: Sequence[BBox]) -> dict[int, int]:
     return paired
 
 
-def _holds(box: BBox, point: tuple[float, float]) -> bool:
-    x, y = point
-    return box.x1 <= x <= box.x2 and box.y1 <= y <= box.y2
+def _box(box: BBox) -> tuple[float, float, float, float]:
+    return box.x1, box.y1, box.x2, box.y2
 
 
 def log_sip(day: HabitDay, now: float, ml: float, how: str, settings: HabitTrackerSettings,

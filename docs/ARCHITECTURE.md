@@ -112,8 +112,9 @@ resting, and with `sip_needs_person` on, a person has to be in at least one pict
 came back (with nobody at the desk, nobody drank). The second way is for a camera that looks down with the bottle
 at the picture's edge: drinking takes it straight out of the picture. A drink the detector only missed for a
 while, or a hand only covered, comes back exactly where it was, so it isn't a sip. A picture where a box of
-another drink word holds its resting spot doesn't count as missing (looking down, the detector switches the same
-bottle between "bottle" and "cup"). Every box of a drink word is watched on its own, matched to the nearest
+another drink word is nearly the box where it rested (`hydration.sip_same_drink_overlap`) doesn't count as missing
+(looking down, the detector switches the same bottle between "bottle" and "cup"); a box that only covers its spot
+is another drink nearby. Every box of a drink word is watched on its own, matched to the nearest
 resting spot, so two cups don't swap spots. A cup taken away, or a covered camera (`sip_cover_share` of the desk
 vanishing for `sip_cover_pictures` pictures in a row, or no pictures for longer than `sip_stall_sec` while it was
 up or missing) is no sip (`SipWatch` in `core/habits/habit_reader.py`).
