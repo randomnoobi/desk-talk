@@ -1,8 +1,8 @@
 """
 Lens's eyes: checks on the camera itself (not the objects).
 
-Lens speaks up in the group chat when something about the camera needs fixing: too dark, glare, blurry,
-an object cut off at the side of the picture, the camera got bumped, the video is slow or stopped. When
+Lens speaks up in the group chat when something about the camera needs fixing: blocked, too dark, glare,
+blurry, an object cut off at the side of the picture, the camera got bumped, the video is slow or stopped. When
 the problem goes away, Lens says thanks. All the numbers are in settings → lens, the words in
 config/prompts.yaml → camera.
 

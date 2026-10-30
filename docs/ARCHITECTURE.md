@@ -46,6 +46,7 @@ Your computer keeps YOLO too, for the phone and the webcam, and as the backup fo
       │                ok   → use the Pi's detections
       │                busy → live view only, no event
       │                off, or not the Pi → UltralyticsDetector on this computer
+      │              then one name per box (agents.same_thing_overlap)
       │ one DetectionEvent per analysed picture
       ▼
  EventStream   (each consumer has its own queue and thread)
@@ -56,7 +57,7 @@ Your computer keeps YOLO too, for the phone and the webcam, and as the backup fo
       ├─▶ HabitTracker      water, breaks, light, phone → HabitEvent
       ├─▶ DeskMonitor       danger zones, edges, pets   → Alert
       ├─▶ LostItems         where your keys were        → Alert
-      ├─▶ TracePhotoTaker   pictures for the developer page's trace (only when dev.enabled)
+      ├─▶ TracePhotoTaker   each object's story pictures (the app page and the developer page)
       └─▶ MessageGenerator  joins, alerts and habits    → chat messages
             │
             ▼
@@ -66,24 +67,57 @@ Your computer keeps YOLO too, for the phone and the webcam, and as the backup fo
           MessageHub ──── SSE: GET /api/events ────▶ every open app page (web_app/)
             ▲
             └── background jobs that speak by themselves: HabitReminders (with the RuleRunner's nudges) and
-                Lens through DesktopAlerts; IdleChat and DailySummary straight to the hub
+                Lens through DesktopAlerts; IdleChat and DailySummary straight to the hub. The developer
+                page's Demo tab (ScenarioRunner, only when dev.enabled) fires pretend warnings on purpose
+                through the same parts: an Alert on the EventStream, HabitReminders, Lens or the HabitTracker
 ```
+
+**One thing, one name.** The detector sometimes names one thing twice on nearly the same box (a laptop that is
+also "book"). Before the producer builds the `DetectionEvent`, two different names whose boxes are at least
+`agents.same_thing_overlap` the same box (shared area over the area both cover) count as one thing, and only one name is
+kept (`core/vision/one_name.py`): a word with its own agent in agents.yaml beats a new thing's word (a mug seen as
+"cup" 0.50 and "vase" 0.52 stays a cup), otherwise the surer name wins. So everyone who listens, and Lens and the live view, see the same
+list. Words on the ignore list take no part. Each name left out is logged once per stretch, at debug level.
 
 **Who joins the chat.** Only the agents in `agents.can_join` (Computer, Cup, Phone, Snack, Book) join, once
 the camera has been sure enough of one for long enough. Both numbers are the sensitivity step you pick in the
 app (`agents.sensitivity_steps`, saved as `sensitivity` in `data/preferences.json`; an agent's own
-`min_confidence` counts only when it is stricter). Everything else the camera sees is still on the
+`min_confidence` counts only when it is stricter). The habits count a box by the same how-sure number, so a cup
+too weak for the chat counts no sips either. The step also stretches the waits that keep flicker out: its `steady`
+multiplies `agents.leave_after_sec` and the object states' `appear_sec`, `gone_sec` and `move_fraction` (not the
+person's waits; Normal is 1, so as written). A new thing (an agent made up for an object without its own block
+in `agents.yaml`) needs `agents.new_things.extra_confidence` more, up to `max_confidence`, and waits
+`extra_wait_sec` longer to join and to appear. The roster, the habits and the object states read the step with
+every picture, so moving the slider works at once. Everything else the camera sees is still on the
 **on-desk list** (`DeskScene.on_desk()`, with its own steady numbers, `agents.on_desk_after_sec` and
 `on_desk_min_confidence`), which the warnings, the live view's drawings and the app's "on the desk" list read.
 A warning about something that nobody in the chat can say comes from Lens ("Heads up: scissors next to the
-cell phone"). The roster also keeps the newest `dev.trace_events_kept` joins, leaves and refusals for each
-kind of object, with why (`ChatJoins`, for the developer page).
+cell phone"). The roster also keeps the newest `object_story.events_kept` joins, leaves and refusals for
+each kind of object, with why (`ChatJoins`, for each object's story).
+
+**Camera problems.** Lens's checks on the picture (`core/vision/camera_problems.py`) find: lost video, covered,
+dark, glare, blurry, bumped, nothing recognized, something cut off, slow video. Covered (the app says "Camera is
+blocked") is any of three: the picture is nearly black (`lens.covered_below`), it has almost no detail and
+isn't dark, like white paper or a hand on the lens (`lens.covered_detail_below`; a dim plain picture stays
+dark), or one box that isn't a person
+or in the ignore list (the desk, furniture) covers more than `lens.covered_by_box_share` of the picture, like a
+book held up to the lens. While covered, the dark, glare, blurry, empty and cut-off checks are not trusted.
 
 **Sips.** A sip counts when a drink is lifted (its box rises more than `hydration.sip_lift_share` of the
-picture) and then put back where it rested, between `sip_gone_min_sec` and `sip_gone_max_sec` later. A hand
-over the cup, a cup taken away, or a covered camera (`sip_cover_share` of the desk vanishing for
-`sip_cover_pictures` pictures in a row, or no pictures for longer than `sip_stall_sec` while it
-was up) is no sip (`SipWatch` in `core/habits/habit_reader.py`).
+picture) and then put back where it rested, or goes missing from the pictures and then comes back near where it
+was (within `sip_back_share`) but moved: its box's middle more than `sip_moved_share` of the picture's diagonal
+off its resting box's middle (a box only drawn bigger or smaller around the same middle is the detector, not a
+drink). Either way it has to rest again between `sip_gone_min_sec` and `sip_gone_max_sec` after it was last seen
+resting, and with `sip_needs_person` on, a person has to be in at least one picture while it was away or as it
+came back (with nobody at the desk, nobody drank). The second way is for a camera that looks down with the bottle
+at the picture's edge: drinking takes it straight out of the picture. A drink the detector only missed for a
+while, or a hand only covered, comes back exactly where it was, so it isn't a sip. A picture where a box of
+another drink word is nearly the box where it rested (`hydration.sip_same_drink_overlap`) doesn't count as missing
+(looking down, the detector switches the same bottle between "bottle" and "cup"); a box that only covers its spot
+is another drink nearby. Every box of a drink word is watched on its own, matched to the nearest
+resting spot, so two cups don't swap spots. A cup taken away, or a covered camera (`sip_cover_share` of the desk
+vanishing for `sip_cover_pictures` pictures in a row, or no pictures for longer than `sip_stall_sec` while it was
+up or missing) is no sip (`SipWatch` in `core/habits/habit_reader.py`).
 
 **To-dos.** `TodoFile` (`core/habits/todos.py`, saved as `data/todos.json`) keeps the to-do list the app and the
 chat send, with due dates. The reminders read it through the desk status: the day before, on the day, each day
@@ -104,10 +138,10 @@ reply only holds up the message generator's own queue, never the camera or the o
 | `desktalk/ports.py` | The interfaces between the parts (below). |
 | `desktalk/domain/` | Plain data, no files or network: `Detection`, `Frame`, the event classes, `AgentProfile`, `Nudge`, the desk right now (`SeenObject`, `SafetyNow`, `Photo`), the danger rules (`DeskRules`), names for pictures and shapes (`Picture`, `Box`, `Size`), day names, and the errors `DetectorUnavailable` / `AIUnavailable` with `plain_error`. |
 | `desktalk/core/desk/` | **The desk right now**, in five parts, each with its own lock inside its methods: `LiveView` (the newest live view pictures and the light), `Scene` (what the camera sees on the desk), `DangerBoard` (the dangers right now and the latest alerts), `Memories` (what the characters said, the tracker panels, when you last typed), `Album` (the proof photos). `WholeDesk` passes calls on to the five, for the parts that still ask for several desk interfaces in one object. |
-| `desktalk/core/vision/` | `producer.py` (pictures → detection events), the desk rules (`rules.py`, `danger_zones.py`, `desk_edges.py`, `risky_pairs.py`, `findings.py`, `geometry.py`, `analyzer.py`), `desk_monitor.py` (safety alerts), Lens's checks on the picture (`camera_health.py`, the front, with `camera_measure.py` for the numbers and `camera_problems.py` for when a problem starts and ends), `proof_photos.py`. No OpenCV here: pictures go through `PictureTools`. |
+| `desktalk/core/vision/` | `producer.py` (pictures → detection events), `one_name.py` (one name per box), the desk rules (`rules.py`, `danger_zones.py`, `desk_edges.py`, `risky_pairs.py`, `findings.py`, `geometry.py`, `analyzer.py`), `desk_monitor.py` (safety alerts), Lens's checks on the picture (`camera_health.py`, the front, with `camera_measure.py` for the numbers and `camera_problems.py` for when a problem starts and ends), `proof_photos.py`. No OpenCV here: pictures go through `PictureTools`. |
 | `desktalk/core/events/` | `EventStream`: publish / subscribe inside the program, a bounded queue and a thread per consumer. |
-| `desktalk/core/agents/` | `ProfileBook` (who each object becomes, from `config/agents.yaml`), `Roster` (who's in the chat, and the on-desk list), `PresenceTracker`. |
-| `desktalk/core/object_states/` | `ObjectStateTracker`: detection events → a steady present / absent state for each kind of object (smoothing, then a small state machine), `object_state` events, and rows in the SQLite store. The person's state is the on/off switch for reminders and small talk. `TracePhotoTaker` (`trace_photos.py`, only when `dev.enabled`): a picture of an object with its box when it appears, when it joins the chat, and every `dev.trace_photo_every_sec` while it's there. |
+| `desktalk/core/agents/` | `ProfileBook` (who each object becomes, from `config/agents.yaml`), `Roster` (who's in the chat, and the on-desk list), `PresenceTracker`, `Slider` (`sensitivity.py`: the sensitivity step in use and how sure a box must be, for the roster, the habits and the object states). |
+| `desktalk/core/object_states/` | `ObjectStateTracker`: detection events → a steady present / absent state for each kind of object (smoothing, then a small state machine, whose waits follow the sensitivity slider), `object_state` events, and rows in the SQLite store. The person's state is the on/off switch for reminders and small talk. `TracePhotoTaker` (`trace_photos.py`): a picture of an object with its box when it appears, joins the chat, moves or goes away (the empty spot, with its last box), and every `object_story.photo_every_sec` while it's there. |
 | `desktalk/core/habits/` | `habit_rules.py` (the book's rules as plain functions), `HabitTracker` (`tracker.py`, the front: the habit buttons and the reminders due), `habit_days.py` (`HabitDay`, one day's numbers, and `HabitDays`, which loads, saves and starts a new day), `habit_reader.py` (reading habits from the detection events), `HabitReminders`, `PreferencesFile` (wake time, bedtime, quiet hours, sensitivity), `TodoFile` (`todos.py`, the to-do list with due dates), `DeskStatusService`, sun times. The rule engine: `rule_engine.py` checks the rules in `config/protocols.yaml` → `rules` against the object states and the habits logged lately (`HabitEvent`), and `RuleRunner` (`rule_runner.py`) runs it once every `rule_engine.check_every_sec`, keeps the nudges that are due for the reminders, and checks whether each nudge worked (`rule_outcome`). |
 | `desktalk/core/chat/` | `MessageGenerator` (the front: events → messages, answering you), built from `alert_voice.py`, `nudge_voice.py`, `chat_answers.py` and `memory.py` (the only part that writes what the characters remember). `MessageHub` (messages → open app pages), `DesktopAlerts` (`desktop_alerts.py`: a `Notifier` around the hub that also pops warnings, reminders and camera-seen sips up as Mac notifications; the `notify` mark it reads never reaches the pages), `prompts.py` (fills in the blanks of the prompts in `config/prompts.yaml`), `names.py` (@mentions and who answers), `history.py`, `live_context.py` (what the AI is told about the desk), `replies.py`, `tracker_actions.py`. `workers/`: `IdleChat`, `LostItems` (with `lost_items_answers.py` and `lost_item_words.py`), `Lens`, `DailySummary`. |
 | `desktalk/adapters/camera/` | `PiFrameSource`, `PhoneFrameSource`, `WebcamSource`, and the pairing key. |
@@ -115,17 +149,18 @@ reply only holds up the message generator's own queue, never the camera or the o
 | `desktalk/adapters/llm/` | `OpenAICompatibleChatModel` (Gemini / OpenAI / Groq / Ollama) and `ResilientChatModel`, which wraps it with time limits, retries and a breaker. |
 | `desktalk/adapters/notify/` | `MacNotifications`: the Mac's own pop-ups through `osascript`, from a small queue (`notifications.queue_size`) on one thread, each with a time limit, failures only logged; `NoNotifications` on other systems or when switched off (`make_notifications`). |
 | `desktalk/adapters/picture/` | What's done to pictures, with OpenCV: `OpenCvPictureTools` (decode, encode, shrink, crop, brightness, sharpness ...) and `DeskPainter` (the boxes and desk drawings on the live view, with every color, width and size from settings → `drawing`). |
-| `desktalk/adapters/storage/` | `EventLog` (the files in `data/events/`), `JsonFileStore` (small JSON files, saved all-or-nothing), `SqliteStateStore` (the object states' history, `object_states.database`) and `TracePhotoFiles` (`trace_photo_files.py`: the developer page's trace pictures in `dev.trace_photos_folder`, the newest `dev.trace_photos_kept` per kind of object). |
+| `desktalk/adapters/storage/` | `EventLog` (the files in `data/events/`), `JsonFileStore` (small JSON files, saved all-or-nothing), `SqliteStateStore` (the object states' history, `object_states.database`) and `TracePhotoFiles` (`trace_photo_files.py`: each object's story pictures in `object_story.photos_folder`; per kind of object the newest `object_story.timed_photos_kept` timed ones and, apart from them, the newest `object_story.step_photos_kept` step ones). |
 | `desktalk/adapters/dev/` | For the developer page, only built when `dev.enabled` is on: `PytestRunner` (`test_runner.py`: runs the checks in `dev.checks`, or some tests with `dev.test_command`, in a child process, one run at a time, stopped after `dev.run_timeout_min`), with `pytest_report.py`, a pytest plugin that writes one line per finished test so the page sees each one as it finishes; `SqliteBrowser` (`sqlite_browser.py`: the SQLite databases opened read-only, one statement that only reads, at most `dev.sql_max_rows` rows, stopped after `dev.sql_timeout_sec`); `DataFolder` (`data_files.py`: the files in `data/` and the start of one, never anything outside it). |
 | `desktalk/runtime/` | `Supervisor` (runs the background jobs and starts them again after a crash), `Scheduler`, `SystemClock` (the shared one), logging. |
-| `desktalk/web/` | FastAPI. `app.py` makes the two servers (the main one, and the phone page's own HTTPS one), `routers/` has the routes by area (`pi`, `phone`, `live`, `video`, `chat`, `habits`, `log`, `settings`, `health`, `dev`), `schemas.py` the request and reply shapes, `streams.py` SSE and the video, `serve.py` runs uvicorn. The routes only see the interfaces, plain data and settings on `DeskTalk`. |
+| `desktalk/web/` | FastAPI. `app.py` makes the two servers (the main one, and the phone page's own HTTPS one), `routers/` has the routes by area (`pi`, `phone`, `live`, `video`, `chat`, `habits`, `log`, `settings`, `health`, `objects`, `dev`), `stories.py` reads an object's story for both `objects` (the app page) and `dev`, `schemas.py` the request and reply shapes, `streams.py` SSE and the video, `serve.py` runs uvicorn. The routes only see the interfaces, plain data and settings on `DeskTalk`. |
+| `desktalk/core/demo/` | The developer page's Demo tab (only when `dev.enabled` is on): `ScenarioRunner` (`scenarios.py`: the pretend warnings in `dev.scenarios`, their countdowns, and a background job that fires each one once its countdown is over) and `DemoFirer` (`firer.py`: sends each one through the same part as the real warning: the desk monitor's `Alert` for the desk edge and danger zones, `HabitReminders.say()` for the drink reminder, `Lens.say_problem()` for the camera covered, the habit tracker's `log()` for a sip, the lost-items `Alert` for keys gone missing). This is the one place the developer page changes what the app does, on purpose. |
 | `desktalk/web/routers/dev.py` | The developer page's routes, `/api/dev/...` (the list is in [API.md](API.md#developer-page-this-computer-only-15)). Every one only answers this computer, and only its own page (`DevOnly` in `deps.py`: the `FromHere` check plus a `Host` and an `Origin` check). It's only added to the main server when `dev.enabled` is on, never to the phone's. `app.py` serves the built page (`dev.ui_folder`) at `/dev/`, or a line saying how to build it. |
 | `shared/desktalk_shared/` | Used on the Pi and on this computer, standard library only: `detection.py` (`Detection`, `BBox`), `wire.py` (the upload format), `detector_api.py` (the detector service's requests and replies), `ultralytics_results.py` (YOLO results → `Detection`s, the same on both sides), `backoff.py` (`Backoff`: the wait after each failure in a row, doubling up to a most), `clock.py` (`SystemClock`, the one real clock), `workers.py` (`WorkerThread`: a job in a thread of its own that starts again after a crash). |
 | `raspberry_pi/camera/` | The camera program: `cli.py` (the command line and loading the settings), `main.py` (the loop: take, save, ask, send), `workers.py` (the threads, and `build_program`, which connects the parts), `cameras.py`, `photo_store.py`, `cleaner.py`, `detector_client.py`, `uploader.py`, `health.py`, `watchdog.py`, `self_test.py`, `settings.py`. [README](../raspberry_pi/camera/README.md). |
 | `raspberry_pi/detector_service/` | The detector service: `Dockerfile`, `compose.yaml`, `.env`, and `desktalk_detector/` (FastAPI: `POST /detect`, `GET /health`, `PUT /model`; converts `.pt` models to ncnn and keeps the last good one). [README](../raspberry_pi/detector_service/README.md). |
 | `benchmarks/` | `deskbench`: times YOLO models on the Mac and on the Pi (in its own Docker image), to pick the Pi's model. [README](../benchmarks/README.md). |
 | `web_app/`, `phone_camera/` | The app's page, and the page a phone opens to be the camera. They keep no copies of the settings: the app page asks `GET /api/ui_settings` when it opens (refresh times, limits, the palette, Lens's card, how long a chat reply may take) and shows its "can't reach Desk Talk" note until it gets them; the phone page asks `GET /api/phone/config` (picture size and quality). |
-| `dev_ui/` | The developer page at `http://localhost:5000/dev/`: Checks, Live, System, Database and Storage tabs. Vite + React + TypeScript, with its own tests (Vitest) and `package-lock.json`; `npm run build` puts it in `dev_ui/dist/`. It keeps no numbers of its own: it asks `GET /api/dev/settings` once when it opens. The app page stays plain JavaScript with no build step. [README](../dev_ui/README.md). |
+| `dev_ui/` | The developer page at `http://localhost:5000/dev/`: Checks, Live, System, Database, Storage and Demo tabs. Vite + React + TypeScript, with its own tests (Vitest) and `package-lock.json`; `npm run build` puts it in `dev_ui/dist/`. It keeps no numbers of its own: it asks `GET /api/dev/settings` once when it opens. The app page stays plain JavaScript with no build step. [README](../dev_ui/README.md). |
 
 There are three uv packages in one workspace with one `uv.lock`: `desktalk` (this folder), `desktalk-shared`
 (`shared/`) and `desktalk-detector` (`raspberry_pi/detector_service/`). The camera program isn't installed
@@ -180,8 +215,10 @@ locking, so nobody outside ever holds a lock:
 | `CharacterMemory` | what each character said lately, the tracker panels, when you last typed | `Memories` | `FakeCharacterMemory` |
 | `PhotoAlbum` | add a proof photo, get one, the newest ones | `Album` | `FakePhotoAlbum` |
 
-**The developer page** has six interfaces of its own. Only the `/api/dev` routes use them, and `DeskTalk`'s
-`test_runner`, `databases`, `data_files` and `trace_photos` are None when `dev.enabled` is off:
+**The developer page** has these interfaces of its own. The `/api/dev` routes use them (and the Demo tab's
+countdowns, the last four), and `DeskTalk`'s `test_runner`, `databases`, `data_files` and `demo` are None
+when `dev.enabled` is off. `ChatJoins` and `TracePhotos` are built either way: the app page's story panel
+(`/api/objects/...`) uses them too.
 
 | Interface | What it promises | Real version | Fake for tests |
 |---|---|---|---|
@@ -189,8 +226,12 @@ locking, so nobody outside ever holds a lock:
 | `DatabaseBrowser` | the databases, their tables (with row counts and the `CREATE` line), one read-only query (`QueryRefused` for anything else, or one that takes too long) | `SqliteBrowser` (`adapters/dev/sqlite_browser.py`) | `FakeDatabaseBrowser` |
 | `DataFiles` | every file and folder in `data/`, the start of one file (`ValueError` for a path outside it) | `DataFolder` (`adapters/dev/data_files.py`) | `FakeDataFiles` |
 | `ChatJoins` | each kind of object's newest joins, leaves and refusals, with how sure, how long it was seen, inside the desk or not, and the sensitivity step (`joins(label)`, oldest first) | `Roster` | `FakeChatJoins` |
-| `TracePhotos` | each kind of object's trace pictures (`photos(label)`, oldest first) and one picture's JPEG (`jpeg(id)`) | `TracePhotoFiles` | `FakeTracePhotos` |
+| `TracePhotos` | each kind of object's story pictures (`photos(label)`, oldest first) and one picture's JPEG (`jpeg(id)`) | `TracePhotoFiles` | `FakeTracePhotos` |
 | `SmoothingTraceView` | what the smoothing made of each object's last `object_states.trace_pictures` pictures (confidence, the votes, seen or not, the state, the wait), oldest first; `[]` for an object never seen | `ObjectStateTracker` | `FakeSmoothingTrace` |
+| `DemoScenarios` (and `DemoCountdowns`, the same plus the background job) | the Demo tab's pretend warnings, start one with a countdown in seconds (`ValueError` for an unknown name, a countdown out of range or too many waiting), cancel one (`KeyError` once it's gone), the ones counting down with the seconds left | `ScenarioRunner` (`core/demo/scenarios.py`) | none: the routes' tests use the real one with a `FakeClock` |
+| `ScenarioFirer` | send one pretend warning by name, the way the real one goes out; `problem()` says why one can't (it names an agent or lost item the settings don't have), so the app still starts and the Demo tab refuses just that one | `DemoFirer` (`core/demo/firer.py`) | a recording one in the runner's tests |
+| `CameraWarnings` | Lens saying a camera problem now (`say_problem()`), as it says one it found | `Lens` | a recording one in the firer's tests |
+| `ReminderSender` | the habit reminders saying one nudge now (`say()`), by the agent for the habit or Lens, with nothing waiting because of it | `HabitReminders` | a recording one in the firer's tests |
 
 A part asks only for the desk interfaces it uses (the roster gets `scene`, idle chat gets `character_memory`).
 The producer, proof photos, the desk monitor, the desk status, lost items, the message generator and the
@@ -308,8 +349,8 @@ in the app shows only the events that matter to you (`GET /api/log/events`: sips
 to-dos, sunlight, reminders, warnings and camera problems); the intervals stay in the files.
 
 The rest of `data/` (settings → `storage.folder`, kept by `JsonFileStore`): `preferences.json`,
-`habits/<day>.json`, `todos.json`, `learned_personalities.json`, `daily_summary.json`; and, when the developer
-page is on, `trace_photos/<object>/` (`TracePhotoFiles`). The log file is
+`habits/<day>.json`, `todos.json`, `learned_personalities.json`, `daily_summary.json`; and each object's story
+pictures, `trace_photos/<object>/` (`TracePhotoFiles`, settings → `object_story`). The log file is
 `data/logs/desktalk.log` (settings → `logging.folder` and `logging.file_name`).
 
 The pictures themselves stay on the Pi and are deleted every 10 minutes (`pi.delete_every_min`). This

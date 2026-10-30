@@ -8,6 +8,7 @@ A segment is two points: a line from one to the other.
 from __future__ import annotations
 
 import math
+from collections.abc import Collection, Sequence
 
 Box = tuple[float, float, float, float]
 Point = tuple[float, float]
@@ -30,6 +31,35 @@ def overlap(a: Box, b: Box) -> Box | None:
     if x2 > x1 and y2 > y1:
         return (x1, y1, x2, y2)
     return None
+
+
+def same_box_share(a: Box, b: Box) -> float:
+    """How much two boxes are one box, 0 to 1: the area they share over the area they cover together."""
+    shared = overlap(a, b)
+    if shared is None:
+        return 0.0
+    inner = (shared[2] - shared[0]) * (shared[3] - shared[1])
+    covered = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inner
+    return inner / covered if covered > 0 else 0.0
+
+
+def same_thing_drops(found: Sequence[tuple[str, float, Box]], overlap: float,
+                     known: Collection[str] = frozenset()) -> dict[int, int]:
+    """One thing, one name. `found` is (name, how sure, box) for each box. When two different names' boxes are
+    at least `overlap` the same box (same_box_share), the other one is a second name for the same thing.
+    A name in `known` (lowercase: a word with its own agent) beats one that isn't (a new thing's word), even a
+    little less sure; between two of the same kind the surer one wins.
+    Returns the place in `found` of each second name → the place of the name it lost to."""
+    kept: list[int] = []
+    dropped: dict[int, int] = {}
+    for i in sorted(range(len(found)), key=lambda i: (found[i][0].lower() in known, found[i][1]), reverse=True):
+        name, _, box = found[i]
+        winner = next((k for k in kept if found[k][0] != name and same_box_share(box, found[k][2]) >= overlap), None)
+        if winner is None:
+            kept.append(i)
+        else:
+            dropped[i] = winner
+    return dropped
 
 
 def box_gap(a: Box, b: Box) -> float:

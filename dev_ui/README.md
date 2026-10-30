@@ -7,7 +7,7 @@ requests from this computer.
 It's a small Vite + React + TypeScript app. The app page itself (`web_app/`) stays plain JavaScript.
 You need Node 22 (it comes with npm).
 
-## The five tabs
+## The six tabs
 
 - **Checks**: **Run everything** runs each step in `dev.checks` (the fast tests, the lint, the type check)
   one after the other. Below it, every test as folder → file → test, with a search box and a **Run** button
@@ -30,6 +30,13 @@ You need Node 22 (it comes with npm).
   **Delete** button that asks first; the files in the data folder, with a look at the start of each (read
   again every `dev.table_counts_every_sec` and on **Read the folder again**); and
   the Pi's stored photos and free space.
+- **Demo**: pretend warnings for testing and for recording a demo video (a cup near the desk edge, a drink
+  next to the laptop, time for a drink, the camera covered, a sip, keys gone missing; the list is
+  `dev.scenarios.items`). Pick one, set the seconds (it starts at `dev.scenarios.countdown_default_sec`, at
+  most `dev.scenarios.countdown_max_sec`) and press **Start**; each one waiting counts down live, with
+  **Cancel**. When the countdown is over it goes out like a real one: in the app's chat, as a Mac pop-up and in
+  the event log, and a pretend sip counts in today's water. This is the one tab that changes what the app
+  does, on purpose.
 
 ## Use it
 
@@ -71,7 +78,7 @@ The server's `/api/dev/...` routes are listed in [docs/API.md](../docs/API.md#de
 - `src/usePoll.ts`: asks the server again every few seconds and keeps the last good answer.
 - `src/App.tsx`: the tab bar. It loads `/api/dev/settings` once and gives it to every tab. The page keeps
   no numbers of its own: they all come from `config/settings.yaml` through that reply.
-- `src/tabs/`: one file per tab (Checks, Live, System, Database, Storage).
+- `src/tabs/`: one file per tab (Checks, Live, System, Database, Storage, Demo).
 - The sums behind the tabs: `src/testTree.ts` (Checks), `src/timeline.ts` and
   `src/SmoothingChart.tsx` (Live), `src/health.ts` (System), `src/queries.ts` (Database's ready-made
   queries), `src/browserStorage.ts` (Storage).

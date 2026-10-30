@@ -7,8 +7,14 @@ smooths the answer (Hysteresis, then MajorityWindow) and runs `step()`. When som
 change to the ObjectStateStore, so a database problem can't hide the event from the app. Changes the store
 couldn't take are kept in memory and saved with the next ones, so the rule engine still sees them.
 
-The person goes through the same machine with its own waits, and movement in the picture can count as
-"seen" (the camera often only sees your hands). That makes the person's state the on/off switch.
+The Settings page's sensitivity slider (Preferences 'sensitivity', read with every picture so a change works at
+once) stretches the waits: an object's appear_sec, gone_sec and move_fraction are multiplied by the step's
+`steady` (settings → agents.sensitivity_steps), so a pickier step lets less flicker through. A new thing (an
+object without its own block in agents.yaml) waits agents.new_things.extra_wait_sec longer to appear.
+
+The person goes through the same machine with its own waits (the slider doesn't change them), and movement in
+the picture can count as "seen" (the camera often only sees your hands). That makes the person's state the
+on/off switch.
 
 It also answers the rule engine (ObjectStatesView): `snapshot()` is the state of every object seen so far,
 and `changes(since)` reads the store (plus any changes not saved yet), so changes from before a restart are still
@@ -25,8 +31,10 @@ import math
 import threading
 from collections import deque
 
-from desktalk.config import ObjectStatesSettings
-from desktalk.core.object_states.machine import ObjectState, Rules, StepInput, Transition, step
+from desktalk.config import AgentsSettings, ObjectStatesSettings, SensitivityStep
+from desktalk.core.agents.sensitivity import Slider
+from desktalk.core.object_states.machine import ObjectState, Rules, StepInput, Transition
+from desktalk.core.object_states.machine import step as next_state
 from desktalk.core.object_states.smoothing import Hysteresis, MajorityWindow
 from desktalk.domain import (
     DeskSnapshot,
@@ -41,7 +49,7 @@ from desktalk.domain import (
     StateRecord,
     plain_error,
 )
-from desktalk.ports import Clock, EventBus, ObjectStateStore
+from desktalk.ports import Clock, EventBus, ObjectStateStore, Preferences, Profiles
 
 log = logging.getLogger(__name__)
 
@@ -75,9 +83,15 @@ class ObjectStateTracker:
     SmoothingTraceView."""
 
     def __init__(self, settings: ObjectStatesSettings, bus: EventBus, store: ObjectStateStore, *,
-                 device_id: str, new_session_after_sec: float, clock: Clock):
-        """`clock`: only for the desk's UTC offset written with each row."""
+                 device_id: str, new_session_after_sec: float, clock: Clock, agents: AgentsSettings,
+                 prefs: Preferences, profiles: Profiles):
+        """`clock`: only for the desk's UTC offset written with each row. `agents` and `prefs`: the sensitivity
+        slider's steps and the one picked; `profiles`: which words are new things."""
         self._bus = bus
+        self._settings = settings
+        self._slider = Slider(agents, prefs)
+        self._new_wait_sec = agents.new_things.extra_wait_sec
+        self._profiles = profiles
         self._clock = clock
         self._store = store
         self._device_id = device_id
@@ -91,9 +105,9 @@ class ObjectStateTracker:
         self._person_counts_movement = settings.person_counts_movement
         self._restore_max_age_sec = settings.restore_max_age_sec
         self._trace_pictures = settings.trace_pictures
-        self._object_rules = (settings.appear_sec, settings.gone_sec, settings.move_fraction)
-        self._person_rules = (settings.person_appear_sec, settings.person_gone_sec, settings.move_fraction)
-        self._rules_by_label: dict[str, Rules] = {}     # built once per kind of object, on first use
+        self._person_rules = Rules(settings.person_appear_sec, settings.person_gone_sec, settings.move_fraction,
+                                   track_moves=self._person_label not in self._no_move_labels)
+        self._is_new: dict[str, bool] = {}              # each word: a new thing? Looked up once, on first use
 
         # One lock for the states, the smoothing, the trace and watched_since: pictures come in on the event bus
         # thread, snapshot() and changes() are read from the rule engine's and reminders' threads, and
@@ -110,11 +124,21 @@ class ObjectStateTracker:
         bus.subscribe('object-states', self._on_event, types={DetectionEvent})
 
     # ── helpers ──
-    def _rules(self, label: str) -> Rules:
-        if label not in self._rules_by_label:
-            appear, gone, move = self._person_rules if label == self._person_label else self._object_rules
-            self._rules_by_label[label] = Rules(appear, gone, move, track_moves=label not in self._no_move_labels)
-        return self._rules_by_label[label]
+    def _rules(self, label: str, step: SensitivityStep) -> Rules:
+        """The waits for one kind of object at the slider's step (the person's never change)."""
+        if label == self._person_label:
+            return self._person_rules
+        appear, gone, move = self._settings.steady_rules(step.steady)
+        if self._new(label):
+            appear += self._new_wait_sec
+        return Rules(appear, gone, move, track_moves=label not in self._no_move_labels)
+
+    def _new(self, label: str) -> bool:
+        """Is this word a new thing (its agent made up, with no block of its own in agents.yaml)?"""
+        if label not in self._is_new:
+            profile = self._profiles.for_label(label)
+            self._is_new[label] = profile is not None and profile.auto
+        return self._is_new[label]
 
     def _smoothing(self, label: str) -> tuple[Hysteresis, MajorityWindow]:
         if label not in self._hysteresis:
@@ -175,6 +199,7 @@ class ObjectStateTracker:
         for det in event.detections:
             boxes.setdefault(det.label, []).append(det)
         movement_is_person = self._person_counts_movement and event.moved
+        step = self._slider.step()                      # the slider works at once
 
         transitions: list[Transition] = []
         with self._lock:
@@ -199,7 +224,7 @@ class ObjectStateTracker:
                 inp = StepInput(ts=ts, seen=majority, center=middle,
                                 conf=own.confidence if own is not None else None,
                                 bbox=_rounded(own) if own is not None else None)
-                self._states[label], fired = step(state, inp, self._rules(label))
+                self._states[label], fired = next_state(state, inp, self._rules(label, step))
                 transitions.extend(fired)
                 yes, total = window.votes()
                 self._add_to_trace(label, SmoothingStep(

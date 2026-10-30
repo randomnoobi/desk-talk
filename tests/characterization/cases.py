@@ -97,7 +97,8 @@ class Step:
 class Case:
     id: str                               # also the snapshot file name
     method: str
-    path: str                             # {snapshot_id} is filled in with a real photo id
+    path: str                             # {snapshot_id} is filled in with a real photo id, {story_photo_id}
+                                          # with the id of a picture in the cup's story
     status: int
     desk: str = 'busy'
     server: str = 'main'                  # main (web_app/ and the Pi) or phone (the phone camera page)
@@ -113,6 +114,8 @@ class Case:
 
 
 DEV_RUN = Step('POST', '/api/dev/runs', {'check': True})     # the developer page starts "Run everything"
+# the Demo tab starts a pretend warning (settings → dev.scenarios), counting down from 30 seconds
+DEMO_START = Step('POST', '/api/dev/scenarios', {'name': 'cup_at_edge', 'after_sec': 30})
 
 CASES = [
     # ── The browser app's page and files (web_app/) ──
@@ -159,6 +162,14 @@ CASES = [
     Case('snapshots', 'GET', '/api/snapshots', 200),
     Case('snapshots-none-yet', 'GET', '/api/snapshots', 200, desk='fresh'),
     Case('snapshots-newest-one', 'GET', '/api/snapshots?limit=1', 200),
+
+    # ── An object's story (the app page's story panel; any device on the Wi-Fi may ask) ──
+    Case('object-story', 'GET', '/api/objects/cup/story', 200, values={'label': 'cup'}),
+    Case('object-story-from-lan', 'GET', '/api/objects/cup/story', 200, from_ip=LAN_DEVICE),
+    Case('object-story-never-seen', 'GET', '/api/objects/pen%2Fpencil/story', 404,
+         values={'error': "The camera hasn't seen pen/pencil yet."}),
+    Case('object-photo', 'GET', '/api/objects/photo/{story_photo_id}', 200, reply=FILE, starts_with=JPEG_START),
+    Case('object-photo-gone', 'GET', '/api/objects/photo/nope', 404, reply=STATUS),
 
     # ── Live status ──
     Case('live', 'GET', '/api/live', 200),
@@ -265,7 +276,8 @@ CASES = [
     Case('dev-settings', 'GET', '/api/dev/settings', 200, desk='fresh',
          values={'checks': ['Fast tests', 'Lint', 'Types', 'Dead code', 'Page tests'], 'web_port': 5000,
                  'flicker_flips_per_min': 4, 'output_keep_kb': 2000, 'flips_window_min': 10,
-                 'table_counts_every_sec': 30}),
+                 'table_counts_every_sec': 30, 'scenarios.countdown_default_sec': 5,
+                 'scenarios.countdown_max_sec': 600, 'scenarios.waiting_max': 10}),
     Case('dev-settings-other-computer', 'GET', '/api/dev/settings', 403, desk='fresh', from_ip=LAN_DEVICE),
     Case('dev-settings-other-web-page', 'GET', '/api/dev/settings', 403, desk='fresh', headers=OTHER_PAGE),
     Case('dev-settings-other-address', 'GET', '/api/dev/settings', 403, desk='fresh', headers=OTHER_ADDRESS),
@@ -317,6 +329,34 @@ CASES = [
     Case('dev-files-preview-missing', 'GET', '/api/dev/files/preview?path=nothing-here.txt', 404),
     Case('dev-files-preview-other-address', 'GET', '/api/dev/files/preview?path=preferences.json', 403,
          headers=OTHER_ADDRESS),
+    # the Demo tab: pretend warnings fired on purpose after a countdown
+    Case('dev-scenarios', 'GET', '/api/dev/scenarios', 200, desk='fresh', before=(DEMO_START,)),
+    Case('dev-scenarios-none-waiting', 'GET', '/api/dev/scenarios', 200, desk='fresh', values={'waiting': []}),
+    Case('dev-scenarios-other-computer', 'GET', '/api/dev/scenarios', 403, desk='fresh', from_ip=LAN_DEVICE),
+    Case('dev-scenarios-other-web-page', 'GET', '/api/dev/scenarios', 403, desk='fresh', headers=OTHER_PAGE),
+    Case('dev-scenario-start', 'POST', '/api/dev/scenarios', 200, desk='fresh',
+         json={'name': 'cup_at_edge', 'after_sec': 30},
+         values={'id': 'demo-1', 'name': 'cup_at_edge', 'label': 'Cup near the desk edge', 'seconds_left': 30}),
+    Case('dev-scenario-start-from-vite', 'POST', '/api/dev/scenarios', 200, desk='fresh',
+         json={'name': 'sip', 'after_sec': 0}, headers=VITE_PAGE),
+    Case('dev-scenario-start-unknown', 'POST', '/api/dev/scenarios', 400, desk='fresh',
+         json={'name': 'fireworks', 'after_sec': 5}, values={'error': "There's no pretend warning called fireworks."}),
+    Case('dev-scenario-start-too-long', 'POST', '/api/dev/scenarios', 400, desk='fresh',
+         json={'name': 'sip', 'after_sec': 601}),
+    Case('dev-scenario-start-negative', 'POST', '/api/dev/scenarios', 400, desk='fresh',
+         json={'name': 'sip', 'after_sec': -1}),
+    Case('dev-scenario-start-no-seconds', 'POST', '/api/dev/scenarios', 400, desk='fresh', json={'name': 'sip'}),
+    Case('dev-scenario-start-other-computer', 'POST', '/api/dev/scenarios', 403, desk='fresh',
+         json={'name': 'sip', 'after_sec': 5}, from_ip=LAN_DEVICE),
+    Case('dev-scenario-start-other-web-page', 'POST', '/api/dev/scenarios', 403, desk='fresh',
+         json={'name': 'sip', 'after_sec': 5}, headers=OTHER_PAGE),
+    Case('dev-scenario-cancel', 'DELETE', '/api/dev/scenarios/demo-1', 200, desk='fresh', before=(DEMO_START,),
+         values={'ok': True}),
+    Case('dev-scenario-cancel-unknown', 'DELETE', '/api/dev/scenarios/demo-9', 404, desk='fresh'),
+    Case('dev-scenario-cancel-other-computer', 'DELETE', '/api/dev/scenarios/demo-1', 403, desk='fresh',
+         before=(DEMO_START,), from_ip=LAN_DEVICE),
+    Case('dev-scenario-cancel-other-web-page', 'DELETE', '/api/dev/scenarios/demo-1', 403, desk='fresh',
+         before=(DEMO_START,), headers=OTHER_PAGE),
 
     # ── The phone camera's own server (phone_camera/) ──
     Case('phone-page', 'GET', '/', 200, desk='phone', server='phone', reply=FILE, starts_with=HTML_START),

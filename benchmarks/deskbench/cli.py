@@ -25,7 +25,17 @@ from pathlib import Path
 import yaml
 
 from . import desk_data, models, probes, report, results
-from .desk_score import app_thresholds, found_kinds, missing_names, name_map, scene_scores, score
+from .desk_score import (
+    OneName,
+    app_one_name,
+    app_thresholds,
+    found_kinds,
+    missing_names,
+    name_map,
+    one_name_each,
+    scene_scores,
+    score,
+)
 from .desk_set import SCENES, build_desk_set, read_your_desk
 from .matrix import build_combos, kind_of
 from .measure import wait_until_cool
@@ -255,8 +265,11 @@ def your_pictures(pictures: list[dict], log=print) -> list[dict]:
 
 
 def desk_row(kind: dict, detections: dict, pictures: list[dict], your_pictures: list[dict], desk_cfg: dict,
-             thresholds: dict[str, float]) -> dict:
-    """Score one combination's detections ({picture id: [[name, confidence], ...]}) on the desk pictures."""
+             thresholds: dict[str, float], one_name: OneName | None = None) -> dict:
+    """Score one combination's detections ({picture id: [[name, confidence, x1, y1, x2, y2], ...]}) on the desk
+    pictures. With `one_name` (app_one_name), a second name for the same box is left out first, as in the app."""
+    if one_name is not None:
+        detections = {pid: one_name_each(rows, *one_name) for pid, rows in detections.items()}
     kinds = list(desk_cfg['kinds'])
     names = name_map(desk_cfg['kinds'], kind['names'])
     nameable = set(names.values())
@@ -289,6 +302,7 @@ def cmd_desk_run(args, cfg: dict, paths: dict) -> None:
     pictures = public_pictures(json.loads((REPO / desk['set_file']).read_text())['pictures'], REPO / desk['photos'])
     yours = your_pictures(read_your_desk(REPO / desk['your_photos'], list(desk['kinds'])))
     thresholds = app_thresholds(REPO / desk['app_settings'], REPO / desk['app_agents'], desk['kinds'])
+    one_name = app_one_name(REPO / desk['app_settings'], REPO / desk['app_agents'])
     combos = build_combos(cfg, args.models, args.kinds)
     env = probes.environment(REPO)
     info = csv_path.with_suffix('.json')            # written only once the pictures are known to be there
@@ -323,7 +337,7 @@ def cmd_desk_run(args, cfg: dict, paths: dict) -> None:
             warned.add(combo.model)
             print(f'  {combo.model} has no names {", ".join(missing)} (fix desk.kinds in the config)')
         (saved / f'{combo.key}.json').write_text(json.dumps(detections))
-        return {'kind': kind_name, **desk_row(kind, detections, pictures, yours, desk, thresholds)}
+        return {'kind': kind_name, **desk_row(kind, detections, pictures, yours, desk, thresholds, one_name)}
 
     def describe(row: dict) -> str:
         def f(v):

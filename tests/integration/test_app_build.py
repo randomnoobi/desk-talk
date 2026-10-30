@@ -16,6 +16,7 @@ from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSour
 from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser
 from desktalk.adapters.notify.mac import MAC_PLATFORM, MacNotifications, NoNotifications
 from desktalk.adapters.storage import JsonFileStore
+from desktalk.adapters.storage.trace_photo_files import TracePhotoFiles
 from desktalk.bootstrap import DeskTalk, build
 from desktalk.domain import AgentJoined
 from desktalk.ports import SmoothingTraceView
@@ -193,6 +194,7 @@ def test_start_runs_every_background_job_after_its_first_wait(tmp_path):
         'lost items': config.lost_items.start_delay_sec,
         'lens': config.lens.check_every_sec,
         'daily recap': config.daily_summary.start_delay_sec,
+        'demo scenarios': 0,            # the developer page's Demo tab: a countdown can be 0 seconds
     }
 
 
@@ -261,6 +263,7 @@ def test_the_developer_tools_are_built_when_the_developer_page_is_on(tmp_path):
 def test_with_the_developer_page_off_there_are_no_developer_tools(tmp_path):
     app = build_quietly(changed(desk_config(tmp_path), 'dev', enabled=False), tmp_path)
     assert (app.test_runner, app.databases, app.data_files) == (None, None, None)
+    assert isinstance(app.trace_photos, TracePhotoFiles)      # each object's story is on the app page too
     assert app.stop(timeout=1) == []
 
 

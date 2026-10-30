@@ -26,7 +26,7 @@ from desktalk.domain import (
     ObjectSnapshot,
     Todo,
 )
-from desktalk.ports import PeriodicWorker
+from desktalk.ports import PeriodicWorker, ReminderSender
 from tests.fakes import (
     FakeChatVoice,
     FakeClock,
@@ -227,7 +227,7 @@ class Desk:
                                  'quiet_start_hour': 22, 'quiet_end_hour': 7})
         self.profiles = ProfileBook(config.agents_file, InMemoryKeyValueStore(), personality_max_chars=400)
         self.roster = Roster(self.bus, self.profiles, self.desk, config.agents, config.presence, prefs,
-                             joins_kept=config.dev.trace_events_kept)
+                             joins_kept=config.object_story.events_kept)
         self.habits = HabitTracker(self.clock, self.bus, InMemoryKeyValueStore(), self.profiles, prefs, self.desk,
                                    config.protocols, config.habit_tracker, config.presence, config.agents,
                                    phone_counts=True, words=config.prompts.habits)
@@ -280,3 +280,15 @@ def test_no_reminders_while_warming_up_or_camera_off(config):
     d.camera.connected = True
     d.reminders.tick(d.clock.now())
     assert len(d.notifier.sent) == 1
+
+
+def test_say_sends_one_nudge_now_the_way_tick_does(config):
+    """The developer page's pretend drink reminder: said like a real one (the agent for the habit, the reminder
+    pop-up, a NudgeSent), but nothing waits because of it, and the desk checks don't hold it back."""
+    r = Rig(config, nudges=(), status=FakeDeskStatus(ready=False))
+    assert isinstance(r.reminders, ReminderSender)
+    r.reminders.say(SIP, NOON)
+    assert [(m['character'], m['text'], m['habit'], m['toast'], m['notify']) for m in r.notifier.sent] == [
+        ('cup', 'Hey, stretch your legs!', 'hydration', True, 'reminder')]
+    assert [(e.rule, e.agent) for e in r.bus.of_type(NudgeSent)] == [('hydration.pace', 'cup')]
+    assert r.habits.fired == [] and r.rules.fired == []

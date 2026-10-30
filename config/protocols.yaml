@@ -31,20 +31,44 @@ hydration:
   daily_goal_ml: 2400         # "about 80 ounces ... across the first ten hours of the day"
   goal_window_hours: 10       # the first ten hours after waking
   ml_per_sip: 80              # a guess for one pick-up of the cup (the camera can't see how much)
-  # A sip counts only when the camera sees the drink lifted, then put back where it was. A hand over the cup or a
-  # covered camera isn't a sip.
-  sip_gone_min_sec: 3         # from lifting it to putting it back takes at least this long...
+  # A sip counts when the camera sees either of these, and the drink then rests again near where it was:
+  #   lifted: the drink rises in the picture, then is put back.
+  #   gone and back: the drink goes missing, then comes back moved a little. A camera that looks down with the
+  #   bottle at the top edge of the picture never sees it rise: drinking takes it straight out of the picture.
+  #   A drink the detector only missed for a while, or a hand only covered, comes back exactly where it was,
+  #   so that isn't a sip. Nor is the detector calling the same bottle "cup", then "bottle", then "cup" again:
+  #   while another drink word's box is nearly its box (sip_same_drink_overlap), it is still there.
+  # Neither counts when the camera was covered or stalled meanwhile, or (with sip_needs_person) when nobody was
+  # at the desk. Each drink is watched on its own, even two with the same word (a mug and a bottle both called
+  # "cup").
+  sip_gone_min_sec: 2         # from the last picture of it resting to it resting again takes at least this long...
+                              # (the user's quickest real drink took 2.7 s; shorter than this is the detector
+                              # missing it for a picture or two)
   sip_gone_max_sec: 120       # ...and at most this (taken away longer = not a sip)
   sip_lift_share: 0.08        # lifted = its box rises more than this share of the picture's height
-  sip_back_share: 0.15        # put back = it rests again within this share of the picture of where it was
+  sip_back_share: 0.15        # back = it rests again within this share of the picture of where it was
+  sip_moved_share: 0.007      # gone and back only counts when the middle of its box comes back more than this
+                              # share of the picture's diagonal off where it rested. About 10 px on a 1280×720
+                              # camera. On the user's desk every real drink came back with its middle 14 to 47 px
+                              # off; a detector miss or a hand over it gives back the same middle within about
+                              # 2 px. A box that only got bigger or smaller around the same middle doesn't count:
+                              # that is the detector drawing it differently, not the drink moving.
+  sip_needs_person: true      # a sip only counts when a person was in at least one picture while the drink was
+                              # away (lifted or missing) or as it came back: with nobody at the desk, a cup
+                              # that seems to move is the detector. Turn off if your camera never sees you.
   sip_cover_share: 0.6        # when this share or more of what was on the desk vanishes in the same picture, the
                               # camera was covered: nothing in that gap is a sip
   sip_cover_pictures: 2       # ...but only when it looks like that in this many pictures in a row (the detector
                               # sometimes misses everything in one picture)
-  sip_stall_sec: 10           # no picture at all for longer than this while the drink is up = the camera stalled,
-                              # and that trip isn't a sip. The Pi's detector can take a few seconds for one picture
-                              # when it's busy, so this is several pictures' worth, and still far below
-                              # sip_gone_max_sec.
+  sip_same_drink_overlap: 0.7  # while a drink is missing, another drink word's box this much the same box as where
+                              # it rested (more than 0, up to 1: shared area over the area both cover, like
+                              # agents.same_thing_overlap) is the same drink under another word ("cup" now
+                              # "bottle"): it is still there. A box that only covers its middle is another drink
+                              # nearby (a mug in front of the bottle), so a real sip from the bottle still counts.
+  sip_stall_sec: 10           # no picture at all for longer than this while the drink is up or missing = the
+                              # camera stalled, and that trip isn't a sip. The Pi's detector can take a few seconds
+                              # for one picture when it's busy, so this is several pictures' worth, and still far
+                              # below sip_gone_max_sec.
   remind_after_min: 45        # no sip for this long...
   behind_by_ml: 300           # ...and this far behind pace → nudge
   stop_before_bed_hours: 2    # "best to avoid a lot of water in the hours before bedtime"

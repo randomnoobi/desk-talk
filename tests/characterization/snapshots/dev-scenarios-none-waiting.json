@@ -1,0 +1,17 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "scenarios": [
+      {
+        "fires": "str",
+        "label": "str",
+        "name": "str"
+      }
+    ],
+    "waiting": []
+  },
+  "request": "GET /api/dev/scenarios (main server, fresh desk)"
+}

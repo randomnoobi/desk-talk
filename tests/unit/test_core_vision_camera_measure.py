@@ -6,7 +6,7 @@ import math
 import numpy as np
 import pytest
 
-from desktalk.core.vision.camera_measure import CameraMeasure, Reading, cut_off_side, tilt_degrees
+from desktalk.core.vision.camera_measure import CameraMeasure, Reading, box_share, cut_off_side, tilt_degrees
 from desktalk.domain import Size
 from tests.fakes import FakePictureTools
 
@@ -63,6 +63,18 @@ def test_pictures_of_different_sizes_count_as_completely_different():
 ])
 def test_which_side_a_box_is_cut_off_at(box, side):
     assert cut_off_side(box, (640, 480), touch_px=6, fills=0.85) == side
+
+
+@pytest.mark.parametrize('box, share', [
+    ((0, 0, 640, 480), 1.0), ((0, 0, 320, 240), 0.25), ((100, 100, 100, 300), 0.0),
+    ((-50, -50, 700, 500), 1.0),                # a box reaching past the edges counts only what's in the picture
+])
+def test_how_much_of_the_picture_a_box_covers(box, share):
+    assert box_share(box, (640, 480)) == share
+
+
+def test_a_picture_with_no_size_has_nothing_covered():
+    assert box_share((0, 0, 10, 10), (0, 0)) == 0.0
 
 
 def test_tilt_between_two_gravity_readings():

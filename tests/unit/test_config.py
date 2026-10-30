@@ -368,6 +368,7 @@ NEW_SETTINGS = {
         ('pi', 'camera'), ('pi', 'error_text_chars'), ('llm', 'error_log_chars'), ('safety', 'min_desk_corners'),
         ('web', 'settings_sliders', 'zone'), ('web', 'settings_sliders', 'warn'), ('web', 'settings_sliders', 'alert'),
         ('web', 'new_zone_px'), ('lens', 'trusted_gravity'),
+        ('lens', 'covered_detail_below'), ('lens', 'covered_by_box_share'),
         # the developer page (docs/plans/2026-10-24-developer-ui-plan.md)
         ('object_states', 'trace_pictures'), ('dev', 'enabled'), ('dev', 'ui_folder'), ('dev', 'vite_port'),
         ('dev', 'poll_sec'), ('dev', 'checks'), ('dev', 'test_command'), ('dev', 'collect_markers'),
@@ -376,6 +377,12 @@ NEW_SETTINGS = {
         ('dev', 'health', 'pi_disk_warn_mb'), ('dev', 'health', 'detect_warn_ms'),
         ('dev', 'flicker_flips_per_min'), ('dev', 'sql_check_every_steps'), ('dev', 'collect_timeout_sec'),
         ('dev', 'flips_window_min'), ('dev', 'table_counts_every_sec'),
+        # the sensitivity slider's bar for new things
+        ('agents', 'new_things', 'extra_confidence'), ('agents', 'new_things', 'extra_wait_sec'),
+        ('agents', 'new_things', 'max_confidence'),
+        # an object's story (the app page and the developer page's trace)
+        ('object_story', 'photos_folder'), ('object_story', 'photo_every_sec'), ('object_story', 'timed_photos_kept'),
+        ('object_story', 'step_photos_kept'), ('object_story', 'events_kept'), ('object_story', 'photo_match_sec'),
     ],
     'protocols.yaml': [('food', 'healthy')],
 }
@@ -478,6 +485,65 @@ def test_sensitivity_steps_load(project):
     assert (agents.on_desk_after_sec, agents.on_desk_min_confidence) == (3, 0.45)
 
 
+def test_each_sensitivity_step_has_a_steadiness_and_normal_keeps_todays_waits(project):
+    agents = load_config(root=project, environ={}).agents
+    assert [s.steady for s in agents.sensitivity_steps] == [2.0, 1.5, 1.0, 0.75, 0.5]
+    assert agents.default_step().steady == 1.0
+
+
+@pytest.mark.parametrize('value', [0, -0.5])
+def test_steady_must_be_more_than_0(project, value):
+    write_local(project, 'agents:\n  sensitivity_default: 0\n  sensitivity_steps:\n'
+                         f'    - {{name: Odd, min_confidence: 0.5, join_after_sec: 1, steady: {value}}}\n')
+    with pytest.raises(ConfigError, match='steady'):
+        load_config(root=project, environ={})
+
+
+def test_the_steadiness_scales_the_object_states_waits_and_the_move_share(project):
+    states = load_config(root=project, environ={}).object_states
+    assert states.steady_rules(1.0) == (states.appear_sec, states.gone_sec, states.move_fraction)
+    appear, gone, move = states.steady_rules(2.0)
+    assert (appear, gone) == (states.appear_sec * 2, states.gone_sec * 2)
+    assert move == pytest.approx(states.move_fraction * 2)
+
+
+def test_the_steadiness_scales_the_chat_leave_wait(project):
+    agents = load_config(root=project, environ={}).agents
+    assert agents.leave_wait(agents.default_step()) == agents.leave_after_sec
+    assert agents.leave_wait(agents.sensitivity_steps[0]) == agents.leave_after_sec * 2
+
+
+@pytest.mark.parametrize('value, name', [(0, 'Picky'), (4, 'Eager'), (5, None), (-1, None), ('picky', None),
+                                         (True, None), (None, None), (1.0, None)])
+def test_a_slider_value_names_its_step(project, value, name):
+    step = load_config(root=project, environ={}).agents.step_at(value)
+    assert (step.name if step else None) == name
+
+
+def test_new_things_settings_load(project):
+    new = load_config(root=project, environ={}).agents.new_things
+    assert (new.extra_confidence, new.extra_wait_sec, new.max_confidence) == (0.15, 2, 0.95)
+
+
+def test_a_new_things_bar_is_higher_but_never_above_its_most_and_never_lower(project):
+    new = load_config(root=project, environ={}).agents.new_things
+    assert new.bar(0.45) == pytest.approx(0.60)
+    assert new.bar(0.9) == 0.95                       # capped at max_confidence...
+    assert new.bar(0.97) == 0.97                      # ...which never lowers a bar already above it
+
+
+def test_same_thing_overlap_loads(project):
+    assert load_config(root=project, environ={}).agents.same_thing_overlap == 0.7
+
+
+@pytest.mark.parametrize('value', [0, -0.1, 1.5])
+def test_same_thing_overlap_must_be_more_than_0_and_at_most_1(project, value):
+    # 0 would make boxes that don't even touch one thing
+    write_local(project, f'agents:\n  same_thing_overlap: {value}\n')
+    with pytest.raises(ConfigError, match='same_thing_overlap'):
+        load_config(root=project, environ={})
+
+
 def test_the_default_sensitivity_must_be_one_of_the_steps(project):
     write_local(project, 'agents:\n  sensitivity_default: 5\n')
     with pytest.raises(ConfigError, match='sensitivity_default'):
@@ -496,13 +562,33 @@ def test_hydration_sip_shares_load(project):
     assert hydration.sip_cover_pictures == 2
 
 
+def test_hydration_same_drink_overlap_loads_and_must_be_more_than_0(project):
+    assert load_config(root=project, environ={}).protocols.hydration.sip_same_drink_overlap == 0.7
+    rules = project / 'config' / 'protocols.yaml'
+    rules.write_text(rules.read_text().replace('sip_same_drink_overlap: 0.7', 'sip_same_drink_overlap: 0', 1))
+    with pytest.raises(ConfigError, match='sip_same_drink_overlap'):
+        load_config(root=project, environ={})
+
+
+def test_hydration_moved_setting_loads_and_the_hand_rule_is_gone(project):
+    hydration = load_config(root=project, environ={}).protocols.hydration
+    assert hydration.sip_moved_share == 0.007
+    assert hydration.sip_needs_person is True
+    assert not hasattr(hydration, 'sip_hand_labels') and not hasattr(hydration, 'sip_hand_share')
+    assert (hydration.sip_gone_min_sec, hydration.sip_gone_max_sec) == (2, 120)
+
+
 def test_the_other_new_settings_load(project):
     cfg = load_config(root=project, environ={})
     tasks, dev, web = cfg.protocols.tasks, cfg.dev, cfg.web
     assert (tasks.remind_after_min, tasks.due_soon_days, tasks.late_repeat_hours) == (120, 1, 24)
-    assert (dev.trace_photos_kept, dev.trace_photo_every_sec, dev.trace_events_kept) == (6, 120, 50)
+    story = cfg.object_story
+    assert (story.timed_photos_kept, story.photo_every_sec, story.events_kept) == (6, 120, 50)
+    assert (story.step_photos_kept, story.photo_match_sec) == (24, 10)
     assert 'trace_photo_quality' not in type(dev).model_fields        # the photos are the camera's JPEG as it is
-    assert dev.trace_photos_folder == Path('data/trace_photos')
+    assert story.photos_folder == Path('data/trace_photos')
+    assert not {'trace_photos_folder', 'trace_photos_kept', 'trace_photo_every_sec',
+                'trace_events_kept'} & set(type(dev).model_fields)     # they moved to object_story
     assert (web.camera_note_after_sec, web.saved_note_sec, web.retry_start_sec) == (5, 4, 3)
     sizes = web.list_sizes
     assert (sizes.on_desk_shown, sizes.camera_issues_shown, sizes.risk_lines_shown, sizes.side_photos_shown) == (
@@ -535,3 +621,33 @@ def test_the_event_log_lists_and_the_photo_quality_that_went_are_dropped_from_yo
         cfg = load_config(root=project, environ={})
     assert cfg.web.list_sizes.toast_chars == 99
     assert all(word in caplog.text for word in ('habit_log', 'log_detections', 'trace_photo_quality'))
+
+
+def test_the_blocked_camera_settings_load(project):
+    lens = load_config(root=project, environ={}).lens
+    assert (lens.covered_detail_below, lens.covered_by_box_share) == (6, 0.7)
+
+
+@pytest.mark.parametrize('text', ['covered_detail_below: -1', 'covered_by_box_share: 0',
+                                  'covered_by_box_share: 1.5'])
+def test_the_blocked_camera_settings_are_checked(project, text):
+    # a share of 0 would call every picture with anything in it blocked
+    write_local(project, f'lens:\n  {text}\n')
+    with pytest.raises(ConfigError, match=text.split(':')[0]):
+        load_config(root=project, environ={})
+
+
+def test_the_trace_settings_that_moved_to_object_story_keep_your_own_values(project, caplog):
+    """An old settings.local.yaml may still set them under dev:, where they were before."""
+    write_local(project, 'dev:\n  trace_photos_kept: 9\n  trace_photo_every_sec: 30\n  trace_events_kept: 20\n'
+                         '  trace_photos_folder: elsewhere/photos\n')
+    with caplog.at_level('WARNING'):
+        story = load_config(root=project, environ={}).object_story
+    assert (story.timed_photos_kept, story.photo_every_sec, story.events_kept) == (9, 30, 20)
+    assert story.photos_folder == Path('elsewhere/photos')
+    assert 'dev.trace_photos_kept' in caplog.text and 'object_story.timed_photos_kept' in caplog.text
+
+
+def test_a_moved_setting_set_in_both_places_keeps_the_new_one(project):
+    write_local(project, 'dev:\n  trace_photos_kept: 9\nobject_story:\n  timed_photos_kept: 4\n')
+    assert load_config(root=project, environ={}).object_story.timed_photos_kept == 4

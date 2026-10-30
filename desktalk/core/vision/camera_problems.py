@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from desktalk.config import LensSettings
-from desktalk.core.vision.camera_measure import Reading, cut_off_side, tilt_degrees
+from desktalk.core.vision.camera_measure import Reading, box_share, cut_off_side, tilt_degrees
 from desktalk.domain import Box
 
 # Most important first. While one of these is happening, the problems it hides can't be trusted
@@ -156,7 +156,9 @@ class CameraProblems:
     def _picture_problems(self, now: float, reading: Reading, seen: Seen, raw: dict[str, Detail]) -> None:
         lens = self._lens
         b = reading.brightness
-        if b < lens.covered_below:
+        # a plain picture only counts as covered when it isn't dark too: a dim evening desk is plain, but too dark
+        plain = reading.sharpness < lens.covered_detail_below and b >= lens.dark_below
+        if b < lens.covered_below or plain or self._one_thing_fills(seen):
             raw['covered'] = {}
         elif b < lens.dark_below:
             raw['dark'] = {}
@@ -224,6 +226,12 @@ class CameraProblems:
             info.said_at = now
             return Said(key, 'problem', info.detail)
         return None
+
+    def _one_thing_fills(self, seen: Seen) -> bool:
+        """Something held right in front of the lens (a book, a box): one box covering most of the picture.
+        People and the things in ignore_labels (the desk itself, furniture) don't count."""
+        return any(label not in self._ignore and box_share(box, seen.size) > self._lens.covered_by_box_share
+                   for label, box in seen.boxes)
 
     def _watched(self, label: str) -> bool:
         if self._watch:

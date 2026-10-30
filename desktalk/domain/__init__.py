@@ -9,7 +9,7 @@ Plain data, no I/O: what the parts of Desk Talk pass to each other.
     LENS                   Lens's id: the camera's own character
     AIUnavailable ...      errors (and UnknownChat: a 1-on-1 chat with an agent that doesn't exist)
     Picture, Size, Box     a picture, how big it is, a box on it (Point, Gravity too)
-    TracePhoto             a picture kept of one kind of object for the developer page's trace
+    TracePhoto             a picture kept of one kind of object for its story (newest_trace_photos: which stay)
     DeskRules, Zone        the danger rules in use
     SeenObject, Danger,    the desk right now: what the camera sees, the dangers, a proof photo
     SafetyNow, Photo
@@ -21,6 +21,8 @@ Plain data, no I/O: what the parts of Desk Talk pass to each other.
     TestItem, RunStatus, SmoothingStep, TableInfo, QueryResult, DataFile ...
                            what the developer page shows (tests and their runs, smoothing, the database, the
                            data folder), and its errors RunAlreadyGoing and QueryRefused
+    Scenario, WaitingScenario
+                           the developer page's Demo tab: a pretend warning, and one counting down
 """
 
 from desktalk.domain.agents import HABITS, LENS, AgentProfile, ChatJoin
@@ -34,11 +36,13 @@ from desktalk.domain.dev import (
     QueryResult,
     RunAlreadyGoing,
     RunStatus,
+    Scenario,
     SmoothingStep,
     StepStatus,
     TableInfo,
     TestItem,
     TestOutcome,
+    WaitingScenario,
 )
 from desktalk.domain.errors import AIUnavailable, DetectorUnavailable, UnknownChat, plain_error
 from desktalk.domain.events import (
@@ -60,7 +64,7 @@ from desktalk.domain.events import (
 )
 from desktalk.domain.habits import Nudge, Todo
 from desktalk.domain.object_states import CHANGE_TYPES, Phase, StateRecord
-from desktalk.domain.pictures import Box, Gravity, Picture, Point, Size, TracePhoto
+from desktalk.domain.pictures import TIMED_PHOTO, Box, Gravity, Picture, Point, Size, TracePhoto, newest_trace_photos
 from desktalk.domain.rules import DeskSnapshot, HabitDone, ObjectSnapshot, RuleHistory, StateChange
 from desktalk_shared.detection import BBox, Detection, keep_inside
 from desktalk_shared.wire import DetectorState, PiHealth, UploadInfo
@@ -73,5 +77,6 @@ __all__ = [
     'ObjectStateChanged', 'Phase', 'Photo', 'Picture', 'PiHealth', 'plain_error', 'Point', 'RuleHistory', 'RuleOutcome',
     'SafetyNow', 'SeenObject', 'Size', 'StateChange', 'StateRecord', 'UnknownChat', 'UploadInfo', 'Zone',
     'DataFile', 'QueryRefused', 'QueryResult', 'RunAlreadyGoing', 'RunStatus', 'SmoothingStep', 'StepStatus',
-    'TableInfo', 'TestItem', 'TestOutcome', 'ChatJoin', 'Todo', 'TracePhoto',
+    'TableInfo', 'TestItem', 'TestOutcome', 'ChatJoin', 'Todo', 'TracePhoto', 'TIMED_PHOTO',
+    'newest_trace_photos', 'Scenario', 'WaitingScenario',
 ]

@@ -26,7 +26,9 @@ const settings: DevSettings = {
   table_counts_every_sec: 30,
   trace_events_kept: 50,
   trace_photos_kept: 6,
+  trace_step_photos_kept: 24,
   object_states: { on_confidence: 0.5, off_confidence: 0.4, appear_sec: 3, gone_sec: 3, window_pictures: 5, vote_share: 0.5 },
+  scenarios: { countdown_default_sec: 5, countdown_max_sec: 600, waiting_max: 10 },
 }
 
 const now = Date.now() / 1000
@@ -112,7 +114,7 @@ describe('Live tab', () => {
     vi.mocked(getObjectTrace).mockImplementation(async label => ({
       label,
       timeline: [{ ts: now - 30, source: 'chat', kind: 'refused', confidence: 0.6, seen_for_sec: 4, on_desk: false,
-                   step: 'Normal', before: null, after: null }],
+                   step: 'Normal', before: null, after: null, photo: null, what: 'stayed out of the chat' }],
       photos: [],
     }))
     render(<Live settings={settings} />)

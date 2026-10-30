@@ -660,7 +660,7 @@ lens:
 camera:
   # what Lens says in the group chat when the camera needs fixing
   problems:
-    covered: Everything just went black. Is something covering my lens, or did the camera get turned away?
+    covered: I can't see the desk anymore. Is something in front of my lens, or did the camera get turned away?
     dark: It's too dark for me to see the desk well. Could you turn on a lamp?
     glare: Something really bright is shining into my camera. Can you angle me away from the window or lamp?
     blurry: Everything looks blurry to me. Could you wipe my lens, or move me back a little so I can focus?
@@ -696,8 +696,8 @@ camera:
       title: No video from the phone
       fix: Keep the phone unlocked with the Desk Talk page open.
     covered:
-      title: Camera is covered
-      fix: Check nothing is on the lens and the camera is facing the desk.
+      title: Camera is blocked
+      fix: Move whatever is in front of the lens, and point the camera at the desk.
     dark:
       title: Too dark
       fix: Turn on a lamp near the desk.
@@ -768,6 +768,38 @@ ui:
   starter_todo: Pick one top priority for the next hour
   # the counters the Habits page starts with ("Your own counters": you can add your own)
   starter_counters: [Picked up phone]
+  # the Settings page: what the sensitivity slider covers (settings → agents.sensitivity_steps)
+  sensitivity_intro: >-
+    How sure the camera must be about an object, and how long it must see it, before the object joins the chat or
+    counts as put down. Pickier means fewer false visitors and less flicker (things flashing on and off, boxes
+    jumping about); eager means things show up sooner. Something new, with no character of its own, always needs a
+    bit more.
+  # what one step of the slider does, under the slider: {name} is the step, {sure} how sure the camera must be (a
+  # percent), {join_sec} how long before the object joins the chat, {appear_sec} and {gone_sec} how long before it
+  # counts as put down or taken away, {move_percent} how far it must move to count as moved (a percent of the
+  # picture), {leave_min} how long it must be gone before it leaves the chat, and {new_sure} and {new_join_sec}
+  # the same as {sure} and {join_sec} for something new
+  sensitivity_step: >-
+    {name}: an object joins the chat once the camera is {sure}% sure of it and has seen it for {join_sec} seconds.
+    It counts as put down after {appear_sec} seconds in view, taken away after {gone_sec} seconds out of view, and
+    moved when it shifts {move_percent}% of the picture. It leaves the chat after {leave_min} min out of view.
+    Something new needs {new_sure}% and {new_join_sec} seconds.
+
+# ── An object's story (click something under "On the desk" on the app page; settings → object_story) ───
+# What happened to it, one line per step, e.g. "10:42  appeared  (81% sure)".
+object_story:
+  appeared: appeared
+  joined: joined the chat
+  moved: moved
+  removed: went away
+  left: left the chat
+  # seen long enough to join, but it isn't one of the things that join the chat (settings → agents.can_join)
+  refused: was seen, but stayed out of the chat
+  # a picture taken every object_story.photo_every_sec while it's there
+  every: still there
+  # the story of something with nothing to tell: no step since the camera started and no picture kept from an
+  # earlier run. {object} is the detector's word for it
+  never_seen: "The camera hasn't seen {object} yet."
 
 # ── The Mac's own pop-up notifications (settings → notifications) ───
 # A warning or reminder pops up with the character's name as its title and its message as the text.
@@ -806,3 +838,19 @@ dev:
   query_timed_out: 'The query took longer than {seconds:g} seconds (dev.sql_timeout_sec), so it was stopped.'
   # /dev/ before `npm run build` has made the page
   not_built: "The developer page isn't built yet. In dev_ui/, run: npm install && npm run build"
+  # the Demo tab (settings → dev.scenarios): a pretend warning that isn't in the list, or a countdown out of range
+  unknown_scenario: "There's no pretend warning called {name}."
+  countdown_out_of_range: 'The countdown must be from 0 to {most:g} seconds (dev.scenarios.countdown_max_sec).'
+  too_many_waiting: 'Already {count} pretend warnings are counting down (dev.scenarios.waiting_max). Wait, or cancel one.'
+  unknown_waiting: "There's no pretend warning {scenario_id} counting down (it may have gone off already)."
+  # a pretend warning that names an agent or a lost item your settings don't have: {thing} is that name, {where}
+  # the list it should be in
+  cannot_fire: "{name} can't go off: it names {thing}, which isn't in {where}."
+  # what the pretend warnings say where the real ones fill in what the camera saw (the other words are the real
+  # ones: desk_alerts.edge_reason, camera.problems.covered, lost_items.alert_plain and the sip's own)
+  scenarios:
+    # the danger zone named in the pretend "drink next to the laptop" warning
+    zone: Spill / pressure zone
+    # the pretend drink reminder: what the camera "saw", and what Lens says when no agent speaks for water
+    drink_evidence: No drink has been seen or logged in {minutes} minutes.
+    drink_text: I haven't seen you drink anything in {minutes} minutes. Want to grab some water?

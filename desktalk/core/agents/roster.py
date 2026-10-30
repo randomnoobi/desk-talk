@@ -7,10 +7,15 @@ The chat. Only agents on settings → agents.can_join may join. The Settings pag
 (Preferences 'sensitivity', read again with every picture so a change works at once) picks one of
 agents.sensitivity_steps: how sure the detector must be (or the agent's own min_confidence in agents.yaml, when
 that is stricter) and how long the object must be seen. Then its agent joins ("Cup joined the chat"); when it
-has been missing for agents.leave_after_sec, it leaves ("Cup left the chat"). Both go back on the event bus as
+has been missing for agents.leave_after_sec times the step's `steady`, it leaves ("Cup left the chat"). A new
+thing (an agent made up for an object without its own block in agents.yaml) needs a surer box and a longer wait:
+agents.new_things. Both go back on the event bus as
 AgentJoined / AgentLeft. Something seen long enough that may not join is "refused", once per stretch of
 sightings. Every join, leave and refusal is kept, with why, for the developer page's trace (ChatJoins). No
 pictures (camera off) means no events, so nobody leaves.
+
+One thing, one name: a second name the detector gave the same box never gets here (the producer leaves it out,
+desktalk/core/vision/one_name.py).
 
 On the desk. Everything the detector names (any agent, also one made up for an object without a block in
 agents.yaml, but never an ignored word), seen for agents.on_desk_after_sec at agents.on_desk_min_confidence or
@@ -31,6 +36,7 @@ from typing import Any
 
 from desktalk.config import AgentsSettings, PresenceSettings, SensitivityStep
 from desktalk.core.agents.presence import PresenceTracker
+from desktalk.core.agents.sensitivity import Slider, confidence_needed
 from desktalk.domain import AgentJoined, AgentLeft, ChatJoin, Detection, DetectionEvent, SeenObject
 from desktalk.ports import DeskScene, EventBus, Preferences, Profiles
 
@@ -42,13 +48,15 @@ OnDesk = Callable[[float, float, int, int], bool | None]
 
 
 class _Sighting:
-    """The best box for one agent in one picture, and whether it was inside the marked desk."""
+    """The best box for one agent in one picture, whether it was inside the marked desk, and whether the agent is
+    a new thing (made up for an object without its own block in agents.yaml)."""
 
-    __slots__ = ('det', 'inside')
+    __slots__ = ('det', 'inside', 'new')
 
-    def __init__(self, det: Detection, inside: bool | None):
+    def __init__(self, det: Detection, inside: bool | None, new: bool):
         self.det = det
         self.inside = inside
+        self.new = new
 
 
 class Roster:
@@ -60,12 +68,12 @@ class Roster:
         self._bus = bus
         self._profiles = profiles
         self._scene = scene
-        self._prefs = prefs
+        self._slider = Slider(agents, prefs)
         self._agents = agents
         self._can_join = set(agents.can_join)
         self._on_desk = on_desk
         step = agents.default_step()
-        self._presence = PresenceTracker(step.join_after_sec, agents.leave_after_sec)     # the chat
+        self._presence = PresenceTracker(step.join_after_sec, agents.leave_wait(step))     # the chat
         self._desk = PresenceTracker(agents.on_desk_after_sec, presence.disappear_after_sec)   # on the desk
         self._fresh_sec = presence.disappear_after_sec       # "in a picture just now" for the scene
         self._lock = threading.Lock()                         # snapshot() is read from the web server's thread
@@ -75,24 +83,9 @@ class Roster:
         self._desk_last: dict[str, tuple[float, Detection]] = {}    # id → its newest sighting on the desk
         self._joins: dict[str, deque[ChatJoin]] = {}         # detector word → its newest joins, leaves, refusals
         self._joins_kept = joins_kept
-        self._bad_steps: set[str] = set()                    # bad slider values already logged
         bus.subscribe('roster', self.on_detection, types=[DetectionEvent])
 
     # ── helpers ──
-    def _step(self) -> SensitivityStep:
-        """The slider's step; agents.sensitivity_default when the saved value is missing or not a step."""
-        steps = self._agents.sensitivity_steps
-        value = self._prefs.get('sensitivity')
-        if value is None:
-            return self._agents.default_step()
-        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < len(steps):
-            return steps[value]
-        if repr(value) not in self._bad_steps:
-            self._bad_steps.add(repr(value))
-            log.warning('The sensitivity preference %r is not one of the %d steps: using %s', value, len(steps),
-                        self._agents.default_step().name)
-        return self._agents.default_step()
-
     def _inside(self, det: Detection, width: int, height: int) -> bool | None:
         """The desk outline's answer for where the object touches the desk (None: no outline, or no size)."""
         if self._on_desk is None or not width:
@@ -115,9 +108,9 @@ class Roster:
             sure_for_desk = det.confidence >= self._agents.on_desk_min_confidence
             if sure_for_desk and (prof.id not in desk or det.confidence > desk[prof.id].confidence):
                 desk[prof.id] = det
-            need = max(step.min_confidence, prof.min_confidence or 0)
-            if det.confidence >= need and (prof.id not in chat or det.confidence > chat[prof.id].det.confidence):
-                chat[prof.id] = _Sighting(det, inside)
+            sure_for_chat = det.confidence >= confidence_needed(step, prof, self._agents.new_things)
+            if sure_for_chat and (prof.id not in chat or det.confidence > chat[prof.id].det.confidence):
+                chat[prof.id] = _Sighting(det, inside, prof.auto)
         return chat, desk
 
     def _keep(self, join: ChatJoin) -> None:
@@ -138,16 +131,19 @@ class Roster:
     def on_detection(self, event: DetectionEvent) -> None:
         now = event.ts
         width, height = event.size
-        step = self._step()
+        step = self._slider.step()
         chat, desk = self._sightings(event.detections, width, height, step)
         joined, left = [], []
         with self._lock:
             self._presence.appear_sec = float(step.join_after_sec)       # the slider works at once
+            self._presence.gone_sec = self._agents.leave_wait(step)
+            new_wait = step.join_after_sec + self._agents.new_things.extra_wait_sec
             for pid in chat:
                 last = self._presence.last_seen(pid)
                 if last is None or now - last > self._presence.gone_sec:
                     self._stretch_start[pid] = now
-            appeared, gone = self._presence.update(chat.keys(), now)
+            appeared, gone = self._presence.update(chat.keys(), now,
+                                                   waits={pid: new_wait for pid, seen in chat.items() if seen.new})
             for pid, seen in chat.items():
                 if pid in self._members:
                     self._members[pid].update(det=seen.det, last_seen=now, inside=seen.inside)
@@ -207,7 +203,7 @@ class Roster:
             return list(self._members)
 
     def joins(self, label: str) -> list[ChatJoin]:
-        """The newest joins, leaves and refusals for a detector word (settings → dev.trace_events_kept), oldest
+        """The newest joins, leaves and refusals for a detector word (settings → object_story.events_kept), oldest
         first."""
         with self._lock:
             return list(self._joins.get(label, ()))

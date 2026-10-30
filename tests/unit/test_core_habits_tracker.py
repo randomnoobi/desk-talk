@@ -111,11 +111,27 @@ def test_sip_when_the_cup_is_lifted_and_put_back(config):
     assert r.today()['hydration']['sips'] == 1
 
 
-def test_gone_and_back_without_being_lifted_is_not_a_sip(config):
+def test_gone_and_back_in_the_same_place_is_not_a_sip(config):
     r = Rig(config)
     r.run(10, 'cup', 'laptop')
-    r.run(8, 'laptop')              # a hand over the cup
-    r.run(5, 'cup', 'laptop')
+    r.run(8, 'laptop', 'person')    # a hand over the cup
+    r.run(5, 'cup', 'laptop')       # back exactly where it was
+    assert r.today()['hydration']['sips'] == 0
+
+
+def test_gone_and_back_moved_is_a_sip(config):
+    r = Rig(config)
+    r.run(10, 'cup', 'laptop')
+    r.run(4, 'laptop')              # picked up straight out of the picture
+    r.run(5, 'cup', 'laptop', boxes={'cup': BBox(20, 0, 30, 10)})     # put down 20 px off its old spot
+    assert r.today()['hydration']['sips'] == 1
+
+
+def test_gone_and_back_moved_with_nobody_at_the_desk_is_not_a_sip(config):
+    r = Rig(config)
+    r.run(10, 'cup', 'laptop', person=False)
+    r.run(4, 'laptop', person=False)          # the detector lost it, nobody here
+    r.run(5, 'cup', 'laptop', person=False, boxes={'cup': BBox(20, 0, 30, 10)})
     assert r.today()['hydration']['sips'] == 0
 
 
@@ -149,12 +165,62 @@ def test_sip_counts_even_with_a_second_drink_on_the_desk(config):
 
 def test_weak_detections_are_not_counted(config):
     r = Rig(config)
-    r.run(5, 'cup', conf=0.5)       # a cup needs 0.55 (agents.yaml)
+    r.run(5, 'cup', conf=0.44)      # below the Normal sensitivity step's 0.45
     assert not r.state().drink_on_desk
-    r.run(5, 'cup', conf=0.6)
+    r.run(5, 'cup', conf=0.46)      # a water bottle the camera calls a cup, about this sure
     assert r.state().drink_on_desk
     r.run(5, 'laptop', conf=0.3)    # below the Normal sensitivity step's 0.45
     assert not r.state().screen_on_desk
+
+
+def slider(step):
+    return FakePreferences({'wake_time': '07:00', 'bed_time': '22:30', 'sensitivity': step})
+
+
+def test_how_sure_a_box_must_be_follows_the_sensitivity_slider(config):
+    picky = Rig(config, prefs=slider(0))          # Picky wants 0.65
+    picky.run(5, 'cup', conf=0.46)
+    assert not picky.state().drink_on_desk
+    normal = Rig(config, prefs=slider(2))         # Normal wants 0.45
+    normal.run(5, 'cup', conf=0.46)
+    assert normal.state().drink_on_desk
+
+
+def test_a_slider_change_works_at_once(config):
+    r = Rig(config, prefs=slider(0))
+    r.run(5, 'cup', conf=0.46)
+    assert not r.state().drink_on_desk
+    r.prefs.values['sensitivity'] = 4
+    r.run(5, 'cup', conf=0.46)
+    assert r.state().drink_on_desk
+
+
+@pytest.mark.parametrize('bad', ['picky', 9, -1, True])
+def test_a_bad_slider_value_uses_the_default_step(config, bad):
+    r = Rig(config, prefs=slider(bad))            # the default step is Normal (0.45)
+    r.run(5, 'cup', conf=0.46)
+    assert r.state().drink_on_desk
+
+
+@pytest.fixture(scope='module')
+def strict_cup_config(tmp_path_factory):
+    """The real settings, with agents.yaml giving the cup a stricter min_confidence of its own (0.55)."""
+    root = tmp_path_factory.mktemp('strict')
+    (root / 'config').mkdir()
+    for name in ('settings.yaml', 'protocols.yaml', 'prompts.yaml'):
+        shutil.copy(ROOT / 'config' / name, root / 'config' / name)
+    agents = (ROOT / 'config' / 'agents.yaml').read_text()
+    agents = agents.replace('    tracker: hydration\n', '    tracker: hydration\n    min_confidence: 0.55\n', 1)
+    (root / 'config' / 'agents.yaml').write_text(agents)
+    return load_config(root, environ={})
+
+
+def test_an_agents_own_stricter_min_confidence_still_wins(strict_cup_config):
+    r = Rig(strict_cup_config, prefs=slider(4))   # Eager wants 0.35, the cup itself 0.55
+    r.run(5, 'cup', conf=0.5)
+    assert not r.state().drink_on_desk
+    r.run(5, 'cup', conf=0.6)
+    assert r.state().drink_on_desk
 
 
 # ── breaks and sitting ────────────────────────────────────────────────

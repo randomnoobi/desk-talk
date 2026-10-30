@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ApiError, getJSON, getTrace, postJSON, startTests } from './api'
+import { ApiError, cancelScenario, getJSON, getTrace, postJSON, startScenario, startTests } from './api'
 
 function reply(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -62,5 +62,24 @@ describe('the route functions', () => {
     const fetch = fakeFetch(reply(200, { label: 'pen/pencil', steps: [] }))
     await expect(getTrace('pen/pencil')).resolves.toEqual([])
     expect(fetch.mock.calls[0][0]).toBe('/api/dev/smoothing/trace?label=pen%2Fpencil')
+  })
+})
+
+describe('the Demo tab', () => {
+  it('startScenario sends the name and the seconds', async () => {
+    const fetch = fakeFetch(reply(200, { id: 'demo-1', name: 'sip', label: 'A sip counted', fires_at: 1, seconds_left: 5 }))
+    await expect(startScenario('sip', 5)).resolves.toMatchObject({ id: 'demo-1' })
+    const [path, init] = fetch.mock.calls[0]
+    expect(path).toBe('/api/dev/scenarios')
+    expect(init?.method).toBe('POST')
+    expect(JSON.parse(String(init?.body))).toEqual({ name: 'sip', after_sec: 5 })
+  })
+
+  it('cancelScenario sends a DELETE for that one', async () => {
+    const fetch = fakeFetch(reply(200, { ok: true }))
+    await cancelScenario('demo/1')
+    const [path, init] = fetch.mock.calls[0]
+    expect(path).toBe('/api/dev/scenarios/demo%2F1')
+    expect(init?.method).toBe('DELETE')
   })
 })

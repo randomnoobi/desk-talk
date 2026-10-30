@@ -53,3 +53,8 @@ class AgentsFile(_Section):
     ignore: Words
     agents: dict[str, Agent]
     relationships: tuple[Relationship, ...]
+
+    @property
+    def own_words(self) -> frozenset[str]:
+        """Every detector word that has its own agent block (lowercase), so not a new thing's word."""
+        return frozenset(w.lower() for agent in self.agents.values() for w in agent.labels)

@@ -85,7 +85,7 @@ def a_roster():
     bus = SyncEventBus()
     profiles = ProfileBook(config.agents_file, InMemoryKeyValueStore(), personality_max_chars=400)
     roster = Roster(bus, profiles, Scene(), config.agents, config.presence, FakePreferences(),
-                    joins_kept=config.dev.trace_events_kept)
+                    joins_kept=config.object_story.events_kept)
 
     def show(start: float, seconds: float, *labels: str) -> float:
         """Pictures 3 a second with these detector words in them. Returns the time after the last one."""
