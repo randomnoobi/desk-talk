@@ -238,6 +238,10 @@ One window, three columns:
 2. **Conversation (middle)**: join / leave notes, colored bubbles, proof photos, @mentions.
    Each 1-on-1 chat has its tracker on top (Cup's water, Computer's breaks, Book's to-do list…).
 3. **Desk cam (right)**: the live picture with boxes, who's on the desk, current risks, proof photos.
+   Click anything under "On the desk" for its story: when it appeared, joined the chat, moved or went away,
+   how sure the camera was each time, and the picture taken at each step with its box drawn on (for "went
+   away", the empty spot with its last box). The pictures are kept in `data/trace_photos/`
+   (settings → `object_story`).
    Until the camera connects it shows the command to run on the Pi.
 
 **Event log** page: what happened each day, newest first: sips, breaks, food, finished to-dos, sunlight,
@@ -408,7 +412,8 @@ check everything with it). It has five tabs:
 - **Live**: each object's state (present, absent), the changes as they happen, and a chart of how the
   smoothing turned the last pictures into that state, so you can see why something flickers. Click an object
   for its whole trace: when it joined the chat, left or was turned away (and why: how sure, how long, the
-  sensitivity), its state changes, and a few pictures of it with its box (kept in `data/trace_photos/`).
+  sensitivity), its state changes, each with the picture taken then and its box (the same story the app
+  page shows, kept in `data/trace_photos/`).
 - **System**: how the Pi is doing (pictures a second, temperature, disk, its detector) and every part on
   this computer (background jobs, timed jobs, the event stream, detection, the AI).
 - **Database**: the tables in the SQLite databases, and a box to run a query that only reads.

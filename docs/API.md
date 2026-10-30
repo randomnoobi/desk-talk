@@ -4,7 +4,7 @@ Every web address (route) the Desk Talk servers answer, grouped by area: what it
 who is allowed to. The code is the source of truth; this page is a map of it. How the parts fit together
 is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-**61 routes in all: 49 on the main server (17 of them for the developer page), 9 on the phone camera's server, 3 on the detector service.**
+**63 routes in all: 51 on the main server (17 of them for the developer page), 9 on the phone camera's server, 3 on the detector service.**
 
 ## Three servers
 
@@ -86,6 +86,18 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 |---|---|---|---|---|
 | GET | `/api/live` | Only what the desk cam panel shows, in one request (the app asks every 1.5 s): `camera`, `camera_source`, `camera_index`, `agents`, `detections.extras` (the other things on the desk, not in the chat: `[{"yolo_class", "ignored"}]`), `safety.explanations` (the "Heads up" sentences), `camera_issues`, `ai: {ready, problem}`, and `phone: {url, qr_svg}` or `pi_command`. `?qr=1` adds the phone link's QR code. | `web_app/app.js`, `tests/e2e/` | anyone on the network; the Pi command, the phone link and the QR code **this computer only** |
 | GET | `/api/status` | A short summary: running, camera, agents, safety state, uptime. | `web_app/app.js` (once, when the page starts) | anyone on the network |
+
+### An object's story (2)
+
+| Method | Path | What it does | Called by | Access |
+|---|---|---|---|---|
+| GET | `/api/objects/{label}/story` | What happened to one kind of object since the camera started, step by step, oldest first, each step in plain words with the picture taken for it. `pen%2Fpencil/story` works for a word with a slash. 404 `{"error": "The camera hasn't seen ... since it started."}` (`config/prompts.yaml` → `object_story.never_seen`) when there's nothing to tell. | `web_app/app.js` (click something under "On the desk") | anyone on the network |
+| GET | `/api/objects/photo/{photo_id}` | One of its pictures (JPEG, without the box: the page draws it). 404 when it's gone. | `web_app/app.js` | anyone on the network |
+
+- The reply is the same as `GET /api/dev/objects/{label}` (see the developer page below), read by the same code
+  (`desktalk/web/stories.py`): `{"label", "timeline": [step], "photos": [photo]}`. Each step has `what`, the
+  plain words for it from `config/prompts.yaml` → `object_story` ("appeared", "joined the chat", "moved",
+  "went away", "left the chat" ...), and `photo`, the picture taken for it or null.
 
 ### Video and proof photos (6)
 
@@ -175,8 +187,8 @@ is the developer page, through `dev_ui/src/api.ts`; the tab that uses each one i
 | GET | `/api/dev/states` | Each object's state now, and the changes since `?since=<time>`. | Live tab | this computer and its own page only |
 | GET | `/api/dev/smoothing` | The objects that have a smoothing trace. | Live tab | this computer and its own page only |
 | GET | `/api/dev/smoothing/trace` | What the smoothing made of one object's last pictures, oldest first. `?label=pen%2Fpencil` (a query, so a label with a slash works); an object never seen gives an empty list, not an error. | Live tab | this computer and its own page only |
-| GET | `/api/dev/objects/{label}` | One kind of object's whole trace: its state changes since the camera started and its chat joins, leaves and refusals (with why), oldest first, and its trace pictures. `pen%2Fpencil` works for a word with a slash; an object never seen gives empty lists. | Live tab | this computer and its own page only |
-| GET | `/api/dev/objects/photo/{photo_id}` | One trace picture (JPEG). 404 when it's gone, or with the developer page off. | Live tab | this computer and its own page only |
+| GET | `/api/dev/objects/{label}` | One kind of object's whole trace: its state changes since the camera started and its chat joins, leaves and refusals (with why), oldest first, each with the picture taken for it, and its pictures. `pen%2Fpencil` works for a word with a slash; an object never seen gives empty lists. | Live tab | this computer and its own page only |
+| GET | `/api/dev/objects/photo/{photo_id}` | One trace picture (JPEG). 404 when it's gone. | Live tab | this computer and its own page only |
 | GET | `/api/dev/tests` | Every test the Checks tab lists (`dev.collect_markers`), slow ones marked. | Checks tab | this computer and its own page only |
 | POST | `/api/dev/runs` | Start a run: every step in `dev.checks`, or some tests by id. One run at a time. | Checks tab | this computer and its own page only |
 | GET | `/api/dev/runs/{run_id}` | How a run is going: its steps, each finished test, and the printout after `?from=<offset>`. | Checks tab, while a run goes | this computer and its own page only |
@@ -192,19 +204,25 @@ is the developer page, through `dev_ui/src/api.ts`; the tab that uses each one i
 - Every `/api/dev` route turns away other computers and other web pages with 403 and `{"error": ...}`
   (the wording is in `config/prompts.yaml` under `dev:`), before anything runs.
 - `GET /api/dev/settings`: `{"poll_sec", "checks": [names], "health": {...}, "trace_pictures",
-  "trace_events_kept", "trace_photos_kept", "sql_max_rows", "data_folder", "object_states": {"on_confidence", "off_confidence", "appear_sec",
+  "trace_events_kept", "trace_photos_kept", "trace_step_photos_kept", "sql_max_rows", "data_folder", "object_states": {"on_confidence", "off_confidence", "appear_sec",
   "gone_sec", "window_pictures", "vote_share"}}`.
 - `GET /api/dev/states`: `{"objects": {label: {"state", "since"}}, "watched_since", "changes": [{"ts",
   "label", "change"}]}`.
 - `GET /api/dev/smoothing`: `{"labels": [...]}`. `/api/dev/smoothing/trace`: `{"label", "steps": [...]}`;
   each step has `ts`, `conf`, `box_seen`, `votes_yes`, `votes_total`, `seen`, `center`, `phase`, `heading`
   and `waiting_sec`.
-- `GET /api/dev/objects/{label}`: `{"label", "timeline": [{"ts", "source": "state" | "chat", "kind",
-  "confidence", "seen_for_sec", "on_desk", "step", "before", "after"}], "photos": [{"id", "ts", "why",
-  "confidence", "box": [x1, y1, x2, y2], "size": [width, height]}]}`. State rows are the newest
-  `dev.trace_events_kept` changes (`kind` = appeared / removed / moved, `before` / `after` the states); chat rows
-  are `joined`, `left` or `refused`, with the sensitivity step's name. `why` is `appeared`, `joined` or `every`
-  (one every `dev.trace_photo_every_sec`); only the newest `dev.trace_photos_kept` pictures are kept.
+- `GET /api/dev/objects/{label}` (and `GET /api/objects/{label}/story`): `{"label", "timeline": [{"ts",
+  "source": "state" | "chat" | "photo", "kind", "what", "confidence", "seen_for_sec", "on_desk", "step",
+  "before", "after", "photo"}], "photos": [photo]}`, where a photo is `{"id", "ts", "why", "confidence",
+  "box": [x1, y1, x2, y2], "size": [width, height]}`. State rows are the newest `object_story.events_kept`
+  changes (`kind` = appeared / removed / moved, `before` / `after` the states); chat rows are `joined`, `left`
+  or `refused`, with the sensitivity step's name. A picture's `why` is `appeared`, `joined`, `moved`, `removed`
+  (the newest picture once it's gone, with its last box: the empty spot) or `every` (one every
+  `object_story.photo_every_sec` while it's there). Each step picture goes in the `photo` of the step of its
+  kind nearest in time (within `object_story.photo_match_sec`); a picture that goes with no step is a row of
+  its own (`source` "photo", `kind` its `why`). Only the newest `object_story.timed_photos_kept` `every`
+  pictures and, apart from them, the newest `object_story.step_photos_kept` others are kept, so a long stay
+  never pushes out how it got there. Here an object never seen gives empty lists (the app page's route a 404).
 - `GET /api/dev/tests`: `{"tests": [{"id", "file", "markers"}]}`. The `id` is pytest's, e.g.
   `tests/unit/test_x.py::test_y`.
 - `POST /api/dev/runs`: `{"check": true}` or `{"tests": [ids]}`. Replies `{"run_id"}`. 409 `{"error": "A run
