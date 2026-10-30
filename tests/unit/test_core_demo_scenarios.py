@@ -11,28 +11,11 @@ import pytest
 from desktalk.config import load_config
 from desktalk.core.demo import ScenarioRunner
 from desktalk.ports import DemoScenarios, PeriodicWorker
-from tests.fakes import FakeClock
+from tests.fakes import FakeClock, RecordingFirer
 
 CONFIG = load_config(environ={}, dotenv=Path('/nonexistent'))
 DEMO = CONFIG.dev.scenarios
 EDGE, SIP = 'cup_at_edge', 'sip'
-
-
-class RecordingFirer:
-    """Records what it fired; `broken` names one that raises, and `problems` the ones it can't fire, with why."""
-
-    def __init__(self, broken: str = '', problems: dict[str, str] | None = None):
-        self.fired: list[tuple[str, float]] = []
-        self.broken = broken
-        self.problems = problems or {}
-
-    def problem(self, name: str) -> str | None:
-        return self.problems.get(name)
-
-    def fire(self, name: str, now: float) -> None:
-        if name == self.broken:
-            raise RuntimeError('the chat is down')
-        self.fired.append((name, now))
 
 
 class Rig:

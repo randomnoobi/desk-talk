@@ -10,9 +10,9 @@ import pytest
 
 from desktalk.config import DemoSettings, load_config
 from desktalk.core.demo.firer import DemoFirer
-from desktalk.domain import LENS, AgentProfile, Alert, Nudge
+from desktalk.domain import LENS, AgentProfile, Alert
 from desktalk.ports import ScenarioFirer
-from tests.fakes import FakeProfiles, SyncEventBus
+from tests.fakes import FakeProfiles, RecordingCameraWarnings, RecordingHabitLog, RecordingReminders, SyncEventBus
 
 CONFIG = load_config(environ={}, dotenv=Path('/nonexistent'))
 PROMPTS = CONFIG.prompts
@@ -23,36 +23,12 @@ PROFILES = [AgentProfile(id='cup', name='Cup', habits=['hydration']),
             AgentProfile(id='paper', name='Paper')]
 
 
-class HabitLogRecord:
-    def __init__(self):
-        self.logged: list[tuple[str, str, dict]] = []
-
-    def log(self, habit: str, action: str, **details):
-        self.logged.append((habit, action, details))
-
-
-class CameraRecord:
-    def __init__(self):
-        self.said: list[tuple[str, str, float]] = []
-
-    def say_problem(self, key: str, text: str, now: float) -> None:
-        self.said.append((key, text, now))
-
-
-class RemindersRecord:
-    def __init__(self):
-        self.said: list[tuple[Nudge, float]] = []
-
-    def say(self, nudge: Nudge, now: float) -> None:
-        self.said.append((nudge, now))
-
-
 class Rig:
     def __init__(self, settings=CONFIG.dev.scenarios, profiles=PROFILES):
         self.bus = SyncEventBus()
-        self.habits = HabitLogRecord()
-        self.camera = CameraRecord()
-        self.reminders = RemindersRecord()
+        self.habits = RecordingHabitLog()
+        self.camera = RecordingCameraWarnings()
+        self.reminders = RecordingReminders()
         self.firer = DemoFirer(settings, self.bus, self.habits, self.camera, self.reminders, FakeProfiles(profiles),
                                prompts=PROMPTS, lost_item_names=LOST_NAMES)
 
