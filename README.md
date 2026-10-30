@@ -424,7 +424,9 @@ cd dev_ui && npm install && npm run build
 Then start Desk Talk as usual and open **http://localhost:5000/dev/** (`web.port`, 5000 unless you changed
 it). Only this computer gets answers from it: other devices on the Wi-Fi, and other web pages open in
 your browser, are turned away (403). It can't change anything, apart from starting and stopping a test
-run and deleting a localStorage key after you say yes. The database is opened read-only. To switch it off, set
+run, deleting a localStorage key after you say yes, and the **Demo** tab, which fires pretend warnings on
+purpose after a countdown you set (for testing, or recording a demo video): they go out like real ones, to
+the chat and the Mac pop-ups, and a pretend sip counts in today's water. The database is opened read-only. To switch it off, set
 `dev.enabled: false` in `config/settings.local.yaml`; its other numbers are in the `dev:` section of
 `config/settings.yaml`.
 

@@ -67,7 +67,9 @@ Your computer keeps YOLO too, for the phone and the webcam, and as the backup fo
           MessageHub ──── SSE: GET /api/events ────▶ every open app page (web_app/)
             ▲
             └── background jobs that speak by themselves: HabitReminders (with the RuleRunner's nudges) and
-                Lens through DesktopAlerts; IdleChat and DailySummary straight to the hub
+                Lens through DesktopAlerts; IdleChat and DailySummary straight to the hub. The developer
+                page's Demo tab (ScenarioRunner, only when dev.enabled) fires pretend warnings on purpose
+                through the same parts: an Alert on the EventStream, HabitReminders, Lens or the HabitTracker
 ```
 
 **One thing, one name.** The detector sometimes names one thing twice on nearly the same box (a laptop that is
@@ -134,13 +136,14 @@ reply only holds up the message generator's own queue, never the camera or the o
 | `desktalk/adapters/dev/` | For the developer page, only built when `dev.enabled` is on: `PytestRunner` (`test_runner.py`: runs the checks in `dev.checks`, or some tests with `dev.test_command`, in a child process, one run at a time, stopped after `dev.run_timeout_min`), with `pytest_report.py`, a pytest plugin that writes one line per finished test so the page sees each one as it finishes; `SqliteBrowser` (`sqlite_browser.py`: the SQLite databases opened read-only, one statement that only reads, at most `dev.sql_max_rows` rows, stopped after `dev.sql_timeout_sec`); `DataFolder` (`data_files.py`: the files in `data/` and the start of one, never anything outside it). |
 | `desktalk/runtime/` | `Supervisor` (runs the background jobs and starts them again after a crash), `Scheduler`, `SystemClock` (the shared one), logging. |
 | `desktalk/web/` | FastAPI. `app.py` makes the two servers (the main one, and the phone page's own HTTPS one), `routers/` has the routes by area (`pi`, `phone`, `live`, `video`, `chat`, `habits`, `log`, `settings`, `health`, `dev`), `schemas.py` the request and reply shapes, `streams.py` SSE and the video, `serve.py` runs uvicorn. The routes only see the interfaces, plain data and settings on `DeskTalk`. |
+| `desktalk/core/demo/` | The developer page's Demo tab (only when `dev.enabled` is on): `ScenarioRunner` (`scenarios.py`: the pretend warnings in `dev.scenarios`, their countdowns, and a background job that fires each one once its countdown is over) and `DemoFirer` (`firer.py`: sends each one through the same part as the real warning: the desk monitor's `Alert` for the desk edge and danger zones, `HabitReminders.say()` for the drink reminder, `Lens.say_problem()` for the camera covered, the habit tracker's `log()` for a sip, the lost-items `Alert` for keys gone missing). This is the one place the developer page changes what the app does, on purpose. |
 | `desktalk/web/routers/dev.py` | The developer page's routes, `/api/dev/...` (the list is in [API.md](API.md#developer-page-this-computer-only-15)). Every one only answers this computer, and only its own page (`DevOnly` in `deps.py`: the `FromHere` check plus a `Host` and an `Origin` check). It's only added to the main server when `dev.enabled` is on, never to the phone's. `app.py` serves the built page (`dev.ui_folder`) at `/dev/`, or a line saying how to build it. |
 | `shared/desktalk_shared/` | Used on the Pi and on this computer, standard library only: `detection.py` (`Detection`, `BBox`), `wire.py` (the upload format), `detector_api.py` (the detector service's requests and replies), `ultralytics_results.py` (YOLO results → `Detection`s, the same on both sides), `backoff.py` (`Backoff`: the wait after each failure in a row, doubling up to a most), `clock.py` (`SystemClock`, the one real clock), `workers.py` (`WorkerThread`: a job in a thread of its own that starts again after a crash). |
 | `raspberry_pi/camera/` | The camera program: `cli.py` (the command line and loading the settings), `main.py` (the loop: take, save, ask, send), `workers.py` (the threads, and `build_program`, which connects the parts), `cameras.py`, `photo_store.py`, `cleaner.py`, `detector_client.py`, `uploader.py`, `health.py`, `watchdog.py`, `self_test.py`, `settings.py`. [README](../raspberry_pi/camera/README.md). |
 | `raspberry_pi/detector_service/` | The detector service: `Dockerfile`, `compose.yaml`, `.env`, and `desktalk_detector/` (FastAPI: `POST /detect`, `GET /health`, `PUT /model`; converts `.pt` models to ncnn and keeps the last good one). [README](../raspberry_pi/detector_service/README.md). |
 | `benchmarks/` | `deskbench`: times YOLO models on the Mac and on the Pi (in its own Docker image), to pick the Pi's model. [README](../benchmarks/README.md). |
 | `web_app/`, `phone_camera/` | The app's page, and the page a phone opens to be the camera. They keep no copies of the settings: the app page asks `GET /api/ui_settings` when it opens (refresh times, limits, the palette, Lens's card, how long a chat reply may take) and shows its "can't reach Desk Talk" note until it gets them; the phone page asks `GET /api/phone/config` (picture size and quality). |
-| `dev_ui/` | The developer page at `http://localhost:5000/dev/`: Checks, Live, System, Database and Storage tabs. Vite + React + TypeScript, with its own tests (Vitest) and `package-lock.json`; `npm run build` puts it in `dev_ui/dist/`. It keeps no numbers of its own: it asks `GET /api/dev/settings` once when it opens. The app page stays plain JavaScript with no build step. [README](../dev_ui/README.md). |
+| `dev_ui/` | The developer page at `http://localhost:5000/dev/`: Checks, Live, System, Database, Storage and Demo tabs. Vite + React + TypeScript, with its own tests (Vitest) and `package-lock.json`; `npm run build` puts it in `dev_ui/dist/`. It keeps no numbers of its own: it asks `GET /api/dev/settings` once when it opens. The app page stays plain JavaScript with no build step. [README](../dev_ui/README.md). |
 
 There are three uv packages in one workspace with one `uv.lock`: `desktalk` (this folder), `desktalk-shared`
 (`shared/`) and `desktalk-detector` (`raspberry_pi/detector_service/`). The camera program isn't installed
@@ -195,8 +198,9 @@ locking, so nobody outside ever holds a lock:
 | `CharacterMemory` | what each character said lately, the tracker panels, when you last typed | `Memories` | `FakeCharacterMemory` |
 | `PhotoAlbum` | add a proof photo, get one, the newest ones | `Album` | `FakePhotoAlbum` |
 
-**The developer page** has six interfaces of its own. Only the `/api/dev` routes use them, and `DeskTalk`'s
-`test_runner`, `databases`, `data_files` and `trace_photos` are None when `dev.enabled` is off:
+**The developer page** has these interfaces of its own. Only the `/api/dev` routes use them (and the Demo tab's
+countdowns, the last four), and `DeskTalk`'s `test_runner`, `databases`, `data_files`, `trace_photos` and `demo`
+are None when `dev.enabled` is off:
 
 | Interface | What it promises | Real version | Fake for tests |
 |---|---|---|---|
@@ -206,6 +210,10 @@ locking, so nobody outside ever holds a lock:
 | `ChatJoins` | each kind of object's newest joins, leaves and refusals, with how sure, how long it was seen, inside the desk or not, and the sensitivity step (`joins(label)`, oldest first) | `Roster` | `FakeChatJoins` |
 | `TracePhotos` | each kind of object's trace pictures (`photos(label)`, oldest first) and one picture's JPEG (`jpeg(id)`) | `TracePhotoFiles` | `FakeTracePhotos` |
 | `SmoothingTraceView` | what the smoothing made of each object's last `object_states.trace_pictures` pictures (confidence, the votes, seen or not, the state, the wait), oldest first; `[]` for an object never seen | `ObjectStateTracker` | `FakeSmoothingTrace` |
+| `DemoScenarios` (and `DemoCountdowns`, the same plus the background job) | the Demo tab's pretend warnings, start one with a countdown in seconds (`ValueError` for an unknown name, a countdown out of range or too many waiting), cancel one (`KeyError` once it's gone), the ones counting down with the seconds left | `ScenarioRunner` (`core/demo/scenarios.py`) | none: the routes' tests use the real one with a `FakeClock` |
+| `ScenarioFirer` | send one pretend warning by name, the way the real one goes out | `DemoFirer` (`core/demo/firer.py`) | a recording one in the runner's tests |
+| `CameraWarnings` | Lens saying a camera problem now (`say_problem()`), as it says one it found | `Lens` | a recording one in the firer's tests |
+| `ReminderSender` | the habit reminders saying one nudge now (`say()`), by the agent for the habit or Lens, with nothing waiting because of it | `HabitReminders` | a recording one in the firer's tests |
 
 A part asks only for the desk interfaces it uses (the roster gets `scene`, idle chat gets `character_memory`).
 The producer, proof photos, the desk monitor, the desk status, lost items, the message generator and the
