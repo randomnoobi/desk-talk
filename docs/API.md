@@ -91,7 +91,7 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 | Method | Path | What it does | Called by | Access |
 |---|---|---|---|---|
-| GET | `/api/objects/{label}/story` | What happened to one kind of object since the camera started, step by step, oldest first, each step in plain words with the picture taken for it. `pen%2Fpencil/story` works for a word with a slash. 404 `{"error": "The camera hasn't seen ... since it started."}` (`config/prompts.yaml` → `object_story.never_seen`) when there's nothing to tell. | `web_app/app.js` (click something under "On the desk") | anyone on the network |
+| GET | `/api/objects/{label}/story` | What happened to one kind of object since the camera started, step by step, oldest first, each step in plain words with the picture taken for it, plus the pictures of it kept from earlier runs (so after a restart it can still answer, with older pictures). `pen%2Fpencil/story` works for a word with a slash. 404 `{"error": "The camera hasn't seen ... yet."}` (`config/prompts.yaml` → `object_story.never_seen`) when there's nothing to tell: no step this run and no kept picture. | `web_app/app.js` (click something under "On the desk") | anyone on the network |
 | GET | `/api/objects/photo/{photo_id}` | One of its pictures (JPEG, without the box: the page draws it). 404 when it's gone. | `web_app/app.js` | anyone on the network |
 
 - The reply is the same as `GET /api/dev/objects/{label}` (see the developer page below), read by the same code

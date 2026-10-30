@@ -2,9 +2,10 @@
 An object's story, for the app page (click something under "On the desk"):
 
     GET /api/objects/<label>/story      what happened to it since the camera started, step by step (oldest first),
-                                        each step in plain words with the picture taken for it (desktalk/web/
-                                        stories.py says how they're put together); 404 when the camera hasn't
-                                        seen it since it started (pen/pencil works too: pen%2Fpencil)
+                                        each step in plain words with the picture taken for it, plus the
+                                        pictures of it kept from earlier runs (desktalk/web/stories.py says how
+                                        they're put together); 404 when there's nothing to tell: no step this
+                                        run and no kept picture (pen/pencil works too: pen%2Fpencil)
     GET /api/objects/photo/<id>         one of its pictures (a JPEG, the page draws the box); 404 once it's gone
 
 Any device on the Wi-Fi may ask, like the rest of the app page's routes.

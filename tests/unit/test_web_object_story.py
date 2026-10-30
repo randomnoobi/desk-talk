@@ -1,8 +1,8 @@
 """An object's story for the app page (desktalk/web/routers/objects.py): GET /api/objects/<label>/story is what
-happened to it since the camera started, step by step, each step with its picture when one was taken then, and
-GET /api/objects/photo/<id> is one of those pictures. The developer page's trace (/api/dev/objects/<label>) is read
-by the same code (desktalk/web/stories.py). The router is built here with fakes; the whole app's characterization
-cases live in tests/characterization/cases.py."""
+happened to it since the camera started (and the pictures of it kept from earlier runs), step by step, each step
+with its picture when one was taken then, and GET /api/objects/photo/<id> is one of those pictures. The developer
+page's trace (/api/dev/objects/<label>) is read by the same code (desktalk/web/stories.py). The router is built
+here with fakes; the whole app's characterization cases live in tests/characterization/cases.py."""
 
 from __future__ import annotations
 

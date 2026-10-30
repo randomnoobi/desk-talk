@@ -797,8 +797,9 @@ object_story:
   refused: was seen, but stayed out of the chat
   # a picture taken every object_story.photo_every_sec while it's there
   every: still there
-  # the story of something the camera hasn't seen since it started: {object} is the detector's word for it
-  never_seen: "The camera hasn't seen {object} since it started."
+  # the story of something with nothing to tell: no step since the camera started and no picture kept from an
+  # earlier run. {object} is the detector's word for it
+  never_seen: "The camera hasn't seen {object} yet."
 
 # ── The Mac's own pop-up notifications (settings → notifications) ───
 # A warning or reminder pops up with the character's name as its title and its message as the text.

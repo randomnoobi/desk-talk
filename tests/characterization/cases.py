@@ -167,7 +167,7 @@ CASES = [
     Case('object-story', 'GET', '/api/objects/cup/story', 200, values={'label': 'cup'}),
     Case('object-story-from-lan', 'GET', '/api/objects/cup/story', 200, from_ip=LAN_DEVICE),
     Case('object-story-never-seen', 'GET', '/api/objects/pen%2Fpencil/story', 404,
-         values={'error': "The camera hasn't seen pen/pencil since it started."}),
+         values={'error': "The camera hasn't seen pen/pencil yet."}),
     Case('object-photo', 'GET', '/api/objects/photo/{story_photo_id}', 200, reply=FILE, starts_with=JPEG_START),
     Case('object-photo-gone', 'GET', '/api/objects/photo/nope', 404, reply=STATUS),
 
