@@ -920,7 +920,7 @@ class ChatJoins(Protocol):
     """Each kind of object's chat joins, leaves and refusals, with why (the roster): the developer page's trace."""
 
     def joins(self, label: str) -> list[ChatJoin]:
-        """The newest ones (settings → dev.trace_events_kept) for a detector word, oldest first; [] for one never
+        """The newest ones (settings → object_story.events_kept) for a detector word, oldest first; [] for one never
         seen."""
         ...
 
@@ -1110,8 +1110,9 @@ class SmoothingTraceView(Protocol):
 
 @runtime_checkable
 class TracePhotos(Protocol):
-    """The pictures kept of each kind of object for the developer page's trace: one when it appears, one when it
-    joins the chat, and one every so often while it's there (settings → dev.trace_*). Only the newest few are kept."""
+    """The pictures kept of each kind of object for its story: one when it appears, joins the chat, moves or goes
+    away, and one every so often while it's there (settings → object_story). Only the newest few timed pictures and,
+    apart from them, the newest few step pictures are kept (domain → newest_trace_photos)."""
 
     def photos(self, label: str) -> list[TracePhoto]:
         """The pictures kept of a detector word, oldest first; [] for one never photographed."""

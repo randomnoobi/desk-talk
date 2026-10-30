@@ -196,7 +196,7 @@ class Roster:
             return list(self._members)
 
     def joins(self, label: str) -> list[ChatJoin]:
-        """The newest joins, leaves and refusals for a detector word (settings → dev.trace_events_kept), oldest
+        """The newest joins, leaves and refusals for a detector word (settings → object_story.events_kept), oldest
         first."""
         with self._lock:
             return list(self._joins.get(label, ()))

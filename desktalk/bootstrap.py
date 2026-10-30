@@ -15,7 +15,7 @@ gets only the interfaces it asks for (desktalk/ports.py) and its own section of 
                                                    ├─► HabitTracker      (water, breaks, light, phone)
                                                    ├─► DeskMonitor       (danger zones, desk edges, pets)
                                                    ├─► LostItems         (where your keys were)
-                                                   ├─► TracePhotoTaker   (the developer page's pictures)
+                                                   ├─► TracePhotoTaker   (each object's story pictures)
                                                    └─► MessageGenerator ──► DesktopAlerts ──► MessageHub ──►
                                                                             (Mac pop-ups)      open app pages
     Background jobs (Supervisor): the producer, the scheduler (compact and prune the event log, save the
@@ -181,9 +181,9 @@ class DeskTalk:
     databases         the developer page's read-only look inside the databases (/api/dev/db...)
     data_files        what's in the data folder, read-only (/api/dev/files...)
                       (these three are None when settings → dev.enabled is false)
-    chat_joins        each kind of object's chat joins, leaves and refusals: joins() (/api/dev/objects/...)
-    trace_photos      each kind of object's trace pictures: photos(), jpeg() (/api/dev/objects/...; None when
-                      settings → dev.enabled is false)
+    chat_joins        each kind of object's chat joins, leaves and refusals: joins() (/api/objects/.../story,
+                      /api/dev/objects/...)
+    trace_photos      each kind of object's story pictures: photos(), jpeg() (/api/objects/..., /api/dev/objects/...)
     todos             the to-do list the server keeps: items(), replace(), has_list() (/api/todos, /api/chat_todos)
     desktop           the Mac's own pop-ups (warnings, reminders, sips): nothing on the web uses it; stop() lets
                       its thread finish
@@ -422,7 +422,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
 
     phone_is_camera = source.kind == 'phone'
     roster = Roster(bus, profiles, scene, config.agents, config.presence, preferences, on_desk=on_desk,
-                    joins_kept=config.dev.trace_events_kept)
+                    joins_kept=config.object_story.events_kept)
     todos = TodoFile(store, bus, clock, key=config.habit_tracker.todos_key, max_items=config.chat.todo_max_items,
                      max_chars=config.chat.todo_max_chars, done_words=config.prompts.habits.logged.task_done)
     desk_status = DeskStatusService(desk, source, preferences, config.reminders, object_states,
@@ -487,9 +487,14 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     supervisor = Supervisor(clock, first_retry_sec=config.supervisor.restart_start_sec,
                             max_retry_sec=config.supervisor.restart_max_sec)
 
+    # ── each object's story pictures (the app page, and the developer page's trace) ──
+    story = config.object_story
+    trace_photos = TracePhotoFiles(data_path(story.photos_folder), story.timed_photos_kept, story.step_photos_kept)
+    TracePhotoTaker(bus, live_pictures, trace_photos, story, clock, states=object_states)  # the bus keeps it
+
     # ── the developer page's tools (only when settings → dev.enabled) ──
     dev = config.dev
-    databases = data_files = trace_photos = None
+    databases = data_files = None
     if dev.enabled:
         if test_runner is None:
             test_runner = PytestRunner(dev, config.prompts.dev, config.root, clock,
@@ -498,8 +503,6 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                                   max_rows=dev.sql_max_rows, timeout_sec=dev.sql_timeout_sec, clock=clock,
                                   words=config.prompts.dev, check_every_steps=dev.sql_check_every_steps)
         data_files = DataFolder(data_path(config.storage.folder), dev.file_preview_kb * 1024, words=config.prompts.dev)
-        trace_photos = TracePhotoFiles(data_path(dev.trace_photos_folder), dev.trace_photos_kept)
-        TracePhotoTaker(bus, live_pictures, trace_photos, dev, clock, states=object_states)  # the bus keeps it
     else:
         test_runner = None
 
