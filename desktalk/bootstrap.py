@@ -20,8 +20,9 @@ gets only the interfaces it asks for (desktalk/ports.py) and its own section of 
                                                                             (Mac pop-ups)      open app pages
     Background jobs (Supervisor): the producer, the scheduler (compact and prune the event log, save the
     habits and the object states), the rule engine (the habit rules in protocols.yaml → rules), habit reminders
-    and Lens (both through DesktopAlerts too), small talk, lost items, the daily recap, and the Ollama keep-alive
-    when the chat runs on Ollama.
+    and Lens (both through DesktopAlerts too), small talk, lost items, the daily recap, the Ollama keep-alive
+    when the chat runs on Ollama, and the developer page's Demo tab countdowns (pretend warnings, fired on purpose
+    through the same parts as the real ones).
 
 Tests build the same app with fakes through build()'s keyword arguments (see tests/integration/app_kit.py).
 """
@@ -55,6 +56,7 @@ from desktalk.core.chat.workers import (
     Lens,
     LostItems,
 )
+from desktalk.core.demo import DemoFirer, ScenarioRunner
 from desktalk.core.desk import Album, DangerBoard, LiveView, Memories, Scene, WholeDesk
 from desktalk.core.events import EventStream
 from desktalk.core.habits.desk_status import DeskStatusService
@@ -82,6 +84,7 @@ from desktalk.ports import (
     Clock,
     DatabaseBrowser,
     DataFiles,
+    DemoCountdowns,
     DeskRulesView,
     DeskScene,
     DeskStatus,
@@ -184,6 +187,9 @@ class DeskTalk:
     chat_joins        each kind of object's chat joins, leaves and refusals: joins() (/api/dev/objects/...)
     trace_photos      each kind of object's trace pictures: photos(), jpeg() (/api/dev/objects/...; None when
                       settings → dev.enabled is false)
+    demo              the Demo tab's pretend warnings: scenarios(), start(), cancel(), waiting()
+                      (/api/dev/scenarios...), and the background job that fires them once their countdown is over
+                      (None when settings → dev.enabled is false)
     todos             the to-do list the server keeps: items(), replace(), has_list() (/api/todos, /api/chat_todos)
     desktop           the Mac's own pop-ups (warnings, reminders, sips): nothing on the web uses it; stop() lets
                       its thread finish
@@ -238,6 +244,7 @@ class DeskTalk:
     data_files: DataFiles | None = None
     chat_joins: ChatJoins | None = None
     trace_photos: TracePhotos | None = None
+    demo: DemoCountdowns | None = None
     todos: TodoList | None = None
     desktop: DesktopNotifications | None = None
 
@@ -261,6 +268,8 @@ class DeskTalk:
         ]
         if self.keepalive is not None:
             jobs.append((self.keepalive, c.llm.ollama_keepalive_start_sec))
+        if self.demo is not None:
+            jobs.append((self.demo, 0.0))
         return jobs
 
     def start(self) -> None:
@@ -490,7 +499,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
 
     # ── the developer page's tools (only when settings → dev.enabled) ──
     dev = config.dev
-    databases = data_files = trace_photos = None
+    databases = data_files = trace_photos = demo = None
     if dev.enabled:
         if test_runner is None:
             test_runner = PytestRunner(dev, config.prompts.dev, config.root, clock,
@@ -501,6 +510,9 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         data_files = DataFolder(data_path(config.storage.folder), dev.file_preview_kb * 1024, words=config.prompts.dev)
         trace_photos = TracePhotoFiles(data_path(dev.trace_photos_folder), dev.trace_photos_kept)
         TracePhotoTaker(bus, live_pictures, trace_photos, dev, clock, states=object_states)  # the bus keeps it
+        firer = DemoFirer(dev.scenarios, bus, habits, lens, reminders, profiles, prompts=config.prompts,
+                          lost_item_names={item_id: item.name for item_id, item in config.lost_items.items.items()})
+        demo = ScenarioRunner(dev.scenarios, firer, clock, words=config.prompts.dev)
     else:
         test_runner = None
 
@@ -516,4 +528,4 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         lost_items=lost_items, daily_summary=daily_summary, scheduler=scheduler,
         supervisor=supervisor, started_at=clock.now(), keepalive=ai.keepalive_worker(), log_file=log_file,
         test_runner=test_runner, databases=databases, data_files=data_files, chat_joins=roster,
-        trace_photos=trace_photos, todos=todos, desktop=desktop)
+        trace_photos=trace_photos, demo=demo, todos=todos, desktop=desktop)

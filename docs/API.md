@@ -4,7 +4,7 @@ Every web address (route) the Desk Talk servers answer, grouped by area: what it
 who is allowed to. The code is the source of truth; this page is a map of it. How the parts fit together
 is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-**61 routes in all: 49 on the main server (17 of them for the developer page), 9 on the phone camera's server, 3 on the detector service.**
+**64 routes in all: 52 on the main server (20 of them for the developer page), 9 on the phone camera's server, 3 on the detector service.**
 
 ## Three servers
 
@@ -162,12 +162,17 @@ The Pi's camera program (`raspberry_pi/camera/`) is the only caller. Both routes
 - Errors: 400 not a JPEG or a bad `info`, 403 wrong key, 409 `camera.source` is not `pi`, 413 bigger than
   `web.pi_upload_max_mb`.
 
-### Developer page (this computer only) (17)
+### Developer page (this computer only) (20)
 
 The routes behind the developer page (`dev_ui/`, see [its README](../dev_ui/README.md)), in
 `desktalk/web/routers/dev.py`. They are only there when `dev.enabled` is on in `config/settings.yaml`;
 switched off, every one of them, and `/dev/`, is a 404. They are never on the phone server. The only caller
 is the developer page, through `dev_ui/src/api.ts`; the tab that uses each one is in the "Called by" column.
+
+They change nothing in the app, with two exceptions: starting and stopping a test run, and the Demo tab's
+pretend warnings (`/api/dev/scenarios`), which are fired on purpose. Once its countdown is over, a pretend
+warning goes out through the same parts as a real one (the chat, the Mac pop-up, the event log, where its alert
+has `"demo": true`), and a pretend sip counts in today's water.
 
 | Method | Path | What it does | Called by | Access |
 |---|---|---|---|---|
@@ -186,6 +191,9 @@ is the developer page, through `dev_ui/src/api.ts`; the tab that uses each one i
 | POST | `/api/dev/db/{name}/query` | Run one query that only reads, on a read-only connection. | Database tab | this computer and its own page only |
 | GET | `/api/dev/files` | Every file and folder in the data folder, with sizes and dates. | Storage tab | this computer and its own page only |
 | GET | `/api/dev/files/preview` | The start of one file in the data folder (`dev.file_preview_kb`). `?path=` is relative to the folder. | Storage tab | this computer and its own page only |
+| GET | `/api/dev/scenarios` | The pretend warnings (`dev.scenarios.items`) and the ones counting down. | Demo tab | this computer and its own page only |
+| POST | `/api/dev/scenarios` | Start a pretend warning counting down; it goes out like the real one when the countdown is over. | Demo tab (**Start**) | this computer and its own page only |
+| DELETE | `/api/dev/scenarios/{id}` | Stop one counting down, so it never goes out. | Demo tab (**Cancel**) | this computer and its own page only |
 | GET | `/dev/` | The developer page (`dev_ui/dist/index.html`, from `dev.ui_folder`). Before `npm run build` has made it, a plain line saying how to build it (200). | Your browser | anyone on the network (only the page itself: what it shows comes from the routes above) |
 | GET | `/dev/{file}` | The page's other files (its script and style, the font). | Your browser | anyone on the network |
 
@@ -193,7 +201,8 @@ is the developer page, through `dev_ui/src/api.ts`; the tab that uses each one i
   (the wording is in `config/prompts.yaml` under `dev:`), before anything runs.
 - `GET /api/dev/settings`: `{"poll_sec", "checks": [names], "health": {...}, "trace_pictures",
   "trace_events_kept", "trace_photos_kept", "sql_max_rows", "data_folder", "object_states": {"on_confidence", "off_confidence", "appear_sec",
-  "gone_sec", "window_pictures", "vote_share"}}`.
+  "gone_sec", "window_pictures", "vote_share"}, "scenarios": {"countdown_default_sec", "countdown_max_sec",
+  "waiting_max"}}`.
 - `GET /api/dev/states`: `{"objects": {label: {"state", "since"}}, "watched_since", "changes": [{"ts",
   "label", "change"}]}`.
 - `GET /api/dev/smoothing`: `{"labels": [...]}`. `/api/dev/smoothing/trace`: `{"label", "steps": [...]}`;
@@ -223,6 +232,15 @@ is the developer page, through `dev_ui/src/api.ts`; the tab that uses each one i
 - `GET /api/dev/files`: `{"files": [{"path", "bytes", "modified", "is_folder"}]}`. `.../preview`:
   `{"path", "text"}`; 400 for a path outside the data folder (`../.env`, an absolute path, a symlink out) or
   a folder, never read; 404 when nothing is there.
+- `GET /api/dev/scenarios`: `{"scenarios": [{"name", "label", "fires"}], "waiting": [{"id", "name", "label",
+  "fires_at", "seconds_left"}]}`, the soonest first. `fires` is `edge_warning`, `danger_zone`, `drink_reminder`,
+  `camera_covered`, `sip` or `lost_object`.
+- `POST /api/dev/scenarios`: `{"name": "cup_at_edge", "after_sec": 10}`. Replies the new one counting down,
+  `{"id", "name", "label", "fires_at", "seconds_left"}`. 400 `{"error": ...}` for a name that isn't in the
+  list, one that names an agent or a lost item your settings don't have, a countdown below 0 or above `dev.scenarios.countdown_max_sec`, or when `dev.scenarios.waiting_max`
+  are counting down already. The background job fires it (checked every `dev.scenarios.check_every_sec`).
+- `DELETE /api/dev/scenarios/{id}`: `{"ok": true}`; 404 when it isn't counting down (never started, cancelled,
+  or gone off already).
 
 ### Pages and files (2)
 

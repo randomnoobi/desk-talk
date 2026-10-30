@@ -11,7 +11,8 @@ Change this file only on purpose: every part depends on it.
 The desk right now is five small interfaces near the end of this file: LivePictures, DeskScene, SafetyBoard,
 CharacterMemory and PhotoAlbum (desktalk/core/desk/ has one class for each). The last sections are what the
 web layer asks of the running app (desktalk/bootstrap.py → DeskTalk types its fields with these), and the
-developer page's tools (tests, smoothing, each object's trace, the database, the data folder).
+developer page's tools (tests, smoothing, each object's trace, the database, the data folder, and the Demo tab's
+pretend warnings).
 """
 
 from __future__ import annotations
@@ -40,6 +41,7 @@ from desktalk.domain import (
     QueryResult,
     RunStatus,
     SafetyNow,
+    Scenario,
     SeenObject,
     Size,
     SmoothingStep,
@@ -50,6 +52,7 @@ from desktalk.domain import (
     Todo,
     TracePhoto,
     UploadInfo,
+    WaitingScenario,
 )
 
 
@@ -1126,3 +1129,67 @@ class TracePhotos(Protocol):
 class TracedObjectStates(ObjectStates, SmoothingTraceView, Protocol):
     """The object states that also keep each object's last pictures of smoothing (the object state tracker):
     what the web layer asks of DeskTalk.object_states."""
+
+
+# ── The developer page's Demo tab: pretend warnings, fired on purpose after a countdown ──
+@runtime_checkable
+class DemoScenarios(Protocol):
+    """The pretend warnings (settings → dev.scenarios), and the ones counting down. Each fires once its countdown
+    is over, through the same path as the real warning (ScenarioFirer)."""
+
+    def scenarios(self) -> list[Scenario]:
+        """Every pretend warning that can be started, in the settings' order."""
+        ...
+
+    def start(self, name: str, after_sec: float) -> WaitingScenario:
+        """Start one counting down from `after_sec` seconds. Raises ValueError, with plain words, for a name that
+        isn't in scenarios(), one that can't go off with the settings as they are, a countdown below 0 or above
+        dev.scenarios.countdown_max_sec, or when dev.scenarios.waiting_max are counting down already."""
+        ...
+
+    def cancel(self, scenario_id: str) -> None:
+        """Stop one counting down, so it never fires. Raises KeyError for one that isn't counting down (never
+        started, cancelled or gone off already)."""
+        ...
+
+    def waiting(self) -> list[WaitingScenario]:
+        """The ones counting down, the soonest first, each with the seconds it has left now."""
+        ...
+
+
+@runtime_checkable
+class ScenarioFirer(Protocol):
+    """Fires one pretend warning, by its name in settings → dev.scenarios.items, the way the real one goes out."""
+
+    def problem(self, name: str) -> str | None:
+        """Why this one can't go off with the settings as they are (it names an agent or a lost item that isn't
+        there), in plain words; None when it can."""
+        ...
+
+    def fire(self, name: str, now: float) -> None:
+        """Raises ValueError for one with a problem()."""
+        ...
+
+
+@runtime_checkable
+class CameraWarnings(Protocol):
+    """Lens saying a camera problem now (the Demo tab's "camera covered"), exactly as it says one it found."""
+
+    def say_problem(self, key: str, text: str, now: float) -> None:
+        ...
+
+
+@runtime_checkable
+class ReminderSender(Protocol):
+    """The habit reminders saying one nudge now (the Demo tab's drink reminder), the way they say a due one: by
+    the agent that speaks for the habit (or Lens), with the reminder pop-up and a NudgeSent. Nothing waits
+    because of it, and it doesn't wait for the camera or the user."""
+
+    def say(self, nudge: Nudge, now: float) -> None:
+        ...
+
+
+@runtime_checkable
+class DemoCountdowns(DemoScenarios, PeriodicWorker, Protocol):
+    """The Demo tab's pretend warnings as the app keeps them: what the web routes ask, and the background job that
+    fires each one once its countdown is over (DeskTalk.demo)."""

@@ -18,7 +18,7 @@ import logging
 
 from desktalk.config import RemindersSettings
 from desktalk.core.agents.speakers import speaker_for
-from desktalk.domain import LENS, NudgeSent
+from desktalk.domain import LENS, Nudge, NudgeSent
 from desktalk.ports import ChatVoice, DeskStatus, EventBus, HabitsView, Notifier, Profiles, RosterView, RuleNudges
 
 log = logging.getLogger(__name__)
@@ -53,15 +53,21 @@ class HabitReminders:
         if not nudges:
             return self._every
         nudge = nudges[0]
+        self._rules.note_fired(nudge, now)
+        self._habits.note_fired(nudge, now)
+        self.say(nudge, now)
+        self._last_sent = now
+        return self._every
+
+    def say(self, nudge: Nudge, now: float) -> None:
+        """Say one nudge now (ReminderSender): by an agent in the chat that speaks for its habit, in its own
+        words, or by Lens with the nudge's own text. tick() uses it for a due nudge; the developer page's Demo
+        tab for a pretend one, which nothing waits for."""
         speaker = speaker_for(nudge.speakers, self._roster.member_ids(), self._profiles)
         text = self._voice.phrase_nudge(speaker, nudge) if speaker != LENS else None    # Lens never uses the AI
         text = text or nudge.text
         self._notifier.send({'type': 'group_message', 'character': speaker, 'text': text, 'habit': nudge.habit,
                              'toast': True, 'notify': 'reminder'})
-        self._rules.note_fired(nudge, now)
-        self._habits.note_fired(nudge, now)
         self._bus.publish(NudgeSent(ts=now, habit=nudge.habit, rule=nudge.key, agent=speaker,
                                     evidence=nudge.evidence, text=text))
-        self._last_sent = now
         log.info('%s nudged about %s: %s', speaker, nudge.habit, nudge.evidence)
-        return self._every

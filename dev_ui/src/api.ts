@@ -54,6 +54,10 @@ export function postJSON<T>(path: string, body: unknown): Promise<T> {
   return send<T>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 }
 
+export function deleteJSON<T>(path: string): Promise<T> {
+  return send<T>(path, { method: 'DELETE' })
+}
+
 // ── the replies ──
 
 /** settings → dev.health: when the System tab turns a number amber or red. */
@@ -92,6 +96,36 @@ export interface DevSettings {
   trace_events_kept: number        // settings → dev.trace_events_kept: an object's trace keeps this many changes and chat joins
   trace_photos_kept: number        // settings → dev.trace_photos_kept: and this many pictures
   object_states: SmoothingSettings
+  scenarios: DemoLimits
+}
+
+/** settings → dev.scenarios: the Demo tab's countdowns. */
+export interface DemoLimits {
+  countdown_default_sec: number    // the countdown the Demo tab starts with
+  countdown_max_sec: number        // the longest one the server takes
+  waiting_max: number              // how many can count down at once
+}
+
+/** A pretend warning the Demo tab can fire (settings → dev.scenarios.items). */
+export interface Scenario {
+  name: string
+  label: string
+  fires: string                    // edge_warning, danger_zone, drink_reminder, camera_covered, sip, lost_object
+}
+
+/** A pretend warning counting down. */
+export interface WaitingScenario {
+  id: string
+  name: string
+  label: string
+  fires_at: number                 // seconds since 1970
+  seconds_left: number             // when the server answered
+}
+
+/** GET /api/dev/scenarios */
+export interface Scenarios {
+  scenarios: Scenario[]
+  waiting: WaitingScenario[]       // the soonest first
 }
 
 export type Phase = 'PRESENT' | 'ABSENT' | 'UNKNOWN'
@@ -354,6 +388,18 @@ export const getFiles = async () => (await getJSON<{ files: DataFile[] }>('/api/
 /** The start of a file in the data folder. 400 for a path outside it, 404 when nothing is there. */
 export const getPreview = async (path: string) =>
   (await getJSON<{ path: string, text: string }>(`/api/dev/files/preview?path=${q(path)}`)).text
+
+export const getScenarios = () => getJSON<Scenarios>('/api/dev/scenarios')
+
+/** Starts a pretend warning counting down. 400 for a name not in the list, seconds out of range, or too many
+ *  counting down already. */
+export const startScenario = (name: string, afterSec: number) =>
+  postJSON<WaitingScenario>('/api/dev/scenarios', { name, after_sec: afterSec })
+
+/** Stops one counting down. 404 once it has gone off. */
+export const cancelScenario = async (id: string): Promise<void> => {
+  await deleteJSON<{ ok: boolean }>(`/api/dev/scenarios/${q(id)}`)
+}
 
 export const getHealth = () => getJSON<Health>('/api/health')
 

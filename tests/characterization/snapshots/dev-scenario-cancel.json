@@ -1,0 +1,10 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "ok": "bool"
+  },
+  "request": "DELETE /api/dev/scenarios/demo-1 (main server, fresh desk)"
+}

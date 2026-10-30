@@ -143,6 +143,13 @@ class QueryRequest(BaseModel):
     sql: str
 
 
+class ScenarioRequest(BaseModel):
+    """POST /api/dev/scenarios: a pretend warning's name (settings → dev.scenarios.items) and its countdown."""
+
+    name: str
+    after_sec: float
+
+
 class PiFrameReply(BaseModel):
     ok: bool = True
     fps: float

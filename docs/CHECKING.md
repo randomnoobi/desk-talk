@@ -25,6 +25,13 @@ One place to see that Desk Talk is healthy, and how to check each item from the 
 | **System** | The Pi's group, then the rest. | Every row green. Red or amber rows name the problem: the Pi too hot or slowed down, little disk left, slow detection, dropped events, a background job that keeps failing, the AI not ready. |
 | **Database** | Click `events`, then the ready-made queries. | The bottle's `appeared` / `removed` rows are there, with the times you put it down and took it away. The page can't change the database. |
 | **Storage** | What the browser and the data folder keep. | The app page's chat history, to-do list and habit counters, and today's event log in the data folder. |
+| **Demo** | Pick a pretend warning (cup near the desk edge, drink next to the laptop, time for a drink, camera covered, a sip, keys gone missing), set the seconds, press **Start**. Open the app page next to it. | The countdown runs down on the page, then the warning shows up in the app's chat and as a Mac pop-up, exactly like a real one. **Cancel** stops one before it goes off. |
+
+The developer page changes nothing in the app, with two exceptions: starting and stopping test runs (and
+deleting a localStorage key after you say yes), and the **Demo** tab, which fires pretend warnings on
+purpose. Those go out through the same parts as real ones, so they land in the chat, the Mac pop-ups and the
+event log (each alert marked `"demo": true` there), and a pretend sip counts in today's water. The list is in
+`dev.scenarios` in `config/settings.yaml`.
 
 ## Each meeting item
 

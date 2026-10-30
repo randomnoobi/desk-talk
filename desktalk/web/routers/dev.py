@@ -21,6 +21,13 @@ only for this computer, from the server's own page or the Vite dev server's (Dev
     POST /api/dev/db/<name>/query           {"sql": "..."}: one statement that only reads; 400 for anything else
     GET  /api/dev/files                     what's in the data folder
     GET  /api/dev/files/preview?path=       the start of one file in it; 400 outside it, 404 when missing
+    GET  /api/dev/scenarios                 the Demo tab's pretend warnings, and the ones counting down
+    POST /api/dev/scenarios                 {"name": ..., "after_sec": n}: start one counting down; 400 for a name
+                                            not in the list, a countdown out of range, or too many counting down
+    DELETE /api/dev/scenarios/<id>          stop one counting down; 404 when it isn't (any more)
+
+The Demo tab is the one place this page changes what the app does on purpose: once its countdown is over, a
+pretend warning goes out the way a real one does (the chat, the Mac pop-up, the event log; a pretend sip counts).
 
 The errors are the parts' own words from config/prompts.yaml → dev.
 """
@@ -34,9 +41,9 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Query, Response
 
 from desktalk.domain import ChatJoin, Phase, QueryRefused, RunAlreadyGoing, StateRecord
-from desktalk.ports import DatabaseBrowser, DataFiles, TestRunner
+from desktalk.ports import DatabaseBrowser, DataFiles, DemoScenarios, TestRunner
 from desktalk.web.deps import App, DevOnly
-from desktalk.web.schemas import QueryRequest, RunRequest
+from desktalk.web.schemas import QueryRequest, RunRequest, ScenarioRequest
 
 router = APIRouter(dependencies=[DevOnly])
 
@@ -62,6 +69,12 @@ def _data_files(app: App) -> DataFiles:
     if app.data_files is None:
         raise HTTPException(404)
     return app.data_files
+
+
+def _demo(app: App) -> DemoScenarios:
+    if app.demo is None:
+        raise HTTPException(404)
+    return app.demo
 
 
 def _cell(value: Any) -> Any:
@@ -100,6 +113,9 @@ def dev_settings(app: App) -> dict[str, Any]:
         'table_counts_every_sec': dev.table_counts_every_sec,
         'trace_events_kept': dev.trace_events_kept,
         'trace_photos_kept': dev.trace_photos_kept,
+        'scenarios': {'countdown_default_sec': dev.scenarios.countdown_default_sec,
+                      'countdown_max_sec': dev.scenarios.countdown_max_sec,
+                      'waiting_max': dev.scenarios.waiting_max},
     }
 
 
@@ -240,3 +256,26 @@ def dev_file_preview(app: App, path: str) -> dict[str, Any]:
         raise HTTPException(400, str(error)) from None
     except FileNotFoundError as error:
         raise HTTPException(404, str(error)) from None
+
+
+@router.get('/api/dev/scenarios')
+def dev_scenarios(app: App) -> dict[str, Any]:
+    demo = _demo(app)
+    return {'scenarios': [asdict(s) for s in demo.scenarios()], 'waiting': [asdict(w) for w in demo.waiting()]}
+
+
+@router.post('/api/dev/scenarios')
+def dev_start_scenario(app: App, body: ScenarioRequest) -> dict[str, Any]:
+    try:
+        return asdict(_demo(app).start(body.name, body.after_sec))
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from None
+
+
+@router.delete('/api/dev/scenarios/{scenario_id}')
+def dev_cancel_scenario(app: App, scenario_id: str) -> dict[str, Any]:
+    try:
+        _demo(app).cancel(scenario_id)
+    except KeyError as error:
+        raise HTTPException(404, _words(error)) from None
+    return {'ok': True}

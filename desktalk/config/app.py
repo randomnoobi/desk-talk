@@ -729,6 +729,55 @@ class DevHealthLimits(_Section):
     detect_warn_ms: PositiveNumber
 
 
+DEMO_NEEDS = {                    # what each kind of pretend warning fills in (settings → dev.scenarios.items)
+    'edge_warning': ('object', 'edge', 'distance_px'),
+    'danger_zone': ('object', 'near'),
+    'drink_reminder': ('minutes',),
+    'camera_covered': (),
+    'sip': (),
+    'lost_object': ('object', 'minutes'),
+}
+
+
+class DemoScenario(_Section):
+    """One pretend warning on the developer page's Demo tab. Which other settings it needs depends on `fires`."""
+
+    name: str
+    label: str
+    fires: Literal['edge_warning', 'danger_zone', 'drink_reminder', 'camera_covered', 'sip', 'lost_object']
+    object: str = ''                  # an agent (edge_warning, danger_zone) or a lost_items item (lost_object)
+    near: str = ''                    # danger_zone: the agent it's too close to
+    edge: str = ''                    # edge_warning: front, back, left or right
+    distance_px: ZeroOrMore | None = None
+    minutes: PositiveNumber | None = None
+
+    @model_validator(mode='after')
+    def _has_what_it_needs(self):
+        missing = [key for key in DEMO_NEEDS[self.fires] if getattr(self, key) in ('', None)]
+        if missing:
+            raise ValueError(f'{self.name} fires {self.fires}, which needs {", ".join(missing)}')
+        return self
+
+
+class DemoSettings(_Section):
+    """The developer page's Demo tab: pretend warnings fired on purpose after a countdown."""
+
+    _in_order = (('countdown_default_sec', 'countdown_max_sec'),)
+    countdown_default_sec: ZeroOrMore
+    countdown_max_sec: PositiveNumber
+    waiting_max: PositiveInt
+    check_every_sec: PositiveNumber
+    items: Annotated[tuple[DemoScenario, ...], Field(min_length=1)]
+
+    @model_validator(mode='after')
+    def _names_differ(self):
+        names = [item.name for item in self.items]
+        twice = sorted({name for name in names if names.count(name) > 1})
+        if twice:
+            raise ValueError(f'two pretend warnings are called {", ".join(twice)}')
+        return self
+
+
 class DevSettings(_Section):
     """The developer page at /dev/ (only from this computer): running the tests, the database, the data folder."""
 
@@ -753,6 +802,7 @@ class DevSettings(_Section):
     trace_photos_kept: PositiveInt
     trace_photo_every_sec: PositiveNumber
     trace_events_kept: PositiveInt
+    scenarios: DemoSettings
     health: DevHealthLimits
 
 

@@ -27,6 +27,7 @@ const settings: DevSettings = {
   trace_events_kept: 50,
   trace_photos_kept: 6,
   object_states: { on_confidence: 0.5, off_confidence: 0.4, appear_sec: 3, gone_sec: 3, window_pictures: 5, vote_share: 0.5 },
+  scenarios: { countdown_default_sec: 5, countdown_max_sec: 600, waiting_max: 10 },
 }
 
 const now = Date.now() / 1000

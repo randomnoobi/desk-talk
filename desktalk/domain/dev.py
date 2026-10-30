@@ -7,6 +7,7 @@ the database's tables, and the files in the data folder.
     SmoothingStep            what the object state tracker made of one picture, for one kind of object
     TableInfo, QueryResult   a database table, and what a query gave back
     DataFile                 a file or folder in the data folder
+    Scenario, WaitingScenario  a pretend warning the Demo tab can fire, and one counting down
     RunAlreadyGoing          a run was started while another was still going
     QueryRefused             a query that would change the database, isn't one statement, or took too long
 """
@@ -103,3 +104,23 @@ class RunAlreadyGoing(Exception):
 
 class QueryRefused(Exception):
     """A query that isn't one statement that only reads, or that ran too long. The message says why."""
+
+
+@dataclass(frozen=True)
+class Scenario:
+    """A pretend warning the Demo tab can fire (settings → dev.scenarios.items)."""
+
+    name: str
+    label: str                          # shown on the Demo tab
+    fires: str                          # edge_warning, danger_zone, drink_reminder, camera_covered, sip, lost_object
+
+
+@dataclass(frozen=True)
+class WaitingScenario:
+    """A pretend warning counting down."""
+
+    id: str                             # e.g. 'demo-1'
+    name: str
+    label: str
+    fires_at: float                     # seconds since 1970
+    seconds_left: float                 # when it was asked (0 once it's due)

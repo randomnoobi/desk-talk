@@ -46,6 +46,9 @@ EVERY_ROUTE: list[tuple[str, str, Any]] = [
     ('GET', '/api/dev/files/preview?path=preferences.json', None),
     ('GET', '/api/dev/objects/cup', None),
     ('GET', '/api/dev/objects/photo/nope', None),
+    ('GET', '/api/dev/scenarios', None),
+    ('POST', '/api/dev/scenarios', {'name': 'sip', 'after_sec': 0}),
+    ('DELETE', '/api/dev/scenarios/demo-1', None),
 ]
 
 
