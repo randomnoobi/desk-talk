@@ -51,7 +51,8 @@ class HydrationRule(_Section):
     sip_gone_max_sec: ZeroOrMore      # ...and at most this
     sip_lift_share: Fraction          # lifted: its box rose more than this share of the picture's height
     sip_back_share: Fraction          # back: within this share of the picture of where it rested
-    sip_moved_share: Fraction         # gone and back: its box this share of the picture off its resting box, or more
+    sip_moved_share: Fraction         # gone and back: its box's middle this share of the picture off where it rested
+    sip_needs_person: bool            # a sip needs a person seen while the drink was away
     sip_cover_share: Fraction         # this share of the desk vanishing at once = a covered camera
     sip_cover_pictures: PositiveInt   # ...in this many pictures in a row
     sip_stall_sec: PositiveNumber     # no picture for longer than this while it's up or missing = the camera stalled

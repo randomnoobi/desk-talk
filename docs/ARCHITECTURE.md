@@ -89,9 +89,11 @@ kind of object, with why (`ChatJoins`, for the developer page).
 
 **Sips.** A sip counts when a drink is lifted (its box rises more than `hydration.sip_lift_share` of the
 picture) and then put back where it rested, or goes missing from the pictures and then comes back near where it
-was (within `sip_back_share`) but moved: its box's middle, width or height more than `sip_moved_share` of the
-picture's diagonal off its resting box. Either way it has to rest again between `sip_gone_min_sec` and
-`sip_gone_max_sec` after it was last seen resting. The second way is for a camera that looks down with the bottle
+was (within `sip_back_share`) but moved: its box's middle more than `sip_moved_share` of the picture's diagonal
+off its resting box's middle (a box only drawn bigger or smaller around the same middle is the detector, not a
+drink). Either way it has to rest again between `sip_gone_min_sec` and `sip_gone_max_sec` after it was last seen
+resting, and with `sip_needs_person` on, a person has to be in at least one picture while it was away or as it
+came back (with nobody at the desk, nobody drank). The second way is for a camera that looks down with the bottle
 at the picture's edge: drinking takes it straight out of the picture. A drink the detector only missed for a
 while, or a hand only covered, comes back exactly where it was, so it isn't a sip. A picture where a box of
 another drink word holds its resting spot doesn't count as missing (looking down, the detector switches the same

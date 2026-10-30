@@ -127,6 +127,14 @@ def test_gone_and_back_moved_is_a_sip(config):
     assert r.today()['hydration']['sips'] == 1
 
 
+def test_gone_and_back_moved_with_nobody_at_the_desk_is_not_a_sip(config):
+    r = Rig(config)
+    r.run(10, 'cup', 'laptop', person=False)
+    r.run(4, 'laptop', person=False)          # the detector lost it, nobody here
+    r.run(5, 'cup', 'laptop', person=False, boxes={'cup': BBox(20, 0, 30, 10)})
+    assert r.today()['hydration']['sips'] == 0
+
+
 def test_a_short_flicker_is_not_a_sip(config):
     r = Rig(config)
     r.run(10, 'cup')

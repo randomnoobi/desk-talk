@@ -1,10 +1,11 @@
 """Sips from the camera (desktalk/core/habits/habit_reader.py): a sip counts when a drink is seen lifted and then
 put back where it rested, or when it goes missing and comes back near where it rested but moved a little. A hand
-over the cup (it comes back exactly where it was), a covered camera or a cup taken away is no sip.
+over the cup (it comes back exactly where it was), a covered camera, a cup taken away, or a trip with nobody at the
+desk is no sip.
 
 Pictures are 640×480, three a second; the cup's box is 40×60. With protocols.yaml's numbers, lifted = its middle
-rose more than 0.08 × 480 ≈ 38 px, put back = within 0.15 × 800 = 120 px of where it rested, and moved = its box
-is more than 0.01 × 800 = 8 px off its resting box.
+rose more than 0.08 × 480 ≈ 38 px, put back = within 0.15 × 800 = 120 px of where it rested, and moved = its box's
+middle is more than 0.007 × 800 = 5.6 px off its resting box's middle.
 """
 
 from __future__ import annotations
@@ -54,6 +55,7 @@ class Desk:
     """A habit tracker fed made-up pictures, three a second, each with the boxes given."""
 
     def __init__(self, config, **hydration):
+        self.person = True                      # whether the pictures show a person (DetectionEvent.person)
         rules = config.protocols
         if hydration:
             rules = rules.model_copy(update={'hydration': rules.hydration.model_copy(update=hydration)})
@@ -71,7 +73,7 @@ class Desk:
     def detections(self, *dets: Detection) -> None:
         """One picture with exactly these detections (two boxes may have the same word)."""
         self.bus.publish(DetectionEvent(ts=self.clock.now(), frame_id='f', source='pi', size=SIZE,
-                                        detections=dets, person=True, light=Light(brightness=120)))
+                                        detections=dets, person=self.person, light=Light(brightness=120)))
         self.clock.advance(1 / PER_SEC)
 
     def show(self, seconds: float, **boxes: BBox) -> None:
@@ -143,12 +145,64 @@ def test_gone_and_back_moved_is_a_sip(config):
     assert d.sips() == 1
 
 
-def test_gone_and_back_the_same_place_but_a_different_size_is_a_sip(config):
+def test_gone_and_back_with_the_same_middle_but_a_taller_box_is_no_sip(config):
+    """The detector missed it for 3 s and then drew its box 16 px taller around the same middle: only the box
+    changed, the cup didn't move. Every real drink's box came back with its middle moved 14 px or more."""
     d = Desk(config)
     d.show(10, cup=CUP_DOWN, laptop=LAPTOP)
+    d.show(3, laptop=LAPTOP)
+    d.show(5, cup=BBox(300, 372, 340, 448), laptop=LAPTOP)
+    assert d.sips() == 0
+
+
+@pytest.mark.parametrize('how', ['gone and back', 'lifted'])
+def test_a_trip_with_nobody_at_the_desk_is_no_sip(config, how):
+    """No person in any picture: nobody drank, whatever the cup's box did."""
+    d = Desk(config)
+    d.person = False
+    d.show(10, cup=CUP_DOWN, laptop=LAPTOP)
+    if how == 'lifted':
+        d.move(1, CUP_DOWN, CUP_UP, laptop=LAPTOP)
+        d.show(4, cup=CUP_UP, laptop=LAPTOP)
+        d.move(1, CUP_UP, CUP_DOWN, laptop=LAPTOP)
+    else:
+        d.show(5, laptop=LAPTOP)
+    d.show(5, cup=CUP_BACK, laptop=LAPTOP)
+    assert d.sips() == 0
+
+
+def test_a_person_seen_only_before_the_cup_left_is_no_sip(config):
+    """Someone was at the desk, then left; after that the cup went missing and came back moved."""
+    d = Desk(config)
+    d.show(10, cup=CUP_DOWN, laptop=LAPTOP)
+    d.person = False
     d.show(5, laptop=LAPTOP)
-    d.show(5, cup=BBox(290, 370, 350, 440), laptop=LAPTOP)    # 20 px wider, 10 px taller, same middle near enough
+    d.show(5, cup=CUP_BACK, laptop=LAPTOP)
+    assert d.sips() == 0
+
+
+def test_a_person_seen_in_one_picture_while_the_cup_was_away_is_enough(config):
+    """Looking down, the camera may see the arm only once while the cup is out of the picture."""
+    d = Desk(config)
+    d.person = False
+    d.show(10, cup=CUP_DOWN, laptop=LAPTOP)
+    d.show(2, laptop=LAPTOP)
+    d.person = True
+    d.picture({'laptop': LAPTOP})
+    d.person = False
+    d.show(3, laptop=LAPTOP)
+    d.show(5, cup=CUP_BACK, laptop=LAPTOP)
     assert d.sips() == 1
+
+
+@pytest.mark.parametrize(('needs_person', 'sips'), [(True, 0), (False, 1)])
+def test_whether_a_sip_needs_a_person_comes_from_protocols_yaml(config, needs_person, sips):
+    d = Desk(config, sip_needs_person=needs_person)
+    d.person = False
+    d.show(10, cup=CUP_DOWN, laptop=LAPTOP)
+    d.show(5, laptop=LAPTOP)
+    d.show(5, cup=CUP_BACK, laptop=LAPTOP)
+    assert d.sips() == sips
 
 
 def test_after_gone_and_back_it_rests_where_it_came_back(config):
@@ -274,15 +328,18 @@ def test_the_users_real_drinks_count(config):
     """90 s of the user's desk (1280×720, about every other picture kept). The camera looks down and the bottle
     rests at the top edge, so each drink takes it straight out of the picture: an arm reaches over it, it is gone
     for 3 to 7 pictures (the detector named the arm in only one of them), then it comes back near where it was but
-    moved: its box is 41 to 50 px off, or (the last) 20 px wider. All four drinks count, each when the bottle is
-    back: after 4.0, 2.7, 5.4 and 3.4 s away."""
+    moved: its box's middle is 41 to 47 px off, or (the last) 14 px. A person is in every picture. All four
+    drinks count, each when the bottle is back: after 4.0, 2.7, 5.4 and 3.4 s away."""
     assert replay(config, REAL_DRINKS) == [15, 26, 36, 52]
 
 
-def test_the_least_moved_real_drink_needs_sip_moved_share_below_0_014(config):
-    """The last drink came back 20 px wider, its middle 14 px off: 0.014 of the 1468 px diagonal is 20.6 px and
-    leaves it out, which is why protocols.yaml has 0.01 (14.7 px), still far above a detector miss's 2 px."""
-    assert replay(config, REAL_DRINKS, sip_moved_share=0.014) == [15, 26, 36]
+def test_the_least_moved_real_drink_needs_sip_moved_share_below_0_0096(config):
+    """The four real drinks came back with their box's middle 46, 47, 41 and 14 px off where it rested. The last
+    one's 14.1 px is 0.0096 of the 1468 px diagonal: 0.01 (14.7 px) leaves it out, which is why protocols.yaml
+    has 0.007 (10.3 px), still far above a detector miss's 2 px. (That drink's box also came back 20 px wider,
+    but only the middle counts: a box drawn bigger or smaller around the same middle is the detector, not a
+    drink.)"""
+    assert replay(config, REAL_DRINKS, sip_moved_share=0.01) == [15, 26, 36]
 
 
 def test_the_shortest_real_drink_needs_sip_gone_min_sec_below_3(config):

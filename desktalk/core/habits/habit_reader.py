@@ -1,7 +1,8 @@
 """
 HabitReader: reads the habits from the camera's DetectionEvents and writes them into today's HabitDay.
 
-    hydration   sips (a drink is lifted, or goes missing and comes back moved a little) → estimated water
+    hydration   sips (a drink is lifted, or goes missing and comes back moved a little, with someone at the desk)
+                → estimated water
     breaks      away from the desk break_min+ minutes (or the camera off that long); how long you've been sitting
     phone-free  desk time with no phone on the desk, and the current streak
     light       how bright the room is
@@ -141,7 +142,7 @@ class HabitReader:
         for det in event.detections:
             if det.label in self._cats['drink'] and self._sure(det, step):
                 drinks.setdefault(det.label, []).append(det.bbox)
-        for _ in range(self._sip_watch.update(set(labels), drinks, event.size, now)):
+        for _ in range(self._sip_watch.update(set(labels), drinks, event.size, now, person=event.person)):
             said.append(log_sip(day, now, self._rules.hydration.ml_per_sip, 'camera', self._s, self._words))
         said += self._food(day, labels, appeared, gone, now)
         if self._phone_counts:
@@ -232,10 +233,12 @@ class _Drink:
     covered_run: int = 0            # pictures in a row, while it's missing, that looked covered
     seen_with: Set[str] = frozenset()   # everything in the last picture that showed it
     missing: int = 0                # pictures since it last rested that didn't show it
+    person_seen: bool = False       # a person was in a picture since it last rested
 
     def settle(self, box: BBox, now: float) -> None:
         """It rests at `box` from now on, a fresh start."""
         self.rest, self.rested_at, self.left_at, self.covered, self.missing = box, now, None, False, 0
+        self.person_seen = False
 
 
 class SipWatch:
@@ -247,9 +250,12 @@ class SipWatch:
     `sip_gone_min_sec` and `sip_gone_max_sec` after it was last seen resting, and it was either
       - lifted first (the camera may lose it while it's up in the hand), or
       - missing from the pictures in between (a camera looking down sees a bottle at the picture's edge go
-        straight out of the picture, never rising), and it comes back moved: its box's middle, width or height is
-        more than `sip_moved_share` of the picture's diagonal off its resting box. A drink the detector only
-        missed for a while, or a hand only covered, comes back exactly where it was.
+        straight out of the picture, never rising), and it comes back moved: its box's middle is more than
+        `sip_moved_share` of the picture's diagonal off its resting box's middle. A drink the detector only
+        missed for a while, or a hand only covered, comes back where it was, at most with its box drawn a little
+        bigger or smaller around the same middle.
+    With `sip_needs_person` on, a sip also needs a person in at least one picture from the one after it last
+    rested to the one where it rests again: with nobody at the desk, nobody drank.
     A picture where a box of another drink word holds the middle of its resting spot doesn't count as missing:
     looking down, the detector often switches the same bottle between "bottle" and "cup".
     If the camera looks covered while a drink is missing (nothing in the picture, or `sip_cover_share` or more of
@@ -270,9 +276,9 @@ class SipWatch:
         self._last_picture: float | None = None
 
     def update(self, labels: Set[str], drinks: Mapping[str, Sequence[BBox]], size: tuple[int, int],
-               now: float) -> int:
-        """One picture: every word sure enough in it, and every box of each drink word. Returns how many sips it
-        ends."""
+               now: float, *, person: bool) -> int:
+        """One picture: every word sure enough in it, every box of each drink word, and whether it shows a
+        person. Returns how many sips it ends."""
         width, height = size
         diagonal = math.hypot(width, height)
         lift_px = self._rule.sip_lift_share * height
@@ -288,6 +294,7 @@ class SipWatch:
             paired = _pair([drink.rest for drink in kept], boxes)
             for i, drink in enumerate(kept):
                 box = boxes[paired[i]] if i in paired else None
+                drink.person_seen = drink.person_seen or person
                 if stalled and (drink.left_at is not None or drink.missing or box is None):
                     drink.covered = True               # the camera stalled while it was up or missing
                 if box is None:
@@ -321,10 +328,12 @@ class SipWatch:
         since = drink.left_at if drink.left_at is not None else drink.rested_at
         return drink.missing > 0 and now - since > self._rule.sip_gone_max_sec
 
-    def _back_in_time(self, drink: _Drink, now: float) -> bool:
-        """Settled again after a trip that can be a sip: not covered, and away a sip's time since it last rested."""
+    def _trip_can_be_sip(self, drink: _Drink, now: float) -> bool:
+        """Settled again after a trip that can be a sip: not covered, away a sip's time since it last rested, and
+        someone was at the desk meanwhile (when `sip_needs_person` is on)."""
         took = now - (drink.left_at if drink.left_at is not None else drink.rested_at)
-        return not drink.covered and self._rule.sip_gone_min_sec <= took <= self._rule.sip_gone_max_sec
+        someone = drink.person_seen or not self._rule.sip_needs_person
+        return not drink.covered and someone and self._rule.sip_gone_min_sec <= took <= self._rule.sip_gone_max_sec
 
     def _looks_covered(self, label: str, labels: Set[str], seen_with: Set[str]) -> bool:
         """`label` is missing from this picture: does the camera look covered?"""
@@ -337,21 +346,23 @@ class SipWatch:
         x, y = box.center
         rest_x, rest_y = drink.rest.center
         lifted = rest_y - y > lift_px                  # up in the picture is a smaller y
-        near = math.hypot(x - rest_x, y - rest_y) <= back_px
+        off = math.hypot(x - rest_x, y - rest_y)      # how far its middle is from where it rests
+        near = off <= back_px
         if drink.left_at is None:                      # resting
             if lifted:
                 drink.left_at = drink.rested_at
                 return False
             back = drink.missing > 0
-            sip = back and near and _moved(drink.rest, box) > moved_px and self._back_in_time(drink, now)
+            sip = back and near and off > moved_px and self._trip_can_be_sip(drink, now)
             if y >= rest_y or not near or back:        # settled lower, slid somewhere else, or put down again
                 drink.rest = box
             drink.rested_at = now
             drink.covered = False
             drink.missing = 0
+            drink.person_seen = False
             return sip
         if not lifted and near:                        # put back
-            sip = self._back_in_time(drink, now)
+            sip = self._trip_can_be_sip(drink, now)
             drink.settle(box, now)
             return sip
         if now - drink.left_at > self._rule.sip_gone_max_sec:    # away too long: it rests wherever it is now
@@ -371,12 +382,6 @@ def _pair(rests: Sequence[BBox], boxes: Sequence[BBox]) -> dict[int, int]:
             paired[i] = j
             used.add(j)
     return paired
-
-
-def _moved(a: BBox, b: BBox) -> float:
-    """How different two boxes are, in pixels: how far the middle moved, or how much the width or the height
-    changed, whichever is most."""
-    return max(math.dist(a.center, b.center), abs(a.width - b.width), abs(a.height - b.height))
 
 
 def _holds(box: BBox, point: tuple[float, float]) -> bool:
