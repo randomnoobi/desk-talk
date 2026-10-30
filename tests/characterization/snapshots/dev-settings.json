@@ -27,6 +27,11 @@
     },
     "output_keep_kb": "number",
     "poll_sec": "number",
+    "scenarios": {
+      "countdown_default_sec": "number",
+      "countdown_max_sec": "number",
+      "waiting_max": "number"
+    },
     "sql_max_rows": "number",
     "table_counts_every_sec": "number",
     "trace_events_kept": "number",
