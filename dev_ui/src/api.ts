@@ -88,8 +88,9 @@ export interface DevSettings {
   output_keep_kb: number           // settings → dev.output_keep_kb: how much of a run's printout the Checks tab keeps
   flips_window_min: number         // settings → dev.flips_window_min: how far back the ready-made "flips" query looks
   table_counts_every_sec: number   // settings → dev.table_counts_every_sec: the Database and Storage tabs count again this often
-  trace_events_kept: number        // settings → dev.trace_events_kept: an object's trace keeps this many changes and chat joins
-  trace_photos_kept: number        // settings → dev.trace_photos_kept: and this many pictures
+  trace_events_kept: number        // settings → object_story.events_kept: an object's trace keeps this many changes and chat joins
+  trace_photos_kept: number        // settings → object_story.timed_photos_kept: this many timed pictures...
+  trace_step_photos_kept: number   // settings → object_story.step_photos_kept: ...and this many step pictures
   object_states: SmoothingSettings
 }
 
@@ -128,25 +129,29 @@ export interface SmoothingStep {
   waiting_sec: number | null
 }
 
-/** One thing that happened to an object (GET /api/dev/objects/{label}): a state change ('state') or a chat join,
- *  leave or refusal ('chat'), with why. A value the server doesn't know is null. */
+/** One thing that happened to an object (GET /api/dev/objects/{label}): a state change ('state'), a chat join,
+ *  leave or refusal ('chat'), or a picture that goes with no other step ('photo'), with why and the picture taken
+ *  for it. A value the server doesn't know is null. */
 export interface TraceRow {
   ts: number
-  source: 'state' | 'chat'
-  kind: string                     // state: appeared, removed, moved; chat: joined, left, refused
+  source: 'state' | 'chat' | 'photo'
+  kind: string                     // state: appeared, removed, moved; chat: joined, left, refused; photo: its why
   confidence: number | null        // how sure the detector was (for a state change: the average while seen)
   seen_for_sec: number | null      // how long it had been seen
   on_desk: boolean | null          // inside the marked desk (a chat row's null: no desk corners marked)
   step: string | null              // the sensitivity step in use (chat rows)
   before: Phase | null             // the state before and after (state rows)
   after: Phase | null
+  photo: TracePhoto | null         // the picture taken for this step (null: none was)
+  what: string                     // the server's plain words for it (config/prompts.yaml → object_story)
 }
 
-/** A picture kept of an object, with its box in the picture's own pixels. */
+/** A picture kept of an object, with its box in the picture's own pixels. 'removed' is the picture where it was
+ *  gone, with its last box: the empty spot. */
 export interface TracePhoto {
   id: string
   ts: number
-  why: 'appeared' | 'joined' | 'every'
+  why: 'appeared' | 'joined' | 'moved' | 'removed' | 'every'
   confidence: number
   box: [number, number, number, number]   // left, top, right, bottom
   size: [number, number]                  // the picture's width, height
