@@ -72,7 +72,9 @@ still watch it: scissors next to the phone get a "Heads up" from Lens even when 
 People, chairs and the desk itself are never counted at all.
 
 **Lens** is the camera. It speaks up when the view needs fixing (too dark, glare, blurry,
-covered, something cut off, the Pi stopped sending pictures) and says thanks when it's fixed.
+blocked, something cut off, the Pi stopped sending pictures) and says thanks when it's fixed. "Blocked" means
+it can't see the desk: the picture went black, it shows nothing at all (paper or a hand on the lens), or one
+thing held up to the lens fills most of it.
 It also tells you when the Pi runs hot, when its clock is off, and when the Pi's own detector is off
 (your computer then does the detecting), and it gives the desk warnings that nobody in the chat can give.
 It doesn't use the AI.

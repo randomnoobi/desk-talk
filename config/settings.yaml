@@ -411,6 +411,12 @@ lost_items:
 lens:
   sample_every_sec: 1.0
   covered_below: 12           # average brightness 0-255
+  # a picture with less detail than this (sharpness, like blur_below) is covered at any brightness: white paper
+  # or a hand right on the lens. A plain cover measures 0-5; a very blurry desk still has shapes and measures
+  # 10 or more. 0 turns this off.
+  covered_detail_below: 6
+  covered_by_box_share: 0.7   # one thing (not a person or the desk) covering this share of the picture is
+                              # covered: a book or box held up to the lens. On a real desk the laptop is about 0.26
   dark_below: 45
   glare_above: 0.30           # share of pure-white pixels
   blur_below: 25
