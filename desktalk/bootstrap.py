@@ -418,7 +418,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     producer = DetectionProducer(source, detector, bus, desk, clock, camera_health, painter, config.camera,
                                  new_session_after_sec=config.protocols.breaks.break_min * MINUTE, pictures=pictures,
                                  same_thing_overlap=config.agents.same_thing_overlap,
-                                 ignore_labels=config.agents_file.ignore)
+                                 ignore_labels=config.agents_file.ignore, known_labels=config.agents_file.own_words)
     state_store = SqliteStateStore(data_path(config.object_states.database))
     object_states = ObjectStateTracker(config.object_states, bus, state_store, device_id=source.kind,
                                        new_session_after_sec=config.protocols.breaks.break_min * MINUTE, clock=clock,

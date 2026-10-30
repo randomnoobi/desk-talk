@@ -74,8 +74,9 @@ Your computer keeps YOLO too, for the phone and the webcam, and as the backup fo
 
 **One thing, one name.** The detector sometimes names one thing twice on nearly the same box (a laptop that is
 also "book"). Before the producer builds the `DetectionEvent`, two different names whose boxes are at least
-`agents.same_thing_overlap` the same box (shared area over the area both cover) count as one thing, and only the
-surer name is kept (`core/vision/one_name.py`). So everyone who listens, and Lens and the live view, see the same
+`agents.same_thing_overlap` the same box (shared area over the area both cover) count as one thing, and only one name is
+kept (`core/vision/one_name.py`): a word with its own agent in agents.yaml beats a new thing's word (a mug seen as
+"cup" 0.50 and "vase" 0.52 stays a cup), otherwise the surer name wins. So everyone who listens, and Lens and the live view, see the same
 list. Words on the ignore list take no part. Each name left out is logged once per stretch, at debug level.
 
 **Who joins the chat.** Only the agents in `agents.can_join` (Computer, Cup, Phone, Snack, Book) join, once

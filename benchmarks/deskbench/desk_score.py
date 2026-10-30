@@ -21,7 +21,8 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.append(str(REPO))          # the app's own box maths (standard library only), so the rule is the same
 from desktalk.core.vision.geometry import same_thing_drops  # noqa: E402
 
-OneName = tuple[float, frozenset[str]]      # (agents.same_thing_overlap, agents.yaml's ignore list, lowercase)
+# (agents.same_thing_overlap, agents.yaml's ignore list, the words with their own agent block there), lowercase
+OneName = tuple[float, frozenset[str], frozenset[str]]
 
 
 def app_thresholds(settings_path: Path, agents_path: Path, kinds: dict) -> dict[str, float]:
@@ -41,18 +42,22 @@ def app_thresholds(settings_path: Path, agents_path: Path, kinds: dict) -> dict[
 
 
 def app_one_name(settings_path: Path, agents_path: Path) -> OneName:
-    """The app's one-name-per-box rule: how much the same box two names must be, and the words that take no part."""
+    """The app's one-name-per-box rule: how much the same box two names must be, the words that take no part,
+    and the words with their own agent (they beat a new thing's word on the same box)."""
     overlap = float(yaml.safe_load(settings_path.read_text())['agents']['same_thing_overlap'])
-    ignore = yaml.safe_load(agents_path.read_text()).get('ignore') or []
-    return overlap, frozenset(str(w).lower() for w in ignore)
+    agents = yaml.safe_load(agents_path.read_text())
+    ignore = agents.get('ignore') or []
+    own = [w for block in (agents.get('agents') or {}).values() for w in block.get('labels') or []]
+    return overlap, frozenset(str(w).lower() for w in ignore), frozenset(str(w).lower() for w in own)
 
 
-def one_name_each(detections: list[list], overlap: float, ignore: frozenset[str]) -> list[list]:
-    """A model's [name, confidence, x1, y1, x2, y2] rows without a second name for a box a surer name already has,
-    as the app does it. Ignored words take no part; rows without a box (saved by an older run) are kept."""
+def one_name_each(detections: list[list], overlap: float, ignore: frozenset[str], known: frozenset[str]) -> list[list]:
+    """A model's [name, confidence, x1, y1, x2, y2] rows without a second name for a box another name already has,
+    as the app does it: a word with its own agent (`known`) beats a new thing's word, otherwise the surer wins.
+    Ignored words take no part; rows without a box (saved by an older run) are kept."""
     boxed = [i for i, d in enumerate(detections) if len(d) == 6 and str(d[0]).lower() not in ignore]
     drops = same_thing_drops([(detections[i][0], detections[i][1], tuple(detections[i][2:6])) for i in boxed],
-                             overlap)
+                             overlap, known)
     gone = {boxed[i] for i in drops}
     return [d for i, d in enumerate(detections) if i not in gone]
 

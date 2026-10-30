@@ -6,6 +6,10 @@ runs every picture's detections through OneNameEach before it builds the Detecti
 goes out and everyone who listens (the chat, the warnings, the habits, lost items, the object states) sees the
 same list.
 
+A word with its own agent in agents.yaml beats a new thing's word on the same box, even a little less sure: a mug
+seen as "cup" 0.50 and "vase" 0.52 stays a cup (a vase would then miss the new-things bar and the mug would vanish).
+Between two words of the same kind, the surer one wins.
+
 Words on the ignore list (agents.yaml) take no part. They never become anything, so they can't knock out the real
 name (a monitor seen as "tv" and, surer, as "picture/frame"), and they are kept as they are (the producer still
 needs "person" for someone at the desk).
@@ -32,20 +36,21 @@ def box_of(det: Detection) -> Box:
 class OneNameEach:
     """detections → the same detections without a second name for a box a surer name already has."""
 
-    def __init__(self, overlap: float, ignore_labels: Iterable[str] = ()):
+    def __init__(self, overlap: float, ignore_labels: Iterable[str] = (), known_labels: Iterable[str] = ()):
         self._overlap = overlap
         self._ignore = {str(x).lower() for x in ignore_labels}
+        self._known = frozenset(str(x).lower() for x in known_labels)    # words with their own agent
         self._dropping: set[tuple[str, str]] = set()     # (left out, kept) in the last picture, logged already
 
     def __call__(self, detections: Sequence[Detection]) -> list[Detection]:
         named = [i for i, d in enumerate(detections) if d.label.lower() not in self._ignore]
         drops = same_thing_drops([(detections[i].label, detections[i].confidence, box_of(detections[i]))
-                                  for i in named], self._overlap)
+                                  for i in named], self._overlap, self._known)
         pairs = {(detections[named[lost]], detections[named[won]]) for lost, won in drops.items()}
         dropping = {(lost.label, won.label) for lost, won in pairs}
         for lost, won in pairs:
             if (lost.label, won.label) not in self._dropping:
-                log.debug('Left out "%s" (%.2f): the same box is "%s" (%.2f), which is surer', lost.label,
+                log.debug('Left out "%s" (%.2f): the same box is "%s" (%.2f)', lost.label,
                           lost.confidence, won.label, won.confidence)
         self._dropping = dropping
         gone = {named[i] for i in drops}

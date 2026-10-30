@@ -43,10 +43,12 @@ def camera_settings(**changes) -> CameraSettings:
 
 
 def one_name_settings() -> dict:
-    """How the producer leaves out a second name for the same box: settings.yaml and agents.yaml's ignore list."""
+    """How the producer leaves out a second name for the same box: settings.yaml, agents.yaml's ignore list and
+    the words that have their own agent there."""
     overlap = yaml.safe_load((ROOT / 'config' / 'settings.yaml').read_text())['agents']['same_thing_overlap']
-    ignore = yaml.safe_load((ROOT / 'config' / 'agents.yaml').read_text())['ignore']
-    return {'same_thing_overlap': overlap, 'ignore_labels': ignore}
+    agents = yaml.safe_load((ROOT / 'config' / 'agents.yaml').read_text())
+    known = [w for block in agents['agents'].values() for w in block['labels']]
+    return {'same_thing_overlap': overlap, 'ignore_labels': agents['ignore'], 'known_labels': known}
 
 
 def desk_picture(value=140, width=640, height=480):
@@ -319,6 +321,15 @@ def test_an_ignored_word_on_the_same_box_doesnt_knock_out_the_real_name():
     rig = Rig(detector=FakeDetector([tv, frame]), kind='webcam')
     rig.picture()
     assert rig.events()[0].detections == (tv, frame)
+
+
+def test_a_word_with_its_own_agent_keeps_the_box_over_a_new_thing():
+    """A mug seen as "cup" 0.50 and "vase" 0.52: the cup has its own agent, so the mug stays a cup."""
+    vase = Detection('vase', 0.52, BBox(300, 200, 360, 290))
+    cup = Detection('cup', 0.50, BBox(300, 200, 360, 290))
+    rig = Rig(kind='webcam', detector=FakeDetector([vase, cup]))
+    rig.picture()
+    assert rig.events()[0].detections == (cup,)
 
 
 def test_how_much_the_same_box_means_one_thing_comes_from_the_settings():

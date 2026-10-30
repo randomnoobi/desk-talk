@@ -132,18 +132,23 @@ BOOK_ON_LAPTOP = ['book', 0.52, 574, 180, 1126, 716]
 
 
 def test_a_second_name_for_the_same_box_is_left_out_like_in_the_app():
-    assert one_name_each([BOOK_ON_LAPTOP, LAPTOP], 0.7, frozenset()) == [LAPTOP]
-    assert one_name_each([BOOK_ON_LAPTOP, LAPTOP], 0.99, frozenset()) == [BOOK_ON_LAPTOP, LAPTOP]
+    assert one_name_each([BOOK_ON_LAPTOP, LAPTOP], 0.7, frozenset(), frozenset()) == [LAPTOP]
+    assert one_name_each([BOOK_ON_LAPTOP, LAPTOP], 0.99, frozenset(), frozenset()) == [BOOK_ON_LAPTOP, LAPTOP]
+
+
+def test_a_word_with_its_own_agent_keeps_the_box_like_in_the_app():
+    vase, cup = ['vase', 0.52, 0, 0, 40, 60], ['cup', 0.50, 0, 0, 40, 60]
+    assert one_name_each([vase, cup], 0.7, frozenset(), frozenset({'cup'})) == [cup]
 
 
 def test_ignored_words_take_no_part_and_rows_without_a_box_are_kept():
     frame = ['picture/frame', 0.99, 574, 183, 1094, 713]
     old = ['cup', 0.6]                                   # saved by an older run, before boxes were kept
-    assert one_name_each([frame, LAPTOP, old], 0.7, frozenset({'picture/frame'})) == [frame, LAPTOP, old]
+    assert one_name_each([frame, LAPTOP, old], 0.7, frozenset({'picture/frame'}), frozenset()) == [frame, LAPTOP, old]
 
 
-def test_app_one_name_reads_the_overlap_and_the_ignore_list(tmp_path):
+def test_app_one_name_reads_the_overlap_the_ignore_list_and_the_own_words(tmp_path):
     s, a = tmp_path / 'settings.yaml', tmp_path / 'agents.yaml'
     s.write_text(yaml.safe_dump({'agents': {**STEPS['agents'], 'same_thing_overlap': 0.7}}))
-    a.write_text(yaml.safe_dump({'agents': {}, 'ignore': ['person', 'Picture/Frame']}))
-    assert app_one_name(s, a) == (0.7, frozenset({'person', 'picture/frame'}))
+    a.write_text(yaml.safe_dump({'agents': {'cup': {'labels': ['Cup', 'mug']}}, 'ignore': ['person', 'Picture/Frame']}))
+    assert app_one_name(s, a) == (0.7, frozenset({'person', 'picture/frame'}), frozenset({'cup', 'mug'}))

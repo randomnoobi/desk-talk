@@ -76,6 +76,15 @@ def test_a_second_name_on_the_same_box_loses_to_the_surer_one():
     assert g.same_thing_drops([('book', 0.8, BOOK_ON_LAPTOP), ('laptop', 0.5, LAPTOP)], 0.7) == {1: 0}
 
 
+def test_a_known_word_beats_a_new_things_word_on_the_same_box():
+    """A word with its own agent keeps the box over a word for a new thing, even a little less sure."""
+    mug = (0, 0, 40, 60)
+    found = [('vase', 0.52, mug), ('cup', 0.50, mug)]
+    assert g.same_thing_drops(found, 0.7, known={'cup'}) == {0: 1}      # the vase (0) is dropped for the cup (1)
+    assert g.same_thing_drops(found, 0.7) == {1: 0}                     # without known words, the surer wins
+    assert g.same_thing_drops(found, 0.7, known={'cup', 'vase'}) == {1: 0}     # both known: the surer wins
+
+
 def test_two_names_count_as_two_things_when_the_boxes_share_less():
     found = [('laptop', 0.95, LAPTOP), ('book', 0.52, BOOK_ON_LAPTOP)]
     assert g.same_thing_drops(found, 0.99) == {}

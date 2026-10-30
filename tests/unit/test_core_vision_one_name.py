@@ -16,6 +16,13 @@ def test_the_second_name_for_the_same_box_is_left_out():
     assert OneNameEach(0.7, IGNORE)([BOOK_ON_LAPTOP, LAPTOP]) == [LAPTOP]
 
 
+def test_a_word_with_its_own_agent_beats_a_new_things_word():
+    vase = Detection('vase', 0.52, BBox(100, 100, 140, 160))
+    cup = Detection('cup', 0.50, BBox(100, 100, 140, 160))
+    assert OneNameEach(0.7, IGNORE, known_labels=('Cup',))([vase, cup]) == [cup]
+    assert OneNameEach(0.7, IGNORE, known_labels=('cup', 'vase'))([vase, cup]) == [vase]
+
+
 def test_the_surer_name_wins():
     book = Detection('book', 0.8, BOOK_ON_LAPTOP.bbox)
     weak_laptop = Detection('laptop', 0.5, LAPTOP.bbox)

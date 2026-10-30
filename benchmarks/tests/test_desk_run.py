@@ -38,7 +38,7 @@ def test_desk_row_leaves_out_a_second_name_for_the_same_box():
     pictures = [{'id': 1, 'answers': {'laptop': 'there', 'book': 'not there'}, 'scenes': ['tidy']}]
     detections = {'1': [['laptop', 0.95, 574, 183, 1094, 713], ['book', 0.52, 574, 180, 1126, 716]]}
     thresholds = {'laptop': 0.45, 'book': 0.45}
-    row = desk_row(COCO, detections, pictures, [], kinds, thresholds, one_name=(0.7, frozenset()))
+    row = desk_row(COCO, detections, pictures, [], kinds, thresholds, one_name=(0.7, frozenset(), frozenset()))
     assert row['false_book'] == 0 and row['found_laptop'] == 1
     assert desk_row(COCO, detections, pictures, [], kinds, thresholds)['false_book'] == 1    # without the rule
 

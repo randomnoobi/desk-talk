@@ -138,7 +138,9 @@ agents:
     extra_wait_sec: 2         # and seen this much longer before they join the chat or count as appeared
   same_thing_overlap: 0.7     # two different names whose boxes are this much the same box (more than 0, up to 1:
                               # shared area over the area both cover) are one thing named twice, like a laptop
-                              # also called "book": only the surer name counts, everywhere in the app. Words on
+                              # also called "book": only one name counts, everywhere in the app. A word with its
+                              # own agent in agents.yaml beats a new thing's word (a mug seen as "cup" 0.50 and
+                              # "vase" 0.52 stays a cup); otherwise the surer name wins. Words on
                               # the ignore list (agents.yaml) take no part. 0 isn't allowed: boxes that don't even
                               # touch would be one thing. Known limit: two real things about the same size, one
                               # on top of the other (a big book on a closed laptop), count as one: raise this if so
