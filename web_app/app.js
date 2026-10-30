@@ -71,6 +71,7 @@ function duration(minutes) {
   if (minutes > MINUTE && minutes % MINUTE === 0) return `${minutes / MINUTE} hours`;
   return `${minutes} minutes`;
 }
+const seconds = (sec) => `${+sec} second${+sec === 1 ? '' : 's'}`;
 /** '2026-10-30' → that day at midnight, here. */
 function localDay(day) {
   const [y, m, d] = String(day).split('-').map(Number);
