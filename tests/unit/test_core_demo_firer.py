@@ -135,9 +135,21 @@ def test_an_unknown_name_is_a_key_error():
         Rig().firer.fire('fireworks', NOW)
 
 
-@pytest.mark.parametrize(('changes', 'named'), [({'edge_warning': {'object': 'unicorn'}}, 'unicorn'),
-                                                ({'danger_zone': {'near': 'unicorn'}}, 'unicorn'),
-                                                ({'lost_object': {'object': 'umbrella'}}, 'umbrella')])
-def test_a_scenario_naming_something_unknown_stops_the_start(changes, named):
+def test_every_scenario_in_the_settings_can_go_off():
+    firer = Rig().firer
+    assert [firer.problem(item.name) for item in CONFIG.dev.scenarios.items] == [None] * 6
+
+
+@pytest.mark.parametrize(('changes', 'name', 'named'), [
+    ({'edge_warning': {'object': 'unicorn'}}, 'cup_at_edge', 'unicorn'),
+    ({'danger_zone': {'near': 'unicorn'}}, 'drink_by_laptop', 'unicorn'),
+    ({'lost_object': {'object': 'umbrella'}}, 'keys_missing', 'umbrella')])
+def test_a_scenario_naming_something_unknown_has_a_problem_but_the_app_still_starts(changes, name, named):
+    """Someone took the keys out of lost_items.items in their own settings: the app must still start, and the Demo
+    tab says why that one can't go off."""
+    rig = Rig(with_items(**changes))
+    problem = rig.firer.problem(name)
+    assert problem is not None and named in problem
     with pytest.raises(ValueError, match=named):
-        Rig(with_items(**changes))
+        rig.firer.fire(name, NOW)
+    assert rig.alerts() == []

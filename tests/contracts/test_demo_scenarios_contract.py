@@ -15,6 +15,9 @@ CONFIG = load_config(environ={}, dotenv=Path('/nonexistent'))
 
 
 class NoFiring:
+    def problem(self, name: str) -> str | None:
+        return None
+
     def fire(self, name: str, now: float) -> None:
         raise AssertionError('the contract never lets a countdown run out')
 

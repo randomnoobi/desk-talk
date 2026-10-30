@@ -11,7 +11,9 @@ the chat, the Mac pop-up and the event log show exactly what a user would see:
     sip             a sip the camera saw, logged in the habit tracker (it counts in today's water)
     lost_object     the lost_object Alert the lost-items job publishes, in its plain words
 
-The alerts carry `demo: true`, so the event log tells them from real ones.
+The alerts carry `demo: true`, so the event log tells them from real ones. A scenario that names an agent or a
+lost item the settings don't have (someone took the keys out of lost_items.items) never stops the app: problem()
+says why, and the Demo tab refuses to start it.
 
     firer = DemoFirer(config.dev.scenarios, bus, habits, lens, reminders, profiles, prompts=config.prompts,
                       lost_item_names={id: item.name for id, item in config.lost_items.items.items()})
@@ -34,9 +36,11 @@ def _number(value: float | None) -> str:
     return f'{value or 0:g}'
 
 
+AGENTS_FILE, LOST_ITEMS = 'config/agents.yaml', 'lost_items.items'     # where the names it uses must be
+
+
 class DemoFirer:
-    """The ScenarioFirer (desktalk/ports.py). Raises ValueError when it's built if a scenario names an agent that
-    isn't in config/agents.yaml or an item that isn't in lost_items.items."""
+    """The ScenarioFirer (desktalk/ports.py). `prompts.dev` has its words for a scenario that can't go off."""
 
     def __init__(self, settings: DemoSettings, bus: EventBus, habit_log: HabitLog, camera: CameraWarnings,
                  reminders: ReminderSender, profiles: Profiles, *, prompts: Prompts,
@@ -53,20 +57,23 @@ class DemoFirer:
             'edge_warning': self._edge_warning, 'danger_zone': self._danger_zone,
             'drink_reminder': self._drink_reminder, 'camera_covered': self._camera_covered, 'sip': self._sip,
             'lost_object': self._lost_object}
-        for item in settings.items:
-            self._check(item)
 
-    def _check(self, item: DemoScenario) -> None:
-        where = f'settings → dev.scenarios: {item.name}'
+    def problem(self, name: str) -> str | None:
+        """Raises KeyError for a name that isn't in the settings."""
+        item = self._items[name]
         if item.fires in ('edge_warning', 'danger_zone'):
             for agent in filter(None, (item.object, item.near)):
                 if self._profiles.get(agent) is None:
-                    raise ValueError(f"{where} names {agent}, which isn't an agent in config/agents.yaml")
+                    return self._words.dev.cannot_fire.format(name=name, thing=agent, where=AGENTS_FILE)
         if item.fires == 'lost_object' and item.object not in self._lost_names:
-            raise ValueError(f"{where} names {item.object}, which isn't in lost_items.items")
+            return self._words.dev.cannot_fire.format(name=name, thing=item.object, where=LOST_ITEMS)
+        return None
 
     def fire(self, name: str, now: float) -> None:
-        """Raises KeyError for a name that isn't in the settings."""
+        """Raises KeyError for a name that isn't in the settings, and ValueError for one with a problem()."""
+        problem = self.problem(name)
+        if problem is not None:
+            raise ValueError(problem)
         item = self._items[name]
         self._send[item.fires](item, now)
 

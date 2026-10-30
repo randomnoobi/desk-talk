@@ -213,6 +213,7 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'dev.countdown_out_of_range': ('most',),
     'dev.too_many_waiting': ('count',),
     'dev.unknown_waiting': ('scenario_id',),
+    'dev.cannot_fire': ('name', 'thing', 'where'),
     'dev.scenarios.drink_evidence': ('minutes',),
     'dev.scenarios.drink_text': ('minutes',),
 }
@@ -690,6 +691,7 @@ class DevWords(_Section):
     countdown_out_of_range: str
     too_many_waiting: str
     unknown_waiting: str
+    cannot_fire: str
     scenarios: DemoWords
 
 

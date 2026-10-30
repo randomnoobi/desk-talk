@@ -19,11 +19,15 @@ EDGE, SIP = 'cup_at_edge', 'sip'
 
 
 class RecordingFirer:
-    """Records what it fired; `broken` names one that raises."""
+    """Records what it fired; `broken` names one that raises, and `problems` the ones it can't fire, with why."""
 
-    def __init__(self, broken: str = ''):
+    def __init__(self, broken: str = '', problems: dict[str, str] | None = None):
         self.fired: list[tuple[str, float]] = []
         self.broken = broken
+        self.problems = problems or {}
+
+    def problem(self, name: str) -> str | None:
+        return self.problems.get(name)
 
     def fire(self, name: str, now: float) -> None:
         if name == self.broken:
@@ -32,9 +36,9 @@ class RecordingFirer:
 
 
 class Rig:
-    def __init__(self, settings=DEMO, broken=''):
+    def __init__(self, settings=DEMO, broken='', problems=None):
         self.clock = FakeClock()
-        self.firer = RecordingFirer(broken)
+        self.firer = RecordingFirer(broken, problems)
         self.runner = ScenarioRunner(settings, self.firer, self.clock, words=CONFIG.prompts.dev)
 
     def tick(self, after: float = 0.0) -> float:
@@ -142,3 +146,10 @@ def test_one_that_fails_is_logged_and_the_others_still_fire(caplog):
     assert [name for name, _ in rig.firer.fired] == [SIP]
     assert 'cup_at_edge' in caplog.text and 'the chat is down' in caplog.text
     assert rig.runner.waiting() == []       # not tried again and again
+
+
+def test_one_the_firer_cannot_fire_is_refused_with_its_reason():
+    rig = Rig(problems={EDGE: "cup_at_edge names unicorn, which isn't an agent"})
+    with pytest.raises(ValueError, match='unicorn'):
+        rig.runner.start(EDGE, 5)
+    assert rig.runner.waiting() == []

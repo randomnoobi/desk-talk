@@ -811,6 +811,9 @@ dev:
   countdown_out_of_range: 'The countdown must be from 0 to {most:g} seconds (dev.scenarios.countdown_max_sec).'
   too_many_waiting: 'Already {count} pretend warnings are counting down (dev.scenarios.waiting_max). Wait, or cancel one.'
   unknown_waiting: "There's no pretend warning {scenario_id} counting down (it may have gone off already)."
+  # a pretend warning that names an agent or a lost item your settings don't have: {thing} is that name, {where}
+  # the list it should be in
+  cannot_fire: "{name} can't go off: it names {thing}, which isn't in {where}."
   # what the pretend warnings say where the real ones fill in what the camera saw (the other words are the real
   # ones: desk_alerts.edge_reason, camera.problems.covered, lost_items.alert_plain and the sip's own)
   scenarios:

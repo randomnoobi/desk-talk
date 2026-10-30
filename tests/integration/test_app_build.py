@@ -193,6 +193,7 @@ def test_start_runs_every_background_job_after_its_first_wait(tmp_path):
         'lost items': config.lost_items.start_delay_sec,
         'lens': config.lens.check_every_sec,
         'daily recap': config.daily_summary.start_delay_sec,
+        'demo scenarios': 0,            # the developer page's Demo tab: a countdown can be 0 seconds
     }
 
 

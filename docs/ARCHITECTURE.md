@@ -211,7 +211,7 @@ are None when `dev.enabled` is off:
 | `TracePhotos` | each kind of object's trace pictures (`photos(label)`, oldest first) and one picture's JPEG (`jpeg(id)`) | `TracePhotoFiles` | `FakeTracePhotos` |
 | `SmoothingTraceView` | what the smoothing made of each object's last `object_states.trace_pictures` pictures (confidence, the votes, seen or not, the state, the wait), oldest first; `[]` for an object never seen | `ObjectStateTracker` | `FakeSmoothingTrace` |
 | `DemoScenarios` (and `DemoCountdowns`, the same plus the background job) | the Demo tab's pretend warnings, start one with a countdown in seconds (`ValueError` for an unknown name, a countdown out of range or too many waiting), cancel one (`KeyError` once it's gone), the ones counting down with the seconds left | `ScenarioRunner` (`core/demo/scenarios.py`) | none: the routes' tests use the real one with a `FakeClock` |
-| `ScenarioFirer` | send one pretend warning by name, the way the real one goes out | `DemoFirer` (`core/demo/firer.py`) | a recording one in the runner's tests |
+| `ScenarioFirer` | send one pretend warning by name, the way the real one goes out; `problem()` says why one can't (it names an agent or lost item the settings don't have), so the app still starts and the Demo tab refuses just that one | `DemoFirer` (`core/demo/firer.py`) | a recording one in the runner's tests |
 | `CameraWarnings` | Lens saying a camera problem now (`say_problem()`), as it says one it found | `Lens` | a recording one in the firer's tests |
 | `ReminderSender` | the habit reminders saying one nudge now (`say()`), by the agent for the habit or Lens, with nothing waiting because of it | `HabitReminders` | a recording one in the firer's tests |
 

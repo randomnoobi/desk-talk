@@ -56,6 +56,9 @@ class ScenarioRunner:
         scenario = self._scenarios.get(name)
         if scenario is None:
             raise ValueError(self._words.unknown_scenario.format(name=name))
+        problem = self._firer.problem(name)
+        if problem is not None:
+            raise ValueError(problem)
         most = self._settings.countdown_max_sec
         if not (math.isfinite(after_sec) and 0 <= after_sec <= most):     # (a NaN fails every comparison)
             raise ValueError(self._words.countdown_out_of_range.format(most=most))

@@ -1143,8 +1143,8 @@ class DemoScenarios(Protocol):
 
     def start(self, name: str, after_sec: float) -> WaitingScenario:
         """Start one counting down from `after_sec` seconds. Raises ValueError, with plain words, for a name that
-        isn't in scenarios(), a countdown below 0 or above dev.scenarios.countdown_max_sec, or when
-        dev.scenarios.waiting_max are counting down already."""
+        isn't in scenarios(), one that can't go off with the settings as they are, a countdown below 0 or above
+        dev.scenarios.countdown_max_sec, or when dev.scenarios.waiting_max are counting down already."""
         ...
 
     def cancel(self, scenario_id: str) -> None:
@@ -1161,7 +1161,13 @@ class DemoScenarios(Protocol):
 class ScenarioFirer(Protocol):
     """Fires one pretend warning, by its name in settings → dev.scenarios.items, the way the real one goes out."""
 
+    def problem(self, name: str) -> str | None:
+        """Why this one can't go off with the settings as they are (it names an agent or a lost item that isn't
+        there), in plain words; None when it can."""
+        ...
+
     def fire(self, name: str, now: float) -> None:
+        """Raises ValueError for one with a problem()."""
         ...
 
 

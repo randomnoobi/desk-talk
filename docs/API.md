@@ -237,7 +237,7 @@ has `"demo": true`), and a pretend sip counts in today's water.
   `camera_covered`, `sip` or `lost_object`.
 - `POST /api/dev/scenarios`: `{"name": "cup_at_edge", "after_sec": 10}`. Replies the new one counting down,
   `{"id", "name", "label", "fires_at", "seconds_left"}`. 400 `{"error": ...}` for a name that isn't in the
-  list, a countdown below 0 or above `dev.scenarios.countdown_max_sec`, or when `dev.scenarios.waiting_max`
+  list, one that names an agent or a lost item your settings don't have, a countdown below 0 or above `dev.scenarios.countdown_max_sec`, or when `dev.scenarios.waiting_max`
   are counting down already. The background job fires it (checked every `dev.scenarios.check_every_sec`).
 - `DELETE /api/dev/scenarios/{id}`: `{"ok": true}`; 404 when it isn't counting down (never started, cancelled,
   or gone off already).
