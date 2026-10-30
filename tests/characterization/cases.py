@@ -97,7 +97,8 @@ class Step:
 class Case:
     id: str                               # also the snapshot file name
     method: str
-    path: str                             # {snapshot_id} is filled in with a real photo id
+    path: str                             # {snapshot_id} is filled in with a real photo id, {story_photo_id}
+                                          # with the id of a picture in the cup's story
     status: int
     desk: str = 'busy'
     server: str = 'main'                  # main (web_app/ and the Pi) or phone (the phone camera page)
@@ -161,6 +162,14 @@ CASES = [
     Case('snapshots', 'GET', '/api/snapshots', 200),
     Case('snapshots-none-yet', 'GET', '/api/snapshots', 200, desk='fresh'),
     Case('snapshots-newest-one', 'GET', '/api/snapshots?limit=1', 200),
+
+    # ── An object's story (the app page's story panel; any device on the Wi-Fi may ask) ──
+    Case('object-story', 'GET', '/api/objects/cup/story', 200, values={'label': 'cup'}),
+    Case('object-story-from-lan', 'GET', '/api/objects/cup/story', 200, from_ip=LAN_DEVICE),
+    Case('object-story-never-seen', 'GET', '/api/objects/pen%2Fpencil/story', 404,
+         values={'error': "The camera hasn't seen pen/pencil since it started."}),
+    Case('object-photo', 'GET', '/api/objects/photo/{story_photo_id}', 200, reply=FILE, starts_with=JPEG_START),
+    Case('object-photo-gone', 'GET', '/api/objects/photo/nope', 404, reply=STATUS),
 
     # ── Live status ──
     Case('live', 'GET', '/api/live', 200),

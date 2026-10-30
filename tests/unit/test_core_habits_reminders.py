@@ -227,7 +227,7 @@ class Desk:
                                  'quiet_start_hour': 22, 'quiet_end_hour': 7})
         self.profiles = ProfileBook(config.agents_file, InMemoryKeyValueStore(), personality_max_chars=400)
         self.roster = Roster(self.bus, self.profiles, self.desk, config.agents, config.presence, prefs,
-                             joins_kept=config.dev.trace_events_kept)
+                             joins_kept=config.object_story.events_kept)
         self.habits = HabitTracker(self.clock, self.bus, InMemoryKeyValueStore(), self.profiles, prefs, self.desk,
                                    config.protocols, config.habit_tracker, config.presence, config.agents,
                                    phone_counts=True, words=config.prompts.habits)

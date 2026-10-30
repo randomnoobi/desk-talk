@@ -37,6 +37,7 @@
     "trace_events_kept": "number",
     "trace_photos_kept": "number",
     "trace_pictures": "number",
+    "trace_step_photos_kept": "number",
     "web_port": "number"
   },
   "request": "GET /api/dev/settings (main server, fresh desk)"

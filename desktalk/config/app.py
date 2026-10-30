@@ -778,6 +778,17 @@ class DemoSettings(_Section):
         return self
 
 
+class ObjectStorySettings(_Section):
+    """An object's story: its state changes, chat joins and pictures (the app page and the developer page)."""
+
+    photos_folder: Path
+    photo_every_sec: PositiveNumber
+    timed_photos_kept: PositiveInt
+    step_photos_kept: PositiveInt
+    events_kept: PositiveInt
+    photo_match_sec: PositiveNumber
+
+
 class DevSettings(_Section):
     """The developer page at /dev/ (only from this computer): running the tests, the database, the data folder."""
 
@@ -798,10 +809,6 @@ class DevSettings(_Section):
     flicker_flips_per_min: Count
     flips_window_min: PositiveNumber
     table_counts_every_sec: PositiveNumber
-    trace_photos_folder: Path
-    trace_photos_kept: PositiveInt
-    trace_photo_every_sec: PositiveNumber
-    trace_events_kept: PositiveInt
     scenarios: DemoSettings
     health: DevHealthLimits
 
@@ -849,6 +856,7 @@ class AppConfig(_Section):
     notifications: NotificationsSettings
     logging: LoggingSettings
     storage: StorageSettings
+    object_story: ObjectStorySettings
     dev: DevSettings
     protocols: Protocols
     agents_file: AgentsFile

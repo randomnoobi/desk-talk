@@ -621,6 +621,18 @@ logging:
 storage:
   folder: data                # preferences.json, habits/<day>.json and learned_personalities.json live here
 
+# ── An object's story (click something under "On the desk", or an object on the developer page's live tab) ──
+# What happened to it, step by step, with a picture for each step and its box drawn on.
+object_story:
+  photos_folder: data/trace_photos  # the pictures are kept here, one folder per kind of object
+  photo_every_sec: 120          # a picture when it appears, joins the chat, moves or goes away, and one this often
+                                # while it's there
+  timed_photos_kept: 6          # only the newest this many of the "this often" pictures are kept per kind of object
+  step_photos_kept: 24          # and, apart from those, the newest this many of the others (appeared, joined,
+                                # moved, went away), so a long stay never pushes out how it got there
+  events_kept: 50               # state changes, and chat joins, leaves and refusals, remembered per kind of object
+  photo_match_sec: 10           # a picture taken this close to a step of the story is shown next to that step
+
 # ── Developer page (http://localhost:5000/dev/, only from this computer) ──
 dev:
   enabled: true                 # false = no developer page and no /api/dev routes
@@ -651,11 +663,6 @@ dev:
   flicker_flips_per_min: 4      # the live tab calls an object "flickering" after more flips than this in a minute
   flips_window_min: 10          # the database tab's ready-made "flips per object" query looks back this far
   table_counts_every_sec: 30    # the database and storage tabs count rows and files again this often
-  # Each object's trace (click an object on the live tab): pictures with its box drawn on, and its chat joins
-  trace_photos_folder: data/trace_photos  # the pictures are kept here, one folder per kind of object
-  trace_photos_kept: 6          # only the newest this many pictures per kind of object are kept (older ones go)
-  trace_photo_every_sec: 120    # one when it appears, one when it joins the chat, and one this often while it's there
-  trace_events_kept: 50         # chat joins, leaves and refusals remembered per kind of object
   # The Demo tab: pretend warnings you fire on purpose after a countdown, for testing and for recording a demo
   # video. Each one goes the same way the real thing does (the chat, the Mac pop-up, the event log), so it looks
   # exactly like what a user would see. The pretend sip is counted in today's water like a real one.

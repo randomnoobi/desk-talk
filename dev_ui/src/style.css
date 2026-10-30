@@ -8,7 +8,7 @@
      .btn .btn.primary .btn.big .btn.danger buttons
      .input .code .printout                typing boxes and scrolling text
      .table .num .clickable                tables (see Table in ui.tsx)
-     .object-card .trace-photos            the Live tab's object cards and an object's trace pictures
+     .object-card .trace-thumb             the Live tab's object cards and an object's trace pictures
      .muted .small .mono .error            text
    ============================================ */
 
@@ -213,9 +213,11 @@ a { color: var(--cobalt); }
 .object-card[aria-pressed="true"] { border-color: var(--cobalt); box-shadow: inset 0 0 0 1px var(--cobalt); }
 .object-name { font-weight: 700; font-size: 15px; word-break: break-word; }
 
-.trace-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 .trace-photo { display: flex; flex-direction: column; gap: 4px; }
 .trace-photo-frame { position: relative; border-radius: 12px; overflow: hidden; background: var(--mist); }
 .trace-photo-frame img { display: block; width: 100%; height: auto; }
 .trace-photo-frame svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .trace-photo-frame rect { fill: none; stroke: var(--cobalt); stroke-width: 3; vector-effect: non-scaling-stroke; }
+.trace-thumb { display: block; width: 96px; padding: 0; border: 0; background: none; cursor: zoom-in; }
+.trace-thumb .trace-photo-frame { border-radius: 6px; }
+.trace-photo-big { max-width: 640px; margin-top: 12px; }

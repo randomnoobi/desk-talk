@@ -15,7 +15,7 @@ def covered_routes(server, server_name: str) -> set:
     out = set()
     for c in CASES:
         if c.server == server_name:
-            route = server.route_for(c.method, c.path.format(snapshot_id='abc123'))
+            route = server.route_for(c.method, c.path.format(snapshot_id='abc123', story_photo_id='abc123'))
             if route is None:
                 assert c.status == 404, f'{c.id}: {c.method} {c.path} matches no route but expects {c.status}'
             else:

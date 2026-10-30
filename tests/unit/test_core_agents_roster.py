@@ -54,7 +54,7 @@ class Rig:
             steps[agents.sensitivity_default] = agents.default_step().model_copy(update=step)
             agents = agents.model_copy(update={'sensitivity_steps': tuple(steps)})
         self.roster = Roster(self.bus, self.profiles, self.desk, agents, config.presence, self.prefs,
-                             on_desk=on_desk, joins_kept=joins_kept or config.dev.trace_events_kept)
+                             on_desk=on_desk, joins_kept=joins_kept or config.object_story.events_kept)
 
     def see(self, ts, *dets, size=(640, 480)):
         self.bus.publish(DetectionEvent(ts=ts, frame_id=f'pi-{ts}', source='pi', size=size, detections=tuple(dets),

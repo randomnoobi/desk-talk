@@ -83,6 +83,31 @@ def test_bottle_on_desk_joins_the_chat(page, tmp_path, pictures):
         expect(page.locator('#messages')).to_contain_text(f'{BOTTLE_CHAT} joined the chat')
 
 
+def test_the_story_of_something_on_the_desk_shows_each_step_with_its_picture(page, tmp_path, pictures):
+    """Click something under "On the desk": a panel tells what happened to it, when, how sure the camera was, and
+    shows the picture taken for each step with its box drawn on."""
+    with app_server(tmp_path, pictures=pictures) as server:
+        server.show(2)
+        open_app(page, server.url)
+        expect(chat_link(page, BOTTLE_CHAT)).to_be_visible(timeout=JOIN_WITHIN_MS)
+        page.locator('#on-desk [data-story]').filter(has_text=BOTTLE_CHAT).click()
+        story = page.locator('#story')
+        expect(story).to_be_visible()
+        expect(story.locator('#story-title')).to_contain_text(BOTTLE_CHAT)
+        steps = story.locator('.story-step')
+        expect(steps.first).to_contain_text('appeared')
+        expect(steps.first).to_contain_text('% sure')
+        expect(story).to_contain_text('joined the chat')
+        picture = steps.first.locator('.story-pic')
+        expect(picture.locator('img')).to_have_attribute('src', re.compile(r'^/api/objects/photo/'))
+        expect(picture.locator('svg rect')).to_have_count(1)                   # its box, drawn by the page
+        assert page.evaluate("document.querySelector('#story .story-pic img').naturalWidth") > 0
+        picture.click()                                                         # a bigger look
+        expect(picture).to_have_class(re.compile(r'\bbig\b'))
+        story.get_by_role('button', name='Close').click()
+        expect(story).to_be_hidden()
+
+
 def test_sending_a_message_gets_a_reply(page, tmp_path, pictures):
     # Lens has no chat of its own on today's page, so this talks to the bottle (Cup) in its own chat.
     with app_server(tmp_path, pictures=pictures) as server:

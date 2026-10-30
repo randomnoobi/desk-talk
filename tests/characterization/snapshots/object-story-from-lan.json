@@ -1,0 +1,50 @@
+{
+  "content_type": "application/json",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "json": {
+    "label": "str",
+    "photos": [
+      {
+        "box": [
+          "number"
+        ],
+        "confidence": "number",
+        "id": "str",
+        "size": [
+          "number"
+        ],
+        "ts": "number",
+        "why": "str"
+      }
+    ],
+    "timeline": [
+      {
+        "after": "null|str",
+        "before": "null|str",
+        "confidence": "number",
+        "kind": "str",
+        "on_desk": "null",
+        "photo": {
+          "box": [
+            "number"
+          ],
+          "confidence": "number",
+          "id": "str",
+          "size": [
+            "number"
+          ],
+          "ts": "number",
+          "why": "str"
+        },
+        "seen_for_sec": "null|number",
+        "source": "str",
+        "step": "null|str",
+        "ts": "number",
+        "what": "str"
+      }
+    ]
+  },
+  "request": "GET /api/objects/cup/story (main server, busy desk)"
+}

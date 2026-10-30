@@ -26,6 +26,10 @@ def send(desk, case: Case) -> Reply:
         items = desk.main.get('/api/snapshots').json()['items']
         assert items, 'this desk has no photos'
         path = path.format(snapshot_id=items[0]['id'])
+    if '{story_photo_id}' in path:
+        photos = desk.main.get('/api/objects/cup/story').json()['photos']
+        assert photos, 'the cup has no pictures on this desk'
+        path = path.format(story_photo_id=photos[0]['id'])
     return desk.server(case.server).request(case.method, path, json=case.json, data=case.data,
                                             headers=case.headers, from_ip=case.from_ip)
 

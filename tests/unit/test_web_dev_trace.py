@@ -1,6 +1,7 @@
 """The developer page's object trace (desktalk/web/routers/dev.py): GET /api/dev/objects/<label> mixes the object
 state changes and the chat's joins and refusals into one timeline, with the pictures kept of it, and
-GET /api/dev/objects/photo/<id> is one of those pictures. The router is built here with fakes; the whole app's
+GET /api/dev/objects/photo/<id> is one of those pictures. It's the same story the app page shows
+(desktalk/web/stories.py, tests/unit/test_web_object_story.py). The router is built here with fakes; the whole app's
 characterization case lives in tests/characterization/cases.py."""
 
 from __future__ import annotations
@@ -68,6 +69,8 @@ def client_for(records=(), joins=(), photos: FakeTracePhotos | None = None, *, n
 def test_object_trace_mixes_states_and_joins():
     photos = FakeTracePhotos()
     photos.add(a_photo('p1', 100.5), JPEG)
+    picture = {'id': 'p1', 'ts': 100.5, 'why': 'appeared', 'confidence': 0.82, 'box': [10.0, 20.0, 50.0, 80.0],
+               'size': [640, 480]}
     client = client_for(
         records=[record(100.0, 'appeared', conf_avg=0.8, dwell_sec=40.0), record(101.0, 'appeared', label='pen')],
         joins=[join('joined', 105.0), join('refused', 103.0, on_desk=None, step='Picky'),
@@ -82,12 +85,12 @@ def test_object_trace_mixes_states_and_joins():
     appeared, refused, joined = body['timeline']
     assert appeared == {'ts': 100.0, 'source': 'state', 'kind': 'appeared', 'confidence': 0.8,
                         'seen_for_sec': None, 'on_desk': None, 'step': None, 'before': 'ABSENT',
-                        'after': 'PRESENT'}
+                        'after': 'PRESENT', 'photo': picture, 'what': 'appeared'}
     assert refused['on_desk'] is None and refused['step'] == 'Picky'
     assert joined == {'ts': 105.0, 'source': 'chat', 'kind': 'joined', 'confidence': 0.81, 'seen_for_sec': 3.2,
-                      'on_desk': True, 'step': 'Normal', 'before': None, 'after': None}
-    assert body['photos'] == [{'id': 'p1', 'ts': 100.5, 'why': 'appeared', 'confidence': 0.82,
-                               'box': [10.0, 20.0, 50.0, 80.0], 'size': [640, 480]}]
+                      'on_desk': True, 'step': 'Normal', 'before': None, 'after': None, 'photo': None,
+                      'what': 'joined the chat'}
+    assert body['photos'] == [picture]
 
 
 def test_a_removed_row_says_how_long_it_was_seen():
@@ -97,7 +100,7 @@ def test_a_removed_row_says_how_long_it_was_seen():
 
 
 def test_only_the_newest_state_changes_since_the_camera_started():
-    kept = app_config().dev.trace_events_kept
+    kept = app_config().object_story.events_kept
     records = [record(1.0, 'appeared')] + [record(100.0 + n, 'moved') for n in range(kept + 5)]
     client = client_for(records=records, watched_since=50.0)
     rows = client.get('/api/dev/objects/cup').json()['timeline']
@@ -142,5 +145,7 @@ def test_object_photo_404():
 
 def test_the_settings_say_how_many_are_kept():
     body = client_for().get('/api/dev/settings').json()
-    assert body['trace_events_kept'] == app_config().dev.trace_events_kept
-    assert body['trace_photos_kept'] == app_config().dev.trace_photos_kept
+    story = app_config().object_story
+    assert body['trace_events_kept'] == story.events_kept
+    assert body['trace_photos_kept'] == story.timed_photos_kept
+    assert body['trace_step_photos_kept'] == story.step_photos_kept

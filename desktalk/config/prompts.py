@@ -40,6 +40,7 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'alert.lens_zone': ('intruder', 'target', 'zone'),
     'alert.lens_edge': ('object',),
     'desk_rules.too_few_corners': ('corners',),
+    'object_story.never_seen': ('object',),
     'replies.ai_errors.rate_limit': ('who',),
     'replies.ai_errors.bad_key': ('who',),
     'replies.ai_errors.no_model': ('who',),
@@ -657,6 +658,19 @@ class UiWords(_Section):
     sensitivity_step: str             # ...and what one step does (blanks in BLANKS)
 
 
+class ObjectStoryWords(_Section):
+    """An object's story, step by step (desktalk/web/stories.py: the app page and the developer page's trace)."""
+
+    appeared: str
+    joined: str
+    moved: str
+    removed: str
+    left: str
+    refused: str
+    every: str
+    never_seen: str
+
+
 class NotificationWords(_Section):
     """The Mac's own pop-up notifications."""
 
@@ -720,6 +734,7 @@ class Prompts(_Section):
     photos: PhotoWords
     desk_checks: DeskCheckWords
     ui: UiWords
+    object_story: ObjectStoryWords
     notifications: NotificationWords
     dev: DevWords
 

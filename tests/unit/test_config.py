@@ -380,6 +380,9 @@ NEW_SETTINGS = {
         # the sensitivity slider's bar for new things
         ('agents', 'new_things', 'extra_confidence'), ('agents', 'new_things', 'extra_wait_sec'),
         ('agents', 'new_things', 'max_confidence'),
+        # an object's story (the app page and the developer page's trace)
+        ('object_story', 'photos_folder'), ('object_story', 'photo_every_sec'), ('object_story', 'timed_photos_kept'),
+        ('object_story', 'step_photos_kept'), ('object_story', 'events_kept'), ('object_story', 'photo_match_sec'),
     ],
     'protocols.yaml': [('food', 'healthy')],
 }
@@ -571,9 +574,13 @@ def test_the_other_new_settings_load(project):
     cfg = load_config(root=project, environ={})
     tasks, dev, web = cfg.protocols.tasks, cfg.dev, cfg.web
     assert (tasks.remind_after_min, tasks.due_soon_days, tasks.late_repeat_hours) == (120, 1, 24)
-    assert (dev.trace_photos_kept, dev.trace_photo_every_sec, dev.trace_events_kept) == (6, 120, 50)
+    story = cfg.object_story
+    assert (story.timed_photos_kept, story.photo_every_sec, story.events_kept) == (6, 120, 50)
+    assert (story.step_photos_kept, story.photo_match_sec) == (24, 10)
     assert 'trace_photo_quality' not in type(dev).model_fields        # the photos are the camera's JPEG as it is
-    assert dev.trace_photos_folder == Path('data/trace_photos')
+    assert story.photos_folder == Path('data/trace_photos')
+    assert not {'trace_photos_folder', 'trace_photos_kept', 'trace_photo_every_sec',
+                'trace_events_kept'} & set(type(dev).model_fields)     # they moved to object_story
     assert (web.camera_note_after_sec, web.saved_note_sec, web.retry_start_sec) == (5, 4, 3)
     sizes = web.list_sizes
     assert (sizes.on_desk_shown, sizes.camera_issues_shown, sizes.risk_lines_shown, sizes.side_photos_shown) == (
@@ -620,3 +627,19 @@ def test_the_blocked_camera_settings_are_checked(project, text):
     write_local(project, f'lens:\n  {text}\n')
     with pytest.raises(ConfigError, match=text.split(':')[0]):
         load_config(root=project, environ={})
+
+
+def test_the_trace_settings_that_moved_to_object_story_keep_your_own_values(project, caplog):
+    """An old settings.local.yaml may still set them under dev:, where they were before."""
+    write_local(project, 'dev:\n  trace_photos_kept: 9\n  trace_photo_every_sec: 30\n  trace_events_kept: 20\n'
+                         '  trace_photos_folder: elsewhere/photos\n')
+    with caplog.at_level('WARNING'):
+        story = load_config(root=project, environ={}).object_story
+    assert (story.timed_photos_kept, story.photo_every_sec, story.events_kept) == (9, 30, 20)
+    assert story.photos_folder == Path('elsewhere/photos')
+    assert 'dev.trace_photos_kept' in caplog.text and 'object_story.timed_photos_kept' in caplog.text
+
+
+def test_a_moved_setting_set_in_both_places_keeps_the_new_one(project):
+    write_local(project, 'dev:\n  trace_photos_kept: 9\nobject_story:\n  timed_photos_kept: 4\n')
+    assert load_config(root=project, environ={}).object_story.timed_photos_kept == 4

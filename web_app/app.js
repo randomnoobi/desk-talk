@@ -95,7 +95,10 @@ async function api(path, { method = 'GET', body, timeout = ui?.web?.request_time
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,
     });
-    if (!res.ok) throw Object.assign(new Error(`${path} → ${res.status}`), { status: res.status });
+    if (!res.ok) {
+      const said = await res.json().then((b) => b?.error).catch(() => undefined);      // the server's own words
+      throw Object.assign(new Error(`${path} → ${res.status}`), { status: res.status, said });
+    }
     return res.status === 204 ? null : await res.json();
   } finally {
     clearTimeout(t);
@@ -1227,10 +1230,62 @@ function renderOnDesk(det) {
     paint(list, here.map(agentLine).join('') || '<li class="extra">Nobody yet</li>');
     return;
   }
-  const extras = [...new Set((det?.extras || []).filter((e) => !e.ignored).map((e) => plainLabel(e.yolo_class)))];
-  const lines = [...here.map(agentLine), ...extras.map((e) => `<li class="extra" title="Seen, not in the chat">${esc(e)}</li>`)];
+  // Each one opens its story (openStory): what the camera saw of it, step by step, with the pictures.
+  const storyButton = (label, inside, title) => (label
+    ? `<button type="button" class="story-open" data-story="${esc(label)}" data-name="${esc(plainLabel(inside.name))}" title="${esc(title)}">${inside.html}</button>`
+    : inside.html);
+  const agentStory = (id) => {
+    const a = state.agents[id];
+    return `<li style="--tint:${tintVar(a.color)}">${storyButton(a.label_seen, { html: `${avatar(a, 26)}${esc(a.name)}`, name: a.name }, `How the camera saw ${a.name}`)}</li>`;
+  };
+  const extras = new Map();          // 'pen' → 'pen/pencil': one line per thing, its story under the detector's word
+  for (const e of (det?.extras || []).filter((x) => !x.ignored)) {
+    if (!extras.has(plainLabel(e.yolo_class))) extras.set(plainLabel(e.yolo_class), e.yolo_class);
+  }
+  const lines = [...here.map(agentStory), ...[...extras].map(([name, label]) => `<li class="extra" title="Seen, not in the chat">${storyButton(label, { html: esc(name), name }, `How the camera saw the ${name}`)}</li>`)];
   paint(list, lines.slice(0, size('on_desk_shown')).join('')
     || `<li class="extra">${state.camOk ? 'Nothing recognized yet' : 'Waiting for the camera'}</li>`);
+}
+
+// ————— An object's story —————
+// GET /api/objects/<label>/story: each step (appeared, joined the chat, moved, went away ...) in the server's own
+// words (config/prompts.yaml → object_story), oldest first, with the picture taken for it. The page draws the
+// object's box on each picture.
+function storyPicture(photo) {
+  const [x1, y1, x2, y2] = photo.box;
+  const [w, h] = photo.size;
+  return `<button type="button" class="story-pic" aria-label="A bigger look at this picture">
+    <img src="/api/objects/photo/${encodeURIComponent(photo.id)}" alt="" loading="lazy">
+    <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+      <rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" vector-effect="non-scaling-stroke"></rect></svg></button>`;
+}
+
+function storyStep(step) {
+  const sure = step.confidence == null ? '' : `<span class="story-sure">${Math.round(step.confidence * PERCENT)}% sure</span>`;
+  const seen = step.seen_for_sec == null ? '' : `<span class="story-sure">after ${seconds(Math.round(step.seen_for_sec))}</span>`;
+  return `<li class="story-step">
+    <time>${esc(clock(step.ts))}</time>
+    <div class="story-what"><strong>${esc(step.what)}</strong>${sure}${seen}</div>
+    ${step.photo ? storyPicture(step.photo) : ''}</li>`;
+}
+
+async function openStory(label, name) {
+  const dlg = $('#story');
+  const body = $('#story-body');
+  $('#story-title').textContent = `How the camera saw ${name || plainLabel(label)}`;
+  body.innerHTML = '<p class="muted">Loading…</p>';
+  if (!dlg.open) dlg.showModal();
+  let story = null;
+  let problem = '';
+  try {
+    story = await api(`/api/objects/${encodeURIComponent(label)}/story`);
+  } catch (e) {
+    problem = e.said || 'Couldn’t load its story. Try again in a moment.';
+  }
+  if (!dlg.open) return;
+  body.innerHTML = story
+    ? `<ol class="story-steps">${story.timeline.map(storyStep).join('')}</ol>`
+    : `<p class="muted">${esc(problem)}</p>`;
 }
 
 function renderRisks(safety, cameraIssues) {
@@ -1606,6 +1661,16 @@ function wire() {
       dlg.showModal();
     }
   });
+  $('#on-desk').addEventListener('click', (e) => {
+    const open = e.target.closest('[data-story]');
+    if (open) openStory(open.dataset.story, open.dataset.name);
+  });
+  $('#story-body').addEventListener('click', (e) => {
+    const pic = e.target.closest('.story-pic');
+    if (pic) pic.classList.toggle('big');
+  });
+  $('#story-close').addEventListener('click', () => $('#story').close());
+  $('#story').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
   $('#photo-close').addEventListener('click', () => $('#photo').close());
   $('#photo').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
 
