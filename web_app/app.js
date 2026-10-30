@@ -1270,7 +1270,10 @@ function storyStep(step) {
     ${step.photo ? storyPicture(step.photo) : ''}</li>`;
 }
 
+let storyAsked = 0;          // which story the panel is waiting for: a late answer to an earlier one is left out
+
 async function openStory(label, name) {
+  const asked = ++storyAsked;
   const dlg = $('#story');
   const body = $('#story-body');
   $('#story-title').textContent = `How the camera saw ${name || plainLabel(label)}`;
@@ -1283,7 +1286,7 @@ async function openStory(label, name) {
   } catch (e) {
     problem = e.said || 'Couldn’t load its story. Try again in a moment.';
   }
-  if (!dlg.open) return;
+  if (!dlg.open || asked !== storyAsked) return;
   body.innerHTML = story
     ? `<ol class="story-steps">${story.timeline.map(storyStep).join('')}</ol>`
     : `<p class="muted">${esc(problem)}</p>`;

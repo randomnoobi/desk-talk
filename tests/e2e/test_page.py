@@ -108,6 +108,30 @@ def test_the_story_of_something_on_the_desk_shows_each_step_with_its_picture(pag
         expect(story).to_be_hidden()
 
 
+def test_a_slow_story_for_something_else_never_fills_the_panel_opened_after_it(page, tmp_path, pictures):
+    """Open one story, then another before the first answers: the late first answer is left out."""
+    held = []
+    stale = {'label': 'vase', 'timeline': [{'ts': time.time(), 'what': 'STALE STORY', 'confidence': None,
+                                             'seen_for_sec': None, 'photo': None}]}
+    with app_server(tmp_path, pictures=pictures) as server:
+        server.show(2)
+        open_app(page, server.url)
+        expect(chat_link(page, BOTTLE_CHAT)).to_be_visible(timeout=JOIN_WITHIN_MS)
+        page.route('**/api/objects/vase/story', lambda route: held.append(route))    # the vase's answer waits
+        page.evaluate("void openStory('vase')")
+        expect(page.locator('#story')).to_be_visible()
+        page.locator('#story').get_by_role('button', name='Close').click()
+        page.locator('#on-desk [data-story]').filter(has_text=BOTTLE_CHAT).click()
+        story = page.locator('#story')
+        expect(story.locator('.story-step').first).to_contain_text('appeared')
+        assert len(held) == 1
+        with page.expect_response('**/api/objects/vase/story'):
+            held[0].fulfill(json=stale)
+        page.wait_for_timeout(300)                                          # let the late answer arrive
+        expect(story.locator('#story-title')).to_contain_text(BOTTLE_CHAT)
+        expect(story).not_to_contain_text('STALE STORY')
+
+
 def test_sending_a_message_gets_a_reply(page, tmp_path, pictures):
     # Lens has no chat of its own on today's page, so this talks to the bottle (Cup) in its own chat.
     with app_server(tmp_path, pictures=pictures) as server:
