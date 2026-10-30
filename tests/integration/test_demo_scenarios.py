@@ -6,6 +6,7 @@ from __future__ import annotations
 import pytest
 
 from desktalk.domain import LENS
+from desktalk.ports import DemoCountdowns
 from tests.integration.app_kit import DeskRig, changed, desk_config
 
 AI_LINE = 'Hey! All good over here on the desk.'      # what the fake AI says (app_kit.chatty_ai)
@@ -16,10 +17,16 @@ def rig(tmp_path):
     return DeskRig(tmp_path, ai_reply=AI_LINE)
 
 
+def demo(rig: DeskRig) -> DemoCountdowns:
+    """The app's Demo tab countdowns (there when the developer page is on, as it is in git)."""
+    assert rig.app.demo is not None
+    return rig.app.demo
+
+
 def fire(rig: DeskRig, name: str, after: float = 3) -> list[dict]:
     """Start `name` with a countdown of `after` seconds, let the background job run once it's over, and give
     what the open app page got."""
-    rig.app.demo.start(name, after)
+    demo(rig).start(name, after)
     rig.tick(rig.app.demo, after=after - 0.5)
     assert rig.messages() == [], 'nothing before the countdown is over'
     rig.tick(rig.app.demo, after=0.5)
@@ -87,7 +94,7 @@ def test_the_lost_keys_are_lens_s_warning(rig):
 
 
 def test_a_cancelled_one_says_nothing(rig):
-    waiting = rig.app.demo.start('cup_at_edge', 2)
-    rig.app.demo.cancel(waiting.id)
+    waiting = demo(rig).start('cup_at_edge', 2)
+    demo(rig).cancel(waiting.id)
     rig.tick(rig.app.demo, after=5)
     assert chat(rig.messages()) == [] and rig.desktop.shown == []

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from desktalk.config import load_config
+from desktalk.config import DemoSettings, load_config
 from desktalk.core.demo.firer import DemoFirer
 from desktalk.domain import LENS, AgentProfile, Alert, Nudge
 from desktalk.ports import ScenarioFirer
@@ -60,7 +60,7 @@ class Rig:
         return self.bus.of_type(Alert)
 
 
-def with_items(**changes) -> object:
+def with_items(**changes) -> DemoSettings:
     """The settings' scenarios, with some fields of the first one of each kind changed: with_items(edge_warning=
     {'object': 'paper'})."""
     items = []
