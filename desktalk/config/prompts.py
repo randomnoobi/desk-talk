@@ -209,6 +209,12 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'dev.query_refused': ('reason',),
     'dev.query_failed': ('reason',),
     'dev.query_timed_out': ('seconds',),
+    'dev.unknown_scenario': ('name',),
+    'dev.countdown_out_of_range': ('most',),
+    'dev.too_many_waiting': ('count',),
+    'dev.unknown_waiting': ('scenario_id',),
+    'dev.scenarios.drink_evidence': ('minutes',),
+    'dev.scenarios.drink_text': ('minutes',),
 }
 
 
@@ -652,6 +658,14 @@ class NotificationWords(_Section):
     sip_title: str
 
 
+class DemoWords(_Section):
+    """What the Demo tab's pretend warnings say where the real ones fill in what the camera saw."""
+
+    zone: str
+    drink_evidence: str
+    drink_text: str
+
+
 class DevWords(_Section):
     """The developer page's server messages (desktalk/web/routers/dev.py and the parts behind it)."""
 
@@ -672,6 +686,11 @@ class DevWords(_Section):
     query_failed: str
     query_timed_out: str
     not_built: str
+    unknown_scenario: str
+    countdown_out_of_range: str
+    too_many_waiting: str
+    unknown_waiting: str
+    scenarios: DemoWords
 
 
 class Prompts(_Section):

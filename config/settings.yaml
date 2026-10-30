@@ -636,6 +636,41 @@ dev:
   trace_photos_kept: 6          # only the newest this many pictures per kind of object are kept (older ones go)
   trace_photo_every_sec: 120    # one when it appears, one when it joins the chat, and one this often while it's there
   trace_events_kept: 50         # chat joins, leaves and refusals remembered per kind of object
+  # The Demo tab: pretend warnings you fire on purpose after a countdown, for testing and for recording a demo
+  # video. Each one goes the same way the real thing does (the chat, the Mac pop-up, the event log), so it looks
+  # exactly like what a user would see. The pretend sip is counted in today's water like a real one.
+  scenarios:
+    countdown_default_sec: 5    # the countdown the Demo tab starts with
+    countdown_max_sec: 600      # the longest countdown you can set
+    waiting_max: 10             # at most this many can be counting down at once
+    check_every_sec: 0.25       # how often the countdowns are checked (a pretend warning fires this late at most)
+    items:                      # name (for the page and the API), label (shown on the Demo tab), and what it fires:
+      - name: cup_at_edge       # edge_warning: the object's character warns that it's near the desk edge
+        label: Cup near the desk edge
+        fires: edge_warning
+        object: cup             # an agent in config/agents.yaml
+        edge: front             # which edge: front, back, left or right
+        distance_px: 12         # how far from the edge it is, in the picture
+      - name: drink_by_laptop   # danger_zone: something in another thing's danger zone
+        label: Drink next to the laptop
+        fires: danger_zone
+        object: cup             # the thing that's too close (an agent)...
+        near: computer          # ...and what it's too close to (a fragile one, like the computer, does the talking)
+      - name: drink_reminder    # drink_reminder: a habit reminder to drink, like the real one after a long time
+        label: Time for a drink
+        fires: drink_reminder
+        minutes: 50             # "no drink seen in this many minutes"
+      - name: camera_covered    # camera_covered: Lens says the picture went black
+        label: Camera covered
+        fires: camera_covered
+      - name: sip               # sip: a sip seen by the camera (counted in today's water)
+        label: A sip counted
+        fires: sip
+      - name: keys_missing      # lost_object: something you keep on the desk hasn't been seen for a while
+        label: Keys gone missing
+        fires: lost_object
+        object: keys            # an item in lost_items.items
+        minutes: 20             # "hasn't been seen for this many minutes"
   health:                       # when the system tab turns a number amber or red
     pi_cpu_warn_c: 70           # the Pi's CPU this hot (°C) turns amber...
     pi_cpu_bad_c: 80            # ...and this hot turns red

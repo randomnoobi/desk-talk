@@ -806,3 +806,16 @@ dev:
   query_timed_out: 'The query took longer than {seconds:g} seconds (dev.sql_timeout_sec), so it was stopped.'
   # /dev/ before `npm run build` has made the page
   not_built: "The developer page isn't built yet. In dev_ui/, run: npm install && npm run build"
+  # the Demo tab (settings → dev.scenarios): a pretend warning that isn't in the list, or a countdown out of range
+  unknown_scenario: "There's no pretend warning called {name}."
+  countdown_out_of_range: 'The countdown must be from 0 to {most:g} seconds (dev.scenarios.countdown_max_sec).'
+  too_many_waiting: 'Already {count} pretend warnings are counting down (dev.scenarios.waiting_max). Wait, or cancel one.'
+  unknown_waiting: "There's no pretend warning {scenario_id} counting down (it may have gone off already)."
+  # what the pretend warnings say where the real ones fill in what the camera saw (the other words are the real
+  # ones: desk_alerts.edge_reason, camera.problems.covered, lost_items.alert_plain and the sip's own)
+  scenarios:
+    # the danger zone named in the pretend "drink next to the laptop" warning
+    zone: Spill / pressure zone
+    # the pretend drink reminder: what the camera "saw", and what Lens says when no agent speaks for water
+    drink_evidence: No drink has been seen or logged in {minutes} minutes.
+    drink_text: I haven't seen you drink anything in {minutes} minutes. Want to grab some water?
