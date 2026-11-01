@@ -640,8 +640,9 @@ def test_the_server_image_has_the_time_zone_data():
 
 def test_the_readme_says_what_a_person_has_to_know():
     text = Path(CLOUD_FOLDER / 'README.md').read_text(encoding='utf-8')
-    for words in ('docker compose up -d --build --wait', 'WEB_PORT', 'Too many tries', 'PUBLIC_URL', 'LOGIN_URL', 'new username', 'plain HTTP',
-                  'pg_dump', 'docker compose down', 'Google', 'ADMIN_USERNAME', 'CHAT_API_KEY', 'REPORT_API_KEY'):
+    for words in ('docker compose up -d --build --wait', 'WEB_PORT', 'Too many tries', 'PUBLIC_URL', 'LOGIN_URL',
+                  'new username', 'plain HTTP', 'pg_dump', 'docker compose down', 'Google', 'ADMIN_USERNAME',
+                  'CHAT_API_KEY', 'REPORT_API_KEY'):
         assert words in text, words
 
 
