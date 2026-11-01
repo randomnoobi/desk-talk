@@ -1,0 +1,61 @@
+# The cloud server's numbers. Words people read are in prompts.yaml, and secrets (keys, passwords) in .env:
+# never put a secret in this file. Each setting says what it does and its unit.
+
+server:
+  host: 0.0.0.0                  # the address the server listens on (0.0.0.0 = reachable from the home network)
+  port: 8000                     # the port the server listens on
+  public_url: http://localhost:8000   # this server's address as a Pi reaches it; shown in the "Add a Pi" setup command (PUBLIC_URL in .env wins)
+  login_url: ""                  # the website's address, where a person lands after logging in; empty = this server's own "/" (LOGIN_URL in .env wins)
+  https_only: false              # true once the site is served over HTTPS: the login cookie is then only sent over HTTPS
+  cookie_name: desktalk_session  # the name of the login cookie
+  session_days: 30               # how many days a login lasts
+  secret_min_chars: 32           # SESSION_SECRET must be at least this long, or the server will not start
+
+google:                          # Google's addresses for "Log in with Google"
+  auth_url: https://accounts.google.com/o/oauth2/v2/auth          # where the person is sent to log in
+  token_url: https://oauth2.googleapis.com/token                  # where the server trades Google's code for a token
+  userinfo_url: https://openidconnect.googleapis.com/v1/userinfo  # where the server asks who just logged in
+  scopes: openid email profile   # what the server asks Google for
+  timeout_sec: 10                # how long to wait for Google before giving up
+
+pairing:
+  code_valid_min: 10             # minutes a one-time code for linking a Pi stays good
+  name_max_chars: 60             # the longest name a Pi may give itself
+
+ingest:
+  max_batch: 500                 # the most events one upload may hold
+  max_body_kb: 1024              # the biggest upload, in kilobytes
+  max_number: 1000000000000      # a number bigger than this (up or down) in an event gets that event refused
+  read_default_limit: 200        # how many events a read gives when it doesn't say
+  read_max_limit: 1000           # the most events one read may give
+
+reports:                         # the weekly report
+  day: sunday                    # the weekday a report comes due, in each Pi's own time zone
+  hour: 20                       # the hour of that day (0-23)
+  check_every_min: 5             # how often the report job looks for reports that are due
+  wait_for_pi_days: 2            # days to wait for a Pi that hasn't caught up before writing without it
+  max_tries: 3                   # how many times to try a report before marking it failed
+  retry_first_wait_min: 10       # minutes to wait before the second try
+  retry_growth: 3                # each wait after that is this many times longer
+  provider: anthropic            # who writes it: anthropic, or openai_compatible (Gemini, OpenAI, Groq, Ollama)
+  model: claude-sonnet-5-5       # the model that writes it
+  url: ""                        # for openai_compatible: the chat completions address
+  max_tokens: 2000               # the longest report the model may write
+  timeout_sec: 120               # how long to wait for the model before giving up
+
+chat:                            # letting a Pi use this server's AI key for chat (text only)
+  url: https://generativelanguage.googleapis.com/v1beta/openai/chat/completions   # the AI company's chat completions address
+  model: gemini-2.5-flash        # the model every chat request uses, whatever the Pi asks for
+  timeout_sec: 60                # how long to wait for the AI company before giving up
+  max_body_kb: 256               # the biggest chat request, in kilobytes
+  limit_requests: 30             # the most chat requests one Pi may make in one window
+  limit_window_sec: 60           # the window those requests are counted in, in seconds
+
+retention:
+  events_days: 365               # events older than this many days are deleted
+  check_every_hours: 24          # how often the clean-up job runs
+
+limits:
+  claim_tries: 10                # the most tries to use a code (or log in as admin) from one address in one window
+  claim_window_sec: 600          # the window those tries are counted in, in seconds
+  claim_body_kb: 4               # the biggest request to link a Pi, in kilobytes

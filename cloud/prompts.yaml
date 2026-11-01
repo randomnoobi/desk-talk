@@ -1,0 +1,38 @@
+# The words the cloud server says, in plain language. The code only fills in the {blanks}.
+# (The weekly report's prompt is added here under `report:` by the report job.)
+
+messages:
+  # Events a Pi sends (why one was not kept)
+  refused_not_an_object: That entry is not an event (it must be a JSON object).
+  refused_not_kept: This kind of event is not kept by the server, or it is missing its id or time.
+  refused_number_too_big: A number in this event is bigger than the server accepts.
+  refused_failed: The server could not read this event.
+
+  # Requests
+  bad_token: The token is missing or not valid. Link this Pi again from the website.
+  bad_code: That code is wrong or has run out. Make a new one on the website.
+  too_many_tries: Too many tries. Wait a few minutes, then try again.
+  body_too_big: That request is too big.
+  batch_too_big: Too many events in one upload (the most is {max}).
+  bad_body: The request is not in the form the server expects.
+  bad_name: The name must be text of at most {max} characters.
+  bad_query: One of the values in the address is not a usable number.
+  not_found: Not found.
+  not_logged_in: Please log in first.
+  default_pi_name: My Pi
+
+  # Logging in (used by the login routes)
+  google_not_set_up: Google login is not set up. Put GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in cloud/.env and start the server again (the README says how).
+  google_failed: Google would not log you in. Try again.
+  bad_state: The login did not start from this website. Try logging in again.
+  email_not_verified: Google says this email address is not verified, so it can't be used here.
+  bad_time_zone: That time zone is not one the server knows.
+  admin_login_failed: Wrong username or password.
+  admin_not_set_up: There is no admin login. Put ADMIN_USERNAME and ADMIN_PASSWORD in cloud/.env to make one.
+
+  # Chat and reports
+  chat_no_key: Chat is not set up on this server (no CHAT_API_KEY).
+  chat_no_images: This server's chat takes text only. Pictures are refused.
+  chat_too_many: Too many chat requests from this Pi. Wait a moment.
+  chat_failed: The AI company did not answer. Try again.
+  report_no_key: No key is set for the weekly report. Put REPORT_API_KEY in cloud/.env.
