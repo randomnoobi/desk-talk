@@ -261,7 +261,7 @@ def test_rerun_resets_the_report(boss, parts, clock):
     assert 'markdown' not in body
     fresh = parts.store.get_report_by_id(report.id)
     assert (fresh.status, fresh.tries, fresh.error, fresh.markdown) == ('pending', 0, None, None)
-    assert fresh.created_at == parts.clock.now()
+    assert fresh.created_at == now          # a re-run keeps its first time, so the wait for the Pi isn't started again
     assert [r.id for r in parts.store.reports_to_write(parts.clock.now())] == [report.id]
 
 
