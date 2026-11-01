@@ -11,7 +11,8 @@ the chat, the Mac pop-up and the event log show exactly what a user would see:
     sip             a sip the camera saw, logged in the habit tracker (it counts in today's water)
     lost_object     the lost_object Alert the lost-items job publishes, in its plain words
 
-The alerts carry `demo: true`, so the event log tells them from real ones. A scenario that names an agent or a
+Everything they make carries `demo: true` (the alerts, the sip and the camera warning too), so the event log
+tells them from real ones and none of it is sent to the cloud server. A scenario that names an agent or a
 lost item the settings don't have (someone took the keys out of lost_items.items) never stops the app: problem()
 says why, and the Demo tab refuses to start it.
 
@@ -96,10 +97,10 @@ class DemoFirer:
         self._reminders.say(nudge, now)
 
     def _camera_covered(self, item: DemoScenario, now: float) -> None:
-        self._camera.say_problem('covered', self._words.camera.problems.covered, now)
+        self._camera.say_problem('covered', self._words.camera.problems.covered, now, demo=True)
 
     def _sip(self, item: DemoScenario, now: float) -> None:
-        self._habit_log.log('hydration', 'sip', how='camera')
+        self._habit_log.log('hydration', 'sip', how='camera', **PRETEND)
 
     def _lost_object(self, item: DemoScenario, now: float) -> None:
         text = self._words.lost_items.alert_plain.format(name=self._lost_names[item.object],

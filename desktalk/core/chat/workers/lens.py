@@ -193,12 +193,12 @@ class Lens:
         return self._words.pi_detector.format(why=why)
 
     # ── saying it ──
-    def say_problem(self, key: str, text: str, now: float) -> None:
+    def say_problem(self, key: str, text: str, now: float, *, demo: bool = False) -> None:
         """Say a camera problem now, the way a found one is said (CameraWarnings: the Demo tab's pretend
-        "camera covered")."""
-        self._say({'key': key, 'kind': 'problem', 'text': text}, now)
+        "camera covered", which `demo` marks as pretend in the event log)."""
+        self._say({'key': key, 'kind': 'problem', 'text': text}, now, demo=demo)
 
-    def _say(self, found: dict[str, Any], now: float) -> None:
+    def _say(self, found: dict[str, Any], now: float, demo: bool = False) -> None:
         kind, text = found['kind'], found['text']
         message = {'type': 'group_message', 'character': LENS, 'text': text, 'lens': kind, 'toast': kind == 'problem'}
         if kind == 'problem':
@@ -208,5 +208,6 @@ class Lens:
             if photo:
                 message['snapshot'] = photo
         self._notifier.send(message)
-        self._bus.publish(CameraNotice(ts=now, key=found['key'], kind=kind, text=text))
+        pretend = {'demo': True} if demo else {}
+        self._bus.publish(CameraNotice(ts=now, key=found['key'], kind=kind, text=text, extra=pretend))
         log.info('Lens: %s', text[:self._preview_chars])

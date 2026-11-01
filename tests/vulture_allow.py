@@ -10,6 +10,7 @@ from typing import Any, cast
 from uvicorn import Server
 
 import desktalk.adapters.dev
+from desktalk.adapters.cloud.http_link import _NoRedirects
 from desktalk.adapters.dev import pytest_report
 from desktalk.adapters.storage.event_log import EventLog
 from desktalk.config import (
@@ -92,3 +93,6 @@ _ = EventLog.recent_detections
 _ = TestOutcome.duration_sec
 # The words for each step of an object's story, picked by the step's kind (desktalk/web/stories.py, getattr).
 _ = ObjectStoryWords.refused
+# urllib calls this by name when a reply says "go to another address": the cloud link answers "no", so the token is
+# never sent anywhere the reply points (desktalk/adapters/cloud/http_link.py).
+_ = _NoRedirects.redirect_request

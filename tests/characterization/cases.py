@@ -269,6 +269,10 @@ CASES = [
     Case('rules-put-empty', 'PUT', '/api/rules', 400, json={}),
     Case('ui-settings', 'GET', '/api/ui_settings', 200, values={'web.refresh_ms.live': 1500, 'lens_card.id': 'lens'}),
 
+    # ── The cloud server (optional): the desks here are not linked to one ──
+    Case('cloud-status', 'GET', '/api/cloud/status', 200,
+         values={'linked': False, 'stopped': False, 'last_sent_ts': None, 'waiting': 0}),
+
     # ── The developer page (dev_ui/ at /dev/, and /api/dev/...) ──
     Case('dev-page-not-built', 'GET', '/dev/', 200, desk='fresh', reply=FILE, starts_with=HTML_START),
     Case('dev-page-not-built-file', 'GET', '/dev/assets/index.js', 404, desk='fresh', reply=STATUS),

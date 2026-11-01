@@ -7,7 +7,8 @@ Plain data, no I/O: what the parts of Desk Talk pass to each other.
     AgentProfile, Nudge    a character, a habit reminder
     ChatJoin, Todo         an object joining, leaving or refused by the chat; a to-do on your list
     LENS                   Lens's id: the camera's own character
-    AIUnavailable ...      errors (and UnknownChat: a 1-on-1 chat with an agent that doesn't exist)
+    AIUnavailable ...      errors (and UnknownChat: a 1-on-1 chat with an agent that doesn't exist;
+                           CloudUnavailable and CloudNotLinked: the cloud server didn't answer, or doesn't know us)
     Picture, Size, Box     a picture, how big it is, a box on it (Point, Gravity too)
     TracePhoto             a picture kept of one kind of object for its story (newest_trace_photos: which stay)
     DeskRules, Zone        the danger rules in use
@@ -44,7 +45,14 @@ from desktalk.domain.dev import (
     TestOutcome,
     WaitingScenario,
 )
-from desktalk.domain.errors import AIUnavailable, DetectorUnavailable, UnknownChat, plain_error
+from desktalk.domain.errors import (
+    AIUnavailable,
+    CloudNotLinked,
+    CloudUnavailable,
+    DetectorUnavailable,
+    UnknownChat,
+    plain_error,
+)
 from desktalk.domain.events import (
     EVENT_TYPES,
     AgentJoined,
@@ -71,6 +79,7 @@ from desktalk_shared.wire import DetectorState, PiHealth, UploadInfo
 
 __all__ = [
     'CHANGE_TYPES', 'EVENT_TYPES', 'HABITS', 'LENS', 'AgentJoined', 'AgentLeft', 'AgentProfile', 'AIUnavailable',
+    'CloudNotLinked', 'CloudUnavailable',
     'Alert', 'BBox', 'Box', 'CameraNotice', 'Compaction', 'Danger', 'DeskRules', 'DeskSnapshot', 'Detection',
     'DetectionEvent', 'DetectorState', 'DetectorUnavailable', 'Event', 'event_from_dict', 'Frame', 'Gravity',
     'HabitDone', 'HabitEvent', 'is_day', 'keep_inside', 'Light', 'new_event_id', 'Nudge', 'NudgeSent', 'ObjectSnapshot',

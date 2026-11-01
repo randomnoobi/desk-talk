@@ -11,6 +11,12 @@
       "todo_max_items": "number"
     },
     "chat_reply_timeout_ms": "number",
+    "cloud": {
+      "off": "str",
+      "on": "str",
+      "stopped": "str",
+      "waiting": "str"
+    },
     "desk": {
       "desk_border_share": "number",
       "edge_proximity": {

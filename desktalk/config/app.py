@@ -515,6 +515,22 @@ class DailySummarySettings(_Section):
     objects_listed: Count
 
 
+class CloudSettings(_Section):
+    """The sender to a linked cloud server (desktalk/core/cloud/). Nothing here is used until the computer is linked."""
+
+    _in_order = (('retry_start_sec', 'retry_max_sec'),)
+    link_key: Annotated[str, Field(pattern=r'^[A-Za-z0-9_-]+$')]       # the name the link is saved under in data/
+    send_every_sec: PositiveNumber
+    idle_check_every_sec: PositiveNumber
+    batch_size: PositiveInt
+    overlap_sec: ZeroOrMore
+    timeout_sec: PositiveNumber
+    retry_start_sec: PositiveNumber
+    retry_max_sec: PositiveNumber
+    totals_every_min: PositiveNumber
+    goals_every_hours: PositiveNumber
+
+
 class SnapshotsSettings(_Section):
     max_kept: PositiveInt
     crop_padding: ZeroOrMore
@@ -849,6 +865,7 @@ class AppConfig(_Section):
     lost_items: LostItemsSettings
     lens: LensSettings
     daily_summary: DailySummarySettings
+    cloud: CloudSettings
     snapshots: SnapshotsSettings
     drawing: DrawingSettings
     habit_tracker: HabitTrackerSettings

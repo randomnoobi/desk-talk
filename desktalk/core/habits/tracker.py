@@ -149,6 +149,9 @@ class HabitTracker:
             if item:
                 self._days.changed()
         if item:
+            if kw.get('demo'):                  # the Demo tab's pretend sip: marked, so it is never sent to the cloud
+                habit_name, what, text, extra = item
+                item = (habit_name, what, text, {**extra, 'demo': True})
             self._publish(item, now, quiet=bool(kw.get('quiet')))
         self.save()
         return self.today(now)

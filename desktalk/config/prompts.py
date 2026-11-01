@@ -191,6 +191,12 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'desk_checks.in_between': ('middle', 'a', 'b'),
     'desk_checks.crowd': ('count', 'labels'),
     'desk_checks.approaching': ('a', 'b', 'percent', 'pictures'),
+    'cloud.status_waiting': ('count',),
+    'cloud.log_unreachable': ('error', 'seconds'),
+    'cloud.log_refused': ('count', 'reasons'),
+    'cloud.link_saved': ('server', 'device_id'),
+    'cloud.link_bad_address': ('server',),
+    'cloud.link_no_answer': ('server', 'error'),
     'lens.pi_hot': ('temp',),
     'lens.pi_clock': ('seconds', 'way'),
     'lens.pi_detector': ('why',),
@@ -677,6 +683,23 @@ class NotificationWords(_Section):
     sip_title: str
 
 
+class CloudWords(_Section):
+    """The cloud sender's words: the status line on the Settings page, its log lines, and what
+    scripts/link_cloud.py says (desktalk/core/cloud/, scripts/link_cloud.py)."""
+
+    status_off: str
+    status_on: str
+    status_waiting: str
+    status_stopped: str
+    log_unreachable: str
+    log_not_linked: str
+    log_refused: str
+    link_saved: str
+    link_bad_address: str
+    link_code_refused: str
+    link_no_answer: str
+
+
 class DemoWords(_Section):
     """What the Demo tab's pretend warnings say where the real ones fill in what the camera saw."""
 
@@ -736,6 +759,7 @@ class Prompts(_Section):
     ui: UiWords
     object_story: ObjectStoryWords
     notifications: NotificationWords
+    cloud: CloudWords
     dev: DevWords
 
 

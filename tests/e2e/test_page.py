@@ -416,6 +416,16 @@ def test_sensitivity_slider_saves(page, tmp_path, pictures):
         expect(page.get_by_label('Sensitivity')).to_have_value('0')
 
 
+def test_settings_page_says_whether_a_cloud_server_is_linked(page, tmp_path, pictures):
+    """The Settings page has one line about the optional cloud server, in the server's words (GET /api/ui_settings);
+    this app is not linked to one."""
+    with running_app(tmp_path, pictures=pictures) as url:
+        ui = page.request.get(f'{url}/api/ui_settings').json()
+        open_app(page, url)
+        page.locator('.page-link[data-view="settings"]').click()
+        expect(page.locator('#cloud-status')).to_have_text(ui['cloud']['off'])
+
+
 SERVER_WITHIN_SEC = 5            # what the page sent reaches the server
 SETTLE_MS = 2_000                # long enough for the page to have sent anything it was going to send
 BACK_WITHIN_MS = 3_000           # well under web.refresh_ms.habits (15 s)

@@ -89,12 +89,13 @@ def test_camera_covered_is_said_by_lens_in_its_own_words():
     rig = Rig()
     rig.firer.fire('camera_covered', NOW)
     assert rig.camera.said == [('covered', PROMPTS.camera.problems.covered, NOW)]
+    assert rig.camera.said_for_demo == [True]
 
 
-def test_the_sip_is_logged_as_one_the_camera_saw():
+def test_the_sip_is_logged_as_one_the_camera_saw_and_marked_pretend():
     rig = Rig()
     rig.firer.fire('sip', NOW)
-    assert rig.habits.logged == [('hydration', 'sip', {'how': 'camera'})]
+    assert rig.habits.logged == [('hydration', 'sip', {'how': 'camera', 'demo': True})]
 
 
 def test_the_lost_object_is_the_alert_lost_items_sends():

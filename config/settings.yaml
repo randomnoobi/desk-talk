@@ -473,6 +473,21 @@ daily_summary:
   check_every_sec: 60
   objects_listed: 8           # most objects named in the recap
 
+# ── The cloud server (optional) ─────────────────────────────────────
+# Nothing here does anything until you link this computer to a cloud server with
+# scripts/link_cloud.py. Then a background job sends it your habit events (never pictures or to-do text).
+cloud:
+  link_key: cloud             # the link (the server's address and your token) is saved as data/cloud.json
+  send_every_sec: 30          # how often it sends what is new
+  idle_check_every_sec: 60    # while this computer isn't linked, look again this often (it calls nothing)
+  batch_size: 500             # most events in one send; the rest go on the next round
+  overlap_sec: 120            # each round looks back this far, so an event written a little late still goes
+  timeout_sec: 10             # give up on a send that takes longer than this
+  retry_start_sec: 30         # after a failed send wait this long, then twice that, and so on...
+  retry_max_sec: 1800         # ...up to this
+  totals_every_min: 15        # a day's numbers (desk time, water ...) go when they changed, at most this often
+  goals_every_hours: 24       # your goals and wake and bed times go again this often, and whenever they change
+
 # ── Proof photos ────────────────────────────────────────────────────
 snapshots:
   max_kept: 150               # photos kept in memory for chat proof / Captures

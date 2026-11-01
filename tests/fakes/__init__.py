@@ -24,8 +24,10 @@ from tests.fakes.parts import (
     InMemoryEventStore,
     InMemoryKeyValueStore,
     InMemoryStateStore,
+    RecordingCloudLink,
     RecordingNotifier,
     SyncEventBus,
+    a_server_that_is_off,
 )
 from tests.fakes.views import (
     FakeCameraHealth,
@@ -52,5 +54,6 @@ __all__ = [
     'FakePictureTools', 'FakePreferences', 'FakeProfiles', 'FakeRuleNudges', 'FakeSafetyBoard', 'InMemoryEventStore',
     'InMemoryKeyValueStore', 'InMemoryStateStore', 'RecordingNotifier', 'StaticRoster', 'SyncEventBus',
     'plain_desk_rules', 'FakeChatJoins', 'FakeDesktopNotifications', 'FakeTodoList', 'FakeTracePhotos',
-    'RecordingCameraWarnings', 'RecordingFirer', 'RecordingHabitLog', 'RecordingReminders',
+    'RecordingCameraWarnings', 'RecordingFirer', 'RecordingHabitLog', 'RecordingReminders', 'RecordingCloudLink',
+    'a_server_that_is_off',
 ]

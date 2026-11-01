@@ -54,6 +54,7 @@ from desktalk.domain import (
     UploadInfo,
     WaitingScenario,
 )
+from desktalk_shared.cloud_api import IngestReply
 
 
 @runtime_checkable
@@ -1176,7 +1177,8 @@ class ScenarioFirer(Protocol):
 class CameraWarnings(Protocol):
     """Lens saying a camera problem now (the Demo tab's "camera covered"), exactly as it says one it found."""
 
-    def say_problem(self, key: str, text: str, now: float) -> None:
+    def say_problem(self, key: str, text: str, now: float, *, demo: bool = False) -> None:
+        """`demo`: mark what it makes as pretend, so it is never sent to the cloud server."""
         ...
 
 
@@ -1194,3 +1196,26 @@ class ReminderSender(Protocol):
 class DemoCountdowns(DemoScenarios, PeriodicWorker, Protocol):
     """The Demo tab's pretend warnings as the app keeps them: what the web routes ask, and the background job that
     fires each one once its countdown is over (DeskTalk.demo)."""
+
+
+# ── The cloud server (optional) ────────────────────────────────────────
+@runtime_checkable
+class CloudLink(Protocol):
+    """The line to one linked cloud server, with the token already in it (desktalk/adapters/cloud/)."""
+
+    def send(self, events: Sequence[Mapping[str, Any]], *, caught_up: bool) -> IngestReply:
+        """Send filtered events (desktalk_shared.cloud_api.to_cloud_event). `caught_up`: this batch empties the
+        backlog. Raises CloudUnavailable when the server gives no good answer (no answer, 5xx, 429: try again
+        later) and CloudNotLinked when it says it doesn't know us (401: stop until linked again)."""
+        ...
+
+
+@runtime_checkable
+class CloudSending(PeriodicWorker, Protocol):
+    """The background job that sends events to a linked cloud server, as the web layer sees it."""
+
+    def status(self) -> dict[str, Any]:
+        """{linked, stopped, last_sent_ts, waiting}: whether a server is linked, whether the server said it
+        doesn't know us any more, when something was last sent (None: never), and how many events wait to go.
+        Never the token."""
+        ...

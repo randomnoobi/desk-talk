@@ -229,6 +229,15 @@ class UiPi(BaseModel):
     delete_every_min: float
 
 
+class UiCloud(BaseModel):
+    """prompts.yaml → cloud: the words for the cloud link's line on the Settings page."""
+
+    off: str
+    on: str
+    waiting: str          # has {count}
+    stopped: str
+
+
 class UiListSizes(BaseModel):
     """settings → web.list_sizes: how many things the page lists, and how long its texts may be."""
 
@@ -269,6 +278,7 @@ class UiSettings(BaseModel):
     phone: PhoneSettings
     lens_card: UiLensCard
     list_sizes: UiListSizes
+    cloud: UiCloud
     starter_todo: str                    # prompts.yaml → ui: what a new to-do list starts with...
     starter_counters: list[str]          # ...and the counters the Habits page starts with
     sensitivity_steps: list[UiSensitivityStep]
