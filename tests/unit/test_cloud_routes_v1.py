@@ -476,11 +476,13 @@ def test_the_store_runs_off_the_event_loop(parts, ann):
             return watched
 
     watching = make_parts(store=cast(Store, Watching(parts.store)), clock=parts.clock)
-    client = build(watching)
-    loop = client.get('/_test/thread').json()['thread']
-    code = make_code(watching, ann.user)
-    claimed = client.post('/v1/devices/claim', json={'code': code, 'name': 'Pi'}).json()
-    post_events(client, claimed['token'], [habit()])
+    # `with` keeps one loop thread alive for every request. Without it each request gets its own,
+    # and a finished thread's id can come back on a worker thread.
+    with build(watching) as client:
+        loop = client.get('/_test/thread').json()['thread']
+        code = make_code(watching, ann.user)
+        claimed = client.post('/v1/devices/claim', json={'code': code, 'name': 'Pi'}).json()
+        post_events(client, claimed['token'], [habit()])
     assert set(seen) == {'claim_code', 'save_batch'}
     assert all(thread != loop for thread in seen.values())
 

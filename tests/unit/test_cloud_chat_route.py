@@ -457,7 +457,9 @@ def test_the_forwarder_runs_off_the_event_loop_thread(ann, parts):
             return super().complete(messages, max_tokens, temperature)
     watching = make_parts(chat_forwarder=Watching(), clock=parts.clock)
     linked = link_device(watching, 'ann')
-    client = build(watching)
-    loop = client.get('/_test/thread').json()['thread']
-    assert post(client, linked.token, {'messages': USER}).status_code == 200
+    # `with` keeps one loop thread alive for every request. Without it each request gets its own,
+    # and a finished thread's id can come back on a worker thread.
+    with build(watching) as client:
+        loop = client.get('/_test/thread').json()['thread']
+        assert post(client, linked.token, {'messages': USER}).status_code == 200
     assert seen and all(thread != loop for thread in seen)
