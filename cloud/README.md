@@ -24,7 +24,7 @@ cp .env.example .env
 
 `.env.example` shows how to make the two random values. Put a value in single quotes if it has a `$` in it.
 
-Open the website at the `LOGIN_URL` address. The login cookie belongs to one address, so logging in from a different one won't work.
+Open the website at the `LOGIN_URL` address. The login cookie belongs to one address, so logging in from a different one sends you to that address first.
 
 ## 2. Make a Google client ID
 

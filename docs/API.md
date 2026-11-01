@@ -353,8 +353,8 @@ The optional server in `cloud/`. Its own access rules:
 | Method | Path | What it does | Access |
 |---|---|---|---|
 | POST | `/v1/devices/claim` | Trade a one-time code for a device id and a token. | limited |
-| POST | `/v1/events` | Send events. Each goes through `to_cloud_event()` again. Replies how many were kept, repeated and refused. | Pi token |
-| GET | `/v1/devices/{device_id}/state` | The Pi, when it was last seen, its goals, its last camera problem and its objects. | Pi token or owner |
+| POST | `/v1/events` | Send events. Each goes through `to_cloud_event()` again. Replies how many were kept, repeated and refused. An empty list is fine: it updates when the Pi was last seen and, with `caught_up: true`, when it last had nothing left to send. | Pi token |
+| GET | `/v1/devices/{device_id}/state` | The Pi, when it was last seen, its goals, its last camera problem and its objects, and `recent_hours` (`site.recent_hours`, how far back the website lists events). | Pi token or owner |
 | GET | `/v1/devices/{device_id}/events` | Its events, oldest first. `?since=`, `?after_id=`, `?limit=`. | Pi token or owner |
 | POST | `/v1/chat/completions` | Chat through this server's AI key, text only. Off without `CHAT_API_KEY`. | Pi token |
 
@@ -362,7 +362,7 @@ The optional server in `cloud/`. Its own access rules:
 
 | Method | Path | What it does | Access |
 |---|---|---|---|
-| GET | `/auth/google/login` | Send the person to Google. 503, in plain words, when Google isn't set up. | open |
+| GET | `/auth/google/login` | Send the person to Google. 503, in plain words, when Google isn't set up. A browser on another address is first sent to this same page on `server.login_url`'s address, with nothing saved. | open |
 | GET | `/auth/google/callback` | Where Google sends them back. | open |
 | POST | `/auth/logout` | Log out. | open |
 | POST | `/auth/admin/login` | The admin's username and password. 404 with no admin set up. | limited |
@@ -380,15 +380,15 @@ All need the login, and only reach that person's own things.
 | PATCH | `/api/devices/{device_id}` | Rename a Pi. |
 | DELETE | `/api/devices/{device_id}` | Remove a Pi: cancels its token and keeps its history. |
 | DELETE | `/api/devices/{device_id}/data` | Delete a Pi and everything kept for it. |
-| GET | `/api/reports` | Their weekly reports. |
+| GET | `/api/reports` | Their weekly reports, newest week first, with each Pi's name and no report text. `?device_id=` for one Pi. |
 | GET | `/api/reports/{report_id}` | One report. |
 
 ### Admin (2), and health (1)
 
 | Method | Path | What it does | Access |
 |---|---|---|---|
-| GET | `/api/admin/overview` | Who's on the server, and failed reports. | admin |
-| POST | `/api/admin/reports/{report_id}/rerun` | Set a report to be written again. | admin |
+| GET | `/api/admin/overview` | Who's on the server, failed reports, and each Pi's latest finished report (without its text). | admin |
+| POST | `/api/admin/reports/{report_id}/rerun` | Set a report to be written again. 409, in plain words, when its Pi has been removed. | admin |
 | GET | `/healthz` | For Docker's health check. nginx doesn't pass it on, so only the containers can reach it. | open |
 
 ## Routes removed in the cleanup
