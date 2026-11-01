@@ -277,3 +277,27 @@ def test_numbers_with_thousands_of_digits_refuse_only_their_event():
 def test_an_infinite_number_refuses_its_event(parts, device):
     reply = run(parts, device, [habit('inf', ml=float('inf')), habit('ok', 101.0)])
     assert reply.accepted == 1 and [r.id for r in reply.refused] == ['inf']
+
+
+def test_the_first_event_with_an_id_in_a_batch_wins(parts, device):
+    full, empty = state_event('o', ts=1.0), state_event('o', ts=2.0, new_state='empty')
+    reply = run(parts, device, [full, empty, habit('h1')])
+    assert (reply.accepted, reply.repeats, reply.refused) == (2, 1, ())
+    [cup] = parts.store.object_states(device.id)
+    assert (cup.state, cup.since) == ('full', 1.0)
+    assert [(e['id'], e.get('new_state')) for e in stored(parts, device)] == [('o', 'full'), ('h1', None)]
+
+
+def test_a_refused_event_does_not_use_up_its_id(parts, device):
+    bad = state_event('o', ts=1.0, object='\ud800')
+    reply = run(parts, device, [bad, state_event('o', ts=2.0, new_state='empty')])
+    assert (reply.accepted, reply.repeats, len(reply.refused)) == (1, 0, 1)
+    assert [(s.state, s.since) for s in parts.store.object_states(device.id)] == [('empty', 2.0)]
+
+
+def test_daily_totals_in_one_batch_keep_the_newest(parts, device):
+    def daily(ts, water):
+        return {'id': 'x', 'ts': ts, 'type': 'daily_totals', 'day': '2026-10-20', 'totals': {'water_ml': water}}
+    reply = run(parts, device, [daily(10.0, 1), daily(20.0, 2), daily(15.0, 3)])
+    assert (reply.accepted, reply.repeats) == (2, 1)
+    assert parts.store.totals_between(device.id, '2026-10-20', '2026-10-20')[0]['totals'] == {'water_ml': 2}

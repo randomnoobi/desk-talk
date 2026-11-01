@@ -470,3 +470,12 @@ def test_the_store_runs_off_the_event_loop(parts, ann):
     post_events(client, claimed['token'], [habit()])
     assert set(seen) == {'claim_code', 'save_batch'}
     assert all(thread != loop for thread in seen.values())
+
+
+def test_two_events_with_one_id_in_a_batch_keep_the_first(client, token, ann):
+    first = {'id': 'o', 'ts': 1.0, 'type': 'object_state', 'change': 'moved', 'object': 'cup', 'prev_state': 'a',
+             'new_state': 'full'}
+    reply = post_events(client, token, [first, {**first, 'ts': 2.0, 'new_state': 'empty'}])
+    assert (reply['accepted'], reply['repeats'], reply['refused']) == (1, 1, [])
+    objects = client.get(f'/v1/devices/{ann.device.id}/state', headers=auth(token)).json()['objects']
+    assert [(o['state'], o['since']) for o in objects] == [('full', 1.0)]

@@ -46,6 +46,12 @@ def _order(event: Mapping[str, Any]) -> tuple[float, str]:
     return event['ts'], event['id']
 
 
+def _is_change_of(change: StateChange, event: Mapping[str, Any]) -> bool:
+    """True when `change` says what the kept `event` says (so it belongs to the instance that was kept)."""
+    same_words = event.get('object') == change.label and event.get('new_state') == change.state
+    return same_words and event['ts'] == change.since
+
+
 class MemoryStore:
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -199,13 +205,13 @@ class MemoryStore:
                 raise LookupError(f'no such Pi: {device_id}')
             accepted = repeats = 0
             kept = self._events.setdefault(device_id, {})
-            newly_kept: set[str] = set()
+            newly_kept: dict[str, dict[str, Any]] = {}
             for event in events:
                 if event['id'] in kept:
                     repeats += 1
                 else:
                     kept[event['id']] = copy.deepcopy(dict(event))
-                    newly_kept.add(event['id'])
+                    newly_kept[event['id']] = kept[event['id']]
                     accepted += 1
             days = self._totals.setdefault(device_id, {})
             for event in totals:
@@ -217,8 +223,9 @@ class MemoryStore:
                     accepted += 1
             states = self._states.setdefault(device_id, {})
             for change in state_changes:
-                if change.event_id not in newly_kept:
-                    continue                                    # a repeat of an event changes nothing
+                event = newly_kept.get(change.event_id)
+                if event is None or not _is_change_of(change, event):
+                    continue            # a repeat, or the change of a repeat that was not the one kept, changes nothing
                 old_state = states.get(change.label)
                 if old_state is None or change.since > old_state.since:
                     states[change.label] = ObjectState(label=change.label, state=change.state, since=change.since,

@@ -249,6 +249,22 @@ class CloudStoreContract:
         assert (cup.state, cup.since, cup.updated_at) == ('full', 1.0, NOW)
         assert store.events_after(device.id, 0.0, None, 10) == [first]
 
+    def test_a_repeat_inside_one_batch_changes_no_state(self, store):
+        device, _ = link(store, make_user(store))
+        full, full_change = state('cup', 'full', 1.0)
+        empty = {**full, 'ts': 2.0, 'new_state': 'empty'}                    # the same id, different content
+        empty_change = StateChange('cup', 'empty', 2.0, full['id'])
+        assert store.save_batch(device.id, [full, empty], [], [full_change, empty_change], False, NOW) == (1, 1)
+        [cup] = store.object_states(device.id)
+        assert (cup.state, cup.since) == ('full', 1.0)                      # only the event that was kept counts
+        assert store.events_after(device.id, 0.0, None, 10) == [full]
+        # the same when the later one has the newer state and comes second in a fresh batch of a new id
+        other, other_change = state('cup', 'moved', 3.0)
+        again = {**other, 'new_state': 'gone'}
+        gone_change = StateChange('cup', 'gone', 3.0, other['id'])
+        assert store.save_batch(device.id, [other, again], [], [other_change, gone_change], False, NOW) == (1, 1)
+        assert [s.state for s in store.object_states(device.id)] == ['moved']
+
     def test_repeat_inside_one_batch_counts_once(self, store):
         device, _ = link(store, make_user(store))
         assert save(store, device, [habit('e1', 10.0), habit('e1', 10.0)]) == (1, 1)

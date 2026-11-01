@@ -117,7 +117,9 @@ class Store(Protocol):
         totals: daily_totals events, one row per day; the one with the newer `ts` replaces the older (the same or an
           older one counts as a repeat).
         state_changes: an object's state; one with an older `since` never replaces a newer one. A change is applied
-          only if the event it names (event_id) was newly kept in this call: a repeat changes nothing.
+          only if the event it names (event_id) was newly kept in this call and the change says what that kept event
+          says (object, new_state, ts). So a repeat changes nothing, and neither does the change of a later event that
+          has the same id as an earlier one in the same batch: the first one with an id wins.
         Raises LookupError when there is no such Pi.
         The Pi's last_seen_at is set to `now`, and caught_up_at too when `caught_up`."""
         ...

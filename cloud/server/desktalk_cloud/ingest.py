@@ -97,6 +97,8 @@ def ingest(store: Store, clock: Clock, settings: IngestSettings, messages: Messa
     totals: list[dict[str, Any]] = []
     changes: list[StateChange] = []
     refused: list[Refusal] = []
+    seen: set[str] = set()                                  # ids of events already taken in this batch
+    local_repeats = 0
     for raw in raw_events:
         if not isinstance(raw, Mapping):
             refused.append(_refused(raw, messages.refused_not_an_object))
@@ -111,11 +113,14 @@ def ingest(store: Store, clock: Clock, settings: IngestSettings, messages: Messa
         if problem is not None or clean is None:
             refused.append(_refused(raw, problem or messages.refused_not_kept))
         elif clean['type'] == 'daily_totals':
-            totals.append(clean)
+            totals.append(clean)                            # (one row per day: the store keeps the newest)
+        elif clean['id'] in seen:
+            local_repeats += 1                              # the first event with an id wins; this one is a repeat
         else:
+            seen.add(clean['id'])
             events.append(clean)
             change = _state_change(clean) if clean['type'] == 'object_state' else None
             if change is not None:
                 changes.append(change)
     accepted, repeats = store.save_batch(device_id, events, totals, changes, caught_up, now)
-    return IngestReply(accepted=accepted, repeats=repeats, refused=tuple(refused))
+    return IngestReply(accepted=accepted, repeats=repeats + local_repeats, refused=tuple(refused))
