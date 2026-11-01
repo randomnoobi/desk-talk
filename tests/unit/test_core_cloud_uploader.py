@@ -704,3 +704,55 @@ def test_a_day_whose_numbers_changed_after_it_ended_is_sent_before_it_is_left(ri
     assert [t['totals']['water_ml'] for t in totals_sent(rig)] == [100, 999]
     rig.tick(after=HOUR)
     assert rig.saved()['totals_from'] == rig.clock.local_day(rig.clock.now())
+
+
+# ── a saved link with odd values in any of its fields ──
+ODD = [None, 'abc', [1], {}]
+ODD_IDS = ['None', 'text', 'list', 'dict']
+
+
+@pytest.mark.parametrize('odd', ODD, ids=ODD_IDS)
+@pytest.mark.parametrize('field', ['place_ts', 'start_ts', 'last_sent_ts'])
+def test_a_time_field_that_is_not_a_number_counts_as_a_damaged_link(rig, caplog, field, odd):
+    rig.linked(**{field: odd})
+    rig.habit(START + 1)
+    with caplog.at_level(logging.WARNING):
+        assert rig.tick(after=10) == SETTINGS.idle_check_every_sec      # never raises out of tick
+    assert rig.made == [] and rig.uploader.status() == {'linked': False, 'stopped': False, 'last_sent_ts': None,
+                                                        'waiting': 0}
+    assert caplog.text.count(WORDS.log_bad_link) == 1
+
+
+@pytest.mark.parametrize('odd', ODD, ids=ODD_IDS)
+@pytest.mark.parametrize('field', ['goals_sent', 'totals_sent', 'totals_from', 'device_id', 'recent_ids', 'stopped'])
+def test_any_other_field_with_an_odd_value_never_raises_out_of_tick(rig, field, odd):
+    rig.linked(**{field: odd})
+    put_day(rig, rig.clock.local_day(START))
+    rig.habit(START + 1, id='h1')
+    rig.tick(after=10)                                                   # linked or counted as damaged, never raises
+    rig.tick(after=60)
+    assert rig.link.sent_ids('habit').count('h1') <= 1
+
+
+@pytest.mark.parametrize('odd', ODD, ids=ODD_IDS)
+def test_the_sender_s_own_notes_with_odd_entries_never_raise(rig, odd):
+    today = rig.clock.local_day(START)
+    rig.linked(goals_sent=odd, totals_sent={today: odd, 'not a day': odd})
+    put_day(rig, today)
+    rig.tick(after=10)
+    assert len(totals_sent(rig)) == 1
+
+
+# ── a day left alone while an earlier one waits ──
+def test_an_unchanged_day_is_sent_once_while_an_earlier_day_is_still_waiting(rig):
+    days = [rig.clock.local_day(START + n * DAY_SEC) for n in range(3)]
+    rig.linked()
+    for day in days:
+        put_day(rig, day, water_ml=100)
+    rig.tick(after=2 * DAY_SEC)                                          # all three go at once
+    put_day(rig, days[0], water_ml=200)                                  # the first changes: it is pinned again
+    for _ in range(4):
+        rig.tick(after=20 * MIN)
+    sent = [(t['day'], t['totals']['water_ml']) for t in totals_sent(rig)]
+    assert sorted(sent) == [(days[0], 100), (days[0], 200), (days[1], 100), (days[2], 100)]
+    assert rig.saved()['totals_sent'].keys() <= set(days)

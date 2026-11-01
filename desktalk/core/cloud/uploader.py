@@ -98,7 +98,7 @@ def _well_formed(saved: Any) -> bool:
         return False
     if parts.scheme not in ('http', 'https') or not parts.hostname or server != server.strip():
         return False
-    if any(key in saved and not _is_finite(saved[key]) for key in ('place_ts', 'start_ts')):
+    if any(key in saved and not _is_finite(saved[key]) for key in ('place_ts', 'start_ts', 'last_sent_ts')):
         return False
     ids = saved.get('recent_ids', [])
     stopped = saved.get('stopped', False)
@@ -172,7 +172,7 @@ class CloudUploader:
         """The clock's day for a time, or None when the clock can't turn it into one (a time far too big or small)."""
         try:
             day = self._clock.local_day(ts)
-        except (OverflowError, OSError, ValueError):
+        except (OverflowError, OSError, ValueError, TypeError):
             return None
         return day if is_day(day) else None
 
@@ -358,7 +358,7 @@ class CloudUploader:
             over = day < today and unchanged is not None and now - unchanged >= self._s.totals_every_min * MINUTE
             if not over and floor is None:
                 floor = day
-            if before is not None and not over:
+            if before is not None:
                 memory[day] = before
             if unchanged is not None:
                 continue                                    # nothing changed since it was sent
@@ -368,7 +368,10 @@ class CloudUploader:
             if event is not None:
                 pending.append(_Pending(event, lambda changes, day=day, signature=signature:
                                         remember(changes, day, signature)))
-        return pending, {'totals_from': floor or today, 'totals_sent': memory}
+        floor = floor or today
+        for day in [d for d in memory if d < floor]:     # only the days before it are forgotten
+            del memory[day]
+        return pending, {'totals_from': floor, 'totals_sent': memory}
 
     @staticmethod
     def _totals(saved: Mapping[str, Any]) -> dict[str, float]:
