@@ -119,3 +119,31 @@ class TestDataFolderPassesDataFilesContract(DataFilesContract):
     @pytest.fixture
     def data_files(self, viewer):
         return viewer
+
+
+# ── files that hold a secret (the cloud link's token) ──
+def test_a_hidden_file_is_not_listed_and_has_no_preview(folder):
+    (folder / 'cloud.json').write_text('{"token": "super-secret-token"}')
+    (folder / 'logs' / 'cloud.json').write_text('{"not": "the same file"}')
+    viewer = DataFolder(folder, PREVIEW_BYTES, words=WORDS, hidden=['cloud.json'])
+    paths = [f.path for f in viewer.list()]
+    assert 'cloud.json' not in paths and 'logs/cloud.json' in paths      # only the one in the data folder itself
+    for way in ('cloud.json', './cloud.json', 'logs/../cloud.json'):
+        with pytest.raises(FileNotFoundError) as raised:
+            viewer.preview(way)
+        assert 'super-secret-token' not in str(raised.value)
+    assert viewer.preview('logs/cloud.json') == '{"not": "the same file"}'
+
+
+def test_a_link_to_a_hidden_file_shows_nothing_either(folder):
+    (folder / 'cloud.json').write_text('{"token": "super-secret-token"}')
+    (folder / 'innocent.txt').symlink_to(folder / 'cloud.json')
+    viewer = DataFolder(folder, PREVIEW_BYTES, words=WORDS, hidden=['cloud.json'])
+    assert 'innocent.txt' not in [f.path for f in viewer.list()]
+    with pytest.raises(FileNotFoundError):
+        viewer.preview('innocent.txt')
+
+
+def test_nothing_is_hidden_unless_asked(folder):
+    (folder / 'cloud.json').write_text('{}')
+    assert 'cloud.json' in [f.path for f in DataFolder(folder, PREVIEW_BYTES, words=WORDS).list()]

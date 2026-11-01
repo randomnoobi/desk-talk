@@ -19,6 +19,7 @@ from desktalk.ports import Clock, KeyValueStore
 log = logging.getLogger(__name__)
 
 HOURS_IN_DAY = 24
+PRETEND_TALLY = ('demo_sips', 'demo_water_ml')            # the Demo tab's pretend sips; in the file only when not zero
 COUNTERS = ('danger_count', 'lost_alerts', 'nudges_sent')     # the counters other parts bump by name
 
 # What happened, for the chat: (habit, action, words, extra fields for the HabitEvent)
@@ -76,6 +77,8 @@ class HabitDay:
     lost_alerts: int = 0
     nudges_sent: int = 0
     summary_sent: bool = False
+    demo_sips: int = 0                 # the Demo tab's pretend sips, which sips and water_ml count too:
+    demo_water_ml: int = 0             # (tallied so the numbers sent to the cloud server can leave them out)
 
     @classmethod
     def from_saved(cls, day: str, saved: Any) -> HabitDay | None:
@@ -87,8 +90,13 @@ class HabitDay:
         return cls(**{k: v for k, v in saved.items() if k in names})
 
     def to_dict(self) -> dict[str, Any]:
-        """The day as it goes in its file (a deep copy)."""
-        return dataclasses.asdict(self)
+        """The day as it goes in its file (a deep copy). The pretend-sip tally is left out while it is zero, so a day
+        with none is laid out exactly as it always was."""
+        saved = dataclasses.asdict(self)
+        for name in PRETEND_TALLY:
+            if not saved[name]:
+                del saved[name]
+        return saved
 
     def bump(self, key: str, amount: int = 1) -> None:
         """Count something other parts notice: danger_count, lost_alerts or nudges_sent."""
@@ -104,6 +112,12 @@ class HabitDay:
         self.water_ml = int(self.water_ml + ml)
         self.last_sip_ts = now
         self.drinks = [*self.drinks, Drink(ts=now, ml=int(ml), how=how)][-keep:]
+
+    def mark_demo_sip(self, ml: float) -> None:
+        """The sip just added was the Demo tab's pretend one: tally it, so the numbers sent to the cloud server can
+        leave it out. (The person still sees it in today's water, as before.)"""
+        self.demo_sips += 1
+        self.demo_water_ml = int(self.demo_water_ml + ml)
 
     def add_break(self, now: float, minutes: int, how: str, keep: int) -> None:
         """A break of `minutes`; only the newest `keep` breaks are listed."""

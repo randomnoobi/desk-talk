@@ -529,6 +529,7 @@ class CloudSettings(_Section):
     retry_max_sec: PositiveNumber
     totals_every_min: PositiveNumber
     goals_every_hours: PositiveNumber
+    error_text_chars: PositiveInt
 
 
 class SnapshotsSettings(_Section):

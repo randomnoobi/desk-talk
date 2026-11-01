@@ -38,12 +38,12 @@ class Claims:
         self.code, self.device_id, self.token, self.error = code, device_id, token, error
         self.calls: list[tuple[str, str, str]] = []
 
-    def __call__(self, server: str, code: str, name: str, *, timeout_sec: float) -> ClaimReply:
+    def __call__(self, server: str, code: str, name: str, *, timeout_sec: float, error_text_chars: int) -> ClaimReply:
         self.calls.append((server, code, name))
         if self.error is not None:
             raise self.error
         if code != self.code:
-            raise CloudNotLinked('that code is not valid')
+            raise CloudNotLinked('')                      # the server gave no reason
         return ClaimReply(device_id=self.device_id, token=self.token)
 
 
@@ -111,3 +111,38 @@ def test_the_script_needs_a_server_and_a_code():
     with pytest.raises(SystemExit):
         script.run(['--code', 'x'], config=CONFIG, store=InMemoryKeyValueStore(), clock=FakeClock(NOW),
                    claim=Claims(), say=lambda text: None)
+
+
+# ── a damaged link already saved ──
+@pytest.mark.parametrize('old', [
+    {'device_id': 'dev-1', 'recent_ids': 5, 'place_ts': 'soon', 'start_ts': float('nan')},
+    {'device_id': 'dev-1', 'recent_ids': [1, None], 'place_ts': float('inf')},
+    {'device_id': ['dev-1']}, ['a', 'list'], 'text', 7])
+def test_a_damaged_old_link_does_not_crash_the_script_after_the_code_is_used(old):
+    store = InMemoryKeyValueStore({KEY: old})
+    code, store, _ = run(['--server', 'http://x:1', '--code', 'RIGHT-CODE'], Claims(), store)
+    saved = store.load(KEY)
+    assert code == 0 and saved['token'] == TOKEN
+    assert saved['recent_ids'] == [] and saved['place_ts'] == NOW and saved['start_ts'] == NOW
+
+
+def test_a_half_good_old_link_for_the_same_device_keeps_what_is_good():
+    old = {'device_id': 'dev-1', 'place_ts': NOW - 50, 'start_ts': 'bad', 'recent_ids': ['a', 3, 'b']}
+    code, store, _ = run(['--server', 'http://x:1', '--code', 'RIGHT-CODE'], Claims(),
+                         InMemoryKeyValueStore({KEY: old}))
+    saved = store.load(KEY)
+    assert saved['place_ts'] == NOW - 50 and saved['start_ts'] == NOW - 50 and saved['recent_ids'] == ['a', 'b']
+
+
+# ── the reason the server gives ──
+def test_a_reason_from_the_server_is_shown_so_a_too_long_name_does_not_read_as_a_bad_code():
+    code, store, said = run(['--server', 'http://x:1', '--code', 'RIGHT-CODE'],
+                            Claims(error=CloudNotLinked('The name is too long.')))
+    assert code != 0 and store.keys() == []
+    assert said == [CONFIG.prompts.cloud.link_refused_because.format(reason='The name is too long.')]
+
+
+def test_a_long_reason_is_cut():
+    long = 'x' * (CONFIG.cloud.error_text_chars + 300)
+    _, _, said = run(['--server', 'http://x:1', '--code', 'RIGHT-CODE'], Claims(error=CloudNotLinked(long)))
+    assert said[0].count('x') == CONFIG.cloud.error_text_chars

@@ -11,29 +11,37 @@ Each round it:
      list, so there is no second copy: with no Wi-Fi the place just stops moving and the sender catches up later
      (days older than event_log.keep_days are gone by then, and that is accepted);
   3. runs each through the one filter (desktalk_shared.cloud_api.to_cloud_event), which drops what must stay home;
-  4. sends up to cloud.batch_size of them, with `caught_up` on the batch that empties the backlog. Your goals and
-     the day's numbers (desk time, water ...) ride along when they are due.
-The link is saved as {server, device_id, token, place_ts, start_ts, recent_ids, stopped, last_sent_ts, goals_sent,
-totals_sent}. Nothing before `start_ts` (the moment of linking) is ever sent, so old history does not go by surprise.
+  4. sends them, with `caught_up` on the batch that empties the backlog. Your goals and each day's numbers (desk
+     time, water ...) ride along when they are due.
+Everything in one send, the goals and the day's numbers too, is at most cloud.batch_size events (the server refuses
+more). The link is saved as {server, device_id, token, place_ts, start_ts, recent_ids, stopped, last_sent_ts,
+goals_sent, totals_sent}; a link that is damaged (a bad address or token, odd numbers) counts as not linked.
+Nothing before `start_ts` (the moment of linking) is ever sent, so old history does not go by surprise.
 Each round looks `overlap_sec` back from the place, so an event written a little late still goes; `recent_ids` stops
 those looked-at-again events from going twice.
 
-A failure never raises: the place does not move and the next try waits longer (Backoff). The server saying it doesn't
-know us (401) stops sending until the computer is linked again. The token is never logged.
+A failure never raises: the place does not move and the next try waits longer (Backoff); a server that answers but
+says no to the upload is logged apart from one that is off. The server saying it doesn't know us (401) stops sending
+until the computer is linked again. The token is never logged. The place never goes past "now", so one event dated in
+the future (a clock that was ahead) can't make the sender skip what is written later.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import math
+import re
 import threading
 from collections.abc import Callable, Mapping
+from datetime import date, timedelta
 from typing import Any
+from urllib.parse import urlsplit
 
 from desktalk.config import CloudSettings
 from desktalk.config.prompts import CloudWords
 from desktalk.core.habits.habit_days import day_key
-from desktalk.domain import CloudNotLinked, CloudUnavailable, plain_error
+from desktalk.domain import CloudNotLinked, CloudRefused, CloudUnavailable, plain_error
 from desktalk.ports import Clock, CloudLink, EventStore, KeyValueStore, Preferences
 from desktalk_shared.backoff import Backoff
 from desktalk_shared.cloud_api import IngestReply, daily_totals_event, goals_event, to_cloud_event
@@ -43,10 +51,13 @@ log = logging.getLogger(__name__)
 MINUTE, HOUR, DAY = 60, 3600, 86_400
 
 # The numbers of a habit day (data/habits/<day>.json, core/habits/habit_days.py) that go as the day's totals. The
-# desk seconds per hour go as hour_00 ... hour_23.
+# desk seconds per hour go as hour_00 ... hour_23. The Demo tab's pretend sips are tallied in the day too
+# (demo_sips, demo_water_ml) and taken out of sips and water_ml here.
 TOTALS = ('desk_sec', 'water_ml', 'sips', 'breaks', 'longest_sit_sec', 'phone_free_sec', 'phone_on_desk_sec',
           'sunlight_minutes', 'nudges_sent')
 HOURLY = 'hourly_activity'
+PRETEND = (('sips', 'demo_sips'), ('water_ml', 'demo_water_ml'))
+USABLE_TOKEN = re.compile(r'[\x21-\x7e]+')     # printable ASCII, no space or line break: fit for a header
 
 LinkFactory = Callable[[str, str], CloudLink]       # (the server's address, the token) → the line to that server
 
@@ -55,16 +66,42 @@ def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+def _is_finite(value: Any) -> bool:
+    return _is_number(value) and math.isfinite(value)
+
+
 def _number_or(value: Any, fallback: float) -> float:
-    return float(value) if _is_number(value) else fallback
+    return float(value) if _is_finite(value) else fallback
 
 
 def _when(entry: Any, signature: str | None = None) -> float | None:
     """The `ts` in a remembered {sig, ts} (goals_sent, one day of totals_sent), if it is one (with that `sig`, when
     one is given)."""
-    if not isinstance(entry, dict) or not _is_number(entry.get('ts')):
+    if not isinstance(entry, dict) or not _is_finite(entry.get('ts')):
         return None
     return float(entry['ts']) if signature is None or entry.get('sig') == signature else None
+
+
+def _usable(saved: Any) -> bool:
+    """A saved link this sender can work with: a web address, a token fit for a header, numbers that are real and a
+    list of ids. (A link made by scripts/link_cloud.py always is; this is for one that was damaged or edited.)"""
+    if not isinstance(saved, dict):
+        return False
+    server, token = saved.get('server'), saved.get('token')
+    if not isinstance(server, str) or not isinstance(token, str) or not USABLE_TOKEN.fullmatch(token):
+        return False
+    try:
+        parts = urlsplit(server)
+        parts.port                                      # noqa: B018  (a bad port raises ValueError here)
+    except ValueError:
+        return False
+    if parts.scheme not in ('http', 'https') or not parts.hostname or server != server.strip():
+        return False
+    if any(key in saved and not _is_finite(saved[key]) for key in ('place_ts', 'start_ts')):
+        return False
+    ids = saved.get('recent_ids', [])
+    stopped = saved.get('stopped', False)
+    return isinstance(ids, list) and all(isinstance(i, str) for i in ids) and isinstance(stopped, bool)
 
 
 class _Pending:
@@ -99,10 +136,11 @@ class CloudUploader:
         self._line: tuple[tuple[str, str], CloudLink] | None = None     # the line made for the current link
         self._lock = threading.Lock()                                   # status() is read from the web server's thread
         self._waiting = 0
+        self._said_damaged = False
 
     # ── the job ──
     def tick(self, now: float) -> float:
-        link = self._linked()
+        link = self._linked(say=True)
         if link is None or link.get('stopped') is True:
             return self._s.idle_check_every_sec
         try:
@@ -112,7 +150,8 @@ class CloudUploader:
             return self._s.idle_check_every_sec
         except CloudUnavailable as exc:
             wait = self._backoff.next()
-            log.warning(self._words.log_unreachable.format(error=str(exc) or plain_error(exc), seconds=wait))
+            words = self._words.log_rejected if isinstance(exc, CloudRefused) else self._words.log_unreachable
+            log.warning(words.format(error=str(exc) or plain_error(exc), seconds=wait))
             return wait
         self._backoff.reset()
         return self._s.send_every_sec
@@ -125,16 +164,22 @@ class CloudUploader:
             waiting = self._waiting
         last = link.get('last_sent_ts')
         return {'linked': True, 'stopped': link.get('stopped') is True,
-                'last_sent_ts': last if _is_number(last) else None, 'waiting': waiting}
+                'last_sent_ts': last if _is_finite(last) else None, 'waiting': waiting}
 
     # ── the link ──
-    def _linked(self) -> dict[str, Any] | None:
-        """The saved link, or None when this computer isn't linked (nothing saved, or no address or token)."""
+    def _linked(self, say: bool = False) -> dict[str, Any] | None:
+        """The saved link, or None when this computer isn't linked: nothing saved, or a link that can't be used (said
+        once in the log, with `say`)."""
         saved = self._store.load(self._s.link_key)
-        if not isinstance(saved, dict):
+        if saved is None:
+            self._said_damaged = False
             return None
-        if not all(isinstance(saved.get(k), str) and saved[k] for k in ('server', 'token')):
+        if not _usable(saved):
+            if say and not self._said_damaged:
+                log.warning(self._words.log_bad_link)
+            self._said_damaged = self._said_damaged or say
             return None
+        self._said_damaged = False
         return saved
 
     def _line_to(self, link: Mapping[str, Any]) -> CloudLink:
@@ -160,19 +205,23 @@ class CloudUploader:
     def _round(self, link: dict[str, Any], now: float) -> None:
         place = _number_or(link.get('place_ts'), now)
         start = _number_or(link.get('start_ts'), place)
-        recent = {i for i in link.get('recent_ids') or [] if isinstance(i, str)}
+        recent = set(link.get('recent_ids', []))
         found = self._read_log(max(place - self._s.overlap_sec, start))
-        fresh = [(ts, event_id, event) for ts, event_id, event in found if event_id not in recent]
-        sendable = [(ts, event_id, sent) for ts, event_id, event in fresh
+        sendable = [(ts, event_id, sent) for ts, event_id, event in found if event_id not in recent
                     if (sent := to_cloud_event(event)) is not None]
-        batch = sendable[:self._s.batch_size]
-        caught_up = len(sendable) <= self._s.batch_size
-        extras = self._extras(link, now)
+        # Everything in one send (goals and the day's numbers too) is at most batch_size: the server refuses more.
+        # Those that don't fit go in later rounds, and events wait a round if they take all the room.
+        extras, totals_memory = self._extras(link, now, place, start)
+        extras = extras[:self._s.batch_size]
+        room = self._s.batch_size - len(extras)
+        batch = sendable[:room]
+        caught_up = len(sendable) <= room
 
         self._set_waiting(len(sendable))
+        stored_memory = link.get('totals_sent')
         if not batch and not extras:
-            moved = self._next_place(link, found, [], place, caught_up=True)
-            if moved['place_ts'] != place or moved['recent_ids'] != list(link.get('recent_ids') or []):
+            moved = self._next_place(link, found, [], place, now, caught_up=True)
+            if moved['place_ts'] != place or moved['recent_ids'] != link.get('recent_ids', []):
                 self._save(link, moved)
             return
         sent = [p.event for p in extras] + [event for _, _, event in batch]
@@ -183,7 +232,9 @@ class CloudUploader:
         changes: dict[str, Any] = {'last_sent_ts': now}
         for pending in extras:
             pending.remember(changes)
-        changes.update(self._next_place(link, found, batch, place, caught_up=caught_up))
+        if totals_memory != stored_memory:
+            changes['totals_sent'] = totals_memory
+        changes.update(self._next_place(link, found, batch, place, now, caught_up=caught_up))
         self._save(link, changes)
 
     def _note_refused(self, reply: IngestReply) -> None:
@@ -192,13 +243,18 @@ class CloudUploader:
             log.warning(self._words.log_refused.format(count=len(reply.refused), reasons=reasons))
 
     def _next_place(self, link: Mapping[str, Any], found: list[tuple[float, str, dict[str, Any]]],
-                    batch: list[tuple[float, str, dict[str, Any]]], place: float, *,
+                    batch: list[tuple[float, str, dict[str, Any]]], place: float, now: float, *,
                     caught_up: bool) -> dict[str, Any]:
         """The saved changes that say where the next round starts. When it caught up, past everything it read (what
-        stays home too); else past the last event sent. `recent_ids` keeps the ids still inside the overlap, so a
-        round that looks back does not send them twice. (Refused events count as sent: asking again won't help.)"""
-        new_place = max([place, *(ts for ts, _, _ in found)]) if caught_up else max(place, batch[-1][0])
-        kept = {i for i in link.get('recent_ids') or [] if isinstance(i, str)} | {i for _, i, _ in batch}
+        stays home too); else past the last event sent (no move when none was sent). Never past `now`, so one event
+        dated in the future can't make later ones be skipped. `recent_ids` keeps the ids still inside the overlap, so
+        a round that looks back does not send them twice. (Refused events count as sent: asking again won't help.)"""
+        if caught_up:
+            new_place = max([place, *(ts for ts, _, _ in found)])
+        else:
+            new_place = max(place, batch[-1][0]) if batch else place
+        new_place = min(new_place, max(now, place))
+        kept = set(link.get('recent_ids', [])) | {i for _, i, _ in batch}
         recent = [event_id for ts, event_id, _ in found if event_id in kept and ts >= new_place - self._s.overlap_sec]
         return {'place_ts': new_place, 'recent_ids': recent}
 
@@ -221,8 +277,12 @@ class CloudUploader:
         return found
 
     # ── the goals and the day's numbers ──
-    def _extras(self, link: Mapping[str, Any], now: float) -> list[_Pending]:
-        return [*self._goals_due(link, now), *self._totals_due(link, now)]
+    def _extras(self, link: Mapping[str, Any], now: float, place: float,
+                start: float) -> tuple[list[_Pending], dict[str, Any]]:
+        """What is due besides the log's events, goals first and then each day's numbers oldest first, and the
+        memory of what was sent for the days still looked at."""
+        totals, memory = self._totals_due(link, now, place, start)
+        return [*self._goals_due(link, now), *totals], memory
 
     def _goals_due(self, link: Mapping[str, Any], now: float) -> list[_Pending]:
         wake, bed = self._prefs.get('wake_time'), self._prefs.get('bed_time')
@@ -236,16 +296,33 @@ class CloudUploader:
             return []
         return [_Pending(event, lambda changes: changes.update(goals_sent={'sig': signature, 'ts': now}))]
 
-    def _totals_due(self, link: Mapping[str, Any], now: float) -> list[_Pending]:
+    def _days_to_look_at(self, link: Mapping[str, Any], now: float, place: float, start: float) -> list[str]:
+        """Every day from the day of the last good send (or the place, whichever is earlier) to today, and never
+        before the day of linking: after an outage of days, each day's numbers still go."""
+        anchor = min(place, _number_or(link.get('last_sent_ts'), place))
+        first = max(self._clock.local_day(anchor), self._clock.local_day(start))
+        today = self._clock.local_day(now)
+        days = []
+        try:
+            day = date.fromisoformat(first)
+        except ValueError:
+            return [today]
+        while day.isoformat() < today:
+            days.append(day.isoformat())
+            day += timedelta(days=1)
+        return [*days, today]
+
+    def _totals_due(self, link: Mapping[str, Any], now: float, place: float,
+                    start: float) -> tuple[list[_Pending], dict[str, Any]]:
         saved = link.get('totals_sent')
         sent_before: dict[str, Any] = saved if isinstance(saved, dict) else {}
-        days = [self._clock.local_day(now - DAY), self._clock.local_day(now)]
+        days = self._days_to_look_at(link, now, place, start)
+        memory = {day: sent_before[day] for day in days if day in sent_before}
         pending: list[_Pending] = []
-        remembered = {day: sent_before[day] for day in days if day in sent_before}
 
         def remember(changes: dict[str, Any], day: str, signature: str) -> None:
-            remembered[day] = {'sig': signature, 'ts': now}
-            changes['totals_sent'] = dict(remembered)
+            memory[day] = {'sig': signature, 'ts': now}
+            changes['totals_sent'] = memory
 
         for day in days:
             numbers = self._store.load(day_key(day))
@@ -263,12 +340,15 @@ class CloudUploader:
             if event is not None:
                 pending.append(_Pending(event, lambda changes, day=day, signature=signature:
                                         remember(changes, day, signature)))
-        return pending
+        return pending, memory
 
     @staticmethod
     def _totals(saved: Mapping[str, Any]) -> dict[str, float]:
-        totals = {name: saved[name] for name in TOTALS if _is_number(saved.get(name))}
+        totals = {name: saved[name] for name in TOTALS if _is_finite(saved.get(name))}
+        for name, pretend in PRETEND:                       # the Demo tab's pretend sips aren't the person's
+            if name in totals and _is_finite(saved.get(pretend)):
+                totals[name] = max(totals[name] - saved[pretend], 0)
         hours = saved.get(HOURLY)
         if isinstance(hours, list):
-            totals.update({f'hour_{hour:02d}': value for hour, value in enumerate(hours) if _is_number(value)})
+            totals.update({f'hour_{hour:02d}': value for hour, value in enumerate(hours) if _is_finite(value)})
         return totals

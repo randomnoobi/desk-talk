@@ -15,6 +15,7 @@ A running Desk Talk reads the link every round, so it starts sending without a r
 from __future__ import annotations
 
 import argparse
+import math
 import socket
 import sys
 from collections.abc import Callable, Sequence
@@ -24,6 +25,22 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+
+def _number(value: Any, fallback: float) -> float:
+    ok = isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+    return float(value) if ok else fallback
+
+
+def _old_place(old: Any, device_id: str, now: float) -> dict[str, Any]:
+    """The place to send from for this device: kept from an earlier link to the same device (whatever of it is
+    good: a damaged one never stops linking), else from now."""
+    if not isinstance(old, dict) or old.get('device_id') != device_id:
+        return {'place_ts': now, 'start_ts': now, 'recent_ids': []}
+    place = _number(old.get('place_ts'), now)
+    ids = old.get('recent_ids')
+    return {'place_ts': place, 'start_ts': _number(old.get('start_ts'), place),
+            'recent_ids': [i for i in ids if isinstance(i, str)] if isinstance(ids, list) else []}
 
 
 def run(argv: Sequence[str], *, config: Any, store: Any, clock: Any, claim: Callable[..., Any],
@@ -43,24 +60,21 @@ def run(argv: Sequence[str], *, config: Any, store: Any, clock: Any, claim: Call
     if parts.scheme not in ('http', 'https') or not parts.hostname:
         say(words.link_bad_address.format(server=server))
         return 1
+    old = store.load(config.cloud.link_key)      # read first: the code works once, so nothing may fail after it is used
     try:
-        reply = claim(server, args.code, args.name, timeout_sec=config.cloud.timeout_sec)
-    except CloudNotLinked:
-        say(words.link_code_refused)
+        reply = claim(server, args.code, args.name, timeout_sec=config.cloud.timeout_sec,
+                      error_text_chars=config.cloud.error_text_chars)
+    except CloudNotLinked as exc:
+        reason = ' '.join(str(exc).split())[:config.cloud.error_text_chars]
+        say(words.link_refused_because.format(reason=reason) if reason else words.link_code_refused)
         return 1
     except CloudUnavailable as exc:
         say(words.link_no_answer.format(server=server, error=str(exc)))
         return 1
 
-    now = clock.now()
-    old = store.load(config.cloud.link_key)
-    same_device = isinstance(old, dict) and old.get('device_id') == reply.device_id
     store.save(config.cloud.link_key, {
-        'server': server, 'device_id': reply.device_id, 'token': reply.token,
-        'place_ts': old.get('place_ts', now) if same_device else now,
-        'start_ts': old.get('start_ts', now) if same_device else now,
-        'recent_ids': list(old.get('recent_ids', [])) if same_device else [],
-        'stopped': False})
+        'server': server, 'device_id': reply.device_id, 'token': reply.token, 'stopped': False,
+        **_old_place(old, reply.device_id, clock.now())})
     say(words.link_saved.format(server=server, device_id=reply.device_id))
     return 0
 

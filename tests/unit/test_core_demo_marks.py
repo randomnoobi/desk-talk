@@ -70,3 +70,30 @@ def test_the_stand_ins_take_the_mark_too():
     camera.say_problem('covered', 'x', 1.0, demo=True)
     assert habits.logged == [('hydration', 'sip', {'how': 'camera', 'demo': True})]
     assert camera.said_for_demo == [True]
+
+
+def saved_day(rig: DeskRig) -> dict:
+    return rig.app.store.load(f'habits/{rig.clock.local_day(rig.clock.now())}')
+
+
+def test_a_pretend_sip_is_tallied_apart_so_the_cloud_totals_can_leave_it_out(rig):
+    rig.app.habits.log('hydration', 'sip', how='camera')
+    rig.app.habits.log('hydration', 'sip', how='camera', demo=True, ml=100)
+    rig.app.habits.save(force=True)
+    day = saved_day(rig)
+    assert (day['sips'], day['demo_sips'], day['demo_water_ml']) == (2, 1, 100)
+    assert day['water_ml'] == day['demo_water_ml'] + rig.config.protocols.hydration.ml_per_sip
+
+
+def test_the_demo_tab_looks_the_same_with_the_tally(rig):
+    """The person still sees the pretend sip in today's water, as before."""
+    before = rig.app.habits.today(rig.clock.now())['hydration']
+    fire(rig, 'sip')
+    after = rig.app.habits.today(rig.clock.now())['hydration']
+    assert after['sips'] == before['sips'] + 1 and after['water_ml'] > before['water_ml']
+
+
+def test_a_real_sip_leaves_no_tally(rig):
+    rig.app.habits.log('hydration', 'sip', how='camera')
+    rig.app.habits.save(force=True)
+    assert 'demo_sips' not in saved_day(rig)         # a day with none is laid out as always

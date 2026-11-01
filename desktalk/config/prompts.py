@@ -193,6 +193,8 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'desk_checks.approaching': ('a', 'b', 'percent', 'pictures'),
     'cloud.status_waiting': ('count',),
     'cloud.log_unreachable': ('error', 'seconds'),
+    'cloud.log_rejected': ('error', 'seconds'),
+    'cloud.link_refused_because': ('reason',),
     'cloud.log_refused': ('count', 'reasons'),
     'cloud.link_saved': ('server', 'device_id'),
     'cloud.link_bad_address': ('server',),
@@ -692,9 +694,12 @@ class CloudWords(_Section):
     status_waiting: str
     status_stopped: str
     log_unreachable: str
+    log_rejected: str
+    log_bad_link: str
     log_not_linked: str
     log_refused: str
     link_saved: str
+    link_refused_because: str
     link_bad_address: str
     link_code_refused: str
     link_no_answer: str

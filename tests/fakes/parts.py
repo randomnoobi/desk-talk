@@ -15,6 +15,7 @@ import numpy as np
 from desktalk.domain import (
     CHANGE_TYPES,
     AIUnavailable,
+    CloudRefused,
     CloudUnavailable,
     Detection,
     DetectorUnavailable,
@@ -286,18 +287,23 @@ class RecordingCloudLink:
     `calls` as (events, caught_up) and keeps the ids it has seen, so a repeat is counted as a repeat.
 
     `script`: what the next sends do, one entry each: an exception to raise or an IngestReply to give; after
-    that every send is accepted. `failure`: raised by every send (a server that is off, or has forgotten us)."""
+    that every send is accepted. `failure`: raised by every send (a server that is off, or has forgotten us).
+    `limit`: the most events one send may hold; a bigger one is refused as the real server does (413)."""
 
-    def __init__(self, script: Sequence[Exception | IngestReply] = (), failure: Exception | None = None):
+    def __init__(self, script: Sequence[Exception | IngestReply] = (), failure: Exception | None = None,
+                 limit: int | None = None):
         self.calls: list[tuple[list[dict[str, Any]], bool]] = []
         self.script = list(script)
         self.failure = failure
+        self.limit = limit
         self._kept: set[str] = set()
 
     def send(self, events: Sequence[Mapping[str, Any]], *, caught_up: bool) -> IngestReply:
         self.calls.append(([dict(e) for e in events], caught_up))
         if self.failure is not None:
             raise self.failure
+        if self.limit is not None and len(events) > self.limit:
+            raise CloudRefused(f'the server answered 413: more than {self.limit} events')
         if self.script:
             step = self.script.pop(0)
             if isinstance(step, Exception):

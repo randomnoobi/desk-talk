@@ -96,3 +96,6 @@ _ = ObjectStoryWords.refused
 # urllib calls this by name when a reply says "go to another address": the cloud link answers "no", so the token is
 # never sent anywhere the reply points (desktalk/adapters/cloud/http_link.py).
 _ = _NoRedirects.redirect_request
+# The habit day's tally of the Demo tab's pretend sips: tracker.log() writes it into the day file, and the cloud sender
+# reads it back by name from the saved day (desktalk/core/cloud/uploader.py: PRETEND) to leave those sips out.
+_ = (HabitDay.demo_sips, HabitDay.demo_water_ml)

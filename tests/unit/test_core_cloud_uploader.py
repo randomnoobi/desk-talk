@@ -13,7 +13,15 @@ from desktalk.adapters.storage import EventLog
 from desktalk.config import CloudSettings, EventLogSettings, load_config
 from desktalk.core.cloud.uploader import CloudUploader
 from desktalk.core.habits.habit_days import day_key
-from desktalk.domain import Alert, CameraNotice, CloudNotLinked, CloudUnavailable, Compaction, HabitEvent
+from desktalk.domain import (
+    Alert,
+    CameraNotice,
+    CloudNotLinked,
+    CloudRefused,
+    CloudUnavailable,
+    Compaction,
+    HabitEvent,
+)
 from desktalk.ports import CloudSending, PeriodicWorker
 from desktalk_shared.cloud_api import IngestReply, Refusal
 from tests.fakes import FakeClock, FakePreferences, InMemoryEventStore, InMemoryKeyValueStore, RecordingCloudLink
@@ -23,7 +31,7 @@ START = 1_760_000_000.0                      # 9 October 2025, 08:53 UTC
 DAY_SEC, HOUR, MIN = 86_400, 3_600, 60
 SETTINGS = CloudSettings(link_key='cloud', send_every_sec=30, idle_check_every_sec=60, batch_size=500,
                          overlap_sec=120, timeout_sec=10, retry_start_sec=30, retry_max_sec=240,
-                         totals_every_min=15, goals_every_hours=24)
+                         totals_every_min=15, goals_every_hours=24, error_text_chars=200)
 SERVER, TOKEN = 'http://cloud.test:8000', 'secret-token-abc'
 GOALS = {'water_ml': 2400, 'phone_free_min': 120}
 
@@ -256,14 +264,15 @@ def test_caught_up_only_on_the_batch_that_empties_the_backlog(tmp_path):
     for _ in range(3):
         rig.tick()
     habits = [[e['id'] for e in events if e['type'] == 'habit'] for events, _ in rig.link.calls]
-    assert habits == [['h1', 'h2'], ['h3', 'h4'], ['h5']]
+    assert habits == [['h1'], ['h2', 'h3'], ['h4', 'h5']]          # the goals took one place of the first batch
     assert [caught_up for _, caught_up in rig.link.calls] == [False, False, True]
+    assert all(len(events) <= 2 for events, _ in rig.link.calls)
     assert rig.tick() == SETTINGS.send_every_sec
     assert len(rig.link.calls) == 3                               # nothing new: no call
 
 
 def test_a_backlog_that_is_exactly_one_batch_is_caught_up(tmp_path):
-    rig = Rig(tmp_path, SETTINGS.model_copy(update={'batch_size': 2}))
+    rig = Rig(tmp_path, SETTINGS.model_copy(update={'batch_size': 3}))      # the goals and two events fill it
     rig.linked()
     rig.habit(START + 1)
     rig.habit(START + 2)
@@ -379,12 +388,16 @@ def test_goals_are_not_sent_while_failing_and_go_with_the_next_good_send(rig):
     assert len(goals_sent(rig)) == 2
 
 
-def test_goals_do_not_use_up_a_batch(tmp_path):
-    rig = Rig(tmp_path, SETTINGS.model_copy(update={'batch_size': 1}))
+def test_goals_count_inside_the_batch(tmp_path):
+    rig = Rig(tmp_path, SETTINGS.model_copy(update={'batch_size': 2}))
     rig.linked()
     rig.habit(START + 1, id='h1')
+    rig.habit(START + 2, id='h2')
     rig.tick(after=10)
-    assert rig.habits_sent() == ['h1'] and rig.link.calls[0][1] is True
+    rig.tick()
+    assert [len(events) for events, _ in rig.link.calls] == [2, 1]     # goals + h1, then h2
+    assert rig.habits_sent() == ['h1', 'h2']
+    assert [caught_up for _, caught_up in rig.link.calls] == [False, True]
 
 
 # ── a day's numbers ──
@@ -493,3 +506,131 @@ def test_the_last_sent_time_is_kept_when_the_app_restarts(rig):
     rig.habit(START + 1)
     rig.tick(after=10)
     assert rig.new_uploader().status()['last_sent_ts'] == START + 10
+
+
+# ── a server that refuses an upload that is too big ──
+def test_every_upload_fits_the_servers_limit_even_with_goals_and_totals(tmp_path):
+    """The real limit: the server takes 500 events and refuses (413) more. A full batch plus the goals and the day's
+    numbers used to make 501 to 503 and the sender stalled for good."""
+    rig = Rig(tmp_path)
+    rig.link = RecordingCloudLink(limit=500)
+    rig.linked()
+    put_day(rig, rig.clock.local_day(START))
+    ids = [rig.habit(START + 1 + n, id=f'e{n}') for n in range(1_200)]
+    rig.clock.advance(2_000)
+    for _ in range(8):
+        assert rig.tick() == SETTINGS.send_every_sec               # never a failure
+    assert all(len(events) <= 500 for events, _ in rig.link.calls)
+    assert rig.habits_sent() == ids
+    flags = [caught_up for _, caught_up in rig.link.calls]
+    assert flags[-1] is True and flags.count(True) == 1
+    assert rig.uploader.status()['waiting'] == 0
+
+
+def test_goals_and_totals_bigger_than_the_room_are_split_and_events_still_get_through(tmp_path):
+    rig = Rig(tmp_path, SETTINGS.model_copy(update={'batch_size': 2}))
+    rig.link = RecordingCloudLink(limit=2)
+    rig.linked()
+    for back in range(4):                                         # four days of numbers: with the goals, five extras
+        put_day(rig, rig.clock.local_day(START + back * DAY_SEC))
+    for n in (1, 2, 3):
+        rig.habit(START + n, id=f'h{n}')
+    rig.clock.advance(3 * DAY_SEC)
+    for _ in range(6):
+        rig.tick()
+    assert all(len(events) <= 2 for events, _ in rig.link.calls)
+    assert rig.habits_sent() == ['h1', 'h2', 'h3']
+    assert len(goals_sent(rig)) == 1 and len({t['day'] for t in totals_sent(rig)}) == 4
+
+
+def test_a_server_that_refuses_the_upload_is_logged_apart_from_one_that_is_off(rig, caplog):
+    rig.linked()
+    rig.habit(START + 1)
+    rig.link.script = [CloudRefused('the server answered 413: too many'), CloudUnavailable('no answer within 10 s')]
+    with caplog.at_level(logging.WARNING):
+        assert rig.tick(after=10) == SETTINGS.retry_start_sec       # it still waits and tries again
+        refused = caplog.text
+        caplog.clear()
+        rig.tick()
+    assert 'refused the upload' in refused and 'too many' in refused
+    assert 'refused' not in caplog.text and 'no answer within 10 s' in caplog.text
+
+
+# ── a link that cannot be used ──
+@pytest.mark.parametrize('change', [
+    {'recent_ids': 5}, {'recent_ids': [1, 2]}, {'server': 'ftp://cloud.test'}, {'server': 'http://'},
+    {'server': 'http://[bad'}, {'place_ts': float('nan')}, {'place_ts': float('inf')}, {'place_ts': 'soon'},
+    {'start_ts': float('nan')}, {'token': 'abc\ndef'}, {'token': 'abc def'}, {'token': 'secret\r\nX-Evil: 1'},
+    {'stopped': 'maybe'}],
+    ids=lambda c: next(iter(c)) + '=' + repr(next(iter(c.values())))[:12])
+def test_a_damaged_link_counts_as_not_linked(rig, caplog, change):
+    rig.linked(**change)
+    rig.habit(START + 1, id='h1')
+    with caplog.at_level(logging.WARNING):
+        assert rig.tick(after=10) == SETTINGS.idle_check_every_sec
+        rig.tick()
+    assert rig.made == [] and rig.link.calls == []
+    assert rig.uploader.status() == {'linked': False, 'stopped': False, 'last_sent_ts': None, 'waiting': 0}
+    assert caplog.text.count(WORDS.log_bad_link) == 1                # said once, not every round
+    assert 'secret' not in caplog.text and 'abc' not in caplog.text
+    rig.linked(place_ts=START, start_ts=START)                         # linked again: it works
+    rig.tick()
+    assert rig.habits_sent() == ['h1']
+
+
+def test_a_link_that_is_not_even_a_dict_counts_as_not_linked(rig):
+    rig.store.save(SETTINGS.link_key, ['not', 'a', 'link'])
+    assert rig.tick(after=10) == SETTINGS.idle_check_every_sec and rig.made == []
+
+
+# ── the clock ──
+def test_a_future_dated_event_does_not_move_the_place_into_the_future(rig):
+    rig.linked()
+    rig.habit(START + 10 * DAY_SEC, id='future')                   # the computer's clock was ahead for a while
+    rig.tick(after=10)
+    assert rig.habits_sent() == ['future'] and rig.saved()['place_ts'] == START + 10
+    rig.habit(START + 60, id='later')                              # written after the clock was corrected
+    rig.tick(after=60)
+    assert rig.habits_sent() == ['future', 'later']
+    rig.tick(after=60)
+    assert rig.habits_sent().count('future') == 1                  # the future one is not sent again
+
+
+# ── the day's numbers over a long outage ──
+def test_totals_of_every_day_of_a_three_day_outage_are_sent_and_none_from_before_linking(rig):
+    days = [rig.clock.local_day(START + n * DAY_SEC) for n in range(4)]
+    before = rig.clock.local_day(START - DAY_SEC)
+    rig.linked()
+    put_day(rig, before, water_ml=111)                               # numbers from before linking
+    put_day(rig, days[0], water_ml=100)
+    rig.link.failure = CloudUnavailable('off')
+    rig.tick(after=10)
+    for n, day in enumerate(days[1:], start=1):                      # three days go by with the server off
+        put_day(rig, day, water_ml=100 * (n + 1))
+        rig.tick(after=DAY_SEC)
+    rig.link.failure = None
+    rig.tick(after=10 * MIN)
+    sent = {t['day']: t['totals']['water_ml'] for events, _ in rig.link.calls[-1:] for t in events
+            if t['type'] == 'daily_totals'}
+    assert sent == dict(zip(days, (100, 200, 300, 400), strict=True))
+    assert before not in {t['day'] for t in totals_sent(rig)}
+
+
+def test_totals_sent_for_a_day_are_not_sent_again_unchanged(rig):
+    days = [rig.clock.local_day(START + n * DAY_SEC) for n in range(3)]
+    rig.linked()
+    for day in days:
+        put_day(rig, day)
+    rig.tick(after=2 * DAY_SEC)
+    rig.tick(after=HOUR)
+    assert sorted(t['day'] for t in totals_sent(rig)) == days
+
+
+# ── pretend sips ──
+def test_the_demo_tabs_pretend_sips_are_taken_out_of_the_totals(rig):
+    today = rig.clock.local_day(START)
+    rig.linked()
+    put_day(rig, today, sips=10, water_ml=800, demo_sips=2, demo_water_ml=160)
+    rig.tick(after=10)
+    [sent] = totals_sent(rig)
+    assert sent['totals']['sips'] == 8 and sent['totals']['water_ml'] == 640

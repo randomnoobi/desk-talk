@@ -44,6 +44,7 @@ from desktalk.adapters.llm import OpenAICompatibleChatModel, ResilientChatModel
 from desktalk.adapters.notify import MacNotifications, make_notifications
 from desktalk.adapters.picture import DeskPainter, OpenCvPictureTools
 from desktalk.adapters.storage import EventLog, JsonFileStore, SqliteStateStore
+from desktalk.adapters.storage.json_files import SUFFIX as JSON_SUFFIX
 from desktalk.adapters.storage.trace_photo_files import TracePhotoFiles
 from desktalk.config import AppConfig, ConfigError, Protocols
 from desktalk.core.agents.profiles import ProfileBook
@@ -510,7 +511,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                                  default_temperature=default_temperature, clock=clock,
                                  prompts=config.prompts.daily_recap, preview_chars=config.logging.preview_chars)
     def http_line(server: str, token: str) -> CloudLink:
-        return HttpCloudLink(server, token, timeout_sec=config.cloud.timeout_sec)
+        return HttpCloudLink(server, token, timeout_sec=config.cloud.timeout_sec,
+                             error_text_chars=config.cloud.error_text_chars)
     cloud = CloudUploader(cloud_link_factory or http_line, event_log, store, preferences, cloud_goals(config.protocols),
                           config.cloud, clock, config.prompts.cloud)
     scheduler = Scheduler(clock, longest_wait_sec=config.supervisor.scheduler_longest_wait_sec)
@@ -539,7 +541,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         databases = SqliteBrowser({'object_states': data_path(config.object_states.database)},
                                   max_rows=dev.sql_max_rows, timeout_sec=dev.sql_timeout_sec, clock=clock,
                                   words=config.prompts.dev, check_every_steps=dev.sql_check_every_steps)
-        data_files = DataFolder(data_path(config.storage.folder), dev.file_preview_kb * 1024, words=config.prompts.dev)
+        data_files = DataFolder(data_path(config.storage.folder), dev.file_preview_kb * 1024, words=config.prompts.dev,
+                                hidden=[f'{config.cloud.link_key}{JSON_SUFFIX}'])      # the cloud link holds a token
         firer = DemoFirer(dev.scenarios, bus, habits, lens, reminders, profiles, prompts=config.prompts,
                           lost_item_names={item_id: item.name for item_id, item in config.lost_items.items.items()})
         demo = ScenarioRunner(dev.scenarios, firer, clock, words=config.prompts.dev)

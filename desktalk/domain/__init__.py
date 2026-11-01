@@ -48,6 +48,7 @@ from desktalk.domain.dev import (
 from desktalk.domain.errors import (
     AIUnavailable,
     CloudNotLinked,
+    CloudRefused,
     CloudUnavailable,
     DetectorUnavailable,
     UnknownChat,
@@ -79,7 +80,7 @@ from desktalk_shared.wire import DetectorState, PiHealth, UploadInfo
 
 __all__ = [
     'CHANGE_TYPES', 'EVENT_TYPES', 'HABITS', 'LENS', 'AgentJoined', 'AgentLeft', 'AgentProfile', 'AIUnavailable',
-    'CloudNotLinked', 'CloudUnavailable',
+    'CloudNotLinked', 'CloudRefused', 'CloudUnavailable',
     'Alert', 'BBox', 'Box', 'CameraNotice', 'Compaction', 'Danger', 'DeskRules', 'DeskSnapshot', 'Detection',
     'DetectionEvent', 'DetectorState', 'DetectorUnavailable', 'Event', 'event_from_dict', 'Frame', 'Gravity',
     'HabitDone', 'HabitEvent', 'is_day', 'keep_inside', 'Light', 'new_event_id', 'Nudge', 'NudgeSent', 'ObjectSnapshot',

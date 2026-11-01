@@ -12,13 +12,14 @@ from typing import Any
 import pytest
 
 from desktalk.adapters.cloud.http_link import HttpCloudLink, claim
-from desktalk.domain import CloudNotLinked, CloudUnavailable
+from desktalk.domain import CloudNotLinked, CloudRefused, CloudUnavailable
 from desktalk_shared.cloud_api import ClaimReply
 from tests.contracts.cloud_link_contract import EVENTS, CloudLinkContract
 from tests.fakes import RecordingCloudLink
 
 TOKEN = 'good-token-123'
 CODE = 'ABCD-EFGH'
+ERROR_CHARS = 40
 
 
 class StandInServer:
@@ -30,6 +31,8 @@ class StandInServer:
         self.kept: set[str] = set()
         self.status = 200
         self.redirect_to = ''
+        self.detail: Any = 'nope'
+        self.claim_reply: tuple[int, Any] | None = None
         self.body: bytes | None = None
         self.delay = 0.0
         outer = self
@@ -47,12 +50,15 @@ class StandInServer:
                     time.sleep(outer.delay)
                 if self.path == '/v1/devices/claim':
                     ok = data.get('code') == CODE
-                    self._reply(200 if ok else 404, {'device_id': 'dev-1', 'token': TOKEN} if ok
-                                else {'detail': 'That code is not valid.'})
+                    if outer.claim_reply is not None:
+                        self._reply(*outer.claim_reply)
+                    else:
+                        self._reply(200 if ok else 404, {'device_id': 'dev-1', 'token': TOKEN} if ok
+                                    else {'detail': 'That code is not valid.'})
                 elif self.headers.get('Authorization') != f'Bearer {TOKEN}':
                     self._reply(401, {'detail': 'Unknown token.'})
                 elif outer.status != 200:
-                    self._reply(outer.status, {'detail': 'nope'}, location=outer.redirect_to)
+                    self._reply(outer.status, {'detail': outer.detail}, location=outer.redirect_to)
                 else:
                     ids = [e['id'] for e in data['events']]
                     fresh = [i for i in ids if i not in outer.kept]
@@ -90,7 +96,7 @@ def server():
 
 
 def link_to(server: StandInServer, token: str = TOKEN, timeout_sec: float = 5) -> HttpCloudLink:
-    return HttpCloudLink(server.address, token, timeout_sec=timeout_sec)
+    return HttpCloudLink(server.address, token, timeout_sec=timeout_sec, error_text_chars=ERROR_CHARS)
 
 
 # ── the contract, on the real line and on the stand-in ──
@@ -141,7 +147,8 @@ def test_the_refused_events_come_back_with_their_reasons(server):
 
 
 def test_the_server_address_may_end_in_a_slash(server):
-    HttpCloudLink(server.address + '/', TOKEN, timeout_sec=5).send(EVENTS, caught_up=False)
+    link = HttpCloudLink(server.address + '/', TOKEN, timeout_sec=5, error_text_chars=ERROR_CHARS)
+    link.send(EVENTS, caught_up=False)
     assert server.requests[0]['path'] == '/v1/events'
 
 
@@ -198,23 +205,85 @@ def test_the_token_is_never_in_an_error_message(server, how):
 @pytest.mark.parametrize('address', ['file:///etc/passwd', 'ftp://example.com', 'example.com:8000', ''])
 def test_only_web_addresses_are_accepted(address):
     with pytest.raises(ValueError):
-        HttpCloudLink(address, TOKEN, timeout_sec=5)
+        HttpCloudLink(address, TOKEN, timeout_sec=5, error_text_chars=ERROR_CHARS)
 
 
 # ── linking with a one-time code ──
 def test_a_good_code_gives_the_device_and_its_token(server):
-    reply = claim(server.address, CODE, 'My desk', timeout_sec=5)
+    reply = claim(server.address, CODE, 'My desk', timeout_sec=5, error_text_chars=ERROR_CHARS)
     assert reply == ClaimReply(device_id='dev-1', token=TOKEN)
     assert server.requests[0]['json'] == {'code': CODE, 'name': 'My desk'}
 
 
 def test_a_code_the_server_does_not_accept_says_so(server):
     with pytest.raises(CloudNotLinked):
-        claim(server.address, 'wrong', 'My desk', timeout_sec=5)
+        claim(server.address, 'wrong', 'My desk', timeout_sec=5, error_text_chars=ERROR_CHARS)
 
 
 def test_claiming_from_a_server_that_is_off_is_try_later():
     stopped = StandInServer()
     stopped.stop()
     with pytest.raises(CloudUnavailable):
-        claim(stopped.address, CODE, 'My desk', timeout_sec=2)
+        claim(stopped.address, CODE, 'My desk', timeout_sec=2, error_text_chars=ERROR_CHARS)
+
+
+# ── a no that will not mend itself, and the reason the server gives ──
+@pytest.mark.parametrize('status', [400, 404, 413, 422])
+def test_a_server_that_says_no_to_the_upload_is_refused_not_just_unavailable(server, status):
+    server.status = status
+    with pytest.raises(CloudRefused):
+        link_to(server).send(EVENTS, caught_up=False)
+
+
+@pytest.mark.parametrize('status', [429, 500, 503])
+def test_a_busy_or_broken_server_is_not_a_refusal(server, status):
+    server.status = status
+    with pytest.raises(CloudUnavailable) as raised:
+        link_to(server).send(EVENTS, caught_up=False)
+    assert not isinstance(raised.value, CloudRefused)
+
+
+def test_the_servers_reason_is_kept_short_and_never_has_the_token(server):
+    server.status = 400
+    server.detail = f'Too many events. Your token {TOKEN} is fine.\n' + 'x' * 500
+    with pytest.raises(CloudRefused) as raised:
+        link_to(server).send(EVENTS, caught_up=False)
+    assert 'Too many events' in str(raised.value) and TOKEN not in str(raised.value)
+    assert '\n' not in str(raised.value) and len(str(raised.value)) < 100
+
+
+def test_a_validation_reason_is_read_from_a_list(server):
+    server.status = 422
+    server.detail = [{'loc': ['body', 'name'], 'msg': 'String should have at most 60 characters'}]
+    with pytest.raises(CloudRefused) as raised:
+        link_to(server).send(EVENTS, caught_up=False)
+    assert 'at most 60 characters' in str(raised.value)
+
+
+def test_a_code_refused_carries_the_reason_the_server_gives(server):
+    with pytest.raises(CloudNotLinked) as raised:
+        claim(server.address, 'wrong', 'My desk', timeout_sec=5, error_text_chars=ERROR_CHARS)
+    assert str(raised.value) == 'That code is not valid.'
+
+
+def test_a_code_refused_for_a_too_long_name_says_so_not_just_a_bad_code(server):
+    server.claim_reply = (422, {'detail': 'The name is too long.'})
+    with pytest.raises(CloudNotLinked) as raised:
+        claim(server.address, CODE, 'x' * 500, timeout_sec=5, error_text_chars=ERROR_CHARS)
+    assert str(raised.value) == 'The name is too long.'
+
+
+# ── a token that cannot be a header ──
+@pytest.mark.parametrize('token', ['abc\ndef', 'abc\r\nX-Evil: 1', 'abc def', 'tökén', ''])
+def test_a_token_with_a_line_break_never_reaches_the_wire_or_an_error_message(server, token):
+    with pytest.raises(CloudUnavailable) as raised:
+        link_to(server, token=token).send(EVENTS, caught_up=False)
+    assert server.requests == []
+    assert 'abc' not in str(raised.value) and 'Bearer' not in str(raised.value) and 'Evil' not in str(raised.value)
+
+
+def test_a_claim_that_gives_a_token_that_cannot_be_used_is_refused_without_showing_it(server):
+    server.claim_reply = (200, {'device_id': 'dev-1', 'token': 'secret\nbreak'})
+    with pytest.raises(CloudUnavailable) as raised:
+        claim(server.address, CODE, 'My desk', timeout_sec=5, error_text_chars=ERROR_CHARS)
+    assert 'secret' not in str(raised.value)

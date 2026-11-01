@@ -166,3 +166,18 @@ def test_the_settings_page_has_the_words_for_the_status_line(tmp_path):
     words = rig.config.prompts.cloud
     assert cloud == {'off': words.status_off, 'on': words.status_on, 'waiting': words.status_waiting,
                      'stopped': words.status_stopped}
+
+
+def test_the_developer_pages_storage_tab_never_shows_the_link_file(tmp_path):
+    rig = make_rig(tmp_path, None)
+    link_it(rig)
+    assert rig.app.data_files is not None
+    rig.app.store.save('something_else', {})
+    name = f'{rig.config.cloud.link_key}.json'
+    listed = [f.path for f in rig.app.data_files.list()]
+    assert 'something_else.json' in listed and name not in listed          # the folder is listed, but not the link
+    with pytest.raises(FileNotFoundError):
+        rig.app.data_files.preview(name)
+    client = web_client(rig.app)
+    assert TOKEN not in client.get('/api/dev/files').text
+    assert TOKEN not in client.get('/api/dev/files/preview', params={'path': name}).text

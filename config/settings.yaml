@@ -487,6 +487,7 @@ cloud:
   retry_max_sec: 1800         # ...up to this
   totals_every_min: 15        # a day's numbers (desk time, water ...) go when they changed, at most this often
   goals_every_hours: 24       # your goals and wake and bed times go again this often, and whenever they change
+  error_text_chars: 200       # most letters kept of a reason the server gives when it says no
 
 # ── Proof photos ────────────────────────────────────────────────────
 snapshots:
