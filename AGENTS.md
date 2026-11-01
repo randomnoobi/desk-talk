@@ -18,6 +18,7 @@ How it got this way (history, finished): the refactor, [docs/plans/2026-10-21-re
 - Types: `uv run pyright` must show 0 errors. `pyrightconfig.json`'s `ignore` list only shrinks: fix a file and take it off; never add one.
 - Dead code: `uv run vulture` must print nothing. A name it can't see being used goes in `tests/vulture_allow.py`, with what uses it.
 - The developer page (`dev_ui/`, TypeScript): run `npm test` and `npm run build` in `dev_ui/` when you change it. It keeps no numbers of its own: they come from `GET /api/dev/settings`. A new `/api/dev` route needs a characterization case like any other route.
+- The cloud server (`cloud/`): its fast tests are in the fast suite. When you change `cloud/server/`, `cloud/settings.yaml`, `cloud/prompts.yaml`, `cloud/compose.yaml` or `cloud/web/nginx*.conf`, also run `uv run pytest -m docker tests/docker/test_cloud_stack.py tests/docker/test_cloud_postgres_store.py`. When you change `cloud/web/`, run `npm test` and `npm run build` there, and `uv run pytest -m e2e tests/e2e/test_cloud_site.py`.
 - Show the test, ruff, pyright and vulture output. Don't just say they passed.
 
 ## Config, not code
@@ -49,6 +50,14 @@ How it got this way (history, finished): the refactor, [docs/plans/2026-10-21-re
   - **The detector service** (`raspberry_pi/detector_service/`), which runs in Docker and may use anything uv installs, but never imports `desktalk/` (only `desktalk_shared`).
 - `shared/desktalk_shared/` is used on the Pi and on this computer. It must stay standard library only and work on Python 3.11.
 - Code gets to the Pi with `git pull` on the Pi (or scp from the Mac). You can't run anything on the Pi, so don't say a Pi change works. Tell the user what to copy and run there, and label each command **on the Pi** or **on your Mac**.
+
+## Cloud server
+- `cloud/` is a program of its own that keeps what a computer or Pi may send and writes a weekly report. It's optional: the app needs no account, and until `scripts/link_cloud.py` links it, the sender in `desktalk/core/cloud/` calls nothing. How to run it: [cloud/README.md](cloud/README.md).
+- `cloud/server/` never imports `desktalk/`, and `desktalk/` never imports it. They share only `desktalk_shared`. `to_cloud_event()` in `shared/desktalk_shared/cloud_api.py` is the one filter of what may leave, and it lists what may go, never what may not. Pictures, to-do text and anything new stay home by default.
+- It has its own rules for the same things: numbers in `cloud/settings.yaml` with a typed field in `cloud/server/desktalk_cloud/config.py`, wording in `cloud/prompts.yaml`, secrets in `cloud/.env` (and `cloud/.env.example`). `bootstrap.py` there is the only place that knows the real classes, and `ports.py` the interfaces.
+- A new route goes in `cloud/server/desktalk_cloud/routers/`. `tests/unit/test_cloud_bootstrap.py` fails if it answers without a login, unless it's on that test's short list.
+- A number that must match in two places (`compose.yaml`, `web/nginx*.conf` and `settings.yaml`) gets a test comparing them, as those in `test_cloud_bootstrap.py` do.
+- Logs never hold a token, a code, a to-do or what Postgres said about a row.
 
 ## Writing style
 - Plain, everyday words everywhere: code comments, docs, config comments, chat text, commit messages. Say "pictures" not "frames", "the Pi" not "the edge node". Match the existing README and `config/settings.yaml`.

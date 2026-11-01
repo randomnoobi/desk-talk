@@ -47,6 +47,11 @@ the AI, the Pi's detector or the network going away never stops the rest.
 
 More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+**No account needed.** Desk Talk runs without any account or cloud service. A cloud server is optional: you
+run it yourself, in Docker, and it keeps your habit events (never pictures, never to-do text) and writes a
+weekly report you read on its website. Until you link to one with `scripts/link_cloud.py`, nothing is sent.
+See [cloud/README.md](cloud/README.md).
+
 ---
 
 ## Characters
@@ -451,7 +456,7 @@ To work on the page itself, `npm run dev` in `dev_ui/` serves it at http://local
 ```
 desk-talk/
 ├── server.py                 # start Desk Talk on your computer: uv run python server.py
-├── pyproject.toml, uv.lock   # the uv workspace: desktalk, desktalk-shared, desktalk-detector
+├── pyproject.toml, uv.lock   # the uv workspace: desktalk, desktalk-shared, desktalk-detector, desktalk-cloud
 ├── config/                   # every setting: settings.yaml, agents.yaml, protocols.yaml, prompts.yaml (the wording), safety_rules.json
 ├── desktalk/                 # the app that runs on your computer
 │   ├── bootstrap.py          #   builds every part and connects them (the only place that knows the real classes)
@@ -479,6 +484,7 @@ desk-talk/
 ├── raspberry_pi/             # what runs on the Pi (raspberry_pi/README.md)
 │   ├── camera/               #   the camera program, on the Pi's own python3 (no Docker): cli.py, main.py, workers.py ...
 │   └── detector_service/     #   YOLO in Docker: Dockerfile, compose.yaml, .env, desktalk_detector/
+├── cloud/                    # the optional cloud server, in Docker: its server, website and settings (cloud/README.md)
 ├── benchmarks/               # times YOLO models on your Mac and on the Pi, to pick the Pi's model
 ├── web_app/                  # the app you open at localhost:5000 (HTML / CSS / JS, art, fonts)
 ├── phone_camera/             # the page a phone opens to be the camera instead of the Pi

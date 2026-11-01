@@ -4,15 +4,16 @@ Every web address (route) the Desk Talk servers answer, grouped by area: what it
 who is allowed to. The code is the source of truth; this page is a map of it. How the parts fit together
 is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-**66 routes in all: 54 on the main server (20 of them for the developer page), 9 on the phone camera's server, 3 on the detector service.**
+**88 routes in all: 55 on the main server (20 of them for the developer page), 9 on the phone camera's server, 3 on the detector service, 21 on the cloud server.**
 
-## Three servers
+## Four servers
 
 | Server | Where it runs | Port | What it's for |
 |---|---|---|---|
 | **Main server** | Your computer (`uv run python server.py`) | `web.port` in `config/settings.yaml`, 5000 | The app page (`web_app/`) and everything it asks for, the Pi's uploads, and the developer page (`dev_ui/`, at `/dev/`). |
 | **Phone camera server** | Your computer, in a thread of the main one. Only runs when the phone is the camera. | `camera.phone_port`, 5443, **https** | The phone camera page (`phone_camera/`). Phones only allow the camera on https pages, so it has its own certificate. |
 | **Detector service** | The Pi, in Docker | `DETECTOR_PORT` in `raspberry_pi/detector_service/.env`, 8100; only reachable from the Pi itself | YOLO object detection for the Pi's camera program. |
+| **Cloud server** (optional) | Wherever you run it, in Docker (`cloud/`) | `WEB_PORT` in `cloud/.env`, 8080, through nginx | Keeps what a linked computer or Pi may send, shows it on its website, and writes a weekly report. |
 
 ### Finding a route in the code
 
@@ -23,7 +24,10 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
   `desktalk/web/deps.py`; what a request body looks like is in `desktalk/web/schemas.py`.
 - **Detector service:** `raspberry_pi/detector_service/desktalk_detector/app.py`. The request and reply
   shapes are in `shared/desktalk_shared/detector_api.py`.
-- **Every route has a test case:** `tests/characterization/cases.py`.
+- **Cloud server:** `cloud/server/desktalk_cloud/routers/`, one file per area, built by `bootstrap.py`. The shapes a Pi
+  sends are in `shared/desktalk_shared/cloud_api.py`.
+- **Every route of the main and phone servers has a test case:** `tests/characterization/cases.py`. The cloud server's
+  are in `tests/unit/test_cloud_*.py`, and `test_cloud_bootstrap.py` checks each one needs the right login.
 
 ### What every reply of the main server has in common
 
@@ -173,6 +177,12 @@ The Pi's camera program (`raspberry_pi/camera/`) is the only caller. Both routes
   Kept for old Pis; nothing in this repo sends it any more except the tests.
 - Errors: 400 not a JPEG or a bad `info`, 403 wrong key, 409 `camera.source` is not `pi`, 413 bigger than
   `web.pi_upload_max_mb`.
+
+### Cloud link (1)
+
+| Method | Path | What it does | Called by | Access |
+|---|---|---|---|---|
+| GET | `/api/cloud/status` | Whether this computer is linked to a cloud server: `{"linked", "stopped", "last_sent_ts", "waiting"}`. `stopped` means the server no longer knows this computer, so it needs linking again. `waiting` is how many events were still to go at its last try, so it doesn't count ones written since. | `web_app/app.js` (the line in Settings) | anyone on the network |
 
 ### Developer page (this computer only) (20)
 
@@ -325,6 +335,62 @@ publishes the port on the Pi itself (`127.0.0.1`), so other computers can't reac
 
 ---
 
+## Cloud server
+
+The optional server in `cloud/`. Its own access rules:
+
+| Access | Meaning |
+|---|---|
+| **open** | No login. |
+| **limited** | No login, but counted per address (`limits.claim_tries` in `limits.claim_window_sec`), then 429. |
+| **Pi token** | `Authorization: Bearer <token>`, the one `scripts/link_cloud.py` saved. |
+| **login** | The login cookie from logging in with Google. |
+| **Pi token or owner** | That Pi's own token, or the login of the person it belongs to. |
+| **admin** | The admin login cookie. |
+
+### For a Pi (5)
+
+| Method | Path | What it does | Access |
+|---|---|---|---|
+| POST | `/v1/devices/claim` | Trade a one-time code for a device id and a token. | limited |
+| POST | `/v1/events` | Send events. Each goes through `to_cloud_event()` again. Replies how many were kept, repeated and refused. | Pi token |
+| GET | `/v1/devices/{device_id}/state` | The Pi, when it was last seen, its goals, its last camera problem and its objects. | Pi token or owner |
+| GET | `/v1/devices/{device_id}/events` | Its events, oldest first. `?since=`, `?after_id=`, `?limit=`. | Pi token or owner |
+| POST | `/v1/chat/completions` | Chat through this server's AI key, text only. Off without `CHAT_API_KEY`. | Pi token |
+
+### Logging in (4)
+
+| Method | Path | What it does | Access |
+|---|---|---|---|
+| GET | `/auth/google/login` | Send the person to Google. 503, in plain words, when Google isn't set up. | open |
+| GET | `/auth/google/callback` | Where Google sends them back. | open |
+| POST | `/auth/logout` | Log out. | open |
+| POST | `/auth/admin/login` | The admin's username and password. 404 with no admin set up. | limited |
+
+### The website (9)
+
+All need the login, and only reach that person's own things.
+
+| Method | Path | What it does |
+|---|---|---|
+| GET | `/api/me` | Who is logged in. |
+| DELETE | `/api/me` | Delete this person and everything of theirs. |
+| GET | `/api/devices` | Their Pis. |
+| POST | `/api/devices/code` | A one-time code and the setup command. With a `device_id`, it links that same Pi again. |
+| PATCH | `/api/devices/{device_id}` | Rename a Pi. |
+| DELETE | `/api/devices/{device_id}` | Remove a Pi: cancels its token and keeps its history. |
+| DELETE | `/api/devices/{device_id}/data` | Delete a Pi and everything kept for it. |
+| GET | `/api/reports` | Their weekly reports. |
+| GET | `/api/reports/{report_id}` | One report. |
+
+### Admin (2), and health (1)
+
+| Method | Path | What it does | Access |
+|---|---|---|---|
+| GET | `/api/admin/overview` | Who's on the server, and failed reports. | admin |
+| POST | `/api/admin/reports/{report_id}/rerun` | Set a report to be written again. | admin |
+| GET | `/healthz` | For Docker's health check. nginx doesn't pass it on, so only the containers can reach it. | open |
+
 ## Routes removed in the cleanup
 
 Nothing called these, so [the cleanup](plans/2026-10-23-codebase-cleanup-plan.md) deleted them. They now
@@ -348,4 +414,5 @@ Event log page and the posture checks used: `GET /api/habit_log` · `GET /api/lo
 `tests/characterization/test_route_coverage.py` fails when a route on the main or phone server has no case
 in `tests/characterization/cases.py`. So a new route needs three things: the route in its file in
 `desktalk/web/routers/` (and a line in that file's top comment), a case in `cases.py`, and a row on this
-page. Nothing checks this page, so keep the totals at the top right too.
+page. Nothing checks this page, so keep the totals at the top right too. A cloud server route goes in
+`cloud/server/desktalk_cloud/routers/`, with tests in `tests/unit/test_cloud_*.py`.
