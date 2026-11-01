@@ -48,6 +48,15 @@ class Setup:
     def tick(self) -> float:
         return self.job.tick(self.clock.now())
 
+    def run_to(self, ts: float) -> None:
+        """A server that stays awake: it ticks every round until `ts` (and at `ts`)."""
+        step = SETTINGS.check_every_min * 60
+        while self.clock.now() + step < ts:
+            self.go_to(self.clock.now() + step)
+            self.tick()
+        self.go_to(ts)
+        self.tick()
+
     def row(self, device=None, week: str = WEEK) -> Report | None:
         return self.store.get_report((device or self.ann).id, week)
 
@@ -87,11 +96,9 @@ def test_waits_for_catch_up_then_writes_after_wait_days():
     s.tick()
     assert s.report().status == PENDING and s.writer.calls == []
     started = s.clock.now()                                                # the report is started on this first round
-    s.go_to(started + SETTINGS.wait_for_pi_days * DAY - 1)
-    s.tick()
+    s.run_to(started + SETTINGS.wait_for_pi_days * DAY - 1)
     assert s.report().status == PENDING and s.writer.calls == []
-    s.go_to(started + SETTINGS.wait_for_pi_days * DAY)
-    s.tick()
+    s.run_to(started + SETTINGS.wait_for_pi_days * DAY)
     assert s.report().status == DONE
     data = s.writer.calls[0][1]
     assert 'had not finished sending' in data and 'Sun Nov 01 19:58' in data       # when the Pi was last heard from
@@ -123,8 +130,7 @@ def test_no_data_waits_for_a_pi_that_has_not_caught_up():
     s.go_to(DUE + 600)
     s.tick()
     assert s.report().status == PENDING
-    s.go_to(DUE + 600 + SETTINGS.wait_for_pi_days * DAY)
-    s.tick()
+    s.run_to(DUE + 600 + SETTINGS.wait_for_pi_days * DAY)
     assert s.report().status == NO_DATA and s.writer.calls == []
 
 
@@ -133,8 +139,7 @@ def test_a_pi_never_heard_from_gets_no_data_after_the_wait():
     s.go_to(DUE + 600)
     s.tick()
     assert s.report().status == PENDING
-    s.go_to(DUE + 600 + SETTINGS.wait_for_pi_days * DAY)
-    s.tick()
+    s.run_to(DUE + 600 + SETTINGS.wait_for_pi_days * DAY)
     assert s.report().status == NO_DATA and s.writer.calls == []
 
 
@@ -387,11 +392,9 @@ def test_the_wait_counts_from_when_the_server_started_the_report_if_that_is_late
     s = Setup()
     s.go_to(DUE + 3 * DAY)
     s.tick()
-    s.go_to(DUE + 3 * DAY + SETTINGS.wait_for_pi_days * DAY - 1)
-    s.tick()
+    s.run_to(DUE + 3 * DAY + SETTINGS.wait_for_pi_days * DAY - 1)
     assert s.report().status == PENDING
-    s.go_to(DUE + 3 * DAY + SETTINGS.wait_for_pi_days * DAY)
-    s.tick()
+    s.run_to(DUE + 3 * DAY + SETTINGS.wait_for_pi_days * DAY)
     assert s.report().status == NO_DATA
 
 
@@ -449,3 +452,80 @@ def test_a_store_that_fails_when_saving_the_report_counts_as_a_try():
     assert (s.report().status, s.report().tries) == (PENDING, 1)
     s.tick()
     assert len(s.writer.calls) == 1                                        # it waits before paying for another
+
+
+# ── fix round 2 ──────────────────────────────────────────────────────────────────────────────────────────────────
+def test_run_again_after_the_wait_writes_at_once():
+    s = Setup()
+    s.send(events=[sip('s1', at(28, 9))], at_ts=DUE - 100, caught_up=False)         # never catches up
+    s.go_to(DUE + 600)
+    s.tick()
+    s.run_to(DUE + 600 + SETTINGS.wait_for_pi_days * DAY)
+    assert s.report().status == DONE and len(s.writer.calls) == 1
+    s.store.reset_report(s.report().id, s.clock.now())                              # the admin runs it again
+    s.go_to(s.clock.now() + SETTINGS.check_every_min * 60)
+    s.tick()
+    assert s.report().status == DONE and len(s.writer.calls) == 2                   # the wait was over: no new wait
+
+
+def test_a_row_made_on_time_then_a_long_sleep_gives_the_pi_a_chance_to_send():
+    s = Setup()
+    s.go_to(DUE + 600)
+    s.tick()                                                                        # the row is made on time
+    assert s.report().status == PENDING
+    s.go_to(DUE + 4 * DAY)                                                          # the server sleeps for four days
+    s.tick()
+    assert s.report().status == PENDING and s.writer.calls == []                    # not "no data" on waking
+    s.send(events=[sip('late', at(30, 9))], at_ts=DUE + 4 * DAY + 20 * 60)          # the Pi sends 20 minutes after
+    s.go_to(DUE + 4 * DAY + 25 * 60)
+    s.tick()
+    assert s.report().status == DONE and len(s.writer.calls) == 1
+
+
+def test_after_the_grace_a_woken_server_writes_without_a_pi_that_never_comes():
+    s = Setup()
+    s.go_to(DUE + 600)
+    s.tick()
+    s.go_to(DUE + 4 * DAY)
+    s.tick()
+    s.run_to(DUE + 4 * DAY + SETTINGS.wake_grace_min * 60 - 1)
+    assert s.report().status == PENDING
+    s.run_to(DUE + 4 * DAY + SETTINGS.wake_grace_min * 60)
+    assert s.report().status == NO_DATA and s.writer.calls == []
+
+
+def test_a_server_that_missed_only_a_round_or_two_did_not_sleep():
+    s = Setup()
+    s.go_to(DUE + 600)
+    s.tick()
+    s.run_to(DUE + 3 * DAY)
+    gap = SETTINGS.check_every_min * 60 * 1.5                                       # a slow round, not a sleep
+    s.go_to(s.clock.now() + gap)
+    s.run_to(DUE + 600 + SETTINGS.wait_for_pi_days * DAY)
+    assert s.report().status == NO_DATA
+
+
+def test_a_pi_that_has_caught_up_is_written_at_once_after_a_sleep():
+    s = Setup()
+    s.go_to(DUE + 600)
+    s.tick()
+    s.send(events=[sip('s1', at(28, 9))], at_ts=DUE + 700)
+    s.go_to(DUE + 4 * DAY)
+    s.tick()
+    assert s.report().status == DONE
+
+
+def test_numbers_sent_after_the_week_ended_are_not_this_weeks_data():
+    s = Setup()
+    after = {'id': 'daily-2026-11-01', 'ts': DUE + 9000, 'type': 'daily_totals', 'day': '2026-11-01',
+             'totals': {'desk_sec': 7200, 'water_ml': 500}}
+    s.store.save_batch(s.ann.id, [], [after], [], True, DUE + 9000)                 # sent at 22:30, week ended at 20:00
+    s.go_to(DUE + 9100)
+    s.tick()
+    assert s.report().status == NO_DATA and s.writer.calls == []
+    before = {**after, 'ts': DUE - 600}
+    other = Setup()
+    other.store.save_batch(other.ann.id, [], [before], [], True, DUE + 300)
+    other.go_to(DUE + 600)
+    other.tick()
+    assert other.report().status == DONE

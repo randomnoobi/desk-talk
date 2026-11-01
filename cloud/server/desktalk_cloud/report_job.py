@@ -27,6 +27,7 @@ __all__ = ['ReportJob']
 log = logging.getLogger(__name__)
 
 SECONDS_IN_MINUTE, SECONDS_IN_DAY = 60, 86_400
+MISSED_ROUNDS = 2             # this many rounds with no tick at all means the server was asleep or stopped, not slow
 GOALS, CAMERA = 'goals', 'camera'
 
 
@@ -43,8 +44,24 @@ class ReportJob:
     def __init__(self, store: Store, writer: ReportWriter, clock: Clock, settings: ReportSettings,
                  prompts: ReportWords) -> None:
         self._store, self._writer, self._clock, self._settings, self._words = store, writer, clock, settings, prompts
+        self._awake_since: float | None = None       # when this server last started or woke up (kept in memory only)
+        self._last_round_end: float | None = None
+
+    def _note_if_woken(self, now: float) -> None:
+        """Remember when the server started, or woke up after missing rounds. A Pi that could not send while the server
+        slept gets reports.wake_grace_min from then to send before the server gives up waiting for it."""
+        every = self._settings.check_every_min * SECONDS_IN_MINUTE
+        if self._last_round_end is None or now - self._last_round_end > MISSED_ROUNDS * every:
+            self._awake_since = now
 
     def tick(self, now: float) -> float:
+        self._note_if_woken(now)
+        try:
+            return self._round(now)
+        finally:
+            self._last_round_end = max(now, self._clock.now())
+
+    def _round(self, now: float) -> float:
         devices = {d.id: d for d in self._store.list_all_devices() if d.removed_at is None}
         for device in devices.values():
             self._guarded(device.id, self._start_week, device, now)
@@ -74,11 +91,15 @@ class ReportJob:
     # ── writing one ──
     def _ready(self, device: Device, report: Report, end: float, now: float) -> bool:
         """The Pi has sent everything up to the end of the week, or the wait for it has run out. The wait counts from
-        the end of the week or from when the server started this report, whichever is later: a server that slept past
-        the end of the week gives the Pi its days to catch up from the moment the server is awake to hear it."""
+        the end of the week or from when the server started this report, whichever is later (a re-run by the admin keeps
+        the first time, so it is written at once). And the server must have been awake for reports.wake_grace_min: one
+        that slept past the end of the wait gives the Pi time to send once it can hear it."""
         if device.caught_up_at is not None and device.caught_up_at >= end:
             return True
-        return now >= max(end, report.created_at) + self._settings.wait_for_pi_days * SECONDS_IN_DAY
+        waited = now >= max(end, report.created_at) + self._settings.wait_for_pi_days * SECONDS_IN_DAY
+        grace = self._settings.wake_grace_min * SECONDS_IN_MINUTE
+        awake = self._awake_since is not None and now >= self._awake_since + grace
+        return waited and awake
 
     def _write(self, report: Report, device: Device, now: float) -> None:
         zone = zone_of(device.time_zone)
@@ -113,8 +134,9 @@ class ReportJob:
         start_day = datetime.fromtimestamp(start, zone).date().isoformat()      # the evening before the first whole day
         events = self._store.events_between(device.id, start, end)
         totals = self._store.totals_between(device.id, start_day, last_day)
-        # (the first evening's day is mostly last week's, so its numbers don't count as this week having data)
-        week_totals = [t for t in totals if str(t.get('day')) >= first_day]
+        # (the first evening's day is mostly last week's, and numbers sent after the week ended are not from it: neither
+        # counts as this week having data)
+        week_totals = [t for t in totals if str(t.get('day')) >= first_day and t.get('ts', 0) <= end]
         if not any(e.get('type') != GOALS for e in events) and not any(_has_numbers(t) for t in week_totals):
             return None
         return build_week(device, events, totals, self._store.latest_event(device.id, GOALS),

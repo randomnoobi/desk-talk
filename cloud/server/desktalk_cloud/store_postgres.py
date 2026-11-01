@@ -447,4 +447,4 @@ class PostgresStore:
 
     def reset_report(self, report_id: str, now: float) -> Report | None:
         return self._change_report(report_id, only_pending=False, status=PENDING, markdown=None, model=None,
-                                   error=None, tries=0, next_try_at=None, created_at=now)
+                                   error=None, tries=0, next_try_at=None)

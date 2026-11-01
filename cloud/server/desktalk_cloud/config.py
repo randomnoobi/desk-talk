@@ -85,6 +85,7 @@ class ReportSettings(_Section):
     hour: Hour
     check_every_min: PositiveNumber
     wait_for_pi_days: Annotated[float, Field(ge=0)]
+    wake_grace_min: Annotated[float, Field(ge=0)]
     max_tries: PositiveInt
     retry_first_wait_min: PositiveNumber
     retry_growth: Annotated[float, Field(ge=1)]

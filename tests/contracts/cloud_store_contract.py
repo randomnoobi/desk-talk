@@ -397,7 +397,7 @@ class CloudStoreContract:
         reset = store.reset_report(report.id, 3000.0)
         assert (reset.status, reset.tries, reset.error) == ('pending', 0, None)
         assert (reset.next_try_at, reset.markdown) == (None, None)
-        assert reset.created_at == 3000.0
+        assert reset.created_at == NOW                  # a re-run keeps when it was first made: its wait is over
         assert store.list_failed_reports() == []
         assert [r.id for r in store.reports_to_write(3000.0)] == [report.id]
 

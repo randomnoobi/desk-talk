@@ -65,6 +65,9 @@ report:
     7. Don't shame, don't diagnose health problems, and don't give medical advice. The camera can't see the person's sleep or health, so don't guess about them.
     8. If you don't have enough data to fill a section, say so in one line. Don't pad it.
     9. Every suggestion under "What to try next week" must be something next week's data can really show, using a number that is in the data's columns or event list. Don't suggest a check the data can't give, such as phone minutes after a certain time of day.
+    10. A pattern across times of day needs more than one day of data. With only one day, call it that day's sign, not a pattern.
+    11. Say what the camera saw, not what the person did or felt: "laptop on the desk", not "working".
+    12. Keep the report consistent with itself: "One thing for this week" is a single time or action that agrees with your suggestions, and every suggestion stays within the 40-word limit below. A check must be something the camera can see: it can't tell a laptop shut from open, only whether it is on the desk.
 
     ## Write the report in exactly this form
 
@@ -101,8 +104,11 @@ report:
       - The object detector makes mistakes. Short appearances and low `conf` values may be wrong, and a camera sip is only a guess at 80 ml.
       - The camera sees where a thing is, not whether it is on: a laptop that stays on the desk may be shut or asleep. When every object disappears at the same moment, the camera may have lost sight rather than everything having been removed.
       - "Desk minutes" is time a person was seen at the desk. A break is logged by a button, by leaving the desk, or by the camera being off. A break logged as "left the desk" shows the person was away from the desk, not that they walked.
-      - Desk minutes, hours at the desk and the longest sit are counted by the clock day, so a session that runs past midnight shows its after-midnight part under the next day.
-      - The wording of nudges and the person's task list are not part of this data. The `evidence` column says what the camera saw.
+      - Desk minutes, hours at the desk and the longest sit are counted by the clock day. A session that runs past midnight has its part after midnight under the next day's row, so a night's tail (until 00:20, say) is on the next day, not the day it began.
+      - The Sunlight column adds up only the minutes the person logged themselves (for example by telling a character they went outside). The camera can't see outdoors, so 0 means nothing was logged, not that the person stayed inside.
+      - `alert proximity` means the camera judged a thing too near the desk edge or too near something fragile (a cup beside a laptop, say). `alert scenario` is a notice about a pet, clutter, a plant or a lost item (`feature` says which). Each is an alert, not a nudge.
+      - Button presses seconds apart (three sips logged within seconds, say) are probably one action, so a count made of them may be too high.
+      - The wording of nudges and the person's task list are not part of this data. A nudge's `evidence` line says what the camera saw when it was sent. It is not what the person was told, and must not be quoted as the nudge's words.
     no_data_means_off: "- This Pi had sent everything up to the end of the week when this report was written, so a day with no data is a day it sent nothing: the app was off or not running."
     not_caught_up: "- This Pi had not finished sending when this report was written. It was last heard from at {last_heard}. A day with no data, or a day that looks short, may be data that has not arrived yet: the data does not show that the app was off on such a day."
     never_heard: never
@@ -121,6 +127,8 @@ report:
     h_daily: "## Daily totals"
     daily_note: "\"Hours at desk\" lists the clock hours with at least {seconds} seconds at the desk (21h = 21:00-21:59). A long sit that crosses midnight counts toward the next day's longest sit."
     daily_header: "| Day | Desk min | Hours at desk | Water ml (sips) | Breaks | Longest sit min | Phone-free min | Phone on desk min | Sunlight min | Nudges |"
+    first_evening_note: "The first evening's row is the whole day. Its numbers were already in last week's report and are not this week's, so adding that row to the others would count them twice."
+    total_label: "Total of the {count} day(s) with numbers (not the first evening, not a row that runs past the end)"
     no_data_day: no data
     numbers_missing: "numbers not received; see the events"
     before_linked: "before this Pi was linked"
@@ -139,6 +147,8 @@ report:
     h_gaps: "## Stretches with nothing reported"
     gaps_intro: "Each stretch below is {gap} minutes or longer with no event of any kind. The app may have been off, or nothing on the desk changed; the data cannot tell which."
     gaps_none: "No stretch of {gap} minutes or more passed without an event."
+    gaps_after_heard: "Everything after {last_heard} has not arrived from this Pi yet, so the time after it, up to the end of the week, is unknown."
+    gaps_never_heard: "Nothing has arrived from this Pi yet, so the time of this week is unknown."
     gap_line: "- {start} to {end} ({length})"
     duration_hm: "{hours} h {minutes} min"
     duration_m: "{minutes} min"
@@ -165,7 +175,7 @@ report:
     detail_week_ended: "the week's data ends before {window} minutes were up"
 
     h_snapshot: "## Most recent snapshot"
-    snapshot_intro: "This is what the Pi last reported, as of {last_heard}. It may not be what is on the desk now. Objects the camera said were on the desk:"
+    snapshot_intro: "This is what the Pi last reported, as of {last_heard}. It is the newest state the server knows, not the state on any one day: it can show a person present beside a day with 0 desk minutes, and it may not be what is on the desk now. Objects the camera said were on the desk:"
     snapshot_none: "None."
     camera_problem: "The camera last reported a problem ({key}) at {at}, after the last time an object changed ({changed}). This may be the last thing it saw, not what was on the desk."
     snapshot_header: "| Object | State | Since |"

@@ -337,4 +337,4 @@ class MemoryStore:
 
     def reset_report(self, report_id: str, now: float) -> Report | None:
         return self._change(report_id, only_pending=False, status=PENDING, markdown=None, model=None, error=None,
-                            tries=0, next_try_at=None, created_at=now)
+                            tries=0, next_try_at=None)

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 import re
+import unicodedata
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -28,16 +29,17 @@ __all__ = ['DATA_WORD_KEYS', 'ERROR_WORD_KEYS', 'ReportWords', 'build_week', 'lo
 
 # Every wording report.data in cloud/prompts.yaml must have (and no other).
 DATA_WORD_KEYS = (
-    'title', 'times', 'last_day_open', 'h_read', 'read_notes', 'no_data_means_off', 'not_caught_up', 'never_heard',
-    'linked_note', 'h_goals', 'schedule', 'goal_lines', 'goals_missing', 'h_daily', 'daily_note', 'daily_header',
-    'no_data_day', 'numbers_missing', 'before_linked', 'first_evening', 'week_starts', 'last_row_open',
-    'last_row_as_of', 'last_row_after_end', 'hour_label', 'hours_none', 'unknown_number', 'breaks_split',
-    'breaks_part', 'breaks_other', 'h_gaps', 'gaps_intro', 'gaps_none', 'gap_line', 'duration_hm', 'duration_m',
-    'h_nudges', 'outcomes_none', 'outcomes_app', 'outcomes_estimate', 'nudge_header', 'no_nudges', 'tasks_left_out',
-    'detail_app', 'result_acted', 'result_no_sign', 'result_cannot_tell', 'sign_break', 'sign_sip', 'sign_phone',
-    'sign_laptop', 'detail_cannot_tell', 'detail_nothing_later', 'detail_acted', 'detail_late', 'detail_week_ended',
-    'h_snapshot', 'snapshot_intro', 'snapshot_none', 'camera_problem', 'snapshot_header', 'all_objects_intro',
-    'h_events', 'events_note')
+    'title', 'times', 'last_day_open', 'h_read', 'read_notes', 'no_data_means_off', 'not_caught_up',
+    'never_heard', 'linked_note', 'h_goals', 'schedule', 'goal_lines', 'goals_missing', 'h_daily', 'daily_note',
+    'daily_header', 'first_evening_note', 'total_label', 'no_data_day', 'numbers_missing', 'before_linked',
+    'first_evening', 'week_starts', 'last_row_open', 'last_row_as_of', 'last_row_after_end', 'hour_label',
+    'hours_none', 'unknown_number', 'breaks_split', 'breaks_part', 'breaks_other', 'h_gaps', 'gaps_intro',
+    'gaps_none', 'gaps_after_heard', 'gaps_never_heard', 'gap_line', 'duration_hm', 'duration_m', 'h_nudges',
+    'outcomes_none', 'outcomes_app', 'outcomes_estimate', 'nudge_header', 'no_nudges', 'tasks_left_out',
+    'detail_app', 'result_acted', 'result_no_sign', 'result_cannot_tell', 'sign_break', 'sign_sip',
+    'sign_phone', 'sign_laptop', 'detail_cannot_tell', 'detail_nothing_later', 'detail_acted', 'detail_late',
+    'detail_week_ended', 'h_snapshot', 'snapshot_intro', 'snapshot_none', 'camera_problem', 'snapshot_header',
+    'all_objects_intro', 'h_events', 'events_note')
 
 # The reasons a report failed (report.errors in cloud/prompts.yaml), and `no_key`, which is messages.report_no_key.
 ERROR_WORD_KEYS = ('status', 'key_refused', 'unreachable', 'timeout', 'empty', 'cut_off', 'refused', 'bad_reply',
@@ -97,7 +99,7 @@ def load_report_words(prompts: Mapping[str, Any], messages: Messages) -> ReportW
 def with_data(prompt: str, data: str) -> str:
     """What the AI is sent: the rules, then the data between <data> and </data>. However the data spells a data tag
     (any case, spaces inside), it can't close or reopen the marker."""
-    return f'{prompt}\n\n{DATA_OPEN}\n{MARKER.sub("&lt;", data)}\n{DATA_CLOSE}'
+    return f'{prompt}\n\n{DATA_OPEN}\n{MARKER.sub("&lt;", _without_format_characters(data))}\n{DATA_CLOSE}'
 
 
 # ── small helpers ────────────────────────────────────────────────────────────────────────────────────────────────
@@ -122,9 +124,16 @@ def _minutes_or(seconds: float | None, unknown: str) -> str:
     return unknown if seconds is None else str(_minutes(seconds))
 
 
+def _without_format_characters(text: str) -> str:
+    """The text without invisible format characters (zero-width spaces and joiners, direction marks ...), which could
+    hide a data tag or a line break from a check."""
+    return ''.join(c for c in text if unicodedata.category(c) != 'Cf')
+
+
 def _clean(text: Any) -> str:
-    """One line of plain text: no line breaks, no table bars, no backticks that could end a code block."""
-    return ' '.join(str(text).split()).replace('|', '/').replace('`', "'")
+    """One line of plain text: no line breaks, no invisible characters, no table bars, no backticks that could end a
+    code block."""
+    return ' '.join(_without_format_characters(str(text)).split()).replace('|', '/').replace('`', "'")
 
 
 def _is_tasks(event: Mapping[str, Any]) -> bool:
@@ -261,14 +270,14 @@ def _coverage_notes(ctx: _Ctx, device: Device, heard: str) -> list[str]:
 def _goal_lines(ctx: _Ctx, goals: Mapping[str, Any] | None) -> list[str]:
     words = ctx.words
     out = [str(words['h_goals']) + '\n']
-    numbers: Mapping[str, Any] = {}
+    numbers: dict[str, Any] = {}
     if goals is not None and isinstance(goals.get('goals'), Mapping):
-        numbers = goals['goals']
+        numbers = {name: v for name, v in goals['goals'].items() if _number(v) is not None}     # (no number: skipped)
     lines: list[str] = []
     for template in words['goal_lines']:
         try:
             lines.append(str(template).format_map(numbers))
-        except (KeyError, ValueError, IndexError):
+        except (KeyError, ValueError, IndexError, TypeError):
             continue                                         # a number this line needs was not sent
     wake, bed = (goals.get('wake'), goals.get('bed')) if goals else (None, None)
     if wake or bed:
@@ -302,6 +311,7 @@ def _daily_rows(ctx: _Ctx, device: Device, totals: Sequence[Mapping[str, Any]], 
             how_by_day.setdefault(ctx.day_of(e['ts']), Counter())[str(e.get('how', '?'))] += 1
     linked_day = ctx.day_of(device.created_at)
     rows: list[str] = []
+    counted: list[dict[str, float | None]] = []              # the rows that are all this week's, to add up
     for day in days:
         label = f'{day:%a %m-%d}'
         stored = by_day.get(day.isoformat())
@@ -325,6 +335,8 @@ def _daily_rows(ctx: _Ctx, device: Device, totals: Sequence[Mapping[str, Any]], 
         value = {name: _number(found.get(name)) for name in DAILY_FIELDS}
         desk_hours = [_fill(words['hour_label'], hour=h) for h in range(HOURS_IN_DAY)
                       if (_number(found.get(f'hour_{h:02d}')) or 0) >= ctx.settings.hour_min_sec]
+        if day != first_evening and not after_end:
+            counted.append(value)
         breaks = _breaks_cell(ctx, value['breaks'], how_by_day.get(day, Counter()),
                               remark=day != first_evening and not after_end)
         cells = [label, _minutes_or(value['desk_sec'], unknown), ', '.join(desk_hours) or str(words['hours_none']),
@@ -333,7 +345,25 @@ def _daily_rows(ctx: _Ctx, device: Device, totals: Sequence[Mapping[str, Any]], 
                  _minutes_or(value['phone_on_desk_sec'], unknown), _show(value['sunlight_minutes'], unknown),
                  _show(value['nudges_sent'], unknown)]
         rows.append('| ' + ' | '.join(cells) + ' |')
+    if counted:
+        rows.append(_total_row(ctx, counted))
     return rows
+
+
+def _total_row(ctx: _Ctx, counted: Sequence[Mapping[str, float | None]]) -> str:
+    """This week's rows added up (the longest sit is the longest of them), so nobody has to add them in their head
+    or add the first evening's row, which was in last week's report."""
+    unknown = ctx.unknown
+
+    def add(name: str) -> float:
+        return sum(value[name] or 0 for value in counted)
+
+    cells = [_fill(ctx.words['total_label'], count=len(counted)), _minutes_or(add('desk_sec'), unknown), '',
+             f"{_show(add('water_ml'), unknown)} ({_show(add('sips'), unknown)})", _show(add('breaks'), unknown),
+             _minutes_or(max(value['longest_sit_sec'] or 0 for value in counted), unknown),
+             _minutes_or(add('phone_free_sec'), unknown), _minutes_or(add('phone_on_desk_sec'), unknown),
+             _show(add('sunlight_minutes'), unknown), _show(add('nudges_sent'), unknown)]
+    return '| ' + ' | '.join(cells) + ' |'
 
 
 def _length(ctx: _Ctx, seconds: float) -> str:
@@ -342,19 +372,29 @@ def _length(ctx: _Ctx, seconds: float) -> str:
         _fill(ctx.words['duration_m'], minutes=minutes)
 
 
-def _gap_lines(ctx: _Ctx, device: Device, ordered: Sequence[Mapping[str, Any]]) -> list[str]:
+def _gap_lines(ctx: _Ctx, device: Device, ordered: Sequence[Mapping[str, Any]], heard: str) -> list[str]:
     """Stretches of the week with no event of any kind, from the first moment the server could have heard from this
-    Pi. Silence can mean the app was off or that nothing on the desk changed, and the data can't tell which."""
+    Pi to the last. Silence can mean the app was off or that nothing on the desk changed, and the data can't tell
+    which. A Pi that had not finished sending is listed only up to when it was last heard from: after that, what
+    happened has not arrived."""
     words, limit = ctx.words, ctx.settings.gap_min * SECONDS_IN_MINUTE
-    marks = [max(ctx.start, device.created_at), *(e['ts'] for e in ordered if ctx.start <= e['ts'] < ctx.end), ctx.end]
-    gaps = [(a, b) for a, b in zip(marks, marks[1:], strict=False) if b - a >= limit]
+    caught_up = device.caught_up_at is not None and device.caught_up_at >= ctx.end
+    first = max(ctx.start, device.created_at)
+    last = ctx.end if caught_up else min(ctx.end, device.last_seen_at if device.last_seen_at is not None else first)
     gap_min = _show(ctx.settings.gap_min)
     out = [str(words['h_gaps']) + '\n']
-    if not gaps:
-        return [*out, _fill(words['gaps_none'], gap=gap_min), '']
-    out.append(_fill(words['gaps_intro'], gap=gap_min) + '\n')
-    out.extend(_fill(words['gap_line'], start=ctx.when(a, '%a %m-%d %H:%M'), end=ctx.when(b, '%a %m-%d %H:%M'),
-                     length=_length(ctx, b - a)) for a, b in gaps)
+    if device.last_seen_at is None and not caught_up:
+        return [*out, str(words['gaps_never_heard']), '']
+    marks = [first, *(e['ts'] for e in ordered if first <= e['ts'] < last), last]
+    gaps = [(a, b) for a, b in zip(marks, marks[1:], strict=False) if b - a >= limit]
+    if gaps:
+        out.append(_fill(words['gaps_intro'], gap=gap_min) + '\n')
+        out.extend(_fill(words['gap_line'], start=ctx.when(a, '%a %m-%d %H:%M'), end=ctx.when(b, '%a %m-%d %H:%M'),
+                         length=_length(ctx, b - a)) for a, b in gaps)
+    else:
+        out.append(_fill(words['gaps_none'], gap=gap_min))
+    if not caught_up:
+        out.append('\n' + _fill(words['gaps_after_heard'], last_heard=heard))
     out.append('')
     return out
 
@@ -452,7 +492,9 @@ def build_week(device: Device, events: Sequence[Mapping[str, Any]], totals: Sequ
     w += [header, '|' + '---|' * (header.count('|') - 1),
           *_daily_rows(ctx, device, totals, ordered, ([first_evening] if first_evening else []) + days, first_evening,
                        last_open), '']
-    w += _gap_lines(ctx, device, ordered)
+    if first_evening is not None and any(t.get('day') == first_evening.isoformat() for t in totals):
+        w += [str(words['first_evening_note']), '']
+    w += _gap_lines(ctx, device, ordered, heard)
     w += _nudge_lines(ctx, ordered)
     w += _snapshot_lines(ctx, states, last_camera, heard)
     shown = [e for e in ordered if e.get('type') in SHOWN_EVENT_TYPES]

@@ -185,7 +185,8 @@ class Store(Protocol):
         ...
 
     def reset_report(self, report_id: str, now: float) -> Report | None:
-        """Back to a fresh pending report (no tries, no error, no text), created at `now`."""
+        """Back to a fresh pending report (no tries, no error, no text). It keeps its `created_at`: the job counts its
+        wait for a Pi from there, so a re-run after that wait is written at once."""
         ...
 
 
