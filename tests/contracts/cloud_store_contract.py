@@ -406,6 +406,30 @@ class CloudStoreContract:
         assert store.finish_report('missing', 'done', 'x', 'm', None, 1.0) is None
         assert store.reset_report('missing', 1.0) is None
 
+    # ── ids that are not ours ─────────────────────────────────────────────
+    def test_ids_that_are_not_ours_give_nothing_and_never_an_error(self, store):
+        """The routes pass on whatever clean text is in the address, so a made-up id must act like an unknown one."""
+        make_user(store)
+        for odd in ('nope', '', "x'; DROP TABLE users; --", '%', 'caf\u00e9 \U0001f4a7', 'a' * 500):
+            assert store.get_device(odd) is None
+            assert store.get_user(odd) is None
+            assert store.get_report_by_id(odd) is None
+            assert store.get_report(odd, '2026-10-19') is None
+            assert store.get_admin(odd) is None
+            assert store.list_devices(odd) == [] and store.list_reports(odd) == []
+            assert store.rename_device(odd, 'x') is None
+            assert store.delete_device(odd) is False and store.delete_user(odd) is False
+            assert store.device_for_token(odd, NOW) is None
+            assert store.claim_code(odd, 'Pi', 'token-odd', NOW) is None
+            assert store.events_after(odd, 0.0, None, 10) == [] and store.events_between(odd, 0.0, 9.0) == []
+            assert store.latest_event(odd, 'habit') is None and store.object_states(odd) == []
+            assert store.totals_between(odd, '2000-01-01', '2100-01-01') == []
+            assert store.retry_report(odd, 'x', 1.0) is None and store.reset_report(odd, 1.0) is None
+            assert store.finish_report(odd, 'done', 'x', 'm', None, 1.0) is None
+            store.remove_device(odd, NOW)
+            with pytest.raises(LookupError):
+                store.save_batch(odd, [], [], [], False, NOW)
+
     # ── what a store refuses ──────────────────────────────────────────────
     def test_saving_for_an_unknown_device_raises_lookup_error(self, store):
         with pytest.raises(LookupError):

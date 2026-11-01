@@ -79,6 +79,9 @@ filterwarnings = ["ignore::DeprecationWarning"]
 [tool.coverage.run]
 source = ["desktalk", "shared/desktalk_shared", "raspberry_pi", "cloud/server/desktalk_cloud"]
 branch = true                  # also count each side of every if, not just each line
+# The Postgres store and its migrations need a real database, so the opt-in `docker` run covers them
+# (uv run pytest -m docker tests/docker/test_cloud_postgres_store.py), not the fast tests.
+omit = ["cloud/server/desktalk_cloud/store_postgres.py", "cloud/server/desktalk_cloud/migrations/*"]
 
 [tool.coverage.report]
 fail_under = 97                # the share of code the fast tests run (measured 2026-10-24); it may only go up
