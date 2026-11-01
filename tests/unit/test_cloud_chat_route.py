@@ -288,6 +288,66 @@ def test_the_cap_reaches_the_ai_company_when_no_max_tokens_is_sent():
     assert json.loads(seen[0].content)['max_tokens'] == 123
 
 
+ODD_VALUES = {'list': ['user'], 'dict': {'a': 1}, 'none': None, 'true': True, 'false': False, 'huge int': 10 ** 400,
+              'negative huge int': -10 ** 400, 'surrogate': '\ud800', 'nan': float('nan'), 'infinity': float('inf'),
+              'float': 1.5, 'empty list': [], 'empty string': '', 'empty dict': {}}
+BASES = {
+    'text content': {'messages': [{'role': 'system', 'content': 'be kind'}, {'role': 'user', 'content': 'hi'}],
+                     'max_tokens': 20, 'temperature': 0.5, 'model': 'm', 'stream': False, 'extra_body': {'k': [1]}},
+    'part content': {'messages': [{'role': 'user', 'content': [{'type': 'text', 'text': 'hi'}]}],
+                     'max_tokens': 20, 'temperature': 0.5},
+}
+
+
+def _paths(value, here=()):
+    """Every place in a body: the path to each dict value, list item and the whole thing."""
+    yield here
+    if isinstance(value, dict):
+        for key, inner in value.items():
+            yield from _paths(inner, (*here, key))
+    elif isinstance(value, list):
+        for index, inner in enumerate(value):
+            yield from _paths(inner, (*here, index))
+
+
+def _with(body, path, new):
+    """A copy of `body` with the value at `path` replaced by `new` (or the key taken out when new is a _GONE)."""
+    if not path:
+        return new
+    copy = json.loads(json.dumps(body))
+    place = copy
+    for step in path[:-1]:
+        place = place[step]
+    if new is GONE:
+        del place[path[-1]]
+    else:
+        place[path[-1]] = new
+    return copy
+
+
+GONE = object()
+ODD_CASES = [pytest.param(name, path, label, id=f'{name}-{"/".join(map(str, path)) or "body"}-{label}')
+             for name, base in BASES.items() for path in _paths(base) for label in (*ODD_VALUES, 'gone')
+             if not (label == 'gone' and not path)]
+
+
+@pytest.mark.parametrize(('base', 'path', 'label'), ODD_CASES)
+def test_an_odd_value_anywhere_never_gets_a_500(ann, parts, base, path, label):
+    client = TestClient(create_app(parts, [chat_v1.router]), raise_server_exceptions=False)
+    new = GONE if label == 'gone' else ODD_VALUES[label]
+    raw = json.dumps(_with(BASES[base], path, new)).encode()          # allow_nan: NaN and Infinity are sent as such
+    reply = client.post('/v1/chat/completions', content=raw, headers=auth(ann.token))
+    assert reply.status_code in (200, 400)
+
+
+def test_a_role_that_is_a_list_or_dict_gets_400(client, ann, fake):
+    for role in (['user'], {}, {'a': 1}, None, 5):
+        assert post(client, ann.token, {'messages': [{'role': role, 'content': 'x'}]}).status_code == 400
+    assert post(client, ann.token, {'messages': [{'role': 'user', 'content': [{'type': ['text'], 'text': 'x'}]}]}
+                ).status_code == 400
+    assert fake.calls == []
+
+
 def test_upstream_error_gets_a_plain_502(client, ann, fake, parts):
     fake.fail_with = 'The AI company said no'
     reply = post(client, ann.token, {'messages': USER})

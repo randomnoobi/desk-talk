@@ -75,7 +75,8 @@ def _clean_content(content: Any) -> str | list[dict[str, str]]:
     for part in content:
         if not isinstance(part, dict):
             raise _Refused()
-        if part.get('type') != 'text':
+        kind = part.get('type')
+        if not isinstance(kind, str) or kind != 'text':
             raise _Refused(images=True)                   # a picture, audio or anything that is not text
         if not _is_text(part.get('text')):
             raise _Refused()
@@ -88,9 +89,10 @@ def _clean_messages(raw: Any) -> list[dict[str, Any]]:
         raise _Refused()
     clean: list[dict[str, Any]] = []
     for message in raw:
-        if not isinstance(message, dict) or message.get('role') not in ROLES:
+        role = message.get('role') if isinstance(message, dict) else None
+        if not isinstance(role, str) or role not in ROLES:      # a list or dict can't be looked up in a set
             raise _Refused()
-        clean.append({'role': message['role'], 'content': _clean_content(message.get('content'))})
+        clean.append({'role': role, 'content': _clean_content(message.get('content'))})
     return clean
 
 
