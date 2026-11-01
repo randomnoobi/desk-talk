@@ -29,7 +29,7 @@ from tests.fakes import FakeClock, FakePreferences, InMemoryEventStore, InMemory
 WORDS = load_config(environ={}, dotenv=Path('/nonexistent')).prompts.cloud
 START = 1_760_000_000.0                      # 9 October 2025, 08:53 UTC
 DAY_SEC, HOUR, MIN = 86_400, 3_600, 60
-SETTINGS = CloudSettings(link_key='cloud', send_every_sec=30, idle_check_every_sec=60, batch_size=500,
+SETTINGS = CloudSettings(link_key='cloud', send_every_sec=30, idle_check_every_sec=60, idle_beat_min=15, batch_size=500,
                          overlap_sec=120, timeout_sec=10, retry_start_sec=30, retry_max_sec=240,
                          totals_every_min=15, goals_every_hours=24, error_text_chars=200)
 SERVER, TOKEN = 'http://cloud.test:8000', 'secret-token-abc'
@@ -287,6 +287,95 @@ def test_nothing_new_means_no_call(rig):
     calls = len(rig.link.calls)
     rig.tick(after=30)
     assert len(rig.link.calls) == calls
+
+
+# ── nothing to send: the server still hears that this computer has caught up ──
+BEAT = SETTINGS.idle_beat_min * MIN
+
+
+def linked_and_up_to_date(rig) -> None:
+    rig.linked()
+    rig.tick()                                                 # the goals go on the first round
+    rig.link.calls.clear()
+
+
+def test_an_idle_computer_tells_the_server_it_has_caught_up(rig):
+    linked_and_up_to_date(rig)
+    rig.tick(after=BEAT - 1)
+    assert rig.link.calls == []
+    rig.tick(after=1)
+    assert rig.link.calls == [([], True)]
+    assert rig.saved()['last_sent_ts'] == rig.clock.now()
+
+
+def test_the_idle_beat_goes_at_most_every_idle_beat_min(rig):
+    linked_and_up_to_date(rig)
+    rig.tick(after=BEAT)
+    rig.tick(after=SETTINGS.send_every_sec)
+    rig.tick(after=BEAT - SETTINGS.send_every_sec - 1)
+    assert len(rig.link.calls) == 1
+    rig.tick(after=1)
+    assert len(rig.link.calls) == 2
+
+
+def test_a_real_send_puts_off_the_idle_beat(rig):
+    linked_and_up_to_date(rig)
+    rig.clock.advance(BEAT - 10)
+    rig.habit(rig.clock.now(), id='h1')
+    rig.tick()
+    rig.tick(after=10)
+    assert [events[0]['id'] for events, _ in rig.link.calls] == ['h1']
+
+
+def test_no_idle_beat_when_not_linked_or_stopped(rig):
+    rig.tick(after=BEAT * 2)
+    assert rig.link.calls == [] and rig.made == []
+    linked_and_up_to_date(rig)
+    rig.store.save(SETTINGS.link_key, {**rig.saved(), 'stopped': True})
+    rig.tick(after=BEAT * 2)
+    assert rig.link.calls == []
+
+
+def test_no_idle_beat_while_a_days_changed_numbers_are_waiting_their_turn(rig):
+    """It has not really caught up then: a report could be written from older numbers than the computer has."""
+    rig.linked()
+    day = rig.clock.local_day(rig.clock.now())
+    rig.store.save(day_key(day), {'day': day, 'desk_sec': 60})
+    rig.tick()                                                 # the numbers go; next after totals_every_min
+    rig.link.calls.clear()
+    rig.store.save(day_key(day), {'day': day, 'desk_sec': 120})
+    held_by = SETTINGS.totals_every_min * MIN
+    beat_settings = SETTINGS.model_copy(update={'idle_beat_min': 1})
+    rig.settings = beat_settings
+    rig.uploader = rig.new_uploader()
+    rig.tick(after=held_by - 1)
+    assert rig.link.calls == []                                # numbers held back, so no word of having caught up
+    rig.tick(after=1)
+    sent, caught_up = rig.link.calls[0]
+    assert [e['type'] for e in sent] == ['daily_totals'] and caught_up is True
+
+
+def test_a_failed_idle_beat_is_tried_again_after_a_wait_and_never_raises(rig):
+    linked_and_up_to_date(rig)
+    rig.link.script = [CloudUnavailable('the cloud server is off')]
+    assert rig.tick(after=BEAT) == SETTINGS.retry_start_sec
+    assert rig.saved()['last_sent_ts'] != rig.clock.now()
+    rig.tick(after=SETTINGS.retry_start_sec)
+    assert rig.link.calls[-1] == ([], True)
+
+
+def test_an_idle_beat_refused_with_not_linked_stops_sending(rig):
+    linked_and_up_to_date(rig)
+    rig.link.script = [CloudNotLinked('no such token')]
+    assert rig.tick(after=BEAT) == SETTINGS.idle_check_every_sec
+    assert rig.saved()['stopped'] is True
+
+
+def test_a_last_sent_time_in_the_future_does_not_silence_the_idle_beat(rig):
+    linked_and_up_to_date(rig)
+    rig.store.save(SETTINGS.link_key, {**rig.saved(), 'last_sent_ts': rig.clock.now() + DAY_SEC})
+    rig.tick(after=1)
+    assert rig.link.calls == [([], True)]
 
 
 # ── late events and repeats ──

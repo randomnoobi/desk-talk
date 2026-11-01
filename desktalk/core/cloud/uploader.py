@@ -12,7 +12,10 @@ Each round it:
      (days older than event_log.keep_days are gone by then, and that is accepted);
   3. runs each through the one filter (desktalk_shared.cloud_api.to_cloud_event), which drops what must stay home;
   4. sends them, with `caught_up` on the batch that empties the backlog. Your goals and each day's numbers (desk
-     time, water ...) ride along when they are due.
+     time, water ...) ride along when they are due;
+  5. with nothing to send, sends an empty upload with `caught_up` at most every `cloud.idle_beat_min` (unless a day's
+     changed numbers are still waiting their turn), so an empty desk doesn't hold up the server's weekly report or
+     leave an old "last seen" on its website.
 Everything in one send, the goals and the day's numbers too, is at most cloud.batch_size events (the server refuses
 more). The link is saved as {server, device_id, token, place_ts, start_ts, recent_ids, stopped, last_sent_ts,
 goals_sent, totals_sent}; a link that is damaged (a bad address or token, odd numbers) counts as not linked.
@@ -227,7 +230,7 @@ class CloudUploader:
                     if (sent := to_cloud_event(event)) is not None]
         # Everything in one send (goals and the day's numbers too) is at most batch_size: the server refuses more.
         # Those that don't fit go in later rounds, and events wait a round if they take all the room.
-        extras, housekeeping = self._extras(link, now, start)
+        extras, housekeeping, numbers_waiting = self._extras(link, now, start)
         extras = extras[:self._s.batch_size]
         room = self._s.batch_size - len(extras)
         batch = sendable[:room]
@@ -237,6 +240,9 @@ class CloudUploader:
         if not batch and not extras:
             moved = self._next_place(link, found, [], place, now, caught_up=True)
             changes = {k: v for k, v in {**moved, **housekeeping}.items() if link.get(k) != v}
+            if not numbers_waiting and self._idle_beat_due(link, now):
+                self._note_refused(self._line_to(link).send([], caught_up=True))
+                changes['last_sent_ts'] = now
             if changes:
                 self._save(link, changes)
             return
@@ -251,6 +257,12 @@ class CloudUploader:
         changes.update(housekeeping)
         changes.update(self._next_place(link, found, batch, place, now, caught_up=caught_up))
         self._save(link, changes)
+
+    def _idle_beat_due(self, link: Mapping[str, Any], now: float) -> bool:
+        """True when the server hasn't heard from this computer for cloud.idle_beat_min. (A last send dated in the
+        future, from a clock that was ahead, doesn't count.)"""
+        since_last = now - _number_or(link.get('last_sent_ts'), float('-inf'))
+        return not 0 <= since_last < self._s.idle_beat_min * MINUTE
 
     def _note_refused(self, reply: IngestReply) -> None:
         if reply.refused:
@@ -293,11 +305,12 @@ class CloudUploader:
 
     # ── the goals and the day's numbers ──
     def _extras(self, link: Mapping[str, Any], now: float,
-                start: float) -> tuple[list[_Pending], dict[str, Any]]:
-        """What is due besides the log's events, goals first and then each day's numbers oldest first, and the
-        link's notes on the days' numbers (`totals_from`, `totals_sent`) as they should be saved."""
-        totals, housekeeping = self._totals_due(link, now, start)
-        return [*self._goals_due(link, now), *totals], housekeeping
+                start: float) -> tuple[list[_Pending], dict[str, Any], bool]:
+        """What is due besides the log's events, goals first and then each day's numbers oldest first; the link's notes
+        on the days' numbers (`totals_from`, `totals_sent`) as they should be saved; and whether a day's changed numbers
+        are waiting their turn."""
+        totals, housekeeping, numbers_waiting = self._totals_due(link, now, start)
+        return [*self._goals_due(link, now), *totals], housekeeping, numbers_waiting
 
     def _goals_due(self, link: Mapping[str, Any], now: float) -> list[_Pending]:
         wake, bed = self._prefs.get('wake_time'), self._prefs.get('bed_time')
@@ -332,7 +345,7 @@ class CloudUploader:
         return [*days, today]
 
     def _totals_due(self, link: Mapping[str, Any], now: float,
-                    start: float) -> tuple[list[_Pending], dict[str, Any]]:
+                    start: float) -> tuple[list[_Pending], dict[str, Any], bool]:
         saved = link.get('totals_sent')
         sent_before: dict[str, Any] = saved if isinstance(saved, dict) else {}
         days = self._days_to_look_at(link, now, start)
@@ -340,6 +353,7 @@ class CloudUploader:
         pending: list[_Pending] = []
         memory: dict[str, Any] = {}
         floor: str | None = None          # the first day not left behind: its numbers may still need sending
+        numbers_waiting = False
 
         def remember(changes: dict[str, Any], day: str, signature: str) -> None:
             memory[day] = {'sig': signature, 'ts': now}
@@ -366,6 +380,7 @@ class CloudUploader:
             if unchanged is not None:
                 continue                                    # nothing changed since it was sent
             if last is not None and now - last < self._s.totals_every_min * MINUTE:
+                numbers_waiting = True
                 continue                                    # changed, but sent too lately
             event = to_cloud_event(daily_totals_event(now, day, totals))
             if event is not None:
@@ -374,7 +389,7 @@ class CloudUploader:
         floor = floor or today
         for day in [d for d in memory if d < floor]:     # only the days before it are forgotten
             del memory[day]
-        return pending, {'totals_from': floor, 'totals_sent': memory}
+        return pending, {'totals_from': floor, 'totals_sent': memory}, numbers_waiting
 
     @staticmethod
     def _totals(saved: Mapping[str, Any]) -> dict[str, float]:

@@ -480,6 +480,7 @@ cloud:
   link_key: cloud             # the link (the server's address and your token) is saved as data/cloud.json
   send_every_sec: 30          # how often it sends what is new
   idle_check_every_sec: 60    # while this computer isn't linked, look again this often (it calls nothing)
+  idle_beat_min: 15           # with nothing to send, tell a linked server "I've caught up" at most this often, so its weekly report isn't held up by an empty desk
   batch_size: 500             # most events in one send; the rest go on the next round
   overlap_sec: 120            # each round looks back this far, so an event written a little late still goes
   timeout_sec: 10             # give up on a send that takes longer than this

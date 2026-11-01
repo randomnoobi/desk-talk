@@ -522,6 +522,7 @@ class CloudSettings(_Section):
     link_key: Annotated[str, Field(pattern=r'^[A-Za-z0-9_-]+$')]       # the name the link is saved under in data/
     send_every_sec: PositiveNumber
     idle_check_every_sec: PositiveNumber
+    idle_beat_min: PositiveNumber
     batch_size: PositiveInt
     overlap_sec: ZeroOrMore
     timeout_sec: PositiveNumber
