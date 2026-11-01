@@ -7,6 +7,8 @@ The connection pool uses SQLAlchemy's own sizes: config.py has no setting for th
 How it keeps to the contract:
 - Event ids and object labels are `COLLATE "C"` columns, so Postgres orders them as plain bytes, as Python does.
 - A batch is one transaction. It starts by updating the Pi's row, which makes a second batch for the same Pi wait.
+- Every write that touches a code, a Pi and its tokens takes them in that one order (code, then Pi, then tokens), so
+  two calls that meet (using a code, removing or deleting a Pi or a person) wait for each other and never deadlock.
 - A repeat event is `INSERT ... ON CONFLICT DO NOTHING`; a state or a day's totals is `ON CONFLICT DO UPDATE ... WHERE`
   the new time is later. Using a code is one `UPDATE ... RETURNING`, so only one of two at once wins.
 - Times are `double precision` and an event's payload is JSONB. JSONB does not keep the order of keys.
@@ -22,6 +24,7 @@ from typing import Any
 import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
+from sqlalchemy import exc as sa_exc
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import Connection, Engine, RowMapping
 
@@ -34,6 +37,7 @@ MIGRATION_LOCK_NAME = 'desktalk_cloud_migrations'
 _FINAL = frozenset({DONE, NO_DATA, FAILED})
 _TIME = postgresql.DOUBLE_PRECISION
 _BYTES_ORDER = 'C'
+_FOREIGN_KEY_REFUSED = '23503'          # Postgres' error code for a row that names somebody who isn't there
 
 _meta = sa.MetaData()
 
@@ -94,6 +98,14 @@ def run_migrations(database_url: str) -> None:
         engine.dispose()
 
 
+def _lookup_error(error: sa_exc.IntegrityError, message: str) -> Exception:
+    """A missing person or Pi (a foreign key refused) is a LookupError, as in the in-memory store; any other
+    refusal is passed on as it is."""
+    if getattr(error.orig, 'sqlstate', None) == _FOREIGN_KEY_REFUSED:
+        return LookupError(message)
+    return error
+
+
 def _bytes_order(column: sa.ColumnElement[str]) -> sa.ColumnElement[str]:
     return sa.collate(column, _BYTES_ORDER)
 
@@ -123,7 +135,9 @@ def _is_change_of(change: StateChange, event: Mapping[str, Any]) -> bool:
 
 class PostgresStore:
     def __init__(self, database_url: str) -> None:
-        self._engine: Engine = sa.create_engine(_driver_url(database_url), pool_pre_ping=True)
+        # hide_parameters: a database error's text must not carry the values sent (event text, token and password
+        # hashes), because it ends up in the logs
+        self._engine: Engine = sa.create_engine(_driver_url(database_url), pool_pre_ping=True, hide_parameters=True)
 
     def dispose(self) -> None:
         """Close every connection in the pool."""
@@ -144,8 +158,12 @@ class PostgresStore:
         return _user(row) if row else None
 
     def delete_user(self, user_id: str) -> bool:
-        """Their Pis go with them, and so do their Pis' events, totals, states, reports, tokens and codes (cascade)."""
+        """Their Pis go with them, and so do their Pis' events, totals, states, reports, tokens and codes. The codes go
+        first (the order is code, Pi, tokens), then the person, whose Pis and the rest follow by cascade."""
         with self._engine.begin() as connection:
+            their_pis = sa.select(_devices.c.id).where(_devices.c.user_id == user_id)
+            connection.execute(sa.delete(_codes).where(sa.or_(_codes.c.user_id == user_id,
+                                                               _codes.c.device_id.in_(their_pis))))
             return connection.execute(sa.delete(_users).where(_users.c.id == user_id)).rowcount > 0
 
     def list_users(self) -> list[User]:
@@ -168,9 +186,13 @@ class PostgresStore:
     def add_code(self, code_hash: str, user_id: str, device_id: str | None, time_zone: str, expires_at: float) -> None:
         statement = postgresql.insert(_codes).values(code_hash=code_hash, user_id=user_id, device_id=device_id,
                                                      time_zone=time_zone, expires_at=expires_at)
-        with self._engine.begin() as connection:
-            if connection.execute(statement.on_conflict_do_nothing().returning(_codes.c.code_hash)).first() is None:
-                raise ValueError('that code already exists')
+        try:
+            with self._engine.begin() as connection:
+                made = connection.execute(statement.on_conflict_do_nothing().returning(_codes.c.code_hash)).first()
+        except sa_exc.IntegrityError as error:
+            raise _lookup_error(error, 'no such person or Pi') from error
+        if made is None:
+            raise ValueError('that code already exists')
 
     def claim_code(self, code_hash: str, name: str, token_hash: str, now: float) -> Device | None:
         with self._engine.begin() as connection:
@@ -231,14 +253,18 @@ class PostgresStore:
 
     def remove_device(self, device_id: str, now: float) -> None:
         with self._engine.begin() as connection:
-            self._cancel_tokens(connection, device_id, now)
+            # code, then Pi, then tokens. A claim in flight holds its code, so this waits for it to finish, and the
+            # cancel below (a new statement) then sees the token that claim made.
             connection.execute(sa.delete(_codes).where(_codes.c.device_id == device_id, _codes.c.used_at.is_(None)))
             connection.execute(sa.update(_devices)
                                .where(_devices.c.id == device_id, _devices.c.removed_at.is_(None))
                                .values(removed_at=now))
+            self._cancel_tokens(connection, device_id, now)
 
     def delete_device(self, device_id: str) -> bool:
         with self._engine.begin() as connection:
+            # codes first, then the Pi
+            connection.execute(sa.delete(_codes).where(_codes.c.device_id == device_id))
             return connection.execute(sa.delete(_devices).where(_devices.c.id == device_id)).rowcount > 0
 
     def device_for_token(self, token_hash: str, now: float) -> Device | None:
@@ -319,9 +345,10 @@ class PostgresStore:
             return [row for row in connection.execute(query).scalars()]
 
     def events_after(self, device_id: str, since: float, after_id: str | None, limit: int) -> list[dict[str, Any]]:
-        later = _events.c.ts > since
-        if after_id is not None:
-            later = sa.or_(later, sa.and_(_events.c.ts == since, _events.c.event_id > after_id))
+        if after_id is None:
+            later = _events.c.ts > since
+        else:       # one comparison of the pair, so the index (device, ts, id) starts right after the last one seen
+            later = sa.tuple_(_events.c.ts, _events.c.event_id) > sa.tuple_(since, after_id)
         return self._event_list(sa.select(_events.c.payload).where(_events.c.device_id == device_id, later)
                                 .order_by(_events.c.ts, _events.c.event_id).limit(limit))
 
@@ -344,7 +371,8 @@ class PostgresStore:
 
     def totals_between(self, device_id: str, first_day: str, last_day: str) -> list[dict[str, Any]]:
         query = (sa.select(_totals.c.payload)
-                 .where(_totals.c.device_id == device_id, _totals.c.day >= first_day, _totals.c.day <= last_day)
+                 .where(_totals.c.device_id == device_id, _bytes_order(_totals.c.day) >= first_day,
+                        _bytes_order(_totals.c.day) <= last_day)
                  .order_by(_bytes_order(_totals.c.day)))
         with self._engine.connect() as connection:
             return list(connection.execute(query).scalars())
@@ -359,8 +387,11 @@ class PostgresStore:
                      .values(id=str(uuid.uuid4()), device_id=device_id, week_start=week_start, status=PENDING,
                              created_at=now, tries=0)
                      .on_conflict_do_nothing().returning(*_reports.c))
-        with self._engine.begin() as connection:
-            row = connection.execute(statement).mappings().first()
+        try:
+            with self._engine.begin() as connection:
+                row = connection.execute(statement).mappings().first()
+        except sa_exc.IntegrityError as error:
+            raise _lookup_error(error, f'no such Pi: {device_id}') from error
         return _report(row) if row else None
 
     def _one_report(self, *where: sa.ColumnElement[bool]) -> Report | None:
@@ -380,34 +411,40 @@ class PostgresStore:
                     connection.execute(sa.select(_reports).where(*where).order_by(*order)).mappings()]
 
     def list_reports(self, device_id: str) -> list[Report]:
-        return self._reports(_reports.c.device_id == device_id, order=[_reports.c.week_start.desc()])
+        return self._reports(_reports.c.device_id == device_id, order=[_bytes_order(_reports.c.week_start).desc()])
 
     def reports_to_write(self, now: float) -> list[Report]:
         due = sa.or_(_reports.c.next_try_at.is_(None), _reports.c.next_try_at <= now)
         return self._reports(_reports.c.status == PENDING, due,
                              order=[_reports.c.created_at, _bytes_order(_reports.c.id)])
 
-    def _change_report(self, report_id: str, **values: Any) -> Report | None:
+    def _change_report(self, report_id: str, *, only_pending: bool, **values: Any) -> Report | None:
+        """Change a report. With `only_pending` a report that is not pending is left as it is (and given back so)."""
+        where = [_reports.c.id == report_id]
+        if only_pending:
+            where.append(_reports.c.status == PENDING)
         with self._engine.begin() as connection:
-            row = connection.execute(sa.update(_reports).where(_reports.c.id == report_id).values(**values)
+            row = connection.execute(sa.update(_reports).where(*where).values(**values)
                                      .returning(*_reports.c)).mappings().first()
-        return _report(row) if row else None
+        if row is None:
+            return self.get_report_by_id(report_id) if only_pending else None
+        return _report(row)
 
     def finish_report(self, report_id: str, status: str, markdown: str | None, model: str | None, error: str | None,
                       now: float) -> Report | None:
         if status not in _FINAL:
             raise ValueError(f'a finished report is done, no_data or failed, not {status!r}')
-        return self._change_report(report_id, status=status, markdown=markdown, model=model, error=error,
-                                   next_try_at=None)
+        return self._change_report(report_id, only_pending=True, status=status, markdown=markdown, model=model,
+                                   error=error, next_try_at=None)
 
     def retry_report(self, report_id: str, error: str, next_try_at: float) -> Report | None:
-        return self._change_report(report_id, status=PENDING, error=error, next_try_at=next_try_at,
-                                   tries=_reports.c.tries + 1)
+        return self._change_report(report_id, only_pending=True, status=PENDING, error=error,
+                                   next_try_at=next_try_at, tries=_reports.c.tries + 1)
 
     def list_failed_reports(self) -> list[Report]:
         return self._reports(_reports.c.status == FAILED,
-                             order=[_reports.c.week_start.desc(), _bytes_order(_reports.c.id).desc()])
+                             order=[_bytes_order(_reports.c.week_start).desc(), _bytes_order(_reports.c.id).desc()])
 
     def reset_report(self, report_id: str, now: float) -> Report | None:
-        return self._change_report(report_id, status=PENDING, markdown=None, model=None, error=None, tries=0,
-                                   next_try_at=None, created_at=now)
+        return self._change_report(report_id, only_pending=False, status=PENDING, markdown=None, model=None,
+                                   error=None, tries=0, next_try_at=None, created_at=now)

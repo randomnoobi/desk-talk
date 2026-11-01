@@ -406,6 +406,37 @@ class CloudStoreContract:
         assert store.finish_report('missing', 'done', 'x', 'm', None, 1.0) is None
         assert store.reset_report('missing', 1.0) is None
 
+    # ── a finished report stays finished ──────────────────────────────────
+    def test_a_late_retry_or_finish_never_changes_a_report_that_is_no_longer_pending(self, store):
+        device, _ = link(store, make_user(store))
+        report = store.create_report(device.id, '2026-10-19', NOW)
+        done = store.finish_report(report.id, 'done', '# Week', 'model-x', None, 2500.0)
+        assert store.retry_report(report.id, 'late', 9999.0) == done            # a safe no-op: the report as it is
+        assert store.finish_report(report.id, 'failed', None, None, 'late', 3000.0) == done
+        assert store.get_report_by_id(report.id) == done
+        assert store.reports_to_write(LATER * 10) == [] and store.list_failed_reports() == []
+        failed_report = store.create_report(device.id, '2026-10-26', NOW)
+        failed = store.finish_report(failed_report.id, 'failed', None, None, 'gave up', 2500.0)
+        assert store.retry_report(failed_report.id, 'again', 9999.0) == failed
+        assert store.finish_report(failed_report.id, 'done', 'x', 'm', None, 3000.0) == failed
+        reset = store.reset_report(failed_report.id, 4000.0)                    # a re-run still works
+        assert (reset.status, reset.tries, reset.error) == ('pending', 0, None)
+        again = store.finish_report(failed_report.id, 'done', '# Fine', 'm', None, 4500.0)
+        assert (again.status, again.markdown) == ('done', '# Fine')
+
+    # ── what a store refuses when a person or Pi is not there ─────────────
+    def test_a_code_or_report_for_somebody_who_is_not_there_raises_lookup_error(self, store):
+        user = make_user(store)
+        with pytest.raises(LookupError):
+            store.add_code('c1', user.id, 'no-such-pi', 'UTC', 2000.0)
+        with pytest.raises(LookupError):
+            store.add_code('c2', 'no-such-person', None, 'UTC', 2000.0)
+        with pytest.raises(LookupError):
+            store.create_report('no-such-pi', '2026-10-19', NOW)
+        assert store.claim_code('c1', 'Pi', 't1', NOW) is None and store.claim_code('c2', 'Pi', 't2', NOW) is None
+        store.add_code('c1', user.id, None, 'UTC', 2000.0)                      # the failed tries left nothing behind
+        assert store.claim_code('c1', 'Pi', 't1', NOW) is not None
+
     # ── ids that are not ours ─────────────────────────────────────────────
     def test_ids_that_are_not_ours_give_nothing_and_never_an_error(self, store):
         """The routes pass on whatever clean text is in the address, so a made-up id must act like an unknown one."""

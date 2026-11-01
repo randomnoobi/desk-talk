@@ -110,6 +110,8 @@ class MemoryStore:
     # ── linking ───────────────────────────────────────────────────────────
     def add_code(self, code_hash: str, user_id: str, device_id: str | None, time_zone: str, expires_at: float) -> None:
         with self._lock:
+            if user_id not in self._users or (device_id is not None and device_id not in self._devices):
+                raise LookupError('no such person or Pi')
             if code_hash in self._codes:
                 raise ValueError('that code already exists')
             self._codes[code_hash] = _Code(user_id, device_id, time_zone, expires_at)
@@ -273,6 +275,8 @@ class MemoryStore:
     # ── reports ───────────────────────────────────────────────────────────
     def create_report(self, device_id: str, week_start: str, now: float) -> Report | None:
         with self._lock:
+            if device_id not in self._devices:
+                raise LookupError(f'no such Pi: {device_id}')
             if self.get_report(device_id, week_start) is not None:
                 return None
             report = Report(id=str(uuid.uuid4()), device_id=device_id, week_start=week_start, status=PENDING,
@@ -302,11 +306,12 @@ class MemoryStore:
                    if r.status == PENDING and (r.next_try_at is None or r.next_try_at <= now)]
             return sorted(due, key=lambda r: (r.created_at, r.id))
 
-    def _change(self, report_id: str, **changes: Any) -> Report | None:
+    def _change(self, report_id: str, *, only_pending: bool, **changes: Any) -> Report | None:
+        """Change a report. With `only_pending` a report that is not pending is left as it is (and given back so)."""
         with self._lock:
             report = self._reports.get(report_id)
-            if report is None:
-                return None
+            if report is None or (only_pending and report.status != PENDING):
+                return report
             self._reports[report_id] = changed = replace(report, **changes)
             return changed
 
@@ -314,14 +319,15 @@ class MemoryStore:
                       now: float) -> Report | None:
         if status not in _FINAL:
             raise ValueError(f'a finished report is done, no_data or failed, not {status!r}')
-        return self._change(report_id, status=status, markdown=markdown, model=model, error=error, next_try_at=None)
+        return self._change(report_id, only_pending=True, status=status, markdown=markdown, model=model, error=error,
+                            next_try_at=None)
 
     def retry_report(self, report_id: str, error: str, next_try_at: float) -> Report | None:
         with self._lock:
             report = self._reports.get(report_id)
             if report is None:
                 return None
-            return self._change(report_id, status=PENDING, error=error, next_try_at=next_try_at,
+            return self._change(report_id, only_pending=True, status=PENDING, error=error, next_try_at=next_try_at,
                                 tries=report.tries + 1)
 
     def list_failed_reports(self) -> list[Report]:
@@ -330,5 +336,5 @@ class MemoryStore:
             return sorted(failed, key=lambda r: (r.week_start, r.id), reverse=True)
 
     def reset_report(self, report_id: str, now: float) -> Report | None:
-        return self._change(report_id, status=PENDING, markdown=None, model=None, error=None, tries=0,
-                            next_try_at=None, created_at=now)
+        return self._change(report_id, only_pending=False, status=PENDING, markdown=None, model=None, error=None,
+                            tries=0, next_try_at=None, created_at=now)

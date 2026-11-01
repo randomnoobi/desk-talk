@@ -17,10 +17,12 @@ import subprocess
 import threading
 import time
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Sequence
+from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from sqlalchemy import event as sa_event
 from sqlalchemy import exc as sa_exc
 
 from desktalk_cloud.store_postgres import MIGRATION_LOCK_NAME, PostgresStore, run_migrations
@@ -32,6 +34,7 @@ IMAGE = 'postgres:17-alpine'
 READY_SEC = 60
 LOCK_WAIT_SEC = 1.5            # how long we wait to see that a migration is stuck behind a held lock
 FINISH_SEC = 30
+RACE_WAIT_SEC = 0.7            # long enough for a blocked call to start waiting, shorter than Postgres' deadlock check
 
 
 def docker(*args: str, check: bool = True) -> str:
@@ -94,6 +97,42 @@ def database_url(server_url) -> Iterator[str]:
         with admin.connect() as connection:
             connection.execute(sa.text(f'DROP DATABASE IF EXISTS {name} WITH (FORCE)'))
         admin.dispose()
+
+
+class Race:
+    """Runs `first` on a thread that is held still at one statement while `second` starts on another thread, so two
+    calls can be made to meet at an exact point. Whatever either raises is kept in `errors`."""
+
+    def __init__(self, store: PostgresStore, statement_part: str, *, after: bool) -> None:
+        self.errors: dict[str, BaseException] = {}
+        self.results: dict[str, Any] = {}
+        self._reached, self._go = threading.Event(), threading.Event()
+
+        def hold(connection, cursor, statement, parameters, context, many) -> None:
+            if threading.current_thread().name == 'first' and statement_part in statement:
+                self._reached.set()
+                self._go.wait(FINISH_SEC)
+
+        name = 'after_cursor_execute' if after else 'before_cursor_execute'
+        sa_event.listen(store._engine, name, hold)            # noqa: SLF001 - the test reaches into the engine
+
+    def run(self, first: Callable[[], Any], second: Callable[[], Any]) -> None:
+        def go(key: str, call: Callable[[], Any]) -> None:
+            try:
+                self.results[key] = call()
+            except BaseException as error:          # noqa: BLE001 - the test reports whatever went wrong
+                self.errors[key] = error
+
+        threads = [threading.Thread(target=go, args=(key, call), name=key)
+                   for key, call in (('first', first), ('second', second))]
+        threads[0].start()
+        assert self._reached.wait(FINISH_SEC), 'the first call never got to the statement'
+        threads[1].start()
+        time.sleep(RACE_WAIT_SEC)                # long enough for the second call to run into the first
+        self._go.set()
+        for thread in threads:
+            thread.join(FINISH_SEC)
+            assert not thread.is_alive(), 'a call is stuck'
 
 
 class TestPostgresStore(CloudStoreContract):
@@ -212,6 +251,84 @@ class TestPostgresStore(CloudStoreContract):
             assert other.list_users() == []
         finally:
             other.dispose()
+
+    # ── calls that run into each other must not deadlock ──────────────────
+    def _linked(self, store):
+        user = make_user(store)
+        device, _ = link(store, user)
+        store.add_code('again', user.id, device.id, 'UTC', 9e9)
+        store.add_code('new', user.id, None, 'UTC', 9e9)
+        return user, device
+
+    def _rows(self, database_url: str, query: str) -> Sequence[Any]:
+        engine = sa.create_engine(database_url)
+        with engine.connect() as connection:
+            rows = connection.execute(sa.text(query)).all()
+        engine.dispose()
+        return rows
+
+    def test_linking_again_and_removing_the_pi_at_once(self, store, database_url):
+        user, device = self._linked(store)
+        race = Race(store, 'UPDATE devices', after=False)
+        race.run(lambda: store.claim_code('again', 'x', 'tok1', 3.0), lambda: store.remove_device(device.id, 4.0))
+        assert race.errors == {}
+        assert store.get_device(device.id).removed_at == 4.0
+        assert store.device_for_token('tok1', 5.0) is None and store.device_for_token('token-a', 5.0) is None
+        assert self._rows(database_url, 'SELECT token_hash FROM device_tokens WHERE revoked_at IS NULL') == []
+
+    def test_a_token_made_just_before_the_pi_is_removed_is_cancelled_too(self, store, database_url):
+        user, device = self._linked(store)
+        race = Race(store, 'INSERT INTO device_tokens', after=True)       # the new token exists, not yet committed
+        race.run(lambda: store.claim_code('again', 'x', 'tok1', 3.0), lambda: store.remove_device(device.id, 4.0))
+        assert race.errors == {}
+        assert store.get_device(device.id).removed_at == 4.0
+        assert store.device_for_token('tok1', 5.0) is None
+        assert self._rows(database_url, 'SELECT token_hash FROM device_tokens WHERE revoked_at IS NULL') == []
+
+    def test_linking_again_and_deleting_the_pi_at_once(self, store, database_url):
+        user, device = self._linked(store)
+        race = Race(store, 'UPDATE devices', after=False)
+        race.run(lambda: store.claim_code('again', 'x', 'tok1', 3.0), lambda: store.delete_device(device.id))
+        assert race.errors == {}
+        assert store.get_device(device.id) is None
+        assert self._rows(database_url, "SELECT 1 FROM device_tokens WHERE token_hash = 'tok1'") == []
+        assert self._rows(database_url, "SELECT 1 FROM pairing_codes WHERE code_hash = 'again'") == []
+
+    def test_making_a_new_pi_and_deleting_the_person_at_once(self, store, database_url):
+        user, device = self._linked(store)
+        race = Race(store, 'INSERT INTO devices', after=False)
+        race.run(lambda: store.claim_code('new', 'x', 'tok1', 3.0), lambda: store.delete_user(user.id))
+        assert race.errors == {}
+        assert store.get_user(user.id) is None
+        for table in ('devices', 'device_tokens', 'pairing_codes'):
+            assert self._rows(database_url, f'SELECT 1 FROM {table}') == [], table
+
+    def test_linking_again_and_deleting_the_person_at_once(self, store, database_url):
+        user, device = self._linked(store)
+        race = Race(store, 'UPDATE devices', after=False)
+        race.run(lambda: store.claim_code('again', 'x', 'tok1', 3.0), lambda: store.delete_user(user.id))
+        assert race.errors == {}
+        assert store.get_user(user.id) is None
+        for table in ('devices', 'device_tokens', 'pairing_codes'):
+            assert self._rows(database_url, f'SELECT 1 FROM {table}') == [], table
+
+    # ── what the database error text may hold ─────────────────────────────
+    def test_an_error_from_the_database_does_not_list_the_values_sent(self, store):
+        """SQLAlchemy would add "[parameters: ...]" (ids, hashes, text) to the error, and so to the logs. (What Postgres
+        itself says in its message is not ours to cut.)"""
+        device, _ = link(store, make_user(store))
+        bad = {**habit('e1', 10.0), 'ml': float('nan')}
+        with pytest.raises(sa_exc.DBAPIError) as caught:
+            store.save_batch(device.id, [bad], [], [], False, 2000.0)
+        text = str(caught.value)
+        assert 'INSERT INTO events' in text and '[parameters' not in text and device.id not in text
+
+    def test_event_ids_and_labels_are_compared_as_plain_bytes_in_the_database(self, store, database_url):
+        """The ordering tests can't tell, because this image's default order is bytes too: so look at the columns."""
+        rows = self._rows(database_url,
+                          "SELECT table_name, column_name, collation_name FROM information_schema.columns "
+                          "WHERE table_name IN ('events', 'device_state') AND column_name IN ('event_id', 'label')")
+        assert sorted(rows) == [('device_state', 'label', 'C'), ('events', 'event_id', 'C')]
 
 
 class TestMigrations:

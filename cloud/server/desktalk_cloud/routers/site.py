@@ -126,7 +126,10 @@ async def make_code(request: Request, user: Annotated[User, Depends(current_user
         await run_in_threadpool(_my_device, request, user, device_id)
     code = new_code()
     expires_at = parts.clock.now() + config.pairing.code_valid_min * 60
-    await run_in_threadpool(parts.store.add_code, hash_secret(code), user.id, device_id, zone, expires_at)
+    try:
+        await run_in_threadpool(parts.store.add_code, hash_secret(code), user.id, device_id, zone, expires_at)
+    except LookupError:         # the Pi or the person went away since we looked
+        raise HTTPException(404, messages.not_found) from None
     server_url = public_address(config)
     command = config.prompts['site']['setup_command'].format(server_url=shlex.quote(server_url), code=code)
     return {'code': code, 'expires_at': expires_at, 'server_url': server_url, 'command': command}

@@ -177,6 +177,15 @@ def test_code_for_an_unknown_device_is_404(parts, ann_client):
     assert ann_client.post('/api/devices/code', json={'time_zone': 'UTC', 'device_id': 'a\x00b'}).status_code == 404
 
 
+def test_a_pi_that_goes_away_while_the_code_is_made_is_a_404(parts, ann, ann_client, monkeypatch):
+    def gone(*args, **kwargs):
+        raise LookupError('no such person or Pi')
+
+    monkeypatch.setattr(parts.store, 'add_code', gone)
+    reply = ann_client.post('/api/devices/code', json={'time_zone': 'UTC', 'device_id': ann.device.id})
+    assert reply.status_code == 404 and reply.json()['detail'] == parts.config.messages.not_found
+
+
 @pytest.mark.parametrize('zone', ['Mars/Olympus', '', '   ', '../../etc/passwd', '/etc/passwd', 'a\x00b', 'UTC\n',
                                   'x' * 500, '..', '.', 'Europe', 5, None, ['UTC']])
 def test_bad_time_zone_refused(parts, ann_client, zone):

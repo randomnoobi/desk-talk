@@ -8,8 +8,9 @@ Events are the plain dicts shared/desktalk_shared/cloud_api.py:to_cloud_event gi
 
 A store only receives clean text: no NUL character and nothing that can't be written as UTF-8, in any string or
 name (domain.is_clean_text). ingest.py and the routes refuse anything else first, because Postgres would refuse it.
-A store raises LookupError for an unknown Pi and ValueError for a code that already exists or a report status that
-isn't allowed; a real store must do the same, and the contract suite checks it.
+A store raises LookupError for an unknown Pi (also for a code made for a Pi or person who isn't there, and a report
+for a Pi who isn't there) and ValueError for a code that already exists or a report status that isn't allowed;
+a real store must do the same, and the contract suite checks it.
 """
 
 from __future__ import annotations
@@ -70,7 +71,8 @@ class Store(Protocol):
 
     # ── linking ───────────────────────────────────────────────────────────
     def add_code(self, code_hash: str, user_id: str, device_id: str | None, time_zone: str, expires_at: float) -> None:
-        """A one-time code. With a `device_id` it links that Pi again; without one it makes a new Pi."""
+        """A one-time code. With a `device_id` it links that Pi again; without one it makes a new Pi.
+        Raises LookupError when the person or the Pi isn't there, ValueError when the code already exists."""
         ...
 
     def claim_code(self, code_hash: str, name: str, token_hash: str, now: float) -> Device | None:
@@ -151,7 +153,7 @@ class Store(Protocol):
 
     # ── reports ───────────────────────────────────────────────────────────
     def create_report(self, device_id: str, week_start: str, now: float) -> Report | None:
-        """A pending report; None when that week already has one."""
+        """A pending report; None when that week already has one. Raises LookupError when the Pi isn't there."""
         ...
 
     def get_report(self, device_id: str, week_start: str) -> Report | None: ...
@@ -168,11 +170,14 @@ class Store(Protocol):
 
     def finish_report(self, report_id: str, status: str, markdown: str | None, model: str | None, error: str | None,
                       now: float) -> Report | None:
-        """Set the final status (done, no_data or failed) and what goes with it. (`now` is when, for a real store.)"""
+        """Set the final status (done, no_data or failed) and what goes with it. Only a pending report changes: any
+        other is given back as it is, so a late call can't undo a finished report. (`now` is not kept: there is no
+        column for it. It stays so a store that wants it later has it.)"""
         ...
 
     def retry_report(self, report_id: str, error: str, next_try_at: float) -> Report | None:
-        """It stays pending with one more try counted, the error kept and the next try set."""
+        """It stays pending with one more try counted, the error kept and the next try set. Only a pending report
+        changes: any other is given back as it is."""
         ...
 
     def list_failed_reports(self) -> list[Report]:

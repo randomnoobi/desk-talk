@@ -19,7 +19,12 @@ def run() -> None:
     url = os.environ.get('DATABASE_URL')
     if not url:
         raise SystemExit('Set DATABASE_URL to the Postgres address first.')
-    engine = sa.create_engine(url.replace('postgresql://', 'postgresql+psycopg://', 1))
+    # Two programs starting at once are made safe by run_migrations() (store_postgres.py), which takes an advisory lock
+    # first. This by-hand way takes no lock: don't run it while the server starts.
+    for plain in ('postgresql://', 'postgres://'):          # the same as store_postgres._driver_url
+        if url.startswith(plain):
+            url = 'postgresql+psycopg://' + url[len(plain):]
+    engine = sa.create_engine(url)
     with engine.connect() as connection:
         context.configure(connection=connection)
         with context.begin_transaction():
