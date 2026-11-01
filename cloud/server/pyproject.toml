@@ -18,6 +18,7 @@ dependencies = [
     "argon2-cffi>=23.1",        # admin password and token hashes
     "itsdangerous>=2.2",        # signed login cookies
     "pyyaml>=6.0",              # cloud/settings.yaml and cloud/prompts.yaml
+    "tzdata>=2024.1",           # time zones (the Docker image has none of its own)
 ]
 
 [tool.uv.sources]

@@ -18,7 +18,6 @@ def is_clean_text(text: str) -> bool:
 
 
 PENDING, DONE, NO_DATA, FAILED = 'pending', 'done', 'no_data', 'failed'      # a report's status
-REPORT_STATUSES = (PENDING, DONE, NO_DATA, FAILED)
 
 
 @dataclass(frozen=True, kw_only=True)

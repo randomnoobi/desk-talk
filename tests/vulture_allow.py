@@ -5,6 +5,7 @@ Add a name here only when something really uses it in a way vulture can't follow
 by name, a field the web page reads from the JSON, a flag another thread reads). Say what uses it.
 """
 
+import logging
 from typing import Any, cast
 
 from uvicorn import Server
@@ -30,6 +31,7 @@ from desktalk.core.habits.tracker import DayTimes
 from desktalk.domain.dev import DataFile, QueryResult, RunStatus, SmoothingStep, TestOutcome
 from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent, NudgeSent
 from desktalk.web.schemas import PhoneSettings, PreferenceChanges, UiPage, UiSettings
+from desktalk_cloud.store_memory import MemoryStore, _Token
 from desktalk_shared.wire import PiHealth
 
 _ = (
@@ -99,3 +101,13 @@ _ = _NoRedirects.redirect_request
 # The habit day's tally of the Demo tab's pretend sips: tracker.log() writes it into the day file, and the cloud sender
 # reads it back by name from the saved day (desktalk/core/cloud/uploader.py: PRETEND) to leave those sips out.
 _ = (HabitDay.demo_sips, HabitDay.demo_water_ml)
+
+# The in-memory store is what the cloud server's fast tests use (tests/fakes/cloud.py); the server itself uses Postgres.
+_ = MemoryStore
+# Set when a token is used, as the Postgres store does in device_tokens.last_used_at. Nothing reads it yet in either.
+_ = _Token.last_used_at
+# Alembic reads these four by name from each file in cloud/server/desktalk_cloud/migrations/versions/.
+_ = (cast(Any, None).revision, cast(Any, None).down_revision, cast(Any, None).branch_labels,
+     cast(Any, None).depends_on)
+# The logging module reads these two when it writes a line; bootstrap.py clears them to hide what Postgres said.
+_ = (logging.LogRecord.exc_text, logging.LogRecord.stack_info)
