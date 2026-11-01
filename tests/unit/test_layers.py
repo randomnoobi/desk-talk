@@ -98,3 +98,38 @@ def test_the_web_rule_catches_core_adapters_and_runtime(tmp_path):
                                               'desktalk.core.agents.speakers.LENS',
                                               'desktalk.core.agents.speakers.speaker_for', 'desktalk.runtime',
                                               'requests']
+
+
+# ── the cloud server ─────────────────────────────────────────────────
+# desktalk_cloud (cloud/server) and desktalk never import each other: they share only desktalk_shared.
+def python_files(folder: str) -> list[str]:
+    return sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / folder).rglob('*.py'))
+
+
+def imports_package(found: set[tuple[str, str]], package: str) -> list[str]:
+    return sorted(m for m, _ in found if m == package or m.startswith(package + '.'))
+
+
+@pytest.mark.parametrize('file', python_files('cloud/server'))
+def test_cloud_server_never_imports_desktalk(file):
+    assert imports_package(imports(ROOT / file), 'desktalk') == []
+
+
+@pytest.mark.parametrize('file', python_files('desktalk'))
+def test_desktalk_never_imports_the_cloud_server(file):
+    assert imports_package(imports(ROOT / file), 'desktalk_cloud') == []
+
+
+def test_the_cloud_rule_catches_the_other_side(tmp_path):
+    sample = tmp_path / 'sample.py'
+    sample.write_text('import desktalk_shared\nfrom desktalk.ports import Clock\n\ndef f():\n    import desktalk\n')
+    assert imports_package(imports(sample), 'desktalk') == ['desktalk', 'desktalk.ports']
+    assert imports_package(imports(sample), 'desktalk_cloud') == []
+
+
+# ── desktalk_shared/cloud_api.py runs on the Pi too ──────────────────
+def test_cloud_api_uses_only_the_standard_library():
+    outside = sorted(m for m, _ in imports(ROOT / 'shared' / 'desktalk_shared' / 'cloud_api.py')
+                     if m.split('.')[0] not in sys.stdlib_module_names
+                     and m.split('.')[0] != '__future__' and not m.startswith('desktalk_shared'))
+    assert outside == []

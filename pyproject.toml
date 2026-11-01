@@ -2,6 +2,7 @@
 #   desktalk          this folder: the app that runs on this computer
 #   desktalk-shared   shared/: the Pi ↔ computer upload format and YOLO result → Detection (standard library only)
 #   desktalk-detector raspberry_pi/detector_service/: the detector that runs in Docker on the Pi
+#   desktalk-cloud    cloud/server/: the cloud server that keeps what a Pi may send and writes a weekly report
 #
 #   uv sync --all-packages        install everything (what the tests need)
 #   uv run python server.py       start Desk Talk
@@ -44,7 +45,7 @@ dev = [
 ]
 
 [tool.uv.workspace]
-members = ["shared", "raspberry_pi/detector_service"]
+members = ["shared", "raspberry_pi/detector_service", "cloud/server"]
 exclude = ["benchmarks"]       # the benchmark has its own uv.lock
 
 [tool.uv.sources]
@@ -76,7 +77,7 @@ markers = [
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.coverage.run]
-source = ["desktalk", "shared/desktalk_shared", "raspberry_pi"]
+source = ["desktalk", "shared/desktalk_shared", "raspberry_pi", "cloud/server/desktalk_cloud"]
 branch = true                  # also count each side of every if, not just each line
 
 [tool.coverage.report]
@@ -84,7 +85,7 @@ fail_under = 97                # the share of code the fast tests run (measured 
 
 [tool.vulture]
 # The dead code check: uv run vulture. tests/vulture_allow.py lists names it can't see being used.
-paths = ["desktalk", "shared", "raspberry_pi", "scripts", "server.py", "tests/vulture_allow.py"]
+paths = ["desktalk", "shared", "raspberry_pi", "cloud/server", "scripts", "server.py", "tests/vulture_allow.py"]
 min_confidence = 60
 # Web routes and pydantic checks are called by FastAPI and pydantic, not by our code.
 ignore_decorators = ["@router.*", "@phone_router.*", "@app.*", "@model_validator", "@field_validator"]
@@ -107,4 +108,4 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "T20"]
 "tests/*" = ["T20"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["desktalk", "desktalk_shared", "desktalk_detector", "tests"]
+known-first-party = ["desktalk", "desktalk_shared", "desktalk_detector", "desktalk_cloud", "tests"]
