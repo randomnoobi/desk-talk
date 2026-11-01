@@ -83,9 +83,10 @@ def pi_detector(url: str) -> str | None:
 
 
 def labels_on_live(url: str) -> set[str]:
-    """Every label /api/live shows, agents and other things alike."""
-    found = httpx.get(f'{url}/api/live').json()['detections']
-    return ({o['class'] for o in found['objects'].values()} | {e['yolo_class'] for e in found['extras']})
+    """Every label /api/live shows, agents on the desk and other things alike."""
+    live = httpx.get(f'{url}/api/live').json()
+    return ({a['label_seen'] for a in live['agents'] if a['on_desk']}
+            | {e['yolo_class'] for e in live['detections']['extras']})
 
 
 @dataclass
