@@ -8,9 +8,10 @@ import math
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.concurrency import run_in_threadpool
 
 from desktalk_cloud.deps import owner_or_device, parts_of, read_json
-from desktalk_cloud.domain import Device
+from desktalk_cloud.domain import Device, is_clean_text
 from desktalk_cloud.tokens import hash_secret, new_token, normal_code
 from desktalk_shared.cloud_api import ClaimReply
 
@@ -34,11 +35,13 @@ async def claim(request: Request) -> dict[str, Any]:
         raise HTTPException(400, messages.bad_body)
     name = body.get('name', messages.default_pi_name)
     max_chars = config.pairing.name_max_chars
-    if not isinstance(name, str) or not name.strip() or len(name.strip()) > max_chars:
+    if not isinstance(name, str) or not name.strip() or len(name.strip()) > max_chars or not is_clean_text(name):
         raise HTTPException(400, messages.bad_name.format(max=max_chars))
+    if not is_clean_text(body['code']):
+        raise HTTPException(400, messages.bad_code)           # the same reply as for a wrong code
     token = new_token()
-    device = parts.store.claim_code(hash_secret(normal_code(body['code'])), name.strip(), hash_secret(token),
-                                    parts.clock.now())
+    device = await run_in_threadpool(parts.store.claim_code, hash_secret(normal_code(body['code'])), name.strip(),
+                                     hash_secret(token), parts.clock.now())
     if device is None:
         raise HTTPException(400, messages.bad_code)          # wrong, used and expired codes all get this
     log.info('Linked Pi %s', device.id)
@@ -64,7 +67,7 @@ def events(request: Request, device: Annotated[Device, Depends(owner_or_device)]
            after_id: str | None = None, limit: Annotated[int | None, Query(ge=1)] = None) -> dict[str, Any]:
     parts = parts_of(request)
     settings = parts.config.ingest
-    if not math.isfinite(since):
+    if not math.isfinite(since) or (after_id is not None and not is_clean_text(after_id)):
         raise HTTPException(400, parts.config.messages.bad_query)
     count = min(limit or settings.read_default_limit, settings.read_max_limit)
     found = parts.store.events_after(device.id, since, after_id, count)

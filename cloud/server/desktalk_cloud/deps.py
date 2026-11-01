@@ -4,11 +4,12 @@ read with a size limit that does not trust Content-Length."""
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException, Request
 
-from desktalk_cloud.domain import Device, User
+from desktalk_cloud.domain import Device, User, is_clean_text
 from desktalk_cloud.tokens import hash_secret
 
 if TYPE_CHECKING:
@@ -62,16 +63,16 @@ def owner_or_device(request: Request, device_id: str) -> Device:
         found = caller if caller.id == device_id else None
     else:
         owner = current_user(request)
-        found = parts.store.get_device(device_id)
+        found = parts.store.get_device(device_id) if is_clean_text(device_id) else None
         found = found if found is not None and found.user_id == owner.id else None
     if found is None:
         raise HTTPException(404, parts.config.messages.not_found)
     return found
 
 
-async def read_json(request: Request, max_kb: int) -> Any:
+async def read_json(request: Request, max_kb: int, parse_int: Callable[[str], Any] | None = None) -> Any:
     """The request body as JSON. Reads it in pieces and stops past `max_kb`, because Content-Length can be missing
-    or wrong. 413 when too big, 400 when it isn't JSON."""
+    or wrong. 413 when too big, 400 when it isn't JSON. `parse_int` is json.loads's hook for whole numbers."""
     messages = parts_of(request).config.messages
     limit = max_kb * 1024
     declared = request.headers.get('content-length', '')
@@ -85,6 +86,6 @@ async def read_json(request: Request, max_kb: int) -> Any:
             raise HTTPException(413, messages.body_too_big)
         chunks.append(chunk)
     try:
-        return json.loads(b''.join(chunks))
+        return json.loads(b''.join(chunks), parse_int=parse_int)
     except (ValueError, RecursionError) as error:
         raise HTTPException(400, messages.bad_body) from error

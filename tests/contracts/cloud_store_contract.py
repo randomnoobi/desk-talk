@@ -1,12 +1,17 @@
 """What every cloud server Store must do (desktalk_cloud.ports.Store).
 
 The in-memory store and the Postgres store run this same suite. Nothing here may depend on one of them, and the
-time is always passed in, never read from the wall clock."""
+time is always passed in, never read from the wall clock.
+
+A store only ever receives clean text: no NUL character and nothing that fails .encode('utf-8'), in any string
+or name (the routes and ingest.py refuse such an event before it gets here). So this suite does not test those."""
 
 from __future__ import annotations
 
 import threading
 from typing import Any
+
+import pytest
 
 from desktalk_cloud.domain import Device, StateChange, User
 
@@ -35,8 +40,17 @@ def totals(day: str, ts: float, water: float) -> dict[str, Any]:
     return {'id': f'daily-{day}', 'ts': ts, 'type': 'daily_totals', 'day': day, 'totals': {'water_ml': water}}
 
 
-def save(store, device: Device, events=(), totals_=(), changes=(), *, caught_up: bool = False, now: float = NOW):
-    return store.save_batch(device.id, list(events), list(totals_), list(changes), caught_up, now)
+def state(label: str, value: str, since: float) -> tuple[dict[str, Any], StateChange]:
+    """An object_state event and the state change it makes (the change names its event)."""
+    event = {'id': f'o-{label}-{value}-{since}', 'ts': since, 'type': 'object_state', 'change': 'moved',
+             'object': label, 'prev_state': 'x', 'new_state': value}
+    return event, StateChange(label, value, since, event['id'])
+
+
+def save(store, device: Device, events=(), totals_=(), states=(), *, caught_up: bool = False, now: float = NOW):
+    """Save a batch. `states` are state(...) pairs: their events are saved too, and their changes passed along."""
+    all_events = [*events, *(event for event, _ in states)]
+    return store.save_batch(device.id, all_events, list(totals_), [change for _, change in states], caught_up, now)
 
 
 class CloudStoreContract:
@@ -88,9 +102,10 @@ class CloudStoreContract:
         user = make_user(store)
         device, old_token = link(store, user, 'first')
         save(store, device, [habit('e1', 10.0)])
-        again, new_token = link(store, user, 'second', device_id=device.id, now=2000.0)
+        again, new_token = link(store, user, 'second', device_id=device.id, now=2000.0, time_zone='Asia/Tokyo')
         assert again.id == device.id
         assert again.name == device.name                                    # the name the person chose stays
+        assert again.time_zone == 'Asia/Tokyo' and store.get_device(device.id).time_zone == 'Asia/Tokyo'
         assert store.device_for_token(old_token, 2001.0) is None
         assert store.device_for_token(new_token, 2001.0) is not None
         assert [e['id'] for e in store.events_after(device.id, 0.0, None, 10)] == ['e1']
@@ -128,6 +143,18 @@ class CloudStoreContract:
         store.remove_device(device.id, 1600.0)
         store.remove_device('missing', 1600.0)
         assert store.get_device(device.id).removed_at == 1500.0
+
+    def test_removing_a_device_cancels_its_unused_link_again_codes(self, store):
+        user = make_user(store)
+        device, _ = link(store, user)
+        store.add_code('again', user.id, device.id, 'UTC', 9999.0)
+        store.add_code('fresh', user.id, None, 'UTC', 9999.0)
+        store.remove_device(device.id, 1500.0)
+        assert store.claim_code('again', 'Pi', 'token-again', 1600.0) is None
+        assert store.device_for_token('token-again', 1600.0) is None
+        assert store.claim_code('fresh', 'Pi', 'token-fresh', 1600.0) is not None     # other codes are untouched
+        store.add_code('later', user.id, device.id, 'UTC', 9999.0)                   # a new code after removal works
+        assert store.claim_code('later', 'Pi', 'token-later', 1700.0).id == device.id
 
     def test_unknown_token_gives_nothing(self, store):
         assert store.device_for_token('nobody', NOW) is None
@@ -171,8 +198,7 @@ class CloudStoreContract:
         device, token = link(store, ann, 'a')
         keep, keep_token = link(store, bob, 'b')
         for d in (device, keep):
-            save(store, d, [habit('e1', 10.0)], [totals('2026-10-20', 10.0, 100)],
-                 [StateChange('cup', 'full', 10.0)])
+            save(store, d, [habit('e1', 10.0)], [totals('2026-10-20', 10.0, 100)], [state('cup', 'full', 10.0)])
             store.create_report(d.id, '2026-10-19', NOW)
         store.add_code('spare', ann.id, None, 'UTC', 9999.0)
         assert store.delete_user(ann.id) is True
@@ -187,13 +213,13 @@ class CloudStoreContract:
         assert store.delete_user(ann.id) is False
         # the other person is untouched
         assert store.device_for_token(keep_token, NOW).id == keep.id
-        assert len(store.events_after(keep.id, 0.0, None, 10)) == 1
+        assert len(store.events_after(keep.id, 0.0, None, 10)) == 2           # the habit and the object state
         assert len(store.list_reports(keep.id)) == 1
 
     def test_delete_device_removes_its_data_but_not_the_person(self, store):
         user = make_user(store)
         device, token = link(store, user)
-        save(store, device, [habit('e1', 10.0)], [totals('2026-10-20', 10.0, 1)], [StateChange('cup', 'full', 1.0)])
+        save(store, device, [habit('e1', 10.0)], [totals('2026-10-20', 10.0, 1)], [state('cup', 'full', 1.0)])
         store.create_report(device.id, '2026-10-19', NOW)
         assert store.delete_device(device.id) is True
         assert store.get_device(device.id) is None and store.device_for_token(token, NOW) is None
@@ -210,6 +236,19 @@ class CloudStoreContract:
         assert save(store, device, batch, now=LATER) == (0, 2)
         assert [e['id'] for e in store.events_after(device.id, 0.0, None, 10)] == ['e1', 'e2']
 
+    def test_a_repeat_event_never_changes_state(self, store):
+        device, _ = link(store, make_user(store))
+        first, change = state('cup', 'full', 1.0)
+        store.save_batch(device.id, [], [], [change], False, NOW)           # its event was not kept: no change
+        assert store.object_states(device.id) == []
+        save(store, device, states=[(first, change)])
+        again = {**first, 'ts': 2.0, 'new_state': 'empty'}                  # same id, different content
+        assert store.save_batch(device.id, [again], [], [StateChange('cup', 'empty', 2.0, first['id'])], False,
+                                LATER) == (0, 1)
+        [cup] = store.object_states(device.id)
+        assert (cup.state, cup.since, cup.updated_at) == ('full', 1.0, NOW)
+        assert store.events_after(device.id, 0.0, None, 10) == [first]
+
     def test_repeat_inside_one_batch_counts_once(self, store):
         device, _ = link(store, make_user(store))
         assert save(store, device, [habit('e1', 10.0), habit('e1', 10.0)]) == (1, 1)
@@ -223,20 +262,19 @@ class CloudStoreContract:
 
     def test_older_event_never_overwrites_newer_state(self, store):
         device, _ = link(store, make_user(store))
-        save(store, device, changes=[StateChange('cup', 'full', 100.0), StateChange('phone', 'on_desk', 90.0)],
-             now=2000.0)
-        save(store, device, changes=[StateChange('cup', 'empty', 50.0)], now=3000.0)
+        save(store, device, states=[state('cup', 'full', 100.0), state('phone', 'on_desk', 90.0)], now=2000.0)
+        save(store, device, states=[state('cup', 'empty', 50.0)], now=3000.0)
         states = {s.label: s for s in store.object_states(device.id)}
         assert (states['cup'].state, states['cup'].since) == ('full', 100.0)
         assert (states['phone'].state, states['phone'].since) == ('on_desk', 90.0)
-        save(store, device, changes=[StateChange('cup', 'empty', 200.0)], now=4000.0)
+        save(store, device, states=[state('cup', 'empty', 200.0)], now=4000.0)
         newer = {s.label: s for s in store.object_states(device.id)}['cup']
         assert (newer.state, newer.since, newer.updated_at) == ('empty', 200.0, 4000.0)
 
     def test_same_time_state_keeps_the_first(self, store):
         device, _ = link(store, make_user(store))
-        save(store, device, changes=[StateChange('cup', 'full', 100.0)])
-        save(store, device, changes=[StateChange('cup', 'empty', 100.0)])
+        save(store, device, states=[state('cup', 'full', 100.0)])
+        save(store, device, states=[state('cup', 'empty', 100.0)])
         assert [s.state for s in store.object_states(device.id)] == ['full']
 
     def test_newer_totals_replace_older(self, store):
@@ -351,3 +389,21 @@ class CloudStoreContract:
         assert store.retry_report('missing', 'x', 1.0) is None
         assert store.finish_report('missing', 'done', 'x', 'm', None, 1.0) is None
         assert store.reset_report('missing', 1.0) is None
+
+    # ── what a store refuses ──────────────────────────────────────────────
+    def test_saving_for_an_unknown_device_raises_lookup_error(self, store):
+        with pytest.raises(LookupError):
+            store.save_batch('nobody', [], [], [], False, NOW)
+
+    def test_a_code_cannot_be_added_twice(self, store):
+        user = make_user(store)
+        store.add_code('c', user.id, None, 'UTC', 2000.0)
+        with pytest.raises(ValueError, match='already'):
+            store.add_code('c', user.id, None, 'UTC', 2000.0)
+
+    def test_a_finished_report_must_be_done_no_data_or_failed(self, store):
+        device, _ = link(store, make_user(store))
+        report = store.create_report(device.id, '2026-10-19', NOW)
+        with pytest.raises(ValueError, match='no_data'):
+            store.finish_report(report.id, 'pending', None, None, None, NOW)
+        assert store.get_report_by_id(report.id).status == 'pending'

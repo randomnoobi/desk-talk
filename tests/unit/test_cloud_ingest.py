@@ -195,17 +195,85 @@ def test_limiter_forgets_old_tries_one_by_one():
     assert limiter.hit('a') and not limiter.hit('a')
 
 
-def test_memory_store_refuses_what_a_real_store_would():
-    store = MemoryStore()
-    with pytest.raises(LookupError):
-        store.save_batch('nobody', [], [], [], False, 1.0)
-    store.add_code('c', 'u', None, 'UTC', 1.0)
-    with pytest.raises(ValueError, match='already exists'):
-        store.add_code('c', 'u', None, 'UTC', 1.0)
-    with pytest.raises(ValueError, match='no_data'):
-        store.finish_report('r', 'pending', None, None, None, 1.0)
-
 
 def test_a_true_or_false_flag_is_not_a_number_for_the_limit(parts, device):
     reply = run(parts, device, [habit('h1', healthy=True), habit('h2', 101.0, healthy=False)])
     assert reply.accepted == 2
+
+
+# ── text, dates and times the store could not keep ────────────────────────
+def state_event(event_id='s1', ts=50.0, **more):
+    return {'id': event_id, 'ts': ts, 'type': 'object_state', 'change': 'moved', 'object': 'cup',
+            'prev_state': 'empty', 'new_state': 'full', **more}
+
+
+@pytest.mark.parametrize('bad', ['\ud800', 'a\x00b', '\udfff tail'])
+def test_text_that_cannot_be_stored_refuses_only_that_event(parts, device, bad):
+    events = [habit('bad-habit', habit=bad), state_event('bad-object', object=bad), habit('ok', 101.0)]
+    reply = run(parts, device, events)
+    assert reply.accepted == 1
+    assert [r.id for r in reply.refused] == ['bad-habit', 'bad-object']
+    assert all('text' in r.why for r in reply.refused)
+    assert [e['id'] for e in stored(parts, device)] == ['ok']
+    assert parts.store.object_states(device.id) == []
+
+
+@pytest.mark.parametrize('bad_id', ['\ud800', 'a\x00', 'x\ud800y'])
+def test_an_id_that_cannot_be_stored_is_refused_and_echoed_as_empty(parts, device, bad_id):
+    reply = run(parts, device, [habit(bad_id), {'id': bad_id, 'ts': 1.0, 'type': 'detection'}, habit('ok', 5.0)])
+    assert reply.accepted == 1 and [r.id for r in reply.refused] == ['', '']
+    for refusal in reply.refused:
+        refusal.id.encode('utf-8')                            # the reply can always be written out
+
+
+def test_a_bad_word_in_a_field_the_filter_drops_does_not_matter(parts, device):
+    reply = run(parts, device, [habit(say='\ud800 \x00')])
+    assert reply.accepted == 1 and 'say' not in stored(parts, device)[0]
+
+
+@pytest.mark.parametrize('day', ['2026-99-99', '2026-02-30', '2026-00-10'])
+def test_a_day_that_is_not_a_date_is_refused(parts, device, day):
+    daily = {'id': 'x', 'ts': 60.0, 'type': 'daily_totals', 'day': day, 'totals': {'water_ml': 1}}
+    reply = run(parts, device, [daily, habit()])
+    assert reply.accepted == 1 and len(reply.refused) == 1 and 'day' in reply.refused[0].why
+
+
+@pytest.mark.parametrize('ts', [0, 0.0, -5.0, -1])
+def test_a_time_of_zero_or_less_is_refused(parts, device, ts):
+    reply = run(parts, device, [habit('early', ts), habit('ok', 5.0)])
+    assert reply.accepted == 1 and [r.id for r in reply.refused] == ['early']
+    assert 'time' in reply.refused[0].why
+
+
+def test_a_time_too_far_ahead_is_refused_and_the_distance_comes_from_settings(parts, device):
+    now = parts.clock.now()
+    ahead = parts.config.ingest.max_ahead_sec
+    assert ahead == 2 * 24 * 3600
+    reply = run(parts, device, [habit('near', now + ahead - 1), habit('far', now + ahead + 1)])
+    assert reply.accepted == 1 and [r.id for r in reply.refused] == ['far']
+    config = cloud_config(ingest={'max_ahead_sec': 10})
+    reply = run(parts, device, [habit('a', now + 5), habit('b', now + 11)], config=config)
+    assert reply.accepted == 1 and [r.id for r in reply.refused] == ['b']
+    far_totals = {'id': 'x', 'ts': now + ahead + 1, 'type': 'daily_totals', 'day': '2026-10-20', 'totals': {}}
+    assert run(parts, device, [far_totals]).accepted == 0
+
+
+def test_a_repeat_event_with_a_new_state_changes_nothing(parts, device):
+    run(parts, device, [state_event('o', ts=1.0)])
+    reply = run(parts, device, [state_event('o', ts=2.0, new_state='empty')])
+    assert (reply.accepted, reply.repeats) == (0, 1)
+    [cup] = parts.store.object_states(device.id)
+    assert (cup.state, cup.since) == ('full', 1.0)
+
+
+def test_numbers_with_thousands_of_digits_refuse_only_their_event():
+    from desktalk_cloud.ingest import number_reader
+    read = number_reader(cloud_config().ingest)
+    assert read('123') == 123 and read('-7') == -7
+    assert read('9' * 5000) == float('inf') and read('-' + '9' * 5000) == float('-inf')
+    assert read('9' * 13) == 9999999999999                    # within the digits, left for the size check
+
+
+def test_an_infinite_number_refuses_its_event(parts, device):
+    reply = run(parts, device, [habit('inf', ml=float('inf')), habit('ok', 101.0)])
+    assert reply.accepted == 1 and [r.id for r in reply.refused] == ['inf']

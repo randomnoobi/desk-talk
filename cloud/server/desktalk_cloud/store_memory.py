@@ -121,7 +121,7 @@ class MemoryStore:
                 known = self._devices.get(code.device_id)
                 if known is None or known.user_id != code.user_id:
                     return None
-                device = replace(known, removed_at=None)
+                device = replace(known, removed_at=None, time_zone=code.time_zone)
                 self._cancel_tokens(device.id, now)
             self._devices[device.id] = device
             self._tokens[token_hash] = _Token(device.id)
@@ -159,6 +159,8 @@ class MemoryStore:
             if device is None:
                 return
             self._cancel_tokens(device_id, now)
+            for code_hash in [h for h, c in self._codes.items() if c.device_id == device_id and not c.used]:
+                del self._codes[code_hash]
             if device.removed_at is None:
                 self._devices[device_id] = replace(device, removed_at=now)
 
@@ -197,11 +199,13 @@ class MemoryStore:
                 raise LookupError(f'no such Pi: {device_id}')
             accepted = repeats = 0
             kept = self._events.setdefault(device_id, {})
+            newly_kept: set[str] = set()
             for event in events:
                 if event['id'] in kept:
                     repeats += 1
                 else:
                     kept[event['id']] = copy.deepcopy(dict(event))
+                    newly_kept.add(event['id'])
                     accepted += 1
             days = self._totals.setdefault(device_id, {})
             for event in totals:
@@ -213,6 +217,8 @@ class MemoryStore:
                     accepted += 1
             states = self._states.setdefault(device_id, {})
             for change in state_changes:
+                if change.event_id not in newly_kept:
+                    continue                                    # a repeat of an event changes nothing
                 old_state = states.get(change.label)
                 if old_state is None or change.since > old_state.since:
                     states[change.label] = ObjectState(label=change.label, state=change.state, since=change.since,

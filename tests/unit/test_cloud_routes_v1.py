@@ -1,16 +1,24 @@
 from __future__ import annotations
 
 import logging
+import threading
+from typing import cast
 
 import pytest
 from fastapi import APIRouter, Request
 from fastapi.testclient import TestClient
 
 from desktalk_cloud.app import create_app
+from desktalk_cloud.ports import Store
 from desktalk_cloud.routers import devices_v1, events_v1
 from tests.fakes.cloud import cloud_config, link_device, make_parts
 
 login_router = APIRouter()
+
+
+@login_router.get('/_test/thread')
+async def _thread():                                # the thread that runs the event loop
+    return {'thread': threading.get_ident()}
 
 
 @login_router.get('/_test/login/{user_id}')
@@ -338,3 +346,127 @@ def test_https_only_marks_the_cookie_secure(parts, ann):
 
 def test_healthz(client):
     assert client.get('/healthz').json() == {'ok': True}
+
+
+# ── text and numbers the store could not keep ─────────────────────────────
+def post_raw(client, token, body: str, expect=200):
+    response = client.post('/v1/events', content=body.encode('ascii'), headers=auth(token))
+    assert response.status_code == expect, response.text
+    return response.json()
+
+
+def json_escape(text: str) -> str:
+    """Text as it goes inside a JSON string in an ASCII body: a lone surrogate and NUL written as \\uXXXX."""
+    return ''.join(f'\\u{ord(ch):04x}' if ord(ch) < 32 or ord(ch) > 126 else ch for ch in text)
+
+
+GOOD = '{"id": "ok", "ts": 5, "type": "habit", "habit": "water", "action": "sip", "ml": 30}'
+
+
+def test_a_surrogate_in_a_refused_id_does_not_fail_the_batch(client, token, ann):
+    reply = post_raw(client, token, '{"events": [' + GOOD + ', {"id": "\\ud800", "ts": 1, "type": "detection"}]}')
+    assert reply['accepted'] == 1 and reply['refused'][0]['id'] == ''
+    assert [e['id'] for e in get_events(client, token, ann.device.id)['events']] == ['ok']
+
+
+@pytest.mark.parametrize('bad', ['\\ud800', '\\u0000', 'a\\u0000b'])
+def test_bad_text_in_a_habit_never_breaks_reading_later(client, token, ann, bad):
+    event = '{"id": "bad", "ts": 1, "type": "habit", "habit": "@", "action": "sip"}'.replace('@', bad)
+    reply = post_raw(client, token, '{"events": [' + event + ', ' + GOOD + ']}')
+    assert reply['accepted'] == 1 and reply['refused'][0]['id'] == 'bad'
+    assert [e['id'] for e in get_events(client, token, ann.device.id)['events']] == ['ok']
+
+
+@pytest.mark.parametrize('bad', ['\\ud800', '\\u0000'])
+def test_bad_text_in_an_object_never_breaks_the_state(client, token, ann, bad):
+    event = ('{"id": "o", "ts": 1, "type": "object_state", "change": "moved", "object": "@", '
+             '"prev_state": "a", "new_state": "b"}').replace('@', bad)
+    reply = post_raw(client, token, '{"events": [' + event + ']}')
+    assert reply['accepted'] == 0 and len(reply['refused']) == 1
+    assert client.get(f'/v1/devices/{ann.device.id}/state', headers=auth(token)).status_code == 200
+
+
+@pytest.mark.parametrize('bad', ['\\u0000', 'a\\u0000'])
+def test_a_nul_in_an_id_is_refused(client, token, bad):
+    reply = post_raw(client, token, '{"events": [{"id": "@", "ts": 1, "type": "habit"}]}'.replace('@', bad))
+    assert reply['accepted'] == 0 and reply['refused'][0]['id'] == ''
+
+
+def test_a_five_thousand_digit_number_refuses_only_its_event(client, token, ann):
+    huge = '{"id": "huge", "ts": 5, "type": "habit", "habit": "water", "action": "sip", "ml": %s}' % ('9' * 5000)
+    reply = post_raw(client, token, '{"events": [' + huge + ', ' + GOOD + ']}')
+    assert reply['accepted'] == 1 and [r['id'] for r in reply['refused']] == ['huge']
+    huge_ts = '{"id": "t", "ts": %s, "type": "habit"}' % ('9' * 5000)
+    assert post_raw(client, token, '{"events": [' + huge_ts + ']}')['refused'][0]['id'] == 't'
+
+
+def test_a_day_that_is_not_a_date_is_refused_by_the_route(client, token):
+    daily = {'id': 'x', 'ts': 60.0, 'type': 'daily_totals', 'day': '2026-99-99', 'totals': {'water_ml': 1}}
+    assert post_events(client, token, [daily, habit()])['refused'][0]['why']
+
+
+def test_times_of_zero_or_far_ahead_are_refused_by_the_route(parts, client, token):
+    far = parts.clock.now() + parts.config.ingest.max_ahead_sec + 10
+    reply = post_events(client, token, [habit('zero', 0), habit('far', far), habit('ok', 5.0)])
+    assert reply['accepted'] == 1 and [r['id'] for r in reply['refused']] == ['zero', 'far']
+
+
+def test_a_repeat_event_does_not_change_state_by_the_route(client, token, ann):
+    old = {'id': 'o', 'ts': 1.0, 'type': 'object_state', 'change': 'moved', 'object': 'cup', 'prev_state': 'a',
+           'new_state': 'full'}
+    post_events(client, token, [old])
+    reply = post_events(client, token, [{**old, 'ts': 2.0, 'new_state': 'empty'}])
+    assert (reply['accepted'], reply['repeats']) == (0, 1)
+    objects = client.get(f'/v1/devices/{ann.device.id}/state', headers=auth(token)).json()['objects']
+    assert [(o['state'], o['since']) for o in objects] == [('full', 1.0)]
+
+
+@pytest.mark.parametrize('code', ['\ud800', 'ABC\ud800DEFG', 'ABCD\x00EFG'])
+def test_a_claim_code_that_cannot_be_stored_gets_the_wrong_code_reply(client, code):
+    wrong = client.post('/v1/devices/claim', json={'code': 'WRONGONE', 'name': 'Pi'})
+    body = '{"code": "@", "name": "Pi"}'.replace('@', json_escape(code))
+    reply = client.post('/v1/devices/claim', content=body.encode('ascii'))
+    assert reply.status_code == 400 and reply.json() == wrong.json()
+
+
+@pytest.mark.parametrize('name', ['\ud800', 'Desk\x00', 'a\udfffb'])
+def test_a_claim_name_that_cannot_be_stored_gets_a_bad_name_reply(parts, client, ann, name):
+    code = make_code(parts, ann.user)
+    body = '{"code": "@", "name": "#"}'.replace('@', code).replace('#', json_escape(name))
+    reply = client.post('/v1/devices/claim', content=body.encode('ascii'))
+    assert reply.status_code == 400
+    assert parts.store.list_devices(ann.user.id) == [ann.device]            # no new Pi; and the code is still good
+    assert client.post('/v1/devices/claim', json={'code': code, 'name': 'Pi'}).status_code == 200
+
+
+def test_a_nul_in_the_query_or_the_path_gets_400_or_404(client, token, ann):
+    path = f'/v1/devices/{ann.device.id}/events'
+    assert client.get(path, params={'after_id': 'a\x00b'}, headers=auth(token)).status_code == 400
+    assert client.get('/v1/devices/a%00b/state', headers=auth(token)).status_code == 404
+
+
+def test_the_store_runs_off_the_event_loop(parts, ann):
+    seen: dict[str, int] = {}
+
+    class Watching:
+        def __init__(self, store):
+            self._store = store
+
+        def __getattr__(self, name):
+            target = getattr(self._store, name)
+            if name not in ('claim_code', 'save_batch'):
+                return target
+
+            def watched(*args, **kwargs):
+                seen[name] = threading.get_ident()
+                return target(*args, **kwargs)
+            return watched
+
+    watching = make_parts(store=cast(Store, Watching(parts.store)), clock=parts.clock)
+    client = build(watching)
+    loop = client.get('/_test/thread').json()['thread']
+    code = make_code(watching, ann.user)
+    claimed = client.post('/v1/devices/claim', json={'code': code, 'name': 'Pi'}).json()
+    post_events(client, claimed['token'], [habit()])
+    assert set(seen) == {'claim_code', 'save_batch'}
+    assert all(thread != loop for thread in seen.values())

@@ -4,6 +4,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+
+def is_clean_text(text: str) -> bool:
+    """True when a store can keep this text: no NUL character (Postgres text and JSONB refuse it) and nothing that
+    can't be written as UTF-8 (a lone surrogate, which JSON allows as "\\ud800")."""
+    if '\x00' in text:
+        return False
+    try:
+        text.encode('utf-8')
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 PENDING, DONE, NO_DATA, FAILED = 'pending', 'done', 'no_data', 'failed'      # a report's status
 REPORT_STATUSES = (PENDING, DONE, NO_DATA, FAILED)
 
@@ -39,11 +52,13 @@ class Device:
 
 @dataclass(frozen=True)
 class StateChange:
-    """An object's state as of `since` (the time of the event that said so)."""
+    """An object's state as of `since` (the time of the event, `event_id`, that said so). A store applies it only
+    when that event was newly kept, so a repeat of the event changes nothing."""
 
     label: str
     state: str
     since: float
+    event_id: str
 
 
 @dataclass(frozen=True, kw_only=True)

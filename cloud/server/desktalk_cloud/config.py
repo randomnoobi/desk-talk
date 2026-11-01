@@ -69,6 +69,7 @@ class IngestSettings(_Section):
     max_batch: PositiveInt
     max_body_kb: PositiveInt
     max_number: PositiveNumber
+    max_ahead_sec: PositiveNumber
     read_default_limit: PositiveInt
     read_max_limit: PositiveInt
 
@@ -131,6 +132,9 @@ class Messages(_Section):
     refused_not_an_object: str
     refused_not_kept: str
     refused_number_too_big: str
+    refused_bad_text: str
+    refused_bad_time: str
+    refused_bad_day: str
     refused_failed: str
     bad_token: str
     bad_code: str

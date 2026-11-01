@@ -6,6 +6,9 @@ messages:
   refused_not_an_object: That entry is not an event (it must be a JSON object).
   refused_not_kept: This kind of event is not kept by the server, or it is missing its id or time.
   refused_number_too_big: A number in this event is bigger than the server accepts.
+  refused_bad_text: Some text in this event has a character the server can't keep.
+  refused_bad_time: The time of this event is not usable (it is 0 or less, or too far in the future).
+  refused_bad_day: The day in this event is not a real date.
   refused_failed: The server could not read this event.
 
   # Requests

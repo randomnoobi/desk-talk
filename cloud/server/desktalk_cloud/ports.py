@@ -5,6 +5,11 @@ suite in tests/contracts/. Change this file only on purpose: every part depends 
 
 Times are seconds since 1970 and are always passed in (`now`), never read from the clock inside a store.
 Events are the plain dicts shared/desktalk_shared/cloud_api.py:to_cloud_event gives.
+
+A store only receives clean text: no NUL character and nothing that can't be written as UTF-8, in any string or
+name (domain.is_clean_text). ingest.py and the routes refuse anything else first, because Postgres would refuse it.
+A store raises LookupError for an unknown Pi and ValueError for a code that already exists or a report status that
+isn't allowed; a real store must do the same, and the contract suite checks it.
 """
 
 from __future__ import annotations
@@ -71,7 +76,8 @@ class Store(Protocol):
     def claim_code(self, code_hash: str, name: str, token_hash: str, now: float) -> Device | None:
         """Use a code: in one step (so one winner when two ask at once) it marks the code used and either makes a new
         Pi (named `name`, in the code's time zone) or, for a "link again" code, keeps that Pi (and its name), brings it
-        back if it was removed and cancels its old tokens. The new token is `token_hash`.
+        back if it was removed, takes the code's time zone (the website sends one every time) and cancels its old
+        tokens. The new token is `token_hash`.
         None when the code is unknown, used or expired (all alike). It expires at `expires_at` exactly."""
         ...
 
@@ -91,7 +97,8 @@ class Store(Protocol):
     def rename_device(self, device_id: str, name: str) -> Device | None: ...
 
     def remove_device(self, device_id: str, now: float) -> None:
-        """Cancel its tokens and mark it removed. Its history stays."""
+        """Cancel its tokens and its unused codes, and mark it removed. Its history stays. (A new code made after
+        this works again.)"""
         ...
 
     def delete_device(self, device_id: str) -> bool:
@@ -109,7 +116,9 @@ class Store(Protocol):
         events: new ones are kept; one with an id the Pi already has changes nothing (a repeat).
         totals: daily_totals events, one row per day; the one with the newer `ts` replaces the older (the same or an
           older one counts as a repeat).
-        state_changes: an object's state; one with an older `since` never replaces a newer one.
+        state_changes: an object's state; one with an older `since` never replaces a newer one. A change is applied
+          only if the event it names (event_id) was newly kept in this call: a repeat changes nothing.
+        Raises LookupError when there is no such Pi.
         The Pi's last_seen_at is set to `now`, and caught_up_at too when `caught_up`."""
         ...
 

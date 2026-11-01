@@ -26,6 +26,7 @@ ingest:
   max_batch: 500                 # the most events one upload may hold
   max_body_kb: 1024              # the biggest upload, in kilobytes
   max_number: 1000000000000      # a number bigger than this (up or down) in an event gets that event refused
+  max_ahead_sec: 172800          # an event dated more than this many seconds after now (2 days) is refused; so is one dated 0 or before
   read_default_limit: 200        # how many events a read gives when it doesn't say
   read_max_limit: 1000           # the most events one read may give
 
