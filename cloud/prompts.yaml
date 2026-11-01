@@ -37,6 +37,7 @@ messages:
   chat_no_key: Chat is not set up on this server (no CHAT_API_KEY).
   chat_no_images: This server's chat takes text only. Pictures are refused.
   chat_too_many: Too many chat requests from this Pi. Wait a moment.
+  chat_busy: The server is answering as many chats as it can right now. Try again in a moment.
   chat_failed: The AI company did not answer. Try again.
   report_no_key: No key is set for the weekly report. Put REPORT_API_KEY in cloud/.env.
   report_pi_removed: This Pi was removed, so its report can't be run again. Link the Pi again first.

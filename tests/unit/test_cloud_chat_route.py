@@ -4,6 +4,8 @@ import json
 import logging
 import threading
 
+import anyio
+import anyio.to_thread
 import httpx
 import pytest
 import yaml
@@ -14,6 +16,7 @@ from openai import OpenAI
 from desktalk_cloud.app import create_app
 from desktalk_cloud.chat_forwarder import HttpChatForwarder
 from desktalk_cloud.config import ConfigError, load_config
+from desktalk_cloud.ports import ChatFailed
 from desktalk_cloud.routers import chat_v1
 from tests.fakes.clock import FakeClock
 from tests.fakes.cloud import (
@@ -463,3 +466,97 @@ def test_the_forwarder_runs_off_the_event_loop_thread(ann, parts):
         loop = client.get('/_test/thread').json()['thread']
         assert post(client, linked.token, {'messages': USER}).status_code == 200
     assert seen and all(thread != loop for thread in seen)
+
+
+# ── how many chats may run at once ─────────────────────────────────────
+ONE_AT_ONCE = {'max_at_once': 1}
+WAIT_SEC = 10                                               # a test that goes wrong fails after this, it doesn't hang
+
+
+def test_the_chat_past_the_cap_gets_503_and_the_forwarder_is_not_called():
+    class Waiting(FakeChatForwarder):
+        def __init__(self):
+            super().__init__()
+            self.started = threading.Event()
+            self.finish = threading.Event()
+
+        def complete(self, messages, max_tokens, temperature):
+            self.started.set()
+            assert self.finish.wait(WAIT_SEC)
+            return super().complete(messages, max_tokens, temperature)
+    waiting = Waiting()
+    parts = make_parts(cloud_config(chat=ONE_AT_ONCE), chat_forwarder=waiting)
+    client, ann, bob = build(parts), link_device(parts, 'ann'), link_device(parts, 'bob')
+    first = []
+    running = threading.Thread(target=lambda: first.append(post(client, ann.token, {'messages': USER})))
+    running.start()
+    try:
+        assert waiting.started.wait(WAIT_SEC)
+        reply = post(client, bob.token, {'messages': USER})     # another Pi: this limit is for the whole server
+    finally:
+        waiting.finish.set()
+        running.join(WAIT_SEC)
+    assert reply.status_code == 503
+    assert reply.json()['detail'] == parts.config.messages.chat_busy
+    assert len(waiting.calls) == 1
+    assert first[0].status_code == 200
+    assert post(client, bob.token, {'messages': USER}).status_code == 200
+
+
+def test_the_other_checks_come_before_the_cap():
+    fake = FakeChatForwarder()
+    parts = make_parts(cloud_config(chat={'max_at_once': 1, 'limit_requests': 4}), chat_forwarder=fake)
+    client, ann = build(parts), link_device(parts, 'ann')
+    assert parts.chat_slots.acquire(blocking=False)              # the server is full
+    assert client.post('/v1/chat/completions', json={'messages': USER}).status_code == 401
+    assert post(client, ann.token, {'messages': []}).status_code == 400
+    assert post(client, ann.token, {'messages': [{'role': 'user', 'content': IMAGE}]}).status_code == 400
+    too_big = 'x' * (parts.config.chat.max_body_kb * 1024)
+    assert post(client, ann.token, {'messages': [{'role': 'user', 'content': too_big}]}).status_code == 413
+    assert post(client, ann.token, {'messages': USER}).status_code == 503
+    assert post(client, ann.token, {'messages': USER}).status_code == 429   # the limit per Pi is checked first
+    assert fake.calls == []
+
+
+def test_no_key_is_still_said_when_the_server_is_full():
+    parts = make_parts(cloud_config(chat=ONE_AT_ONCE), chat_forwarder=None)
+    ann = link_device(parts, 'ann')
+    assert parts.chat_slots.acquire(blocking=False)
+    reply = post(build(parts), ann.token, {'messages': USER})
+    assert reply.status_code == 503 and reply.json()['detail'] == parts.config.messages.chat_no_key
+
+
+class _Answers(FakeChatForwarder):
+    """Raises `raising` from the first call on, until it is set to None."""
+    raising: Exception | None = None
+
+    def complete(self, messages, max_tokens, temperature):
+        if self.raising is not None:
+            raise self.raising
+        return super().complete(messages, max_tokens, temperature)
+
+
+@pytest.mark.parametrize(('raising', 'status'), [(None, 200), (ChatFailed('no'), 502), (RuntimeError('boom'), 502)],
+                         ids=['success', 'ChatFailed', 'unexpected'])
+def test_a_slot_comes_back_however_the_chat_ends(raising, status):
+    answers = _Answers()
+    answers.raising = raising
+    parts = make_parts(cloud_config(chat=ONE_AT_ONCE), chat_forwarder=answers)
+    client, ann = build(parts), link_device(parts, 'ann')
+    assert [post(client, ann.token, {'messages': USER}).status_code for _ in range(3)] == [status] * 3
+    assert parts.chat_slots.acquire(blocking=False)              # given back, once each: the one slot is free
+    assert not parts.chat_slots.acquire(blocking=False)
+
+
+def test_a_refused_chat_takes_no_slot(client, ann, parts):
+    for _ in range(parts.config.chat.max_at_once + 1):
+        assert post(client, ann.token, {'messages': []}).status_code == 400
+    for _ in range(parts.config.chat.max_at_once):
+        assert parts.chat_slots.acquire(blocking=False)
+    assert not parts.chat_slots.acquire(blocking=False)
+
+
+def test_the_cap_leaves_at_least_half_the_threads_for_the_rest_of_the_api():
+    async def threads() -> int:
+        return int(anyio.to_thread.current_default_thread_limiter().total_tokens)
+    assert cloud_config().chat.max_at_once * 2 <= anyio.run(threads)

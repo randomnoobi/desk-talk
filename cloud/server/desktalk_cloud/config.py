@@ -121,10 +121,18 @@ class ChatSettings(_Section):
     url: str
     model: str
     timeout_sec: PositiveNumber
+    deadline_sec: PositiveNumber
+    max_at_once: PositiveInt
     max_body_kb: PositiveInt
     max_tokens_cap: PositiveInt
     limit_requests: PositiveInt
     limit_window_sec: PositiveNumber
+
+    @model_validator(mode='after')
+    def _deadline_fits_one_wait(self):
+        if self.deadline_sec < self.timeout_sec:
+            raise ValueError('deadline_sec must not be less than timeout_sec')
+        return self
 
 
 class RetentionSettings(_Section):
@@ -169,6 +177,7 @@ class Messages(_Section):
     chat_no_key: str
     chat_no_images: str
     chat_too_many: str
+    chat_busy: str
     chat_failed: str
     report_no_key: str
     report_pi_removed: str

@@ -58,6 +58,12 @@ def test_build_uses_the_real_parts_from_the_settings():
     assert parts.chat_limiter.hit('a') and not parts.chat_limiter.hit('a')
 
 
+def test_build_makes_one_set_of_chat_slots_from_the_settings():
+    slots = bootstrap.build(cloud_config(ALL_SET, chat={'max_at_once': 2})).app.state.parts.chat_slots
+    assert slots.acquire(blocking=False) and slots.acquire(blocking=False)
+    assert not slots.acquire(blocking=False)
+
+
 @pytest.mark.parametrize('missing', ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'])
 def test_no_google_without_both_of_its_values(missing):
     env = {name: value for name, value in ALL_SET.items() if name != missing}
@@ -625,7 +631,7 @@ def test_nginx_waits_longer_than_the_slowest_route():
     config = cloud_config()
     found = re.search(r'proxy_read_timeout\s+(\d+)s;', (CLOUD_FOLDER / 'web' / 'nginx-proxy.conf').read_text('utf-8'))
     assert found is not None
-    assert int(found.group(1)) > config.chat.timeout_sec
+    assert int(found.group(1)) > config.chat.deadline_sec + config.chat.timeout_sec     # one chat's longest possible
     assert int(found.group(1)) > 2 * config.google.timeout_sec      # a login makes two calls to Google
 
 

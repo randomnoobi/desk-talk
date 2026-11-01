@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import threading
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -90,7 +91,8 @@ def build_parts(config: CloudConfig, store: Store, clock: Clock) -> CloudParts:
     return CloudParts(
         config=config, store=store, clock=clock, google=google, chat_forwarder=chat_forwarder,
         claim_limiter=RateLimiter(config.limits.claim_tries, config.limits.claim_window_sec, clock),
-        chat_limiter=RateLimiter(config.chat.limit_requests, config.chat.limit_window_sec, clock))
+        chat_limiter=RateLimiter(config.chat.limit_requests, config.chat.limit_window_sec, clock),
+        chat_slots=threading.BoundedSemaphore(config.chat.max_at_once))
 
 
 def build_app(parts: CloudParts, *, lifespan=None) -> FastAPI:

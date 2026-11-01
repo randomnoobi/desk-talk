@@ -131,10 +131,15 @@ async def chat_completions(request: Request, device: Annotated[Device, Depends(d
         max_tokens, temperature = _clean_options(body, config.chat.max_tokens_cap)
     except _Refused as refused:
         raise HTTPException(400, messages.chat_no_images if refused.images else messages.bad_body) from None
+    if not parts.chat_slots.acquire(blocking=False):             # refused at once: waiting would hold the request open
+        raise HTTPException(503, messages.chat_busy)
     try:
+        # If the Pi hangs up, this still waits for the thread to end, so the slot is only given back once it's free.
         return await run_in_threadpool(parts.chat_forwarder.complete, clean, max_tokens, temperature)
     except ChatFailed:
         pass
     except Exception as error:                          # its text can hold the chat text: only the kind is logged
         log.warning('The chat forwarder broke (%s)', type(error).__name__)
+    finally:
+        parts.chat_slots.release()
     raise HTTPException(502, messages.chat_failed)

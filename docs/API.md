@@ -356,7 +356,7 @@ The optional server in `cloud/`. Its own access rules:
 | POST | `/v1/events` | Send events. Each goes through `to_cloud_event()` again. Replies how many were kept, repeated and refused. An empty list is fine: it updates when the Pi was last seen and, with `caught_up: true`, when it last had nothing left to send. | Pi token |
 | GET | `/v1/devices/{device_id}/state` | The Pi, when it was last seen, its goals, its last camera problem and its objects, and `recent_hours` (`site.recent_hours`, how far back the website lists events). | Pi token or owner |
 | GET | `/v1/devices/{device_id}/events` | Its events, oldest first. `?since=`, `?after_id=`, `?limit=`. | Pi token or owner |
-| POST | `/v1/chat/completions` | Chat through this server's AI key, text only. Off without `CHAT_API_KEY`. | Pi token |
+| POST | `/v1/chat/completions` | Chat through this server's AI key, text only. Off without `CHAT_API_KEY`. 503 in plain words when `chat.max_at_once` chats are already running on the server, and 502 when the AI company goes past `chat.deadline_sec` or fails. | Pi token |
 
 ### Logging in (4)
 

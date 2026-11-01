@@ -2,10 +2,17 @@
 
 The chat text can hold to-dos and what the user typed. It passes through here and is never kept: only the status and
 the time taken are logged, and a failure is raised in fixed plain words. An error from the AI company (its reply or
-the text of an httpx error) can hold the chat text, so none of it is logged or passed on."""
+the text of an httpx error) can hold the chat text, so none of it is logged or passed on.
+
+httpx's timeout is for one read, so an AI company sending a byte at a time could hold a chat (and its thread) open for
+ever. The reply is read in pieces and each piece checks `chat.deadline_sec` and the size limit. The wait for the next
+piece is at most `chat.timeout_sec`, so a chat ends by deadline_sec + timeout_sec. What this can't see is the reply's
+headers arriving a byte at a time: they come before the first piece. They are limited in size by the HTTP library, not
+in time."""
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -37,23 +44,46 @@ class HttpChatForwarder:
             request['max_tokens'] = max_tokens
         if temperature is not None:
             request['temperature'] = temperature
+        # Asks for it unsqueezed: a gzip reply can arrive for a long time before any piece comes out to be checked.
+        headers = {'authorization': f'Bearer {self._api_key}', 'accept-encoding': 'identity'}
         started = self._clock.monotonic()
         try:
-            reply = self._client.post(s.url, json=request, headers={'authorization': f'Bearer {self._api_key}'},
-                                      timeout=s.timeout_sec, follow_redirects=False)
+            with self._client.stream('POST', s.url, json=request, headers=headers, timeout=s.timeout_sec,
+                                     follow_redirects=False) as reply:          # leaving this closes it, on every path
+                status = reply.status_code
+                content = self._read(reply, started) if status in OK_STATUSES else b''
+        except ChatFailed:
+            raise
         except Exception as error:                  # its message can hold the chat text: only the kind is logged
             log.warning('The chat AI did not answer (%s) after %.1f s', type(error).__name__,
                         self._clock.monotonic() - started)
             raise ChatFailed('The AI company did not answer.') from None
         took = self._clock.monotonic() - started
-        log.info('The chat AI answered with status %d in %.1f s', reply.status_code, took)
-        if reply.status_code not in OK_STATUSES:
+        log.info('The chat AI answered with status %d in %.1f s', status, took)
+        if status not in OK_STATUSES:
             raise ChatFailed('The AI company refused the request.')
         try:
-            body = reply.json()
+            body = json.loads(content)
         except ValueError:
             raise ChatFailed('The AI company sent back something that is not JSON.') from None
         choices = body.get('choices') if isinstance(body, dict) else None
         if not isinstance(choices, list) or not choices:
             raise ChatFailed('The AI company sent back no answer.')
         return body
+
+    def _read(self, reply: httpx.Response, started: float) -> bytes:
+        """The whole reply, a piece at a time. Raises ChatFailed as soon as it is too late or too big."""
+        s = self._settings
+        pieces: list[bytes] = []
+        size = 0
+        for piece in reply.iter_bytes():
+            took = self._clock.monotonic() - started
+            if took > s.deadline_sec:
+                log.warning('The chat AI went past the deadline after %.1f s', took)
+                raise ChatFailed('The AI company took too long.')
+            size += len(piece)
+            if size > s.max_body_kb * 1024:
+                log.warning('The chat AI sent too long a reply after %.1f s', took)
+                raise ChatFailed('The AI company sent back too much.')
+            pieces.append(piece)
+        return b''.join(pieces)

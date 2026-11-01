@@ -3,6 +3,7 @@ fake report writer and fake chat forwarder, and a quick way to link a Pi without
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -87,7 +88,8 @@ def make_parts(config: CloudConfig | None = None, *, store: Store | None = None,
     return CloudParts(
         config=config, store=store or MemoryStore(), clock=clock, google=google, chat_forwarder=chat_forwarder,
         claim_limiter=RateLimiter(config.limits.claim_tries, config.limits.claim_window_sec, clock),
-        chat_limiter=RateLimiter(config.chat.limit_requests, config.chat.limit_window_sec, clock))
+        chat_limiter=RateLimiter(config.chat.limit_requests, config.chat.limit_window_sec, clock),
+        chat_slots=threading.BoundedSemaphore(config.chat.max_at_once))
 
 
 @dataclass(frozen=True)
