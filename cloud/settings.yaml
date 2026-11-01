@@ -41,8 +41,13 @@ reports:                         # the weekly report
   provider: anthropic            # who writes it: anthropic, or openai_compatible (Gemini, OpenAI, Groq, Ollama)
   model: claude-sonnet-5-5       # the model that writes it
   url: ""                        # for openai_compatible: the chat completions address
-  max_tokens: 2000               # the longest report the model may write
+  max_tokens: 8000               # the longest report the model may write (a model that thinks first uses some of this)
   timeout_sec: 120               # how long to wait for the model before giving up
+  outcome_window_min: 15         # a nudge counts as acted on if the matching sign comes within this many minutes
+  outcome_match_sec: 30          # the app's own result belongs to a nudge only if the nudge was sent within this many seconds of when the result says it was
+  blip_sec: 120                  # a thing that leaves the desk and comes back within this many seconds was a detector blip
+  hour_min_sec: 60               # an hour counts as "at the desk" with at least this many seconds there
+  gap_min: 30                    # a stretch with no event of any kind this many minutes long or longer is listed in the report's data
 
 chat:                            # letting a Pi use this server's AI key for chat (text only)
   url: https://generativelanguage.googleapis.com/v1beta/openai/chat/completions   # the AI company's chat completions address

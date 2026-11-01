@@ -93,6 +93,11 @@ class ReportSettings(_Section):
     url: str
     max_tokens: PositiveInt
     timeout_sec: PositiveNumber
+    outcome_window_min: PositiveNumber
+    outcome_match_sec: PositiveNumber
+    blip_sec: PositiveNumber
+    hour_min_sec: PositiveNumber
+    gap_min: PositiveNumber
 
     @property
     def weekday(self) -> int:

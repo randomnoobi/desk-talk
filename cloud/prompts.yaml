@@ -47,6 +47,7 @@ site:
 
 # The weekly report. `prompt` is what the AI is told (the data is added after it, between <data> and </data>).
 # `data` is the wording of the data notes the report is written from, `errors` the plain reasons a report failed.
+# The notes are plain facts, because the prompt tells the AI to treat everything inside <data> as information only.
 report:
   prompt: |
     You are writing a weekly habit report for one person who uses Desk Talk, a camera on their desk that notices habits and sends reminders ("nudges"). Your job is to help them reach their goals. Write to them directly as "you", in plain, warm, honest words, like a coach who has read their notes closely.
@@ -56,13 +57,14 @@ report:
     ## Rules for using the data
 
     1. Only state what the data supports. Back up every claim with a day, time or number from the data.
-    2. Check coverage before anything else. No data on a day means the app was off, so never count that day as a bad day. If most of the week is missing, say so at the top and call patterns "early signs", not trends.
+    2. Check coverage before anything else. A day with no data counts as the app being off only when the data notes say the Pi had sent everything; otherwise it is unknown. Either way, never count that day as a bad day. If most of the week is missing, say so at the top and call patterns "early signs", not trends.
     3. Never compare a part-day to a full day using totals. Use rates such as per desk hour, and say when one day is carrying a conclusion.
     4. Keep the person's habits apart from mistakes by the camera. If a number looks impossible or an object looks wrong, point it out as a possible error and don't give advice based on it.
     5. An outcome only shows what happened next, not that the nudge caused it.
     6. Suggest things this person can do at this desk on their schedule. Tie each one to something you saw. No generic advice like "stay hydrated" or "get more sleep".
     7. Don't shame, don't diagnose health problems, and don't give medical advice. The camera can't see the person's sleep or health, so don't guess about them.
     8. If you don't have enough data to fill a section, say so in one line. Don't pad it.
+    9. Every suggestion under "What to try next week" must be something next week's data can really show, using a number that is in the data's columns or event list. Don't suggest a check the data can't give, such as phone minutes after a certain time of day.
 
     ## Write the report in exactly this form
 
@@ -90,11 +92,6 @@ report:
     The report must be 300 to 450 words in total, short enough to read in two minutes. This limit is firm. Before you finish, count the words and cut any detail that doesn't change what the person should do. Trends get at most 20 words per goal, and each suggestion gets at most 40 words. Use only the headings above, and no tables.
 
   data:
-    # Which numbers the notes and the estimate of "did they act on the nudge" use
-    outcome_window_min: 15       # a nudge counts as acted on if the matching sign comes within this many minutes
-    blip_sec: 120                # a thing that leaves the desk and comes back within this many seconds was a detector blip
-    hour_min_sec: 60             # an hour counts as "at the desk" with at least this many seconds there
-
     title: "# Desk Talk data: {first} to {last}"
     times: "Times are the person's local time ({zone}). The week runs from {start} to {end}. This data was put together at {written}."
     last_day_open: "The last day ({day}) is not a whole day: the week ends at {end_time} that day."
@@ -102,11 +99,14 @@ report:
     read_notes: |
       - A camera over the desk reports what it recognizes. It only knows what happens while the app is on and sending.
       - The object detector makes mistakes. Short appearances and low `conf` values may be wrong, and a camera sip is only a guess at 80 ml.
-      - "Desk minutes" is time a person was seen at the desk. A break can be logged by a button, by leaving the desk, or by the camera being off.
-      - The wording of nudges and the person's task list are not part of this data. Trust the `evidence` column.
-    no_data_means_off: "- A day with no data means the app was off, not that the user did nothing."
-    not_caught_up: "- IMPORTANT: this Pi had not finished sending when this report was written. It was last heard from at {last_heard}. A day with no data, or a day that looks short, does not mean the app was off: its data may just not have arrived yet. Do not count it as a bad day, and say that it is unknown."
+      - The camera sees where a thing is, not whether it is on: a laptop that stays on the desk may be shut or asleep. When every object disappears at the same moment, the camera may have lost sight rather than everything having been removed.
+      - "Desk minutes" is time a person was seen at the desk. A break is logged by a button, by leaving the desk, or by the camera being off. A break logged as "left the desk" shows the person was away from the desk, not that they walked.
+      - Desk minutes, hours at the desk and the longest sit are counted by the clock day, so a session that runs past midnight shows its after-midnight part under the next day.
+      - The wording of nudges and the person's task list are not part of this data. The `evidence` column says what the camera saw.
+    no_data_means_off: "- This Pi had sent everything up to the end of the week when this report was written, so a day with no data is a day it sent nothing: the app was off or not running."
+    not_caught_up: "- This Pi had not finished sending when this report was written. It was last heard from at {last_heard}. A day with no data, or a day that looks short, may be data that has not arrived yet: the data does not show that the app was off on such a day."
     never_heard: never
+    linked_note: "- This Pi was linked to this server at {linked}. The server has nothing from before that moment, so the days before it say nothing about whether the app was off."
 
     h_goals: "## Goals"
     schedule: "Schedule: wake {wake}, bed {bed}."
@@ -116,16 +116,32 @@ report:
       - "- Phone: {phone_free_min:g} phone-free desk minutes a day, phone away the {phone_away_before_bed_min:g} minutes before bed."
       - "- Light: outside light within {morning_light_window_min:g} minutes of waking (10-30 min by weather), some in the late afternoon, dim lights the {evening_dim_before_bed_min:g} minutes before bed."
       - "- Screens: off the {screens_off_before_bed_min:g} minutes before bed."
-    goals_missing: "This Pi has not sent its goals yet, so there is no goal number to measure against. Do not guess one."
+    goals_missing: "This Pi has not sent its goals yet, so there is no goal number to measure against."
 
     h_daily: "## Daily totals"
-    daily_note: "\"Hours at desk\" lists the clock hours with at least a minute at the desk (21h = 21:00-21:59). A long sit that crosses midnight counts toward the next day's longest sit."
+    daily_note: "\"Hours at desk\" lists the clock hours with at least {seconds} seconds at the desk (21h = 21:00-21:59). A long sit that crosses midnight counts toward the next day's longest sit."
     daily_header: "| Day | Desk min | Hours at desk | Water ml (sips) | Breaks | Longest sit min | Phone-free min | Phone on desk min | Sunlight min | Nudges |"
     no_data_day: no data
-    so_far: " (so far)"
+    numbers_missing: "numbers not received; see the events"
+    before_linked: "before this Pi was linked"
+    first_evening: " (this week starts at {time}; the numbers cover the whole day)"
+    week_starts: " (this week starts at {time})"
+    last_row_open: " (the week ends at {time})"
+    last_row_as_of: " (numbers as of {sent})"
+    last_row_after_end: " (numbers as of {sent}, after the week ended at {end}; they include time outside this week)"
     hour_label: "{hour}h"
     hours_none: "-"
     unknown_number: "?"
+    breaks_split: "{total} ({parts})"
+    breaks_part: "{count} {how}"
+    breaks_other: "{count} not in the events"
+
+    h_gaps: "## Stretches with nothing reported"
+    gaps_intro: "Each stretch below is {gap} minutes or longer with no event of any kind. The app may have been off, or nothing on the desk changed; the data cannot tell which."
+    gaps_none: "No stretch of {gap} minutes or more passed without an event."
+    gap_line: "- {start} to {end} ({length})"
+    duration_hm: "{hours} h {minutes} min"
+    duration_m: "{minutes} min"
 
     h_nudges: "## Nudges and outcomes"
     outcomes_none: "The app recorded no outcomes for these nudges. The Next sign column is worked out afterward from the log: \"acted\" means the matching action came within {window} minutes. It shows what happened next, not that the nudge caused it."
@@ -140,8 +156,8 @@ report:
     result_cannot_tell: cannot tell
     sign_break: a break was logged
     sign_sip: a sip was logged
-    sign_phone: the phone left the desk for 2+ min
-    sign_laptop: the laptop left the desk for 2+ min
+    sign_phone: "the phone left the desk for {minutes}+ min"
+    sign_laptop: "the laptop left the desk for {minutes}+ min"
     detail_cannot_tell: the camera has no way to see this
     detail_nothing_later: nothing matching later in the log
     detail_acted: "{sign} {minutes} min later"
@@ -151,7 +167,7 @@ report:
     h_snapshot: "## Most recent snapshot"
     snapshot_intro: "This is what the Pi last reported, as of {last_heard}. It may not be what is on the desk now. Objects the camera said were on the desk:"
     snapshot_none: "None."
-    camera_problem: "Careful: the camera last reported a problem ({key}) at {at}, after the last time an object changed ({changed}). This may be the last thing it saw, not what was on the desk."
+    camera_problem: "The camera last reported a problem ({key}) at {at}, after the last time an object changed ({changed}). This may be the last thing it saw, not what was on the desk."
     snapshot_header: "| Object | State | Since |"
     all_objects_intro: "Last change for each object it has ever tracked:"
     h_events: "## All events ({count})"

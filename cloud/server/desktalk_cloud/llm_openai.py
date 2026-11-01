@@ -13,7 +13,7 @@ from pydantic import SecretStr
 from desktalk_cloud.config import ReportSettings
 from desktalk_cloud.ports import ReportFailed
 from desktalk_cloud.report_data import with_data
-from desktalk_cloud.report_job import ReportWillNotWork, failure_for_status
+from desktalk_cloud.report_errors import ReportWillNotWork, failure_for_status
 
 __all__ = ['OpenAIReportWriter']
 
@@ -57,7 +57,12 @@ class OpenAIReportWriter:
         except (ValueError, KeyError, IndexError, TypeError, AttributeError):
             raise ReportFailed(self._errors['bad_reply']) from None
         if finish == 'length':
-            raise ReportFailed(self._errors['cut_off'])       # a report that stops half way is not kept
+            # A report that stops half way is not kept, and the same limit would stop it again.
+            raise ReportWillNotWork(self._errors['cut_off'])
+        if finish == 'content_filter':
+            raise ReportFailed(self._errors['refused'])
+        if finish not in (None, 'stop'):                        # (a missing reason is fine: some servers leave it out)
+            raise ReportFailed(self._errors['bad_reply'])
         if not isinstance(text, str) or not text.strip():
             raise ReportFailed(self._errors['empty'])
         return text.strip()

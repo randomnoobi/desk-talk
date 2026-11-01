@@ -12,12 +12,13 @@ from pydantic import SecretStr
 from desktalk_cloud.config import ReportSettings
 from desktalk_cloud.ports import ReportFailed
 from desktalk_cloud.report_data import with_data
-from desktalk_cloud.report_job import ReportWillNotWork, failure_for_status
+from desktalk_cloud.report_errors import ReportWillNotWork, failure_for_status
 
 __all__ = ['AnthropicReportWriter']
 
 log = logging.getLogger(__name__)
 
+ENDINGS = ('end_turn', 'stop_sequence')     # the model finished; any other stop (a pause, a tool call) is not a report
 NO_SDK_RETRIES = 0           # the report job does the retrying (with longer and longer waits), so the SDK does none
 
 
@@ -54,7 +55,10 @@ class AnthropicReportWriter:
         if answer.stop_reason == 'refusal':
             raise ReportFailed(self._errors['refused'])
         if answer.stop_reason == 'max_tokens':
-            raise ReportFailed(self._errors['cut_off'])       # a report that stops half way is not kept
+            # A report that stops half way is not kept, and the same limit would stop it again.
+            raise ReportWillNotWork(self._errors['cut_off'])
+        if answer.stop_reason not in ENDINGS:
+            raise ReportFailed(self._errors['bad_reply'])
         text = ''.join(block.text for block in answer.content if block.type == 'text').strip()
         if not text:
             raise ReportFailed(self._errors['empty'])

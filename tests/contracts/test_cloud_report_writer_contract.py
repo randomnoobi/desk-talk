@@ -20,7 +20,7 @@ from desktalk_cloud.llm_anthropic import AnthropicReportWriter
 from desktalk_cloud.llm_openai import OpenAIReportWriter
 from desktalk_cloud.ports import ReportFailed, ReportWriter
 from desktalk_cloud.report_data import load_report_words
-from desktalk_cloud.report_job import ReportWillNotWork
+from desktalk_cloud.report_errors import ReportWillNotWork
 from tests.fakes.cloud import cloud_config
 
 KEY = 'sk-test-key-0123456789'
@@ -77,7 +77,7 @@ class ReportWriterContract:
         ('timeout', False, ERRORS['timeout']),
         ('no_network', False, ERRORS['unreachable']),
         ('empty', False, ERRORS['empty']),
-        ('cut_off', False, ERRORS['cut_off']),
+        ('cut_off', True, ERRORS['cut_off']),             # the same limit would cut it off again
     ])
     def test_a_problem_gives_plain_words(self, scenario, will_not_work, words):
         rig = self.rig(scenario)

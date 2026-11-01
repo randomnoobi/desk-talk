@@ -9,7 +9,8 @@ from typing import Any
 from desktalk_cloud.domain import DONE, FAILED, NO_DATA, PENDING, Report
 from desktalk_cloud.ports import ReportFailed
 from desktalk_cloud.report_data import load_report_words
-from desktalk_cloud.report_job import ReportJob, ReportWillNotWork
+from desktalk_cloud.report_errors import ReportWillNotWork
+from desktalk_cloud.report_job import ReportJob
 from desktalk_cloud.store_memory import MemoryStore
 from tests.fakes import FakeClock
 from tests.fakes.cloud import FakeReportWriter, cloud_config, link_device, make_parts
@@ -85,10 +86,11 @@ def test_waits_for_catch_up_then_writes_after_wait_days():
     s.go_to(DUE + 600)
     s.tick()
     assert s.report().status == PENDING and s.writer.calls == []
-    s.go_to(DUE + SETTINGS.wait_for_pi_days * DAY - 1)
+    started = s.clock.now()                                                # the report is started on this first round
+    s.go_to(started + SETTINGS.wait_for_pi_days * DAY - 1)
     s.tick()
     assert s.report().status == PENDING and s.writer.calls == []
-    s.go_to(DUE + SETTINGS.wait_for_pi_days * DAY)
+    s.go_to(started + SETTINGS.wait_for_pi_days * DAY)
     s.tick()
     assert s.report().status == DONE
     data = s.writer.calls[0][1]
@@ -121,14 +123,17 @@ def test_no_data_waits_for_a_pi_that_has_not_caught_up():
     s.go_to(DUE + 600)
     s.tick()
     assert s.report().status == PENDING
-    s.go_to(DUE + SETTINGS.wait_for_pi_days * DAY)
+    s.go_to(DUE + 600 + SETTINGS.wait_for_pi_days * DAY)
     s.tick()
     assert s.report().status == NO_DATA and s.writer.calls == []
 
 
 def test_a_pi_never_heard_from_gets_no_data_after_the_wait():
     s = Setup()
-    s.go_to(DUE + SETTINGS.wait_for_pi_days * DAY)
+    s.go_to(DUE + 600)
+    s.tick()
+    assert s.report().status == PENDING
+    s.go_to(DUE + 600 + SETTINGS.wait_for_pi_days * DAY)
     s.tick()
     assert s.report().status == NO_DATA and s.writer.calls == []
 
@@ -363,3 +368,84 @@ def test_a_week_of_all_zero_numbers_and_nothing_else_is_no_data():
     s.go_to(DUE + 600)
     s.tick()
     assert s.report().status == NO_DATA and s.writer.calls == []
+
+
+# ── fix round 1 ──────────────────────────────────────────────────────────────────────────────────────────────────
+def test_a_server_that_slept_waits_for_a_pi_that_has_not_sent_yet():
+    s = Setup()
+    s.send(at_ts=at(21, 12))                                               # it sent on Wednesday, then held the rest
+    s.go_to(DUE + 3 * DAY)                                                 # the server wakes on Wednesday evening
+    s.tick()
+    assert s.report().status == PENDING and s.writer.calls == []           # not "no data": the Pi has not had its say
+    s.send(events=[sip('late', at(30, 9))], at_ts=DUE + 3 * DAY + 3600)
+    s.go_to(DUE + 3 * DAY + 3700)
+    s.tick()
+    assert s.report().status == DONE and 'habit hydration/sip' in s.writer.calls[0][1]
+
+
+def test_the_wait_counts_from_when_the_server_started_the_report_if_that_is_later():
+    s = Setup()
+    s.go_to(DUE + 3 * DAY)
+    s.tick()
+    s.go_to(DUE + 3 * DAY + SETTINGS.wait_for_pi_days * DAY - 1)
+    s.tick()
+    assert s.report().status == PENDING
+    s.go_to(DUE + 3 * DAY + SETTINGS.wait_for_pi_days * DAY)
+    s.tick()
+    assert s.report().status == NO_DATA
+
+
+def test_the_first_evening_of_the_week_is_in_the_data():
+    s = Setup()
+    sunday = {'id': 'daily-2026-10-25', 'ts': at(26, 1), 'type': 'daily_totals', 'day': '2026-10-25',
+              'totals': {'desk_sec': 7200, 'hour_21': 3600}}
+    s.store.save_batch(s.ann.id, [sip('s1', at(28, 9))], [sunday], [], True, DUE + 300)
+    s.go_to(DUE + 600)
+    s.tick()
+    assert 'this week starts at 20:00' in s.writer.calls[0][1] and '| 120 | 21h |' in s.writer.calls[0][1]
+
+
+def test_a_week_with_only_the_first_evenings_numbers_has_no_data():
+    s = Setup()
+    sunday = {'id': 'daily-2026-10-25', 'ts': at(26, 1), 'type': 'daily_totals', 'day': '2026-10-25',
+              'totals': {'desk_sec': 7200}}
+    s.store.save_batch(s.ann.id, [], [sunday], [], True, DUE + 300)        # a day mostly in last week
+    s.go_to(DUE + 600)
+    s.tick()
+    assert s.report().status == NO_DATA and s.writer.calls == []
+
+
+class _Reply:
+    def __init__(self, text: str) -> None:
+        self.text, self.calls = text, 0
+
+    def write(self, prompt: str, data: str) -> str:
+        self.calls += 1
+        return self.text
+
+
+def test_a_reply_a_store_cannot_keep_is_a_failed_try():
+    writer = _Reply('# Week\x00 with a NUL')
+    s = Setup(writer=writer)
+    s.send(events=[sip('s1', at(28, 9))], at_ts=DUE + 300)
+    s.go_to(DUE + 600)
+    s.tick()
+    report = s.report()
+    assert (report.status, report.tries, report.markdown) == (PENDING, 1, None)
+    assert report.error == WORDS.errors['bad_reply']
+
+
+def test_a_store_that_fails_when_saving_the_report_counts_as_a_try():
+    class CannotSave(MemoryStore):
+        def finish_report(self, report_id, status, markdown, model, error, now):
+            if status == DONE:
+                raise RuntimeError('database went away')
+            return super().finish_report(report_id, status, markdown, model, error, now)
+
+    s = Setup(store=CannotSave())
+    s.send(events=[sip('s1', at(28, 9))], at_ts=DUE + 300)
+    s.go_to(DUE + 600)
+    s.tick()
+    assert (s.report().status, s.report().tries) == (PENDING, 1)
+    s.tick()
+    assert len(s.writer.calls) == 1                                        # it waits before paying for another

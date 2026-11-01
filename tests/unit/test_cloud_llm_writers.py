@@ -17,7 +17,7 @@ from desktalk_cloud.llm_anthropic import AnthropicReportWriter
 from desktalk_cloud.llm_openai import OpenAIReportWriter
 from desktalk_cloud.ports import ReportFailed
 from desktalk_cloud.report_data import load_report_words
-from desktalk_cloud.report_job import ReportWillNotWork
+from desktalk_cloud.report_errors import ReportWillNotWork
 from tests.fakes.cloud import cloud_config
 
 KEY = 'sk-test-key-0123456789'
@@ -147,3 +147,30 @@ def test_openai_makes_its_own_client_when_it_is_not_given_one(monkeypatch):
     monkeypatch.setattr(httpx, 'Client', lambda: real(transport=httpx.MockTransport(lambda request: ok('# Made'))))
     writer = OpenAIReportWriter(SETTINGS, SecretStr(KEY), ERRORS)
     assert writer.write('RULES', 'DATA') == '# Made'
+
+
+@pytest.mark.parametrize(('finish', 'words', 'fatal'), [
+    ('length', 'cut_off', True), ('content_filter', 'refused', False), ('tool_calls', 'bad_reply', False),
+    ('something_new', 'bad_reply', False)])
+def test_openai_any_finish_other_than_stop_is_a_failure(finish, words, fatal):
+    choice = {'finish_reason': finish, 'message': {'content': '# Half a report'}}
+    reply = httpx.Response(200, json={'choices': [choice]})
+    with pytest.raises(ReportFailed) as caught:
+        openai_writer(lambda request: reply).write('R', 'D')
+    assert str(caught.value) == ERRORS[words] and isinstance(caught.value, ReportWillNotWork) is fatal
+
+
+@pytest.mark.parametrize('finish', ['stop', None])
+def test_openai_a_missing_finish_reason_is_fine(finish):
+    choice: dict[str, Any] = {'message': {'content': '# Done'}}
+    if finish:
+        choice['finish_reason'] = finish
+    assert openai_writer(lambda request: httpx.Response(200, json={'choices': [choice]})).write('R', 'D') == '# Done'
+
+
+@pytest.mark.parametrize(('stop', 'words'), [('pause_turn', 'bad_reply'), ('tool_use', 'bad_reply')])
+def test_anthropic_a_stop_that_is_not_an_ending_is_a_failure(stop, words):
+    answer = SimpleNamespace(content=[SimpleNamespace(type='text', text='# Half')], stop_reason=stop)
+    with pytest.raises(ReportFailed) as caught:
+        AnthropicReportWriter(SETTINGS, SecretStr(KEY), ERRORS, client=Recorder(answer)).write('R', 'D')
+    assert str(caught.value) == ERRORS[words]
