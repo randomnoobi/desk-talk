@@ -43,6 +43,7 @@ messages:
 # The website's "Add a Pi" box (the code only fills in {server_url} and {code})
 site:
   setup_command: uv run python scripts/link_cloud.py --server {server_url} --code {code}
+  needs_json: This request must be sent as JSON (content type application/json).
 
 # The weekly report. `prompt` is what the AI is told (the data is added after it, between <data> and </data>).
 # `data` is the wording of the data notes the report is written from, `errors` the plain reasons a report failed.

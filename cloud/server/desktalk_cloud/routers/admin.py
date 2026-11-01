@@ -12,7 +12,9 @@ from fastapi.concurrency import run_in_threadpool
 
 from desktalk_cloud.admins import SESSION_ADMIN, admin_login_ok, admin_set_up, current_admin
 from desktalk_cloud.deps import parts_of, read_json
-from desktalk_cloud.domain import Admin, Device, Report, is_clean_text
+from desktalk_cloud.domain import DONE, NO_DATA, Admin, Device, Report, is_clean_text
+from desktalk_cloud.ports import Store
+from desktalk_cloud.routers.auth import needs_json
 
 router = APIRouter()
 log = logging.getLogger(__name__)
@@ -22,7 +24,7 @@ def _address(request: Request) -> str:
     return 'admin:' + (request.client.host if request.client else 'unknown')     # apart from a Pi's tries
 
 
-@router.post('/auth/admin/login')
+@router.post('/auth/admin/login', dependencies=[Depends(needs_json)])
 async def admin_login(request: Request) -> dict[str, bool]:
     parts = parts_of(request)
     config, messages = parts.config, parts.config.messages
@@ -56,6 +58,18 @@ def _device_row(device: Device) -> dict[str, Any]:
             'caught_up_at': device.caught_up_at, 'removed': device.removed_at is not None}
 
 
+def _latest_finished(store: Store, devices: list[Device]) -> list[dict[str, Any]]:
+    """Each Pi's newest report that was written (done, or no data that week), without its text, so the admin can
+    set it to run again after late data. (A failed one is under failed_reports.)"""
+    found = []
+    for device in devices:
+        finished = [r for r in store.list_reports(device.id) if r.status in (DONE, NO_DATA)]
+        if finished:
+            found.append(finished[0])                       # newest week first
+    found.sort(key=lambda r: (r.week_start, r.id), reverse=True)
+    return [_report_row(r) for r in found]
+
+
 @router.get('/api/admin/overview')
 def overview(request: Request, _admin: Annotated[Admin, Depends(current_admin)]) -> dict[str, Any]:
     store = parts_of(request).store
@@ -68,11 +82,13 @@ def overview(request: Request, _admin: Annotated[Admin, Depends(current_admin)])
                    'device_count': counts.get(u.id, 0)} for u in store.list_users()],
         'devices': [_device_row(d) for d in devices],
         'failed_reports': [_report_row(r) for r in store.list_failed_reports()],
+        'recent_reports': _latest_finished(store, devices),
     }
 
 
 @router.post('/api/admin/reports/{report_id}/rerun')
-def rerun(request: Request, report_id: str, _admin: Annotated[Admin, Depends(current_admin)]) -> dict[str, Any]:
+def rerun(request: Request, report_id: str, _admin: Annotated[Admin, Depends(current_admin)],
+          _json: Annotated[None, Depends(needs_json)]) -> dict[str, Any]:
     parts = parts_of(request)
     fresh = parts.store.reset_report(report_id, parts.clock.now()) if is_clean_text(report_id) else None
     if fresh is None:

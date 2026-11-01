@@ -5,18 +5,43 @@ isn't there. A Pi's token does not open these routes. Deleting a person removes 
 from __future__ import annotations
 
 import shlex
+from string import Formatter
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 
+from desktalk_cloud.config import CloudConfig, ConfigError
 from desktalk_cloud.deps import current_user, parts_of, read_json
 from desktalk_cloud.domain import Device, Report, User, is_clean_text
-from desktalk_cloud.routers.auth import public_address
+from desktalk_cloud.routers.auth import needs_json, public_address
 from desktalk_cloud.tokens import hash_secret, new_code
 
+__all__ = ['check_site_words', 'router']
+
 router = APIRouter()
+
+SITE_WORDS = ('setup_command', 'needs_json')                       # in cloud/prompts.yaml → site
+SETUP_BLANKS = ('server_url', 'code')
+
+
+def check_site_words(config: CloudConfig) -> None:
+    """Stop the start (ConfigError, in plain words) when cloud/prompts.yaml → site is missing a wording or the setup
+    command has a blank the code does not fill in, instead of failing on the first use."""
+    words = config.prompts.get('site')
+    if not isinstance(words, dict):
+        raise ConfigError("prompts.yaml: 'site' is missing (it holds the setup command and the JSON-only wording)")
+    for key in SITE_WORDS:
+        if not isinstance(words.get(key), str) or not words[key].strip():
+            raise ConfigError(f"prompts.yaml: site → {key} is missing or is not text")
+    try:
+        blanks = {name for _, name, _, _ in Formatter().parse(words['setup_command']) if name is not None}
+    except ValueError:
+        blanks = set()
+    if blanks != set(SETUP_BLANKS):
+        raise ConfigError("prompts.yaml: site → setup_command must use exactly the blanks {server_url} and {code} "
+                          "(and braces only for those)")
 
 
 def _device_row(device: Device) -> dict[str, Any]:
@@ -84,7 +109,8 @@ def devices(request: Request, user: Annotated[User, Depends(current_user)]) -> l
 
 
 @router.post('/api/devices/code')
-async def make_code(request: Request, user: Annotated[User, Depends(current_user)]) -> dict[str, Any]:
+async def make_code(request: Request, user: Annotated[User, Depends(current_user)],
+                    _json: Annotated[None, Depends(needs_json)]) -> dict[str, Any]:
     """A one-time code, in the browser's time zone. With a `device_id` it links that same Pi again."""
     parts = parts_of(request)
     config, messages = parts.config, parts.config.messages
@@ -107,7 +133,8 @@ async def make_code(request: Request, user: Annotated[User, Depends(current_user
 
 
 @router.patch('/api/devices/{device_id}')
-async def rename(request: Request, device: Annotated[Device, Depends(my_device)]) -> dict[str, Any]:
+async def rename(request: Request, device: Annotated[Device, Depends(my_device)],
+                 _json: Annotated[None, Depends(needs_json)]) -> dict[str, Any]:
     parts = parts_of(request)
     name = _clean_name(request, await read_json(request, parts.config.limits.claim_body_kb))
     renamed = await run_in_threadpool(parts.store.rename_device, device.id, name)

@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from desktalk_cloud.app import create_app
+from desktalk_cloud.config import ConfigError
 from desktalk_cloud.domain import GoogleUser
 from desktalk_cloud.routers import auth, site
 from desktalk_cloud.tokens import hash_secret, normal_code
@@ -72,7 +73,7 @@ def test_every_site_route_needs_a_login(app, parts, ann):
              ('delete', f'/api/devices/{ann.device.id}/data'), ('get', '/api/reports'),
              ('get', f'/api/reports/{report.id}')]
     for method, path in calls:
-        reply = getattr(client, method)(path)
+        reply = client.request(method.upper(), path, content=b'')      # no content type: login is checked first
         assert reply.status_code == 401, (method, path)
         assert reply.json()['detail'] == parts.config.messages.not_logged_in
     assert parts.store.get_device(ann.device.id) is not None
@@ -307,3 +308,42 @@ def test_the_report_of_a_deleted_person_is_not_reachable_with_an_old_cookie(part
 def test_the_site_never_shows_a_token_hash(parts, ann, ann_client):
     assert hash_secret(ann.token) not in ann_client.get('/api/devices').text
     assert ann.token not in ann_client.get('/api/devices').text
+
+
+def test_the_setup_command_uses_the_pis_address_not_the_login_address():
+    google = FakeGoogleLogin()
+    google.people['ann-code'] = GoogleUser(sub='g', email='a@example.com', name='A', email_verified=True)
+    parts = make_parts(cloud_config(server={'public_url': 'http://192.168.1.20:8000',
+                                            'login_url': 'http://localhost:8000'}), google=google)
+    client = sign_in(create_app(parts, [auth.router, site.router]), 'ann')
+    body = client.post('/api/devices/code', json={'time_zone': 'UTC'}).json()
+    assert body['server_url'] == 'http://192.168.1.20:8000' and 'http://192.168.1.20:8000' in body['command']
+    assert 'localhost' not in body['command']
+
+
+@pytest.mark.parametrize('headers', [{}, {'content-type': 'text/plain'}, {'content-type': 'multipart/form-data'}])
+def test_making_a_code_or_renaming_needs_a_json_content_type(parts, ann, ann_client, headers):
+    body = b'{"time_zone": "UTC", "name": "Hacked"}'
+    reply = ann_client.post('/api/devices/code', content=body, headers=headers)
+    assert reply.status_code == 415 and reply.json()['detail'] == parts.config.prompts['site']['needs_json']
+    assert ann_client.patch(f'/api/devices/{ann.device.id}', content=body, headers=headers).status_code == 415
+    assert parts.store.get_device(ann.device.id).name == ann.device.name
+
+
+def test_the_site_words_check_passes_for_the_shipped_words(parts):
+    site.check_site_words(parts.config)
+
+
+@pytest.mark.parametrize('site_words', [
+    None, {}, {'setup_command': 'run {server_url} {code}'}, {'needs_json': 'Send JSON.'},
+    {'setup_command': 5, 'needs_json': 'Send JSON.'}, {'setup_command': 'run {server_url}', 'needs_json': 'x'},
+    {'setup_command': 'run {server_url} {code} {other}', 'needs_json': 'x'},
+    {'setup_command': 'run {', 'needs_json': 'x'}, {'setup_command': 'run {0}', 'needs_json': 'x'}])
+def test_a_bad_site_wording_stops_the_start_with_a_plain_error(parts, site_words):
+    prompts = {k: v for k, v in parts.config.prompts.items() if k != 'site'}
+    if site_words is not None:
+        prompts['site'] = site_words
+    broken = parts.config.model_copy(update={'prompts': prompts})
+    with pytest.raises(ConfigError) as caught:
+        site.check_site_words(broken)
+    assert 'prompts.yaml' in str(caught.value) and 'site' in str(caught.value)

@@ -62,12 +62,37 @@ def start(client) -> str:
     return parse_qs(urlparse(reply.headers['location']).query)['state'][0]
 
 
-def test_login_sends_the_person_to_google_with_a_state_and_the_public_address(client, parts, google):
-    reply = client.get('/auth/google/login')
+CALLBACK = '/auth/google/callback'
+
+
+def test_login_sends_the_person_to_google_with_a_state_and_the_login_address(google):
+    parts = make_parts(cloud_config(server={'public_url': 'http://192.168.1.20:8000',
+                                            'login_url': 'http://localhost:8000'}), google=google)
+    reply = build(parts).get('/auth/google/login')
     query = parse_qs(urlparse(reply.headers['location']).query)
     assert reply.headers['location'].startswith('https://google.test/login')
-    assert query['redirect_uri'] == [parts.config.server.public_url.rstrip('/') + '/auth/google/callback']
+    assert query['redirect_uri'] == ['http://localhost:8000' + CALLBACK]        # not the Pi's address
     assert len(query['state'][0]) >= 20
+
+
+def test_the_exchange_uses_the_same_return_address_as_the_login(google):
+    parts = make_parts(cloud_config(server={'public_url': 'http://192.168.1.20:8000',
+                                            'login_url': 'http://localhost:8000/'}), google=google)
+    client = build(parts)
+    client.get(CALLBACK, params={'code': 'ann-code', 'state': start(client)})
+    assert google.exchanged == [('ann-code', 'http://localhost:8000' + CALLBACK)]
+
+
+def test_with_no_login_url_google_comes_back_to_the_public_url(client, parts):
+    assert parts.config.server.login_url == ''
+    query = parse_qs(urlparse(client.get('/auth/google/login').headers['location']).query)
+    assert query['redirect_uri'] == [parts.config.server.public_url.rstrip('/') + CALLBACK]
+
+
+def test_only_the_address_of_the_login_url_is_used_not_its_page(google):
+    parts = make_parts(cloud_config(server={'login_url': 'http://localhost:5173/app/home?x=1'}), google=google)
+    query = parse_qs(urlparse(build(parts).get('/auth/google/login').headers['location']).query)
+    assert query['redirect_uri'] == ['http://localhost:5173' + CALLBACK]
 
 
 def test_each_login_gets_a_new_state(client):
@@ -114,7 +139,7 @@ def test_no_state_in_the_url_or_no_login_started_is_refused(client, parts):
 def test_a_state_works_once(client, parts):
     state = start(client)
     assert client.get('/auth/google/callback', params={'code': 'ann-code', 'state': state}).status_code == 303
-    client.post('/auth/logout')
+    client.post('/auth/logout', json={})
     assert client.get('/auth/google/callback', params={'code': 'ann-code', 'state': state}).status_code == 400
 
 
@@ -201,9 +226,23 @@ def test_no_state_code_or_cookie_value_reaches_a_log(client, caplog):
 def test_logout_ends_the_session(client, parts):
     client.get('/auth/google/callback', params={'code': 'ann-code', 'state': start(client)})
     assert client.get('/_test/session').json() != {}
-    assert client.post('/auth/logout').json() == {'ok': True}
+    assert client.post('/auth/logout', json={}).json() == {'ok': True}
     assert client.get('/_test/session').json() == {}
 
 
 def test_logout_with_nobody_logged_in_is_fine(client):
-    assert client.post('/auth/logout').status_code == 200
+    assert client.post('/auth/logout', json={}).status_code == 200
+
+
+@pytest.mark.parametrize('headers', [{}, {'content-type': 'text/plain'},
+                                     {'content-type': 'application/x-www-form-urlencoded'}])
+def test_logout_needs_a_json_content_type(client, headers):
+    client.get(CALLBACK, params={'code': 'ann-code', 'state': start(client)})
+    reply = client.post('/auth/logout', content=b'', headers=headers)
+    assert reply.status_code == 415
+    assert client.get('/_test/session').json() != {}                 # still logged in
+
+
+def test_a_json_content_type_with_a_charset_or_capitals_is_fine(client):
+    for kind in ('application/json; charset=utf-8', 'Application/JSON'):
+        assert client.post('/auth/logout', content=b'{}', headers={'content-type': kind}).status_code == 200

@@ -5,7 +5,7 @@ server:
   host: 0.0.0.0                  # the address the server listens on (0.0.0.0 = reachable from the home network)
   port: 8000                     # the port the server listens on
   public_url: http://localhost:8000   # this server's address as a Pi reaches it; shown in the "Add a Pi" setup command (PUBLIC_URL in .env wins)
-  login_url: ""                  # the website's address, where a person lands after logging in; empty = this server's own "/" (LOGIN_URL in .env wins)
+  login_url: ""                  # the website's address, where a person lands after logging in, and where Google sends them back to (so it must be localhost or a real domain, as Google needs); empty = public_url, and "/" after login (LOGIN_URL in .env wins)
   https_only: false              # true once the site is served over HTTPS: the login cookie is then only sent over HTTPS
   cookie_name: desktalk_session  # the name of the login cookie
   session_days: 30               # how many days a login lasts

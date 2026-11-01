@@ -3,7 +3,6 @@ the library's own settings), and the login check the admin routes use. With neit
 
 from __future__ import annotations
 
-import functools
 import logging
 
 from argon2 import PasswordHasher
@@ -35,9 +34,7 @@ def verify_password(password_hash: str, password: str) -> bool:
         return False
 
 
-@functools.cache
-def _hash_nobody_has() -> str:
-    return hash_password('no one has this password')
+_HASH_NOBODY_HAS = hash_password('no one has this password')      # made once, up front, so no login pays for it
 
 
 def admin_set_up(config: CloudConfig) -> bool:
@@ -58,7 +55,7 @@ def admin_login_ok(config: CloudConfig, store: Store, username: str, password: s
     """True for the right username and password. Takes as long for a wrong username as for a wrong password."""
     admin = _the_admin(config, store, username)
     if admin is None:
-        verify_password(_hash_nobody_has(), password)
+        verify_password(_HASH_NOBODY_HAS, password)
         return False
     return verify_password(admin.password_hash, password)
 

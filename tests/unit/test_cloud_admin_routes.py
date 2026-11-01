@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from urllib.parse import parse_qs, urlparse
 
@@ -137,7 +138,8 @@ def test_wrong_password_and_wrong_username_get_the_same_answer(client, parts):
                                   {'username': 'boss', 'password': ['x']}, {'username': 'b\x00', 'password': 'x'},
                                   [], 'text', None])
 def test_a_bad_login_body_is_refused(client, body):
-    assert client.post('/auth/admin/login', json=body).status_code == 400
+    reply = client.post('/auth/admin/login', content=json.dumps(body), headers={'content-type': 'application/json'})
+    assert reply.status_code == 400
 
 
 def test_a_huge_login_body_is_refused(client, parts):
@@ -176,14 +178,14 @@ def test_the_password_is_never_logged(client, caplog):
 
 def test_a_visitor_cannot_reach_admin_routes(client, parts):
     assert client.get('/api/admin/overview').status_code == 401
-    assert client.post('/api/admin/reports/x/rerun').status_code == 401
+    assert client.post('/api/admin/reports/x/rerun', json={}).status_code == 401
 
 
 def test_person_cannot_reach_admin_routes(client, parts):
     sign_in_as_ann(client)
     assert client.get('/api/me').status_code == 200
     assert client.get('/api/admin/overview').status_code == 401
-    assert client.post('/api/admin/reports/x/rerun').status_code == 401
+    assert client.post('/api/admin/reports/x/rerun', json={}).status_code == 401
 
 
 def test_the_admin_cookie_is_not_a_persons_login(boss):
@@ -198,7 +200,7 @@ def test_a_person_and_the_admin_in_one_browser_stay_apart(boss):
 
 
 def test_logout_ends_the_admin_session(boss):
-    assert boss.post('/auth/logout').status_code == 200
+    assert boss.post('/auth/logout', json={}).status_code == 200
     assert boss.get('/api/admin/overview').status_code == 401
 
 
@@ -228,7 +230,7 @@ def test_overview_has_no_events_or_report_text(boss, parts):
     assert reply.status_code == 200
     body = reply.json()
     assert 'EVENT-SECRET' not in reply.text and 'REPORT-SECRET' not in reply.text and 'markdown' not in reply.text
-    assert set(body) == {'users', 'devices', 'failed_reports'}
+    assert set(body) == {'users', 'devices', 'failed_reports', 'recent_reports'}
     assert {u['email'] for u in body['users']} == {'ann@example.com', 'bob@example.com'}
     by_id = {d['id']: d for d in body['devices']}
     assert by_id[ann.device.id]['last_seen_at'] == now and by_id[ann.device.id]['removed'] is False
@@ -252,7 +254,7 @@ def test_rerun_resets_the_report(boss, parts, clock):
     parts.store.finish_report(report.id, 'failed', None, None, 'boom', now)
     parts.store.retry_report(report.id, 'boom', now + 5)
     clock.advance(100)
-    reply = boss.post(f'/api/admin/reports/{report.id}/rerun')
+    reply = boss.post(f'/api/admin/reports/{report.id}/rerun', json={})
     assert reply.status_code == 200
     body = reply.json()
     assert body['id'] == report.id and body['status'] == 'pending' and body['error'] is None
@@ -267,10 +269,62 @@ def test_rerun_of_a_finished_report_clears_its_text(boss, parts):
     ann = link_device(parts, 'ann')
     report = parts.store.create_report(ann.device.id, '2026-10-12', parts.clock.now())
     parts.store.finish_report(report.id, 'done', '# old', 'm', None, parts.clock.now())
-    assert boss.post(f'/api/admin/reports/{report.id}/rerun').status_code == 200
+    assert boss.post(f'/api/admin/reports/{report.id}/rerun', json={}).status_code == 200
     assert parts.store.get_report_by_id(report.id).markdown is None
 
 
 @pytest.mark.parametrize('report_id', ['nope', 'a%00b', '%ff'])
 def test_rerun_of_an_unknown_report_is_404(boss, report_id):
-    assert boss.post(f'/api/admin/reports/{report_id}/rerun').status_code == 404
+    assert boss.post(f'/api/admin/reports/{report_id}/rerun', json={}).status_code == 404
+
+
+# ── a JSON content type on the routes that change things ─────────────
+
+@pytest.mark.parametrize('headers', [{}, {'content-type': 'text/plain'}])
+def test_admin_login_and_rerun_need_a_json_content_type(client, parts, boss, headers):
+    ann = link_device(parts, 'ann')
+    report = parts.store.create_report(ann.device.id, '2026-10-12', parts.clock.now())
+    parts.store.finish_report(report.id, 'done', '# keep me', 'm', None, parts.clock.now())
+    rerun = boss.post(f'/api/admin/reports/{report.id}/rerun', content=b'{}', headers=headers)
+    assert rerun.status_code == 415 and rerun.json()['detail'] == parts.config.prompts['site']['needs_json']
+    assert parts.store.get_report_by_id(report.id).status == 'done'
+    fresh = build(make_parts(cloud_config(ENV), google=None))
+    reply = fresh.post('/auth/admin/login', content=b'{"username": "boss", "password": "x"}', headers=headers)
+    assert reply.status_code == 415
+    assert fresh.get('/api/admin/overview').status_code == 401
+
+
+def test_a_wrong_content_type_does_not_use_up_a_login_try(google):
+    parts = make_parts(cloud_config(ENV, limits={'claim_tries': 1}), google=google)
+    client = build(parts)
+    assert client.post('/auth/admin/login', content=b'x', headers={'content-type': 'text/plain'}).status_code == 415
+    assert client.post('/auth/admin/login', json=LOGIN).status_code == 200
+
+
+def test_the_unknown_username_check_does_not_make_a_hash_on_the_spot(monkeypatch, parts):
+    from desktalk_cloud import admins
+
+    def no_new_hash(password):
+        raise AssertionError('the stand-in hash should have been made up front')
+    monkeypatch.setattr(admins, 'hash_password', no_new_hash)
+    assert admins.admin_login_ok(parts.config, parts.store, 'nobody', 'x') is False
+
+
+def test_overview_lists_the_latest_finished_report_of_each_pi_without_text(boss, parts):
+    ann = link_device(parts, 'ann')
+    bob = link_device(parts, 'bob')
+    now = parts.clock.now()
+    for week, status, text in (('2026-10-05', 'done', '# OLD-SECRET'), ('2026-10-12', 'no_data', None),
+                               ('2026-10-19', 'done', '# NEW-SECRET')):
+        report = parts.store.create_report(ann.device.id, week, now)
+        parts.store.finish_report(report.id, status, text, 'm', None, now)
+    pending = parts.store.create_report(ann.device.id, '2026-10-26', now)              # not finished: not listed
+    bad = parts.store.create_report(bob.device.id, '2026-10-19', now)
+    parts.store.finish_report(bad.id, 'failed', None, None, 'boom', now)               # failed: in failed_reports only
+    reply = boss.get('/api/admin/overview')
+    rows = reply.json()['recent_reports']
+    assert [(r['device_id'], r['week_start'], r['status']) for r in rows] == [(ann.device.id, '2026-10-19', 'done')]
+    assert set(rows[0]) == {'id', 'device_id', 'week_start', 'status', 'model', 'error', 'tries', 'created_at'}
+    assert 'SECRET' not in reply.text and pending.id not in reply.text
+    # and the row's id is what re-run takes
+    assert boss.post(f'/api/admin/reports/{rows[0]["id"]}/rerun', json={}).status_code == 200
