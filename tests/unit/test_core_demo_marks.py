@@ -97,3 +97,25 @@ def test_a_real_sip_leaves_no_tally(rig):
     rig.app.habits.log('hydration', 'sip', how='camera')
     rig.app.habits.save(force=True)
     assert 'demo_sips' not in saved_day(rig)         # a day with none is laid out as always
+
+
+@pytest.mark.parametrize('name', SCENARIOS)
+def test_no_scenario_changes_any_number_the_cloud_totals_send_except_the_tallied_sip(rig, name):
+    """The Demo tab can add to the day's numbers only through a pretend sip (tallied apart): every other number in
+    the totals stays as it was, so nothing else needs a tally."""
+    from desktalk.core.cloud.uploader import PRETEND, TOTALS
+
+    def numbers() -> dict:
+        rig.app.habits.save(force=True)
+        day = saved_day(rig)
+        return {name: day[name] for name in (*TOTALS, 'hourly_activity')} | {p: day.get(p, 0) for _, p in PRETEND}
+
+    before = numbers()
+    fire(rig, name)
+    after = numbers()
+    for field in (*TOTALS, 'hourly_activity'):
+        pretend = dict(PRETEND).get(field)
+        if pretend:
+            assert after[field] - after[pretend] == before[field] - before[pretend], field
+        else:
+            assert after[field] == before[field], field

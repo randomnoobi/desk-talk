@@ -41,7 +41,7 @@ from urllib.parse import urlsplit
 from desktalk.config import CloudSettings
 from desktalk.config.prompts import CloudWords
 from desktalk.core.habits.habit_days import day_key
-from desktalk.domain import CloudNotLinked, CloudRefused, CloudUnavailable, plain_error
+from desktalk.domain import CloudNotLinked, CloudRefused, CloudUnavailable, is_day, plain_error
 from desktalk.ports import Clock, CloudLink, EventStore, KeyValueStore, Preferences
 from desktalk_shared.backoff import Backoff
 from desktalk_shared.cloud_api import IngestReply, daily_totals_event, goals_event, to_cloud_event
@@ -82,9 +82,10 @@ def _when(entry: Any, signature: str | None = None) -> float | None:
     return float(entry['ts']) if signature is None or entry.get('sig') == signature else None
 
 
-def _usable(saved: Any) -> bool:
+def _well_formed(saved: Any) -> bool:
     """A saved link this sender can work with: a web address, a token fit for a header, numbers that are real and a
-    list of ids. (A link made by scripts/link_cloud.py always is; this is for one that was damaged or edited.)"""
+    list of ids. (A link made by scripts/link_cloud.py always is; this is for one that was damaged or edited. The
+    clock checks the times too: see CloudUploader._usable.)"""
     if not isinstance(saved, dict):
         return False
     server, token = saved.get('server'), saved.get('token')
@@ -167,6 +168,18 @@ class CloudUploader:
                 'last_sent_ts': last if _is_finite(last) else None, 'waiting': waiting}
 
     # ── the link ──
+    def _day_of(self, ts: float) -> str | None:
+        """The clock's day for a time, or None when the clock can't turn it into one (a time far too big or small)."""
+        try:
+            day = self._clock.local_day(ts)
+        except (OverflowError, OSError, ValueError):
+            return None
+        return day if is_day(day) else None
+
+    def _usable(self, saved: Any) -> bool:
+        return _well_formed(saved) and all(self._day_of(saved[key]) is not None
+                                           for key in ('place_ts', 'start_ts', 'last_sent_ts') if key in saved)
+
     def _linked(self, say: bool = False) -> dict[str, Any] | None:
         """The saved link, or None when this computer isn't linked: nothing saved, or a link that can't be used (said
         once in the log, with `say`)."""
@@ -174,7 +187,7 @@ class CloudUploader:
         if saved is None:
             self._said_damaged = False
             return None
-        if not _usable(saved):
+        if not self._usable(saved):
             if say and not self._said_damaged:
                 log.warning(self._words.log_bad_link)
             self._said_damaged = self._said_damaged or say
@@ -211,18 +224,18 @@ class CloudUploader:
                     if (sent := to_cloud_event(event)) is not None]
         # Everything in one send (goals and the day's numbers too) is at most batch_size: the server refuses more.
         # Those that don't fit go in later rounds, and events wait a round if they take all the room.
-        extras, totals_memory = self._extras(link, now, place, start)
+        extras, housekeeping = self._extras(link, now, start)
         extras = extras[:self._s.batch_size]
         room = self._s.batch_size - len(extras)
         batch = sendable[:room]
         caught_up = len(sendable) <= room
 
         self._set_waiting(len(sendable))
-        stored_memory = link.get('totals_sent')
         if not batch and not extras:
             moved = self._next_place(link, found, [], place, now, caught_up=True)
-            if moved['place_ts'] != place or moved['recent_ids'] != link.get('recent_ids', []):
-                self._save(link, moved)
+            changes = {k: v for k, v in {**moved, **housekeeping}.items() if link.get(k) != v}
+            if changes:
+                self._save(link, changes)
             return
         sent = [p.event for p in extras] + [event for _, _, event in batch]
         reply = self._line_to(link).send(sent, caught_up=caught_up)
@@ -232,8 +245,7 @@ class CloudUploader:
         changes: dict[str, Any] = {'last_sent_ts': now}
         for pending in extras:
             pending.remember(changes)
-        if totals_memory != stored_memory:
-            changes['totals_sent'] = totals_memory
+        changes.update(housekeeping)
         changes.update(self._next_place(link, found, batch, place, now, caught_up=caught_up))
         self._save(link, changes)
 
@@ -266,7 +278,7 @@ class CloudUploader:
     def _read_log(self, since: float) -> list[tuple[float, str, dict[str, Any]]]:
         """(ts, id, event) for every event written at or after `since`, oldest first. It reads the days from one
         day before `since` on, so a place on a day that was deleted just carries on from the oldest day left."""
-        first_day = self._clock.local_day(since - DAY)
+        first_day = self._day_of(since - DAY) or ''           # (a time no clock can use: look at every day)
         found: list[tuple[float, str, dict[str, Any]]] = []
         for day in sorted(d for d in self._events.days() if d >= first_day):
             for event in reversed(self._events.events(day, None, None)):         # the log gives newest first
@@ -277,12 +289,12 @@ class CloudUploader:
         return found
 
     # ── the goals and the day's numbers ──
-    def _extras(self, link: Mapping[str, Any], now: float, place: float,
+    def _extras(self, link: Mapping[str, Any], now: float,
                 start: float) -> tuple[list[_Pending], dict[str, Any]]:
         """What is due besides the log's events, goals first and then each day's numbers oldest first, and the
-        memory of what was sent for the days still looked at."""
-        totals, memory = self._totals_due(link, now, place, start)
-        return [*self._goals_due(link, now), *totals], memory
+        link's notes on the days' numbers (`totals_from`, `totals_sent`) as they should be saved."""
+        totals, housekeeping = self._totals_due(link, now, start)
+        return [*self._goals_due(link, now), *totals], housekeeping
 
     def _goals_due(self, link: Mapping[str, Any], now: float) -> list[_Pending]:
         wake, bed = self._prefs.get('wake_time'), self._prefs.get('bed_time')
@@ -296,29 +308,35 @@ class CloudUploader:
             return []
         return [_Pending(event, lambda changes: changes.update(goals_sent={'sig': signature, 'ts': now}))]
 
-    def _days_to_look_at(self, link: Mapping[str, Any], now: float, place: float, start: float) -> list[str]:
-        """Every day from the day of the last good send (or the place, whichever is earlier) to today, and never
-        before the day of linking: after an outage of days, each day's numbers still go."""
-        anchor = min(place, _number_or(link.get('last_sent_ts'), place))
-        first = max(self._clock.local_day(anchor), self._clock.local_day(start))
-        today = self._clock.local_day(now)
-        days = []
+    def _days_to_look_at(self, link: Mapping[str, Any], now: float, start: float) -> list[str]:
+        """Every day from `totals_from` (the first day whose numbers might still need sending; the day of linking at
+        first, and never before it) to today: after an outage of days, each day's numbers still go."""
+        today = self._day_of(now)
+        first = self._day_of(start)
+        saved = link.get('totals_from')
+        if isinstance(saved, str) and is_day(saved) and first is not None:
+            first = max(first, saved)
+        if today is None or first is None:
+            return [today] if today is not None else []
         try:
             day = date.fromisoformat(first)
         except ValueError:
             return [today]
+        days = []
         while day.isoformat() < today:
             days.append(day.isoformat())
             day += timedelta(days=1)
         return [*days, today]
 
-    def _totals_due(self, link: Mapping[str, Any], now: float, place: float,
+    def _totals_due(self, link: Mapping[str, Any], now: float,
                     start: float) -> tuple[list[_Pending], dict[str, Any]]:
         saved = link.get('totals_sent')
         sent_before: dict[str, Any] = saved if isinstance(saved, dict) else {}
-        days = self._days_to_look_at(link, now, place, start)
-        memory = {day: sent_before[day] for day in days if day in sent_before}
+        days = self._days_to_look_at(link, now, start)
+        today = days[-1] if days else ''
         pending: list[_Pending] = []
+        memory: dict[str, Any] = {}
+        floor: str | None = None          # the first day not left behind: its numbers may still need sending
 
         def remember(changes: dict[str, Any], day: str, signature: str) -> None:
             memory[day] = {'sig': signature, 'ts': now}
@@ -326,21 +344,31 @@ class CloudUploader:
 
         for day in days:
             numbers = self._store.load(day_key(day))
+            before = sent_before.get(day)
             if not isinstance(numbers, dict) or numbers.get('day') != day:
-                continue
+                if day == today and floor is None:
+                    floor = day
+                continue                                    # no numbers for that day: nothing to send
             totals = self._totals(numbers)
             signature = json.dumps(totals, sort_keys=True)
-            before = sent_before.get(day)
-            if _when(before, signature) is not None:
-                continue                                    # nothing changed since it was sent
+            unchanged = _when(before, signature)
             last = _when(before)
+            # A day is left behind once it is over and its numbers have matched what was sent for a while (so a late
+            # save of its last numbers is still caught).
+            over = day < today and unchanged is not None and now - unchanged >= self._s.totals_every_min * MINUTE
+            if not over and floor is None:
+                floor = day
+            if before is not None and not over:
+                memory[day] = before
+            if unchanged is not None:
+                continue                                    # nothing changed since it was sent
             if last is not None and now - last < self._s.totals_every_min * MINUTE:
                 continue                                    # changed, but sent too lately
             event = to_cloud_event(daily_totals_event(now, day, totals))
             if event is not None:
                 pending.append(_Pending(event, lambda changes, day=day, signature=signature:
                                         remember(changes, day, signature)))
-        return pending, memory
+        return pending, {'totals_from': floor or today, 'totals_sent': memory}
 
     @staticmethod
     def _totals(saved: Mapping[str, Any]) -> dict[str, float]:

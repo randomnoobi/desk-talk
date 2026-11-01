@@ -634,3 +634,73 @@ def test_the_demo_tabs_pretend_sips_are_taken_out_of_the_totals(rig):
     rig.tick(after=10)
     [sent] = totals_sent(rig)
     assert sent['totals']['sips'] == 8 and sent['totals']['water_ml'] == 640
+
+
+# ── numbers no clock can turn into a day ──
+@pytest.mark.parametrize('change', [
+    {'place_ts': 1e300}, {'place_ts': -1e300}, {'start_ts': 1e300}, {'start_ts': -1e300},
+    {'last_sent_ts': 1e300}, {'last_sent_ts': -1e300}, {'place_ts': 1e18}, {'start_ts': -1e18}],
+    ids=lambda c: next(iter(c)) + '=' + repr(next(iter(c.values()))))
+def test_a_time_no_clock_can_turn_into_a_day_counts_as_a_damaged_link(rig, caplog, change):
+    rig.linked(**change)
+    rig.habit(START + 1, id='h1')
+    with caplog.at_level(logging.WARNING):
+        assert rig.tick(after=10) == SETTINGS.idle_check_every_sec     # no OverflowError out of tick
+    assert rig.made == [] and rig.uploader.status()['linked'] is False
+    assert caplog.text.count(WORDS.log_bad_link) == 1
+
+
+def test_remembered_times_that_no_clock_can_use_do_not_stop_the_sender(rig):
+    odd = {rig.clock.local_day(START): {'sig': 'y', 'ts': -1e300}}
+    rig.linked(goals_sent={'sig': 'x', 'ts': 1e300}, totals_sent=odd, totals_from='not a day')
+    put_day(rig, rig.clock.local_day(START))
+    rig.habit(START + 1, id='h1')
+    rig.tick(after=10)
+    assert rig.habits_sent() == ['h1'] and len(totals_sent(rig)) == 1
+
+
+# ── a day's last numbers ──
+def test_a_days_last_totals_are_not_lost_when_an_events_only_send_comes_between(rig):
+    """Yesterday's numbers go at 23:50, change at 23:58, and are skipped at 00:00 by the 15-minute gate; an
+    events-only send at 00:02 must not make yesterday drop out of the days looked at."""
+    first = rig.clock.local_day(START)
+    midnight = (int(START) // DAY_SEC + 1) * DAY_SEC
+    rig.linked()
+    put_day(rig, first, water_ml=100)
+    rig.clock.advance(midnight - 10 * MIN - rig.clock.now())          # 23:50
+    rig.tick()
+    assert [t['totals']['water_ml'] for t in totals_sent(rig)] == [100]
+    put_day(rig, first, water_ml=150)                                  # 23:58: the last drink of the day
+    rig.clock.advance(12 * MIN)                                        # 00:02
+    rig.habit(midnight + 60, id='after-midnight')
+    rig.tick()
+    assert rig.habits_sent() == ['after-midnight']                     # an events-only send...
+    assert [t['totals']['water_ml'] for t in totals_sent(rig)] == [100]    # ...the gate still holds yesterday back
+    rig.tick(after=20 * MIN)                                           # 00:22
+    assert [(t['day'], t['totals']['water_ml']) for t in totals_sent(rig)] == [(first, 100), (first, 150)]
+    rig.tick(after=HOUR)
+    assert len(totals_sent(rig)) == 2                                  # settled: not sent again
+    assert rig.saved()['totals_from'] == rig.clock.local_day(rig.clock.now())      # and no longer looked at
+
+
+def test_a_day_stays_looked_at_until_it_is_over_and_its_numbers_have_not_changed_for_a_while(rig):
+    first = rig.clock.local_day(START)
+    rig.linked()
+    put_day(rig, first)
+    rig.tick(after=10)
+    assert rig.saved()['totals_from'] == first                        # the day is not over
+    rig.tick(after=DAY_SEC)                                           # it is over, and its numbers still match
+    assert rig.saved()['totals_from'] == rig.clock.local_day(rig.clock.now())
+    assert len(totals_sent(rig)) == 1
+
+
+def test_a_day_whose_numbers_changed_after_it_ended_is_sent_before_it_is_left(rig):
+    first = rig.clock.local_day(START)
+    rig.linked()
+    put_day(rig, first, water_ml=100)
+    rig.tick(after=10)
+    put_day(rig, first, water_ml=999)
+    rig.tick(after=DAY_SEC)
+    assert [t['totals']['water_ml'] for t in totals_sent(rig)] == [100, 999]
+    rig.tick(after=HOUR)
+    assert rig.saved()['totals_from'] == rig.clock.local_day(rig.clock.now())

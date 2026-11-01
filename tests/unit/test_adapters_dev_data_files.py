@@ -5,6 +5,8 @@ It lists what's in the data folder and shows the start of a file, and never read
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from desktalk.adapters.dev.data_files import DataFolder
@@ -147,3 +149,17 @@ def test_a_link_to_a_hidden_file_shows_nothing_either(folder):
 def test_nothing_is_hidden_unless_asked(folder):
     (folder / 'cloud.json').write_text('{}')
     assert 'cloud.json' in [f.path for f in DataFolder(folder, PREVIEW_BYTES, words=WORDS).list()]
+
+
+def test_a_hidden_file_is_hidden_whatever_its_letters_or_hard_links(folder):
+    """A case-insensitive disk (this Mac's) opens cloud.json as Cloud.json or CLOUD.JSON too, and a hard link is the
+    same file under another name."""
+    (folder / 'cloud.json').write_text('{"token": "super-secret-token"}')
+    os.link(folder / 'cloud.json', folder / 'copy.txt')
+    viewer = DataFolder(folder, PREVIEW_BYTES, words=WORDS, hidden=['cloud.json'])
+    for way in ('Cloud.json', 'CLOUD.JSON', 'copy.txt'):
+        with pytest.raises(FileNotFoundError) as raised:
+            viewer.preview(way)
+        assert 'super-secret-token' not in str(raised.value)
+    listed = [f.path.lower() for f in viewer.list()]
+    assert 'cloud.json' not in listed and 'copy.txt' not in listed

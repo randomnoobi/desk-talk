@@ -31,8 +31,16 @@ class DataFolder:
         self._words = words
         self._hidden = [self._folder / path for path in hidden]
 
-    def _is_hidden(self, resolved: Path) -> bool:
-        return any(resolved == _resolve(path) for path in self._hidden)
+    def _is_hidden(self, found: Path) -> bool:
+        """`found` is a hidden file: the very same file on the disk, whatever it is called (another spelling on a
+        disk that ignores capital letters, a hard link or a link), so it is compared as a file, not as a name."""
+        for hidden in self._hidden:
+            try:
+                if hidden.exists() and os.path.samefile(found, hidden):
+                    return True
+            except OSError:
+                continue
+        return False
 
     def list(self) -> list[DataFile]:
         root = self._folder.resolve()
