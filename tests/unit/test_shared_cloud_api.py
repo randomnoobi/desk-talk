@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -325,3 +326,112 @@ def test_a_broken_claim_reply_is_an_error(data):
 def test_a_broken_ingest_reply_is_an_error(data):
     with pytest.raises(ValueError):
         IngestReply.from_dict(data)
+
+
+# ── fix round 1: the to-do text in a nudge's rule, and odd values from a bad sender ──
+TODO_RULES = ['tasks.due.english essay.today', 'tasks.due.read ch. 3. v2.0.late.2', 'tasks.due.essay.tomorrow',
+              'tasks.due.essay.soon.3', 'tasks.due.tasks.open.today', 'tasks.due.', 'tasks.due']
+
+
+@pytest.mark.parametrize('rule', TODO_RULES)
+def test_a_due_nudge_sends_only_the_fixed_part_of_its_rule(rule):
+    sent = to_cloud_event(ev('nudge', habit='tasks', rule=rule, agent='paper', evidence='"english essay"'))
+    assert sent == ev('nudge', habit='tasks', rule='tasks.due', agent='paper')
+
+
+@pytest.mark.parametrize('rule', TODO_RULES)
+def test_a_due_rule_outcome_sends_only_the_fixed_part_of_its_rule(rule):
+    sent = to_cloud_event(ev('rule_outcome', rule=rule, habit='tasks', result='worked', after_sec=5.0))
+    assert sent == ev('rule_outcome', rule='tasks.due', habit='tasks', result='worked', after_sec=5.0)
+
+
+def test_the_open_to_do_check_in_keeps_its_rule():
+    sent = to_cloud_event(ev('nudge', habit='tasks', rule='tasks.open', agent='paper', evidence='"essay"'))
+    assert sent == ev('nudge', habit='tasks', rule='tasks.open', agent='paper')
+
+
+def test_a_tasks_rule_is_cut_even_when_the_habit_says_something_else():
+    nudge = to_cloud_event(ev('nudge', habit='x', rule='tasks.due.english essay.today', agent='a', evidence='e'))
+    assert nudge == ev('nudge', habit='x', rule='tasks.due', agent='a')
+    outcome = to_cloud_event(ev('rule_outcome', rule='tasks.due.english essay.today', habit='x', result='missed'))
+    assert outcome == ev('rule_outcome', rule='tasks.due', habit='x', result='missed')
+
+
+def test_a_tasks_nudge_loses_its_evidence_when_only_the_rule_says_tasks():
+    sent = to_cloud_event(ev('nudge', habit='x', rule='tasks.open', agent='a', evidence='starting with "essay"'))
+    assert sent is not None and 'evidence' not in sent
+
+
+def test_a_rule_that_is_not_one_of_the_two_to_do_rules_is_cut_to_tasks():
+    for habit, rule in (('tasks', 'english essay'), ('tasks', 'tasks.english essay'), ('x', 'tasks.opened')):
+        sent = to_cloud_event(ev('nudge', habit=habit, rule=rule, agent='a'))
+        assert sent is not None and sent['rule'] == 'tasks'
+
+
+def test_other_rules_keep_their_whole_key():
+    for rule in ('hydration.morning', 'breaks.meal.1', 'food.sitting.1800', 'rule.my_own_rule', 'phone.bedtime'):
+        nudge = to_cloud_event(ev('nudge', habit='hydration', rule=rule, agent='cup'))
+        outcome = to_cloud_event(ev('rule_outcome', rule=rule, habit='hydration', result='worked'))
+        assert nudge is not None and nudge['rule'] == rule
+        assert outcome is not None and outcome['rule'] == rule
+
+
+@pytest.mark.parametrize('how', [['camera'], {'a': 1}, {'camera'}, [], {}, None, 5, 1.5, b'camera'])
+def test_a_how_that_is_not_text_is_dropped_and_never_raises(how):
+    sent = to_cloud_event(ev('habit', habit='hydration', action='sip', how=how))
+    assert sent == ev('habit', habit='hydration', action='sip')
+
+
+ODD_VALUES = [None, True, False, 0, -1, 1.5, 10**400, -10**400, math.nan, math.inf, '', 'x', 'x' * 5000, 'camera',
+              'demo.x', 'tasks.due.essay.today', '2026-10-28', b'camera', [], ['camera'], [1, 2], {}, {'a': 1},
+              {'demo': True}, {'camera'}, (1, 2), object()]
+FIELDS = ['id', 'ts', 'type', 'extra', 'demo', 'rule', 'habit', 'action', 'how', 'healthy', 'say', 'label', 'text',
+          'evidence', 'agent', 'kind', 'scenario', 'feature', 'key', 'change', 'object', 'prev_state', 'new_state',
+          'device_id', 'conf_avg', 'dwell_sec', 'bbox', 'result', 'after_sec', 'wake', 'bed', 'goals', 'day',
+          'totals', 'ml', 'mystery']
+TYPES = ['object_state', 'habit', 'nudge', 'rule_outcome', 'alert', 'camera', 'goals', 'daily_totals', 'detection',
+         'mystery']
+
+
+def a_good_event(kind: str) -> dict[str, Any]:
+    """An event of this type with every field filled in, so each field has something to be replaced."""
+    event: dict[str, Any] = {name: 'abc' for name in FIELDS}
+    event.update(id='a', ts=1.0, type=kind, extra={}, demo=False, rule='hydration.low', how='camera', healthy=True,
+                 conf_avg=0.5, dwell_sec=2.0, after_sec=3.0, goals={'water_ml': 2000}, day='2026-10-28',
+                 totals={'desk_min': 4}, ml=250)
+    event.pop('bbox')
+    return event
+
+
+@pytest.mark.parametrize('kind', TYPES)
+@pytest.mark.parametrize('field', FIELDS)
+def test_odd_values_in_any_field_never_raise(kind, field):
+    for value in ODD_VALUES:
+        event = {**a_good_event(kind), field: value}
+        sent = to_cloud_event(event)
+        assert sent is None or isinstance(sent, dict)
+        if sent is not None:
+            assert to_cloud_event(sent) == sent
+
+
+@pytest.mark.parametrize('kind', TYPES)
+@pytest.mark.parametrize('field', FIELDS)
+def test_a_missing_field_never_raises(kind, field):
+    event = a_good_event(kind)
+    event.pop(field, None)
+    sent = to_cloud_event(event)
+    assert sent is None or isinstance(sent, dict)
+
+
+@pytest.mark.parametrize('event', [None, 5, 'habit', ['habit'], (), b'x', 1.5, object()])
+def test_something_that_is_not_an_event_stays_home(event):
+    assert to_cloud_event(event) is None
+
+
+def test_a_huge_whole_number_is_not_a_problem():
+    sent = to_cloud_event(ev('habit', habit='hydration', action='sip', ml=10**400))
+    assert sent is not None and sent['ml'] == 10**400
+
+
+def test_a_day_in_other_digits_is_not_a_day():
+    assert to_cloud_event(ev('daily_totals', day='٢٠٢٦-١٠-٢٨', totals={'desk_min': 1})) is None

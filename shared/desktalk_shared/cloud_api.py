@@ -11,6 +11,7 @@ What goes (the spec's send table, "What gets sent"):
     habit         habit, action, the numbers in extra, how (from HOW_WORDS), healthy  (never say)
     nudge         habit, rule, agent, evidence  (never text; for tasks, not evidence either)
     rule_outcome  rule, habit, result, after_sec
+                  (a to-do's rule key holds the to-do's text, so for tasks only 'tasks.due' or 'tasks.open' goes)
     alert         kind, agent, scenario, feature  (never text)
     camera        key, kind  (never text)
     goals         wake, bed, the goal numbers
@@ -45,7 +46,7 @@ HOW_WORDS = frozenset({'camera', 'button', 'chat', 'left the desk', 'camera off'
 # A number whose name starts like this is not sent, whatever its value: it could stand for a picture.
 _PICTURE_STEMS = ('picture', 'jpeg', 'jpg', 'image', 'photo', 'frame', 'bbox', 'snapshot')
 _KEY = re.compile(r'[a-z][a-z0-9_]{0,39}')
-_DAY = re.compile(r'\d{4}-\d{2}-\d{2}')
+_DAY = re.compile(r'\d{4}-\d{2}-\d{2}', re.ASCII)       # ASCII only: \d would also take other scripts' digits
 
 # Per type: the text fields and the number fields that may go. (A habit's extra numbers are handled separately.)
 _OBJECT_STATE = (('change', 'object', 'prev_state', 'new_state', 'device_id'), ('conf_avg', 'dwell_sec'))
@@ -58,7 +59,9 @@ _HABIT_RESERVED = frozenset({'id', 'ts', 'type', 'habit', 'action', 'say', 'quie
 
 
 def _is_number(value: Any) -> bool:
-    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return isinstance(value, int) or math.isfinite(value)       # (isfinite can't take a huge whole number)
 
 
 def _text(value: Any) -> str | None:
@@ -84,6 +87,19 @@ def is_demo(event: Mapping[str, Any]) -> bool:
     return isinstance(rule, str) and rule.startswith('demo.')
 
 
+def _is_tasks(habit: Any, rule: Any) -> bool:
+    return habit == 'tasks' or (isinstance(rule, str) and rule.startswith('tasks.'))
+
+
+def _task_rule(rule: str) -> str:
+    """A to-do rule's key without the to-do: its key is 'tasks.due.<the to-do's text>.<when>' (see
+    core/habits/habit_rules.py), so only the fixed start of it may go."""
+    for fixed in ('tasks.due', 'tasks.open'):
+        if rule == fixed or rule.startswith(fixed + '.'):
+            return fixed
+    return 'tasks'
+
+
 def _fields(event: Mapping[str, Any], texts: tuple[str, ...], numbers: tuple[str, ...]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for name in texts:
@@ -99,6 +115,8 @@ def _fields(event: Mapping[str, Any], texts: tuple[str, ...], numbers: tuple[str
 def to_cloud_event(event: Mapping[str, Any]) -> dict[str, Any] | None:
     """The part of `event` that may go to the cloud server, or None when the whole event stays home.
     Gives the same answer when its own answer is put back in."""
+    if not isinstance(event, Mapping):
+        return None
     event_id, ts, kind = event.get('id'), event.get('ts'), event.get('type')
     if not isinstance(event_id, str) or not 0 < len(event_id) <= MAX_ID_CHARS or not _is_number(ts):
         return None
@@ -110,16 +128,20 @@ def to_cloud_event(event: Mapping[str, Any]) -> dict[str, Any] | None:
     elif kind == 'habit':
         out.update(_fields(event, ('habit', 'action'), ()))
         out.update(_numbers({k: v for k, v in event.items() if k not in _HABIT_RESERVED}))
-        if event.get('how') in HOW_WORDS:
+        if isinstance(event.get('how'), str) and event['how'] in HOW_WORDS:
             out['how'] = event['how']
         if isinstance(event.get('healthy'), bool):
             out['healthy'] = event['healthy']
     elif kind == 'nudge':
         out.update(_fields(event, *_NUDGE))
-        if event.get('habit') == 'tasks':
+        if _is_tasks(event.get('habit'), event.get('rule')):
             out.pop('evidence', None)          # it quotes the to-do
+            if 'rule' in out:
+                out['rule'] = _task_rule(out['rule'])
     elif kind == 'rule_outcome':
         out.update(_fields(event, *_RULE_OUTCOME))
+        if _is_tasks(event.get('habit'), event.get('rule')) and 'rule' in out:
+            out['rule'] = _task_rule(out['rule'])
     elif kind == 'alert':
         out.update(_fields(event, *_ALERT))
     elif kind == 'camera':
