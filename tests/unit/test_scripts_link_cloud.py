@@ -117,6 +117,7 @@ def test_the_script_needs_a_server_and_a_code():
 @pytest.mark.parametrize('old', [
     {'device_id': 'dev-1', 'recent_ids': 5, 'place_ts': 'soon', 'start_ts': float('nan')},
     {'device_id': 'dev-1', 'recent_ids': [1, None], 'place_ts': float('inf')},
+    {'device_id': 'dev-1', 'place_ts': 10**400, 'start_ts': 10**400},       # too big for float maths
     {'device_id': ['dev-1']}, ['a', 'list'], 'text', 7])
 def test_a_damaged_old_link_does_not_crash_the_script_after_the_code_is_used(old):
     store = InMemoryKeyValueStore({KEY: old})

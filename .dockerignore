@@ -1,7 +1,7 @@
-# What docker builds never need from the repo's top folder (the cloud server's and the detector's images build from it).
+# What docker builds never need from the repo's top folder (the cloud server's image builds from it; the detector's has
+# its own list, raspberry_pi/detector_service/Dockerfile.dockerignore).
 # It keeps the build quick, and your keys and data out of what's sent to Docker.
-.env
-cloud/.env
+**/.env
 data
 models
 certs

@@ -24,7 +24,6 @@ from desktalk_cloud.store_postgres import PostgresStore, run_migrations
 log = logging.getLogger(__name__)
 
 SECONDS_IN_MINUTE = 60
-STOP_CHECK_SEC = 0.5        # how often a wait looks for a stop signal
 
 
 class Job(Protocol):
@@ -39,7 +38,8 @@ class StopFlag:
     """Set by a signal handler. A plain flag and short sleeps, because a threading.Event's lock could already be held by
     the code the signal interrupted."""
 
-    def __init__(self) -> None:
+    def __init__(self, check_every_sec: float) -> None:
+        self._check_every_sec = check_every_sec
         self._stopped = False
 
     def set(self) -> None:
@@ -49,7 +49,7 @@ class StopFlag:
         """Sleep for `seconds` or until stopped. True when stopped."""
         left = seconds
         while left > 0 and not self._stopped:
-            nap = min(left, STOP_CHECK_SEC)
+            nap = min(left, self._check_every_sec)
             time.sleep(nap)
             left -= nap
         return self._stopped
@@ -86,7 +86,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ConfigError as error:
         log.error('%s', error)
         return 1
-    stop = StopFlag()
+    stop = StopFlag(config.reports.stop_check_sec)
     for stop_signal in (signal.SIGTERM, signal.SIGINT):
         signal.signal(stop_signal, lambda *_: stop.set())
     try:

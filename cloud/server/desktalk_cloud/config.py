@@ -84,6 +84,7 @@ class ReportSettings(_Section):
     day: Literal['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
     hour: Hour
     check_every_min: PositiveNumber
+    stop_check_sec: PositiveNumber
     wait_for_pi_days: Annotated[float, Field(ge=0)]
     wake_grace_min: Annotated[float, Field(ge=0)]
     max_tries: PositiveInt

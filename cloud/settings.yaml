@@ -34,6 +34,7 @@ reports:                         # the weekly report
   day: sunday                    # the weekday a report comes due, in each Pi's own time zone
   hour: 20                       # the hour of that day (0-23)
   check_every_min: 5             # how often the report job looks for reports that are due
+  stop_check_sec: 0.5            # while it waits, how often the report job looks for a stop signal, in seconds
   wait_for_pi_days: 2            # days to wait for a Pi that hasn't caught up before writing without it
   wake_grace_min: 60             # after the server starts or wakes from sleep, minutes before it gives up waiting for a Pi that hasn't caught up (a Pi can take about 30 minutes to try sending again)
   max_tries: 3                   # how many times to try a report before marking it failed

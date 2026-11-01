@@ -707,8 +707,8 @@ def test_a_day_whose_numbers_changed_after_it_ended_is_sent_before_it_is_left(ri
 
 
 # ── a saved link with odd values in any of its fields ──
-ODD = [None, 'abc', [1], {}]
-ODD_IDS = ['None', 'text', 'list', 'dict']
+ODD = [None, 'abc', [1], {}, 10**400]         # the last is a whole number too big for float maths
+ODD_IDS = ['None', 'text', 'list', 'dict', 'huge']
 
 
 @pytest.mark.parametrize('odd', ODD, ids=ODD_IDS)

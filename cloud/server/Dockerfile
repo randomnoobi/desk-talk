@@ -1,6 +1,6 @@
 # The cloud server: one image for `api` (the website's server) and `reports` (the weekly report), with different commands.
 # Built from the repo's top folder, so uv sees the whole workspace and uv.lock; compose.yaml does that:
-#   cd cloud && docker compose up -d --build
+#   cd cloud && docker compose up -d --build --wait
 # Same package versions as on the computer: uv installs them from uv.lock.
 FROM python:3.12.14-slim-bookworm
 

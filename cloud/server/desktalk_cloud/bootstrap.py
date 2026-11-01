@@ -31,7 +31,7 @@ from desktalk_cloud.report_data import load_report_words
 from desktalk_cloud.report_job import ReportJob
 from desktalk_cloud.retention import RetentionJob
 from desktalk_cloud.routers import admin, auth, chat_v1, devices_v1, events_v1, site
-from desktalk_cloud.store_postgres import PostgresStore
+from desktalk_cloud.store_postgres import PostgresStore, is_postgres_address
 
 __all__ = ['ROUTERS', 'Server', 'build', 'build_app', 'build_jobs', 'check_settings', 'database_url', 'log_handler',
            'set_up_logging']
@@ -48,6 +48,10 @@ def database_url(config: CloudConfig) -> str:
     if url is None:
         raise ConfigError('DATABASE_URL is not set. compose.yaml sets it for you; when you run the server by hand, '
                           'put the Postgres address in the environment (see cloud/.env.example).')
+    if not is_postgres_address(url.get_secret_value()):     # the words never repeat it: it holds the password
+        raise ConfigError('DATABASE_URL is not a Postgres address the server can read. It should look like '
+                          'postgresql+psycopg://user:password@host:5432/desktalk. With Docker, compose.yaml makes it '
+                          'from POSTGRES_PASSWORD, which must be letters and digits only (see cloud/.env.example).')
     return url.get_secret_value()
 
 
@@ -141,9 +145,13 @@ def _database_error_in(error: object) -> BaseException | None:
 
 class _HideDatabaseWords(logging.Filter):
     """Puts a database error's kind in the line, in place of its text and traceback. It sits on the handler, so it
-    covers every logger, uvicorn's "Exception in ASGI application" and report_job's log.exception included."""
+    covers every logger, uvicorn's "Exception in ASGI application" and report_job's log.exception included, and an
+    error passed as the message itself (log.error(error))."""
 
     def filter(self, record: logging.LogRecord) -> bool:
+        in_message = _database_error_in(record.msg)
+        if in_message is not None:
+            record.msg, record.args = type(in_message).__name__, None
         if isinstance(record.args, tuple):
             record.args = tuple(type(arg).__name__ if _database_error_in(arg) else arg for arg in record.args)
         hidden = _database_error_in(record.exc_info[1]) if isinstance(record.exc_info, tuple) else None

@@ -1,8 +1,8 @@
 # The cloud server: Postgres, the website's server, the website, and the weekly report writer.
 # Fill in cloud/.env first (copy .env.example). README.md says how. In this folder:
-#   docker compose up -d --build      build and start it, and wait until it's healthy; it starts again on boot
-#   docker compose logs -f            see what it's doing
-#   docker compose down               stop it (the database's volume stays)
+#   docker compose up -d --build --wait      build and start it, and wait until it's healthy; it starts again on boot
+#   docker compose logs -f                   see what it's doing
+#   docker compose down                      stop it (the database's volume stays)
 # Only `web` publishes a port. A Pi and a browser both come in through it.
 name: desktalk-cloud
 

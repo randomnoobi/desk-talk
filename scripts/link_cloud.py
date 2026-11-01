@@ -2,8 +2,8 @@
 """
 Link this computer to a cloud server, so Desk Talk can send it your habit events in the background.
 
-    uv run python scripts/link_cloud.py --server http://192.168.1.9:8000 --code ABCD-EFGH
-    uv run python scripts/link_cloud.py --server http://192.168.1.9:8000 --code ABCD-EFGH --name "My desk"
+    uv run python scripts/link_cloud.py --server http://192.168.1.9:8080 --code ABCD-EFGH
+    uv run python scripts/link_cloud.py --server http://192.168.1.9:8080 --code ABCD-EFGH --name "My desk"
 
 Get the code from the cloud server's website ("Add a Pi", or "Link again" on a Pi it already knows). A code works
 once and runs out after a few minutes. The server's reply holds a token; it is saved in data/cloud.json (settings →
@@ -28,7 +28,10 @@ sys.path.insert(0, str(ROOT))
 
 
 def _number(value: Any, fallback: float) -> float:
-    ok = isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+    try:
+        ok = isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+    except OverflowError:                               # a whole number too big for float maths
+        return fallback
     return float(value) if ok else fallback
 
 
@@ -49,7 +52,7 @@ def run(argv: Sequence[str], *, config: Any, store: Any, clock: Any, claim: Call
     from desktalk.domain import CloudNotLinked, CloudUnavailable
 
     parser = argparse.ArgumentParser(description='Link this computer to a cloud server.')
-    parser.add_argument('--server', required=True, help='the cloud server\'s address, like http://192.168.1.9:8000')
+    parser.add_argument('--server', required=True, help='the cloud server\'s address, like http://192.168.1.9:8080')
     parser.add_argument('--code', required=True, help='the one-time code from the cloud server\'s website')
     parser.add_argument('--name', default=socket.gethostname(), help='what to call this computer on the website')
     args = parser.parse_args(list(argv))

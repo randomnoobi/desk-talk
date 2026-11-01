@@ -36,10 +36,12 @@ Open the website at the `LOGIN_URL` address. The login cookie belongs to one add
 ## 3. Start it
 
 ```
-docker compose up -d --build
+docker compose up -d --build --wait
 ```
 
-It waits until everything is healthy, and comes back by itself when the computer boots (as long as Docker starts on boot). The website is at `http://localhost:8080`. Only the website's port is open: the database and the server behind it can't be reached from outside. To use a different port, set `WEB_PORT` in `.env`.
+`--wait` makes it wait until everything is healthy, and it says so if something doesn't get there. It comes back by itself when the computer boots (as long as Docker starts on boot). The website is at `http://localhost:8080`. Only the website's port is open: the database and the server behind it can't be reached from outside.
+
+To use a different port, set `WEB_PORT` in `.env`, and put the same port in `PUBLIC_URL` and `LOGIN_URL` (and in the address you gave Google in step 2). Left empty, those two still say `8080`, so the setup command and the login would go to the wrong place.
 
 `docker compose logs -f` shows what it's doing. If it stops because of a setting, the log says which one in plain words.
 
@@ -50,6 +52,18 @@ Settings in `settings.yaml` and wording in `prompts.yaml` are built into the ima
 1. Log in on the website and click **Add a Pi**.
 2. Run the command it shows, in your Desk Talk folder. The code in it works once, for a few minutes.
 3. The Pi appears on the website. Its events show up as it sends them.
+
+## If linking says "Too many tries"
+
+The server counts tries per address: 10 in 10 minutes (`limits.claim_tries` and `limits.claim_window_sec` in `settings.yaml`), right or wrong, to use a code. Past that, that address waits until its oldest tries are 10 minutes old. Admin logins are counted the same way, on their own.
+
+On Colima or Docker Desktop, every device on your home network may reach the server as the same address, so 10 tries from anyone can block linking for everyone for up to 10 minutes. To spot it:
+
+```
+docker compose logs web
+```
+
+Each request's line starts with the address the server saw. If your Pi and your other devices all show one address, like `172.30.87.1`, they share one count. Restarting `api` clears the count (`docker compose restart api`), because it's kept in memory.
 
 ## Your own API keys
 

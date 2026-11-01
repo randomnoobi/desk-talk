@@ -67,7 +67,10 @@ def _is_number(value: Any) -> bool:
 
 
 def _is_finite(value: Any) -> bool:
-    return _is_number(value) and math.isfinite(value)
+    try:
+        return _is_number(value) and math.isfinite(value)
+    except OverflowError:                               # a whole number too big for float maths
+        return False
 
 
 def _number_or(value: Any, fallback: float) -> float:

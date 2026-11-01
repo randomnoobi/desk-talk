@@ -26,7 +26,8 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import exc as sa_exc
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.engine import Connection, Engine, RowMapping
+from sqlalchemy.engine import Connection, Engine, RowMapping, make_url
+from sqlalchemy.exc import ArgumentError
 
 from desktalk_cloud.domain import DONE, FAILED, NO_DATA, PENDING, Admin, Device, ObjectState, Report, StateChange, User
 
@@ -80,6 +81,16 @@ def _driver_url(database_url: str) -> str:
         if database_url.startswith(plain):
             return 'postgresql+psycopg://' + database_url[len(plain):]
     return database_url
+
+
+def is_postgres_address(database_url: str) -> bool:
+    """Whether this can be read as an address of a Postgres database. It connects to nothing."""
+    try:
+        address = make_url(_driver_url(database_url))
+        address.get_dialect()
+    except (ArgumentError, ValueError):                 # (an unknown driver is an ArgumentError too)
+        return False
+    return address.get_backend_name() == 'postgresql'
 
 
 def run_migrations(database_url: str) -> None:

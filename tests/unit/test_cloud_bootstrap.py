@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 import sqlalchemy.exc
 import yaml
+from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
@@ -94,15 +95,22 @@ def test_stopping_the_server_closes_the_database_connections(monkeypatch):
 
 
 # ── who may call what ──────────────────────────────────────────────────
-def every_route() -> list[tuple[str, str]]:
-    """Each route of each included router, and the health check, with any id in its address filled in."""
-    routes = [('GET', '/healthz')]
-    for router in bootstrap.ROUTERS:
-        for route in router.routes:
-            assert isinstance(route, APIRoute)
+def every_route(app: FastAPI | None = None) -> list[tuple[str, str]]:
+    """Each route of each included router and of the real built app (so one added straight on the app counts too), and
+    the health check, with any id in its address filled in."""
+    built = app if app is not None else bootstrap.build_app(make_parts())
+    routes = {('GET', '/healthz')}
+    for route in [*(item for router in bootstrap.ROUTERS for item in router.routes), *built.routes]:
+        if isinstance(route, APIRoute):
             path = re.sub(r'{[a-z_]+}', 'x', route.path)
-            routes += [(method, path) for method in sorted(route.methods or ())]
-    return routes
+            routes |= {(method, path) for method in route.methods or ()}
+    return sorted(routes)
+
+
+def test_every_route_sees_a_route_added_straight_on_the_app():
+    app = bootstrap.build_app(make_parts())
+    app.add_api_route('/added-on-the-app/{thing_id}', lambda thing_id: thing_id, methods=['POST'])
+    assert ('POST', '/added-on-the-app/x') in every_route(app)
 
 
 def is_open_to_anyone(path: str) -> bool:
@@ -224,6 +232,29 @@ def test_a_database_error_passed_as_a_log_value_is_hidden():
     assert 'It failed' in text and 'IntegrityError' in text and 'private value' not in text
 
 
+def test_a_database_error_that_is_the_message_itself_is_hidden():
+    text = logged(lambda logger: logger.error(database_error()))
+    assert 'IntegrityError' in text and 'private value' not in text and 'DETAIL' not in text
+
+
+def test_a_database_error_behind_the_message_itself_is_hidden():
+    def emit(logger):
+        try:
+            try:
+                raise database_error()
+            except Exception as error:
+                raise RuntimeError('wrapped') from error
+        except Exception as error:
+            logger.error(error)
+
+    text = logged(emit)
+    assert 'IntegrityError' in text and 'private value' not in text
+
+
+def test_any_other_error_as_the_message_stays_as_it_is():
+    assert 'a plain problem' in logged(lambda logger: logger.error(ValueError('a plain problem')))
+
+
 def test_a_message_with_a_percent_sign_still_logs_after_the_error_is_hidden():
     def emit(logger):
         try:
@@ -316,6 +347,35 @@ def test_main_stops_with_no_postgres_words_when_the_database_fails(program, monk
     assert 'dispose' in program
 
 
+BAD_ADDRESSES = ['not an address', 'postgresql+psycopg://user:hidden-password@nowhere.invalid:not-a-port/desktalk',
+                 'nosuchthing://user:hidden-password@nowhere.invalid/desktalk',
+                 'sqlite:///hidden-password.db']
+
+
+@pytest.mark.parametrize('address', BAD_ADDRESSES)
+def test_main_stops_in_plain_words_on_a_bad_database_address(program, monkeypatch, caplog, address):
+    monkeypatch.setenv('DATABASE_URL', address)
+    assert main.main() == 1
+    assert 'DATABASE_URL' in caplog.text
+    assert 'hidden-password' not in caplog.text and address not in caplog.text and 'Traceback' not in caplog.text
+    assert program == ['logging']                   # no database touched
+
+
+@pytest.mark.parametrize('address', BAD_ADDRESSES)
+def test_the_report_program_stops_in_plain_words_on_a_bad_database_address(program, monkeypatch, caplog, address):
+    monkeypatch.setenv('DATABASE_URL', address)
+    assert reports_main.main([]) == 1
+    assert 'DATABASE_URL' in caplog.text
+    assert 'hidden-password' not in caplog.text and address not in caplog.text and 'Traceback' not in caplog.text
+    assert program == ['logging']
+
+
+@pytest.mark.parametrize('address', ['postgresql+psycopg://u:p@db:5432/d', 'postgresql://u:p@db:5432/d',
+                                     'postgres://u:p@db:5432/d'])
+def test_the_kinds_of_database_address_the_server_uses_pass(address):
+    assert bootstrap.database_url(cloud_config({'DATABASE_URL': address})) == address
+
+
 # ── reports_main.py: the weekly report and the clean-up ────────────────
 class Job:
     def __init__(self, name: str, wait: float, *, fail_on: tuple[int, ...] = ()) -> None:
@@ -359,14 +419,21 @@ def test_one_bad_tick_never_ends_the_loop_or_stops_the_other_job(caplog):
 
 
 def test_the_stop_flag_ends_a_wait_quickly():
-    stop = reports_main.StopFlag()
+    stop = reports_main.StopFlag(cloud_config().reports.stop_check_sec)
     assert stop.wait(0) is False
     stop.set()
     assert stop.wait(3600) is True
 
 
 def test_the_stop_flag_waits_the_time_it_is_given():
-    assert reports_main.StopFlag().wait(0.01) is False
+    assert reports_main.StopFlag(0.001).wait(0.01) is False
+
+
+def test_the_stop_flag_looks_for_a_stop_as_often_as_it_is_told(monkeypatch):
+    naps: list[float] = []
+    monkeypatch.setattr(reports_main.time, 'sleep', naps.append)
+    reports_main.StopFlag(0.25).wait(0.5)
+    assert naps == [0.25, 0.25]
 
 
 def reports_program(monkeypatch, jobs) -> None:
@@ -519,6 +586,13 @@ def test_the_server_and_the_website_run_without_root_rights():
             assert not re.search(r'^USER\s+root', text, re.MULTILINE)
 
 
+def test_a_stop_waits_longer_than_the_slowest_report():
+    grace = compose()['services']['reports']['stop_grace_period']
+    found = re.fullmatch(r'(\d+)s', grace)
+    assert found is not None
+    assert int(found.group(1)) > cloud_config().reports.timeout_sec
+
+
 def test_the_nginx_body_limit_matches_the_settings():
     config = cloud_config()
     assert kb_setting(nginx_conf()) == config.ingest.max_body_kb
@@ -566,14 +640,14 @@ def test_the_server_image_has_the_time_zone_data():
 
 def test_the_readme_says_what_a_person_has_to_know():
     text = Path(CLOUD_FOLDER / 'README.md').read_text(encoding='utf-8')
-    for words in ('docker compose up -d --build', 'PUBLIC_URL', 'LOGIN_URL', 'new username', 'plain HTTP',
+    for words in ('docker compose up -d --build --wait', 'WEB_PORT', 'Too many tries', 'PUBLIC_URL', 'LOGIN_URL', 'new username', 'plain HTTP',
                   'pg_dump', 'docker compose down', 'Google', 'ADMIN_USERNAME', 'CHAT_API_KEY', 'REPORT_API_KEY'):
         assert words in text, words
 
 
 def test_docker_builds_never_get_your_keys_or_data():
     ignored = (ROOT / '.dockerignore').read_text(encoding='utf-8').splitlines()
-    assert {'.env', 'cloud/.env', 'data', 'models', '**/node_modules'} <= set(ignored)
+    assert {'**/.env', 'data', 'models', '**/node_modules'} <= set(ignored)
 
 
 def test_env_example_lists_what_compose_needs():
