@@ -213,6 +213,8 @@ BAD_BODIES = {
     'temperature negative': {'messages': USER, 'temperature': -1},
     'temperature over 2': {'messages': USER, 'temperature': 2.5},
     'temperature huge': {'messages': USER, 'temperature': 10 ** 30},
+    'temperature 400 digits': {'messages': USER, 'temperature': 10 ** 400},
+    'temperature minus 400 digits': {'messages': USER, 'temperature': -10 ** 400},
     'temperature list': {'messages': USER, 'temperature': [1]},
 }
 
@@ -315,6 +317,36 @@ def real_forwarder_parts(handler):
     chat = HttpChatForwarder(config.chat, 'sk-x', FakeClock(), client=client)
     parts = make_parts(config, chat_forwarder=chat)
     return parts, link_device(parts, 'ann')
+
+
+def test_a_400_digit_max_tokens_is_lowered_to_the_cap(client, ann, fake, parts):
+    assert post(client, ann.token, {'messages': USER, 'max_tokens': 10 ** 400}).status_code == 200
+    assert fake.calls[0][1] == parts.config.chat.max_tokens_cap
+
+
+@pytest.mark.parametrize('raw', [
+    b'{"messages": [{"role": "user", "content": "to-do \\ud800 text"}]}',
+    b'{"messages": [{"role": "user", "content": [{"type": "text", "text": "to-do \\udfff"}]}]}',
+    b'{"messages": [{"role": "to-do \\ud800", "content": "x"}]}'])
+def test_a_lone_surrogate_gets_a_plain_400_without_echoing(client, ann, fake, parts, raw):
+    reply = client.post('/v1/chat/completions', content=raw, headers=auth(ann.token))
+    assert reply.status_code == 400
+    assert reply.json()['detail'] == parts.config.messages.bad_body
+    assert 'to-do' not in reply.text and fake.calls == []
+
+
+def test_a_lone_surrogate_never_reaches_the_ai_company_or_a_log(caplog):
+    caplog.set_level(logging.DEBUG)
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={'choices': [{'message': {'role': 'assistant', 'content': 'ok'}}]})
+    parts, ann = real_forwarder_parts(handler)
+    raw = ('{"messages": [{"role": "user", "content": "' + SECRET_TEXT + ' \\ud800"}]}').encode()
+    reply = build(parts).post('/v1/chat/completions', content=raw, headers=auth(ann.token))
+    assert reply.status_code == 400 and seen == []
+    assert SECRET_TEXT not in caplog.text and SECRET_TEXT not in reply.text
 
 
 def test_chat_text_appears_in_no_log_or_table_on_success(caplog):

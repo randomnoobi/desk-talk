@@ -6,7 +6,6 @@ here, and nothing from a failure (its reply, an error's text) is logged or sent 
 from __future__ import annotations
 
 import logging
-import math
 from collections import deque
 from typing import Annotated, Any
 
@@ -53,9 +52,22 @@ def _has_image(body: Any) -> bool:
     return False
 
 
+def _is_text(value: Any) -> bool:
+    """A string that can be sent on as UTF-8 (a lone surrogate such as "\\ud800" can't)."""
+    if not isinstance(value, str):
+        return False
+    try:
+        value.encode('utf-8')
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def _clean_content(content: Any) -> str | list[dict[str, str]]:
     """The content of one message: text, or a non-empty list of text parts. Raises _Refused for anything else."""
     if isinstance(content, str):
+        if not _is_text(content):
+            raise _Refused()
         return content
     if not isinstance(content, list) or not content:
         raise _Refused()
@@ -65,7 +77,7 @@ def _clean_content(content: Any) -> str | list[dict[str, str]]:
             raise _Refused()
         if part.get('type') != 'text':
             raise _Refused(images=True)                   # a picture, audio or anything that is not text
-        if not isinstance(part.get('text'), str):
+        if not _is_text(part.get('text')):
             raise _Refused()
         parts.append({'type': 'text', 'text': part['text']})
     return parts
@@ -91,8 +103,9 @@ def _clean_options(body: dict[str, Any], max_tokens_cap: int) -> tuple[int, floa
     max_tokens, temperature = body.get('max_tokens'), body.get('temperature')
     if max_tokens is not None and (not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens < 1):
         raise _Refused()
-    if temperature is not None and (not _is_number(temperature) or not math.isfinite(temperature)
-                                    or not 0 <= temperature <= TEMPERATURE_MAX):
+    # The range is checked on its own: a whole number of hundreds of digits is too big for float maths (isfinite).
+    # A NaN fails the range too, and an infinity is beyond it.
+    if temperature is not None and (not _is_number(temperature) or not 0 <= temperature <= TEMPERATURE_MAX):
         raise _Refused()
     return min(max_tokens or max_tokens_cap, max_tokens_cap), temperature
 
