@@ -111,6 +111,7 @@ class ChatSettings(_Section):
     model: str
     timeout_sec: PositiveNumber
     max_body_kb: PositiveInt
+    max_tokens_cap: PositiveInt
     limit_requests: PositiveInt
     limit_window_sec: PositiveNumber
 

@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 ROLES = frozenset({'system', 'user', 'assistant'})         # the chat roles of the OpenAI format
 IMAGE_KEYS = frozenset({'image_url', 'image', 'images', 'input_image'})
 DATA_IMAGE = 'data:image/'
-MAX_TOKENS_LIMIT = 2 ** 31 - 1                             # the biggest whole number the chat format can hold
+TEMPERATURE_MAX = 2                                        # the top of the OpenAI temperature range (0 is the bottom)
 
 
 class _Refused(Exception):
@@ -86,14 +86,15 @@ def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def _clean_options(body: dict[str, Any]) -> tuple[int | None, float | None]:
+def _clean_options(body: dict[str, Any], max_tokens_cap: int) -> tuple[int, float | None]:
+    """The reply length (lowered to `max_tokens_cap`, which is also used when none is asked for) and the temperature."""
     max_tokens, temperature = body.get('max_tokens'), body.get('temperature')
-    if max_tokens is not None and (not isinstance(max_tokens, int) or isinstance(max_tokens, bool)
-                                   or not 1 <= max_tokens <= MAX_TOKENS_LIMIT):
+    if max_tokens is not None and (not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens < 1):
         raise _Refused()
-    if temperature is not None and (not _is_number(temperature) or not math.isfinite(temperature) or temperature < 0):
+    if temperature is not None and (not _is_number(temperature) or not math.isfinite(temperature)
+                                    or not 0 <= temperature <= TEMPERATURE_MAX):
         raise _Refused()
-    return max_tokens, temperature
+    return min(max_tokens or max_tokens_cap, max_tokens_cap), temperature
 
 
 @router.post('/v1/chat/completions')
@@ -112,7 +113,7 @@ async def chat_completions(request: Request, device: Annotated[Device, Depends(d
         if not isinstance(body, dict):
             raise _Refused()
         clean = _clean_messages(body.get('messages'))
-        max_tokens, temperature = _clean_options(body)
+        max_tokens, temperature = _clean_options(body, config.chat.max_tokens_cap)
     except _Refused as refused:
         raise HTTPException(400, messages.chat_no_images if refused.images else messages.bad_body) from None
     try:

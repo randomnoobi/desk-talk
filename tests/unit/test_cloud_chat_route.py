@@ -6,15 +6,24 @@ import threading
 
 import httpx
 import pytest
+import yaml
 from fastapi import APIRouter
 from fastapi.testclient import TestClient
 from openai import OpenAI
 
 from desktalk_cloud.app import create_app
 from desktalk_cloud.chat_forwarder import HttpChatForwarder
+from desktalk_cloud.config import ConfigError, load_config
 from desktalk_cloud.routers import chat_v1
 from tests.fakes.clock import FakeClock
-from tests.fakes.cloud import FakeChatForwarder, cloud_config, link_device, make_parts
+from tests.fakes.cloud import (
+    CLOUD_FOLDER,
+    TEST_SESSION_SECRET,
+    FakeChatForwarder,
+    cloud_config,
+    link_device,
+    make_parts,
+)
 
 SECRET_TEXT = 'remember-to-feed-the-purple-giraffe'
 USER = [{'role': 'user', 'content': 'hello'}]
@@ -119,7 +128,7 @@ def test_model_from_settings_not_request():
     assert reply.status_code == 200
     sent = json.loads(seen[0].content)
     assert sent['model'] == config.chat.model and sent['stream'] is False
-    assert set(sent) == {'model', 'messages', 'stream'}
+    assert set(sent) == {'model', 'messages', 'stream', 'max_tokens'}
 
 
 def test_only_role_and_content_are_forwarded(client, ann, fake):
@@ -199,10 +208,11 @@ BAD_BODIES = {
     'max_tokens float': {'messages': USER, 'max_tokens': 5.5},
     'max_tokens zero': {'messages': USER, 'max_tokens': 0},
     'max_tokens negative': {'messages': USER, 'max_tokens': -3},
-    'max_tokens huge': {'messages': USER, 'max_tokens': 10 ** 30},
     'temperature string': {'messages': USER, 'temperature': 'hot'},
     'temperature bool': {'messages': USER, 'temperature': False},
     'temperature negative': {'messages': USER, 'temperature': -1},
+    'temperature over 2': {'messages': USER, 'temperature': 2.5},
+    'temperature huge': {'messages': USER, 'temperature': 10 ** 30},
     'temperature list': {'messages': USER, 'temperature': [1]},
 }
 
@@ -232,11 +242,48 @@ def test_a_body_over_the_limit_gets_413(client, ann, parts, fake):
     assert fake.calls == []
 
 
-def test_max_tokens_and_temperature_may_be_left_out_or_whole_or_decimal(client, ann, fake):
+def test_max_tokens_and_temperature_may_be_left_out_or_whole_or_decimal(client, ann, fake, parts):
+    cap = parts.config.chat.max_tokens_cap
     post(client, ann.token, {'messages': USER})
     post(client, ann.token, {'messages': USER, 'max_tokens': 20, 'temperature': 1})
     post(client, ann.token, {'messages': USER, 'max_tokens': None, 'temperature': 0.0})
-    assert [call[1:] for call in fake.calls] == [(None, None), (20, 1), (None, 0.0)]
+    post(client, ann.token, {'messages': USER, 'temperature': 2})
+    assert [call[1:] for call in fake.calls] == [(cap, None), (20, 1), (cap, 0.0), (cap, 2)]
+
+
+def test_max_tokens_cap_is_in_settings_and_is_2000(tmp_path):
+    assert cloud_config().chat.max_tokens_cap == 2000
+    settings = yaml.safe_load((CLOUD_FOLDER / 'settings.yaml').read_text())
+    settings['chat']['max_tokens_cap'] = 0
+    (tmp_path / 'settings.yaml').write_text(yaml.safe_dump(settings))
+    (tmp_path / 'prompts.yaml').write_text((CLOUD_FOLDER / 'prompts.yaml').read_text())
+    with pytest.raises(ConfigError, match='chat.max_tokens_cap'):
+        load_config(tmp_path, {'SESSION_SECRET': TEST_SESSION_SECRET})
+
+
+def test_a_bigger_max_tokens_is_lowered_to_the_cap_not_refused(fake):
+    parts = make_parts(cloud_config(chat={'max_tokens_cap': 300}), chat_forwarder=fake)
+    ann = link_device(parts, 'ann')
+    client = build(parts)
+    for asked in (301, 5000, 10 ** 30):
+        assert post(client, ann.token, {'messages': USER, 'max_tokens': asked}).status_code == 200
+    assert post(client, ann.token, {'messages': USER, 'max_tokens': 300}).status_code == 200
+    assert post(client, ann.token, {'messages': USER, 'max_tokens': 299}).status_code == 200
+    assert [call[1] for call in fake.calls] == [300, 300, 300, 300, 299]
+
+
+def test_the_cap_reaches_the_ai_company_when_no_max_tokens_is_sent():
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={'choices': [{'message': {'role': 'assistant', 'content': 'ok'}}]})
+    config = cloud_config(chat={'max_tokens_cap': 123})
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    parts = make_parts(config, chat_forwarder=HttpChatForwarder(config.chat, 'sk-x', FakeClock(), client=client))
+    ann = link_device(parts, 'ann')
+    assert post(build(parts), ann.token, {'messages': USER}).status_code == 200
+    assert json.loads(seen[0].content)['max_tokens'] == 123
 
 
 def test_upstream_error_gets_a_plain_502(client, ann, fake, parts):

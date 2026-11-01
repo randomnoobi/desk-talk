@@ -49,6 +49,7 @@ chat:                            # letting a Pi use this server's AI key for cha
   model: gemini-2.5-flash        # the model every chat request uses, whatever the Pi asks for
   timeout_sec: 60                # how long to wait for the AI company before giving up
   max_body_kb: 256               # the biggest chat request, in kilobytes
+  max_tokens_cap: 2000           # the longest reply one chat request may ask for, in tokens (a bigger ask is lowered to this)
   limit_requests: 30             # the most chat requests one Pi may make in one window
   limit_window_sec: 60           # the window those requests are counted in, in seconds
 
