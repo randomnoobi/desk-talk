@@ -18,9 +18,19 @@ type Route =
   | { page: 'report', id: string }
   | { page: 'admin' }
 
+// The part of the address after the page's name. An address can be typed by hand, so it may not decode.
+function decoded(part: string | undefined): string | null {
+  try {
+    return part ? decodeURIComponent(part) : ''
+  } catch {
+    return null
+  }
+}
+
 function routeOf(hash: string): Route {
   const [, first, second] = hash.replace(/^#/, '').split('/')
-  const id = second ? decodeURIComponent(second) : ''
+  const id = decoded(second)
+  if (id === null) return { page: 'pis' }
   if (first === 'pis' && id) return { page: 'pi', id }
   if (first === 'reports') return id ? { page: 'report', id } : { page: 'reports' }
   if (first === 'admin') return { page: 'admin' }

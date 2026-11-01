@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import IO
@@ -117,7 +117,8 @@ def build(config: CloudConfig) -> Server:
 
 
 # ── the weekly report and the clean-up ─────────────────────────────────
-def build_jobs(config: CloudConfig, store: Store, clock: Clock) -> Sequence[ReportJob | RetentionJob]:
+def build_jobs(config: CloudConfig, store: Store, clock: Clock,
+               should_stop: Callable[[], bool]) -> Sequence[ReportJob | RetentionJob]:
     words = load_report_words(config.prompts, config.messages)
     key = config.secrets.report_api_key
     writer: ReportWriter
@@ -125,7 +126,7 @@ def build_jobs(config: CloudConfig, store: Store, clock: Clock) -> Sequence[Repo
         writer = AnthropicReportWriter(config.reports, key, words.errors)
     else:
         writer = OpenAIReportWriter(config.reports, key, words.errors)
-    return (ReportJob(store, writer, clock, config.reports, words), RetentionJob(store, config.retention))
+    return (ReportJob(store, writer, clock, config.reports, words, should_stop), RetentionJob(store, config.retention))
 
 
 # ── logs ───────────────────────────────────────────────────────────────

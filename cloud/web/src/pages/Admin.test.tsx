@@ -11,6 +11,10 @@ const OVERVIEW = {
     { id: 'd2', user_id: 'u1', name: 'Old Pi', last_seen_at: null, removed_at: 1700000200 },
   ],
   failed_reports: [{ id: 'r1', device_id: 'd1', week_start: '2026-10-19', error: 'No AI key is set for reports.' }],
+  recent_reports: [
+    { id: 'r2', device_id: 'd1', week_start: '2026-10-12', status: 'done', markdown: 'SECRET report text' },
+    { id: 'r3', device_id: 'd2', week_start: '2026-10-05', status: 'no_data' },
+  ],
 }
 
 describe('Admin', () => {
@@ -19,7 +23,7 @@ describe('Admin', () => {
     render(<Admin />)
     expect(await screen.findByText('sam@example.com')).toBeInTheDocument()
     expect(within(screen.getByRole('region', { name: /^pis$/i })).getByText('Desk Pi')).toBeInTheDocument()
-    expect(screen.getByText('Old Pi').closest('li')).toHaveTextContent(/removed/i)
+    expect(within(screen.getByRole('region', { name: /^pis$/i })).getByText('Old Pi').closest('li')).toHaveTextContent(/removed/i)
     const failed = screen.getByText('2026-10-19').closest('li')!
     expect(failed).toHaveTextContent('No AI key is set for reports.')
   })
@@ -41,6 +45,33 @@ describe('Admin', () => {
     const row = (await screen.findByText('2026-10-19')).closest('li')!
     await userEvent.click(within(row).getByRole('button', { name: /run again/i }))
     await waitFor(() => expect(server.made('POST', '/api/admin/reports/r1/rerun')).toHaveLength(1))
+  })
+
+  it('can run a finished report again, and never shows report text', async () => {
+    const server = fakeServer({
+      'GET /api/admin/overview': { body: OVERVIEW },
+      'POST /api/admin/reports/r2/rerun': { body: {} },
+    })
+    render(<Admin />)
+    const row = (await screen.findByText('2026-10-12')).closest('li')!
+    expect(row).toHaveTextContent('Desk Pi')
+    expect(row).toHaveTextContent(/written/i)
+    expect(screen.getByText('2026-10-05').closest('li')).toHaveTextContent(/no data/i)
+    expect(screen.queryByText(/SECRET/)).not.toBeInTheDocument()
+    await userEvent.click(within(row).getByRole('button', { name: /run again/i }))
+    await waitFor(() => expect(server.made('POST', '/api/admin/reports/r2/rerun')).toHaveLength(1))
+  })
+
+  it('shows the words the server gives when a report can not be run again', async () => {
+    const words = "This Pi was removed, so its report can't be run again. Link the Pi again first."
+    fakeServer({
+      'GET /api/admin/overview': { body: OVERVIEW },
+      'POST /api/admin/reports/r3/rerun': { status: 409, body: { detail: words } },
+    })
+    render(<Admin />)
+    const row = (await screen.findByText('2026-10-05')).closest('li')!
+    await userEvent.click(within(row).getByRole('button', { name: /run again/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(words)
   })
 
   it('asks for the admin login first, and sends it in the body, never the address', async () => {

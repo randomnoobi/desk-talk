@@ -8,9 +8,6 @@ import { formatTime, plainName, plainValue } from '../format'
 import { CodeMaker, Confirm, Loading, Problem } from '../ui'
 import { useLoad } from '../useLoad'
 
-// How far back the event list goes. The server can't tell the page this, so it's here.
-const RECENT_HOURS = 24
-
 function Facts({ title, facts }: { title: string, facts: Record<string, unknown> | null }) {
   if (!facts) return <section><h3>{title}</h3><p className="muted">Nothing yet.</p></section>
   const { ts, ...rest } = facts
@@ -28,15 +25,15 @@ function Facts({ title, facts }: { title: string, facts: Record<string, unknown>
   )
 }
 
-function Events({ deviceId }: { deviceId: string }) {
+function Events({ deviceId, hours }: { deviceId: string, hours: number }) {
   const { data, error, loading } = useLoad<CloudEvent[]>(
-    () => recentEvents(deviceId, Math.floor(Date.now() / 1000) - RECENT_HOURS * 3600), deviceId)
+    () => recentEvents(deviceId, Math.floor(Date.now() / 1000) - hours * 3600), deviceId)
   return (
     <section>
       <h3>Recent events</h3>
       {error && <Problem error={error} />}
       {loading && !data && <Loading />}
-      {data && data.length === 0 && <p className="muted">No events in the last {RECENT_HOURS} hours.</p>}
+      {data && data.length === 0 && <p className="muted">No events in the last {hours} hours.</p>}
       {data && data.length > 0 && (
         <ul className="list events">
           {data.map(event => (
@@ -105,7 +102,7 @@ export default function OnePi({ id, afterDelete = () => { window.location.hash =
       <h2>{data.device.name}</h2>
       {removed && <p className="tag">Removed. Its history is kept, and it can't send new events until it is linked again.</p>}
       <p className="muted small">
-        Last seen {formatTime(data.last_seen_at)}. Time zone {data.device.time_zone}.
+        {data.last_seen_at === null ? 'Not seen yet' : `Last seen ${formatTime(data.last_seen_at)}`}. Time zone {data.device.time_zone}.
       </p>
 
       <section>
@@ -119,7 +116,7 @@ export default function OnePi({ id, afterDelete = () => { window.location.hash =
       </section>
       <Facts title="Goals" facts={data.goals} />
       <Facts title="Camera" facts={data.last_camera} />
-      <Events deviceId={id} />
+      {data.recent_hours !== null && <Events deviceId={id} hours={data.recent_hours} />}
 
       <section className="stack">
         <h3>This Pi</h3>

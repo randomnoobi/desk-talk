@@ -6,6 +6,7 @@ import OnePi from './OnePi'
 
 function stateOf(removed: boolean) {
   return {
+    recent_hours: 24,
     device: { id: 'd1', name: 'Desk Pi', time_zone: 'Europe/Paris', removed },
     last_seen_at: 1700000000,
     goals: { id: 'g1', ts: 1699999000, type: 'goals', wake: '07:00', bed: '23:00', water_ml: 2000 },
@@ -32,6 +33,30 @@ function linked(extra: Record<string, unknown> = {}) {
 }
 
 describe('OnePi', () => {
+  it('asks for events as far back as the server says, and says so when there are none', async () => {
+    const server = fakeServer({
+      'GET /v1/devices/d1/state': { body: { ...stateOf(false), recent_hours: 6 } },
+      'GET /v1/devices/d1/events': { body: { events: [], next_since: 0, next_after_id: null } },
+    })
+    const before = Math.floor(Date.now() / 1000)
+    render(<OnePi id="d1" />)
+    expect(await screen.findByText('No events in the last 6 hours.')).toBeInTheDocument()
+    const since = Number(new URLSearchParams(server.made('GET', '/v1/devices/d1/events')[0].path.split('?')[1]).get('since'))
+    expect(since).toBeGreaterThanOrEqual(before - 6 * 3600)
+    expect(since).toBeLessThan(before - 6 * 3600 + 60)
+  })
+
+  it('says a Pi has not been seen yet in plain words', async () => {
+    fakeServer({
+      'GET /v1/devices/d1/state': { body: { ...stateOf(false), last_seen_at: null } },
+      'GET /v1/devices/d1/events': { body: EVENTS },
+    })
+    render(<OnePi id="d1" />)
+    const line = await screen.findByText(/not seen yet/i)
+    expect(line).toHaveTextContent('Not seen yet. Time zone Europe/Paris.')
+    expect(line).not.toHaveTextContent(/last seen/i)
+  })
+
   it('shows the state, the goals, the camera notice and the newest events first', async () => {
     linked()
     render(<OnePi id="d1" />)

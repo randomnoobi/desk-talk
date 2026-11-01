@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from desktalk_cloud.admins import ensure_admin, hash_password, verify_password
 from desktalk_cloud.app import create_app
-from desktalk_cloud.domain import GoogleUser
+from desktalk_cloud.domain import FAILED, GoogleUser
 from desktalk_cloud.routers import admin, auth, site
 from desktalk_cloud.store_memory import MemoryStore
 from tests.fakes.clock import FakeClock
@@ -30,7 +30,8 @@ class ForgetfulStore(MemoryStore):
 
 def build(parts) -> TestClient:
     ensure_admin(parts.config, parts.store)
-    return TestClient(create_app(parts, [auth.router, site.router, admin.router]), follow_redirects=False)
+    return TestClient(create_app(parts, [auth.router, site.router, admin.router]), follow_redirects=False,
+                      base_url=parts.config.server.public_url)
 
 
 @pytest.fixture
@@ -328,3 +329,28 @@ def test_overview_lists_the_latest_finished_report_of_each_pi_without_text(boss,
     assert 'SECRET' not in reply.text and pending.id not in reply.text
     # and the row's id is what re-run takes
     assert boss.post(f'/api/admin/reports/{rows[0]["id"]}/rerun', json={}).status_code == 200
+
+
+def test_rerun_of_a_removed_pis_report_is_refused_in_plain_words(boss, parts, clock):
+    ann = link_device(parts, 'ann')
+    report = parts.store.create_report(ann.device.id, '2026-10-19', clock.now())
+    parts.store.remove_device(ann.device.id, clock.now())
+    parts.store.finish_report(report.id, FAILED, None, None, 'gone', clock.now())
+    reply = boss.post(f'/api/admin/reports/{report.id}/rerun', json={})
+    assert reply.status_code == 409 and reply.json()['detail'] == parts.config.messages.report_pi_removed
+    assert parts.store.get_report_by_id(report.id).status == FAILED          # left as it was
+
+
+def test_the_overview_does_not_load_report_text(boss, parts, clock, monkeypatch):
+    ann = link_device(parts, 'ann')
+    parts.store.create_report(ann.device.id, '2026-10-19', clock.now())
+    asked: list[bool] = []
+    real = parts.store.list_reports
+
+    def spy(device_id, *, with_text=True):
+        asked.append(with_text)
+        return real(device_id, with_text=with_text)
+
+    monkeypatch.setattr(parts.store, 'list_reports', spy)
+    assert boss.get('/api/admin/overview').status_code == 200
+    assert asked == [False]

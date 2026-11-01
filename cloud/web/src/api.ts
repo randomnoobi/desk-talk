@@ -7,7 +7,7 @@
 //   GET  /api/devices                           POST /api/devices/code   PATCH|DELETE /api/devices/{id}
 //   DELETE /api/devices/{id}/data
 //   GET  /v1/devices/{id}/state                 GET  /v1/devices/{id}/events?since=&after_id=
-//   GET  /api/reports?device_id=                GET  /api/reports/{id}
+//   GET  /api/reports                           GET  /api/reports/{id}
 //   GET  /api/admin/overview                    POST /api/admin/reports/{id}/rerun
 
 /** A call that didn't work. `status` is the HTTP status, or 0 when the server couldn't be reached. */
@@ -164,6 +164,7 @@ export async function deleteDeviceWithData(id: string): Promise<void> {
 export interface ObjectState { label: string, state: string, since: number | null }
 
 export interface DeviceState {
+  recent_hours: number | null
   device: { id: string, name: string, time_zone: string, removed: boolean }
   last_seen_at: number | null
   goals: Fields | null
@@ -175,6 +176,7 @@ export async function getState(deviceId: string): Promise<DeviceState> {
   const body = fields(await get(`/v1/devices/${encodeURIComponent(deviceId)}/state`))
   const device = fields(body.device)
   return {
+    recent_hours: num(body.recent_hours),
     device: { id: text(device.id, deviceId), name: text(device.name), time_zone: text(device.time_zone), removed: device.removed === true },
     last_seen_at: num(body.last_seen_at),
     goals: body.goals ? fields(body.goals) : null,
@@ -244,14 +246,10 @@ export async function getReport(id: string): Promise<Report> {
 
 export interface ReportRow { report: Report, deviceName: string }
 
-/** The reports of every Pi the person has, newest week first. */
+/** The reports of every Pi the person has, newest week first (the server's order). */
 export async function listAllReports(): Promise<ReportRow[]> {
-  const devices = await listDevices()
-  const perDevice = await Promise.all(devices.map(async device => {
-    const body = await get(`/api/reports?device_id=${encodeURIComponent(device.id)}`)
-    return listOf(body, 'reports').map(raw => ({ report: toReport({ device_id: device.id, ...raw }), deviceName: device.name }))
-  }))
-  return perDevice.flat().sort((a, b) => b.report.week_start.localeCompare(a.report.week_start))
+  const body = await get('/api/reports')
+  return listOf(body, 'reports').map(raw => ({ report: toReport(raw), deviceName: text(raw.device_name) }))
 }
 
 // ---------------------------------------------------------------- admin
@@ -259,7 +257,8 @@ export async function listAllReports(): Promise<ReportRow[]> {
 export interface AdminUser { id: string, email: string, name: string }
 export interface AdminDevice { id: string, name: string, owner_id: string, last_seen_at: number | null, removed: boolean }
 export interface AdminFailure { id: string, device_id: string, week_start: string, error: string | null }
-export interface AdminOverview { users: AdminUser[], devices: AdminDevice[], failed_reports: AdminFailure[] }
+export interface AdminFinished { id: string, device_id: string, week_start: string, status: string }
+export interface AdminOverview { users: AdminUser[], devices: AdminDevice[], failed_reports: AdminFailure[], recent_reports: AdminFinished[] }
 
 export async function getAdminOverview(): Promise<AdminOverview> {
   const body = await get('/api/admin/overview')
@@ -268,6 +267,9 @@ export async function getAdminOverview(): Promise<AdminOverview> {
     devices: listOf(body, 'devices').map(d => ({ ...toDevice(d), owner_id: text(d.user_id) })),
     failed_reports: listOf(body, 'failed_reports').map(r => ({
       id: text(r.id), device_id: text(r.device_id), week_start: text(r.week_start), error: typeof r.error === 'string' && r.error ? r.error : null,
+    })),
+    recent_reports: listOf(body, 'recent_reports').map(r => ({
+      id: text(r.id), device_id: text(r.device_id), week_start: text(r.week_start), status: text(r.status),
     })),
   }
 }

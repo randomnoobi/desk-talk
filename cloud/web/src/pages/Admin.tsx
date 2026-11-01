@@ -1,5 +1,5 @@
-// The admin page: who has an account, whether each Pi is working, and which reports failed (with a button
-// to run one again). It has no events and no report text: it never asks for them.
+// The admin page: who has an account, whether each Pi is working, which reports failed and each Pi's latest
+// finished report (with a button to run one again). It has no events and no report text: it never asks for them.
 import { useState } from 'react'
 import { adminLogin, ApiError, getAdminOverview, rerunReport, type AdminOverview } from '../api'
 import { formatTime } from '../format'
@@ -80,6 +80,19 @@ function Overview({ overview, reload }: { overview: AdminOverview, reload: () =>
             <li key={r.id}>
               <span>{r.week_start}</span> <span className="muted small">{nameOf(r.device_id) ?? ''}</span>
               {r.error && <div className="small">{r.error}</div>}
+              <button type="button" className="btn" onClick={() => void again(r.id)}>Run again</button>
+            </li>
+          ))}
+        </ul>
+      </section>
+      <section aria-labelledby="admin-finished" className="stack">
+        <h3 id="admin-finished">Latest finished reports</h3>
+        {overview.recent_reports.length === 0 && <p className="muted">None.</p>}
+        <ul className="list">
+          {overview.recent_reports.map(r => (
+            <li key={r.id}>
+              <span>{r.week_start}</span> <span className="muted small">{nameOf(r.device_id) ?? ''}</span>
+              <div className="small">{r.status === 'no_data' ? 'No data that week.' : 'Written.'}</div>
               <button type="button" className="btn" onClick={() => void again(r.id)}>Run again</button>
             </li>
           ))}

@@ -63,7 +63,7 @@ def _latest_finished(store: Store, devices: list[Device]) -> list[dict[str, Any]
     set it to run again after late data. (A failed one is under failed_reports.)"""
     found = []
     for device in devices:
-        finished = [r for r in store.list_reports(device.id) if r.status in (DONE, NO_DATA)]
+        finished = [r for r in store.list_reports(device.id, with_text=False) if r.status in (DONE, NO_DATA)]
         if finished:
             found.append(finished[0])                       # newest week first
     found.sort(key=lambda r: (r.week_start, r.id), reverse=True)
@@ -90,7 +90,11 @@ def overview(request: Request, _admin: Annotated[Admin, Depends(current_admin)])
 def rerun(request: Request, report_id: str, _admin: Annotated[Admin, Depends(current_admin)],
           _json: Annotated[None, Depends(needs_json)]) -> dict[str, Any]:
     parts = parts_of(request)
-    fresh = parts.store.reset_report(report_id, parts.clock.now()) if is_clean_text(report_id) else None
+    found = parts.store.get_report_by_id(report_id) if is_clean_text(report_id) else None
+    device = parts.store.get_device(found.device_id) if found is not None else None
+    if device is not None and device.removed_at is not None:
+        raise HTTPException(409, parts.config.messages.report_pi_removed)
+    fresh = parts.store.reset_report(report_id, parts.clock.now()) if device is not None else None
     if fresh is None:
         raise HTTPException(404, parts.config.messages.not_found)
     log.info('The admin set report %s to be written again', fresh.id)

@@ -39,6 +39,7 @@ messages:
   chat_too_many: Too many chat requests from this Pi. Wait a moment.
   chat_failed: The AI company did not answer. Try again.
   report_no_key: No key is set for the weekly report. Put REPORT_API_KEY in cloud/.env.
+  report_pi_removed: This Pi was removed, so its report can't be run again. Link the Pi again first.
 
 # The website's "Add a Pi" box (the code only fills in {server_url} and {code})
 site:
@@ -128,7 +129,8 @@ report:
     daily_note: "\"Hours at desk\" lists the clock hours with at least {seconds} seconds at the desk (21h = 21:00-21:59). A long sit that crosses midnight counts toward the next day's longest sit."
     daily_header: "| Day | Desk min | Hours at desk | Water ml (sips) | Breaks | Longest sit min | Phone-free min | Phone on desk min | Sunlight min | Nudges |"
     first_evening_note: "The first evening's row is the whole day. Its numbers were already in last week's report and are not this week's, so adding that row to the others would count them twice."
-    total_label: "Total of the {count} day(s) with numbers (not the first evening, not a row that runs past the end)"
+    total_label: "Total of the {count} day(s) with numbers (not the first evening; a last row that runs past the end counts, and its label says how far)"
+    total_part_known: "{total} (only the {known} of {count} days known)"
     no_data_day: no data
     numbers_missing: "numbers not received; see the events"
     before_linked: "before this Pi was linked"
@@ -136,7 +138,7 @@ report:
     week_starts: " (this week starts at {time})"
     last_row_open: " (the week ends at {time})"
     last_row_as_of: " (numbers as of {sent})"
-    last_row_after_end: " (numbers as of {sent}, after the week ended at {end}; they include time outside this week)"
+    last_row_after_end: " (numbers as of {sent}, after the week ended at {end}; they may include this day's time up to {until}, which is outside this week)"
     hour_label: "{hour}h"
     hours_none: "-"
     unknown_number: "?"
@@ -193,3 +195,4 @@ report:
     refused: "The AI company would not write this report."
     bad_reply: "The AI company's answer was not in the form this server expects."
     unexpected: "The server hit a problem while writing this report."
+    pi_removed: "This Pi was removed before its report was written, so it was not written."

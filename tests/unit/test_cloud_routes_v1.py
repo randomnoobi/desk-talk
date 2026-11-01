@@ -151,6 +151,19 @@ def test_caught_up_and_last_seen_are_recorded(parts, client, token, ann):
     assert device.last_seen_at == device.caught_up_at == parts.clock.now()
 
 
+def test_an_empty_upload_says_the_pi_is_up_to_date(parts, client, token, ann):
+    parts.clock.advance(100)
+    reply = client.post('/v1/events', json={'events': [], 'caught_up': True}, headers=auth(token))
+    assert (reply.status_code, reply.json()) == (200, {'accepted': 0, 'repeats': 0, 'refused': []})
+    device = parts.store.get_device(ann.device.id)
+    assert device.last_seen_at == device.caught_up_at == parts.clock.now()
+
+
+def test_state_says_how_far_back_the_website_shows_events(parts, client, token, ann):
+    state = client.get(f'/v1/devices/{ann.device.id}/state', headers=auth(token)).json()
+    assert state['recent_hours'] == parts.config.site.recent_hours
+
+
 def test_removed_pi_gets_401(parts, client, token, ann):
     post_events(client, token, [habit()])
     parts.store.remove_device(ann.device.id, parts.clock.now())

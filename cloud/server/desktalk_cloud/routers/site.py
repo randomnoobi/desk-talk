@@ -173,9 +173,9 @@ def reports(request: Request, user: Annotated[User, Depends(current_user)],
     """The reports of one of my Pis, or of all of them. Newest week first. No report text: that is /api/reports/{id}."""
     store = parts_of(request).store
     mine = [_my_device(request, user, device_id)] if device_id is not None else store.list_devices(user.id)
-    found = [report for device in mine for report in store.list_reports(device.id)]
-    found.sort(key=lambda r: (r.week_start, r.id), reverse=True)
-    return [_report_row(r) for r in found]
+    found = [(report, device.name) for device in mine for report in store.list_reports(device.id, with_text=False)]
+    found.sort(key=lambda row: (row[0].week_start, row[0].id), reverse=True)
+    return [{**_report_row(report), 'device_name': name} for report, name in found]
 
 
 @router.get('/api/reports/{report_id}')

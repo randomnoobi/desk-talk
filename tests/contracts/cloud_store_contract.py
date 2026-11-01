@@ -9,11 +9,12 @@ or name (the routes and ingest.py refuse such an event before it gets here). So 
 from __future__ import annotations
 
 import threading
+from dataclasses import replace
 from typing import Any
 
 import pytest
 
-from desktalk_cloud.domain import Device, StateChange, User
+from desktalk_cloud.domain import DONE, Device, StateChange, User
 
 NOW = 1000.0
 LATER = 5000.0
@@ -338,6 +339,24 @@ class CloudStoreContract:
         save(store, device, [habit('e1', 10.0)])
         store.events_after(device.id, 0.0, None, 10)[0]['ml'] = 999
         assert store.events_after(device.id, 0.0, None, 10)[0]['ml'] == 30
+
+    def test_a_list_of_reports_can_leave_out_their_text(self, store):
+        device, _ = link(store, make_user(store))
+        report = store.create_report(device.id, '2026-10-19', NOW)
+        store.finish_report(report.id, DONE, '# A week', 'model', None, NOW)
+        full = store.list_reports(device.id)[0]
+        bare = store.list_reports(device.id, with_text=False)[0]
+        assert full.markdown == '# A week' and bare.markdown is None
+        assert replace(full, markdown=None) == bare
+
+    def test_an_empty_upload_counts_as_hearing_from_the_pi(self, store):
+        device, _ = link(store, make_user(store))
+        assert store.save_batch(device.id, [], [], [], True, 3000.0) == (0, 0)
+        heard = store.get_device(device.id)
+        assert (heard.last_seen_at, heard.caught_up_at) == (3000.0, 3000.0)
+        assert store.save_batch(device.id, [], [], [], False, 4000.0) == (0, 0)
+        heard = store.get_device(device.id)
+        assert (heard.last_seen_at, heard.caught_up_at) == (4000.0, 3000.0)
 
     def test_last_seen_and_caught_up(self, store):
         device, _ = link(store, make_user(store))

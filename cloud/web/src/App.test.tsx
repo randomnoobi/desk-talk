@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import App from './App'
@@ -18,7 +18,7 @@ describe('App', () => {
     fakeServer({
       'GET /api/me': { body: ME },
       'GET /api/devices': { body: DEVICES },
-      'GET /api/reports?device_id=d1': { body: { reports: [] } },
+      'GET /api/reports': { body: [] },
     })
     render(<App />)
     expect(await screen.findByRole('link', { name: /desk pi/i })).toBeInTheDocument()
@@ -31,10 +31,33 @@ describe('App', () => {
     fakeServer({
       'GET /api/me': { body: ME },
       'GET /api/devices': { body: DEVICES },
-      'GET /api/reports?device_id=d1': { body: { reports: [{ id: 'r1', device_id: 'd1', week_start: '2026-10-19', status: 'done', markdown: 'x', model: null, error: null, created_at: 1 }] } },
+      'GET /api/reports': { body: [{ id: 'r1', device_id: 'd1', device_name: 'Desk Pi', week_start: '2026-10-19', status: 'done', model: null, error: null, created_at: 1 }] },
     })
     render(<App />)
     expect(await screen.findByRole('link', { name: /^reports.*new/i })).toBeInTheDocument()
+  })
+
+  it('asks for the reports once each time the page changes, whatever the number of Pis', async () => {
+    const server = fakeServer({
+      'GET /api/me': { body: ME },
+      'GET /api/devices': { body: { devices: [{ id: 'd1', name: 'Desk Pi' }, { id: 'd2', name: 'Bed Pi' }] } },
+      'GET /api/reports': { body: [] },
+    })
+    render(<App />)
+    await screen.findByRole('link', { name: /desk pi/i })
+    await waitFor(() => expect(server.made('GET', '/api/reports')).toHaveLength(1))
+    expect(server.calls.filter(c => c.path.includes('device_id'))).toEqual([])
+  })
+
+  it.each(['#/pis/%', '#/reports/%E0%A4%A'])('falls back to the Pis page for an address that makes no sense: %s', async hash => {
+    window.location.hash = hash
+    fakeServer({
+      'GET /api/me': { body: ME },
+      'GET /api/devices': { body: DEVICES },
+      'GET /api/reports': { body: [] },
+    })
+    render(<App />)
+    expect(await screen.findByRole('link', { name: /desk pi/i })).toBeInTheDocument()
   })
 
   it('shows the admin page without a person logged in', async () => {
@@ -48,7 +71,7 @@ describe('App', () => {
     const server = fakeServer({
       'GET /api/me': { body: ME },
       'GET /api/devices': { body: DEVICES },
-      'GET /api/reports?device_id=d1': { body: { reports: [] } },
+      'GET /api/reports': { body: [] },
       'POST /auth/logout': { body: {} },
     })
     render(<App />)
@@ -61,7 +84,7 @@ describe('App', () => {
     const server = fakeServer({
       'GET /api/me': { body: ME },
       'GET /api/devices': { body: DEVICES },
-      'GET /api/reports?device_id=d1': { body: { reports: [] } },
+      'GET /api/reports': { body: [] },
       'DELETE /api/me': { status: 204 },
     })
     render(<App />)

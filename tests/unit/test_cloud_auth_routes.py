@@ -28,8 +28,10 @@ def _session(request: Request):                     # what the login cookie hold
     return dict(request.session)
 
 
-def build(parts) -> TestClient:
-    return TestClient(create_app(parts, [auth.router, peek]), follow_redirects=False)
+def build(parts, *, address: str | None = None) -> TestClient:
+    """A browser on `address`, or by default on the address Google sends the person back to."""
+    return TestClient(create_app(parts, [auth.router, peek]), follow_redirects=False,
+                      base_url=address or auth.google_return_address(parts.config))
 
 
 @pytest.fixture
@@ -246,3 +248,62 @@ def test_logout_needs_a_json_content_type(client, headers):
 def test_a_json_content_type_with_a_charset_or_capitals_is_fine(client):
     for kind in ('application/json; charset=utf-8', 'Application/JSON'):
         assert client.post('/auth/logout', content=b'{}', headers={'content-type': kind}).status_code == 200
+
+
+# ── coming from another address than the login address ───────────────
+LOGIN_ADDRESS = 'http://localhost:8080'
+BEHIND_NGINX = {'public_url': 'http://192.168.1.20:8080', 'login_url': LOGIN_ADDRESS}
+
+
+@pytest.fixture
+def behind_nginx(google):
+    return make_parts(cloud_config(server=BEHIND_NGINX), google=google)
+
+
+def test_login_from_another_address_goes_to_the_login_address_first_with_no_state(behind_nginx):
+    away = build(behind_nginx, address='http://192.168.1.20:8080')
+    reply = away.get('/auth/google/login')
+    assert reply.status_code == 302 and reply.headers['location'] == f'{LOGIN_ADDRESS}/auth/google/login'
+    assert away.get('/_test/session').json() == {}                          # no state on the address it left
+
+
+def test_the_whole_login_works_after_being_sent_to_the_login_address(behind_nginx):
+    sent_to = build(behind_nginx, address='http://192.168.1.20:8080').get('/auth/google/login').headers['location']
+    home = build(behind_nginx, address=LOGIN_ADDRESS)
+    reply = home.get(sent_to)
+    assert reply.headers['location'].startswith('https://google.test/login')
+    state = parse_qs(urlparse(reply.headers['location']).query)['state'][0]
+    back = home.get(CALLBACK, params={'code': 'ann-code', 'state': state})
+    assert back.status_code == 303 and back.headers['location'] == LOGIN_ADDRESS
+
+
+def test_the_address_to_go_to_never_comes_from_the_host_header(behind_nginx):
+    away = build(behind_nginx, address=LOGIN_ADDRESS)
+    reply = away.get('/auth/google/login', headers={'Host': 'evil.example.com', 'X-Forwarded-Host': 'evil.example.com'})
+    assert reply.status_code == 302 and reply.headers['location'] == f'{LOGIN_ADDRESS}/auth/google/login'
+
+
+def test_the_login_address_with_a_page_on_it_still_uses_only_its_address(google):
+    parts = make_parts(cloud_config(server={'login_url': 'https://desk.example.com/home'}), google=google)
+    reply = build(parts, address='http://192.168.1.20:8080').get('/auth/google/login')
+    assert reply.headers['location'] == 'https://desk.example.com/auth/google/login'
+
+
+@pytest.mark.parametrize('host', ['desk.example.com', 'DESK.example.com', 'desk.example.com:443'])
+def test_the_same_address_is_not_sent_round_again_whatever_way_it_is_spelled(google, host):
+    # nginx or another program in front may speak plain http to the server, so only the name and port are compared:
+    # comparing http with https here would send the browser round for ever
+    parts = make_parts(cloud_config(server={'login_url': 'https://desk.example.com'}), google=google)
+    reply = build(parts, address='http://internal').get('/auth/google/login', headers={'Host': host})
+    assert reply.headers['location'].startswith('https://google.test/login')
+
+
+def test_a_host_header_that_makes_no_sense_goes_to_the_login_address(behind_nginx):
+    reply = build(behind_nginx).get('/auth/google/login', headers={'Host': 'localhost:port'})
+    assert reply.headers['location'] == f'{LOGIN_ADDRESS}/auth/google/login'
+
+
+def test_google_not_set_up_is_said_before_any_move_so_the_login_button_can_show_it():
+    parts = make_parts(cloud_config(server=BEHIND_NGINX))
+    reply = build(parts, address='http://192.168.1.20:8080').get('/auth/google/login')
+    assert reply.status_code == 503 and reply.json()['detail'] == parts.config.messages.google_not_set_up

@@ -51,6 +51,9 @@ reports:                         # the weekly report
   hour_min_sec: 60               # an hour counts as "at the desk" with at least this many seconds there
   gap_min: 30                    # a stretch with no event of any kind this many minutes long or longer is listed in the report's data
 
+site:                            # the website
+  recent_hours: 24               # how many hours back a Pi's page lists its recent events
+
 chat:                            # letting a Pi use this server's AI key for chat (text only)
   url: https://generativelanguage.googleapis.com/v1beta/openai/chat/completions   # the AI company's chat completions address
   model: gemini-2.5-flash        # the model every chat request uses, whatever the Pi asks for

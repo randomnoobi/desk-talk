@@ -2,7 +2,8 @@
 settings.yaml and prompts.yaml. Run exactly one: there's no step where a program claims a report, so two would both pay
 the AI company for it.
 
-One bad round never ends the loop: the job just tries again later. A stop signal ends it after the round in progress."""
+One bad round never ends the loop: the job just tries again later. A stop signal ends it after the report in progress:
+the report job looks for the stop before starting each one, so a stop can't outlast compose.yaml's grace period."""
 
 from __future__ import annotations
 
@@ -45,6 +46,9 @@ class StopFlag:
     def set(self) -> None:
         self._stopped = True
 
+    def is_set(self) -> bool:
+        return self._stopped
+
     def wait(self, seconds: float) -> bool:
         """Sleep for `seconds` or until stopped. True when stopped."""
         left = seconds
@@ -82,11 +86,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         config = load_config(Path.cwd(), os.environ)
         url = database_url(config)
         store = PostgresStore(url)
-        jobs = build_jobs(config, store, clock)
+        stop = StopFlag(config.reports.stop_check_sec)
+        jobs = build_jobs(config, store, clock, stop.is_set)
     except ConfigError as error:
         log.error('%s', error)
         return 1
-    stop = StopFlag(config.reports.stop_check_sec)
     for stop_signal in (signal.SIGTERM, signal.SIGINT):
         signal.signal(stop_signal, lambda *_: stop.set())
     try:

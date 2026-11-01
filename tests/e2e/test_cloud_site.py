@@ -94,6 +94,14 @@ def site(cloud_site_folder: Path) -> Iterator[tuple[str, CloudParts]]:
             thread.join(START_WAIT_SEC)
 
 
+def test_logging_in_from_another_address_ends_up_on_the_login_address(page: Any, site: tuple[str, CloudParts]):
+    url, _ = site
+    page.goto(url.replace(THIS_COMPUTER, 'localhost'))              # this server, under a name Google won't return to
+    page.get_by_role('link', name='Log in with Google').click()
+    expect(page.get_by_role('button', name='Add a Pi')).to_be_visible()
+    assert page.url.startswith(url)
+
+
 def test_log_in_add_a_pi_see_it_listed_and_read_its_report(page: Any, site: tuple[str, CloudParts]):
     url, parts = site
     page.goto(url)

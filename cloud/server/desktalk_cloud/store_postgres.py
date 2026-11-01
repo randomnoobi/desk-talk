@@ -416,13 +416,17 @@ class PostgresStore:
     def get_report_by_id(self, report_id: str) -> Report | None:
         return self._one_report(_reports.c.id == report_id)
 
-    def _reports(self, *where: sa.ColumnElement[bool], order: Sequence[sa.ColumnElement[Any]]) -> list[Report]:
+    def _reports(self, *where: sa.ColumnElement[bool], order: Sequence[sa.ColumnElement[Any]],
+                 with_text: bool = True) -> list[Report]:
+        columns = _reports.c if with_text else [*(c for c in _reports.c if c is not _reports.c.markdown),
+                                                sa.null().label('markdown')]
         with self._engine.connect() as connection:
             return [_report(row) for row in
-                    connection.execute(sa.select(_reports).where(*where).order_by(*order)).mappings()]
+                    connection.execute(sa.select(*columns).where(*where).order_by(*order)).mappings()]
 
-    def list_reports(self, device_id: str) -> list[Report]:
-        return self._reports(_reports.c.device_id == device_id, order=[_bytes_order(_reports.c.week_start).desc()])
+    def list_reports(self, device_id: str, *, with_text: bool = True) -> list[Report]:
+        return self._reports(_reports.c.device_id == device_id, order=[_bytes_order(_reports.c.week_start).desc()],
+                             with_text=with_text)
 
     def reports_to_write(self, now: float) -> list[Report]:
         due = sa.or_(_reports.c.next_try_at.is_(None), _reports.c.next_try_at <= now)

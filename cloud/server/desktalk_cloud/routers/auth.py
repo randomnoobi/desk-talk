@@ -7,7 +7,8 @@ to a log.
 
 Google sends the person back to `server.login_url`'s address (the one the login cookie belongs to, which Google must
 accept: `localhost` or a real domain), not to `server.public_url`, which is the address a Pi reaches and may be a
-home network number."""
+home network number. A browser that starts from any other address is first sent to that one, because the state in
+the login cookie must be on the address Google comes back to."""
 
 from __future__ import annotations
 
@@ -29,7 +30,9 @@ log = logging.getLogger(__name__)
 
 SESSION_STATE = 'google_state'
 STATE_BYTES = 32                    # 256 bits of randomness, like a token
+LOGIN_PATH = '/auth/google/login'
 CALLBACK_PATH = '/auth/google/callback'
+DEFAULT_PORTS = {'http': 80, 'https': 443}
 
 
 JSON = 'application/json'
@@ -50,6 +53,22 @@ def google_return_address(config: CloudConfig) -> str:
     return f'{parts.scheme}://{parts.netloc}' if parts.scheme and parts.netloc else server.login_url.rstrip('/')
 
 
+def _is_on_return_address(request: Request, return_address: str) -> bool:
+    """Whether the browser is already on the address Google comes back to. Only the name and port are compared, because
+    nginx or another program in front may speak plain http to this server (comparing http with https would send the
+    browser round for ever). An address that can't be read as one (settings are checked at the start, a Host header
+    isn't) never matches a good one, and the browser is sent to the configured one, which always can be read."""
+    configured = urlsplit(return_address)
+    try:
+        here = urlsplit(f"//{request.headers.get('host', '')}")
+        if not configured.hostname or configured.scheme not in DEFAULT_PORTS:
+            return True                                         # nowhere usable to send the browser
+        default = DEFAULT_PORTS[configured.scheme]
+        return here.hostname == configured.hostname and (here.port or default) == (configured.port or default)
+    except ValueError:
+        return False
+
+
 def needs_json(request: Request) -> None:
     """For a route that changes things and reads its cookie: refuse anything not sent as JSON (415). A web page
     on another address can send a plain form or text with the cookie, but not as application/json without the
@@ -66,14 +85,16 @@ def _google(request: Request) -> GoogleLogin:
     return parts.google
 
 
-@router.get('/auth/google/login')
+@router.get(LOGIN_PATH)
 def google_login(request: Request) -> RedirectResponse:
     parts = parts_of(request)
-    google = _google(request)
+    google = _google(request)                                   # first: the login button shows this message, if any
+    home = google_return_address(parts.config)
+    if not _is_on_return_address(request, home):
+        return RedirectResponse(home + LOGIN_PATH, status_code=302)
     state = secrets.token_urlsafe(STATE_BYTES)
     request.session[SESSION_STATE] = state
-    back_to = google_return_address(parts.config) + CALLBACK_PATH
-    return RedirectResponse(google.login_url(state, back_to), status_code=302)
+    return RedirectResponse(google.login_url(state, home + CALLBACK_PATH), status_code=302)
 
 
 @router.get(CALLBACK_PATH)

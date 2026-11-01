@@ -338,6 +338,9 @@ def test_the_last_row_says_how_far_past_the_end_it_runs():
     after_end = row(build(totals=[late]), 'Sun 11-01')
     assert 'so far' not in after_end
     assert 'Sun Nov 01 22:30' in after_end and 'after the week ended at Sun Nov 01 20:00' in after_end
+    assert "this day's time up to Sun Nov 01 22:30" in after_end
+    much_later = row(build(totals=[{**late, 'ts': END + 3 * 86_400}]), 'Sun 11-01')
+    assert "this day's time up to Mon Nov 02 00:00" in much_later         # a day's numbers stop when the day does
     before_end = row(build(totals=[{**late, 'ts': END - 1800}]), 'Sun 11-01')
     assert 'as of Sun Nov 01 19:30' in before_end and 'after the week ended' not in before_end
 
@@ -452,10 +455,73 @@ def test_the_first_evenings_numbers_are_marked_as_last_weeks_and_this_weeks_rows
     assert 'Total' not in only_sunday and "already in last week's report" in only_sunday
 
 
-def test_a_last_row_that_runs_past_the_end_is_left_out_of_the_total():
+def test_a_last_row_that_runs_past_the_end_still_counts_in_the_total():
     late = {**totals_event('2026-11-01', desk_sec=7200), 'ts': END + 9000}
     text = build(totals=[totals_event('2026-10-26', desk_sec=3600), late])
-    assert 'the 1 day(s) with numbers' in row(text, 'Total') and '| 60 |' in row(text, 'Total')
+    total = row(text, 'Total')
+    assert 'the 2 day(s) with numbers' in total and 'not the first evening' in total
+    assert '| 180 |' in total                                             # 60 + 120 desk minutes
+    assert '| 1600 (20) | 4 | 30 |' in total                              # the breaks column counts it too
+    assert 'after the week ended at Sun Nov 01 20:00' in row(text, 'Sun 11-01')
+
+
+def test_a_late_last_day_is_in_exactly_one_of_two_weeks_totals():
+    """The store keeps only the newest numbers of a day, so a send at 21:05 replaced the one from before the end."""
+    late = {**totals_event('2026-11-01', desk_sec=7200), 'ts': END + 3900}
+    this_week = build(totals=[totals_event('2026-10-26', desk_sec=3600), late])
+    next_due = END + 7 * 86_400
+    next_week = build(totals=[late, totals_event('2026-11-02', desk_sec=1800)], now=next_due + 600,
+                      week=week_of(next_due, UTC_ZONE, 6, 20))
+    assert 'the 2 day(s) with numbers' in row(this_week, 'Total') and '| 180 |' in row(this_week, 'Total')
+    assert 'the 1 day(s) with numbers' in row(next_week, 'Total') and '| 30 |' in row(next_week, 'Total')
+    assert 'this week starts at 20:00' in row(next_week, 'Sun 11-01')      # next week shows it, but doesn't count it
+
+
+# ── numbers that can't be added or aren't known ──────────────────────────────────────────────────────────────────
+def test_a_number_too_big_for_float_maths_is_unknown_and_the_week_is_still_built():
+    huge = 10**400
+    goals = {**GOALS, 'goals': {**GOALS['goals'], 'water_ml': huge}}
+    events = [habit('h', at(28, 9), 'hydration', 'sip', ml=huge),
+              {'id': 'o', 'ts': at(28, 10), 'type': 'rule_outcome', 'rule': 'r', 'habit': 'breaks', 'result': 'acted',
+               'after_sec': huge}]
+    text = build(events, [totals_event('2026-10-26', water_ml=huge, desk_sec=huge)], goals=goals)
+    assert '| ? | ' in row(text, 'Mon 10-26') and '| ? (10) |' in row(text, 'Mon 10-26')
+    assert '| ? |' in row(text, 'Total') and '| ? (10) |' in row(text, 'Total')
+
+
+def test_a_total_too_big_to_add_up_is_unknown():
+    big = {'desk_sec': 1e308, 'water_ml': 10**308}
+    text = build(totals=[totals_event('2026-10-26', **big), totals_event('2026-10-27', **big),
+                         totals_event('2026-10-28', desk_sec=1e308, water_ml=1.5)])
+    assert '| ? |' in row(text, 'Total') and '| ? (30) |' in row(text, 'Total')
+
+
+def without(day: str, *names: str) -> dict:
+    event = totals_event(day)
+    for name in names:
+        del event['totals'][name]
+    return event
+
+
+def test_a_total_column_unknown_on_every_day_shows_the_unknown_mark_not_zero():
+    text = build(totals=[without('2026-10-26', 'water_ml', 'sunlight_minutes', 'longest_sit_sec'),
+                         without('2026-10-27', 'water_ml', 'sunlight_minutes', 'longest_sit_sec')])
+    cells = [cell.strip() for cell in row(text, 'Total').split('|')]
+    assert cells[2] == '120' and cells[4] == '? (20)' and cells[6] == '?' and cells[9] == '?'
+
+
+def test_a_total_column_known_on_some_days_says_it_covers_only_those():
+    text = build(totals=[totals_event('2026-10-26'), without('2026-10-27', 'water_ml', 'longest_sit_sec'),
+                         totals_event('2026-10-28')])
+    cells = [cell.strip() for cell in row(text, 'Total').split('|')]
+    partly = _partly_known('1600', 2, 3)
+    assert cells[4] == f'{partly} (30)'
+    assert cells[6] == _partly_known('30', 2, 3)
+    assert cells[2] == '180'                                              # known on every day: nothing to say
+
+
+def _partly_known(total: str, known: int, count: int) -> str:
+    return str(DATA_WORDS['total_part_known']).format(total=total, known=known, count=count)
 
 
 @pytest.mark.parametrize('goal', [None, {'a': 1}, [1], 'text', float('nan')])

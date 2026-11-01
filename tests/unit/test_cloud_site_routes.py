@@ -30,8 +30,8 @@ def app(parts):
     return create_app(parts, [auth.router, site.router])
 
 
-def sign_in(app, who: str) -> TestClient:
-    client = TestClient(app, follow_redirects=False)
+def sign_in(app, who: str, address: str = cloud_config().server.public_url) -> TestClient:
+    client = TestClient(app, follow_redirects=False, base_url=address)
     reply = client.get('/auth/google/login')
     state = parse_qs(urlparse(reply.headers['location']).query)['state'][0]
     assert client.get('/auth/google/callback', params={'code': f'{who}-code', 'state': state}).status_code == 303
@@ -136,7 +136,7 @@ def test_a_trailing_slash_in_the_public_url_is_not_doubled():
     google = FakeGoogleLogin()
     google.people['ann-code'] = GoogleUser(sub='g', email='a@example.com', name='A', email_verified=True)
     parts = make_parts(cloud_config(server={'public_url': 'http://192.168.1.9:8000/'}), google=google)
-    client = sign_in(create_app(parts, [auth.router, site.router]), 'ann')
+    client = sign_in(create_app(parts, [auth.router, site.router]), 'ann', 'http://192.168.1.9:8000')
     body = client.post('/api/devices/code', json={'time_zone': 'UTC'}).json()
     assert body['server_url'] == 'http://192.168.1.9:8000'
     assert 'http://192.168.1.9:8000' in body['command']
@@ -269,7 +269,8 @@ def test_reports_list_has_no_text_and_is_newest_first(parts, ann, ann_client):
     report_for(parts, ann.device, '2026-10-19')
     rows = ann_client.get('/api/reports', params={'device_id': ann.device.id}).json()
     assert [r['week_start'] for r in rows] == ['2026-10-19', '2026-10-12']
-    assert set(rows[0]) == {'id', 'device_id', 'week_start', 'status', 'model', 'error', 'created_at'}
+    assert set(rows[0]) == {'id', 'device_id', 'device_name', 'week_start', 'status', 'model', 'error', 'created_at'}
+    assert rows[0]['device_name'] == ann.device.name
     assert 'Secret' not in str(rows)
 
 
@@ -281,6 +282,20 @@ def test_reports_without_a_device_lists_all_my_pis(parts, ann, ann_client, bob):
     rows = ann_client.get('/api/reports').json()
     assert [(r['device_id'], r['week_start']) for r in rows] == [(second.device.id, '2026-10-19'),
                                                                   (ann.device.id, '2026-10-12')]
+
+
+def test_the_list_of_reports_does_not_load_their_text(parts, ann, ann_client, monkeypatch):
+    report_for(parts, ann.device)
+    asked: list[bool] = []
+    real = parts.store.list_reports
+
+    def spy(device_id, *, with_text=True):
+        asked.append(with_text)
+        return real(device_id, with_text=with_text)
+
+    monkeypatch.setattr(parts.store, 'list_reports', spy)
+    assert len(ann_client.get('/api/reports').json()) == 1
+    assert asked == [False]
 
 
 def test_reports_of_other_persons_device_is_404(parts, ann, bob_client):
@@ -324,7 +339,7 @@ def test_the_setup_command_uses_the_pis_address_not_the_login_address():
     google.people['ann-code'] = GoogleUser(sub='g', email='a@example.com', name='A', email_verified=True)
     parts = make_parts(cloud_config(server={'public_url': 'http://192.168.1.20:8000',
                                             'login_url': 'http://localhost:8000'}), google=google)
-    client = sign_in(create_app(parts, [auth.router, site.router]), 'ann')
+    client = sign_in(create_app(parts, [auth.router, site.router]), 'ann', 'http://localhost:8000')
     body = client.post('/api/devices/code', json={'time_zone': 'UTC'}).json()
     assert body['server_url'] == 'http://192.168.1.20:8000' and 'http://192.168.1.20:8000' in body['command']
     assert 'localhost' not in body['command']

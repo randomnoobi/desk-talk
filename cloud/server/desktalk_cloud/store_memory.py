@@ -295,10 +295,11 @@ class MemoryStore:
         with self._lock:
             return self._reports.get(report_id)
 
-    def list_reports(self, device_id: str) -> list[Report]:
+    def list_reports(self, device_id: str, *, with_text: bool = True) -> list[Report]:
         with self._lock:
-            return sorted((r for r in self._reports.values() if r.device_id == device_id),
-                          key=lambda r: r.week_start, reverse=True)
+            found = sorted((r for r in self._reports.values() if r.device_id == device_id),
+                           key=lambda r: r.week_start, reverse=True)
+            return found if with_text else [replace(r, markdown=None) for r in found]
 
     def reports_to_write(self, now: float) -> list[Report]:
         with self._lock:

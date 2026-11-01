@@ -160,7 +160,7 @@ class Store(Protocol):
 
     def get_report_by_id(self, report_id: str) -> Report | None: ...
 
-    def list_reports(self, device_id: str) -> list[Report]:
+    def list_reports(self, device_id: str, *, with_text: bool = True) -> list[Report]:
         """Newest week first."""
         ...
 

@@ -113,6 +113,10 @@ class ReportSettings(_Section):
         return self
 
 
+class SiteSettings(_Section):
+    recent_hours: PositiveNumber
+
+
 class ChatSettings(_Section):
     url: str
     model: str
@@ -167,6 +171,7 @@ class Messages(_Section):
     chat_too_many: str
     chat_failed: str
     report_no_key: str
+    report_pi_removed: str
 
 
 class Secrets(_Section):
@@ -188,6 +193,7 @@ class CloudConfig(_Section):
     pairing: PairingSettings
     ingest: IngestSettings
     reports: ReportSettings
+    site: SiteSettings
     chat: ChatSettings
     retention: RetentionSettings
     limits: LimitSettings
@@ -253,7 +259,7 @@ def load_config(root: Path, environ: Mapping[str, str]) -> CloudConfig:
                 server[key] = _env(environ, name)
     try:
         sections = {name: settings.get(name) for name in
-                    ('server', 'google', 'pairing', 'ingest', 'reports', 'chat', 'retention', 'limits')}
+                    ('server', 'google', 'pairing', 'ingest', 'reports', 'site', 'chat', 'retention', 'limits')}
         unknown = sorted(set(settings) - set(sections))
         if unknown:
             raise ConfigError(f"{SETTINGS_FILE}: '{unknown[0]}' is not a section the server knows")
@@ -277,6 +283,7 @@ class _Parts(_Section):
     pairing: PairingSettings
     ingest: IngestSettings
     reports: ReportSettings
+    site: SiteSettings
     chat: ChatSettings
     retention: RetentionSettings
     limits: LimitSettings

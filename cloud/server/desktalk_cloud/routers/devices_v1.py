@@ -50,8 +50,10 @@ async def claim(request: Request) -> dict[str, Any]:
 
 @router.get('/v1/devices/{device_id}/state')
 def state(request: Request, device: Annotated[Device, Depends(owner_or_device)]) -> dict[str, Any]:
-    store = parts_of(request).store
+    parts = parts_of(request)
+    store = parts.store
     return {
+        'recent_hours': parts.config.site.recent_hours,
         'device': {'id': device.id, 'name': device.name, 'time_zone': device.time_zone,
                    'removed': device.removed_at is not None},
         'last_seen_at': device.last_seen_at,

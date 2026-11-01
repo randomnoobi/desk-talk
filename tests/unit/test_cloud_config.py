@@ -27,6 +27,7 @@ def test_spec_defaults():
     assert (config.reports.wait_for_pi_days, config.reports.max_tries) == (2, 3)
     assert (config.reports.provider, config.reports.model) == ('anthropic', 'claude-sonnet-5-5')
     assert config.server.https_only is False
+    assert config.site.recent_hours == 24
     assert config.google.auth_url.startswith('https://accounts.google.com/')
     assert config.chat.url and config.chat.model and config.chat.limit_requests > 0
 

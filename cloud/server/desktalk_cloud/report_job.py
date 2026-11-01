@@ -5,13 +5,15 @@ data. A report that fails is tried again a few times, then marked failed (the ad
 
 One Pi's trouble never stops another's report. A report is never written twice (the store keeps one row per Pi and
 week), and after a long sleep only the newest week is started. A row left pending by a run that stopped is finished by
-the next run. Settings: cloud/settings.yaml → reports. Words: cloud/prompts.yaml → report.
+the next run, and one whose Pi was removed is marked failed without asking the AI. A stop is looked for before each
+report, so a stop can't outlast the grace period by starting another. Settings: cloud/settings.yaml → reports. Words:
+cloud/prompts.yaml → report.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -36,14 +38,23 @@ def _has_numbers(event: Mapping[str, Any]) -> bool:
     return isinstance(totals, Mapping) and any(isinstance(v, (int, float)) and v != 0 for v in totals.values())
 
 
+def _counts_for_the_week(event: Mapping[str, Any], first_day: str, end_day: str, end: float) -> bool:
+    """Whether a day's numbers show this week had data. It goes by the day, because `ts` is when they were sent: a day
+    wholly inside the week counts whenever it came. The first evening is mostly last week's, so it doesn't. The day the
+    week ends on counts only if its numbers were sent by the end, since later ones could be all from after it."""
+    day = str(event.get('day'))
+    return day >= first_day and (day != end_day or event.get('ts', 0) <= end)
+
+
 class ReportJob:
     """A PeriodicWorker (desktalk-style): tick() does one round and says how many seconds until the next."""
 
     name = 'weekly report'
 
     def __init__(self, store: Store, writer: ReportWriter, clock: Clock, settings: ReportSettings,
-                 prompts: ReportWords) -> None:
+                 prompts: ReportWords, should_stop: Callable[[], bool] = lambda: False) -> None:
         self._store, self._writer, self._clock, self._settings, self._words = store, writer, clock, settings, prompts
+        self._should_stop = should_stop
         self._awake_since: float | None = None       # when this server last started or woke up (kept in memory only)
         self._last_round_end: float | None = None
 
@@ -62,13 +73,18 @@ class ReportJob:
             self._last_round_end = max(now, self._clock.now())
 
     def _round(self, now: float) -> float:
-        devices = {d.id: d for d in self._store.list_all_devices() if d.removed_at is None}
+        devices = {d.id: d for d in self._store.list_all_devices()}
         for device in devices.values():
-            self._guarded(device.id, self._start_week, device, now)
+            if device.removed_at is None:
+                self._guarded(device.id, self._start_week, device, now)
         for report in self._store.reports_to_write(now):
+            if self._should_stop():
+                break                                # the next run finishes the rest
             device = devices.get(report.device_id)
-            if device is not None:
-                self._guarded(device.id, self._write, report, device, now)
+            if device is None:
+                continue
+            step = self._give_up_on if device.removed_at is not None else self._write
+            self._guarded(device.id, step, report, device, now)
         return self._settings.check_every_min * SECONDS_IN_MINUTE
 
     def _guarded(self, device_id: str, step, *args) -> None:
@@ -87,6 +103,11 @@ class ReportJob:
         due = latest_due(now, zone, self._settings.weekday, self._settings.hour)
         if device.created_at <= due:
             self._store.create_report(device.id, self._week(due, zone)[2], now)
+
+    def _give_up_on(self, report: Report, _device: Device, _now: float) -> None:
+        """A removed Pi's report: nobody is waiting for it, and linking the Pi again must not get it written and paid
+        for."""
+        self._store.finish_report(report.id, FAILED, None, None, self._words.errors['pi_removed'], self._clock.now())
 
     # ── writing one ──
     def _ready(self, device: Device, report: Report, end: float, now: float) -> bool:
@@ -132,12 +153,11 @@ class ReportJob:
         first = date.fromisoformat(first_day)
         last_day = (first + timedelta(days=DAYS_IN_WEEK - 1)).isoformat()
         start_day = datetime.fromtimestamp(start, zone).date().isoformat()      # the evening before the first whole day
+        end_day = datetime.fromtimestamp(end, zone).date().isoformat()          # (ending at midnight: the next day)
         events = self._store.events_between(device.id, start, end)
         totals = self._store.totals_between(device.id, start_day, last_day)
-        # (the first evening's day is mostly last week's, and numbers sent after the week ended are not from it: neither
-        # counts as this week having data)
-        week_totals = [t for t in totals if str(t.get('day')) >= first_day and t.get('ts', 0) <= end]
-        if not any(e.get('type') != GOALS for e in events) and not any(_has_numbers(t) for t in week_totals):
+        if not any(e.get('type') != GOALS for e in events) and not any(
+                _has_numbers(t) and _counts_for_the_week(t, first_day, end_day, end) for t in totals):
             return None
         return build_week(device, events, totals, self._store.latest_event(device.id, GOALS),
                           self._store.object_states(device.id), self._store.latest_event(device.id, CAMERA), now, week,

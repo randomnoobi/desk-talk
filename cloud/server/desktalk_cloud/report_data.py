@@ -15,7 +15,7 @@ import math
 import re
 import unicodedata
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, tzinfo
 from typing import Any
@@ -29,21 +29,20 @@ __all__ = ['DATA_WORD_KEYS', 'ERROR_WORD_KEYS', 'ReportWords', 'build_week', 'lo
 
 # Every wording report.data in cloud/prompts.yaml must have (and no other).
 DATA_WORD_KEYS = (
-    'title', 'times', 'last_day_open', 'h_read', 'read_notes', 'no_data_means_off', 'not_caught_up',
-    'never_heard', 'linked_note', 'h_goals', 'schedule', 'goal_lines', 'goals_missing', 'h_daily', 'daily_note',
-    'daily_header', 'first_evening_note', 'total_label', 'no_data_day', 'numbers_missing', 'before_linked',
-    'first_evening', 'week_starts', 'last_row_open', 'last_row_as_of', 'last_row_after_end', 'hour_label',
-    'hours_none', 'unknown_number', 'breaks_split', 'breaks_part', 'breaks_other', 'h_gaps', 'gaps_intro',
-    'gaps_none', 'gaps_after_heard', 'gaps_never_heard', 'gap_line', 'duration_hm', 'duration_m', 'h_nudges',
-    'outcomes_none', 'outcomes_app', 'outcomes_estimate', 'nudge_header', 'no_nudges', 'tasks_left_out',
-    'detail_app', 'result_acted', 'result_no_sign', 'result_cannot_tell', 'sign_break', 'sign_sip',
-    'sign_phone', 'sign_laptop', 'detail_cannot_tell', 'detail_nothing_later', 'detail_acted', 'detail_late',
-    'detail_week_ended', 'h_snapshot', 'snapshot_intro', 'snapshot_none', 'camera_problem', 'snapshot_header',
-    'all_objects_intro', 'h_events', 'events_note')
+    'title', 'times', 'last_day_open', 'h_read', 'read_notes', 'no_data_means_off', 'not_caught_up', 'never_heard',
+    'linked_note', 'h_goals', 'schedule', 'goal_lines', 'goals_missing', 'h_daily', 'daily_note', 'daily_header',
+    'first_evening_note', 'total_label', 'total_part_known', 'no_data_day', 'numbers_missing', 'before_linked',
+    'first_evening', 'week_starts', 'last_row_open', 'last_row_as_of', 'last_row_after_end', 'hour_label', 'hours_none',
+    'unknown_number', 'breaks_split', 'breaks_part', 'breaks_other', 'h_gaps', 'gaps_intro', 'gaps_none',
+    'gaps_after_heard', 'gaps_never_heard', 'gap_line', 'duration_hm', 'duration_m', 'h_nudges', 'outcomes_none',
+    'outcomes_app', 'outcomes_estimate', 'nudge_header', 'no_nudges', 'tasks_left_out', 'detail_app', 'result_acted',
+    'result_no_sign', 'result_cannot_tell', 'sign_break', 'sign_sip', 'sign_phone', 'sign_laptop', 'detail_cannot_tell',
+    'detail_nothing_later', 'detail_acted', 'detail_late', 'detail_week_ended', 'h_snapshot', 'snapshot_intro',
+    'snapshot_none', 'camera_problem', 'snapshot_header', 'all_objects_intro', 'h_events', 'events_note')
 
 # The reasons a report failed (report.errors in cloud/prompts.yaml), and `no_key`, which is messages.report_no_key.
 ERROR_WORD_KEYS = ('status', 'key_refused', 'unreachable', 'timeout', 'empty', 'cut_off', 'refused', 'bad_reply',
-                   'unexpected')
+                   'unexpected', 'pi_removed')
 
 DATA_OPEN, DATA_CLOSE = '<data>', '</data>'
 MARKER = re.compile(r'<(?=\s*/?\s*data)', re.IGNORECASE)      # the start of anything that looks like a data tag
@@ -104,9 +103,14 @@ def with_data(prompt: str, data: str) -> str:
 
 # ── small helpers ────────────────────────────────────────────────────────────────────────────────────────────────
 def _number(value: Any) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+    """The value if it is a number that sums can use, else None. (math.isfinite raises on a whole number too big for
+    float maths.)"""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return value
+    try:
+        return value if math.isfinite(value) else None
+    except OverflowError:
+        return None
 
 
 def _show(value: float | None, unknown: str = '?') -> str:
@@ -311,20 +315,20 @@ def _daily_rows(ctx: _Ctx, device: Device, totals: Sequence[Mapping[str, Any]], 
             how_by_day.setdefault(ctx.day_of(e['ts']), Counter())[str(e.get('how', '?'))] += 1
     linked_day = ctx.day_of(device.created_at)
     rows: list[str] = []
-    counted: list[dict[str, float | None]] = []              # the rows that are all this week's, to add up
+    counted: list[dict[str, float | None]] = []              # every row but the first evening's, to add up
     for day in days:
         label = f'{day:%a %m-%d}'
         stored = by_day.get(day.isoformat())
         found = stored['totals'] if stored is not None else None
-        after_end = False
         if day == first_evening:
             label += _fill(words['first_evening' if found else 'week_starts'], time=ctx.when(ctx.start, '%H:%M'))
         elif day == last_open:
             if stored is None:
                 label += _fill(words['last_row_open'], time=ctx.when(ctx.end, '%H:%M'))
             elif stored['ts'] > ctx.end:
-                after_end = True
-                label += _fill(words['last_row_after_end'], sent=ctx.when(stored['ts']), end=ctx.when(ctx.end))
+                day_over = datetime.combine(day + timedelta(days=1), time(0), tzinfo=ctx.zone).timestamp()
+                label += _fill(words['last_row_after_end'], sent=ctx.when(stored['ts']), end=ctx.when(ctx.end),
+                               until=ctx.when(min(stored['ts'], day_over)))
             else:
                 label += _fill(words['last_row_as_of'], sent=ctx.when(stored['ts']))
         if found is None:
@@ -335,10 +339,9 @@ def _daily_rows(ctx: _Ctx, device: Device, totals: Sequence[Mapping[str, Any]], 
         value = {name: _number(found.get(name)) for name in DAILY_FIELDS}
         desk_hours = [_fill(words['hour_label'], hour=h) for h in range(HOURS_IN_DAY)
                       if (_number(found.get(f'hour_{h:02d}')) or 0) >= ctx.settings.hour_min_sec]
-        if day != first_evening and not after_end:
+        if day != first_evening:
             counted.append(value)
-        breaks = _breaks_cell(ctx, value['breaks'], how_by_day.get(day, Counter()),
-                              remark=day != first_evening and not after_end)
+        breaks = _breaks_cell(ctx, value['breaks'], how_by_day.get(day, Counter()), remark=day != first_evening)
         cells = [label, _minutes_or(value['desk_sec'], unknown), ', '.join(desk_hours) or str(words['hours_none']),
                  f"{_show(value['water_ml'], unknown)} ({_show(value['sips'], unknown)})", breaks,
                  _minutes_or(value['longest_sit_sec'], unknown), _minutes_or(value['phone_free_sec'], unknown),
@@ -350,19 +353,39 @@ def _daily_rows(ctx: _Ctx, device: Device, totals: Sequence[Mapping[str, Any]], 
     return rows
 
 
+def _added_up(numbers: Sequence[float]) -> float | None:
+    """The sum, or None when it is too big for sums to use."""
+    try:
+        return _number(sum(numbers))
+    except OverflowError:
+        return None
+
+
 def _total_row(ctx: _Ctx, counted: Sequence[Mapping[str, float | None]]) -> str:
     """This week's rows added up (the longest sit is the longest of them), so nobody has to add them in their head
-    or add the first evening's row, which was in last week's report."""
-    unknown = ctx.unknown
+    or add the first evening's row, which was in last week's report. A week's last day always counts, even when its
+    numbers were sent after the week ended: the store keeps only a day's newest numbers, and next week's report leaves
+    the day out as its first evening. A column no row knows shows the unknown mark, not 0, and one only some rows know
+    says the total covers just those."""
+    words, unknown = ctx.words, ctx.unknown
 
-    def add(name: str) -> float:
-        return sum(value[name] or 0 for value in counted)
+    def column(name: str, show: Callable[[float], str], combine: Callable[[Sequence[float]], float | None] = _added_up
+               ) -> str:
+        known = [number for value in counted if (number := value[name]) is not None]
+        total = combine(known) if known else None
+        if total is None:
+            return unknown
+        if len(known) == len(counted):
+            return show(total)
+        return _fill(words['total_part_known'], total=show(total), known=len(known), count=len(counted))
 
-    cells = [_fill(ctx.words['total_label'], count=len(counted)), _minutes_or(add('desk_sec'), unknown), '',
-             f"{_show(add('water_ml'), unknown)} ({_show(add('sips'), unknown)})", _show(add('breaks'), unknown),
-             _minutes_or(max(value['longest_sit_sec'] or 0 for value in counted), unknown),
-             _minutes_or(add('phone_free_sec'), unknown), _minutes_or(add('phone_on_desk_sec'), unknown),
-             _show(add('sunlight_minutes'), unknown), _show(add('nudges_sent'), unknown)]
+    def minutes(seconds: float) -> str:
+        return str(_minutes(seconds))
+
+    cells = [_fill(words['total_label'], count=len(counted)), column('desk_sec', minutes), '',
+             f"{column('water_ml', _show)} ({column('sips', _show)})", column('breaks', _show),
+             column('longest_sit_sec', minutes, max), column('phone_free_sec', minutes),
+             column('phone_on_desk_sec', minutes), column('sunlight_minutes', _show), column('nudges_sent', _show)]
     return '| ' + ' | '.join(cells) + ' |'
 
 

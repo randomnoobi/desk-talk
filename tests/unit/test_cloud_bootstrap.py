@@ -9,6 +9,7 @@ import logging
 import re
 import signal
 import tomllib
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -175,7 +176,7 @@ def writer_of(jobs) -> Any:
 
 
 def test_the_jobs_are_the_weekly_report_and_the_clean_up():
-    jobs = bootstrap.build_jobs(cloud_config(), MemoryStore(), FakeClock())
+    jobs = bootstrap.build_jobs(cloud_config(), MemoryStore(), FakeClock(), lambda: False)
     assert sorted(type(job).__name__ for job in jobs) == ['ReportJob', 'RetentionJob']
     assert isinstance(jobs[1], RetentionJob)
     assert isinstance(writer_of(jobs), AnthropicReportWriter)
@@ -183,7 +184,8 @@ def test_the_jobs_are_the_weekly_report_and_the_clean_up():
 
 def test_the_report_writer_follows_the_provider_setting():
     config = cloud_config(reports={'provider': 'openai_compatible', 'url': 'http://nowhere.invalid/chat'})
-    assert isinstance(writer_of(bootstrap.build_jobs(config, MemoryStore(), FakeClock())), OpenAIReportWriter)
+    jobs = bootstrap.build_jobs(config, MemoryStore(), FakeClock(), lambda: False)
+    assert isinstance(writer_of(jobs), OpenAIReportWriter)
 
 
 # ── logs: what Postgres says stays out of them ─────────────────────────
@@ -437,7 +439,7 @@ def test_the_stop_flag_looks_for_a_stop_as_often_as_it_is_told(monkeypatch):
 
 
 def reports_program(monkeypatch, jobs) -> None:
-    monkeypatch.setattr(reports_main, 'build_jobs', lambda config, store, clock: jobs)
+    monkeypatch.setattr(reports_main, 'build_jobs', lambda config, store, clock, should_stop: jobs)
 
 
 @pytest.fixture(autouse=True)
@@ -462,6 +464,26 @@ def test_the_report_program_stops_cleanly_on_a_stop_signal(program, monkeypatch,
     assert program == ['logging', ('migrations', DATABASE), 'dispose']
     assert len(job.ticks) == 1
     assert ready.exists()
+
+
+def test_a_stop_signal_reaches_the_report_job_while_its_round_is_running(program, monkeypatch):
+    given: list[Callable[[], bool]] = []
+    seen: list[bool] = []
+
+    class LooksForTheStop(Job):
+        def tick(self, now: float) -> float:
+            seen.append(given[0]())
+            signal.raise_signal(signal.SIGTERM)
+            seen.append(given[0]())
+            return super().tick(now)
+
+    def build_jobs(config, store, clock, should_stop):
+        given.append(should_stop)
+        return [LooksForTheStop('job', 3600)]
+
+    monkeypatch.setattr(reports_main, 'build_jobs', build_jobs)
+    assert reports_main.main([]) == 0
+    assert seen == [False, True]
 
 
 def test_the_report_program_says_it_is_ready_only_after_the_migrations(program, monkeypatch, tmp_path, caplog):

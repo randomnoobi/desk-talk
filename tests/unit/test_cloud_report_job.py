@@ -529,3 +529,137 @@ def test_numbers_sent_after_the_week_ended_are_not_this_weeks_data():
     other.go_to(DUE + 600)
     other.tick()
     assert other.report().status == DONE
+
+
+# ── days sent late ───────────────────────────────────────────────────────────────────────────────────────────────
+def sent_late(day: str, **numbers) -> dict[str, Any]:
+    return {**daily(day, **numbers), 'ts': DUE + 9000}
+
+
+def test_numbers_of_days_inside_the_week_count_whenever_they_were_sent():
+    s = Setup()
+    s.store.save_batch(s.ann.id, [], [sent_late('2026-10-26', desk_sec=3600), sent_late('2026-10-31', desk_sec=1800)],
+                       [], True, DUE + 9000)                                # offline until after the due moment
+    s.go_to(DUE + 9100)
+    s.tick()
+    assert s.report().status == DONE and '| Mon 10-26 | 60 |' in s.writer.calls[0][1]
+
+
+def test_the_last_day_sent_late_counts_when_the_week_has_other_data():
+    s = Setup()
+    s.store.save_batch(s.ann.id, [], [sent_late('2026-10-28', desk_sec=3600), sent_late('2026-11-01', desk_sec=7200)],
+                       [], True, DUE + 9000)
+    s.go_to(DUE + 9100)
+    s.tick()
+    assert s.report().status == DONE
+    total = next(line for line in s.writer.calls[0][1].splitlines() if line.startswith('| Total'))
+    assert '| 180 |' in total
+
+
+def test_the_first_evening_sent_late_still_does_not_count():
+    s = Setup()
+    s.store.save_batch(s.ann.id, [], [sent_late('2026-10-25', desk_sec=7200)], [], True, DUE + 9000)
+    s.go_to(DUE + 9100)
+    s.tick()
+    assert s.report().status == NO_DATA and s.writer.calls == []
+
+
+def test_in_a_week_ending_at_midnight_the_last_day_is_a_whole_day_inside_it():
+    settings = SETTINGS.model_copy(update={'hour': 0})
+    s = Setup()
+    s.job = ReportJob(s.store, s.writer, s.clock, settings, WORDS)
+    due = datetime(2026, 11, 1, 0, tzinfo=UTC).timestamp()
+    last = {'id': 'daily-2026-10-31', 'ts': due + 1800, 'type': 'daily_totals', 'day': '2026-10-31',
+            'totals': {'desk_sec': 3600}}
+    s.store.save_batch(s.ann.id, [], [last], [], True, due + 1800)
+    s.go_to(due + 2000)
+    s.tick()
+    assert s.report(week='2026-10-25').status == DONE
+
+
+def test_a_number_too_big_for_float_maths_does_not_fail_the_report():
+    s = Setup()
+    s.store.save_batch(s.ann.id, [], [daily('2026-10-28', desk_sec=10**400, water_ml=500)], [], True, DUE + 300)
+    s.go_to(DUE + 600)
+    s.tick()
+    assert s.report().status == DONE and s.report().tries == 0
+
+
+# ── a removed Pi ─────────────────────────────────────────────────────────────────────────────────────────────────
+def link_again(s: Setup, device, now: float) -> None:
+    s.store.add_code('again-hash', device.user_id, device.id, 'UTC', now + 600)
+    assert s.store.claim_code('again-hash', 'x', 'new-token-hash', now) is not None
+
+
+def test_a_pending_report_of_a_removed_pi_is_marked_failed_with_no_ai_call():
+    s = Setup()
+    s.send(at_ts=DUE - 100, events=[sip('s1', at(28, 9))], caught_up=False)
+    s.go_to(DUE + 600)
+    s.tick()
+    assert s.report().status == PENDING
+    s.store.remove_device(s.ann.id, DUE + 700)
+    s.go_to(DUE + 900)
+    s.tick()
+    report = s.report()
+    assert (report.status, report.error) == (FAILED, WORDS.errors['pi_removed']) and s.writer.calls == []
+
+
+def test_linking_again_later_does_not_get_the_old_report_written_and_paid_for():
+    s = Setup()
+    s.send(at_ts=DUE - 100, events=[sip('s1', at(28, 9))], caught_up=False)
+    s.go_to(DUE + 600)
+    s.tick()
+    s.store.remove_device(s.ann.id, DUE + 700)
+    s.go_to(DUE + 900)
+    s.tick()
+    link_again(s, s.ann, DUE + 3600)
+    s.send(at_ts=DUE + 3700)
+    s.go_to(DUE + 3800)
+    s.tick()
+    assert s.report().status == FAILED and s.writer.calls == []
+
+
+def test_one_removed_pi_does_not_stop_the_others_reports():
+    s = Setup()
+    bob = link_device(s.parts, 'bob').device
+    for pi in (s.ann, bob):
+        s.send(pi, events=[sip(f's-{pi.id}', at(28, 9))], at_ts=DUE - 100, caught_up=False)
+    s.go_to(DUE + 600)
+    s.tick()
+    s.store.remove_device(s.ann.id, DUE + 700)
+    s.send(bob, at_ts=DUE + 800)
+    s.go_to(DUE + 900)
+    s.tick()
+    assert s.report().status == FAILED and s.report(bob).status == DONE
+
+
+# ── stopping ─────────────────────────────────────────────────────────────────────────────────────────────────────
+def test_a_stop_during_a_round_starts_no_more_reports():
+    stop = {'asked': False}
+
+    class StoppedWhileWriting(FakeReportWriter):
+        def write(self, prompt: str, data: str) -> str:
+            stop['asked'] = True
+            return super().write(prompt, data)
+
+    s = Setup(writer=StoppedWhileWriting('# The week'))
+    s.job = ReportJob(s.store, s.writer, s.clock, SETTINGS, WORDS, should_stop=lambda: stop['asked'])
+    bob = link_device(s.parts, 'bob').device
+    for pi in (s.ann, bob):
+        s.send(pi, events=[sip(f's-{pi.id}', at(28, 9))], at_ts=DUE + 300)
+    s.go_to(DUE + 600)
+    s.tick()
+    assert len(s.writer.calls) == 1
+    assert sorted((s.report().status, s.report(bob).status)) == sorted((DONE, PENDING))
+    stop['asked'] = False                                                  # the next run finishes the other one
+    s.tick()
+    assert s.report().status == s.report(bob).status == DONE and len(s.writer.calls) == 2
+
+
+def test_a_stop_before_the_round_starts_no_report_at_all():
+    s = Setup()
+    s.job = ReportJob(s.store, s.writer, s.clock, SETTINGS, WORDS, should_stop=lambda: True)
+    s.send(events=[sip('s1', at(28, 9))], at_ts=DUE + 300)
+    s.go_to(DUE + 600)
+    s.tick()
+    assert s.report().status == PENDING and s.writer.calls == []

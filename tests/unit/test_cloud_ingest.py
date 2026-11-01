@@ -301,3 +301,13 @@ def test_daily_totals_in_one_batch_keep_the_newest(parts, device):
     reply = run(parts, device, [daily(10.0, 1), daily(20.0, 2), daily(15.0, 3)])
     assert (reply.accepted, reply.repeats) == (2, 1)
     assert parts.store.totals_between(device.id, '2026-10-20', '2026-10-20')[0]['totals'] == {'water_ml': 2}
+
+
+@pytest.mark.parametrize('huge', [10**400, -(10**400), 1e308, float('inf')])
+def test_a_number_too_big_for_float_maths_never_reaches_the_store(parts, device, huge):
+    day = {'id': 'd', 'ts': 5.0, 'type': 'daily_totals', 'day': '2026-10-26', 'totals': {'desk_sec': huge}}
+    sip = {'id': 's', 'ts': 5.0, 'type': 'habit', 'habit': 'hydration', 'action': 'sip', 'ml': huge}
+    reply = ingest(parts.store, parts.clock, parts.config.ingest, parts.config.messages, device.id, [day, sip], False)
+    assert reply.accepted == 0
+    assert {r.why for r in reply.refused} == {parts.config.messages.refused_number_too_big}
+    assert parts.store.totals_between(device.id, '2026-10-26', '2026-10-26') == []
