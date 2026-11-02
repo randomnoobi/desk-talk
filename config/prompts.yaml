@@ -653,8 +653,7 @@ lens:
   pi_clock: 'The Raspberry Pi''s clock is {seconds} seconds {way} the app''s. I go by the app''s time, but turning on network time on the Pi fixes it (on the Pi): sudo timedatectl set-ntp true'
   pi_clock_behind: behind
   pi_clock_ahead: ahead of
-  pi_detector: The Raspberry Pi isn't finding the objects right now{why}. Until it does, I can't see what is on the desk, but the live view still works. On the Pi, check that the detector is running (docker compose ps).
-  pi_detector_why: ': {reason}'
+  pi_detector: The Raspberry Pi isn't finding the objects right now. Until it does, I can't see what is on the desk, but the live view still works. On the Pi, check that the detector is running (docker compose ps).
   # when a Pi problem is gone
   pi_fixed:
     pi_hot: The Raspberry Pi has cooled down and is running normally again. Thanks!

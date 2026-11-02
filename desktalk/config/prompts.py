@@ -201,8 +201,6 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'cloud.link_no_answer': ('server', 'error'),
     'lens.pi_hot': ('temp',),
     'lens.pi_clock': ('seconds', 'way'),
-    'lens.pi_detector': ('why',),
-    'lens.pi_detector_why': ('reason',),
     'camera.problems.bumped': ('degrees',),
     'camera.problems.cutoff': ('object', 'side', 'hint'),
     'camera.problems.slow': ('fps',),
@@ -590,7 +588,6 @@ class LensPrompts(_Section):
     pi_clock_behind: str
     pi_clock_ahead: str
     pi_detector: str
-    pi_detector_why: str
     pi_fixed: PiFixed
 
 

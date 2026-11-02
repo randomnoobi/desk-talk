@@ -127,7 +127,7 @@ def test_lens_speaks_up_when_the_pi_goes_quiet(tmp_path):
     assert [e['key'] for e in rig.app.event_log.events(day, {'camera'}, 10)] == ['lost']
 
 
-def test_lens_says_why_the_pis_own_detection_is_off(tmp_path):
+def test_lens_says_the_pis_own_detection_is_off_in_plain_words(tmp_path):
     rig = DeskRig(tmp_path)
     off = rig.config.lens.wait_before_saying_sec.pi_detector
     said = []
@@ -140,7 +140,8 @@ def test_lens_says_why_the_pis_own_detection_is_off(tmp_path):
         if second % 2 == 0:
             rig.tick(rig.app.lens)
             said += [m['text'] for m in rig.messages() if m.get('character') == 'lens']
-    assert [t for t in said if 'the detector is still starting' in t] != []
+    assert [t for t in said if "isn't finding the objects" in t] != []
+    assert not [t for t in said if 'the detector is still starting' in t]      # that goes in the log only
     assert rig.app.roster.member_ids() == ['computer']          # this computer detected meanwhile
 
 
