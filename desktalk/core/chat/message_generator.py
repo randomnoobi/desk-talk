@@ -92,7 +92,8 @@ class MessageGenerator:
         self._alerts = AlertVoice(self._ai, profiles, desk, self.live_context, prompts.alert, chat, drink_labels)
         self._nudges = NudgeVoice(self._ai, profiles, habits, desk, memory, clock, prompts, chat, todos=todos,
                                   local=local_model)
-        self._answers = ChatAnswers(AgentAI(model, profiles, llm, reply_max_chars), model, notifier, roster, profiles, habits, desk, memory,
+        self._answers = ChatAnswers(AgentAI(model, profiles, llm, reply_max_chars), model, notifier, roster, profiles,
+                                    habits, desk, memory,
                                     TrackerPanels(desk, chat), clock, self.live_context, habit_log=habit_log,
                                     todos=todos, words=prompts, llm=llm, chat=chat,
                                     sunlight_default_min=sunlight_default_min, preview_chars=preview_chars,
