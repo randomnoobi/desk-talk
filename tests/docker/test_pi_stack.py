@@ -149,14 +149,14 @@ def test_app_uses_the_users_time_zone(stack):
 
 
 def test_detector_port_is_not_open_outside(stack):
-    port = int(env_file(PI / '.env')['DETECTOR_PORT'])
+    port = int(env_file(PI / '.env.example')['DETECTOR_PORT'])
     with pytest.raises(OSError), socket.create_connection(('127.0.0.1', port), timeout=2):
         pass
     assert stack.compose('port', 'detector', str(port), check=False).stdout.strip() in ('', ':0')
 
 
 def test_the_app_can_reach_the_detector_by_name(stack):
-    port = env_file(PI / '.env')['DETECTOR_PORT']
+    port = env_file(PI / '.env.example')['DETECTOR_PORT']
     done = stack.compose('exec', '-T', '-e', f'ASK_PORT={port}', 'app', 'python', '-c', ASK_THE_DETECTOR)
     assert done.stdout.strip()
 
@@ -164,7 +164,7 @@ def test_the_app_can_reach_the_detector_by_name(stack):
 def test_the_app_saves_in_the_data_folder_as_the_pi_user(stack):
     assert (stack.data / 'logs').is_dir()
     done = stack.compose('exec', '-T', 'app', 'sh', '-c', 'stat -c %u /proc/$(cut -d" " -f1 /proc/1/task/1/children)')
-    assert done.stdout.strip() == env_file(PI / '.env')['PI_USER_ID']
+    assert done.stdout.strip() == env_file(PI / '.env.example')['PI_USER_ID']
 
 
 def test_the_danger_zones_start_in_the_data_folder(stack):

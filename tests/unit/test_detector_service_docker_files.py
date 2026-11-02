@@ -20,7 +20,7 @@ NAME = re.compile(r'\$\{(\w+)(?::-([^}]*))?\}')     # ${NAME} or ${NAME:-what it
 
 
 def env_file() -> dict[str, str]:
-    lines = (PI / '.env').read_text(encoding='utf-8').splitlines()
+    lines = (PI / '.env.example').read_text(encoding='utf-8').splitlines()
     return dict(line.split('=', 1) for line in lines if line.strip() and not line.lstrip().startswith('#'))
 
 

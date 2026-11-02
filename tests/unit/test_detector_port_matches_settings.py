@@ -22,7 +22,7 @@ def env_value(path: Path, name: str) -> str:
 
 
 def detector_port() -> int:
-    return int(env_value(ROOT / 'raspberry_pi' / '.env', 'DETECTOR_PORT'))
+    return int(env_value(ROOT / 'raspberry_pi' / '.env.example', 'DETECTOR_PORT'))
 
 
 def test_the_pi_asks_the_detector_by_its_container_name_on_that_port():

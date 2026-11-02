@@ -44,7 +44,8 @@ messages:
 
 # The website's "Add a Pi" box (the code only fills in {server_url} and {code})
 site:
-  setup_command: uv run python scripts/link_cloud.py --server {server_url} --code {code}
+  # Run on the Pi: it fetches Desk Talk the first time, then installs it (or just links it, on a Pi that has it already).
+  setup_command: test -d ~/desk-talk || git clone https://github.com/randomnoobi/desk-talk ~/desk-talk; bash ~/desk-talk/raspberry_pi/install.sh --server {server_url} --code {code}
   needs_json: This request must be sent as JSON (content type application/json).
 
 # The weekly report. `prompt` is what the AI is told (the data is added after it, between <data> and </data>).

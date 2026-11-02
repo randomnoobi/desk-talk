@@ -50,7 +50,7 @@ COMPUTER_FINDS = Detection('cup', 0.9, BBox(300, 600, 380, 720))       # what th
 
 
 def env_file() -> dict[str, str]:
-    lines = (PI / '.env').read_text(encoding='utf-8').splitlines()
+    lines = (PI / '.env.example').read_text(encoding='utf-8').splitlines()
     return dict(line.split('=', 1) for line in lines if line.strip() and not line.lstrip().startswith('#'))
 
 

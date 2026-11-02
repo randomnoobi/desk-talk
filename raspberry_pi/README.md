@@ -37,6 +37,40 @@ the watchdog and the cleaner), each starting again after a crash. The rest: `cam
 `cleaner.py`, `detector_client.py`, `uploader.py`, `health.py`, `watchdog.py`, `self_test.py`,
 `settings.py`, `net.py` and `clock.py`.
 
+## Install with one command
+
+**On the Pi** (Raspberry Pi OS 64-bit):
+
+```bash
+git clone https://github.com/randomnoobi/desk-talk ~/desk-talk
+bash ~/desk-talk/raspberry_pi/install.sh
+```
+
+It checks the Pi (64-bit, free disk, memory, sound), installs Docker if it's missing, makes `raspberry_pi/.env` from
+`.env.example` with this Pi's own numbers, names the Pi `desktalk`, fetches the model and starts the three containers.
+It's safe to run again, and never touches the data folder, the pairing key or the models. It says if the Pi needs a
+restart, and only does that by itself with `--reboot`.
+
+| Flag | What it does |
+|---|---|
+| `--tz Europe/Paris` | your time zone, if the Pi's isn't right |
+| `--server <address> --code <code>` | link to your cloud server, as its website's "Add a Pi" box says. The Pi needs no cloud: if this fails, the rest still works |
+| `--keep-hostname` | keep the Pi's present name instead of `desktalk`, and remember that |
+| `--reboot` | restart the Pi at the end, if it needs that |
+| `--dry-run` | do the same checks, say what it would do, and change nothing |
+
+**Renaming the Pi changes its address**, to `http://desktalk.local:5000`. It says so at the end; change the old name
+anywhere you saved it, such as your Mac's `~/.ssh/config`.
+
+To get new code later, **on the Pi**: `bash ~/desk-talk/raspberry_pi/update.sh`. It runs `git pull`, fills in the camera's
+device numbers again, since a kernel update can change them, and rebuilds. It takes `--dry-run` too.
+
+`raspberry_pi/.env` is yours and isn't in git. New settings from `.env.example` get added to it by these two scripts,
+and what's already in it stays. The model's checksum is in `raspberry_pi/model_checksums.txt`: a model that isn't
+listed is still used, and the script says it couldn't check it.
+
+The steps below are the older setup, by hand.
+
 ## What you need
 
 - A Raspberry Pi 4 or 5 with the camera module (or a USB webcam). 4 GB of memory or more is best; with

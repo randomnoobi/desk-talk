@@ -129,7 +129,7 @@ def test_code_reply_uses_public_url(parts, ann_client):
     assert body['server_url'] == parts.config.server.public_url
     assert body['expires_at'] == pytest.approx(parts.clock.now() + parts.config.pairing.code_valid_min * 60)
     assert body['code'] in body['command'] and body['server_url'] in body['command']
-    assert 'link_cloud.py' in body['command']
+    assert 'raspberry_pi/install.sh' in body['command']
 
 
 def test_a_trailing_slash_in_the_public_url_is_not_doubled():

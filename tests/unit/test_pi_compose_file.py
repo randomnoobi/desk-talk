@@ -67,11 +67,7 @@ def test_each_container_restarts_has_a_memory_limit_small_logs_and_a_health_chec
 def test_every_name_the_compose_file_uses_is_in_the_env_file():
     text = (PI / 'compose.yaml').read_text(encoding='utf-8')
     used = set(re.findall(r'\$\{(\w+)', '\n'.join(line.split(' #')[0] for line in text.splitlines())))
-    assert used <= set(env_file(PI / '.env'))
-
-
-def test_env_example_has_the_same_names_as_env():
-    assert set(env_file(PI / '.env.example')) == set(env_file(PI / '.env'))
+    assert used <= set(env_file(PI / '.env.example'))
 
 
 def test_only_the_camera_gets_all_the_devices_and_nothing_is_privileged(services):
@@ -93,7 +89,7 @@ def test_the_detector_has_no_open_port_and_only_the_app_does(services):
 
 
 def test_the_app_port_is_the_one_in_the_settings():
-    assert int(env_file(PI / '.env')['APP_PORT']) == load_config(root=ROOT, environ={}).web.port
+    assert int(env_file(PI / '.env.example')['APP_PORT']) == load_config(root=ROOT, environ={}).web.port
 
 
 def test_the_pairing_key_is_shared_read_only_for_the_camera(services, pi_settings):
@@ -123,7 +119,7 @@ def test_both_programs_that_read_the_settings_get_the_pi_settings_read_only(serv
 
 def test_the_data_folder_location_comes_from_the_env_file(services):
     assert mounts(services['app'])['/desk-talk/data'] == '${DESKTALK_DATA}:/desk-talk/data'
-    assert env_file(PI / '.env')['DESKTALK_DATA'] == '../data'      # next to the repo's raspberry_pi/ folder
+    assert env_file(PI / '.env.example')['DESKTALK_DATA'] == '../data'      # next to the repo's raspberry_pi/ folder
 
 
 def test_the_app_with_the_pi_settings_loads_without_a_word_about_old_settings(tmp_path, caplog):
@@ -221,12 +217,12 @@ def test_a_hung_program_ends_itself_so_docker_starts_it_again(services, name):
 
 @pytest.mark.parametrize('name', ['APP', 'DETECTOR'])
 def test_the_health_check_gives_up_on_an_answer_before_docker_gives_up_on_it(name):
-    values = env_file(PI / '.env')
+    values = env_file(PI / '.env.example')
     assert float(values[f'{name}_HEALTH_ANSWER_WAIT_SEC']) < int(values[f'{name}_HEALTH_TIMEOUT'].removesuffix('s'))
 
 
 def test_a_detector_changing_a_model_has_minutes_before_it_could_be_ended():
-    values = env_file(PI / '.env')
+    values = env_file(PI / '.env.example')
     every = int(values['DETECTOR_HEALTH_INTERVAL'].removesuffix('s'))
     assert every * int(values['DETECTOR_HEALTH_FAILS_BEFORE_RESTART']) >= 5 * 60
     assert int(values['DETECTOR_HEALTH_GRACE_SEC']) >= 5 * 60

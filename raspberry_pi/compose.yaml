@@ -1,7 +1,8 @@
 # Everything on the Pi: the camera, the detector and the app, in Docker. Nothing else needs to run.
 # The numbers you may want to change (ports, memory limits, health checks, log sizes ...) are in .env next to this
-# file; docker compose reads it from there by itself. The value after :- below is used when .env doesn't have that
-# name (an .env edited by hand before the name was added); it is the same as in .env.
+# file; docker compose reads it from there by itself. install.sh makes .env from .env.example, which is in git, and
+# fills in this Pi's own numbers; .env itself isn't in git, so `git pull` never trips over it. The value after :- below
+# is used when .env doesn't have that name; it is the same as in .env.example.
 #
 # On the Pi, in desk-talk/raspberry_pi:
 #   docker compose up -d --build      build (the first time takes a while) and start; they start again on boot
