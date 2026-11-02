@@ -3,7 +3,8 @@
 #
 #  Every prompt the AI gets, Lens's wording, the habit nudges and the
 #  fixed replies. Change the words here; the code only fills in the blanks.
-#  Restart `uv run python server.py` after a change.
+#  Restart the app after a change: on a computer, `uv run python server.py`; on the Pi these words are built into the
+#  app's image, so run `docker compose up -d --build` in raspberry_pi/ (or update.sh).
 #
 #  Blanks are written {like_this}. Each text can only use the blanks its
 #  code fills in (the list is in desktalk/config/prompts.py, BLANKS); a
@@ -46,7 +47,7 @@ replies:
     ollama_too_slow: Ollama took too long to answer (it may still be loading the model). Try again in a moment.
     no_connection: Could not reach the AI service. Check the internet connection and try again.
     ollama_no_connection: Could not reach Ollama. Check that the computer running it is awake and the Ollama app is open, then try again.
-    cloud_refused: The cloud server said no to this link. Link again with scripts/link_cloud.py.
+    cloud_refused: "The cloud server said no to this link. Link again: on a Pi, run the install command again with a new code from the website; on a computer, use scripts/link_cloud.py."
     # only ever in the log: something tried to use the AI by itself while the AI is the cloud server
     cloud_chat_only: Only chat you asked for goes to the cloud server.
     # an error it doesn't know, shown as it came ({error}, cut to settings → llm.error_text_chars)
@@ -140,7 +141,7 @@ chat:
     - When widget data is shown, tie your reply to it (open todos, breaks, sips, snacks). Use @mentions only when natural.
     - When the user asks you to DO something (add a task, log a break, etc.), you MUST include the action tag — talking about it is not enough.
     {action_instructions}
-  # for AIs on this computer (Ollama): they do better with fewer rules
+  # for small AIs (Ollama): they do better with fewer rules
   identity_short: |-
     You are {name}, a {object} on someone's desk. You text with the desk owner.
 
@@ -315,7 +316,7 @@ trackers:
   behavior: |2-
 
     BEHAVIOR: The user opened this panel {count} time(s) in the last hour. If nothing was completed or changed, gently point that out.
-  # the to-do tracker starts with today's date (this computer's day), so "due Friday" becomes a real day
+  # the to-do tracker starts with today's date (the app's own day), so "due Friday" becomes a real day
   todo_today: |2-
 
     TODAY IS {weekday} {day}. Work out "tomorrow", "Friday" or "next week" from this day.
@@ -793,19 +794,19 @@ ui:
 # ── The cloud server (optional; settings → cloud) ───────────────────
 cloud:
   # the status line on the Settings page
-  status_off: Not linked to a cloud server. Nothing leaves this computer.
+  status_off: Not linked to a cloud server. Nothing leaves this device.
   status_on: Linked to a cloud server. Habit events go to it in the background.
   # {count} is how many events are waiting to be sent
   status_waiting: '{count} events are waiting to be sent (the server may be off).'
-  status_stopped: The cloud server doesn't know this computer any more, so nothing is sent. Link it again with scripts/link_cloud.py.
+  status_stopped: "The cloud server doesn't know this device any more, so nothing is sent. Link it again: on a Pi, run the install command again with a new code from the website; on a computer, use scripts/link_cloud.py."
   # in the log: the server did not answer ({error} says why) and the sender waits {seconds} seconds
   log_unreachable: "The cloud server didn't answer well ({error}). Trying again in {seconds:g} s."
   # in the log: the server answered but said no to the upload ({error} says why). That will not mend itself, so check
   # the server; the sender tries again in {seconds} seconds
   log_rejected: "The cloud server refused the upload ({error}). Trying again in {seconds:g} s, but this needs a fix."
   # in the log: the saved link (data/cloud.json) cannot be used, so nothing is sent until you link again
-  log_bad_link: The saved cloud link is damaged, so it counts as not linked. Link again with scripts/link_cloud.py.
-  log_not_linked: The cloud server says it doesn't know this computer any more. Sending stops until you link it again with scripts/link_cloud.py.
+  log_bad_link: "The saved cloud link is damaged, so it counts as not linked. Link again: on a Pi, run the install command again with a new code from the website; on a computer, use scripts/link_cloud.py."
+  log_not_linked: "The cloud server says it doesn't know this device any more. Sending stops until you link it again: on a Pi, run the install command again with a new code from the website; on a computer, use scripts/link_cloud.py."
   # in the log: the server kept the rest but would not keep {count} events; {reasons} says why
   log_refused: "The cloud server did not keep {count} events: {reasons}"
   # what scripts/link_cloud.py says: it worked ({server}, {device_id}), the code was not accepted, or nothing answered
