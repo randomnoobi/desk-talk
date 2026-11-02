@@ -147,6 +147,8 @@ Apple Silicon Macs are 64-bit ARM like the Pi, so `docker compose up -d --build`
 
 - **`/health` says `error`**: the message says why. Often the model name is wrong, or it's your own model and
   isn't in the volume yet (see "Your own model file"). It tries again by itself, waiting longer each time.
+  It also says `error` (with the model still named) when the model loaded but the last picture failed. It goes back
+  to `ready` by itself when a picture works.
 - **`docker compose up` warns that the memory limit isn't supported**: the Pi's memory controls are off.
   **On the Pi**, add `cgroup_enable=memory cgroup_memory=1` to the end of the line in
   `/boot/firmware/cmdline.txt`, then `sudo reboot`.

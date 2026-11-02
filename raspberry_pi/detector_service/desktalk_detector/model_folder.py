@@ -16,12 +16,26 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from desktalk_shared.detector_api import ModelSettings
 
 log = logging.getLogger(__name__)
 
 DEVICE = 'cpu'                  # the Pi has no GPU that Ultralytics can use
 MEMORY_FILE = 'last_model.json'
+DEFAULT_TASK = 'detect'         # used when the model's metadata.yaml doesn't say what the model does
+
+
+def task_of(ncnn: Path) -> str:
+    """What the converted model does ("detect", "segment" ...), as its metadata.yaml says. A model
+    opened with the wrong task gives wrong numbers, so this is not guessed when the file says."""
+    try:
+        said = yaml.safe_load((ncnn / 'metadata.yaml').read_text(encoding='utf-8'))
+    except (OSError, yaml.YAMLError):
+        return DEFAULT_TASK
+    task = said.get('task') if isinstance(said, dict) else None
+    return task if isinstance(task, str) and task else DEFAULT_TASK
 
 
 def ultralytics_yolo(path: str, task: str | None = None) -> Any:
@@ -60,7 +74,7 @@ class ModelFolder:
             shutil.rmtree(tmp, ignore_errors=True)
             shutil.move(str(made), str(tmp))
             tmp.rename(ncnn)
-        return self._yolo(str(ncnn), task='detect')
+        return self._yolo(str(ncnn), task=task_of(ncnn))
 
     def remember(self, settings: ModelSettings) -> None:
         self.folder.mkdir(parents=True, exist_ok=True)

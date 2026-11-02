@@ -108,6 +108,45 @@ def test_a_failed_load_says_why_in_plain_words(manager, yolo):
         manager.detect(picture())
 
 
+def test_a_failed_detection_shows_in_health_until_a_picture_works(manager, yolo):
+    manager.want(MODEL)
+    manager.load_step()
+
+    def crash():
+        raise KeyError(50)
+
+    yolo.during_predict = crash
+    with pytest.raises(KeyError):
+        manager.detect(picture())
+    health = manager.health()
+    assert health.state is ServiceState.ERROR and health.model == MODEL
+    assert 'yolo11n.pt' in health.message and '50' in health.message and 'last picture' in health.message
+    yolo.during_predict = None
+    manager.detect(picture())
+    assert manager.health().state is ServiceState.READY
+
+
+def test_loading_a_model_that_works_clears_an_earlier_failed_detection(manager, yolo):
+    manager.want(MODEL)
+    manager.load_step()
+    yolo.during_predict = lambda: (_ for _ in ()).throw(RuntimeError('ncnn crashed'))
+    with pytest.raises(RuntimeError):
+        manager.detect(picture())
+    yolo.during_predict = None
+    manager.want(OTHER)
+    manager.load_step()
+    assert manager.health().state is ServiceState.READY
+
+
+def test_a_picture_turned_away_as_busy_is_not_a_failed_detection(manager, yolo):
+    manager.want(MODEL)
+    manager.load_step()
+    manager._one_at_a_time.acquire()
+    with pytest.raises(DetectorBusy):
+        manager.detect(picture())
+    assert manager.health().state is ServiceState.READY
+
+
 def test_a_failed_load_is_tried_again_with_longer_and_longer_waits(manager, yolo):
     yolo.fail_open = 'the file is damaged'
     manager.want(MODEL)
