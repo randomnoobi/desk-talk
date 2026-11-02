@@ -35,7 +35,7 @@ class ServiceState(StrEnum):
     STARTING = 'starting'    # just started, no model yet
     LOADING = 'loading'      # loading or converting a model (a previous one may still be answering)
     READY = 'ready'
-    ERROR = 'error'          # no working model; message says why
+    ERROR = 'error'          # no working model, or one is loaded but the last picture failed; message says why
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -85,8 +85,10 @@ function piRows(health: Health, pi: PiStatus | null, limits: RowLimits, now: num
     'CPU °C': pi.cpu_temp_c === undefined ? notSent
       : [String(Number(pi.cpu_temp_c.toFixed(1))),
          pi.cpu_temp_c >= limits.pi_cpu_bad_c ? 'bad' : pi.cpu_temp_c >= limits.pi_cpu_warn_c ? 'warn' : 'ok'],
-    // The Pi's slow-down flags: anything but 0x0 means it was too hot or short of power.
+    // The Pi's slow-down flags: anything but 0x0 means it was too hot or short of power. '' means the Pi
+    // could not read them (it never claims 0x0 then), so nothing is known.
     'slowed down': pi.throttled === undefined ? notSent
+      : pi.throttled === '' || Number.isNaN(parseInt(pi.throttled, 16)) ? ["can't tell", 'off']
       : parseInt(pi.throttled, 16) === 0 ? ['no', 'ok'] : [`yes (${pi.throttled})`, 'bad'],
     'disk free': pi.disk_free_mb === undefined ? notSent
       : [formatBytes(pi.disk_free_mb * MBYTE), pi.disk_free_mb < limits.pi_disk_warn_mb ? 'warn' : 'ok'],

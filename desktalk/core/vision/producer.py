@@ -125,7 +125,8 @@ class DetectionProducer:
 
     @property
     def problem(self) -> str | None:
-        """Why detection on this computer isn't working, in plain words (None = it works)."""
+        """Why detection isn't working (the Pi's didn't answer and the app has none, or its own failed), in plain
+        words (None = it works)."""
         return self._detecting.reason
 
     def tick(self, now: float) -> float:
@@ -165,6 +166,7 @@ class DetectionProducer:
             size = self._pictures.size(frame.picture)
             if pi.detect_ms is not None:
                 self._detect_ms = pi.detect_ms
+            self._detecting.worked()
             return keep_inside(frame.pi_detections, size.width, size.height), 'pi'
         started = self._clock.monotonic()
         try:

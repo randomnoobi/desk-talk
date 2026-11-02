@@ -458,6 +458,19 @@ def test_a_pi_detection_still_gets_through_when_the_app_has_no_detector():
     assert rig.producer.problem is None
 
 
+def test_the_no_detector_problem_goes_away_when_the_pi_detector_starts_answering(caplog):
+    """The Pi's detector is off while it loads: the first picture reaches NoDetector and sets the problem. Once the
+    Pi's detections arrive the problem is gone, and the log says so."""
+    caplog.set_level(logging.INFO)
+    rig = Rig(detector=NoDetector())
+    rig.picture(info=from_pi(DetectorState.OFF))
+    assert 'detector.enabled' in (rig.producer.problem or '')
+    caplog.clear()
+    rig.picture(info=from_pi(DetectorState.OK, [LAPTOP], frame_id='pi-000008'))
+    assert rig.producer.problem is None
+    assert 'works again' in caplog.text
+
+
 def test_a_detection_problem_is_logged_once_and_again_when_it_is_fixed(caplog):
     caplog.set_level(logging.INFO)
     rig = Rig(kind='webcam', detector=FakeDetector(fail='the model file is missing'))
