@@ -67,7 +67,7 @@ anywhere you saved it, such as your Mac's `~/.ssh/config`. The links the app sho
 `APP_HOST_PORT`, which it writes to `.env` as `PUBLIC_NAME`.
 
 To get new code later, **on the Pi**: `bash ~/desk-talk/raspberry_pi/update.sh`. It runs `git pull`, fills in the camera's
-device numbers again, since a kernel update can change them, rebuilds, and clears old images and build steps so the card
+device numbers again, since a kernel update can change them, rebuilds, and clears old images and old build steps so the card
 doesn't fill up. It takes `--dry-run` too.
 
 `raspberry_pi/.env` is yours and isn't in git. New settings from `.env.example` get added to it by these two scripts,

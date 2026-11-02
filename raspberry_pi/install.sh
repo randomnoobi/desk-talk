@@ -679,17 +679,17 @@ start_containers() {
         if [ "$REBOOT_NEEDED" = 1 ]; then
             say "The Pi needs a restart for its new boot settings, which may be why. Restart it and run this again."
         fi
-        stop "the containers didn't start. See why with: cd $(quoted "$PI_DIR") && docker compose logs"
+        stop "the containers didn't build or start. If a download failed above, running this again is often all it takes. Otherwise see why with: cd $(quoted "$PI_DIR") && docker compose logs"
     fi
     clear_old_builds
 }
 
-# After a good build only, so the card can't fill up over many updates. Old images and the build steps nothing uses any
-# more go (on a Pi that took the build cache from 10.3 GB to 2.9 GB). The steps still in use stay, so an update that only
-# changes the code doesn't download PyTorch again. Volumes are never touched.
+# After a good build only, so the card can't fill up over many updates. Old images go, and the build steps used longest
+# ago, down to a set amount. Clearing them all would mean downloading PyTorch and the voice again on every update, and a
+# failed download would then stop an update that only changed the code. Volumes are never touched.
 clear_old_builds() {
     docker_ image prune -f > /dev/null 2>&1 || say "Old images couldn't be cleared. It's safe to go on."
-    docker_ builder prune -f > /dev/null 2>&1 || say "Old build steps couldn't be cleared. It's safe to go on."
+    docker_ builder prune -af --reserved-space "$(setting INSTALL_BUILD_CACHE_KEEP_MB)MB" > /dev/null 2>&1 || say "Old build steps couldn't be cleared. It's safe to go on."
 }
 
 finish() {

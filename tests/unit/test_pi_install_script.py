@@ -306,8 +306,10 @@ def test_update_checks_the_disk_too(pi):
 
 def test_a_good_build_clears_old_builds_but_a_failed_one_doesnt(pi):
     calls = pi.run().calls
-    assert 'docker builder prune -f' in calls and 'docker image prune -f' in calls
-    assert calls.index('docker compose up -d --build') < calls.index('docker builder prune -f')
+    keep = env_file(PI / '.env.example')['INSTALL_BUILD_CACHE_KEEP_MB']
+    prune = f'docker builder prune -af --reserved-space {keep}MB'
+    assert prune in calls and 'docker image prune -f' in calls
+    assert calls.index('docker compose up -d --build') < calls.index(prune)
     pi.state('up_fails')
     assert not any('prune' in line for line in pi.run().calls)
 
