@@ -8,6 +8,7 @@ The alert voice, the nudge voice and the chat answers all ask through this, so t
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -28,6 +29,7 @@ class AgentAI:
         self._profiles = profiles
         self._llm = llm
         self._reply_max_chars = reply_max_chars
+        self._still_asking: threading.Thread | None = None      # the last ask_briefly, which may have outlived its wait
 
     def call(self, messages: Sequence[Mapping[str, Any]], reply: str, agent: AgentProfile, background: bool) -> str:
         """The AI's reply; raises AIUnavailable. `reply` names the llm.replies size to use
@@ -44,6 +46,28 @@ class AgentAI:
         except AIUnavailable as err:
             log.info('No AI %s line for %s: %s', reply, agent.id, err.reason)
             return None
+
+    def ask_briefly(self, messages: Sequence[Mapping[str, Any]], reply: str, agent: AgentProfile) -> str | None:
+        """Like ask, in the background, but waiting at most llm.reminder_wait_sec: the AI's turn, its tries and its
+        answer all count, so an AI that has gone away can't hold this up. An answer that comes later is thrown away.
+        While a late one is still going no other is started, so a gone AI can't pile up waiting threads."""
+        if self._still_asking is not None and self._still_asking.is_alive():
+            log.info('No AI %s line for %s: the AI is still busy with the last one', reply, agent.id)
+            return None
+        answer: list[str | None] = []
+
+        def ask_it() -> None:
+            try:
+                answer.append(self.ask(messages, reply, agent, background=True))
+            except Exception:           # noqa: BLE001  (a job on its own thread: nobody else would see this)
+                log.exception('Asking the AI for a %s line failed', reply)
+
+        self._still_asking = threading.Thread(target=ask_it, name='ai: ask briefly', daemon=True)
+        self._still_asking.start()
+        self._still_asking.join(self._llm.reminder_wait_sec)
+        if not answer and self._still_asking.is_alive():
+            log.info('No AI %s line for %s: no answer in %g s', reply, agent.id, self._llm.reminder_wait_sec)
+        return answer[0] if answer else None
 
     def one_speaker(self, text: str, agent: AgentProfile) -> str:
         """The reply with lines the AI wrote for other agents taken out, cut to reply_max_chars."""

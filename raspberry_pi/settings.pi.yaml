@@ -1,5 +1,6 @@
 # The app's and the camera's settings on the Pi, laid over config/settings.yaml. compose.yaml mounts this file
 # read-only as config/settings.local.yaml in both containers. Nothing here turns on an AI: the Pi works with none.
+# To add chat, set llm.ai_url (config/settings.yaml says how).
 
 detector:
   enabled: false                 # the detector container does the finding, so the app needs no PyTorch or YOLO
@@ -15,6 +16,21 @@ camera:
 
 storage:
   rules_folder: data             # the app can't write to config/ in its image, and a rebuild would lose it
+
+notifications:
+  output: speaker                # warnings and reminders are said out loud
+  sound_card: usb                # ALSA's own choice here is the HDMI socket, so name the card: any with usb in its name
+  sound_cards_file: /sound-cards   # /proc/asound/cards, which compose.yaml lets in here (Docker hides it from the app)
+  queue_size: 5                  # things said out loud take seconds each, so don't let old ones pile up
+
+chat:
+  ai_writes_warnings: false      # a warning must come at once, in its ready-made words
+
+llm:
+  send_pictures: false           # pictures never leave the Pi, whatever AI is set up
+  reminder_wait_sec: 3           # a reminder waits this long for an AI, then uses its ready-made words
+  ollama_timeout_sec: 30         # a laptop that went to sleep shouldn't keep your chat waiting for long
+  ollama_reasoning_effort: none  # answer at once: a reminder only waits a moment, and thinking can use up the reply
 
 pi:
   photo_dir: /photos             # the camera's own volume (compose.yaml), so pictures don't sit inside the container

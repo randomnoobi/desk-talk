@@ -31,7 +31,7 @@ def test_other_errors_are_not_rate_limits(text):
     ('Error code: 404 - model not found', 'OpenAI gpt-4o-mini', 'could not find the model'),
     ('Request timed out.', 'Gemini gemini-2.5-flash', 'Gemini took too long to answer'),
     ('Request timed out.', 'Ollama llama3.2', 'Ollama took too long to answer'),
-    ('Connection refused', 'Ollama llama3.2', 'Could not reach Ollama. Open the Ollama app'),
+    ('Connection refused', 'Ollama llama3.2', 'Could not reach Ollama. Check that the computer running it is awake'),
     ('Connection refused', 'Gemini gemini-2.5-flash', 'Check the internet connection'),
     ('something odd', '', 'The AI returned an error: something odd'),
 ])

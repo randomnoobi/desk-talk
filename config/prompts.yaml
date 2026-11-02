@@ -23,10 +23,13 @@
 
 # ── Fixed replies (no AI needed) ────────────────────────────────────
 replies:
-  needs_an_ai: The characters need an AI to chat. Add a key to .env (GEMINI_API_KEY is free; or set OLLAMA_URL) and restart the server.
+  needs_an_ai: "Chat isn't set up. It's optional: warnings, reminders and habit tracking all work without it. The README says how to add it."
   empty_reply: The AI sent back an empty reply. Try saying it again.
   nobody_here: Nobody is on the desk yet. Put something in front of the camera, or @mention someone who was here earlier.
-  no_ai_label: No AI (add a key to .env)
+  no_ai_label: "Chat isn't set up (optional)"
+  cloud_ai_label: Cloud server AI
+  # someone asked an AI about a picture, or tried to send one, where pictures must stay home
+  pictures_stay_home: Pictures stay here and aren't sent to any AI.
   no_picture: There is no picture to look at yet.
   # added to the message when a small AI sent back nothing
   ask_for_a_sentence: |2-
@@ -42,7 +45,8 @@ replies:
     too_slow: '{who} took too long to answer. Try again in a moment.'
     ollama_too_slow: Ollama took too long to answer (it may still be loading the model). Try again in a moment.
     no_connection: Could not reach the AI service. Check the internet connection and try again.
-    ollama_no_connection: Could not reach Ollama. Open the Ollama app, then try again.
+    ollama_no_connection: Could not reach Ollama. Check that the computer running it is awake and the Ollama app is open, then try again.
+    cloud_refused: The cloud server said no to this link. Link again with scripts/link_cloud.py.
     # an error it doesn't know, shown as it came ({error}, cut to settings → llm.error_text_chars)
     other: 'The AI returned an error: {error}'
     no_pictures: 'The model "{model}" cannot look at pictures. Set llm.vision_model in config/settings.yaml to a vision model (for example `ollama pull llava`).'

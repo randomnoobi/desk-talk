@@ -12,7 +12,7 @@ from desktalk.config import NotificationsSettings
 from desktalk.ports import DesktopNotifications
 
 QUEUE = 4
-SETTINGS = NotificationsSettings.model_construct(enabled=True, warnings=True, reminders=True, sips=True,
+SETTINGS = NotificationsSettings.model_construct(output='mac', enabled=True, warnings=True, reminders=True, sips=True,
                                                  time_limit_sec=5.0, command='osascript')
 
 
@@ -109,7 +109,7 @@ def test_not_a_mac_gives_no_notifications(caplog):
     with caplog.at_level(logging.INFO):
         notifications = make_notifications(SETTINGS, 'linux', queue_size=QUEUE)
     assert isinstance(notifications, NoNotifications) and notifications.show('Cup', 'x') is None
-    assert len([r for r in caplog.records if 'only work on a Mac' in r.message]) == 1
+    assert len([r for r in caplog.records if 'Pop-ups only work on a Mac' in r.message]) == 1
 
 
 def test_switched_off_gives_no_notifications():

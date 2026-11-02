@@ -26,12 +26,19 @@ services:
       HEALTH_FAILS_BEFORE_RESTART: ${APP_HEALTH_FAILS_BEFORE_RESTART:-5}
       PI_USER_ID: ${PI_USER_ID:-1000}                         # start.sh hands over to this user
       PI_GROUP_ID: ${PI_GROUP_ID:-1000}
+      PI_AUDIO_GROUP: ${PI_AUDIO_GROUP:-29}                   # and to this group, which may use the sound card
     ports:
       - "${APP_HOST_PORT:-5000}:${APP_PORT:-5000}"                  # the one door: phones and computers on your Wi-Fi come in here
     volumes:
       - ./settings.pi.yaml:/desk-talk/config/settings.local.yaml:ro
       - ${DESKTALK_DATA:-../data}:/desk-talk/data                # a plain folder, so it can be backed up or copied with scp
       - pairing:/pairing                                # the app writes the pairing key, the camera reads it
+      # The sound card, and no other device. A folder and not `devices:`, which copies what's there at the start: this
+      # way a speaker plugged in later shows up with no restart. The rule below lets it open only sound devices.
+      - ${SOUND_DEVICES:-/dev/snd}:/dev/snd
+      - ${SOUND_CARDS_FILE:-/proc/asound/cards}:/sound-cards:ro   # Docker hides /proc/asound, and this says which is which
+    device_cgroup_rules:
+      - c ${SOUND_DEVICE_MAJOR:-116}:* rw               # read and write sound devices, but not make new ones
     mem_limit: ${APP_MEMORY_LIMIT:-1g}                      # over this, Docker stops it and starts it again ...
     memswap_limit: ${APP_MEMORY_LIMIT:-1g}                  # ... instead of it swapping and slowing the whole Pi down
     init: true                                          # so a hung program can be ended (raspberry_pi/health_check.py)

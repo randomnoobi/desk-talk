@@ -371,6 +371,10 @@ class LlmSettings(_Section):
     ollama_keepalive_start_sec: ZeroOrMore
     gemini_url: str
     groq_url: str
+    ai_url: Annotated[str, Field(pattern=r'^(https?://\S+)?$')]     # empty = .env decides (see config/settings.yaml)
+    send_pictures: bool
+    reminder_wait_sec: PositiveNumber
+    ollama_reasoning_effort: str      # empty = say nothing about it
     gemini_thinking_budget: Count
     error_text_chars: PositiveInt
     error_log_chars: PositiveInt
@@ -411,6 +415,7 @@ class ChatSettings(_Section):
     panel_views_window_sec: PositiveNumber
     panel_views_min: PositiveInt
     panel_action_max_chars: PositiveInt
+    ai_writes_warnings: bool
 
 
 class IdleChatSettings(_Section):
@@ -729,16 +734,26 @@ class WebSettings(_Section):
         return self
 
 
-class NotificationsSettings(_Section):
-    """The Mac's own pop-up notifications (desktalk/adapters/notify/): which kinds, and how they're shown."""
+Command = Annotated[tuple[str, ...], Field(min_length=1)]    # a program and its arguments, run without a shell
 
+
+class NotificationsSettings(_Section):
+    """Warnings and reminders outside the chat (desktalk/adapters/notify/): the Mac's own pop-ups or the Pi's speaker,
+    which kinds, and how they're given."""
+
+    output: Literal['mac', 'speaker', 'none']
     enabled: bool
     warnings: bool
     reminders: bool
     sips: bool
     time_limit_sec: PositiveNumber
     command: str                      # the program that shows them (the Mac's osascript)
-    queue_size: PositiveInt           # pop-ups that can wait to be shown (more are dropped)
+    queue_size: PositiveInt           # messages that can wait their turn (more are dropped)
+    speak_command: Command            # what says the words it gets on standard input; blanks: {voice} {device}
+    voice_model: str                  # the voice, for {voice}
+    sound_card: str                   # a word in the sound card's name; empty = the system's own choice
+    sound_cards_file: Path            # where the system lists its sound cards
+    speak_time_limit_sec: PositiveNumber
 
 
 class LoggingSettings(_Section):
@@ -748,9 +763,6 @@ class LoggingSettings(_Section):
     files_kept: Count
     file_name: str
     preview_chars: PositiveInt
-
-
-Command = Annotated[tuple[str, ...], Field(min_length=1)]    # a program and its arguments, run without a shell
 
 
 class DevCheck(_Section):

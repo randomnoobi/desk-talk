@@ -214,6 +214,16 @@ and how big its log files get) are in `raspberry_pi/.env`; the detector's
 [README](detector_service/README.md) lists them all. After changing one, run `docker compose up -d` again **on the Pi**, in
 `~/desk-talk/raspberry_pi/detector_service`. The port must match `pi.detector.url` on your computer.
 
+### The speaker, and chat
+
+Warnings and reminders are said out loud through a USB speaker (`notifications.output` and `notifications.sound_card` in
+`raspberry_pi/settings.pi.yaml`). Plug it in whenever you like: no restart needed. With none plugged in, the log says so
+once and the Pi carries on. Quiet hours (the app's Settings page) mute it.
+
+Chat with the characters is optional and needs an AI somewhere else, since none runs on the Pi. Set `llm.ai_url` in that
+same file (`config/settings.yaml` says how). Warnings never wait for it, and a reminder waits at most
+`llm.reminder_wait_sec` before using its ready-made words. Only text goes to it, never a picture.
+
 ## If something's wrong
 
 The camera program's log (in the terminal, or `journalctl -u desk-talk-camera -f` **on the Pi**) says what's

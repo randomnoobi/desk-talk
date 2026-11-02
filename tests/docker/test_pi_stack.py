@@ -96,9 +96,13 @@ def stack(request) -> Iterator[Stack]:
     pictures = work / 'pictures'
     pictures.mkdir()
     some_pictures(pictures)
+    no_sound, no_cards = work / 'no-sound', work / 'no-cards'     # a computer's Docker has no sound card to share
+    no_sound.mkdir()
+    no_cards.write_text('--- no soundcards ---\n', encoding='utf-8')
     port = free_port()
     env = {**os.environ, 'TZ': TIME_ZONE, 'APP_HOST_PORT': str(port), 'DESKTALK_DATA': str(work / 'data'),
-           'PI_TEST_PICTURES': str(pictures), 'APP_HEALTH_INTERVAL': QUICK_HEALTH,
+           'PI_TEST_PICTURES': str(pictures), 'SOUND_DEVICES': str(no_sound), 'SOUND_CARDS_FILE': str(no_cards),
+           'APP_HEALTH_INTERVAL': QUICK_HEALTH,
            'DETECTOR_HEALTH_INTERVAL': QUICK_HEALTH, 'CAMERA_HEALTH_INTERVAL': QUICK_HEALTH,
            'APP_HEALTH_GRACE_SEC': '10', 'DETECTOR_HEALTH_GRACE_SEC': '10',
            'DETECTOR_HEALTH_FAILS_BEFORE_RESTART': '3', 'APP_HEALTH_FAILS_BEFORE_RESTART': '3'}
@@ -183,13 +187,29 @@ def test_the_app_has_no_detector_of_its_own(stack):
     assert done.stdout.strip() == 'None None'
 
 
-def test_no_container_but_the_camera_has_the_devices(stack):
+def test_no_container_but_the_camera_has_all_the_devices(stack):
     for name in ('app', 'detector'):
         container = stack.compose('ps', '--quiet', name).stdout.strip()
         shown = '{{json .HostConfig.Binds}} {{.HostConfig.Privileged}}'
         found = subprocess.run(['docker', 'inspect', '--format', shown, container],
                                capture_output=True, text=True, check=True).stdout
         assert '/dev:/dev' not in found and found.strip().endswith('false')
+
+
+def test_the_app_image_can_speak_with_no_network(stack):
+    """Piper and its voice are in the image: the words come out as sound data, ready for aplay."""
+    voice = 'import yaml; print(yaml.safe_load(open("config/settings.yaml"))["notifications"]["voice_model"])'
+    model = stack.compose('exec', '-T', 'app', 'python', '-c', voice).stdout.strip()
+    said = stack.compose('exec', '-T', 'app', 'bash', '-c',
+                         f'echo Mind the cup | piper --quiet --model {model} --output_raw | wc -c').stdout
+    assert int(said.split()[-1]) > 10_000
+    assert stack.compose('exec', '-T', 'app', 'which', 'aplay').stdout.strip()
+
+
+def test_the_app_keeps_the_audio_group_when_it_gives_up_root(stack):
+    find = ("for p in /proc/[0-9]*; do tr '\\0' ' ' < $p/cmdline 2>/dev/null | grep -q '^python server.py' "
+            '&& grep Groups $p/status; done; true')
+    assert stack.compose('exec', '-T', 'app', 'sh', '-c', find).stdout.split() == ['Groups:', '29']
 
 
 def test_ultralytics_sends_nothing_home(stack):

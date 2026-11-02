@@ -242,6 +242,7 @@ class AiErrors(_Section):
     ollama_too_slow: str
     no_connection: str
     ollama_no_connection: str
+    cloud_refused: str
     other: str
     no_pictures: str
     resting: str
@@ -255,6 +256,8 @@ class Replies(_Section):
     empty_reply: str
     nobody_here: str
     no_ai_label: str
+    cloud_ai_label: str
+    pictures_stay_home: str
     no_picture: str
     ask_for_a_sentence: str
     ai_errors: AiErrors

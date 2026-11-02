@@ -41,7 +41,7 @@ from desktalk.adapters.cloud import HttpCloudLink
 from desktalk.adapters.detector import NoDetector, UltralyticsDetector
 from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser
 from desktalk.adapters.llm import OpenAICompatibleChatModel, ResilientChatModel
-from desktalk.adapters.notify import MacNotifications, make_notifications
+from desktalk.adapters.notify import QueuedNotifications, make_notifications
 from desktalk.adapters.picture import DeskPainter, OpenCvPictureTools
 from desktalk.adapters.storage import EventLog, JsonFileStore, SqliteStateStore
 from desktalk.adapters.storage.json_files import SUFFIX as JSON_SUFFIX
@@ -58,7 +58,7 @@ from desktalk.core.chat.workers import (
     Lens,
     LostItems,
 )
-from desktalk.core.cloud import CloudUploader
+from desktalk.core.cloud import CloudUploader, linked_server
 from desktalk.core.demo import DemoFirer, ScenarioRunner
 from desktalk.core.desk import Album, DangerBoard, LiveView, Memories, Scene, WholeDesk
 from desktalk.core.events import EventStream
@@ -198,8 +198,8 @@ class DeskTalk:
                       (/api/dev/scenarios...), and the background job that fires them once their countdown is over
                       (None when settings → dev.enabled is false)
     todos             the to-do list the server keeps: items(), replace(), has_list() (/api/todos, /api/chat_todos)
-    desktop           the Mac's own pop-ups (warnings, reminders, sips): nothing on the web uses it; stop() lets
-                      its thread finish
+    desktop           the Mac's pop-ups or the Pi's speaker (warnings, reminders, sips): nothing on the web uses it;
+                      stop() lets its thread finish
     """
 
     config: AppConfig
@@ -305,7 +305,7 @@ class DeskTalk:
         self._shutdown_step('save the object states', lambda: self.object_states.save_snapshot(self.clock.now()))
         self._shutdown_step('save the habits', lambda: self.habits.save(force=True))
         self._shutdown_step('compact the event log', lambda: self.event_log.compact(self.clock.now()))
-        if isinstance(self.desktop, MacNotifications):
+        if isinstance(self.desktop, QueuedNotifications):
             self._shutdown_step('show the last notifications', self.desktop.close)
         still_running += self.bus.close(wait)
         if isinstance(self.source, WebcamSource):
@@ -403,7 +403,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         set_up_logging      log to the terminal and to the log folder (settings → logging)
         test_runner         the developer page's test runner (PytestRunner on this project), when settings →
                             dev.enabled is on
-        desktop             the computer's own pop-ups (the Mac's, through osascript; nothing on other systems)
+        desktop             pop-ups on a Mac or the Pi's speaker, as settings → notifications.output says
         cloud_link_factory  makes the line to the cloud server from its address and token (HttpCloudLink); only
                             called once the computer is linked"""
     clock = clock or SystemClock()
@@ -480,11 +480,14 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
 
     # ── the AI and the chat ──
     ai = OpenAICompatibleChatModel(config.llm, config.secrets, clock, client_factory=client_factory,
-                                   replies=config.prompts.replies)
+                                   replies=config.prompts.replies,
+                                   cloud_link=lambda: linked_server(store, config.cloud.link_key))
     model = ResilientChatModel(ai, clock, config.llm, time_limit_sec=ai.time_limit_sec, replies=config.prompts.replies)
-    vision = model if model.local_vision else None       # pictures only go to an AI on this computer (no quota)
+    # Pictures only go to an AI on this computer (no quota), and never with llm.send_pictures off or to llm.ai_url.
+    vision = model if model.local_vision else None
     hub = MessageHub(clock, recent_kept=config.chat.recent_kept, queue_size=config.web.live_queue_size)
-    # Warnings, reminders and sips the camera saw go to the chat through `feed`, which also pops them up on the Mac.
+    # Warnings, reminders and sips the camera saw go to the chat through `feed`, which also pops them up on the Mac
+    # or says them through the Pi's speaker.
     # The web keeps reading the hub.
     notifications = config.notifications
     if desktop is None:

@@ -1,12 +1,15 @@
 """What every DesktopNotifications must do (desktalk/ports.py): show the computer's own pop-up, never raising and
-never holding up the caller. The fake runs it here; the real Mac one joins as one more test class in this file
-(it needs a `notifications` fixture that doesn't really show anything, e.g. with a fake runner)."""
+never holding up the caller. The fake runs it here, and the real Mac and speaker ones join as test classes of their
+own (each with a `notifications` fixture that doesn't really show or say anything, e.g. with a fake runner)."""
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import pytest
 
 from desktalk.adapters.notify.mac import MacNotifications, NoNotifications
+from desktalk.adapters.notify.speaker import SpeakerNotifications
 from desktalk.config import NotificationsSettings
 from desktalk.ports import DesktopNotifications
 from tests.fakes import FakeDesktopNotifications
@@ -58,3 +61,14 @@ def test_the_fake_remembers_what_it_showed():
     fake.show('Cup', 'Sip logged')
     fake.show('Lens', 'The camera is covered')
     assert fake.shown == [('Cup', 'Sip logged'), ('Lens', 'The camera is covered')]
+
+
+class TestSpeakerNotifications(DesktopNotificationsContract):
+    @pytest.fixture
+    def notifications(self):
+        settings = NotificationsSettings.model_construct(
+            speak_command=('speak', '{voice}', '{device}'), voice_model='voice.onnx', sound_card='',
+            sound_cards_file=Path('/nonexistent'), speak_time_limit_sec=5.0)
+        speaker = SpeakerNotifications(settings, queue_size=4, run_command=lambda args, text, time_limit: None)
+        yield speaker
+        speaker.close()

@@ -317,8 +317,16 @@ rule_engine:
 
 # ── AI (keys are in .env) ──────────────────────────────────────────
 llm:
-  # Which AI answers: the first one with a key in .env wins:
+  # Chat AI is optional: with none, warnings and reminders still go out in their ready-made words.
+  # Which AI answers: ai_url when it's set, or else the first one with a key in .env:
   # Gemini → OpenAI → Groq → Ollama (OLLAMA_URL, no key needed)
+  ai_url: ''                  # an AI's address, text only, for the Pi, which keeps no keys. Ollama on your computer:
+                              # http://<computer>:11434/v1, with ollama_model below. Your linked cloud server:
+                              # <its address>/v1. Only this setting may point at the cloud server, and only an address
+                              # matching the saved link (data/cloud.json) gets the token; that needs no restart.
+  send_pictures: true         # false = pictures never go to any AI. They only ever go to OLLAMA_URL, never ai_url
+  reminder_wait_sec: 400      # longest a reminder waits for the AI's words before using its ready-made ones (here
+                              # longer than the AI's own limits; the Pi's is short, in raspberry_pi/settings.pi.yaml)
   gemini_model: gemini-2.5-flash
   openai_model: gpt-4o-mini
   groq_model: llama-3.3-70b-versatile
@@ -341,6 +349,8 @@ llm:
   vision_retry_sec: 1         # a failed picture question is tried again after this long (times the try number)
   ollama_keepalive_sec: 240   # ask Ollama something tiny this often, so the model stays loaded
   ollama_keepalive_start_sec: 10
+  ollama_reasoning_effort: '' # none = a model that thinks before it answers skips that. Without it such a model can use
+                              # up its whole reply on thinking and send nothing back. Empty = say nothing about it
   gemini_url: https://generativelanguage.googleapis.com/v1beta/openai/
   groq_url: https://api.groq.com/openai/v1
   gemini_thinking_budget: 0   # 0 = Gemini answers straight away, without "thinking" first (faster, cheaper)
@@ -387,6 +397,7 @@ chat:
   panel_views_window_sec: 3600  # opened this often within this long...
   panel_views_min: 2          # ...at least this many times = the agent mentions it
   panel_action_max_chars: 40  # what the app says you did in a panel ("view", "close" ...) is cut to this many letters
+  ai_writes_warnings: true    # false = danger warnings use their ready-made words and never wait for an AI
 
 # ── Small talk between agents ──────────────────────────────────────
 idle_chat:
@@ -627,17 +638,31 @@ web:
   # The colors the page knows. Agents (agents.yaml) use the first eight; ink is the group chat's.
   palette: [cobalt, teal, tang, mustard, coral, plum, moss, slate, ink]
 
-# ── Mac notifications (only on a Mac) ───────────────────────────────
-# Desk Talk itself shows the Mac's own pop-up, so it comes whether or not an app page is open. Quiet hours (the
-# app's Settings page) mute them all. The first one may ask once to allow notifications from "Script Editor".
+# ── Notifications: pop-ups on a Mac, or said out loud on the Pi ─────
+# Desk Talk does this itself, so it comes whether or not an app page is open. Quiet hours (the app's Settings page) mute
+# them all. On a Mac, the first one may ask once to allow notifications from "Script Editor".
 notifications:
-  enabled: true               # false = no pop-ups at all (and none show in quiet hours: reminders → quiet_hours)
+  output: mac                 # mac = the Mac's pop-ups, speaker = said out loud (the Pi), none = only in the chat
+  enabled: true               # false = no pop-ups or speech at all (and none in quiet hours: reminders → quiet_hours)
   warnings: true              # danger warnings, and Lens saying the camera needs fixing
   reminders: true             # water, breaks, phone-free time, light, screens, food and to-dos
   sips: true                  # "Sip logged" when the camera saw you drink (not the buttons or the chat)
   time_limit_sec: 5           # a pop-up that takes longer than this to show is given up on (it never holds up the chat)
   command: osascript          # the Mac's built-in program that shows them
-  queue_size: 20              # how many pop-ups can wait to be shown; any more are dropped (and that is logged)
+  queue_size: 20              # how many can wait their turn; any more are dropped (and that is logged)
+  # The rest is only for output: speaker. The command gets the words on its standard input, and {voice} and {device}
+  # filled in. Piper's "medium" voices make 22050 sounds a second, so the voice and -r go together.
+  speak_command:
+    - bash
+    - -c
+    - set -o pipefail; piper --quiet --model "$1" --output_raw | aplay -q -D "$2" -t raw -f S16_LE -c 1 -r 22050
+    - speak
+    - '{voice}'
+    - '{device}'
+  voice_model: /opt/piper/en_US-lessac-medium.onnx   # the voice, in the Pi's app image (raspberry_pi/app/Dockerfile)
+  sound_card: ''              # a word in the sound card's name, looked for each time (usb). Empty = the system's choice
+  sound_cards_file: /proc/asound/cards   # where the system lists its sound cards
+  speak_time_limit_sec: 30    # a message still being said after this long is stopped (it never holds up the chat)
 
 # ── Logs ────────────────────────────────────────────────────────────
 logging:

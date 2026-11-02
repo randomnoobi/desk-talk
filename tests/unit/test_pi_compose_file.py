@@ -74,7 +74,7 @@ def test_env_example_has_the_same_names_as_env():
     assert set(env_file(PI / '.env.example')) == set(env_file(PI / '.env'))
 
 
-def test_only_the_camera_gets_the_devices_and_nothing_is_privileged(services):
+def test_only_the_camera_gets_all_the_devices_and_nothing_is_privileged(services):
     assert '/dev' in mounts(services['camera'])
     assert mounts(services['camera'])['/run/udev'].endswith(':ro')
     assert len(services['camera']['device_cgroup_rules']) == 3
@@ -84,7 +84,7 @@ def test_only_the_camera_gets_the_devices_and_nothing_is_privileged(services):
         assert 'devices' not in service
         if name != 'camera':
             assert '/dev' not in mounts(service)
-            assert 'device_cgroup_rules' not in service
+    assert 'device_cgroup_rules' not in services['detector']     # the app's one rule: test_the_app_gets_the_sound_card
 
 
 def test_the_detector_has_no_open_port_and_only_the_app_does(services):
@@ -140,8 +140,50 @@ def test_the_app_with_the_pi_settings_loads_without_a_word_about_old_settings(tm
     assert not config.secrets.gemini_api_key.get_secret_value()
 
 
-def test_the_pi_settings_set_no_ai(pi_settings):
-    assert 'llm' not in pi_settings and 'chat' not in pi_settings
+def test_the_pi_settings_set_no_ai_and_keep_pictures_home(pi_settings):
+    assert not pi_settings['llm'].get('ai_url')
+    assert pi_settings['llm']['send_pictures'] is False
+    assert pi_settings['chat']['ai_writes_warnings'] is False
+
+
+def test_the_pi_speaks_through_a_usb_card_and_a_reminder_waits_briefly(pi_settings, tmp_path):
+    (tmp_path / 'config').mkdir()
+    for name in ('settings.yaml', 'protocols.yaml', 'agents.yaml', 'prompts.yaml'):
+        shutil.copy(ROOT / 'config' / name, tmp_path / 'config' / name)
+    shutil.copy(PI / 'settings.pi.yaml', tmp_path / 'config' / 'settings.local.yaml')
+    config = load_config(root=tmp_path, environ={})
+    assert config.notifications.output == 'speaker' and config.notifications.sound_card == 'usb'
+    assert config.llm.reminder_wait_sec < config.llm.timeout_sec
+
+
+def test_a_computer_keeps_todays_behaviour():
+    config = load_config(environ={}, dotenv=ROOT / 'no-such-file')
+    assert config.notifications.output == 'mac' and config.chat.ai_writes_warnings is True
+    assert config.llm.send_pictures is True and config.llm.ai_url == ''
+    assert config.llm.reminder_wait_sec > config.llm.longest_reply_sec()
+
+
+def test_the_app_gets_the_sound_card_and_no_other_device(compose):
+    app = compose['services']['app']
+    binds = [str(v) for v in app['volumes']]
+    assert not any(v.startswith('/dev:') for v in binds) and 'privileged' not in app and 'devices' not in app
+    assert '${SOUND_DEVICES:-/dev/snd}:/dev/snd' in binds
+    assert '${SOUND_CARDS_FILE:-/proc/asound/cards}:/sound-cards:ro' in binds
+    assert app['device_cgroup_rules'] == ['c ${SOUND_DEVICE_MAJOR:-116}:* rw']
+    assert app['environment']['PI_AUDIO_GROUP'] == '${PI_AUDIO_GROUP:-29}'
+
+
+def test_the_card_list_is_where_the_settings_look(pi_settings, compose):
+    inside = next(v for v in compose['services']['app']['volumes'] if 'SOUND_CARDS_FILE' in str(v)).split(':')[-2]
+    assert pi_settings['notifications']['sound_cards_file'] == inside
+
+
+def test_the_voice_is_in_the_image_where_the_settings_say():
+    config = load_config(environ={}, dotenv=ROOT / 'no-such-file')
+    dockerfile = (PI / 'app' / 'Dockerfile').read_text(encoding='utf-8')
+    assert 'COPY --from=voice /opt/piper /opt/piper' in dockerfile
+    assert config.notifications.voice_model.startswith('/opt/piper/')
+    assert f'-o {Path(config.notifications.voice_model).name} ' in dockerfile
 
 
 def test_the_app_image_can_see_no_keys_or_data():

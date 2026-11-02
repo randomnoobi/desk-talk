@@ -171,11 +171,11 @@ def test_the_ai_is_the_one_with_a_key_wrapped_so_it_never_stalls_the_app(tmp_pat
     assert reply['messages'] == [{'character': 'computer', 'text': 'Hello from the fake AI!'}]
 
 
-def test_without_a_key_the_chat_says_how_to_add_one(tmp_path):
+def test_without_a_key_the_chat_says_it_isnt_set_up(tmp_path):
     rig = DeskRig(tmp_path)
     rig.watch(4, LAPTOP)
     assert not rig.app.model.ready
-    assert '.env' in rig.app.generator.answer('computer', 'How are you?')['error']
+    assert 'optional' in rig.app.generator.answer('computer', 'How are you?')['error']
 
 
 # ── logging ──────────────────────────────────────────────────────────

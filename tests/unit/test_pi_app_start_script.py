@@ -27,13 +27,14 @@ def desk(tmp_path) -> Path:
     tools = tmp_path / 'tools'
     tools.mkdir()
     stand_in(tools, 'chown', 'exit 0')
-    # setpriv --reuid=.. --regid=.. --clear-groups <the program>: runs the program
+    # setpriv --reuid=.. --regid=.. --groups=.. <the program>: runs the program
     stand_in(tools, 'setpriv', 'shift 3; exec "$@"')
     return tmp_path
 
 
 def start(desk: Path) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, 'PATH': f'{desk / "tools"}:{os.environ["PATH"]}', 'PI_USER_ID': '1000', 'PI_GROUP_ID': '1000'}
+    env = {**os.environ, 'PATH': f'{desk / "tools"}:{os.environ["PATH"]}', 'PI_USER_ID': '1000', 'PI_GROUP_ID': '1000',
+           'PI_AUDIO_GROUP': '29'}
     return subprocess.run(['sh', str(START), 'sh', '-c', 'echo the app started'], cwd=desk, env=env,
                           capture_output=True, text=True, check=False)
 
@@ -72,3 +73,9 @@ def test_when_chown_fails_the_app_still_starts(desk):
     stand_in(desk / 'tools', 'chown', 'exit 1')
     done = start(desk)
     assert done.returncode == 0 and 'the app started' in done.stdout
+
+
+def test_the_app_keeps_the_audio_group_when_it_gives_up_root(desk):
+    tools = desk / 'tools'
+    stand_in(tools, 'setpriv', 'echo "$@"')
+    assert '--groups=29 ' in start(desk).stdout

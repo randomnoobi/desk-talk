@@ -89,10 +89,10 @@ def test_the_key_from_env_goes_to_the_client(llm):
 
 def test_no_key_means_no_ai_and_a_plain_reason(llm):
     model, factory = make(llm)
-    assert not model.ready and model.label == 'No AI (add a key to .env)' == REPLIES.no_ai_label
+    assert not model.ready and model.label == REPLIES.no_ai_label and 'optional' in model.label
     with pytest.raises(AIUnavailable) as err:
         model.chat(HELLO, max_tokens=50, temperature=0.7)
-    assert err.value.reason == REPLIES.needs_an_ai and '.env' in err.value.reason and factory.clients == []
+    assert err.value.reason == REPLIES.needs_an_ai and 'optional' in err.value.reason and factory.clients == []
 
 
 def test_the_fixed_replies_come_from_the_prompt_settings(llm):

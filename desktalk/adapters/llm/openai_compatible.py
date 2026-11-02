@@ -1,9 +1,14 @@
 """
 The AI connection (chat + pictures), through the OpenAI-compatible API.
 
-Which AI answers is decided by .env: the first of Gemini → OpenAI → Groq → Ollama that has a key
-(Ollama needs only OLLAMA_URL). When OLLAMA_URL is set, questions about pictures go to Ollama's
-vision model even when the chat runs on a cloud AI. Model names and limits: config/settings.yaml → llm.
+Which AI answers: llm.ai_url when it's set (how the Pi gets an AI, since it keeps no keys), otherwise .env decides: the
+first of Gemini → OpenAI → Groq → Ollama that has a key (Ollama needs only OLLAMA_URL). When OLLAMA_URL is set,
+questions about pictures go to Ollama's vision model even when the chat runs on a cloud AI, unless llm.send_pictures
+is off. Model names and limits: config/settings.yaml → llm.
+
+llm.ai_url gets text only, never a picture. It may be Ollama on the user's computer, or the linked cloud server. Only
+when it matches the server of the saved link does a request carry the link's token, read for each request so linking
+later needs no restart; any other address never sees it. The token is never logged.
 
 Each request has a time limit (llm.timeout_sec, or llm.ollama_timeout_sec for Ollama), set with the
 OpenAI client's own `timeout` option. Every failure is raised as AIUnavailable in plain words.
@@ -18,6 +23,7 @@ import base64
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
+from urllib.parse import urlsplit
 
 from desktalk.adapters.llm.errors import AIRefused, error_from, is_rate_limit
 from desktalk.config import LlmSettings, Secrets
@@ -28,6 +34,20 @@ from desktalk.ports import Clock
 log = logging.getLogger(__name__)
 
 _NOT_FOR_PICTURES = ('multimodal', 'does not support')
+_NO_KEY = 'ollama'                      # Ollama takes any key, and the client insists on one
+_CLOUD_CHAT_PATH = '/v1'                # where a cloud server's chat lives (cloud/.../routers/chat_v1.py)
+_USUAL_PORT = {'http': 80, 'https': 443}
+_TOKEN_HIDDEN = '***'
+
+
+def is_chat_address_of(ai_url: str, server: str) -> bool:
+    """`ai_url` is the chat address of this cloud server: the same scheme, host and port, plus the chat's path."""
+    try:
+        url, home = urlsplit(ai_url), urlsplit(server)
+        places = [(u.scheme, (u.hostname or '').lower(), u.port or _USUAL_PORT.get(u.scheme)) for u in (url, home)]
+    except ValueError:
+        return False
+    return places[0] == places[1] and url.path.rstrip('/') == home.path.rstrip('/') + _CLOUD_CHAT_PATH
 
 
 def openai_client(*, api_key: str, base_url: str | None = None) -> Any:
@@ -40,10 +60,12 @@ class OpenAICompatibleChatModel:
     """The ChatModel (desktalk/ports.py) for Gemini, OpenAI, Groq and Ollama.
 
     client_factory(api_key=..., base_url=...) makes a client like openai.OpenAI; tests pass a fake.
-    `replies`: config/prompts.yaml → replies (what it says when there is no AI, an empty reply or no picture)."""
+    `replies`: config/prompts.yaml → replies (what it says when there is no AI, an empty reply or no picture).
+    `cloud_link`: (the linked cloud server's address, the token) right now, or None when not linked."""
 
     def __init__(self, settings: LlmSettings, secrets: Secrets, clock: Clock,
-                 client_factory: Callable[..., Any] | None = None, *, replies: Replies):
+                 client_factory: Callable[..., Any] | None = None, *, replies: Replies,
+                 cloud_link: Callable[[], tuple[str, str] | None] = lambda: None):
         self._settings = settings
         self._clock = clock
         self._words = replies
@@ -52,11 +74,16 @@ class OpenAICompatibleChatModel:
         self._model_name = ''
         self._label = replies.no_ai_label
         self._is_gemini = False
-        self.is_local = False            # the chat runs on Ollama, on this computer
+        self._local = False              # the chat runs on Ollama, on this computer (or the one llm.ai_url names)
+        self._ai_url = settings.ai_url.strip()
+        self._cloud_link = cloud_link
+        self._factory = client_factory or openai_client
+        self._cloud_client: Any = None   # the client with the token in it, for that token
+        self._cloud_client_token = ''
         self._problem: str | None = None
         self._vision_refused: str | None = None
         try:
-            self._connect(secrets, client_factory or openai_client)
+            self._connect(secrets, self._factory)
         except ImportError:
             log.warning('The openai package is not installed, so the characters cannot chat.')
             self._client = self._vision_client = None
@@ -64,8 +91,12 @@ class OpenAICompatibleChatModel:
 
     def _connect(self, secrets: Secrets, factory: Callable[..., Any]) -> None:
         s = self._settings
+        if self._ai_url:
+            self._client = factory(api_key=_NO_KEY, base_url=self._ai_url)
+            self._model_name, self._label, self._local = s.ollama_model, f'Ollama {s.ollama_model}', True
+            return
         ollama_url = secrets.ollama_url.strip()
-        if ollama_url:
+        if ollama_url and s.send_pictures:
             # A separate client for pictures, so the chat can run on Gemini while Ollama looks at pictures.
             self._vision_client = factory(api_key='ollama', base_url=ollama_url)
         gemini, openai, groq = (k.get_secret_value().strip() for k in
@@ -81,12 +112,17 @@ class OpenAICompatibleChatModel:
             self._model_name, self._label = s.groq_model, f'Groq {s.groq_model}'
         elif ollama_url:
             self._client = factory(api_key='ollama', base_url=ollama_url)
-            self._model_name, self._label, self.is_local = s.ollama_model, f'Ollama {s.ollama_model}', True
+            self._model_name, self._label, self._local = s.ollama_model, f'Ollama {s.ollama_model}', True
 
     # ── what the app shows ──
     @property
     def label(self) -> str:
-        return self._label
+        return self._words.cloud_ai_label if self._token() else self._label
+
+    @property
+    def is_local(self) -> bool:
+        """The chat runs on Ollama, on this computer or the user's (not the cloud server, once linked)."""
+        return self._local and not self._token()
 
     @property
     def ready(self) -> bool:
@@ -100,27 +136,47 @@ class OpenAICompatibleChatModel:
     @property
     def time_limit_sec(self) -> float:
         """The longest wait for one chat reply."""
-        return self._settings.ollama_timeout_sec if self.is_local else self._settings.timeout_sec
+        return self._settings.ollama_timeout_sec if self._local else self._settings.timeout_sec
 
     def problem(self) -> str | None:
         """The current AI problem in plain words, or None if the last call worked."""
         return self._problem
+
+    def _token(self) -> str:
+        """The token, when llm.ai_url is the linked cloud server's chat address right now; otherwise ''."""
+        if not self._ai_url:
+            return ''
+        link = self._cloud_link()
+        return link[1] if link and is_chat_address_of(self._ai_url, link[0]) else ''
+
+    def _chat_client(self, token: str) -> Any:
+        if not token:
+            return self._client
+        if token != self._cloud_client_token:           # the first time, or linked again
+            self._cloud_client = self._factory(api_key=token, base_url=self._ai_url)
+            self._cloud_client_token = token
+        return self._cloud_client
 
     # ── calls ──
     def chat(self, messages: Sequence[Mapping[str, Any]], *, max_tokens: int, temperature: float,
              background: bool = False) -> str:
         if self._client is None:
             raise AIUnavailable(self._words.needs_an_ai)
+        if self._ai_url and any(not isinstance(m.get('content'), str) for m in messages):
+            raise AIRefused(self._words.pictures_stay_home)
         s = self._settings
-        request: dict[str, Any] = {'model': self._model_name, 'max_tokens': max_tokens,
-                                   'temperature': temperature, 'timeout': self.time_limit_sec}
-        if self.is_local:
-            request['extra_body'] = {'num_predict': max_tokens}
+        token = self._token()
+        local = self._local and not token
+        request: dict[str, Any] = {'model': self._model_name, 'max_tokens': max_tokens, 'temperature': temperature,
+                                   'timeout': s.ollama_timeout_sec if local else s.timeout_sec}
+        if local:
+            effort = {'reasoning_effort': s.ollama_reasoning_effort} if s.ollama_reasoning_effort else {}
+            request['extra_body'] = {'num_predict': max_tokens, **effort}
         elif self._is_gemini:
             request['extra_body'] = {'extra_body': {'google': {'thinking_config': {
                 'thinking_budget': s.gemini_thinking_budget}}}}
         # Small local models sometimes answer with nothing: ask again, a little more creative each time.
-        tries = s.max_retries if self.is_local else 1
+        tries = s.max_retries if local else 1
         for attempt in range(tries):
             asked = [dict(m) for m in messages]
             if attempt:
@@ -129,7 +185,7 @@ class OpenAICompatibleChatModel:
                 if asked and asked[-1].get('role') == 'user':
                     asked[-1]['content'] = f'{asked[-1]["content"]}{self._words.ask_for_a_sentence}'
                 log.info('%s sent back an empty reply, asking again (try %d)', self._label, attempt + 1)
-            text = self._ask(self._client, {**request, 'messages': asked})
+            text = self._ask(self._chat_client(token), {**request, 'messages': asked}, token=token)
             if text:
                 self._problem = None      # a call worked, so any earlier problem is over
                 return text
@@ -144,6 +200,8 @@ class OpenAICompatibleChatModel:
         client = self._vision_client or self._client
         if client is None:
             raise AIUnavailable(self._words.needs_an_ai)
+        if self._ai_url or not self._settings.send_pictures:
+            raise AIRefused(self._words.pictures_stay_home)
         if not jpeg:
             raise AIUnavailable(self._words.no_picture)
         if self._vision_refused:
@@ -170,20 +228,28 @@ class OpenAICompatibleChatModel:
                 self._problem = err.reason     # pictures on a cloud AI use the same quota as the chat
             raise
 
-    def _ask(self, client: Any, request: dict[str, Any], picture_question: bool = False) -> str:
-        """One request. Raises AIUnavailable (or AIRefused) in plain words."""
+    def _ask(self, client: Any, request: dict[str, Any], picture_question: bool = False, token: str = '') -> str:
+        """One request. Raises AIUnavailable (or AIRefused) in plain words. `token`: the one this client holds, kept
+        out of what is logged or shown."""
         try:
             resp = client.chat.completions.create(**request)
         except Exception as exc:
-            text = str(exc).lower()
+            said = str(exc).replace(token, _TOKEN_HIDDEN) if token else str(exc)
+            text = said.lower()
             if picture_question and not is_rate_limit(text) and any(w in text for w in _NOT_FOR_PICTURES):
                 self._vision_refused = self._words.ai_errors.no_pictures.format(model=request['model'])
                 log.warning('Questions about pictures are off: %s', self._vision_refused)
                 raise AIRefused(self._vision_refused) from exc
             s = self._settings
-            err = error_from(exc, self._label, max_chars=s.error_text_chars, words=self._words.ai_errors)
+            err = error_from(said, self._label, max_chars=s.error_text_chars, words=self._words.ai_errors)
+            if token:
+                if isinstance(err, AIRefused):      # the only key here is the link's, and the server said no to it
+                    err = AIRefused(self._words.ai_errors.cloud_refused)
+                log.warning('%s failed: %s', self._words.cloud_ai_label, said[:s.error_log_chars])
+                self._problem = err.reason
+                raise err from None                 # not `from exc`: what it said may hold the token
             log.warning('%s failed: %s', 'Picture question' if picture_question else self._label,
-                        str(exc)[:s.error_log_chars])
+                        said[:s.error_log_chars])
             if not picture_question:
                 self._problem = err.reason
             raise err from exc
@@ -193,7 +259,7 @@ class OpenAICompatibleChatModel:
     # ── keeping Ollama's model loaded ──
     def ping(self) -> None:
         """Ask the chat AI something tiny. Failures are ignored: this only keeps Ollama's model in memory."""
-        if self._client is None:
+        if self._client is None or not self.is_local:
             return
         try:
             self._client.chat.completions.create(model=self._model_name, messages=[{'role': 'user', 'content': 'hi'}],
@@ -204,7 +270,7 @@ class OpenAICompatibleChatModel:
     def keepalive_worker(self) -> OllamaKeepAlive | None:
         """A job that keeps Ollama's model loaded (None for a cloud AI). Add it to the Supervisor with
         start_after=llm.ollama_keepalive_start_sec."""
-        return OllamaKeepAlive(self, self._settings.ollama_keepalive_sec) if self.is_local else None
+        return OllamaKeepAlive(self, self._settings.ollama_keepalive_sec) if self._local else None
 
 
 class OllamaKeepAlive:

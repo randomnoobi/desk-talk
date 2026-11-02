@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from desktalk.adapters.notify import mac
+from desktalk.adapters.notify import mac, speaker
 
 
 @pytest.fixture(autouse=True)
@@ -29,6 +29,18 @@ def osascript_calls(monkeypatch):
     monkeypatch.setattr(mac, 'subprocess', SimpleNamespace(run=lambda *args, **kw: calls.append((args, kw))))
     yield calls
     assert not calls, (f'a test tried to show {len(calls)} real Mac pop-up(s): pass build() a fake `desktop=` '
+                       '(tests.fakes.FakeDesktopNotifications)')
+
+
+@pytest.fixture(autouse=True)
+def speak_calls(monkeypatch):
+    """No test ever really speaks: a SpeakerNotifications made without its own command gets this recorder instead of
+    the real one, and a test that reached it fails. A test that means to reach it takes this fixture and empties the
+    list. (A test of the real runner imports run_speak_command by name, which this doesn't change.)"""
+    calls: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(speaker, 'run_speak_command', lambda args, text, limit: calls.append((args, text, limit)))
+    yield calls
+    assert not calls, (f'a test tried to really say {len(calls)} thing(s): pass build() a fake `desktop=` '
                        '(tests.fakes.FakeDesktopNotifications)')
 
 

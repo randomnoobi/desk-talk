@@ -20,4 +20,5 @@ if [ ! -s "$rules" ]; then
     fi
 fi
 
-exec setpriv --reuid="$PI_USER_ID" --regid="$PI_GROUP_ID" --clear-groups "$@"
+# Its one extra group is the Pi's audio group, which may use the sound card (/dev/snd).
+exec setpriv --reuid="$PI_USER_ID" --regid="$PI_GROUP_ID" --groups="$PI_AUDIO_GROUP" "$@"
