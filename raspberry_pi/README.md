@@ -1,41 +1,51 @@
 # Raspberry Pi
 
-The Pi is Desk Talk's camera, and it finds the objects in its own pictures too. Two programs run on it:
-
-- **The camera program** (`raspberry_pi/camera/`) runs on the Pi's own Python 3. It takes **3 pictures
-  a second**, keeps them on the Pi and **deletes them every 10 minutes**, asks the detector what's in each
-  one, and sends each picture with what was found to your computer over Wi-Fi.
-- **The detector** (`raspberry_pi/detector_service/`) runs YOLO inside a Docker container. Only the
-  camera program on the Pi itself can reach it.
+The Pi runs all of Desk Talk by itself: it is the camera, it finds the objects in its own pictures, and it serves
+the app's page. Three Docker containers from one compose file (`raspberry_pi/compose.yaml`) do it, and nothing runs
+outside Docker. No computer, no AI and no account is needed.
 
 ```
-Raspberry Pi                                                       Your computer
-┌─────────────────────────────────────────────────────┐            ┌─────────────────────────────┐
-│ camera program (python3 -m raspberry_pi.camera)     │ picture +  │ uv run python server.py     │
-│   3 pictures a second, saved in ~/desk-talk-photos, │ what was   │ /api/pi/frame               │
-│   deleted every 10 minutes                          │ found      │   uses the Pi's detections, │
-│       │ picture          ▲ what's in it             │ ─────────▶ │   or runs YOLO itself when  │
-│       ▼                  │                          │   Wi-Fi    │   the Pi's detector is off  │
-│ detector container (Docker, 127.0.0.1:8100 only)    │            │                             │
-└─────────────────────────────────────────────────────┘            └─────────────────────────────┘
+Raspberry Pi (docker compose)
+ camera                      detector                       app
+ ──────                      ────────                       ───
+ 3 pictures a second,   ───▶ YOLO: what is in this picture? ──┐
+ kept on the Pi,        ◀─── (no open port: only camera       │
+ deleted every 10 min        and app can reach it)            ▼
+        │                                          events, characters, habits,
+        └── picture + what was found, one upload ─▶ warnings on the speaker,
+            for each picture                        the page on port 5000
+                                                        ▲
+                       http://desktalk.local:5000, from a phone or computer on your Wi-Fi
 ```
 
-If the detector is down, still starting or too slow, the camera program sends the pictures anyway and your
-computer finds the objects itself. So the camera keeps going whatever happens to the container.
+- **`camera`** takes **3 pictures a second**, keeps them on the Pi and **deletes them every 10 minutes**, asks the
+  detector what's in each one, and sends each picture with what was found to the app. Only this container gets the
+  camera's devices.
+- **`detector`** runs YOLO. If it is still loading, or down, the camera sends the pictures anyway, with nothing
+  found, and Lens says the detector is off. Docker starts it again. There is no other detector to fall back on.
+- **`app`** is the same Desk Talk code that runs on a computer. It is the only container with an open port, and it
+  writes everything to the `data/` folder.
 
-> **Not tried on a real Pi yet.** These steps follow how the camera program and the detector are built
-> and tested on the Mac, but nobody has run them on a Raspberry Pi so far, and the detector's Docker image
-> hasn't been built yet. If a step doesn't work as written, note what it printed.
+Pictures never leave the Pi, except to a page someone opens on your own Wi-Fi. The app has no login on the Wi-Fi:
+anyone who can join your Wi-Fi can open the page, and only the Wi-Fi's password keeps them out.
 
-More detail: the camera program's [README](camera/README.md) (every flag) and the detector's
-[README](detector_service/README.md) (its API, settings and your own model files).
+> **What has and hasn't been tried on a real Pi.** Tried on a Pi 5 (8 GB): the three containers together with the real
+> camera, pictures flowing into events, one container restarting by itself, `update.sh`, a dry run of `install.sh`,
+> the speak command with a stand-in for the speaker (so nobody has heard it), and that no picture leaves the Pi.
+> **Not tried yet:** `install.sh` on a fresh card, a real USB speaker, a real object on the desk, a power cut, a
+> start with no Wi-Fi, no network at all, a real phone, a real cloud link, and closing the laptop an AI runs on.
+> They are the steps in [docs/PI_CHECKS.md](../docs/PI_CHECKS.md).
 
-The camera program's files, in `raspberry_pi/camera/`: `cli.py` reads the flags and the settings and starts
-it; `main.py` is the loop (take a picture, save it, ask the detector, send it); `workers.py` connects the
-parts and runs the ones with threads of their own (the detector worker, the uploader, the settings watcher,
-the watchdog and the cleaner), each starting again after a crash. The rest: `cameras.py`, `photo_store.py`,
-`cleaner.py`, `detector_client.py`, `uploader.py`, `health.py`, `watchdog.py`, `self_test.py`,
-`settings.py`, `net.py` and `clock.py`.
+More detail: the camera's [README](camera/README.md) and the detector's [README](detector_service/README.md).
+
+## What you need
+
+- A Raspberry Pi with the camera module (or a USB webcam). Only a Pi 5 with 8 GB has been tried. The install stops on
+  a Pi with under about 2 GB of memory, and says to lower `DETECTOR_MEMORY_LIMIT` below about 3.5 GB.
+- **64-bit** Raspberry Pi OS, with the Pi on your Wi-Fi.
+- **A 32 GB SD card or larger.** The first install needs about 14 GB free: the three images and Docker's saved build
+  steps take about 12.6 GB. A 16 GB card is too small, and the install stops and says so.
+- A USB speaker, if you want to hear warnings and reminders. Nothing else needs it.
 
 ## Install with one command
 
@@ -47,11 +57,14 @@ bash ~/desk-talk/raspberry_pi/install.sh
 ```
 
 It checks the Pi (64-bit, free disk, memory, sound), installs Docker if it's missing, makes `raspberry_pi/.env` from
-`.env.example` with this Pi's own numbers, fetches the model and starts the three containers. It needs about 14 GB free
-the first time, so use a 32 GB card: a 16 GB one is too small. A Pi still called
-`raspberrypi` is renamed `desktalk`; a Pi you named keeps its name.
-It's safe to run again, and never touches the data folder, the pairing key or the models. It says if the Pi needs a
-restart, and only does that by itself with `--reboot`.
+`.env.example` with this Pi's own numbers, fetches the model and starts the three containers. The first time takes a
+while: it builds the images, which download PyTorch. A Pi still called `raspberrypi` is renamed `desktalk`; a Pi you
+named keeps its name. It's safe to run again, and never touches the data folder, the pairing key or the models. It says
+if the Pi needs a restart (for the memory limits and the camera, which need a line in the Pi's boot settings), and only
+does that by itself with `--reboot`. At the end it prints the address to open.
+
+It replaces the old steps by hand: apt packages, a systemd service for the camera, and starting the camera with
+`--server` and `--key`. None of those are needed any more.
 
 | Flag | What it does |
 |---|---|
@@ -64,220 +77,107 @@ restart, and only does that by itself with `--reboot`.
 
 **Renaming the Pi changes its address**, to `http://desktalk.local:5000`. It says so at the end; change the old name
 anywhere you saved it, such as your Mac's `~/.ssh/config`. The links the app shows come from the Pi's real name and
-`APP_HOST_PORT`, which it writes to `.env` as `PUBLIC_NAME`.
+`APP_HOST_PORT`, which it writes to `.env` as `PUBLIC_NAME`. If that name doesn't work on a phone, use the Pi's number:
+**on the Pi**, `hostname -I`.
 
-To get new code later, **on the Pi**: `bash ~/desk-talk/raspberry_pi/update.sh`. It runs `git pull`, fills in the camera's
-device numbers again, since a kernel update can change them, rebuilds, and clears old images. Docker's saved build steps are
-cleared only when the card runs low, since a whole new build takes 12 to 21 minutes. It takes `--dry-run` too.
-
-`raspberry_pi/.env` is yours and isn't in git. New settings from `.env.example` get added to it by these two scripts,
-and what's already in it stays. The model's checksum is in `raspberry_pi/model_checksums.txt`: a model that isn't
-listed is still used, and the script says it couldn't check it.
-
-The steps below are the older setup, by hand.
-
-## What you need
-
-- A Raspberry Pi 4 or 5 with the camera module (or a USB webcam). 4 GB of memory or more is best; with
-  2 GB it will be tight.
-- **64-bit** Raspberry Pi OS (Bookworm). Docker and the detector need it.
-- About 3 GB free on the SD card for the detector's image and models.
-- The Pi and your computer on the same Wi-Fi.
-
-Check the first two **on the Pi**. This should print `arm64`:
+To link to the cloud server later, **on the Pi**, run the install command again with the website's code (the same
+command the website's "Add a Pi" box shows):
 
 ```bash
-dpkg --print-architecture
+DESKTALK_LINK_CODE=<the code> bash ~/desk-talk/raspberry_pi/install.sh --server <the server's address>
 ```
 
-And this should print Python 3.11 or newer:
+`raspberry_pi/.env` is yours and isn't in git. New settings from `.env.example` get added to it by the install and
+update commands, and what's already in it stays. The model's checksum is in `raspberry_pi/model_checksums.txt`: a
+model that isn't listed is still used, and the script says it couldn't check it.
 
-```bash
-python3 --version
-```
+## Is it working?
 
-How much space is free:
-
-```bash
-df -h ~
-```
-
-## Set up the Pi (once)
-
-### 1. Packages for the camera program
-
-**On the Pi**. Raspberry Pi OS already has Python 3, Picamera2 and PyYAML; this makes sure, and adds git
-and OpenCV:
-
-```bash
-sudo apt update && sudo apt install -y git python3-picamera2 python3-opencv python3-yaml
-```
-
-Nothing else gets installed for the camera program: it only needs the standard library, these apt
-packages, and the repo's `shared/` folder.
-
-### 2. Get the code
-
-**On the Pi**:
-
-```bash
-git clone https://github.com/randomnoobi/desk-talk.git ~/desk-talk
-```
-
-### 3. Install Docker
-
-**On the Pi**:
-
-```bash
-curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker $USER
-```
-
-Then log out and back in (or `sudo reboot`), so you can use Docker without `sudo`. Check it **on the Pi**:
-
-```bash
-docker compose version
-```
-
-### 4. Start the detector container
-
-**On the Pi**. The first build downloads PyTorch and Ultralytics, so it takes a while:
-
-```bash
-cd ~/desk-talk/raspberry_pi && docker compose up -d --build
-```
-
-Check that it answers, **on the Pi**. After a minute or so `docker compose ps` should say `healthy`:
+**On the Pi**, in the compose folder. After a minute or two all three should say `healthy`:
 
 ```bash
 cd ~/desk-talk/raspberry_pi && docker compose ps
 ```
 
-```bash
-curl http://127.0.0.1:8100/health
-```
-
-It says `"state": "starting"` until the camera program tells it which model to run. Docker starts it again
-by itself after a crash and when the Pi boots.
-
-### 5. Run the camera program
-
-1. **On your Mac**, in the `desk-talk` folder, start Desk Talk. It prints the exact command for the Pi,
-   with your computer's address and the pairing key (the app shows it too, in the Desk cam panel and in
-   Settings):
-
-   ```bash
-   uv run python server.py
-   ```
-
-2. **On the Pi**, check everything first, with the address and key `server.py` printed:
-
-   ```bash
-   cd ~/desk-talk && python3 -m raspberry_pi.camera --self-test --server http://192.168.1.20:5000 --key AbC123xY
-   ```
-
-   It checks the camera, the detector container, the Pi's temperature and that your computer answers, one
-   line each, and says what to do about any problem. It sends no pictures.
-
-3. **On the Pi**, start it (same address and key):
-
-   ```bash
-   cd ~/desk-talk && python3 -m raspberry_pi.camera --server http://192.168.1.20:5000 --key AbC123xY
-   ```
-
-4. **On your Mac**, open http://localhost:5000. The Desk cam panel switches to the live picture.
-
-The first time a model is used, the container converts it to ncnn, which takes a few minutes. Until it's
-ready, the pictures go to your computer as `off` and your computer finds the objects. Lens may mention
-that the Pi's own detection is off; it goes away once the model is ready.
-
-Useful flags (`python3 -m raspberry_pi.camera --help` lists them all):
-
-| Flag | What it does |
-|---|---|
-| `--camera` | `auto`, `picamera2` (camera module), `usb` / `usb:1` (USB webcam), `folder:<dir>` or `video:<file>` for testing. Without it: `pi.camera` in `config/settings.yaml` (`auto`) |
-| `--no-detector` | don't use the detector container; your computer detects every picture |
-| `--offline` | only take and save pictures; send nothing |
-| `--self-test` | check everything, then stop |
-
-### 6. Start it when the Pi boots (optional)
-
-**On the Pi**, in the `desk-talk` folder. Put your own address and key in the first line. This fills them
-into `raspberry_pi/camera/desk-talk-camera.service` and installs it:
+Then open **http://desktalk.local:5000** on a phone or computer on the same Wi-Fi. Within a few seconds the Desk cam
+panel shows the live picture. To see what each one is doing (Ctrl-C stops watching):
 
 ```bash
-SERVER=http://192.168.1.20:5000 KEY=AbC123xY
-sed -e "s|PI_USER|$USER|g" -e "s|SERVER_URL|$SERVER|" -e "s|PAIR_KEY|$KEY|" raspberry_pi/camera/desk-talk-camera.service \
-  | sudo tee /etc/systemd/system/desk-talk-camera.service
-sudo systemctl daemon-reload && sudo systemctl enable --now desk-talk-camera
+docker compose logs -f camera
 ```
 
-The service expects the code in `~/desk-talk`. systemd starts the camera program again when it stops,
-including when its watchdog ends it because the camera got stuck.
+Use `app` or `detector` in place of `camera` for the others. Docker keeps only a few small log files per container
+(`LOG_FILE_SIZE` and `LOG_FILES` in `.env`), so they can't fill the card. The app also writes `data/logs/desktalk.log`.
 
-**On the Pi**, to see what it's doing (Ctrl-C to stop watching):
+The detector has no open port, so `curl http://127.0.0.1:8100` on the Pi doesn't answer; that is on purpose. Ask it from
+inside its own container instead:
 
 ```bash
-journalctl -u desk-talk-camera -f
+docker compose exec detector python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8100/health').read().decode())"
 ```
 
-**On the Pi**, to stop it or start it again:
-
-```bash
-sudo systemctl stop desk-talk-camera
-```
-
-```bash
-sudo systemctl restart desk-talk-camera
-```
-
-If your computer's address or the pairing key changes, run the commands above again with the new ones.
-
-## Settings
-
-You change the Pi's settings **on your Mac**, in `config/settings.yaml` (the `pi:` section), or just the lines
-you change in `config/settings.local.yaml`. Restart `server.py` after a change. The camera program asks your
-computer for its settings when it starts and again every minute (`pi.settings_check_every_sec`):
-
-- new `pi.detector` settings (model, format, picture size ...) go to the container right away;
-- for anything else, restart the camera program **on the Pi** (`sudo systemctl restart desk-talk-camera`).
-
-If your computer can't be reached when it starts, the camera program uses the copy of `config/settings.yaml`
-on the Pi. Flags win over both.
-
-Two `pi:` settings you may want: `pi.camera` picks the camera (`auto`, `picamera2`, `usb`, `usb:1` ...;
-the `--camera` flag beats it), and `pi.error_text_chars` is how much of a reply the Pi can't read goes in its
-log (200 letters).
-
-The container's own settings (its port, memory limit, retry waits, how often Docker checks its `/health`,
-and how big its log files get) are in `raspberry_pi/.env`; the detector's
-[README](detector_service/README.md) lists them all. After changing one, run `docker compose up -d` again **on the Pi**, in
-`~/desk-talk/raspberry_pi/detector_service`. The port must match `pi.detector.url` on your computer.
-
-### The speaker, and chat
-
-Warnings and reminders are said out loud through a USB speaker (`notifications.output` and `notifications.sound_card` in
-`raspberry_pi/settings.pi.yaml`). Plug it in whenever you like: no restart needed. With none plugged in, the log says so
-once and the Pi carries on. Quiet hours (the app's Settings page) mute it.
-
-Chat with the characters is optional and needs an AI somewhere else, since none runs on the Pi. Set `llm.ai_url` in that
-same file (`config/settings.yaml` says how). Warnings never wait for it, and a reminder waits at most
-`llm.reminder_wait_sec` before using its ready-made words. Only text goes to it, never a picture.
-
-## If something's wrong
-
-The camera program's log (in the terminal, or `journalctl -u desk-talk-camera -f` **on the Pi**) says what's
-wrong in plain words. On your computer, `GET /api/health` shows what the Pi said lately: its detector state
-and why, how long detection takes, the model, and how far its clock is off. **On your Mac**:
+It says `starting` until the app's camera tells it which model to run, `loading` while it converts it, then `ready`.
+Or read what the Pi has said lately from the app (**on the Pi**; from a computer use the Pi's address in place of
+`localhost`):
 
 ```bash
 curl http://localhost:5000/api/health
 ```
 
+Its `pi` part has what the camera said lately: the detector's state and why, how long detection takes and the model.
+
+## Settings
+
+The Pi's own settings are in `raspberry_pi/settings.pi.yaml`, laid over `config/settings.yaml`. Both the app and the
+camera read it (compose mounts it into both as `config/settings.local.yaml`, read-only). It is a file in git, so keep your
+changes to a few lines. After a change, **on the Pi**:
+
+```bash
+cd ~/desk-talk/raspberry_pi && docker compose restart app camera
+```
+
+The camera asks the app for its `pi:` settings when it starts, and again every minute (`pi.settings_check_every_sec`).
+New `pi.detector` settings (model, picture size ...) go to the detector right away; for anything else, restart the
+camera. If the app can't be reached when it starts, the camera uses the copy of `config/settings.yaml` inside its image.
+
+Two `pi:` settings you may want: `pi.camera` picks the camera (`auto`, `picamera2`, `usb`, `usb:1` ...), and
+`pi.error_text_chars` is how much of a reply the camera can't read goes in its log (200 letters).
+
+The containers' own numbers (ports, memory limits, how often Docker checks them, how big their log files get, and the
+install command's limits) are in `raspberry_pi/.env`; the detector's [README](detector_service/README.md) lists its
+ones. After changing one, run `docker compose up -d` again, **on the Pi**, in `~/desk-talk/raspberry_pi`. `DETECTOR_PORT` must
+match `pi.detector.url` in `settings.pi.yaml`, and `APP_PORT` must be `web.port`.
+
+### The speaker, and chat
+
+Warnings and reminders are said out loud through a USB speaker (`notifications.output` and `notifications.sound_card` in
+`raspberry_pi/settings.pi.yaml`). Plug it in whenever you like: no restart needed. With none plugged in, the log says so
+once and the Pi carries on. Quiet hours (the app's Settings page) mute it. A webcam with a microphone has `usb` in its
+name too, and can get picked ahead of the speaker: then set `sound_card` to a word only the speaker's name has
+(**on the Pi**, `cat /proc/asound/cards` lists them). Nobody has heard it on a real USB speaker yet.
+
+Chat with the characters is optional and needs an AI somewhere else, since none runs on the Pi. Set `llm.ai_url` in that
+same file (`config/settings.yaml` says how), then `docker compose restart app`:
+
+- **Ollama on your own computer**: `http://<your computer>:11434/v1`. Text only goes there: your chat messages, and the
+  words the characters say by themselves (reminders, small talk, the recap), which can include the text of your
+  to-dos. A reminder waits at most `llm.reminder_wait_sec` for it, then uses its ready-made words, and warnings never
+  wait for it at all.
+- **Your cloud server**: `<its address>/v1`, once the Pi is linked to it. Only chat you start yourself goes there,
+  as text, and the server doesn't store or log it.
+
+Pictures never go to either: `llm.send_pictures` is `false` on the Pi.
+
+## If something's wrong
+
+Each container's log (`docker compose logs --tail 50 camera`, **on the Pi**, in the compose folder) says what's
+wrong in plain words.
+
 ### The detector container is down
 
-You see "Stopped asking the detector" in the camera program's log, and Lens says the Pi's own detection is
-off. Nothing breaks: your computer detects the pictures meanwhile, and the camera program checks the
-container now and then by itself and goes back to it once it's ready.
+Lens says the detector is off, and the camera's log says "Stopped asking the detector". Nothing breaks: the
+camera and the app go on, but no objects are found until it's back. The camera checks again by itself and goes
+back to it once it's ready.
 
 **On the Pi**, see whether it's running, and what it said last:
 
@@ -286,7 +186,7 @@ cd ~/desk-talk/raspberry_pi && docker compose ps
 ```
 
 ```bash
-cd ~/desk-talk/raspberry_pi && docker compose logs --tail 50
+cd ~/desk-talk/raspberry_pi && docker compose logs --tail 50 detector
 ```
 
 **On the Pi**, start it again:
@@ -295,25 +195,32 @@ cd ~/desk-talk/raspberry_pi && docker compose logs --tail 50
 cd ~/desk-talk/raspberry_pi && docker compose up -d
 ```
 
-- **`/health` says `error`**: the message says why. Often the model name is wrong, or it's your own model
-  file and it isn't in the container's `models` volume yet (see the detector's [README](detector_service/README.md)).
-  It tries again by itself, waiting longer each time.
+- **`/health` says `error`**: the message says why. Often the model name is wrong, or the model file isn't in the
+  detector's `models` volume yet: it never downloads anything itself (see the detector's [README](detector_service/README.md)).
+  It also says `error` when a model is loaded but the last picture failed; it goes back to `ready` by itself when one
+  works. It tries again by itself, waiting longer each time.
 - **It keeps restarting** (`docker compose ps` shows "Restarting"): it may be running out of memory. Try a
   smaller model or picture size, or raise `DETECTOR_MEMORY_LIMIT` in `.env` if the Pi has memory to spare.
-- **`docker compose up` warns that the memory limit isn't supported**: **on the Pi**, add
-  `cgroup_enable=memory cgroup_memory=1` to the end of the line in `/boot/firmware/cmdline.txt`, then
-  `sudo reboot`.
-- **"The detector has no model yet"**: the container is still converting the model (a few minutes the
-  first time). Your computer detects the pictures until then.
-- **"speaks version ... of its API"**: the container and the camera program are from different versions of
-  the code. Update both (see [Updating](#updating)).
+- **`docker compose up` warns that the memory limit isn't supported**: the install command adds
+  `cgroup_enable=memory cgroup_memory=1` to the Pi's boot settings and says the Pi needs a restart. If you haven't
+  restarted since, **on the Pi** run `sudo reboot`.
+- **"The detector has no model yet"**: the container is still converting the model (a few minutes the first time),
+  or the model isn't on the Pi. Run `bash ~/desk-talk/raspberry_pi/install.sh` again: it fetches the model named in
+  `pi.detector.model` if it's missing.
+- **"speaks version ... of its API"**: the containers are from different versions of the code. Run
+  `bash ~/desk-talk/raspberry_pi/update.sh`, which rebuilds all three.
+- A container that stops answering (not just failing) is started again by Docker after its health check has failed for
+  a few minutes (the numbers are in `.env`). The detector gets 5 minutes, because converting a model can keep it busy.
 
 ### The Pi is too hot
 
 Lens says the Pi is running hot (from `pi.hot_warning_c`, 75 °C; the Pi slows itself down at about 80 °C),
 or that it's slowing itself down. Detection gets slower, so more pictures go out as `busy`.
 
-**On the Pi**, the temperature, and the slow-down flags (`throttled=0x0` means fine):
+The camera container can read the temperature, but not all the slow-down flags: `vcgencmd` doesn't work inside a
+container, and a Pi 5's kernel only gives whether the power supply is too weak. So the Pi can't always tell whether it
+slowed itself down. **On the Pi itself** (not inside a container), the temperature, and the slow-down flags
+(`throttled=0x0` means fine):
 
 ```bash
 vcgencmd measure_temp
@@ -324,95 +231,87 @@ vcgencmd get_throttled
 ```
 
 What helps: a cooler or a small fan, a case with air holes, or less work for the Pi: a smaller model or
-picture size (`pi.detector.model`, `pi.detector.image_size`) or fewer pictures a second (`pi.fps`), changed
-on your Mac. If Lens says the power supply is too weak, use the official Raspberry Pi power supply.
+picture size (`pi.detector.model`, `pi.detector.image_size`) or fewer pictures a second (`pi.fps`). If Lens says the
+power supply is too weak, use the official Raspberry Pi power supply.
 
-### Your computer is away
+### The page won't open
 
-You see "Cannot reach the computer" in the camera program's log. The Pi keeps taking and saving pictures,
-and tries again after a short wait that grows each time (up to `pi.upload_retry_max_sec`). When your computer
-is back it sends only the newest picture: no catching up on old ones, which would make the characters react
-minutes late. The event log on your computer shows the gap.
+- Is the Pi on the Wi-Fi? From a computer on the same Wi-Fi, `ssh <the Pi>` should answer. A phone on mobile data can't
+  reach it.
+- `desktalk.local` needs your phone or computer to understand `.local` names. Try the Pi's number instead
+  (**on the Pi**, `hostname -I`), as `http://<number>:5000`.
+- **On the Pi**, `docker compose ps` should show `app` as `healthy`. If it isn't, `docker compose logs --tail 50 app`.
 
-- Is `server.py` running on your computer? Are both on the same Wi-Fi?
-- On a Mac, allow incoming connections for Python if the firewall asks.
-- Did your computer's address change? `server.py` prints the new command; if the camera program runs as a
-  service, install it again with the new address (step 6).
+### No Wi-Fi at all
 
-**On the Pi**, check that your computer can be reached (use its address). Any reply means it can:
+The Pi keeps going: it takes pictures, finds objects, saves events and says warnings on the speaker. The cloud server
+(if linked) gets its events later, and an AI on another computer can't be reached, so chat says so. Nobody can open the
+page until the Wi-Fi is back. Without a network, the Pi's clock can be wrong after a power cut (it has no clock
+battery) until the network is back. Starting with no Wi-Fi hasn't been tried on a real Pi yet
+([docs/PI_CHECKS.md](../docs/PI_CHECKS.md)).
+
+### Camera problem
+
+The camera module is only for one program at a time. **On the Pi**, stop the camera container before testing it:
 
 ```bash
-curl http://192.168.1.20:5000/api/health
+cd ~/desk-talk/raspberry_pi && docker compose stop camera
 ```
+
+then `rpicam-hello` should show a picture (check the ribbon cable if not), and `docker compose up -d` starts the camera
+again. If `rpicam-hello` works but the camera container says it can't open the camera, the numbers for the camera's devices
+in `.env` (`CAMERA_MEDIA_MAJOR`, `CAMERA_DMA_HEAP_MAJOR`) may have changed with a kernel update: running
+`bash ~/desk-talk/raspberry_pi/update.sh` fills them in again. For a USB webcam set `pi.camera: usb` in `settings.pi.yaml`.
+
+"No picture from the camera ... it seems stuck": the camera stopped giving pictures for `pi.restart_after_missed_pictures`
+picture times, so the camera program stopped and Docker started the container again. If it keeps happening, check the
+ribbon cable or the USB plug.
 
 ### Other problems
 
-- **"Pairing key does not match"**: copy the key `server.py` printed again (it's kept in `certs/pair-key.txt`
-  on your computer).
-- **"camera.source: phone"**: set `camera: source: pi` in `config/settings.yaml` on your computer and restart it.
-- **"The Pi sends upload format ..."**: the Pi and your computer run different versions of the code. Update
-  both (see [Updating](#updating)).
-- **Camera problem**: **on the Pi**, `rpicam-hello` should show a picture; check the ribbon cable. For a USB
-  webcam use `--camera usb`.
-- **"No picture from the camera ... it seems stuck"**: the watchdog stopped the camera program so systemd
-  starts it again (only when it runs as the service). If it keeps happening, check the ribbon cable or the
-  USB plug.
-- **Lens says the Pi's clock is off**: your computer uses its own clock for timing, so nothing breaks, but
-  **on the Pi** `timedatectl` should say `System clock synchronized: yes`.
+- **"Pairing key does not match"** in the camera's log: the app made a new key (its `pairing` volume was removed). The
+  camera reads the key when it starts, so run `docker compose up -d` again, or `docker compose restart camera`.
+- **The old camera service is still running** (the install command says so): the old setup holds the camera. Stop it with
+  `sudo systemctl disable --now desk-talk-camera`.
+- **Lens says the Pi's clock is off**: **on the Pi**, `timedatectl` should say `System clock synchronized: yes`.
 
 ## Updating
 
-Update the Pi and your computer together: each upload carries a version number, and when they don't match
-you get a message saying which side to update.
+**On the Pi**:
 
-1. **On your Mac**, in the `desk-talk` folder, get the new code and packages, then restart `server.py`:
+```bash
+bash ~/desk-talk/raspberry_pi/update.sh
+```
 
-   ```bash
-   git pull && uv sync --all-packages
-   ```
+It runs `git pull`, fills in the camera's device numbers again, since a kernel update can change them, rebuilds, and
+clears old images. Docker's saved build steps are cleared only when the card runs low, since a whole new build takes 12 to
+21 minutes. It takes `--dry-run` too. Your data, the pairing key, the models and `.env` stay. If `git pull` couldn't run
+(no internet, or a file you changed by hand), it says so and rebuilds with the code that's there.
 
-   ```bash
-   uv run python server.py
-   ```
+All three containers are rebuilt together, so they are always the same version.
 
-2. **On the Pi**, get the new code:
+### Coming from the older setup
 
-   ```bash
-   cd ~/desk-talk && git pull
-   ```
+If you ran the camera program as a systemd service and the detector from `raspberry_pi/detector_service`, run the install
+command once. It stops the old `desktalk-detector` containers and keeps their models, and it tells you to stop the old
+camera service (`sudo systemctl disable --now desk-talk-camera`), which would otherwise hold the camera. The computer that
+ran `server.py` is no longer needed.
 
-3. **On the Pi**, restart the camera program (or press Ctrl-C and start it again, if it isn't a service):
-
-   ```bash
-   sudo systemctl restart desk-talk-camera
-   ```
-
-4. **On the Pi**, rebuild and restart the container. Only what changed is rebuilt; it's slow again only when
-   `uv.lock` changed:
-
-   ```bash
-   cd ~/desk-talk/raspberry_pi && docker compose up -d --build
-   ```
-
-5. **On the Pi**, check everything (stop the service first, or the camera may be busy):
-
-   ```bash
-   cd ~/desk-talk && python3 -m raspberry_pi.camera --self-test --server http://192.168.1.20:5000 --key AbC123xY
-   ```
+If that computer wrote its pairing key into `data/logs/` (older versions did), see
+[README.md](../README.md#on-a-computer-for-working-on-it) for the command that clears those lines and makes a new key.
 
 ## Choosing the model
 
-The model the Pi runs isn't picked yet. By default it's the same as on your computer,
-`yolo26m-objv1-150.pt` (365 kinds of objects, at 640 pixels), which may only manage about one picture a
-second on a Pi. The speed test in [`benchmarks/`](../benchmarks/README.md) finds a better fit:
+The model the Pi runs isn't picked yet. By default it's `yolo26m-objv1-150.pt` (365 kinds of objects, at 640 pixels),
+which answered about 1.5 pictures a second on a Pi 5 alongside the camera and the app. That is not a final number. The speed
+test in [`benchmarks/`](../benchmarks/README.md) finds a better fit:
 
 1. Run the benchmark on the Pi, in its own Docker image. The steps, each labelled **on the Pi** or
    **on your Mac**, are in [benchmarks/README.md](../benchmarks/README.md); the full run takes a few hours.
 2. **On your Mac**, fetch the results and rebuild the summary (also in that README). The **best pick** in
    [benchmarks/results/README.md](../benchmarks/results/README.md) is the fastest combination that keeps up
    with 3 pictures a second and reaches at least 90% of the best accuracy.
-3. Set it **on your Mac**, in `config/settings.yaml` (or `config/settings.local.yaml`), then restart
-   `server.py`:
+3. Set it **on the Pi**, in `raspberry_pi/settings.pi.yaml`, under `pi:` then `detector:`:
 
    | Benchmark name, e.g. `yolo11s-480-ncnn-fp16` | Setting |
    |---|---|
@@ -421,8 +320,9 @@ second on a Pi. The speed test in [`benchmarks/`](../benchmarks/README.md) finds
    | `ncnn` | `pi.detector.format: ncnn` |
    | `fp16` / `fp32` | `pi.detector.half: true` / `false` |
 
-   Within a minute the camera program passes the new settings to the container, which converts the model
-   (a few minutes the first time; your computer detects meanwhile).
+   Then run `bash ~/desk-talk/raspberry_pi/install.sh` (it fetches the model if it isn't on the Pi) and
+   `docker compose restart app camera`. The camera passes the new settings to the detector, which converts the model
+   (a few minutes the first time; no objects are found meanwhile).
 
 Things to know when you pick:
 
@@ -431,7 +331,5 @@ Things to know when you pick:
 - The `yolo11` models only know the 80 everyday COCO objects: no keys, earphones or pens, which the lost
   items and some characters need. To try models that know those (the Objects365 ones, like the default),
   add them to `config/benchmark.yaml` and run the benchmark again.
-- Your computer detects the pictures the Pi couldn't, with its own model (`detector.model`). Using the same
-  model on both keeps the objects' names the same.
-- A model file of your own (not one Ultralytics can download) has to be copied into the container's
+- A model file of your own (not one Ultralytics can download) has to be copied into the detector's
   `models` volume: see the detector's [README](detector_service/README.md).
