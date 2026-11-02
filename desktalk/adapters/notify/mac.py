@@ -19,6 +19,7 @@ from typing import Any
 from desktalk.adapters.notify.queued import QueuedNotifications
 from desktalk.adapters.notify.speaker import RunCommand, SpeakerNotifications
 from desktalk.config import NotificationsSettings
+from desktalk.ports import Clock
 
 log = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ class NoNotifications:
         return None
 
 
-def make_notifications(settings: NotificationsSettings, platform: str, *, queue_size: int,
+def make_notifications(settings: NotificationsSettings, platform: str, *, queue_size: int, clock: Clock,
                        runner: Callable[..., Any] | None = None,
                        run_command: RunCommand | None = None) -> QueuedNotifications | NoNotifications:
     """What settings → notifications.output asks for, when switched on: the speaker on any system, or pop-ups on a
@@ -70,7 +71,7 @@ def make_notifications(settings: NotificationsSettings, platform: str, *, queue_
     if not settings.enabled or settings.output == 'none':
         return NoNotifications()
     if settings.output == 'speaker':
-        return SpeakerNotifications(settings, queue_size=queue_size, run_command=run_command)
+        return SpeakerNotifications(settings, queue_size=queue_size, clock=clock, run_command=run_command)
     if platform != MAC_PLATFORM:
         log.info('Pop-ups only work on a Mac, so none will be shown here. notifications.output can be speaker or none.')
         return NoNotifications()

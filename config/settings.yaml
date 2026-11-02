@@ -649,7 +649,8 @@ notifications:
   sips: true                  # "Sip logged" when the camera saw you drink (not the buttons or the chat)
   time_limit_sec: 5           # a pop-up that takes longer than this to show is given up on (it never holds up the chat)
   command: osascript          # the Mac's built-in program that shows them
-  queue_size: 20              # how many can wait their turn; any more are dropped (and that is logged)
+  queue_size: 20              # how many can wait their turn; past that one is dropped (and that is logged): the new
+                              # pop-up on a Mac, the oldest waiting when said out loud
   # The rest is only for output: speaker. The command gets the words on its standard input, and {voice} and {device}
   # filled in. Piper's "medium" voices make 22050 sounds a second, so the voice and -r go together.
   speak_command:
@@ -663,6 +664,8 @@ notifications:
   sound_card: ''              # a word in the sound card's name, looked for each time (usb). Empty = the system's choice
   sound_cards_file: /proc/asound/cards   # where the system lists its sound cards
   speak_time_limit_sec: 30    # a message still being said after this long is stopped (it never holds up the chat)
+  speak_stop_wait_sec: 2      # ...and if it hasn't stopped this long after that, it's left behind so speech carries on
+  speak_max_age_sec: 60       # a message that has waited its turn longer than this is skipped (and that is logged)
 
 # ── Logs ────────────────────────────────────────────────────────────
 logging:

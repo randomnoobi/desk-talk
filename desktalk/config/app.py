@@ -754,6 +754,8 @@ class NotificationsSettings(_Section):
     sound_card: str                   # a word in the sound card's name; empty = the system's own choice
     sound_cards_file: Path            # where the system lists its sound cards
     speak_time_limit_sec: PositiveNumber
+    speak_stop_wait_sec: PositiveNumber
+    speak_max_age_sec: PositiveNumber
 
 
 class LoggingSettings(_Section):

@@ -177,7 +177,7 @@ def _add_todo(tag: str) -> dict:
     return action
 
 
-ACTION_TAG = re.compile(r'\[(?:LOG_[A-Z_]+|(?:ADD|DONE|DEL)_TODO)(?::[^\]]*)?\]')
+ACTION_TAG = re.compile(r'\[(?:LOG_[A-Z_]+|(?:ADD|DONE|DEL)_TODO)(?::[^\]]*)?\]', re.IGNORECASE)
 
 
 def strip_action_tags(text: str) -> str:

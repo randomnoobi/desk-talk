@@ -38,7 +38,7 @@ def speak_calls(monkeypatch):
     the real one, and a test that reached it fails. A test that means to reach it takes this fixture and empties the
     list. (A test of the real runner imports run_speak_command by name, which this doesn't change.)"""
     calls: list[tuple[Any, ...]] = []
-    monkeypatch.setattr(speaker, 'run_speak_command', lambda args, text, limit: calls.append((args, text, limit)))
+    monkeypatch.setattr(speaker, 'run_speak_command', lambda args, text, limit, **_: calls.append((args, text, limit)))
     yield calls
     assert not calls, (f'a test tried to really say {len(calls)} thing(s): pass build() a fake `desktop=` '
                        '(tests.fakes.FakeDesktopNotifications)')

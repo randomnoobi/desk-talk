@@ -47,6 +47,8 @@ replies:
     no_connection: Could not reach the AI service. Check the internet connection and try again.
     ollama_no_connection: Could not reach Ollama. Check that the computer running it is awake and the Ollama app is open, then try again.
     cloud_refused: The cloud server said no to this link. Link again with scripts/link_cloud.py.
+    # only ever in the log: something tried to use the AI by itself while the AI is the cloud server
+    cloud_chat_only: Only chat you asked for goes to the cloud server.
     # an error it doesn't know, shown as it came ({error}, cut to settings → llm.error_text_chars)
     other: 'The AI returned an error: {error}'
     no_pictures: 'The model "{model}" cannot look at pictures. Set llm.vision_model in config/settings.yaml to a vision model (for example `ollama pull llava`).'

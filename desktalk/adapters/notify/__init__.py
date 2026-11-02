@@ -1,7 +1,7 @@
 """Saying warnings and reminders through the DesktopNotifications interface: the Mac's own pop-ups (through osascript)
 or the Pi's speaker (through Piper), as settings → notifications.output says.
 
-    desktop = make_notifications(config.notifications, sys.platform, queue_size=...)
+    desktop = make_notifications(config.notifications, sys.platform, queue_size=..., clock=clock)
     feed = DesktopAlerts(hub, desktop, preferences, profiles, config.notifications, clock, ...)
 """
 

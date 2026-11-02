@@ -51,9 +51,11 @@ def is_chat_address_of(ai_url: str, server: str) -> bool:
 
 
 def openai_client(*, api_key: str, base_url: str | None = None) -> Any:
-    """The real client. Its own retries are off: ResilientChatModel decides when to try again."""
-    from openai import OpenAI
-    return OpenAI(api_key=api_key, base_url=base_url, max_retries=0)
+    """The real client. Its own retries are off: ResilientChatModel decides when to try again. So are redirects: one
+    would carry the words, and the key, to a host nobody chose."""
+    from openai import DefaultHttpxClient, OpenAI
+    return OpenAI(api_key=api_key, base_url=base_url, max_retries=0,
+                  http_client=DefaultHttpxClient(follow_redirects=False))
 
 
 class OpenAICompatibleChatModel:
@@ -141,6 +143,11 @@ class OpenAICompatibleChatModel:
     def problem(self) -> str | None:
         """The current AI problem in plain words, or None if the last call worked."""
         return self._problem
+
+    @property
+    def uses_cloud(self) -> bool:
+        """llm.ai_url is the linked cloud server's chat address right now."""
+        return bool(self._token())
 
     def _token(self) -> str:
         """The token, when llm.ai_url is the linked cloud server's chat address right now; otherwise ''."""

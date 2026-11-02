@@ -22,6 +22,8 @@ notifications:
   sound_card: usb                # ALSA's own choice here is the HDMI socket, so name the card: any with usb in its name
   sound_cards_file: /sound-cards   # /proc/asound/cards, which compose.yaml lets in here (Docker hides it from the app)
   queue_size: 5                  # things said out loud take seconds each, so don't let old ones pile up
+  speak_time_limit_sec: 15       # plenty for a sentence or two, and a stuck sound card only holds things up this long
+  speak_max_age_sec: 20          # a warning said later than this is no use, so it's skipped
 
 chat:
   ai_writes_warnings: false      # a warning must come at once, in its ready-made words

@@ -12,7 +12,7 @@ from desktalk.adapters.notify.mac import MacNotifications, NoNotifications
 from desktalk.adapters.notify.speaker import SpeakerNotifications
 from desktalk.config import NotificationsSettings
 from desktalk.ports import DesktopNotifications
-from tests.fakes import FakeDesktopNotifications
+from tests.fakes import FakeClock, FakeDesktopNotifications
 
 
 class DesktopNotificationsContract:
@@ -68,7 +68,9 @@ class TestSpeakerNotifications(DesktopNotificationsContract):
     def notifications(self):
         settings = NotificationsSettings.model_construct(
             speak_command=('speak', '{voice}', '{device}'), voice_model='voice.onnx', sound_card='',
-            sound_cards_file=Path('/nonexistent'), speak_time_limit_sec=5.0)
-        speaker = SpeakerNotifications(settings, queue_size=4, run_command=lambda args, text, time_limit: None)
+            sound_cards_file=Path('/nonexistent'), speak_time_limit_sec=5.0, speak_stop_wait_sec=1.0,
+            speak_max_age_sec=20.0)
+        speaker = SpeakerNotifications(settings, queue_size=4, clock=FakeClock(),
+                                       run_command=lambda args, text, time_limit: None)
         yield speaker
         speaker.close()

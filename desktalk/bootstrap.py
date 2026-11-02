@@ -40,7 +40,7 @@ from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSour
 from desktalk.adapters.cloud import HttpCloudLink
 from desktalk.adapters.detector import NoDetector, UltralyticsDetector
 from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser
-from desktalk.adapters.llm import OpenAICompatibleChatModel, ResilientChatModel
+from desktalk.adapters.llm import OpenAICompatibleChatModel, ResilientChatModel, UnpromptedChatModel
 from desktalk.adapters.notify import QueuedNotifications, make_notifications
 from desktalk.adapters.picture import DeskPainter, OpenCvPictureTools
 from desktalk.adapters.storage import EventLog, JsonFileStore, SqliteStateStore
@@ -482,7 +482,12 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     ai = OpenAICompatibleChatModel(config.llm, config.secrets, clock, client_factory=client_factory,
                                    replies=config.prompts.replies,
                                    cloud_link=lambda: linked_server(store, config.cloud.link_key))
-    model = ResilientChatModel(ai, clock, config.llm, time_limit_sec=ai.time_limit_sec, replies=config.prompts.replies)
+    # `asked_model` is only for the chat you asked for. Everything else gets `model`, which never reaches the cloud
+    # server: you allowed chat to pass through it, and nothing else. A new part that calls the AI by itself uses `model`.
+    asked_model = ResilientChatModel(ai, clock, config.llm, time_limit_sec=ai.time_limit_sec,
+                                     replies=config.prompts.replies)
+    model = UnpromptedChatModel(asked_model, goes_to_cloud=lambda: ai.uses_cloud,
+                                reason=config.prompts.replies.ai_errors.cloud_chat_only)
     # Pictures only go to an AI on this computer (no quota), and never with llm.send_pictures off or to llm.ai_url.
     vision = model if model.local_vision else None
     hub = MessageHub(clock, recent_kept=config.chat.recent_kept, queue_size=config.web.live_queue_size)
@@ -491,7 +496,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     # The web keeps reading the hub.
     notifications = config.notifications
     if desktop is None:
-        desktop = make_notifications(notifications, sys.platform, queue_size=notifications.queue_size)
+        desktop = make_notifications(notifications, sys.platform, queue_size=notifications.queue_size, clock=clock)
     feed = DesktopAlerts(hub, desktop, preferences, profiles, notifications, clock,
                          lens_name=config.prompts.lens.card.name, sip_title=config.prompts.notifications.sip_title)
     default_temperature = config.agents_file.default.temperature
@@ -499,12 +504,12 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                            config.llm.replies, photos=photos, default_temperature=default_temperature,
                            pictures=pictures, prompts=config.prompts.lost_items,
                            photos_kept=config.snapshots.max_kept, phone_is_camera=phone_is_camera)
-    generator = MessageGenerator(model, feed, roster, profiles, habits, desk, clock, status=desk_status,
+    generator = MessageGenerator(asked_model, feed, roster, profiles, habits, desk, clock, status=desk_status,
                                  habit_log=habits, todos=todos, llm=config.llm, chat=config.chat, agents=config.agents,
                                  sunlight_default_min=config.habit_tracker.sunlight_default_min,
                                  reply_max_chars=config.chat.reply_max_chars, prompts=config.prompts,
                                  drink_labels=config.safety.liquids, preview_chars=config.logging.preview_chars,
-                                 local_model=ai.is_local)
+                                 local_model=ai.is_local, unprompted_model=model)
     generator.subscribe_to(bus)
 
     # ── the background jobs ──
@@ -569,7 +574,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         pi_inbox=camera.pi, pi=camera.pi, phone_inbox=camera.phone, phone=camera.phone, pair_key=pair_key,
         safety_rules=safety_rules, camera_health=camera_health, photos=photos, detector=detector,
         producer=producer, object_states=object_states, state_store=state_store, roster=roster,
-        desk_status=desk_status, habits=habits, ai=ai, model=model, hub=hub, generator=generator,
+        desk_status=desk_status, habits=habits, ai=ai, model=asked_model, hub=hub, generator=generator,
         rule_runner=rule_runner, reminders=reminders, lens=lens, idle_chat=idle_chat,
         lost_items=lost_items, daily_summary=daily_summary, cloud=cloud, scheduler=scheduler,
         supervisor=supervisor, started_at=clock.now(), keepalive=ai.keepalive_worker(), log_file=log_file,

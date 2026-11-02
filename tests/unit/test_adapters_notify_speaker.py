@@ -4,15 +4,21 @@ last tests run a real program, a small shell line, to check the time limit)."""
 from __future__ import annotations
 
 import logging
+import os
+import signal
+import sys
 import threading
 import time
 from pathlib import Path
 
 import pytest
 
+from desktalk.adapters.notify import speaker as speaker_module
 from desktalk.adapters.notify.mac import MacNotifications, NoNotifications, make_notifications
+from desktalk.adapters.notify.queued import STOP, QueuedNotifications
 from desktalk.adapters.notify.speaker import SpeakerNotifications, run_speak_command
 from desktalk.config import load_config
+from tests.fakes import FakeClock
 
 SETTINGS = load_config(environ={}, dotenv=Path('/nonexistent')).notifications
 USB_CARD = (' 0 [vc4hdmi0       ]: vc4-hdmi - vc4-hdmi-0\n'
@@ -40,11 +46,11 @@ class Recorder:
         return [text for _, text, _ in self.calls]
 
 
-def speaker(run_command, *, queue_size=4, **changes):
+def speaker(run_command, *, queue_size=4, clock=None, **changes):
     settings = SETTINGS.model_copy(update={'output': 'speaker', 'sound_card': '',
                                            'speak_command': ('speak', '--voice', '{voice}', '--on', '{device}'),
                                            'voice_model': '/voices/test.onnx', 'speak_time_limit_sec': 7.0, **changes})
-    return SpeakerNotifications(settings, queue_size=queue_size, run_command=run_command)
+    return SpeakerNotifications(settings, queue_size=queue_size, clock=clock or FakeClock(), run_command=run_command)
 
 
 def said_by(run, *shows, **changes):
@@ -92,6 +98,7 @@ def test_says_one_thing_at_a_time():
 
 
 def test_full_queue_drops_and_logs(caplog):
+    """Full: the oldest waiting one goes, not the new one, so a new warning isn't lost behind old reminders."""
     stuck, let_go = threading.Event(), threading.Event()
     said = []
 
@@ -100,16 +107,111 @@ def test_full_queue_drops_and_logs(caplog):
         let_go.wait(WAIT_SEC)
         said.append(text)
 
-    voice = speaker(stuck_command, queue_size=1)
+    voice = speaker(stuck_command, queue_size=2)
     voice.show('Cup', 'being said')
     assert stuck.wait(WAIT_SEC)
-    voice.show('Cup', 'waiting')
+    voice.show('Book', 'old reminder')
+    voice.show('Plant', 'other reminder')
     with caplog.at_level(logging.WARNING):
-        voice.show('Lens', 'dropped')
-    assert 'dropped' in caplog.text and 'Lens' in caplog.text
+        voice.show('Lens', 'new warning')
+    assert 'dropped' in caplog.text and 'Book' in caplog.text
     let_go.set()
     voice.close()
-    assert said == ['being said', 'waiting']
+    assert said == ['being said', 'other reminder', 'new warning']
+
+
+def test_show_after_close_with_a_full_queue_never_raises():
+    stuck, let_go = threading.Event(), threading.Event()
+
+    def stuck_command(args, text, time_limit):
+        stuck.set()
+        let_go.wait(WAIT_SEC)
+
+    voice = speaker(stuck_command, queue_size=1, speak_stop_wait_sec=0.01)
+    voice.show('Cup', 'being said')
+    assert stuck.wait(WAIT_SEC)
+    voice._queue.put_nowait(STOP)        # noqa: SLF001  (as close() leaves it)
+    assert voice.show('Cup', 'too late') is None
+    let_go.set()
+    voice._thread.join(WAIT_SEC)                                            # noqa: SLF001
+    assert not voice._thread.is_alive()                                     # noqa: SLF001
+
+
+def test_a_message_waiting_too_long_is_skipped_and_logged(caplog):
+    clock = FakeClock()
+    stuck, let_go = threading.Event(), threading.Event()
+    said = []
+
+    def stuck_command(args, text, time_limit):
+        stuck.set()
+        let_go.wait(WAIT_SEC)
+        said.append(text)
+
+    voice = speaker(stuck_command, clock=clock, speak_max_age_sec=20.0)
+    voice.show('Cup', 'being said')
+    assert stuck.wait(WAIT_SEC)
+    voice.show('Book', 'too old by the time its turn comes')
+    clock.advance(21)
+    voice.show('Lens', 'new warning')
+    with caplog.at_level(logging.WARNING):
+        let_go.set()
+        voice.close()
+    assert said == ['being said', 'new warning']
+    assert 'Book' in caplog.text and 'too old' not in caplog.text, 'names who, not the words'
+
+
+def test_one_exactly_at_the_age_limit_is_still_said():
+    clock = FakeClock()
+    run = Recorder()
+    stuck, let_go = threading.Event(), threading.Event()
+
+    def held_up(args, text, time_limit):
+        if not stuck.is_set():
+            stuck.set()
+            let_go.wait(WAIT_SEC)
+        run(args, text, time_limit)
+
+    voice = speaker(held_up, clock=clock, speak_max_age_sec=20.0)
+    voice.show('Cup', 'first')
+    assert stuck.wait(WAIT_SEC)
+    voice.show('Cup', 'second')
+    clock.advance(20)
+    let_go.set()
+    voice.close()
+    assert run.said == ['first', 'second']
+
+
+def test_a_bad_message_does_not_end_speech_for_good(monkeypatch, caplog):
+    said = Recorder()
+    real = speaker_module.words_to_say
+
+    def breaks_on_bad(text):
+        if text == 'bad':
+            raise ValueError('cannot read this')
+        return real(text)
+
+    monkeypatch.setattr(speaker_module, 'words_to_say', breaks_on_bad)
+    with caplog.at_level(logging.ERROR):
+        said_by(said, 'bad', 'good')
+    assert said.said == ['good']
+    assert 'cannot read this' in caplog.text
+
+
+def test_the_thread_guard_is_for_every_kind_of_queue(caplog):
+    done = threading.Event()
+
+    class Odd(QueuedNotifications):
+        def _say(self, title, text):
+            if title == 'bad':
+                raise RuntimeError('odd')
+            done.set()
+
+    queued = Odd(queue_size=2, time_limit_sec=1)
+    with caplog.at_level(logging.ERROR):
+        queued.show('bad', 'x')
+        queued.show('good', 'x')
+        assert done.wait(WAIT_SEC)
+    queued.close()
 
 
 @pytest.mark.parametrize('text, words', [
@@ -118,6 +220,8 @@ def test_full_queue_drops_and_logs(caplog):
     ('Careful ⚠️ the cup!', 'Careful the cup!'),
     ('**Move** the *cup*', 'Move the cup'),
     ('Two\nlines', 'Two lines'),
+    ('Sip logged [log_sip] there', 'Sip logged there'),
+    ('Done [done_todo:milk]!', 'Done !'),
     ('Café déjà-vu, 3 sips', 'Café déjà-vu, 3 sips'),
 ])
 def test_action_tags_and_emoji_are_not_read_out(text, words):
@@ -204,7 +308,7 @@ def test_a_failing_command_is_logged_once_without_the_words(caplog):
 
 # ── choosing by notifications.output ──────────────────────────────────
 def test_mac_output_on_a_mac_gives_pop_ups():
-    chosen = make_notifications(SETTINGS, 'darwin', queue_size=2, runner=lambda args, **kw: None)
+    chosen = make_notifications(SETTINGS, 'darwin', queue_size=2, clock=FakeClock(), runner=lambda args, **kw: None)
     assert isinstance(chosen, MacNotifications)
     chosen.close()
 
@@ -215,7 +319,7 @@ def test_a_computer_keeps_mac_pop_ups_by_default():
 
 def test_mac_output_anywhere_else_gives_nothing_and_says_so(caplog):
     with caplog.at_level(logging.INFO):
-        chosen = make_notifications(SETTINGS, 'linux', queue_size=2)
+        chosen = make_notifications(SETTINGS, 'linux', queue_size=2, clock=FakeClock())
     assert isinstance(chosen, NoNotifications)
     assert 'this computer' not in caplog.text and caplog.text
 
@@ -223,7 +327,7 @@ def test_mac_output_anywhere_else_gives_nothing_and_says_so(caplog):
 @pytest.mark.parametrize('platform', ['linux', 'darwin'])
 def test_speaker_output_works_on_any_system(platform):
     chosen = make_notifications(SETTINGS.model_copy(update={'output': 'speaker'}), platform, queue_size=2,
-                                run_command=Recorder())
+                                clock=FakeClock(), run_command=Recorder())
     assert isinstance(chosen, SpeakerNotifications)
     chosen.close()
 
@@ -231,13 +335,14 @@ def test_speaker_output_works_on_any_system(platform):
 @pytest.mark.parametrize('changes', [{'output': 'none'}, {'output': 'speaker', 'enabled': False},
                                      {'output': 'mac', 'enabled': False}])
 def test_none_or_switched_off_gives_nothing(changes):
-    assert isinstance(make_notifications(SETTINGS.model_copy(update=changes), 'darwin', queue_size=2), NoNotifications)
+    assert isinstance(make_notifications(SETTINGS.model_copy(update=changes), 'darwin', queue_size=2,
+                                         clock=FakeClock()), NoNotifications)
 
 
 def test_the_guard_stops_a_test_from_really_speaking(speak_calls):
     """A SpeakerNotifications made without its own command gets the recorder in tests/conftest.py."""
     chosen = make_notifications(SETTINGS.model_copy(update={'output': 'speaker', 'sound_card': ''}), 'linux',
-                                queue_size=2)
+                                queue_size=2, clock=FakeClock())
     assert isinstance(chosen, SpeakerNotifications)
     chosen.show('Cup', 'hello')
     chosen.close()
@@ -248,13 +353,13 @@ def test_the_guard_stops_a_test_from_really_speaking(speak_calls):
 # ── the real way of running the command ──────────────────────────────
 def test_the_real_runner_gives_the_words_on_standard_input(tmp_path):
     out = tmp_path / 'said.txt'
-    run_speak_command(['sh', '-c', 'cat > "$1"', 'speak', str(out)], 'Hello there', 5)
+    run_speak_command(['sh', '-c', 'cat > "$1"', 'speak', str(out)], 'Hello there', 5, stop_wait_sec=1)
     assert out.read_text().strip() == 'Hello there'
 
 
 def test_the_real_runner_raises_with_the_last_line_of_what_went_wrong():
     with pytest.raises(RuntimeError, match='no such card'):
-        run_speak_command(['sh', '-c', 'echo first >&2; echo no such card >&2; exit 3'], 'Hello', 5)
+        run_speak_command(['sh', '-c', 'echo first >&2; echo no such card >&2; exit 3'], 'Hello', 5, stop_wait_sec=1)
 
 
 def test_the_real_runner_stops_every_program_of_a_stuck_pipeline(tmp_path):
@@ -262,7 +367,75 @@ def test_the_real_runner_stops_every_program_of_a_stuck_pipeline(tmp_path):
     line = f'(sleep 1; touch {alive}) | cat; sleep 30'
     started = time.monotonic()
     with pytest.raises(TimeoutError):
-        run_speak_command(['sh', '-c', line], 'Hello', 0.2)
+        run_speak_command(['sh', '-c', line], 'Hello', 0.2, stop_wait_sec=1)
     assert time.monotonic() - started < 5
     time.sleep(1.2)
     assert not alive.exists()
+
+
+ESCAPES = """
+import subprocess, sys, time
+subprocess.Popen(['sleep', '20'], start_new_session=True)      # out of reach of the stop, and holds stderr open
+time.sleep(int(sys.argv[1]))
+"""
+
+
+def stop_sleepers():
+    os.system("pkill -f '^sleep 20$'")                             # noqa: S605, S607  (this test's own stray program)
+
+
+def test_a_child_that_escapes_and_holds_stderr_doesnt_hold_up_the_runner():
+    started = time.monotonic()
+    try:
+        with pytest.raises(TimeoutError):
+            run_speak_command([sys.executable, '-c', ESCAPES, '20'], 'Hello', 0.3, stop_wait_sec=0.2)
+    finally:
+        stop_sleepers()
+    assert time.monotonic() - started < 3
+
+
+def test_a_program_that_has_finished_but_left_a_child_holding_stderr_doesnt_either():
+    started = time.monotonic()
+    try:
+        with pytest.raises(TimeoutError):
+            run_speak_command([sys.executable, '-c', ESCAPES, '0'], 'Hello', 0.3, stop_wait_sec=0.2)
+    finally:
+        stop_sleepers()
+    assert time.monotonic() - started < 3
+
+
+def test_a_command_that_wont_die_is_walked_away_from(monkeypatch, tmp_path):
+    """A program stuck deep in the system (aplay when a USB speaker is pulled out) can't be killed. Here the kill does
+    nothing, which looks the same to the runner."""
+    real_kill = os.killpg
+    pids = []
+    monkeypatch.setattr(speaker_module.os, 'killpg', lambda pid, sig: pids.append(pid))
+    started = time.monotonic()
+    try:
+        with pytest.raises(TimeoutError, match='would not stop'):
+            run_speak_command(['sleep', '30'], 'Hello', 0.2, stop_wait_sec=0.2)
+    finally:
+        for pid in pids:
+            real_kill(pid, signal.SIGKILL)
+    assert pids and time.monotonic() - started < 3
+
+
+def test_the_speech_thread_goes_on_after_walking_away(monkeypatch):
+    """Through the whole speaker: after the stuck one it says the next."""
+    real_kill = os.killpg
+    pids = []
+    monkeypatch.setattr(speaker_module.os, 'killpg', lambda pid, sig: pids.append(pid))
+    said = []
+
+    def real_then_note(args, text, limit, stop_wait_sec=None):
+        if text == 'stuck':
+            run_speak_command(['sleep', '30'], text, 0.2, stop_wait_sec=0.2)
+        said.append(text)
+
+    voice = speaker(real_then_note)
+    voice.show('Cup', 'stuck')
+    voice.show('Cup', 'next')
+    voice.close()
+    for pid in pids:
+        real_kill(pid, signal.SIGKILL)
+    assert said == ['next']

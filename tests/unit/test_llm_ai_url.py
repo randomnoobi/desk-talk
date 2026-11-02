@@ -3,7 +3,9 @@ The cloud path is checked here with a fake client only: no real cloud server has
 
 from __future__ import annotations
 
+import http.server
 import logging
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +13,7 @@ import pytest
 from pydantic import SecretStr
 
 from desktalk.adapters.llm.errors import AIRefused
-from desktalk.adapters.llm.openai_compatible import OpenAICompatibleChatModel, is_chat_address_of
+from desktalk.adapters.llm.openai_compatible import OpenAICompatibleChatModel, is_chat_address_of, openai_client
 from desktalk.adapters.llm.resilient import ResilientChatModel
 from desktalk.config import Secrets, load_config
 from desktalk.core.cloud import linked_server
@@ -225,3 +227,43 @@ def test_nothing_is_said_about_thinking_unless_the_setting_asks():
     model, factory, _ = make('http://laptop.test:11434/v1')
     say_hello(model)
     assert 'reasoning_effort' not in factory.asked()[0].requests[0]['extra_body']
+
+
+# ── redirects ─────────────────────────────────────────────────────────
+class _Host(http.server.BaseHTTPRequestHandler):
+    """Answers every request with a redirect (when `go_to` is set), and keeps what it was sent."""
+
+    def do_POST(self):
+        server: Any = self.server
+        server.got.append(self.rfile.read(int(self.headers['Content-Length'])))
+        go_to = server.go_to
+        self.send_response(307 if go_to else 200)
+        if go_to:
+            self.send_header('Location', go_to)
+        self.send_header('Content-Length', '0')
+        self.end_headers()
+
+    def log_message(self, *args):
+        pass
+
+
+@pytest.fixture
+def host_pair():
+    """A first host that redirects to a second."""
+    second: Any = http.server.HTTPServer(('127.0.0.1', 0), _Host)
+    first: Any = http.server.HTTPServer(('127.0.0.1', 0), _Host)
+    second.got, first.got = [], []
+    second.go_to, first.go_to = '', f'http://127.0.0.1:{second.server_port}/elsewhere'
+    for server in (first, second):
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield first, second
+    first.shutdown()
+    second.shutdown()
+
+
+def test_a_redirect_never_carries_the_words_to_another_host(host_pair):
+    first, second = host_pair
+    client = openai_client(api_key='x', base_url=f'http://127.0.0.1:{first.server_port}/v1')
+    with pytest.raises(Exception):      # noqa: B017, PT011  (whatever the client makes of it: the second host is the point)
+        client.chat.completions.create(model='m', messages=HELLO, timeout=5)
+    assert first.got and second.got == []

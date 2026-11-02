@@ -243,6 +243,7 @@ class AiErrors(_Section):
     no_connection: str
     ollama_no_connection: str
     cloud_refused: str
+    cloud_chat_only: str
     other: str
     no_pictures: str
     resting: str
