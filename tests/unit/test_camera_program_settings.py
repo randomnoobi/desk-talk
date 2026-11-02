@@ -98,6 +98,24 @@ def test_reads_the_pi_section_of_the_repos_settings_file(tmp_path):
     assert read_repo_settings(path) == {'fps': 3, 'detector': {'image_size': 640}}
 
 
+def test_a_settings_local_file_next_to_it_is_laid_over_it(tmp_path):
+    path = tmp_path / 'settings.yaml'
+    path.write_text('pi:\n  fps: 3\n  photo_dir: ~/here\n'
+                    '  detector:\n    url: http://127.0.0.1:8100\n    image_size: 640\n')
+    (tmp_path / 'settings.local.yaml').write_text('camera:\n  fps: 9\npi:\n  photo_dir: /photos\n'
+                                                  '  detector:\n    url: http://detector:8100\n')
+    assert read_repo_settings(path) == {'fps': 3, 'photo_dir': '/photos',
+                                        'detector': {'url': 'http://detector:8100', 'image_size': 640}}
+
+
+def test_a_broken_settings_local_file_says_so(tmp_path):
+    path = tmp_path / 'settings.yaml'
+    path.write_text('pi:\n  fps: 3\n')
+    (tmp_path / 'settings.local.yaml').write_text('pi: [unclosed\n')
+    with pytest.raises(SettingsError, match='settings.local.yaml'):
+        read_repo_settings(path)
+
+
 def test_no_settings_file_gives_nothing(tmp_path):
     assert read_repo_settings(tmp_path / 'missing.yaml') == {}
 

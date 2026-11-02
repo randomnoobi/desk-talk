@@ -179,10 +179,20 @@ def _model(detector: Mapping[str, Any]) -> ModelSettings:
 
 
 # ── where the settings come from ──────────────────────────────────────
+LOCAL_SETTINGS = 'settings.local.yaml'
+
+
 def read_repo_settings(path: str | Path) -> dict[str, Any]:
-    """The pi: section of config/settings.yaml in this repo ({} if there's no such file)."""
+    """The pi: section of config/settings.yaml in this repo ({} if there's no such file), with the pi: section of
+    settings.local.yaml next to it laid over it. In Docker that file is raspberry_pi/settings.pi.yaml, so the
+    camera has the right addresses and folders even when it starts before the app does, as it can after a reboot."""
+    path = Path(path)
+    return merge(_pi_section(path), _pi_section(path.with_name(LOCAL_SETTINGS)))
+
+
+def _pi_section(path: Path) -> dict[str, Any]:
     try:
-        text = Path(path).read_text(encoding='utf-8')
+        text = path.read_text(encoding='utf-8')
     except FileNotFoundError:
         return {}
     try:
