@@ -81,6 +81,7 @@ markers = [
     "slow: runs the real YOLO model (skipped if the model file isn't in models/)",
     "docker: builds and starts the detector's Docker image (needs Docker and the internet)",
     "e2e: drives the real page in a browser; needs `uv run playwright install chromium` once",
+    "pi: runs against a real Pi over SSH; only with DESKTALK_PI=<host> uv run pytest -m pi (docs/PI_CHECKS.md)",
 ]
 filterwarnings = ["ignore::DeprecationWarning"]
 

@@ -66,6 +66,8 @@ uv run pytest -m e2e
 
 The last one drives the app page and the developer page in a real browser (`uv run playwright install chromium` once). `uv run pytest -m slow` runs the real YOLO model, when you change detection.
 
+`DESKTALK_PI=pi uv run pytest -m pi -v -rs` runs against the real Pi over SSH, and [PI_CHECKS.md](PI_CHECKS.md) lists what only a person can do there: a cup on the desk, a power cut, the Wi-Fi off, listening to the speaker, closing the laptop, a real phone.
+
 ## The Pi
 
 The camera program and the detector need the newest code too. See [raspberry_pi/README.md](../raspberry_pi/README.md) for the first setup.
