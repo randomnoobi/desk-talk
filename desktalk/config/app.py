@@ -12,7 +12,6 @@ from pydantic import Field, SecretStr, model_validator
 
 from desktalk.config.agents import AgentsFile
 from desktalk.config.base import (
-    CONFIG_FOLDER,
     Count,
     Fraction,
     Hour,
@@ -464,6 +463,7 @@ class LostItemsSettings(_Section):
 
 class StorageSettings(_Section):
     folder: Path
+    rules_folder: Path
 
 
 class LensWaits(_Section):
@@ -890,8 +890,3 @@ class AppConfig(_Section):
         """A path from the settings: absolute paths and ~ stay as they are, others are under the project folder."""
         path = Path(path).expanduser()
         return path if path.is_absolute() else self.root / path
-
-    @property
-    def config_folder(self) -> Path:
-        """The folder the config files came from (config/safety_rules.json is kept there too)."""
-        return self.root / CONFIG_FOLDER

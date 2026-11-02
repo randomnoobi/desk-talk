@@ -145,7 +145,7 @@ class DeskTalk:
     event_log         the event log: days(), events(), counts() (/api/log/...)
     store             the data folder: preferences, habit days, the to-do list, learned personalities, the daily
                       recap's day
-    config_store      the config folder: safety_rules.json
+    config_store      settings → storage.rules_folder: safety_rules.json
     profiles          every agent: get(), for_label(), is_ignored() for the app's agent list and the live view
     preferences       wake time, bedtime, quiet hours, sensitivity: all(), update() and quiet_now()
                       (/api/preferences)
@@ -396,7 +396,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         data_folder         where the files this run writes go (the store, the event log, the object states
                             database, the log files):
                             the folders in the settings are taken under it instead of the project folder
-        config_store        the store for config/safety_rules.json (a JsonFileStore of the config folder)
+        config_store        the store for safety_rules.json (a JsonFileStore of settings → storage.rules_folder)
         pair_key            the key in settings → camera.pair_key_file (made and saved the first time)
         synchronous_events  the event stream hands each event to its consumers right inside publish(),
                             with no threads, so tests are exact
@@ -420,7 +420,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
 
     # ── storage and the desk right now ──
     store = JsonFileStore(data_path(config.storage.folder))
-    config_store = config_store if config_store is not None else JsonFileStore(config.config_folder)
+    config_store = (config_store if config_store is not None
+                    else JsonFileStore(config.resolve(config.storage.rules_folder)))
     live_pictures, scene, safety_board = LiveView(), Scene(), DangerBoard()
     character_memory, photo_album = Memories(), Album(keep=config.snapshots.max_kept)
     # For the parts that still ask for several desk interfaces in one object; it passes each call on.

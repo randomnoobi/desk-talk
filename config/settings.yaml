@@ -88,7 +88,7 @@ pi:
     image_size: 640           # pictures are shrunk to this many pixels before detection (smaller = faster)
     confidence: 0.35          # lowest confidence a box needs to be kept at all
     half: false               # true = smaller 16-bit numbers: a smaller model file, sometimes faster
-    url: http://127.0.0.1:8100  # the container, on the Pi itself only (other computers can't reach it)
+    url: http://127.0.0.1:8100  # the container. On the Pi it is http://detector:8100 (raspberry_pi/settings.pi.yaml)
     wait_per_picture_sec: 2   # no answer within this long: the picture goes to this computer to detect instead
     failures_before_pause: 3  # this many failures in a row: stop asking the container for a while...
     pause_start_sec: 5        # ...this long at first...
@@ -644,6 +644,7 @@ logging:
 # ── Your data on this computer ──────────────────────────────────────
 storage:
   folder: data                # preferences.json, habits/<day>.json and learned_personalities.json live here
+  rules_folder: config        # safety_rules.json (the desk's corners and danger zones) is read and saved here
 
 # ── An object's story (click something under "On the desk", or an object on the developer page's live tab) ──
 # What happened to it, step by step, with a picture for each step and its box drawn on.

@@ -143,6 +143,15 @@ def test_without_a_config_store_the_rules_are_safety_rules_json_in_the_config_fo
     assert app.safety_rules.loaded and app.safety_rules.current.zones['laptop'].expand == 134
 
 
+def test_the_rules_can_be_kept_in_another_folder_from_the_settings(tmp_path):
+    config = desk_config(tmp_path)
+    config = changed(config, 'storage', rules_folder=tmp_path / 'kept')
+    app = build_quietly(config, tmp_path)
+    app.safety_rules.save({'desk_outline': [[0, 0], [1, 0], [1, 0.8], [0, 0.8]]})
+    assert (tmp_path / 'kept' / 'safety_rules.json').is_file()
+    assert not (config.root / 'config' / 'safety_rules.json').exists()
+
+
 def test_things_off_the_marked_desk_never_join(tmp_path):
     rig = DeskRig(tmp_path)
     rig.app.safety_rules.save({'desk_outline': [[0, 0], [0.5, 0], [0.5, 1], [0, 1]]})     # the left half

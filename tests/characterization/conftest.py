@@ -107,7 +107,7 @@ def desks(tmp_path):
         reply: Any = {'no_ai': None, 'ai_down': ConnectionError('Connection refused')}.get(name, fake_ai)
         # ollama also gives the busy desk a (fake) vision AI, for the lost-items scan of the pictures
         config = desk_config(tmp_path, ai=reply is not None, ollama=name == 'busy')
-        shutil.copy(RULES_COPY, config.config_folder / 'safety_rules.json')
+        shutil.copy(RULES_COPY, config.resolve(config.storage.rules_folder) / 'safety_rules.json')
         if name == 'phone':
             config = changed(config, 'camera', source='phone')
         clock = FakeClock(pinned - WATCH_STARTS_AGO_SEC)

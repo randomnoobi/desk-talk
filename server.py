@@ -68,7 +68,8 @@ def main() -> int:
     desktalk = build(config)
     say(f'  Detector     : {desktalk.detector.label}')
     say(f'  AI           : {desktalk.model.label}')
-    say(f'  Danger zones : {"config/safety_rules.json" if desktalk.safety_rules.loaded else "built-in"}')
+    rules = config.storage.rules_folder / 'safety_rules.json'
+    say(f'  Danger zones : {rules if desktalk.safety_rules.loaded else "built-in"}')
     address = lan_ip()
     phone_cert = None
     phone_port = None
