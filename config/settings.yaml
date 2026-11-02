@@ -584,6 +584,7 @@ web:
   public_address: ''          # how other devices reach this app: a name and the port above, like desktalk.local:5000.
                               # Empty: it is worked out from this computer's Wi-Fi address. The Pi sets it (inside
                               # Docker that can't be seen), and then no command to start the Pi's camera is shown
+  outside_port: 0             # the port others use, when Docker opens a different one for the port above. 0 = the same
   app_folder: web_app         # the app's page and files (what you open at http://localhost:5000)
   phone_folder: phone_camera  # the page a phone opens to be the camera
   cors_origins: []            # other web sites allowed to read from this app and change things, like

@@ -52,10 +52,22 @@ def test_the_public_address_is_a_host_and_the_web_port(tmp_path):
     assert load_config(root=project, environ={}).web.public_address == 'desktalk.local:5000'
 
 
-def test_the_pis_settings_file_has_a_good_public_address(tmp_path):
+def test_the_pi_gets_its_address_from_the_environment_compose_gives_it(tmp_path):
     project = project_with_local(tmp_path, copy_from=ROOT / 'raspberry_pi' / 'settings.pi.yaml')
-    config = load_config(root=project, environ={})
-    assert config.web.public_address == f'desktalk.local:{config.web.port}'
+    config = load_config(root=project, environ={'PUBLIC_ADDRESS': 'desktalk-pi.local:8123', 'OUTSIDE_PORT': '8123'})
+    assert config.web.public_address == 'desktalk-pi.local:8123'
+    assert config.web.port == 5000 and config.web.outside_port == 8123
+
+
+def test_with_no_outside_port_the_address_must_still_use_web_port(tmp_path):
+    with pytest.raises(ConfigError, match='public_address must be a name and the port'):
+        load_config(root=project_with_local(tmp_path), environ={'PUBLIC_ADDRESS': 'desktalk.local:8123'})
+
+
+def test_an_address_with_a_port_docker_doesnt_open_is_refused(tmp_path):
+    environ = {'PUBLIC_ADDRESS': 'desktalk.local:9999', 'OUTSIDE_PORT': '8123'}
+    with pytest.raises(ConfigError, match='public_address must be a name and the port'):
+        load_config(root=project_with_local(tmp_path), environ=environ)
 
 
 @pytest.mark.parametrize('address', [

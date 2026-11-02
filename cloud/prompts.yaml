@@ -44,8 +44,9 @@ messages:
 
 # The website's "Add a Pi" box (the code only fills in {server_url} and {code})
 site:
-  # Run on the Pi: it fetches Desk Talk the first time, then installs it (or just links it, on a Pi that has it already).
-  setup_command: test -d ~/desk-talk || git clone https://github.com/randomnoobi/desk-talk ~/desk-talk; bash ~/desk-talk/raspberry_pi/install.sh --server {server_url} --code {code}
+  # Run on the Pi. It gets git if the card has none, gets Desk Talk or its new code, then installs. On a Pi that has it
+  # already, that just links it. The code is in an environment name, because the list of running programs doesn't show those.
+  setup_command: "command -v git > /dev/null || (sudo apt-get update && sudo apt-get install -y git); git -C ~/desk-talk pull --ff-only 2> /dev/null || git clone https://github.com/randomnoobi/desk-talk ~/desk-talk; DESKTALK_LINK_CODE={code} bash ~/desk-talk/raspberry_pi/install.sh --server {server_url}"
   needs_json: This request must be sent as JSON (content type application/json).
 
 # The weekly report. `prompt` is what the AI is told (the data is added after it, between <data> and </data>).

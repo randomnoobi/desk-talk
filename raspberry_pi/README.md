@@ -47,23 +47,28 @@ bash ~/desk-talk/raspberry_pi/install.sh
 ```
 
 It checks the Pi (64-bit, free disk, memory, sound), installs Docker if it's missing, makes `raspberry_pi/.env` from
-`.env.example` with this Pi's own numbers, names the Pi `desktalk`, fetches the model and starts the three containers.
+`.env.example` with this Pi's own numbers, fetches the model and starts the three containers. It needs about 12 GB free
+the first time: a 32 GB card is plenty, and a 16 GB card only works with Raspberry Pi OS Lite. A Pi still called
+`raspberrypi` is renamed `desktalk`; a Pi you named keeps its name.
 It's safe to run again, and never touches the data folder, the pairing key or the models. It says if the Pi needs a
 restart, and only does that by itself with `--reboot`.
 
 | Flag | What it does |
 |---|---|
 | `--tz Europe/Paris` | your time zone, if the Pi's isn't right |
-| `--server <address> --code <code>` | link to your cloud server, as its website's "Add a Pi" box says. The Pi needs no cloud: if this fails, the rest still works |
-| `--keep-hostname` | keep the Pi's present name instead of `desktalk`, and remember that |
+| `--server <address>` with `DESKTALK_LINK_CODE=<code>` in front | link to your cloud server first, as its website's "Add a Pi" box says. The Pi needs no cloud: if this fails, the rest still installs, it says so with the command to try again, and exits with 3 |
+| `--code <code>` | the code as a flag, for typing by hand. Others on the Pi can see it in the list of running programs while this runs |
+| `--keep-hostname` | keep the name even if it's still `raspberrypi`, and remember that |
 | `--reboot` | restart the Pi at the end, if it needs that |
 | `--dry-run` | do the same checks, say what it would do, and change nothing |
 
 **Renaming the Pi changes its address**, to `http://desktalk.local:5000`. It says so at the end; change the old name
-anywhere you saved it, such as your Mac's `~/.ssh/config`.
+anywhere you saved it, such as your Mac's `~/.ssh/config`. The links the app shows come from the Pi's real name and
+`APP_HOST_PORT`, which it writes to `.env` as `PUBLIC_NAME`.
 
 To get new code later, **on the Pi**: `bash ~/desk-talk/raspberry_pi/update.sh`. It runs `git pull`, fills in the camera's
-device numbers again, since a kernel update can change them, and rebuilds. It takes `--dry-run` too.
+device numbers again, since a kernel update can change them, rebuilds, and clears old images and build steps so the card
+doesn't fill up. It takes `--dry-run` too.
 
 `raspberry_pi/.env` is yours and isn't in git. New settings from `.env.example` get added to it by these two scripts,
 and what's already in it stays. The model's checksum is in `raspberry_pi/model_checksums.txt`: a model that isn't

@@ -5,12 +5,19 @@ stand-in writes down how it was called in `calls`, so nothing here can change th
 from __future__ import annotations
 
 import hashlib
+import http.server
+import importlib.util
+import json
 import os
 import re
+import shlex
 import shutil
+import socket
 import stat
 import subprocess
 import sys
+import threading
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -23,7 +30,7 @@ from tests.unit.test_pi_compose_file import env_file
 ROOT = Path(__file__).resolve().parents[2]
 PI = ROOT / 'raspberry_pi'
 CODE = 'SECRET-CODE'
-SERVER = 'http://192.168.1.9:8080'
+TOKEN = 'THE-SECRET-TOKEN'
 BOOT_LINE = 'console=tty1 root=PARTUUID=abc rootwait'
 FLAGS = 'cgroup_enable=memory cgroup_memory=1'
 
@@ -49,19 +56,22 @@ case "$name" in
       *get.docker*) echo 'echo installed-docker' > "$out" ;;
       *) [ -e "$FAKE/download_fails" ] && exit 22; cat "$FAKE/model_bytes" > "$out" ;;
     esac ;;
+  python3) printf '%s\n' "${DESKTALK_LINK_CODE:-}" > "$FAKE/linker_got"; exec "$FAKE_PYTHON" -S "$@" ;;
   sudo)
     cmd=$1; shift
     case "$cmd" in
       docker) FAKE_SUDO=1 exec "$FAKE/bin/docker" "$@" ;;
-      tee|cp) exec "$cmd" "$@" ;;
+      tee|cp|mv) exec "$cmd" "$@" ;;
       sh) rm -f "$FAKE/no_docker"; touch "$FAKE/docker_group_active" ;;
       hostnamectl) exec "$FAKE/bin/hostnamectl" "$@" ;;
       *) : ;;
     esac ;;
   docker)
+    [ -n "${DESKTALK_LINK_CODE:-}" ] && touch "$FAKE/docker_saw_the_code"
     [ -e "$FAKE/no_docker" ] && exit 127
     case "$*" in
       "compose version") exit 0 ;;
+      "image inspect "*) [ -e "$FAKE/images_built" ] ;;
       info) [ -e "$FAKE/docker_group_active" ] || [ -n "${FAKE_SUDO:-}" ] ;;
       "ps -aq --filter label=com.docker.compose.project=desktalk-detector") cat "$FAKE/old_containers" 2>/dev/null; exit 0 ;;
       "volume ls -q "*"project=desktalk-detector"*) cat "$FAKE/old_volume" 2>/dev/null; exit 0 ;;
@@ -70,7 +80,6 @@ case "$name" in
       "compose exec -T detector test -s "*) [ -s "$FAKE/models/$(basename "$7")" ] ;;
       "compose cp "*) cp "$3" "$FAKE/models/$(basename "${4#*:}")" ;;
       "compose exec -T detector mv "*) mv "$FAKE/models/$(basename "$6")" "$FAKE/models/$(basename "$7")" ;;
-      "compose exec -T "*"app sh -c "*) cat > "$FAKE/link_stdin"; [ -e "$FAKE/link_fails" ] && { echo "No answer from the server, code $(cat "$FAKE/link_stdin")"; exit 1; }; echo linked ;;
       *) exit 0 ;;
     esac ;;
 esac
@@ -127,21 +136,25 @@ class FakePi:
 
 @pytest.fixture
 def pi(tmp_path) -> FakePi:
-    root, fake, proc = tmp_path / 'desk-talk', tmp_path / 'fake', tmp_path / 'proc'
+    root, fake, proc = tmp_path / 'desk talk', tmp_path / 'fake', tmp_path / 'proc'       # a space, on purpose
     (root / 'raspberry_pi').mkdir(parents=True)
     (root / 'config').mkdir()
     (root / 'data').mkdir()
-    for name in ('install.sh', 'update.sh', '.env.example', 'settings.pi.yaml', 'model_checksums.txt'):
+    for name in ('install.sh', 'update.sh', 'link_pi.py', '.env.example', 'settings.pi.yaml', 'model_checksums.txt',
+                 'compose.yaml'):
         if (PI / name).exists():
             shutil.copy(PI / name, root / 'raspberry_pi' / name)
     shutil.copy(ROOT / 'config' / 'settings.yaml', root / 'config' / 'settings.yaml')
+    (root / 'config' / 'prompts.yaml').symlink_to(ROOT / 'config' / 'prompts.yaml')
+    for name in ('desktalk', 'shared', 'scripts'):       # what the real linker runs from
+        (root / name).symlink_to(ROOT / name)
     (root / 'data' / 'events.jsonl').write_text('an event\n', encoding='utf-8')
     (root / 'data' / 'cloud.json').write_text('{"token": "keep me"}', encoding='utf-8')
 
     (fake / 'bin').mkdir(parents=True)
     (fake / 'models').mkdir()
     for name in ('uname', 'getconf', 'df', 'getent', 'id', 'hostname', 'hostnamectl', 'timedatectl', 'systemctl',
-                 'git', 'sha256sum', 'curl', 'sudo', 'docker'):
+                 'git', 'sha256sum', 'curl', 'sudo', 'docker', 'python3'):
         path = fake / 'bin' / name
         path.write_text(STAND_IN, encoding='utf-8')
         path.chmod(path.stat().st_mode | stat.S_IEXEC)
@@ -177,12 +190,57 @@ def pi(tmp_path) -> FakePi:
     return made
 
 
+class CloudStandIn(http.server.BaseHTTPRequestHandler):
+    """The cloud server's claim route, on this computer only."""
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+        self.server.claims.append(body)  # type: ignore[attr-defined]
+        right = body['code'] == CODE
+        reply = {'device_id': 'dev-1', 'token': TOKEN} if right else {'detail': f"The code {body['code']} is no good"}
+        data = json.dumps(reply).encode('utf-8')
+        self.send_response(200 if right else 400)
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *_args):
+        pass
+
+
+@dataclass
+class Cloud:
+    url: str
+    claims: list[dict]
+
+
+@pytest.fixture
+def cloud() -> Iterator[Cloud]:
+    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), CloudStandIn)
+    server.claims = []  # type: ignore[attr-defined]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield Cloud(f'http://127.0.0.1:{server.server_address[1]}', server.claims)  # type: ignore[attr-defined]
+    server.shutdown()
+    server.server_close()
+
+
+def nothing_listening() -> str:
+    with socket.socket() as s:
+        s.bind(('127.0.0.1', 0))
+        return f'http://127.0.0.1:{s.getsockname()[1]}'
+
+
 def model_name() -> str:
     return load_config(root=ROOT, environ={}).pi.detector.model
 
 
 def files_in(folder: Path) -> dict[str, bytes]:
     return {str(p.relative_to(folder)): p.read_bytes() for p in folder.rglob('*') if p.is_file()}
+
+
+def unquoted(text: str) -> str:
+    """A printed command with bash's quoting of spaces taken out, to compare it with a path."""
+    return text.replace('\\ ', ' ')
 
 
 def docker_calls(result: Result) -> list[str]:
@@ -222,6 +280,38 @@ def test_too_little_free_disk_is_refused_with_the_number_from_the_settings(pi):
     assert result.code == 1 and '4321' in result.out and '100' in result.out
 
 
+def test_with_the_images_built_only_the_small_disk_minimum_applies(pi):
+    pi.state('images_built')
+    pi.change_example('INSTALL_MIN_DISK_MB', '50000')
+    pi.change_example('INSTALL_MIN_DISK_BUILT_MB', '2000')
+    pi.state('free_mb', '3500')
+    assert pi.run().code == 0
+    pi.state('free_mb', '1000')
+    result = pi.run()
+    assert result.code == 1 and '2000' in result.out
+
+
+def test_the_images_it_asks_about_are_the_ones_compose_builds(pi):
+    pi.state('images_built')
+    asked = [line.split()[-1] for line in pi.run().calls if line.startswith('docker image inspect')]
+    services = yaml.safe_load((PI / 'compose.yaml').read_text(encoding='utf-8'))['services']
+    assert sorted(asked) == sorted(service['image'] for service in services.values())
+
+
+def test_update_checks_the_disk_too(pi):
+    pi.state('images_built')
+    pi.state('free_mb', '10')
+    assert pi.run(script='update.sh').code == 1
+
+
+def test_a_good_build_clears_old_builds_but_a_failed_one_doesnt(pi):
+    calls = pi.run().calls
+    assert 'docker builder prune -f' in calls and 'docker image prune -f' in calls
+    assert calls.index('docker compose up -d --build') < calls.index('docker builder prune -f')
+    pi.state('up_fails')
+    assert not any('prune' in line for line in pi.run().calls)
+
+
 def test_too_little_memory_is_refused(pi):
     (pi.proc / 'meminfo').write_text('MemTotal:   900000 kB\n', encoding='utf-8')
     result = pi.run('--dry-run')
@@ -252,8 +342,9 @@ def test_no_usb_speaker_is_not_an_error(pi):
     assert result.code == 0 and 'plugged in' in result.out
 
 
-@pytest.mark.parametrize('args', [('--server', SERVER), ('--code', CODE), ('--nonsense',), ('--tz',),
-                                  ('--tz', 'Not/AZone'), ('--tz', 'x;rm -rf y')])
+@pytest.mark.parametrize('args', [('--server', 'http://x:1'), ('--code', CODE), ('--nonsense',), ('--tz',),
+                                  ('--tz', 'Not/AZone'), ('--tz', 'x;rm -rf y'), ('--tz', 'Europe'),
+                                  ('--update', '--server', 'http://x:1', '--code', CODE)])
 def test_wrong_flags_are_refused_before_anything_happens(pi, args):
     result = pi.run(*args)
     assert result.code != 0 and not docker_calls(result) and not pi.env_path.exists()
@@ -267,10 +358,10 @@ def test_a_dry_run_changes_nothing(pi):
     pi.cmdline.write_text(BOOT_LINE + '\n', encoding='utf-8')
     pi.state('hostname', 'raspberrypi\n')
     (pi.fake / 'docker_group_active').unlink()
-    result = pi.run('--dry-run', '--server', SERVER, '--code', CODE)
+    result = pi.run('--dry-run', '--server', 'http://x:1', '--code', CODE)
     assert result.code == 0
     assert files_in(pi.root) == before
-    assert not any(line.startswith(('sudo', 'hostnamectl', 'curl')) for line in result.calls)
+    assert not any(line.startswith(('sudo', 'hostnamectl', 'curl', 'python3')) for line in result.calls)
     assert pi.cmdline.read_text(encoding='utf-8') == BOOT_LINE + '\n'
     assert CODE not in result.out and CODE not in '\n'.join(result.calls)
 
@@ -316,6 +407,14 @@ def test_makes_env_from_the_example_and_fills_in_this_pi(pi):
     assert values['PI_USER_ID'] == '1001' and values['PI_GROUP_ID'] == '1002'
     assert values['TZ'] == 'Europe/Paris'
     assert set(values) == set(env_file(pi.example))
+
+
+@pytest.mark.parametrize('text', ['', '\n\n'])
+def test_an_empty_env_gets_filled_in(pi, text):
+    pi.env_path.write_text(text, encoding='utf-8')
+    assert pi.run().code == 0
+    assert set(pi.values()) == set(env_file(pi.example))
+    assert pi.values()['CAMERA_MEDIA_MAJOR'] == '511'
 
 
 def test_a_block_device_with_the_same_name_is_not_taken_for_the_camera(pi):
@@ -406,7 +505,8 @@ def test_running_twice_keeps_data_and_key(pi, flags):
 @pytest.mark.parametrize('script', ['install.sh', 'update.sh'])
 def test_never_removes_volumes(pi, script):
     text = (PI / script).read_text(encoding='utf-8')
-    assert '--volumes' not in text and 'volume rm' not in text and 'prune' not in text
+    assert '--volumes' not in text and 'volume rm' not in text and 'volume prune' not in text
+    assert 'system prune' not in text
     assert not re.search(r'\bdown\b[^\n]* -v\b', text)
     pi.state('old_containers', 'abc\n')
     pi.state('old_volume', 'desktalk-detector_models\n')
@@ -425,6 +525,15 @@ def test_memory_flags_are_added_once_and_a_restart_is_asked_for(pi):
     pi.run()
     assert pi.cmdline.read_text(encoding='utf-8') == f'{BOOT_LINE} {FLAGS}\n'
     assert not any('reboot' in line for line in first.calls)
+
+
+def test_boot_settings_are_swapped_in_whole_and_a_copy_is_kept(pi):
+    pi.cmdline.write_text(BOOT_LINE + '\n', encoding='utf-8')
+    calls = pi.run().calls
+    assert any(line.startswith('sudo mv ') and line.endswith(str(pi.cmdline)) for line in calls)
+    assert not any(line == f'sudo tee {pi.cmdline}' for line in calls)
+    assert Path(f'{pi.cmdline}.before-desktalk').read_text(encoding='utf-8') == BOOT_LINE + '\n'
+    assert not list(pi.fake.glob('*.new'))
 
 
 def test_only_the_missing_memory_flag_is_added(pi):
@@ -459,18 +568,27 @@ def test_a_camera_already_on_is_left_alone(pi):
     assert not any(pi.config_txt.name in line for line in result.calls)
 
 
-def test_a_camera_switched_off_is_switched_on_once(pi):
-    pi.config_txt.write_text('dtparam=audio=on\ncamera_auto_detect=0\n', encoding='utf-8')
+def test_a_camera_with_no_line_gets_one_under_all_once(pi):
+    pi.config_txt.write_text('dtparam=audio=on\n[cm5]\ndtoverlay=dwc2\n', encoding='utf-8')
     assert 'restart' in pi.run().out
     pi.run()
-    assert pi.config_txt.read_text(encoding='utf-8') == 'dtparam=audio=on\ncamera_auto_detect=1\n'
+    assert pi.config_txt.read_text(encoding='utf-8') == ('dtparam=audio=on\n[cm5]\ndtoverlay=dwc2\n'
+                                                         '[all]\ncamera_auto_detect=1\n')
 
 
-def test_a_camera_named_by_hand_is_left_alone(pi):
-    text = 'camera_auto_detect=0\ndtoverlay=imx708\n'
-    pi.config_txt.write_text(text, encoding='utf-8')
+def test_a_camera_line_only_for_another_pi_doesnt_count(pi):
+    pi.config_txt.write_text('[cm4]\ncamera_auto_detect=1\n', encoding='utf-8')
     pi.run()
-    assert pi.config_txt.read_text(encoding='utf-8') == text
+    assert pi.config_txt.read_text(encoding='utf-8') == '[cm4]\ncamera_auto_detect=1\n[all]\ncamera_auto_detect=1\n'
+
+
+@pytest.mark.parametrize('text', ['camera_auto_detect=0\n', 'camera_auto_detect=0\ndtoverlay=imx708\n',
+                                  'dtoverlay=imx219,cam0\n', 'dtoverlay=ov5647\n'])
+def test_a_camera_set_by_hand_is_left_alone_and_it_says_so(pi, text):
+    pi.config_txt.write_text(text, encoding='utf-8')
+    result = pi.run()
+    assert pi.config_txt.read_text(encoding='utf-8') == text and 'left' in result.out
+    assert 'restart' not in result.out.lower()
 
 
 def test_the_old_camera_program_outside_docker_gets_a_line(pi):
@@ -480,29 +598,48 @@ def test_the_old_camera_program_outside_docker_gets_a_line(pi):
 
 # ── The name ──
 
-def test_renames_the_pi_and_says_the_new_address_plainly(pi):
+def test_renames_a_pi_with_the_stock_name_and_says_the_new_address_plainly(pi):
     pi.state('hostname', 'raspberrypi\n')
     result = pi.run()
     assert 'sudo hostnamectl set-hostname desktalk' in result.calls
     assert 'http://desktalk.local:5000' in result.out and 'raspberrypi.local' in result.out
+    assert pi.values()['PUBLIC_NAME'] == 'desktalk.local'
 
 
-def test_a_pi_with_the_right_name_is_not_renamed(pi):
-    assert not any('hostnamectl' in line for line in pi.run().calls)
+@pytest.mark.parametrize('name', ['desktalk', 'desktalk-pi', 'kitchen'])
+def test_a_pi_someone_named_is_not_renamed(pi, name):
+    pi.state('hostname', f'{name}\n')
+    result = pi.run()
+    assert not any('hostnamectl' in line for line in result.calls)
+    assert f'http://{name}.local:5000' in result.out
+    assert pi.values()['PUBLIC_NAME'] == f'{name}.local'
 
 
-def test_keep_hostname_keeps_it_and_later_runs_remember(pi):
-    pi.state('hostname', 'desktalk-pi\n')
+def test_keep_hostname_keeps_the_stock_name_and_later_runs_remember(pi):
+    pi.state('hostname', 'raspberrypi\n')
     first = pi.run('--keep-hostname')
-    assert not any('hostnamectl' in line for line in first.calls) and 'http://desktalk-pi.local:5000' in first.out
+    assert not any('hostnamectl' in line for line in first.calls) and 'http://raspberrypi.local:5000' in first.out
     second = pi.run()
     assert not any('hostnamectl' in line for line in second.calls)
+    assert pi.values()['PUBLIC_NAME'] == 'raspberrypi.local'
 
 
-def test_the_name_it_gives_is_the_one_the_app_shows():
-    name = env_file(PI / '.env.example')['INSTALL_HOSTNAME']
-    settings = yaml.safe_load((PI / 'settings.pi.yaml').read_text(encoding='utf-8'))
-    assert settings['web']['public_address'] == f"{name}.local:{env_file(PI / '.env.example')['APP_HOST_PORT']}"
+def test_the_address_follows_the_port_in_env(pi):
+    pi.run()
+    text = pi.env_path.read_text(encoding='utf-8')
+    pi.env_path.write_text(text.replace('APP_HOST_PORT=5000', 'APP_HOST_PORT=8123'), encoding='utf-8')
+    assert 'http://desktalk.local:8123' in pi.run().out
+
+
+def test_compose_hands_the_app_its_address_from_the_real_name_and_port():
+    app = yaml.safe_load((PI / 'compose.yaml').read_text(encoding='utf-8'))['services']['app']
+    assert re.fullmatch(r'\$\{PUBLIC_NAME:-[^}]+\}:\$\{APP_HOST_PORT:-\d+\}', app['environment']['PUBLIC_ADDRESS'])
+    assert app['environment']['OUTSIDE_PORT'].startswith('${APP_HOST_PORT:-')
+
+
+def test_the_name_in_the_example_is_the_name_it_gives():
+    values = env_file(PI / '.env.example')
+    assert values['PUBLIC_NAME'] == f"{values['INSTALL_HOSTNAME']}.local"
 
 
 # ── The model ──
@@ -512,7 +649,8 @@ def test_fetches_the_chosen_model_and_copies_it_in(pi):
     result = pi.run()
     assert result.code == 0
     assert (pi.fake / 'models' / model_name()).read_text(encoding='utf-8') == 'the model'
-    assert any(line.startswith('curl ') and model_name() in line for line in result.calls)
+    fetch = next(line for line in result.calls if line.startswith('curl ') and model_name() in line)
+    assert f"--max-time {env_file(PI / '.env.example')['INSTALL_DOWNLOAD_MAX_SEC']}" in fetch
     assert any(line.startswith('docker compose cp ') for line in result.calls)
     assert not list((pi.fake / 'models').glob('.*'))
 
@@ -527,7 +665,8 @@ def test_a_model_already_there_is_not_fetched_again(pi):
 def test_a_failed_download_leaves_the_rest_working_and_says_how_to_retry(pi):
     pi.state('download_fails')
     result = pi.run()
-    assert result.code == 0 and 'install.sh' in result.out and model_name() in result.out
+    assert result.code == 0 and model_name() in result.out
+    assert shlex.join(['bash', str(pi.root / 'raspberry_pi' / 'install.sh')]).replace("'", '') in unquoted(result.out)
     assert 'docker compose up -d --build' in result.calls
     assert not list((pi.fake / 'models').iterdir())
 
@@ -576,38 +715,134 @@ def test_a_dry_run_only_says_it_would_bring_the_old_setup_down(pi):
 
 # ── Linking to the cloud ──
 
-def test_links_inside_the_app_container_without_showing_the_code(pi):
-    pi.state('hostname', 'desktalk\n')
-    result = pi.run('--server', SERVER, '--code', CODE)
+def saved_link(pi: FakePi) -> dict:
+    return json.loads((pi.root / 'data' / 'cloud.json').read_text(encoding='utf-8'))
+
+
+@pytest.fixture
+def unlinked(pi) -> FakePi:
+    (pi.root / 'data' / 'cloud.json').unlink()
+    return pi
+
+
+def test_the_code_is_used_before_docker_and_the_build(unlinked, cloud):
+    unlinked.state('no_docker')
+    unlinked.env_vars['DESKTALK_LINK_CODE'] = CODE
+    calls = unlinked.run('--server', cloud.url).calls
+    linker = next(i for i, line in enumerate(calls) if line.startswith('python3 '))
+    assert not any(line.startswith(('docker compose up', 'sudo sh')) or 'get.docker' in line for line in calls[:linker])
+    assert cloud.claims == [{'code': CODE, 'name': 'desktalk'}]
+
+
+def test_the_link_is_saved_where_the_app_reads_it_only_for_the_pis_user(unlinked, cloud):
+    unlinked.env_vars['DESKTALK_LINK_CODE'] = CODE
+    result = unlinked.run('--server', cloud.url)
     assert result.code == 0
-    line = next(line for line in result.calls if ' app sh -c ' in line)
-    assert 'scripts/link_cloud.py' in line and SERVER in line and 'desktalk' in line and '-u 1001:1002' in line
-    assert (pi.fake / 'link_stdin').read_text(encoding='utf-8').strip() == CODE
-    assert CODE not in result.out and CODE not in '\n'.join(result.calls)
+    link = saved_link(unlinked)
+    assert link['server'] == cloud.url and link['device_id'] == 'dev-1' and link['token'] == TOKEN
+    assert link['stopped'] is False and link['recent_ids'] == [] and link['place_ts'] == link['start_ts']
+    assert stat.S_IMODE((unlinked.root / 'data' / 'cloud.json').stat().st_mode) == 0o600
+    assert load_config(root=ROOT, environ={}).cloud.link_key == 'cloud'
+    assert TOKEN not in result.out and 'dev-1' in result.out
 
 
-def test_the_code_stays_out_of_sudos_log_too(pi):
-    (pi.fake / 'docker_group_active').unlink()
-    result = pi.run('--server', SERVER, '--code', CODE)
-    assert any(line.startswith('sudo docker compose exec') for line in result.calls)
+def test_linking_the_same_pi_again_keeps_its_place(unlinked, cloud):
+    (unlinked.root / 'data' / 'cloud.json').write_text(json.dumps({
+        'server': 'http://old:1', 'device_id': 'dev-1', 'token': 'old', 'place_ts': 123.0, 'start_ts': 100.0,
+        'recent_ids': ['a']}), encoding='utf-8')
+    unlinked.env_vars['DESKTALK_LINK_CODE'] = CODE
+    unlinked.run('--server', cloud.url)
+    link = saved_link(unlinked)
+    assert link['place_ts'] == 123.0 and link['recent_ids'] == ['a'] and link['token'] == TOKEN
+
+
+def test_the_code_from_the_environment_is_in_no_arguments_and_no_output(unlinked, cloud):
+    unlinked.env_vars['DESKTALK_LINK_CODE'] = CODE
+    result = unlinked.run('--server', cloud.url)
+    assert CODE not in '\n'.join(result.calls) and CODE not in result.out
+    assert (unlinked.fake / 'linker_got').read_text(encoding='utf-8').strip() == CODE
+    assert not (unlinked.fake / 'docker_saw_the_code').exists()
+
+
+def test_the_code_flag_for_use_by_hand_still_stays_out_of_the_linkers_arguments(unlinked, cloud):
+    result = unlinked.run('--server', cloud.url, '--code', CODE)
+    assert result.code == 0 and cloud.claims[0]['code'] == CODE
     assert CODE not in '\n'.join(result.calls)
+    assert not (unlinked.fake / 'docker_saw_the_code').exists()
 
 
-def test_a_cloud_server_that_is_down_doesnt_stop_the_install_and_says_so(pi):
-    pi.state('link_fails')
-    result = pi.run('--server', SERVER, '--code', CODE)
-    assert result.code == 0
-    assert 'without' in result.out and 'install.sh' in result.out and SERVER in result.out
-    assert CODE not in result.out
+def test_a_refused_code_says_so_finishes_the_install_and_doesnt_exit_0(unlinked, cloud):
+    unlinked.env_vars['DESKTALK_LINK_CODE'] = 'WRONG-CODE'
+    result = unlinked.run('--server', cloud.url)
+    assert result.code == 3
+    assert 'NOT linked' in result.out and 'WRONG-CODE' not in result.out
+    assert 'docker compose up -d --build' in result.calls
+    assert not (unlinked.root / 'data' / 'cloud.json').exists()
+
+
+def test_a_cloud_server_that_is_down_says_so_and_how_to_try_again(unlinked):
+    unlinked.env_vars['DESKTALK_LINK_CODE'] = CODE
+    server = nothing_listening()
+    result = unlinked.run('--server', server)
+    assert result.code == 3 and 'NOT linked' in result.out and CODE not in result.out
+    assert 'docker compose up -d --build' in result.calls
+    retry = next(line for line in result.out.splitlines() if 'DESKTALK_LINK_CODE=' in line)
+    assert unquoted(str(unlinked.root / 'raspberry_pi' / 'install.sh')) in unquoted(retry) and server in retry
+
+
+def test_a_failed_link_and_no_docker_doesnt_hide_a_failed_start(unlinked):
+    unlinked.env_vars['DESKTALK_LINK_CODE'] = CODE
+    unlinked.state('up_fails')
+    assert unlinked.run('--server', nothing_listening()).code == 1
+
+
+def test_a_data_folder_it_cant_write_to_doesnt_use_up_the_code(unlinked, cloud):
+    data = unlinked.root / 'data'
+    data.chmod(0o500)
+    try:
+        unlinked.env_vars['DESKTALK_LINK_CODE'] = CODE
+        result = unlinked.run('--server', cloud.url)
+    finally:
+        data.chmod(0o700)
+    assert result.code == 3 and cloud.claims == []
 
 
 def test_no_flags_means_no_link(pi):
-    assert not any(' app sh -c ' in line for line in pi.run().calls)
+    assert not any(line.startswith('python3 ') for line in pi.run().calls)
 
 
-def test_the_website_gives_the_install_command():
-    words = yaml.safe_load((ROOT / 'cloud' / 'prompts.yaml').read_text(encoding='utf-8'))['site']['setup_command']
-    assert 'raspberry_pi/install.sh --server {server_url} --code {code}' in words
+def link_pi():
+    spec = importlib.util.spec_from_file_location('link_pi_script', PI / 'link_pi.py')
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_linker_reads_the_same_settings_and_words_the_app_does():
+    config = load_config(root=ROOT, environ={})
+    shim = link_pi().settings_for_the_linker(ROOT)
+    assert shim.cloud.link_key == config.cloud.link_key
+    assert shim.cloud.timeout_sec == config.cloud.timeout_sec
+    assert shim.cloud.error_text_chars == config.cloud.error_text_chars
+    for name in ('link_saved', 'link_bad_address', 'link_refused_because', 'link_code_refused', 'link_no_answer'):
+        assert getattr(shim.prompts.cloud, name) == getattr(config.prompts.cloud, name)
+
+
+def website_command() -> str:
+    return yaml.safe_load((ROOT / 'cloud' / 'prompts.yaml').read_text(encoding='utf-8'))['site']['setup_command']
+
+
+def test_the_website_gives_the_install_command_with_the_code_out_of_the_arguments():
+    words = website_command()
+    assert 'DESKTALK_LINK_CODE={code} bash ~/desk-talk/raspberry_pi/install.sh --server {server_url}' in words
+    assert '--code' not in words
+
+
+def test_the_website_command_works_on_a_clean_card_and_on_an_old_clone():
+    words = website_command()
+    assert 'apt-get install -y git' in words and 'command -v git' in words
+    assert 'pull --ff-only' in words and 'git clone' in words
 
 
 # ── update.sh ──

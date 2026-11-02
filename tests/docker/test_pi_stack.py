@@ -136,6 +136,12 @@ def test_pictures_arrive_at_the_app(stack):
     assert httpx.get(f'{stack.url}/api/health').json()['camera']['pictures_received'] > received
 
 
+def test_the_app_shows_the_address_compose_gave_it_with_the_port_docker_opened(stack):
+    port = stack.url.rsplit(':', 1)[1]
+    shown = httpx.get(f'{stack.url}/api/ui_settings').json()['pi']['public_address']
+    assert shown == f"{env_file(PI / '.env.example')['PUBLIC_NAME']}:{port}"
+
+
 def test_the_camera_got_the_detector_address_and_its_folder_from_the_pi_settings(stack):
     logs = stack.compose('logs', 'camera').stdout
     assert 'saved in /photos' in logs

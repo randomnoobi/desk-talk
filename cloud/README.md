@@ -50,7 +50,7 @@ Settings in `settings.yaml` and wording in `prompts.yaml` are built into the ima
 ## 4. Add a Pi
 
 1. Log in on the website and click **Add a Pi**.
-2. Run the command it shows, in your Desk Talk folder. The code in it works once, for a few minutes.
+2. Run the command it shows, **on the Pi**, from any folder. It gets Desk Talk if the Pi doesn't have it, installs it, and uses the code first. The code in it works once, for a few minutes.
 3. The Pi appears on the website. Its events show up as it sends them.
 
 ## If linking says "Too many tries"

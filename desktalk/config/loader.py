@@ -34,6 +34,8 @@ ENV_OVERRIDES = {
     'LLM_MODEL': ('llm', 'openai_model'),
     'GROQ_MODEL': ('llm', 'groq_model'),
     'YOLO_MODEL': ('detector', 'model'),
+    'PUBLIC_ADDRESS': ('web', 'public_address'),      # raspberry_pi/compose.yaml: the Pi's real name and open port
+    'OUTSIDE_PORT': ('web', 'outside_port'),
 }
 # Old .env settings that moved to config/settings.yaml (startup shows a hint if they're set).
 MOVED_ENV = ('CAMERA_SOURCE', 'CAMERA_INDICES', 'PIPELINE_CAMERA', 'EVENT_COOLDOWN', 'APPEAR_FRAMES',

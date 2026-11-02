@@ -51,7 +51,7 @@ Being moved to this; see [the Pi standalone plan](docs/plans/2026-10-30-pi-stand
 - `shared/desktalk_shared/` is used on the Pi and on this computer. It must stay standard library only and work on Python 3.11.
 - The Pi works by itself, with no computer and no AI: nothing on the Pi may need either. A computer or the cloud may add chat AI, but it's optional. No AI runs on the Pi, and API keys never go on the Pi; AI keys stay on the cloud server.
 - Only events, state and goals may leave the Pi. No pictures, no to-do text. The one exception: chat the user has turned on may pass through their cloud server, text only, never stored or logged there.
-- Code gets to the Pi with `git pull` on the Pi, then `docker compose up -d --build`.
+- Code gets to the Pi with `bash raspberry_pi/update.sh` on the Pi, which runs `git pull` and rebuilds. A new Pi gets it with `raspberry_pi/install.sh`.
 - Agents run things on the Pi with `ssh pi`, using a key login only. Never type or write down the Pi's password anywhere. If the key login fails, stop and ask the user.
 - A Pi change isn't finished until its real-Pi checks pass (`uv run pytest -m pi`, and any command the task names, run over `ssh pi`). Paste the output into the PR. Don't say a Pi change works without that. Label each command you give the user **on the Pi** or **on your Mac**.
 

@@ -691,6 +691,7 @@ class WebSettings(_Section):
     host: str
     port: Port
     public_address: str               # how others reach the app: name and web.port (desktalk.local:5000); '' = work out
+    outside_port: Annotated[int, Field(ge=0, le=65535)]   # the port others use, if Docker opens another; 0 = web.port
     app_folder: Path
     phone_folder: Path
     stop_wait_sec: PositiveNumber
@@ -724,13 +725,15 @@ class WebSettings(_Section):
 
     @model_validator(mode='after')
     def _public_address_is_host_and_web_port(self):
-        """Like desktalk.local:5000: a name, a colon and web.port. Without a port the link would open port 80;
-        a path, ?, #, @ or a space would give a link that goes somewhere else."""
+        """Like desktalk.local:5000: a name, a colon and web.port (or outside_port, when Docker opens another one
+        for it). Without a port the link would open port 80; a path, ?, #, @ or a space would give a link that goes
+        somewhere else."""
         if self.public_address:
             host, _, port = self.public_address.partition(':')
-            if not (_HOST_NAME.fullmatch(host) and port == str(self.port)):
+            opened = self.outside_port or self.port
+            if not (_HOST_NAME.fullmatch(host) and port == str(opened)):
                 raise ValueError(f'public_address must be a name and the port the app listens on (web.port, '
-                                 f'{self.port}), like desktalk.local:{self.port} (got {self.public_address!r})')
+                                 f'{opened}), like desktalk.local:{opened} (got {self.public_address!r})')
         return self
 
 

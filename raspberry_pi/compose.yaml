@@ -28,6 +28,9 @@ services:
       PI_USER_ID: ${PI_USER_ID:-1000}                         # start.sh hands over to this user
       PI_GROUP_ID: ${PI_GROUP_ID:-1000}
       PI_AUDIO_GROUP: ${PI_AUDIO_GROUP:-29}                   # and to this group, which may use the sound card
+      # How others reach the app: the Pi's real name and the port opened below. The app can't see them from in here.
+      PUBLIC_ADDRESS: ${PUBLIC_NAME:-desktalk.local}:${APP_HOST_PORT:-5000}
+      OUTSIDE_PORT: ${APP_HOST_PORT:-5000}
     ports:
       - "${APP_HOST_PORT:-5000}:${APP_PORT:-5000}"                  # the one door: phones and computers on your Wi-Fi come in here
     volumes:

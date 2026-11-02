@@ -14,7 +14,7 @@ function code(serverUrl: string) {
     code: 'ABCD-EFGH',
     expires_at: 1900000000,
     server_url: serverUrl,
-    command: `uv run python scripts/link_cloud.py --server ${serverUrl} --code ABCD-EFGH`,
+    command: `DESKTALK_LINK_CODE=ABCD-EFGH bash ~/desk-talk/raspberry_pi/install.sh --server ${serverUrl}`,
   }
 }
 
@@ -46,7 +46,7 @@ describe('Pis', () => {
     render(<Pis />)
     await userEvent.click(await screen.findByRole('button', { name: /add a pi/i }))
     expect(await screen.findByText('ABCD-EFGH')).toBeInTheDocument()
-    expect(screen.getByText(/--server http:\/\/192\.168\.1\.20:8080 --code ABCD-EFGH/)).toBeInTheDocument()
+    expect(screen.getByText(/DESKTALK_LINK_CODE=ABCD-EFGH .* --server http:\/\/192\.168\.1\.20:8080/)).toBeInTheDocument()
     const posts = server.made('POST', '/api/devices/code')
     expect(posts).toHaveLength(1)
     expect(posts[0].body).toEqual({ time_zone: 'Asia/Tokyo' })
