@@ -3,7 +3,7 @@ Desk Talk's camera program: runs on the Raspberry Pi's own Python 3 (3.11 or new
 
     python3 -m raspberry_pi.camera --server http://192.168.1.20:5000 --key AbC123xY
 
-(run it in the desk-talk folder; server.py prints the exact command, with your computer's address and key)
+(run it in the desk-talk folder; the app's page shows the exact command, with the address and key)
 
 Standard library only, plus picamera2, cv2 and yaml from apt (imported inside the function that
 uses them), plus desktalk_shared straight from this repo's shared/ folder.

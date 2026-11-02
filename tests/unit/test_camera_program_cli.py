@@ -98,7 +98,7 @@ def test_offline_does_not_ask_the_computer(tmp_path, computer):
 
 def test_missing_server_says_where_to_get_the_command(caplog):
     assert main([]) == 2
-    assert 'server.py' in caplog.text
+    assert "The app's page shows the address and the key" in caplog.text
 
 
 @pytest.fixture(autouse=True)

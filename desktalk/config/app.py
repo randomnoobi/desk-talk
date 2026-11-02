@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 
 from desktalk.config.agents import AgentsFile
 from desktalk.config.base import (
@@ -680,6 +680,7 @@ class PageRefresh(_Section):
 class WebSettings(_Section):
     host: str
     port: Port
+    public_address: str               # how other devices reach the app, like desktalk.local:5000; '' = work it out
     app_folder: Path
     phone_folder: Path
     stop_wait_sec: PositiveNumber
@@ -705,6 +706,14 @@ class WebSettings(_Section):
     settings_sliders: SettingsSliders
     new_zone_px: PositiveInt
     palette: Words
+
+    @field_validator('public_address')
+    @classmethod
+    def _is_host_and_port(cls, value: str) -> str:
+        value = value.strip()
+        if '://' in value or '/' in value or ' ' in value:
+            raise ValueError(f'must be like desktalk.local:5000, without http:// or a path (got {value!r})')
+        return value
 
 
 class NotificationsSettings(_Section):

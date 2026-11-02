@@ -201,6 +201,19 @@ def test_page_shows_the_servers_numbers(page, tmp_path, pictures):
         expect(page.locator('#cam-stage')).to_contain_text('deletes them every 7 minutes')
 
 
+def test_pi_page_uses_the_public_address_and_shows_no_command(page, tmp_path, pictures):
+    """On the Pi the camera starts itself: the desk cam says where to open the app, with no command or key."""
+    def change(config):
+        return changed(config, 'web', public_address='desktalk.local:5000')
+
+    with app_server(tmp_path, pictures=pictures, change=change) as server:
+        open_app(page, server.url)
+        stage = page.locator('#cam-stage')
+        expect(stage).to_contain_text('http://desktalk.local:5000')
+        expect(stage).not_to_contain_text('raspberry_pi.camera')
+        expect(stage.locator('#copy-pi')).to_have_count(0)
+
+
 def watch_for_errors(page: Any) -> list[str]:
     errors: list[str] = []
     page.on('pageerror', lambda exc: errors.append(f'page error: {exc}'))

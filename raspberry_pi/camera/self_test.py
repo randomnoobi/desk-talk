@@ -94,7 +94,7 @@ def check_temperature(reader: HealthReader, hot_warning_c: float) -> Check:
 def check_computer(server: str | None, key: str | None, timeout: float, error_text_chars: int) -> Check:
     if not (server and key):
         return Check('computer', False, 'no --server and --key given, or DESKTALK_SERVER and DESKTALK_PAIR_KEY_FILE '
-                                        '(server.py on your computer prints the address and key)')
+                                        "(the app's page shows the address and key)")
     try:
         reply = computer_config(server, key, timeout, error_text_chars)
     except ComputerProblem as exc:

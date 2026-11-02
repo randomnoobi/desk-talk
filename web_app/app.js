@@ -577,7 +577,7 @@ async function send(text) {
     if (!state.waiting[chatId]) hideTyping(chatId);
   }
   if (!res) {
-    addMessage(chatId, { note: true, text: 'Couldn’t reach Desk Talk. Is it still running on this computer?' });
+    addMessage(chatId, { note: true, text: 'Couldn’t reach Desk Talk. Is it still running?' });
     return;
   }
   for (const r of res.messages || []) {
@@ -1206,6 +1206,15 @@ function renderCamStage() {
   }
   if (state.cameraSource === 'webcam') {
     stage.innerHTML = '<p class="cam-caption">No webcam found. Check that one is plugged in, then restart Desk Talk.</p>';
+    return;
+  }
+  if (state.cameraSource === 'pi' && ui.pi.public_address) {
+    // On the Pi the camera starts by itself, so there is no command (and no pairing key) to show.
+    stage.innerHTML = `<div class="pair">
+      <h3>The Pi's camera</h3>
+      <p>It starts by itself when the Pi does. Open Desk Talk from any phone or computer on the same Wi-Fi at:</p>
+      <pre class="json pi-cmd">http://${esc(ui.pi.public_address)}</pre>
+      <p class="pair-url">It takes ${ui.pi.fps} pictures a second${ui.pi.delete_every_min ? `, keeps them on the Pi, and deletes them every ${ui.pi.delete_every_min} minutes` : ' and keeps them on the Pi'}.</p></div>`;
     return;
   }
   if (state.cameraSource === 'pi') {

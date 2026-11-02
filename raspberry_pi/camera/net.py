@@ -44,7 +44,7 @@ def error_text(body: bytes, most_chars: int | None) -> str:
 
 
 def computer_away(server: str, why: NoAnswer) -> str:
-    return f'Cannot reach the computer at {server} ({why}). Is server.py running, and on the same Wi-Fi?'
+    return f'Cannot reach the computer at {server} ({why}). Is the app running, and on the same network?'
 
 
 def computer_said_no(status: int, body: bytes, most_chars: int | None) -> str:

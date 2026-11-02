@@ -113,3 +113,11 @@ def test_object_state_event_says_object_in_its_dict():
                  'prev_state': 'PRESENT', 'new_state': 'ABSENT', 'device_id': 'pi-1', 'conf_avg': 0.8,
                  'bbox': [10.0, 20.0, 50.0, 100.0], 'dwell_sec': 61.0}
     assert event_from_dict(d).bbox == (10.0, 20.0, 50.0, 100.0)    # a tuple again, not a list
+
+
+def test_a_detection_is_from_the_pi_unless_it_says_otherwise():
+    """The Pi's detector container is the usual finder now; old log files that say 'computer' still read."""
+    base = detection_event().to_dict()
+    del base['detected_on']
+    assert event_from_dict(base).detected_on == 'pi'
+    assert event_from_dict({**base, 'detected_on': 'computer'}).detected_on == 'computer'

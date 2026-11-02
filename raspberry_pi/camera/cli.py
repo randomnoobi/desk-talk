@@ -79,13 +79,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         prog='python3 -m raspberry_pi.camera', formatter_class=argparse.RawDescriptionHelpFormatter,
         description=f'Desk Talk camera program for the Raspberry Pi. In the desk-talk folder on the Pi, run:\n\n'
                     f'    {RUN_COMMAND}\n\n'
-                    f"server.py on your computer prints this command with your computer's address and pairing key.\n"
+                    f"The app's page (open it on the computer running the app) shows this command with the address "
+                    f'and key.\n'
                     f'In Docker, set {SERVER_ENV} and {PAIR_KEY_FILE_ENV} (a file with the key in it) instead of '
                     f'--server and --key; a flag beats the environment.\n'
                     f'Settings come from config/settings.yaml (pi:) on your computer; these flags override them.')
-    p.add_argument('--server', help=f'your computer, e.g. http://192.168.1.20:5000 (printed by server.py). '
+    p.add_argument('--server', help=f"your computer, e.g. http://192.168.1.20:5000 (shown on the app's page). "
                                     f'If not given: {SERVER_ENV}')
-    p.add_argument('--key', help='pairing key (printed by server.py)')
+    p.add_argument('--key', help="pairing key (shown on the app's page, and saved in the app's pairing key file)")
     p.add_argument('--key-file', dest='key_file',
                    help=f'a file with the pairing key in it (so it stays out of the command). '
                         f'If neither this nor --key is given: {PAIR_KEY_FILE_ENV}')
@@ -130,8 +131,8 @@ def main(argv: list[str] | None = None, *, repo_settings: Path = REPO_SETTINGS, 
     args = parse_args(argv)
     if not args.offline and not args.self_test and not (args.server and args.key):
         log.error('Missing the computer to send to: give --server and --key (or --key-file), or set %s and %s. '
-                  'Start server.py on your computer: it prints the address and the key.', SERVER_ENV,
-                  PAIR_KEY_FILE_ENV)
+                  "The app's page shows the address and the key (the key is also saved in the app's pairing key file).",
+                  SERVER_ENV, PAIR_KEY_FILE_ENV)
         return 2
     clock = clock or SystemClock()
     try:

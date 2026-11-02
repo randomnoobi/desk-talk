@@ -34,7 +34,8 @@ TEST_ADDRESS = 'http://testserver'      # where FastAPI's TestClient sends reque
 
 def links_for(app: DeskTalk, *, phone_page: bool = False) -> Links:
     return Links(ADDRESS, app.config.web.port, app.pair_key,
-                 phone_port=app.config.camera.phone_port if phone_page else None)
+                 phone_port=app.config.camera.phone_port if phone_page else None,
+                 public_address=app.config.web.public_address)
 
 
 def web_client(app: DeskTalk | FastAPI, *, from_ip: str = THIS_COMPUTER) -> TestClient:

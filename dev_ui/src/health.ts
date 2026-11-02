@@ -102,7 +102,7 @@ function piRows(health: Health, pi: PiStatus | null, limits: RowLimits, now: num
 }
 
 function detectionRows(health: Health, limits: HealthLimits): Row[] {
-  const group = 'Detection on this computer'
+  const group = 'Detection in the app'
   const d = health.detection
   return [
     { group, name: 'pictures analysed', value: String(d.pictures_analysed), level: 'ok' },
@@ -183,5 +183,5 @@ export function healthRows(health: Health, logStatus: LogStatus, limits: RowLimi
 }
 
 /** The group names in the order the tab shows them. */
-export const GROUPS = ['Pi', 'Detection on this computer', 'Event stream', 'Background jobs', 'Timed jobs',
+export const GROUPS = ['Pi', 'Detection in the app', 'Event stream', 'Background jobs', 'Timed jobs',
                        'Event log', 'AI'] as const

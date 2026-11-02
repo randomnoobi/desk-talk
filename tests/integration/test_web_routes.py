@@ -45,6 +45,15 @@ def test_live_shows_the_agents_the_detections_and_the_pi_command_on_this_compute
     assert 'pi_command' not in web_client(rig.app, from_ip=ON_THE_WIFI).get('/api/live').json()
 
 
+def test_live_with_a_public_address_has_no_pi_command(tmp_path):
+    """On the Pi the camera starts itself, so there is no command to show (and no pairing key sent out)."""
+    config = changed(desk_config(tmp_path), 'web', public_address='desktalk.local:5000')
+    rig = DeskRig(tmp_path, config=config)
+    live = web_client(rig.app).get('/api/live').json()
+    assert 'pi_command' not in live and PAIR_KEY not in json.dumps(live)
+    assert web_client(rig.app).get('/api/ui_settings').json()['pi']['public_address'] == 'desktalk.local:5000'
+
+
 def test_the_latest_picture_and_proof_photos_are_served(tmp_path):
     rig = DeskRig(tmp_path)
     client = web_client(rig.app)
@@ -211,7 +220,7 @@ def test_ui_settings_reply(tmp_path):
     assert ui['desk']['edge_proximity']['danger_px'] == 35 and ui['desk']['max_desk_corners'] == 12
     assert ui['desk']['desk_border_share'] == 0.03 and ui['desk']['min_desk_corners'] == 3
     assert ui['quiet_hours'] == {'enabled': False, 'start_hour': 22, 'end_hour': 7}
-    assert ui['pi'] == {'fps': 3, 'delete_every_min': 10}
+    assert ui['pi'] == {'fps': 3, 'delete_every_min': 10, 'public_address': ''}
     assert ui['phone'] == {'fps': 3, 'max_side': 960, 'jpeg_quality': 70, 'tilt_max': 50,
                            'capture_width': 1280, 'capture_height': 720}
     assert ui['lens_card'] == {'id': 'lens', 'name': 'Lens', 'art': 'art/lens.svg', 'color': 'coral',

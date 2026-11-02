@@ -90,7 +90,7 @@ describe('healthRows', () => {
 
   it('turns slow detection on this computer amber', () => {
     const slow = health({ detection: { pictures_analysed: 3, detect_ms: 700, problem: null, model: 'yolo11n' } })
-    expect(row(healthRows(slow, log, limits, NOW), 'Detection on this computer', 'detect ms').level).toBe('warn')
+    expect(row(healthRows(slow, log, limits, NOW), 'Detection in the app', 'detect ms').level).toBe('warn')
   })
 
   it('shows the Pi detector off with its reason, and a missing camera as red', () => {

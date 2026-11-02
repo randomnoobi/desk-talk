@@ -258,7 +258,7 @@ class SettingsWatcher:
                      model.image_size)
             self.detector.want_model(model)
         if _without_model(new) != _without_model(self.current):
-            log.info('The computer has new camera settings: restart the camera program to use them')
+            log.info('The app has new camera settings: restart the camera program to use them')
         self.current = new
         return self.every_sec
 

@@ -37,7 +37,7 @@ from desktalk.web.pairing import Links
 from desktalk.web.routers import DEV_SERVER, MAIN_SERVER, PHONE_SERVER
 from desktalk.web.streams import LiveStreams
 
-SOMETHING_WENT_WRONG = 'Something went wrong on this computer. The details are in the log.'
+SOMETHING_WENT_WRONG = 'Something went wrong in Desk Talk. The details are in the log.'
 
 
 @asynccontextmanager

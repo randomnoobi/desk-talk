@@ -7,6 +7,9 @@ detector:
 dev:
   enabled: false                 # no developer page on the Pi
 
+web:
+  public_address: desktalk.local:5000   # the Pi's own name on the Wi-Fi (the app can't see it from inside Docker)
+
 camera:
   pair_key_file: /pairing/pair-key.txt   # on the volume the camera reads it from (compose.yaml)
 

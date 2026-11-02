@@ -88,7 +88,7 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 | Method | Path | What it does | Called by | Access |
 |---|---|---|---|---|
-| GET | `/api/live` | Only what the desk cam panel shows, in one request (the app asks every 1.5 s): `camera`, `camera_source`, `camera_index`, `agents`, `detections.extras` (the other things on the desk, not in the chat: `[{"yolo_class", "ignored"}]`), `safety.explanations` (the "Heads up" sentences), `camera_issues`, `ai: {ready, problem}`, and `phone: {url, qr_svg}` or `pi_command`. `?qr=1` adds the phone link's QR code. | `web_app/app.js`, `tests/e2e/` | anyone on the network; the Pi command, the phone link and the QR code **this computer only** |
+| GET | `/api/live` | Only what the desk cam panel shows, in one request (the app asks every 1.5 s): `camera`, `camera_source`, `camera_index`, `agents`, `detections.extras` (the other things on the desk, not in the chat: `[{"yolo_class", "ignored"}]`), `safety.explanations` (the "Heads up" sentences), `camera_issues`, `ai: {ready, problem}`, and `phone: {url, qr_svg}` or `pi_command` (left out when `web.public_address` is set: the Pi starts its own camera). `?qr=1` adds the phone link's QR code. | `web_app/app.js`, `tests/e2e/` | anyone on the network; the Pi command, the phone link and the QR code **this computer only** |
 | GET | `/api/status` | A short summary: running, camera, agents, safety state, uptime. | `web_app/app.js` (once, when the page starts) | anyone on the network |
 
 ### An object's story (2)

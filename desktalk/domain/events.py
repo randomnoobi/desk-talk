@@ -46,7 +46,7 @@ class Event:
     TYPE: ClassVar[str] = ''
     KEYS: ClassVar[Mapping[str, str]] = {}      # field name → its key in the dict, where they differ
 
-    ts: float                                   # when it happened (this computer's clock)
+    ts: float                                   # when it happened (the app's own clock, on the Pi or a computer)
     id: str = field(default_factory=new_event_id)
     extra: Mapping[str, Any] = field(default_factory=dict)
 
@@ -105,7 +105,8 @@ class DetectionEvent(Event):
     light: Light
     moved: bool = False                 # the picture changed a lot lately (a hand, the camera, the light)
     taken_at: float | None = None       # the camera's own clock
-    detected_on: str = 'computer'       # where YOLO ran: pi or computer
+    detected_on: str = 'pi'             # where YOLO ran: pi (the detector container) or computer (the app's own
+                                        # YOLO). Old log files have both, so the values stay
 
     @classmethod
     def _decode(cls, name: str, value: Any) -> Any:

@@ -60,7 +60,7 @@ def live(request: Request, app: App, links: ShownLinks, from_here: FromHere) -> 
         wants_qr = bool(request.query_params.get('qr'))
         out['phone'] = {'url': links.phone_url if from_here else '',
                         'qr_svg': links.phone_qr_svg if from_here and wants_qr else None}
-    if app.pi is not None and from_here:
+    if app.pi is not None and from_here and links.pi_command:
         out['pi_command'] = links.pi_command
     return out
 
