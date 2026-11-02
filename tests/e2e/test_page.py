@@ -101,7 +101,7 @@ def test_the_story_of_something_on_the_desk_shows_each_step_with_its_picture(pag
         picture = steps.first.locator('.story-pic')
         expect(picture.locator('img')).to_have_attribute('src', re.compile(r'^/api/objects/photo/'))
         expect(picture.locator('svg rect')).to_have_count(1)                   # its box, drawn by the page
-        assert page.evaluate("document.querySelector('#story .story-pic img').naturalWidth") > 0
+        page.wait_for_function("document.querySelector('#story .story-pic img')?.naturalWidth > 0")     # it has loaded
         picture.click()                                                         # a bigger look
         expect(picture).to_have_class(re.compile(r'\bbig\b'))
         story.get_by_role('button', name='Close').click()
