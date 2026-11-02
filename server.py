@@ -63,9 +63,10 @@ def main() -> int:
         return 2
     start_logging(config)
     settings_lines(config)
-    say('  Loading YOLO model (the first run downloads it)...')
+    if config.detector.enabled:
+        say('  Loading YOLO model (the first run downloads it)...')
     desktalk = build(config)
-    say(f'  YOLO model   : {desktalk.detector.label}')
+    say(f'  Detector     : {desktalk.detector.label}')
     say(f'  AI           : {desktalk.model.label}')
     say(f'  Danger zones : {"config/safety_rules.json" if desktalk.safety_rules.loaded else "built-in"}')
     address = lan_ip()

@@ -373,7 +373,7 @@ def test_lens_says_why_the_pis_own_detection_is_off_once_it_has_been_off_a_while
     assert rig.said() == []
     rig.tick(after=1)
     [(kind, text)] = rig.said()
-    assert kind == 'problem' and NO_CONTAINER in text and 'This computer' in text
+    assert kind == 'problem' and NO_CONTAINER in text and 'This computer' not in text and 'docker compose' in text
     assert [(n.key, n.kind) for n in rig.bus.of_type(CameraNotice)] == [('pi_detector', 'problem')]
 
 

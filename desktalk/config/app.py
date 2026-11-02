@@ -106,6 +106,7 @@ class PiSettings(_Section):
 
 
 class DetectorSettings(_Section):
+    enabled: bool
     model: str
     confidence: Fraction
     image_size: PositiveInt

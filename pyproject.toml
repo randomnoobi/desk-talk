@@ -4,7 +4,8 @@
 #   desktalk-detector raspberry_pi/detector_service/: the detector that runs in Docker on the Pi
 #   desktalk-cloud    cloud/server/: the cloud server that keeps what a Pi may send and writes a weekly report
 #
-#   uv sync --all-packages        install everything (what the tests need)
+#   uv sync --all-packages        install everything, YOLO included (what the tests need)
+#   uv sync --package desktalk --no-dev   the app alone, with no PyTorch or YOLO (the Pi's app image)
 #   uv run python server.py       start Desk Talk
 #   uv run pytest -m "not slow"   fast tests
 #   uv run ruff check <files>     lint
@@ -22,15 +23,22 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "pydantic>=2.7",
     "opencv-python>=4.8",
-    "ultralytics==8.4.14",     # same version as on the Pi, so labels and boxes match
-    "torch",
-    "torchvision",
     "openai>=1.0",             # talks to Gemini / OpenAI / Groq / Ollama
     "python-dotenv>=1.0",
     "pyyaml>=6.0",             # config/*.yaml
     "numpy>=1.24",
     "cryptography>=42.0",      # HTTPS for the phone camera page
     "qrcode>=7.4",
+]
+
+[project.optional-dependencies]
+# YOLO inside the app itself. Left out, the app has no PyTorch (detector.enabled: false in config/settings.yaml)
+# and the Pi's detector container does the finding. `uv sync --all-packages` brings these in anyway, through
+# the detector member (the same versions); `uv sync --extra computer-detector` brings in only these.
+computer-detector = [
+    "ultralytics==8.4.14",     # same version as on the Pi, so labels and boxes match
+    "torch",
+    "torchvision",
 ]
 
 [dependency-groups]

@@ -38,7 +38,7 @@ from typing import Any
 
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource, make_pair_key
 from desktalk.adapters.cloud import HttpCloudLink
-from desktalk.adapters.detector import UltralyticsDetector
+from desktalk.adapters.detector import NoDetector, UltralyticsDetector
 from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser
 from desktalk.adapters.llm import OpenAICompatibleChatModel, ResilientChatModel
 from desktalk.adapters.notify import MacNotifications, make_notifications
@@ -361,9 +361,12 @@ def cloud_goals(protocols: Protocols) -> dict[str, float]:
         'screens_off_before_bed_min': light.screens_off_before_bed_min}
 
 
-def make_detector(config: AppConfig) -> UltralyticsDetector:
-    """Object detection on this computer (settings → detector), warmed up so the first picture isn't slow.
-    A model that won't load leaves the Pi's own detections working."""
+def make_detector(config: AppConfig) -> Detector:
+    """Object detection in this app (settings → detector), warmed up so the first picture isn't slow. A model that
+    won't load leaves the Pi's own detections working. With detector.enabled off there is none (NoDetector), and
+    ultralytics and torch are never imported: only the Pi's detections count."""
+    if not config.detector.enabled:
+        return NoDetector()
     detector = UltralyticsDetector(config.resolve(config.detector.model), config.detector,
                                    end2end=config.detector.end2end, rect=config.detector.rect)
     detector.warmup()
@@ -380,7 +383,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
 
     The keyword arguments are for tests; left out, the real things are made from `config`:
         clock               the computer's clock
-        detector            UltralyticsDetector (settings → detector), warmed up
+        detector            UltralyticsDetector (settings → detector), warmed up; NoDetector if detector.enabled is off
         client_factory      makes the OpenAI-compatible client (openai.OpenAI)
         source              the camera in settings → camera.source (one passed in is only a camera: not the
                             Pi's or the phone's uploads)

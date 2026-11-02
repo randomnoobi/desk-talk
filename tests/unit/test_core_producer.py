@@ -12,6 +12,7 @@ import pytest
 import yaml
 
 from desktalk.adapters.camera import PiFrameSource
+from desktalk.adapters.detector import NoDetector
 from desktalk.adapters.picture import OpenCvPictureTools
 from desktalk.config import CameraSettings
 from desktalk.core.vision.producer import DetectionProducer
@@ -436,6 +437,25 @@ def test_when_detection_here_fails_the_live_view_goes_on_without_boxes_or_events
     assert rig.desk.plain(0) and rig.desk.boxed(0)
     assert 'the model file is missing' in caplog.text
     assert rig.producer.problem == 'the model file is missing'
+
+
+def test_off_picture_gets_live_view_and_no_event():
+    """The app with no detector of its own (detector.enabled: false) and a Pi whose detector is off: the live view
+    goes on, nothing is said about what is on the desk."""
+    painter = MarkingPainter()
+    rig = Rig(detector=NoDetector(), painter=painter)
+    rig.picture(info=from_pi(DetectorState.OFF))
+    assert rig.events() == [] and rig.lens.samples == []
+    assert painter.given == [[]]
+    assert rig.desk.plain(0) and rig.desk.boxed(0)
+    assert 'detector.enabled' in (rig.producer.problem or '')
+
+
+def test_a_pi_detection_still_gets_through_when_the_app_has_no_detector():
+    rig = Rig(detector=NoDetector())
+    rig.picture(info=from_pi(DetectorState.OK, [LAPTOP]))
+    assert [e.detections for e in rig.events()] == [(LAPTOP,)]
+    assert rig.producer.problem is None
 
 
 def test_a_detection_problem_is_logged_once_and_again_when_it_is_fixed(caplog):

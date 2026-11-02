@@ -106,7 +106,7 @@ class DetectionProducer:
         self._one_name = OneNameEach(same_thing_overlap, ignore_labels, known_labels)
         self._last_analysed_at: float | None = None
         self._newest: list[Detection] = []          # from the newest analysed picture, for busy pictures
-        self._detecting = _Trouble('Detection on this computer')
+        self._detecting = _Trouble('Detection in the app')
         self._drawing = _Trouble('Drawing the live view')
         self._analysed = 0
         self._detect_ms: float | None = None

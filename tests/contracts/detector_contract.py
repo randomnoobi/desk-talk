@@ -29,3 +29,17 @@ class DetectorContract:
         with pytest.raises(DetectorUnavailable) as err:
             broken_detector.detect(picture)
         assert str(err.value)
+
+
+class UnavailableDetectorContract:
+    """What a Detector that never finds anything must do (one that is turned off). Subclass and give a fixture:
+    `detector`. DetectorContract needs a detector that finds things, so this is the part of it that fits."""
+
+    def test_label_is_plain_text(self, detector):
+        assert isinstance(detector.label, str) and detector.label
+
+    def test_every_picture_raises_detector_unavailable_with_a_reason(self, detector):
+        for picture in (np.zeros((64, 64, 3), np.uint8), np.full((48, 80, 3), 200, np.uint8)):
+            with pytest.raises(DetectorUnavailable) as err:
+                detector.detect(picture)
+            assert str(err.value)

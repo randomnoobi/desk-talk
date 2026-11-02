@@ -122,7 +122,7 @@ def test_lens_speaks_up_when_the_pi_goes_quiet(tmp_path):
     for _ in range(15):                                  # no more pictures
         rig.tick(rig.app.lens, after=2)
         said += [m for m in rig.messages() if m.get('character') == 'lens']
-    assert said and 'Raspberry Pi' in said[0]['text'] and 'python3 -m raspberry_pi.camera' in said[0]['text']
+    assert said and 'Raspberry Pi' in said[0]['text'] and 'docker compose' in said[0]['text']
     day = rig.app.event_log.days()[0]
     assert [e['key'] for e in rig.app.event_log.events(day, {'camera'}, 10)] == ['lost']
 
