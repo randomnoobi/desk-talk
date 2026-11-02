@@ -94,8 +94,9 @@ def key_check(problem: str) -> Callable[[Request, DeskTalk], None]:
 
 def other_camera(app: DeskTalk, kind: str) -> HTTPException:
     """409: the camera in the settings is another one, so an upload from `kind` would go nowhere."""
-    return HTTPException(409, f'This computer is set to camera.source: {app.source_kind}. '
-                              f'Set it to {kind} in config/settings.yaml.')
+    return HTTPException(409, f'The app is set to camera.source: {app.source_kind}, so pictures from {kind} '
+                              f'go nowhere. Set camera.source to {kind} in its settings '
+                              '(settings.local.yaml; on the Pi, raspberry_pi/mine/settings.mine.yaml) and restart it.')
 
 
 async def read_upload(request: Request, limit_mb: float) -> bytes:

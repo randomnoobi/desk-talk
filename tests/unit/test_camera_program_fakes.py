@@ -19,6 +19,9 @@ from desktalk_shared.detection import BBox, Detection
 from desktalk_shared.detector_api import API_VERSION, DetectorHealth, DetectReply, ModelSettings, ServiceState
 from desktalk_shared.wire import UploadInfo, WireError, decode_upload
 
+KEY_PROBLEM = ('Pairing key does not match. The app made a new key, so restart the camera to read it '
+               '(on the Pi: docker compose restart camera).')
+
 JPEG = b'\xff\xd8\xff\xe0 a picture \xff\xd9'          # the camera program never decodes pictures
 KEY = 'testkey'
 
@@ -206,12 +209,12 @@ class FakeComputer(FakeServer):
 
     def _config(self, req):
         if not self._key_ok(req):
-            return 403, {'error': 'Pairing key does not match. Copy the command printed by server.py.'}
+            return 403, {'error': KEY_PROBLEM}
         return 200, {'pi': self.pi, 'camera_source': self.camera_source}
 
     def _frame(self, req):
         if not self._key_ok(req):
-            return 403, {'error': 'Pairing key does not match. Copy the command printed by server.py.'}
+            return 403, {'error': KEY_PROBLEM}
         try:
             jpeg, info = decode_upload(req.body, req.headers.get('content-type', ''))
         except WireError as exc:

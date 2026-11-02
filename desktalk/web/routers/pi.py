@@ -20,7 +20,8 @@ from desktalk.web.deps import App, key_check, other_camera, read_upload
 from desktalk.web.schemas import PiFrameReply
 from desktalk_shared.wire import WireError, decode_upload, info_from_v1_headers
 
-KEY_PROBLEM = 'Pairing key does not match. Copy the command printed by server.py.'
+KEY_PROBLEM = ('Pairing key does not match. The app made a new key, so restart the camera to read it '
+               '(on the Pi: docker compose restart camera).')
 NOT_A_PICTURE = 'not a JPEG image'
 FORMAT_2 = 'multipart/form-data'
 

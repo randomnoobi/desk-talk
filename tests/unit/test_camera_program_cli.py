@@ -64,7 +64,7 @@ def test_an_older_pi_settings_file_without_error_text_chars_still_asks_the_compu
 def test_without_error_text_chars_the_computers_whole_reason_is_shown(tmp_path, computer, caplog):
     computer.key = 'another key'
     args = parse_args(['--server', computer.url, '--key', KEY])
-    with pytest.raises(ComputerProblem, match='Copy the command printed by server.py'):
+    with pytest.raises(ComputerProblem, match='restart the camera to read it'):
         load_settings(args, older_repo_file(tmp_path, 'error_text_chars'), need_computer=True)
 
 

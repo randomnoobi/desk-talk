@@ -102,7 +102,8 @@ def check_computer(server: str | None, key: str | None, timeout: float, error_te
     source = reply.get('camera_source')
     if source not in (None, 'pi'):
         return Check('app', False, f'{server} answered, but it is set to camera.source: {source}. '
-                                        'Set it to pi in config/settings.yaml and restart it.')
+                                   'Set camera.source to pi in its settings (on the Pi, look for a camera: line in '
+                                   'raspberry_pi/mine/settings.mine.yaml) and restart it.')
     return Check('app', True, f'{server} answered, and takes its pictures from the Pi')
 
 
