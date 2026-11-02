@@ -8,12 +8,16 @@ import pytest
 
 from tests.pi.on_the_pi import (
     _address,
+    app_stopped_cleanly,
     check_data,
+    first_wifi_after_boot,
+    how_boot_ended,
     off_the_pi,
     pages_on_the_wifi,
     parse_proc_net,
     problems,
     read_json_lines,
+    restored_since,
     speak_result,
 )
 
@@ -43,6 +47,13 @@ def test_an_address_reads_the_way_the_kernel_writes_it():
     assert _address('00000000000000000000000001000000:0050') == ('::1', 80)
 
 
+def test_a_udp_socket_with_no_other_end_is_kept_since_it_can_send_anywhere():
+    text = ('  sl  local_address rem_address   st\n'
+            '   0: 040012AC:9B84 00000000:0000 07 00000000\n')
+    assert parse_proc_net(text, 'udp') == [{'kind': 'udp', 'local': '172.18.0.4', 'local_port': 39812,
+                                            'remote': '0.0.0.0', 'remote_port': 0}]
+
+
 def test_listening_sockets_are_left_out():
     text = ('  sl  local_address rem_address   st\n'
             '   0: 0B00007F:8E05 00000000:0000 0A 00000000\n'
@@ -55,6 +66,12 @@ def test_listening_sockets_are_left_out():
 @pytest.mark.parametrize('remote', ['127.0.0.1', '::1', '172.18.0.2', '::ffff:172.18.0.3'])
 def test_the_container_and_dockers_network_stay_on_the_pi(remote):
     assert off_the_pi([connection(remote)], DOCKER, WIFI) == []
+
+
+def test_a_udp_socket_that_can_send_anywhere_counts_unless_it_only_has_the_container_itself():
+    socket = {'kind': 'udp', 'local': '172.18.0.4', 'local_port': 39812, 'remote': '0.0.0.0', 'remote_port': 0}
+    assert off_the_pi([socket], DOCKER, WIFI) == [socket]
+    assert off_the_pi([{**socket, 'local': '127.0.0.11'}], DOCKER, WIFI) == []
 
 
 def test_a_page_opened_on_the_wifi_is_allowed():
@@ -112,6 +129,10 @@ def test_each_way_a_run_can_go_wrong_is_named(changes, words):
     assert any(words in problem for problem in problems(good_run(**changes)))
 
 
+def test_one_look_is_not_enough_to_say_it_stayed_healthy():
+    assert any('settle' in problem for problem in problems(good_run(samples=[sample(120, 120)])))
+
+
 def test_a_look_or_two_going_wrong_is_allowed():
     samples = [sample(after, after) for after in range(120, 360, 10)]
     samples[5] = sample(170, 170, app_answers=False)
@@ -127,3 +148,71 @@ def test_a_look_or_two_going_wrong_is_allowed():
 ])
 def test_what_the_log_shows_about_speaking(counts, result):
     assert speak_result({'speak': counts}) == result
+
+
+# ── when the Wi-Fi came, from NetworkManager's lines in the journal ──
+NM_START = '[    7.74] pi NetworkManager[885]: <info> device (lo): state change\n'
+WIFI_UP = "[   13.12] pi NetworkManager[885]: <info> device (wlan0): Activation: successful, device activated.\n"
+
+
+def test_the_wifi_time_comes_from_the_journal():
+    assert first_wifi_after_boot(NM_START + WIFI_UP + WIFI_UP.replace('13.12', '90.00')) == 13.12
+
+
+@pytest.mark.parametrize('journal', [
+    '',                                                 # can't be read
+    'Hint: You are currently not seeing messages from other users.\n',
+    NM_START,                                           # no such line: a new wording, or it never connected
+    WIFI_UP.replace('13.12', '900.00'),                 # the start of the boot has already gone from the journal
+])
+def test_when_the_journal_cant_say_the_wifi_time_is_unknown(journal):
+    assert first_wifi_after_boot(journal) is None
+
+
+# ── how the boot before this one ended ──
+@pytest.mark.parametrize('line', ['systemd[1]: Reached target shutdown.target - System Shutdown.',
+                                  'systemd[1]: Reached target reboot.target - System Reboot.',
+                                  'systemd-shutdown[1]: Syncing filesystems and block devices.',
+                                  'systemd-journald[300]: Journal stopped'])
+def test_a_journal_that_got_to_the_shutdown_shows_it_was_clean(line):
+    assert how_boot_ended(f'Nov 01 10:00:00 pi sshd[9]: something\nNov 01 10:00:01 pi {line}\n') == 'clean'
+
+
+def test_a_journal_that_just_stops_shows_it_was_not():
+    assert how_boot_ended('Nov 01 10:00:00 pi sshd[9]: something\n') == 'not clean'
+
+
+@pytest.mark.parametrize('text', ['', '-- No entries --\n', 'Specifying boot ID: no persistent journal was found.\n'])
+def test_no_earlier_journal_says_nothing(text):
+    assert how_boot_ended(text) is None
+
+
+# ── the app's log, which outlives each start ──
+RESTORED = 'INFO desktalk.core.object_states.tracker: Picked up {} object states from before the restart\n'
+RUN_1 = ('2026-11-01 10:00:00 ' + RESTORED.format(3) +
+         '2026-11-01 10:00:01 INFO uvicorn.error: Started server process [7]\n')
+STOPPED = '2026-11-01 10:05:00 INFO uvicorn.error: Shutting down\n'
+RUN_2 = ('2026-11-01 10:06:00 ' + RESTORED.format(1) +
+         '2026-11-01 10:06:01 INFO uvicorn.error: Started server process [7]\n')
+
+
+def test_only_a_line_from_this_start_counts():
+    assert restored_since(RUN_1 + STOPPED + RUN_2, '2026-11-01 10:06:00') == 1
+
+
+def test_an_older_line_doesnt_stand_in_for_this_start():
+    assert restored_since(RUN_1 + STOPPED, '2026-11-01 10:06:00') is None
+
+
+def test_lines_with_no_time_on_them_dont_count():
+    assert restored_since('Picked up 3 object states from before the restart\n', '2026-11-01 10:06:00') is None
+
+
+@pytest.mark.parametrize(('log', 'stopped'), [
+    (RUN_1 + STOPPED + RUN_2, True),                    # stopped before this start: a reboot or `docker stop`
+    (RUN_1 + RUN_2, False),                             # no goodbye: the plug, or a kill
+    (STOPPED + RUN_1 + RUN_2, False),                   # an older run's goodbye doesn't count
+    (RUN_2, None),                                      # nothing ran before this
+])
+def test_did_the_run_before_this_start_stop_cleanly(log, stopped):
+    assert app_stopped_cleanly(log, '2026-11-01 10:06:00') is stopped

@@ -22,6 +22,7 @@ import contextlib
 import ipaddress
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -49,6 +50,17 @@ ENOUGH_GOOD_SAMPLES = 0.8           # of the looks after that time, this share m
 SAID = 'Said a message out loud'
 NO_CARD = 'No sound card with'
 COULD_NOT = 'Could not say a message out loud'
+
+MONOTONIC_LINE = re.compile(r'\[\s*([\d.]+)\]')
+WIFI_CONNECTED = 'device (wlan0): Activation: successful'
+JOURNAL_STARTS_BY_SEC = 120         # NetworkManager starts in seconds. If its first line is later, the rest has gone
+NO_EARLIER_JOURNAL = ('no persistent journal', 'No entries', 'No journal')
+SHUTDOWN_LINE = re.compile(r'Reached target (shutdown|reboot|poweroff|halt|final)\.target|systemd-shutdown|'
+                           r'Journal stopped|Reached target System (Shutdown|Reboot|Power Off|Halt)')
+LOG_TIME = re.compile(r'\d{4}-\d\d-\d\d \d\d:\d\d:\d\d')
+RESTORED_LINE = re.compile(r'Picked up (\d+) object states from before the restart')
+APP_STARTED = 'Picked up '
+APP_STOPPING = 'uvicorn.error: Shutting down'
 
 
 # ── reading a file that may be cut off ──
@@ -106,7 +118,7 @@ def parse_proc_net(text: str, kind: str) -> list[dict[str, Any]]:
         if len(parts) < 4:
             continue
         local, remote = _address(parts[1]), _address(parts[2])
-        if remote[1] == 0:
+        if remote[1] == 0 and not kind.startswith('udp'):       # a TCP socket with no other end is only listening
             continue
         found.append({'kind': kind, 'local': local[0], 'local_port': local[1], 'remote': remote[0],
                       'remote_port': remote[1]})
@@ -121,10 +133,16 @@ def _plain_ip(address: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
 def off_the_pi(connections: Iterable[Mapping[str, Any]], docker_network: str, wifi_network: str,
                app_port: int = APP_PORT) -> list[Mapping[str, Any]]:
     """The connections that go off the Pi. Allowed: the container itself, Docker's own network, and a page someone
-    on the Wi-Fi opened (it comes in to the app's port; nothing may go out to the Wi-Fi by itself)."""
+    on the Wi-Fi opened (it comes in to the app's port; nothing may go out to the Wi-Fi by itself). A UDP socket with
+    no other end can send anywhere and doesn't say where, so it counts, unless it's only open to the container itself
+    (Docker's name lookup, say)."""
     docker, wifi = ipaddress.ip_network(docker_network), ipaddress.ip_network(wifi_network)
     off = []
     for connection in connections:
+        if connection['remote_port'] == 0:
+            if not _plain_ip(str(connection['local'])).is_loopback:
+                off.append(connection)
+            continue
         remote = _plain_ip(str(connection['remote']))
         if remote.is_loopback or remote in docker:
             continue
@@ -252,6 +270,7 @@ def run_no_network(data: Path, out: Path, *, minutes: float, wait_minutes: float
                    pretend: bool) -> dict[str, Any]:
     """Wait for the network to go, restart the app once with none there, then watch. Every step is saved at once, so
     a run that gets cut off still says how far it got."""
+    print('Started: waiting for the network to go.', flush=True)
     results: dict[str, Any] = {'started_at': time.time(), 'pretend': pretend, 'minutes_wanted': minutes,
                                'finished_at': None, 'never_offline': False, 'network_came_back': False,
                                'app_restart_ok': None, 'samples': [], 'speak': {}}
@@ -303,7 +322,7 @@ def problems(results: Mapping[str, Any], *, come_back_sec: float = COME_BACK_SEC
     if not results.get('app_restart_ok'):
         found.append("the app couldn't be restarted with no network")
     settled = [s for s in results.get('samples', []) if s['after_sec'] >= come_back_sec]
-    if not settled:
+    if len(settled) < 2:        # new pictures can only be told from two looks
         return [*found, 'no looks at the stack after it had time to settle']
     offline = results.get('offline_at', 0)
     good = 0
@@ -319,6 +338,51 @@ def problems(results: Mapping[str, Any], *, come_back_sec: float = COME_BACK_SEC
     if not any((s.get('newest_detection_ts') or 0) > offline for s in settled):
         found.append('no pictures were written to the event log while there was no network')
     return found
+
+
+# ── what the journal and the app's log say about a boot ──
+def first_wifi_after_boot(journal: str) -> float | None:
+    """Seconds after boot the Wi-Fi first connected, from `journalctl -b -u NetworkManager -o short-monotonic`. None
+    when it can't be told: no lines, no such line, or the start of this boot has already gone from the journal."""
+    times = [(float(found[1]), line) for line in journal.splitlines() if (found := MONOTONIC_LINE.match(line))]
+    if not times or times[0][0] > JOURNAL_STARTS_BY_SEC:
+        return None
+    return next((when for when, line in times if WIFI_CONNECTED in line), None)
+
+
+def how_boot_ended(journal: str) -> str | None:
+    """'clean' or 'not clean', from `journalctl -b -1`, or None when there's no such journal to read."""
+    lines = [line for line in journal.splitlines() if line.strip()]
+    if not lines or any(word in lines[0] for word in NO_EARLIER_JOURNAL):
+        return None
+    return 'clean' if any(SHUTDOWN_LINE.search(line) for line in lines) else 'not clean'
+
+
+def _log_before_and_after(log: str, started: str) -> tuple[list[str], list[str]]:
+    """The app's log lines from before and after `started` ('2026-11-01 10:06:00', the Pi's local time). A line with
+    no time on it is left out."""
+    before, after = [], []
+    for line in log.splitlines():
+        found = LOG_TIME.match(line)
+        if found:
+            (after if found[0] >= started else before).append(line)
+    return before, after
+
+
+def restored_since(log: str, started: str) -> int | None:
+    """How many object states the app says it picked up at this start. None if it hasn't said."""
+    found = RESTORED_LINE.findall('\n'.join(_log_before_and_after(log, started)[1]))
+    return int(found[-1]) if found else None
+
+
+def app_stopped_cleanly(log: str, started: str) -> bool | None:
+    """Did the app's run before `started` get to say goodbye? A reboot lets it, and a pulled plug doesn't. None if
+    nothing ran before."""
+    before = _log_before_and_after(log, started)[0]
+    last_start = next((i for i in range(len(before) - 1, -1, -1) if APP_STARTED in before[i]), None)
+    if last_start is None:
+        return None
+    return any(APP_STOPPING in line for line in before[last_start:])
 
 
 def speak_result(results: Mapping[str, Any]) -> str:

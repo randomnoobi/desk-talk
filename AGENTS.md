@@ -12,7 +12,7 @@ How it got this way (history): the refactor, [docs/plans/2026-10-21-refactor-pla
 
 ## Check your work before saying it's done
 - Packages come from uv (`uv sync --all-packages`; never pip). Run things with `uv run ...`.
-- Fast tests: `uv run pytest -m "not slow"`. The `slow` tests run the real YOLO model; run them only when you change detection. `docker` tests build the Pi's images; run them only when you change them. `uv run pytest -m e2e` drives the real page in a browser (`uv run playwright install chromium` once); run it when you change `web_app/`, `phone_camera/` or a route they use. `uv run pytest -m pi` runs against the real Pi over `ssh pi`; run it when you change `raspberry_pi/`, or anything that runs in the Pi's containers.
+- Fast tests: `uv run pytest -m "not slow"`. The `slow` tests run the real YOLO model; run them only when you change detection. `docker` tests build the Pi's images; run them only when you change them. `uv run pytest -m e2e` drives the real page in a browser (`uv run playwright install chromium` once); run it when you change `web_app/`, `phone_camera/` or a route they use. `DESKTALK_PI=pi uv run pytest -m pi -v -rs` runs against the real Pi over `ssh pi`; run it when you change `raspberry_pi/`, or anything that runs in the Pi's containers. Without `DESKTALK_PI` every test skips. If the compose file isn't in `~/desk-talk/raspberry_pi`, also set `DESKTALK_PI_DIR='~/your-folder/raspberry_pi'` (quoted, so `~` is the Pi's home). What only a person can do is in [docs/PI_CHECKS.md](docs/PI_CHECKS.md).
 - Coverage: `uv run pytest -m "not slow and not docker and not e2e" --cov` fails below `fail_under` in `pyproject.toml`. It may only go up.
 - Lint: `uv run ruff check <files you changed>`. Old files may still have ruff errors, so don't fix files you didn't touch. Just don't add new errors. Don't run `ruff format`.
 - Types: `uv run pyright` must show 0 errors. `pyrightconfig.json`'s `ignore` list only shrinks: fix a file and take it off; never add one.
@@ -53,7 +53,7 @@ Being moved to this; see [the Pi standalone plan](docs/plans/2026-10-30-pi-stand
 - Only events, state and goals may leave the Pi. No pictures, no to-do text. The one exception: chat the user has turned on may pass through their cloud server, text only, never stored or logged there.
 - Code gets to the Pi with `bash raspberry_pi/update.sh` on the Pi, which runs `git pull` and rebuilds. A new Pi gets it with `raspberry_pi/install.sh`.
 - Agents run things on the Pi with `ssh pi`, using a key login only. Never type or write down the Pi's password anywhere. If the key login fails, stop and ask the user.
-- A Pi change isn't finished until its real-Pi checks pass (`uv run pytest -m pi`, and any command the task names, run over `ssh pi`). Paste the output into the PR. Don't say a Pi change works without that. Label each command you give the user **on the Pi** or **on your Mac**.
+- A Pi change isn't finished until its real-Pi checks pass (`DESKTALK_PI=pi uv run pytest -m pi`, and any command the task names, run over `ssh pi`). Paste the output into the PR. Don't say a Pi change works without that. Label each command you give the user **on the Pi** or **on your Mac**.
 
 ## Cloud server
 - `cloud/` is a program of its own that keeps what a computer or Pi may send and writes a weekly report. It's optional: the app needs no account, and until `scripts/link_cloud.py` links it, the sender in `desktalk/core/cloud/` calls nothing. How to run it: [cloud/README.md](cloud/README.md).

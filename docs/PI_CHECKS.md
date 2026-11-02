@@ -52,7 +52,9 @@ Shows the Pi starts everything by itself, and that pulling the plug leaves the e
    DESKTALK_PI=pi DESKTALK_PI_JUST_POWER_CUT=1 uv run pytest -m pi -v -rs -k test_starts_after_power_cut
    ```
 
-It checks that the Pi has only just booted, that all three are healthy and started by themselves soon after the boot, that pictures are coming in, that the event log and SQLite can be read, and that the app picked up the saved states. It skips the last part if nothing was saved just before the cut, and says so.
+It checks that the Pi has only just booted, that all three are healthy and started by themselves soon after the boot, that pictures are coming in, that the event log and SQLite can be read, and that the app picked up the saved states at this start. It skips the last part if nothing was saved just before the cut, and says so.
+
+It also checks the power really was cut, so a `sudo reboot` fails on purpose. The Pi's journal is kept in memory, so the boot before this one is normally gone (Raspberry Pi OS sets `Storage=volatile`). The proof is then the app's log: a clean shut-down lets the app write `Shutting down` before it stops, and a pulled plug doesn't. Stopping the containers yourself first also fails it, for the same reason.
 
 The clock can be wrong after a power cut with no clock battery. That's known, and not part of this check.
 
@@ -69,7 +71,15 @@ Shows everything starts and works with no network there at all.
    DESKTALK_PI=pi DESKTALK_PI_NO_WIFI_AT_BOOT=1 uv run pytest -m pi -v -rs -k test_no_wifi_at_boot
    ```
 
-It checks the same things as after a power cut, and that all three containers started before the Wi-Fi connected. It fails if the Wi-Fi was there first, as the run then shows nothing.
+It checks that all three started by themselves and the data can be read, as after a power cut, but not how the Pi was switched off.
+
+The proof the Wi-Fi was off is the journal: the time of NetworkManager's first `device (wlan0): Activation: successful` must be later than each container's start. **On the Pi**, this shows that line, with the seconds since boot at the start of it (your user must be in the `adm` group, as the first user is):
+
+```bash
+journalctl -b -u NetworkManager -o short-monotonic --no-pager | grep -m1 "device (wlan0): Activation: successful"
+```
+
+The test fails if the Wi-Fi came first, as the run then shows nothing. It skips and says so if the journal doesn't have the line.
 
 ## No network at all
 
@@ -79,8 +89,10 @@ Shows that with no Wi-Fi and no AI the app keeps recording, and that the speak c
 2. **On your Mac**, start the script from the Pi's project folder. It waits up to 15 minutes for the network to go:
 
    ```bash
-   ssh pi 'cd ~/desk-talk && nohup python3 tests/pi/on_the_pi.py no-network > /dev/null 2>&1 &'
+   ssh pi 'cd ~/desk-talk || exit 1; nohup python3 tests/pi/on_the_pi.py no-network > no_network_check.log 2>&1 < /dev/null & sleep 3; cat no_network_check.log; grep -q Started no_network_check.log'
    ```
+
+   It should print `Started: waiting for the network to go.` If it prints anything else, or says there's no such folder, **stop here**: it isn't running, and switching off the router would only waste your time. Use your folder in place of `~/desk-talk` if it's somewhere else.
 
 3. Switch off your Wi-Fi router. The SSH connection and the page stop working, which is expected.
 

@@ -21,7 +21,17 @@ import pytest
 import yaml
 
 from tests.pi.conftest import SERVICES, Pi, wait_for
-from tests.pi.on_the_pi import RESULTS, off_the_pi, pages_on_the_wifi, problems, speak_result
+from tests.pi.on_the_pi import (
+    RESULTS,
+    app_stopped_cleanly,
+    first_wifi_after_boot,
+    how_boot_ended,
+    off_the_pi,
+    pages_on_the_wifi,
+    problems,
+    restored_since,
+    speak_result,
+)
 
 pytestmark = pytest.mark.pi
 
@@ -43,7 +53,9 @@ DETECT_TRIES = 100                  # the detector is usually busy: how many tim
 DETECTOR_BACK_WAIT_SEC = 240        # a stopped detector has to start and load its model again
 WARNING_SLACK_SEC = 90              # on top of Lens's wait: the camera has to notice first, and Lens looks now and then
 LOOK_FOR_CONNECTIONS_SEC = 90
-MOST_WIFI_SENT_BYTES_PER_SEC = 50_000   # the camera makes about 600 KB of pictures a second: this is far below that
+# All the Wi-Fi may send in the whole look. Measured on a quiet Pi: about 25 bytes a second, so about 2 KB. One picture
+# is about 30 KB at the smallest seen, so this is half of one in 90 s.
+MOST_WIFI_SENT_BYTES = 15_000
 SHORT_DELETE_EVERY_MIN = 1          # for the disk test; the real 10 minutes would take half an hour
 DISK_CYCLES = 3.5
 DISK_ROOM = 1.25                    # one cycle's pictures may be this much over fps x time
@@ -83,10 +95,32 @@ def latest_camera_status(pi: Pi) -> tuple[int, ...]:
     return tuple(int(n) for n in found[-1])
 
 
+def _started_local(pi: Pi) -> str:
+    """When the app's container last started, the way the app's log writes the time."""
+    return pi.run(f"date -d {shlex.quote(pi.state('app')['StartedAt'])} '+%F %T'").strip()
+
+
 def restored_count(pi: Pi) -> int | None:
-    """How many object states the app's last start says it picked up."""
-    found = re.findall(r'Picked up (\d+) object states from before the restart', pi.app_log())
-    return int(found[-1]) if found else None
+    """How many object states the app says it picked up at its last start. The log outlives restarts, so a line from
+    before that start doesn't count."""
+    return restored_since(pi.app_log(), _started_local(pi))
+
+
+def _power_cut_evidence(pi: Pi) -> str | None:
+    """Fails if the last boot ended with a clean shutdown, so a plain `sudo reboot` can't pass for a power cut. The
+    earlier boot's journal says best, but Raspberry Pi OS keeps the journal in memory only
+    (/usr/lib/systemd/journald.conf.d/40-rpi-volatile-storage.conf), so it's normally gone. Then the app's own log
+    tells: on a clean shutdown Docker stops the app and it says goodbye. Returns why it can't be told, or None."""
+    ended = how_boot_ended(pi.run('journalctl -b -1 -n 200 --no-pager 2>&1', check=False))
+    assert ended != 'clean', 'The journal shows the boot before this one shut down cleanly, so this was no power cut'
+    if ended == 'not clean':
+        return None
+    stopped = app_stopped_cleanly(pi.app_log(), _started_local(pi))
+    assert stopped is not True, ("The app's log shows it was stopped cleanly before this start, so this was a reboot "
+                                 'or a shut-down and not a power cut')
+    if stopped is None:
+        return "there's no earlier journal, and the app's log has no earlier run"
+    return None
 
 
 # ── nothing else on ──
@@ -159,7 +193,10 @@ def test_starts_after_power_cut(pi: Pi):
         pytest.skip(f'Someone has to pull the plug. Do the steps in {STEPS} ("A power cut"), then run with '
                     f'{JUST_POWER_CUT}=1.')
     assert_started_by_itself(pi)
+    unknown = _power_cut_evidence(pi)
     data = assert_data_readable(pi, broken_allowed=BROKEN_LINES_ALLOWED)
+    if unknown:
+        pytest.skip(f"Started and readable, but nothing shows the power was really cut: {unknown}.")
     if not data['states']['readable']:
         pytest.skip('Started and readable, but there was no SQLite file, so restored states could not be checked.')
 
@@ -182,11 +219,10 @@ def _started_wall_time(pi: Pi) -> float:
 
 
 def _first_wifi_after_boot_sec(pi: Pi) -> float | None:
-    """When NetworkManager first connected the Wi-Fi this boot, counted from the boot. None if it hasn't."""
-    text = pi.run('journalctl -b -u NetworkManager -o short-monotonic --no-pager 2>/dev/null | '
-                  'grep -m1 "device (wlan0): Activation: successful" || true')
-    found = re.match(r'\[\s*([\d.]+)\]', text)
-    return float(found[1]) if found else None
+    """When NetworkManager first connected the Wi-Fi this boot, counted from the boot. None if the journal can't say
+    (the user must be in the adm or systemd-journal group to read it)."""
+    return first_wifi_after_boot(pi.run('journalctl -b -u NetworkManager -o short-monotonic --no-pager 2>&1',
+                                        check=False))
 
 
 def test_no_wifi_at_boot(pi: Pi):
@@ -196,14 +232,16 @@ def test_no_wifi_at_boot(pi: Pi):
                     f'run with {NO_WIFI_AT_BOOT}=1.')
     assert_started_by_itself(pi)
     assert_data_readable(pi, broken_allowed=BROKEN_LINES_ALLOWED)
-    wifi = _first_wifi_after_boot_sec(pi)
-    if wifi is not None:
-        for service in SERVICES:
-            started = pi.started_after_boot_sec(service)
-            assert started < wifi, (f'Wi-Fi came {wifi:.0f} s after boot and {service} started at {started:.0f} s. '
-                                    'So the Wi-Fi was there at boot, and this shows nothing')
     newest = pi.today_lines('detections.jsonl')[-1]
-    assert time.time() - newest['ts'] < 120, 'no new pictures in the event log'
+    assert float(pi.run('date +%s')) - newest['ts'] < 120, 'no new pictures in the event log'
+    wifi = _first_wifi_after_boot_sec(pi)
+    if wifi is None:
+        pytest.skip("Started and readable, but the journal doesn't say when the Wi-Fi came, so nothing shows it was "
+                    f'off at boot. On the Pi: journalctl -b -u NetworkManager | grep wlan0 ({STEPS}).')
+    for service in SERVICES:
+        started = pi.started_after_boot_sec(service)
+        assert started < wifi, (f'Wi-Fi came {wifi:.0f} s after boot and {service} started at {started:.0f} s. '
+                                'So the Wi-Fi was there at boot, and this shows nothing')
 
 
 # ── no network at all: a person turns it off, and a script on the Pi takes notes ──
@@ -376,14 +414,21 @@ def test_disk_stays_under_limit(stack: Pi):
         free_mb = int(pi.run(f"docker exec {pi.container('camera')} df -m /photos | tail -n 1 | awk '{{print $4}}'"))
         assert free_mb > real['min_free_mb'], f'{free_mb} MB free'
     finally:
-        pi.restore_stack()
-        pi.run(f'rm -rf {folder}')
+        try:
+            pi.restore_stack()
+        finally:
+            pi.run(f'rm -rf {folder}')
     assert pi.settings()['pi']['delete_every_min'] == real['delete_every_min'], 'the real settings did not come back'
 
 
 def test_no_picture_goes_off_the_pi(pi: Pi):
     """With no AI set. It looks in each container about once a second, so a connection that opens and closes between
-    two looks can go unseen. The Wi-Fi's byte count covers that for pictures: they're far too big to hide in it."""
+    two looks can go unseen. The Wi-Fi's byte count over the whole look covers that for pictures: one alone would use
+    up the limit.
+
+    What it still can't see: anything smaller than the limit (words, or a tiny picture) sent now and then; anything
+    sent outside these 90 s; anything sent on another way out (a cable, when the Wi-Fi isn't the default route). And
+    another SSH session on the Wi-Fi, like a download on the Pi, makes it fail with nothing wrong."""
     pi.wait_until_healthy()
     status = pi.get('/api/status')
     if status['llm']:
@@ -392,13 +437,14 @@ def test_no_picture_goes_off_the_pi(pi: Pi):
     seen = pi.on_the_pi('connections', '--seconds', str(LOOK_FOR_CONNECTIONS_SEC),
                         timeout=LOOK_FOR_CONNECTIONS_SEC + 60)
     print(f"{seen['looks']} looks in {seen['seconds']:.0f} s, {len(seen['connections'])} other ends, "
-          f"{seen['wifi_sent_bytes'] / seen['seconds'] / 1000:.1f} KB a second out on {seen['wifi_device']}")
+          f"{seen['wifi_sent_bytes']} bytes out on {seen['wifi_device']}")
     assert seen['looks'] >= LOOK_FOR_CONNECTIONS_SEC / 10, f"only {seen['looks']} looks"
     assert seen['connections'], 'saw no connections at all, not even the camera to the app: the check is broken'
     assert off_the_pi(seen['connections'], docker_network, seen['wifi_network']) == []
 
-    per_sec = seen['wifi_sent_bytes'] / seen['seconds']
-    if per_sec >= MOST_WIFI_SENT_BYTES_PER_SEC and pages_on_the_wifi(seen['connections'], seen['wifi_network']):
+    sent = seen['wifi_sent_bytes']
+    if sent >= MOST_WIFI_SENT_BYTES and pages_on_the_wifi(seen['connections'], seen['wifi_network']):
         pytest.skip('No connection off the Pi, and a lot went out over the Wi-Fi, but someone has the page open, so '
                     'that may be the live picture going to them. Close the page and run it again.')
-    assert per_sec < MOST_WIFI_SENT_BYTES_PER_SEC, f'{per_sec / 1000:.0f} KB a second went out over the Wi-Fi'
+    assert sent < MOST_WIFI_SENT_BYTES, (f"{sent} bytes went out over the Wi-Fi in {seen['seconds']:.0f} s (limit "
+                                         f'{MOST_WIFI_SENT_BYTES}). Is anything else busy on the Pi?')
