@@ -89,7 +89,7 @@ Shows that with no Wi-Fi and no AI the app keeps recording, and that the speak c
 2. **On your Mac**, start the script from the Pi's project folder. It waits up to 15 minutes for the network to go:
 
    ```bash
-   ssh pi 'cd ~/desk-talk || exit 1; nohup python3 tests/pi/on_the_pi.py no-network > no_network_check.log 2>&1 < /dev/null & sleep 3; cat no_network_check.log; grep -q Started no_network_check.log'
+   ssh pi 'cd ~/desk-talk || exit 1; nohup python3 tests/pi/on_the_pi.py no-network > ~/no_network_check.log 2>&1 < /dev/null & sleep 3; cat ~/no_network_check.log; grep -q Started ~/no_network_check.log'
    ```
 
    It should print `Started: waiting for the network to go.` If it prints anything else, or says there's no such folder, **stop here**: it isn't running, and switching off the router would only waste your time. Use your folder in place of `~/desk-talk` if it's somewhere else.
