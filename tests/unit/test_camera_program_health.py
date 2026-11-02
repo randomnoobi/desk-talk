@@ -42,6 +42,46 @@ def test_no_slow_down_flags_when_this_is_not_a_pi(tmp_path):
     assert HealthReader(tmp_path).throttled() == ''
 
 
+def power_sensor(root, alarm, name='rpi_volt', hwmon='hwmon3'):
+    write(root, f'sys/class/hwmon/{hwmon}/name', name + '\n')
+    write(root, f'sys/class/hwmon/{hwmon}/in0_lcrit_alarm', f'{alarm}\n')
+
+
+def test_kernels_without_the_firmware_file_still_say_when_the_power_is_too_weak(tmp_path):
+    """A Pi 5 kernel has no get_throttled, only the power sensor (rpi_volt)."""
+    write(tmp_path, 'sys/class/hwmon/hwmon0/name', 'cpu_thermal\n')
+    power_sensor(tmp_path, 1)
+    reader = HealthReader(tmp_path)
+    assert reader.throttled() == '0x1'                          # bit 0: the power supply is too weak right now
+    assert reader.throttle_coverage() == 'power'
+    assert throttle_words(reader.throttled())[0] == ['the power supply is too weak']
+
+
+def test_power_fine_on_the_sensor_is_not_reported_as_no_slow_down(tmp_path):
+    """The sensor only knows about power, so 'fine' must not become 0x0 ('nothing slowed it down')."""
+    power_sensor(tmp_path, 0)
+    reader = HealthReader(tmp_path)
+    assert reader.throttled() == ''
+    assert reader.throttle_coverage() == 'power'
+
+
+def test_the_firmware_file_beats_the_power_sensor(tmp_path):
+    write(tmp_path, 'sys/devices/platform/soc/soc:firmware/get_throttled', '4\n')
+    power_sensor(tmp_path, 0)
+    reader = HealthReader(tmp_path)
+    assert reader.throttled() == '0x4' and reader.throttle_coverage() == 'all'
+
+
+def test_a_sensor_that_is_not_the_power_one_is_ignored(tmp_path):
+    power_sensor(tmp_path, 1, name='pwmfan')
+    reader = HealthReader(tmp_path)
+    assert reader.throttled() == '' and reader.throttle_coverage() == 'none'
+
+
+def test_nothing_to_read_means_it_cannot_tell(tmp_path):
+    assert HealthReader(tmp_path).throttle_coverage() == 'none'
+
+
 def test_slow_down_flags_in_plain_words():
     now, earlier = throttle_words('0x50005')
     assert now == ['the power supply is too weak', 'the processor is slowed down']

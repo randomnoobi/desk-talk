@@ -60,8 +60,10 @@ class PiCamera:
         except Exception as exc:          # Picamera2 raises almost anything when there's no camera or it's busy
             if self.cam is not None:
                 self.close()
-            raise CameraError(f'the Pi camera module could not start ({exc}). Check the ribbon cable, and that '
-                              'no other program is using the camera') from None
+            raise CameraError(f'the Pi camera module could not start ({exc}). Check the ribbon cable, that '
+                              'no other program is using the camera, and (in Docker) that the camera container is '
+                              'given the camera devices: every /dev/video*, /dev/media*, /dev/v4l-subdev*, '
+                              '/dev/dma_heap, and /run/udev read-only') from None
         clock.sleep(warmup_sec)              # let the exposure settle
 
     def capture(self) -> tuple[bytes, float | None]:

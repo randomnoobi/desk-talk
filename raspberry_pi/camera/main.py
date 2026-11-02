@@ -5,7 +5,7 @@ container what's in it (one picture at a time), and send it to the computer.
 Four background threads keep the camera's pace steady: the detector worker, the uploader, the cleaner
 (deletes stored pictures) and the settings watcher (workers.py starts them). Each one only waits on its own
 job, so a slow detector, Wi-Fi or SD card never holds up the camera. Another, the watchdog, ends the program
-when the camera stops giving pictures, so systemd starts it again. The command line is in cli.py.
+when the camera stops giving pictures, so Docker starts the container again. The command line is in cli.py.
 
 A picture that can't be saved on the Pi is still detected and sent, and a cleanup that fails never stops
 the camera: each problem is logged once, until it goes away.

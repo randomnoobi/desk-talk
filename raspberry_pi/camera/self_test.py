@@ -20,8 +20,17 @@ from raspberry_pi.camera.settings import CameraSettings, ComputerProblem, comput
 log = logging.getLogger(__name__)
 
 KB = 1024
-START_DETECTOR = ('Start it on the Pi: cd raspberry_pi/detector_service && docker compose up -d '
-                  '(raspberry_pi/detector_service/README.md has the first-time steps)')
+START_DETECTOR = ('Start it on the Pi: docker compose up -d detector (docker compose ps shows what is running, '
+                  'docker compose logs detector why it stopped; raspberry_pi/detector_service/README.md has the '
+                  'first-time steps)')
+
+
+# What is added to the temperature line when the Pi's kernel can't give all the slow-down flags
+COVERAGE_NOTE = {
+    'all': '',
+    'power': "; the power supply is fine right now, but this Pi can't tell if it slowed itself down",
+    'none': "; can't tell if the Pi slowed itself down or the power is weak (this Pi gives no flags to read)",
+}
 
 
 @dataclass(frozen=True)
@@ -35,8 +44,9 @@ def check_camera(open_camera: Callable[[], Any]) -> Check:
     try:
         camera = open_camera()
     except Exception as exc:
-        return Check('camera', False, f'{exc}. For the camera module, rpicam-hello should show a picture; '
-                                      'for a USB webcam add --camera usb')
+        return Check('camera', False, f'{exc}. For the camera module, rpicam-hello should show a picture on the Pi '
+                                      'itself, and the camera container needs the camera devices (see the '
+                                      'compose file); for a USB webcam add --camera usb')
     try:
         jpeg, lux = camera.capture()
     except Exception as exc:
@@ -78,12 +88,13 @@ def check_temperature(reader: HealthReader, hot_warning_c: float) -> Check:
     if problems:
         return Check('temperature', False, '; '.join(problems))
     since = f' (since it started: {", ".join(earlier)})' if earlier else ''
-    return Check('temperature', True, f'{temp:g} °C{since}')
+    return Check('temperature', True, f'{temp:g} °C{since}{COVERAGE_NOTE[reader.throttle_coverage()]}')
 
 
 def check_computer(server: str | None, key: str | None, timeout: float, error_text_chars: int) -> Check:
     if not (server and key):
-        return Check('computer', False, 'no --server and --key given (server.py on your computer prints them)')
+        return Check('computer', False, 'no --server and --key given, or DESKTALK_SERVER and DESKTALK_PAIR_KEY_FILE '
+                                        '(server.py on your computer prints the address and key)')
     try:
         reply = computer_config(server, key, timeout, error_text_chars)
     except ComputerProblem as exc:

@@ -77,21 +77,23 @@ it uses the copy of `config/settings.yaml` on the Pi. Flags win over both:
 | `--offline` | only take and save pictures; send nothing |
 | `--self-test` | check everything, then stop |
 
-## Start it when the Pi boots (optional)
+## Start it when the Pi boots
 
-**On the Pi**, in the `desk-talk` folder. Put your own address and key in the first line:
+The camera container is started by Docker, not by a service file. Its compose setting `restart: unless-stopped`
+starts it again when the Pi boots and whenever the program stops (including when the watchdog stops it).
+Give it the computer's address and the pairing key like this, instead of `--server` and `--key`:
 
-```bash
-SERVER=http://192.168.1.20:5000 KEY=AbC123xY
-sed -e "s|PI_USER|$USER|g" -e "s|SERVER_URL|$SERVER|" -e "s|PAIR_KEY|$KEY|" raspberry_pi/camera/desk-talk-camera.service \
-  | sudo tee /etc/systemd/system/desk-talk-camera.service
-sudo systemctl daemon-reload && sudo systemctl enable --now desk-talk-camera
-journalctl -u desk-talk-camera -f      # see what it's doing (Ctrl-C to stop watching)
-```
+- `DESKTALK_SERVER`: your computer, e.g. `http://192.168.1.20:5000`.
+- `DESKTALK_PAIR_KEY_FILE`: the path, inside the container, of a file with the pairing key in it (or use
+  `--key-file <path>`). This keeps the key out of `docker ps`.
+
+A flag always beats the environment, and `--key` beats the key file. The compose file that sets all this up
+comes with the Pi standalone plan's compose task; until then, the commands in
+[the first-run notes](../../docs/plans/2026-10-30-pi-first-run-notes.md) show how to run the image by hand.
 
 ## If something's wrong
 
-The log (in the terminal, or `journalctl -u desk-talk-camera -f` **on the Pi**) says what's wrong in plain words.
+The log (in the terminal, or `docker logs -f <the camera container>` **on the Pi**) says what's wrong in plain words.
 
 - **"Cannot reach the computer"**: are both on the same Wi-Fi? Is `server.py` running? On a Mac, allow
   incoming connections for Python if the firewall asks. The Pi keeps taking pictures meanwhile and tries
@@ -105,5 +107,5 @@ The log (in the terminal, or `journalctl -u desk-talk-camera -f` **on the Pi**) 
   a few minutes. Your computer detects the pictures until then.
 - **Camera problem**: `rpicam-hello` should show a picture; check the ribbon cable. For a USB webcam use `--camera usb`.
 - **"No picture from the camera ... it seems stuck"**: the camera stopped giving pictures for
-  `pi.restart_after_missed_pictures` picture times, so the camera program stopped and systemd started it again
-  (only when it runs as the service above). If it keeps happening, check the ribbon cable or the USB plug.
+  `pi.restart_after_missed_pictures` picture times, so the camera program stopped and Docker started the container again
+  (`restart: unless-stopped`). If it keeps happening, check the ribbon cable or the USB plug.

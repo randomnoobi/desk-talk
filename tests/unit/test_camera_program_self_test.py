@@ -90,7 +90,7 @@ def test_container_with_an_error_is_a_problem(container):
 def test_container_not_running_says_how_to_start_it(container):
     container.away = True
     check = self_test.check_detector(client_for(container))
-    assert not check.ok and 'docker compose up -d' in check.message
+    assert not check.ok and 'docker compose up -d' in check.message and 'systemd' not in check.message
 
 
 def test_no_detector_is_fine():
@@ -117,6 +117,36 @@ def test_slowed_down_right_now_is_a_problem(tmp_path):
 def test_slowed_down_earlier_is_only_mentioned(tmp_path):
     check = self_test.check_temperature(HealthReader(fake_pi(tmp_path, 60, throttled='10000')), hot_warning_c=75)
     assert check.ok and 'the power supply was too weak' in check.message
+
+
+def pi_with_power_sensor_only(tmp_path, alarm, temp_c=50.0):
+    """A Pi 5 kernel: no get_throttled file, but a power sensor."""
+    root = fake_pi(tmp_path, temp_c)
+    (root / 'sys/devices/platform/soc/soc:firmware/get_throttled').unlink()
+    sensor = root / 'sys/class/hwmon/hwmon3'
+    sensor.mkdir(parents=True)
+    (sensor / 'name').write_text('rpi_volt\n')
+    (sensor / 'in0_lcrit_alarm').write_text(f'{alarm}\n')
+    return root
+
+
+def test_power_fine_is_said_but_slow_down_is_not_claimed_to_be_fine(tmp_path):
+    check = self_test.check_temperature(HealthReader(pi_with_power_sensor_only(tmp_path, 0)), hot_warning_c=75)
+    assert check.ok and '50 °C' in check.message
+    assert 'power supply is fine' in check.message and "can't tell if" in check.message
+    assert 'not slowed' not in check.message
+
+
+def test_weak_power_on_the_power_sensor_is_a_problem(tmp_path):
+    check = self_test.check_temperature(HealthReader(pi_with_power_sensor_only(tmp_path, 1)), hot_warning_c=75)
+    assert not check.ok and 'the power supply is too weak' in check.message
+
+
+def test_nothing_readable_says_it_cannot_tell(tmp_path):
+    root = fake_pi(tmp_path)
+    (root / 'sys/devices/platform/soc/soc:firmware/get_throttled').unlink()
+    check = self_test.check_temperature(HealthReader(root), hot_warning_c=75)
+    assert check.ok and "can't tell if the Pi slowed itself down or the power is weak" in check.message
 
 
 def test_no_temperature_is_a_problem(tmp_path):
@@ -149,7 +179,7 @@ def test_computer_set_to_another_camera_is_a_problem(computer):
 
 def test_no_server_given_is_a_problem():
     check = self_test.check_computer(None, None, timeout=2, error_text_chars=200)
-    assert not check.ok and '--server' in check.message
+    assert not check.ok and '--server' in check.message and 'DESKTALK_SERVER' in check.message
 
 
 # ── all together ──────────────────────────────────────────────────────
