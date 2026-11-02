@@ -87,7 +87,7 @@ def test_computer_away_at_start_uses_the_repos_settings(tmp_path, computer, capl
     computer.away = True
     args = parse_args(['--server', computer.url, '--key', KEY])
     assert load_settings(args, repo_file(tmp_path, fps=6)).fps == 6
-    assert 'Cannot reach the computer' in caplog.text
+    assert 'Cannot reach the app' in caplog.text
 
 
 def test_offline_does_not_ask_the_computer(tmp_path, computer):

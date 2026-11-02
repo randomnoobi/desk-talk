@@ -143,7 +143,7 @@ def test_a_wrong_key_is_a_plain_problem():
 def test_a_computer_that_is_away_is_a_plain_problem():
     with FakeComputer() as computer:
         computer.away = True
-        with pytest.raises(ComputerProblem, match='Cannot reach the computer'):
+        with pytest.raises(ComputerProblem, match='Cannot reach the app'):
             computer_config(computer.url, KEY, timeout=2, error_text_chars=200)
 
 

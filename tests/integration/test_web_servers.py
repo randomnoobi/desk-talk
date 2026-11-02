@@ -109,7 +109,7 @@ def test_the_camera_program_reports_a_wrong_key(tmp_path):
         pi.offer(rig.jpeg, from_pi(DetectorState.OFF, 1))
         pi.tick()
     assert (pi.sent, pi.failed) == (0, 1)
-    assert pi.last_error.startswith('The computer said no (403): Pairing key does not match')
+    assert pi.last_error.startswith('The app said no (403): Pairing key does not match')
 
 
 def test_the_camera_program_gets_its_settings_from_the_server_and_its_pictures_get_analysed(tmp_path):

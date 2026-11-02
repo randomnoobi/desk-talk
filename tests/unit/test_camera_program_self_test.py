@@ -168,7 +168,7 @@ def test_wrong_key_is_a_problem(computer):
 def test_computer_away_is_a_problem(computer):
     computer.away = True
     check = self_test.check_computer(computer.url, KEY, timeout=2, error_text_chars=200)
-    assert not check.ok and 'Cannot reach the computer' in check.message
+    assert not check.ok and 'Cannot reach the app' in check.message
 
 
 def test_computer_set_to_another_camera_is_a_problem(computer):

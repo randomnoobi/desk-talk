@@ -1,7 +1,7 @@
 """
 The camera program's command line: python3 -m raspberry_pi.camera (in the desk-talk folder, or what the
 camera container runs). --help shows the flags. Settings come from config/settings.yaml (pi:), then the
-computer's settings, then the flags. In Docker the computer's address and pairing key can come from the
+app's settings, then the flags. In Docker the app's address and pairing key can come from the
 environment instead (DESKTALK_SERVER, DESKTALK_PAIR_KEY_FILE), so the key never shows in `docker ps`.
 """
 
@@ -49,7 +49,7 @@ def flag_settings(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def load_settings(args: argparse.Namespace, repo_settings: Path, *, need_computer: bool = False) -> CameraSettings:
-    """config/settings.yaml in the repo → the computer's settings → flags. If the computer can't be reached,
+    """config/settings.yaml in the repo → the app's settings → flags. If the app can't be reached,
     the repo's settings are used (unless need_computer: then ComputerProblem is raised)."""
     repo = read_repo_settings(repo_settings)
     flags = flag_settings(args)
@@ -79,12 +79,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         prog='python3 -m raspberry_pi.camera', formatter_class=argparse.RawDescriptionHelpFormatter,
         description=f'Desk Talk camera program for the Raspberry Pi. In the desk-talk folder on the Pi, run:\n\n'
                     f'    {RUN_COMMAND}\n\n'
-                    f"The app's page (open it on the computer running the app) shows this command with the address "
+                    f"The app's page (open it in a browser) shows this command with the address "
                     f'and key.\n'
                     f'In Docker, set {SERVER_ENV} and {PAIR_KEY_FILE_ENV} (a file with the key in it) instead of '
                     f'--server and --key; a flag beats the environment.\n'
-                    f'Settings come from config/settings.yaml (pi:) on your computer; these flags override them.')
-    p.add_argument('--server', help=f"your computer, e.g. http://192.168.1.20:5000 (shown on the app's page). "
+                    f'Settings come from config/settings.yaml (pi:) ; these flags override them.')
+    p.add_argument('--server', help=f"the app, e.g. http://app:5000 in Docker. "
                                     f'If not given: {SERVER_ENV}')
     p.add_argument('--key', help="pairing key (shown on the app's page, and saved in the app's pairing key file)")
     p.add_argument('--key-file', dest='key_file',
@@ -105,10 +105,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help='if the disk gets this full, delete the oldest pictures right away')
     p.add_argument('--upload-timeout-sec', dest='upload_timeout_sec', type=float)
     p.add_argument('--no-detector', action='store_true',
-                   help="don't use the detector container: the computer detects every picture")
+                   help="don't use the detector container: pictures go to the app with no objects found")
     p.add_argument('--offline', action='store_true', help='only take and save pictures; send nothing')
     p.add_argument('--self-test', action='store_true',
-                   help='check the camera, the detector container, the temperature and the computer, then stop')
+                   help='check the camera, the detector container, the temperature and the app, then stop')
     p.add_argument('--max-pictures', type=int, help='stop after this many (for testing)')
     args = p.parse_args(argv)
     args.server = args.server or os.environ.get(SERVER_ENV) or None
@@ -130,7 +130,7 @@ def main(argv: list[str] | None = None, *, repo_settings: Path = REPO_SETTINGS, 
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%H:%M:%S')
     args = parse_args(argv)
     if not args.offline and not args.self_test and not (args.server and args.key):
-        log.error('Missing the computer to send to: give --server and --key (or --key-file), or set %s and %s. '
+        log.error('Missing the app to send to: give --server and --key (or --key-file), or set %s and %s. '
                   "The app's page shows the address and the key (the key is also saved in the app's pairing key file).",
                   SERVER_ENV, PAIR_KEY_FILE_ENV)
         return 2

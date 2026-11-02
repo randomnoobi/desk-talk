@@ -1,5 +1,5 @@
 """
-Cameras. Each one has a `name` (sent to the computer with every picture), `capture()` → (JPEG bytes,
+Cameras. Each one has a `name` (sent to the app with every picture), `capture()` → (JPEG bytes,
 light level in lux or None) and `close()`.
 
     picamera2         the Raspberry Pi camera module (it also measures the light level)

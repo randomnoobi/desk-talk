@@ -3,11 +3,10 @@ Asks the detector container (raspberry_pi/detector_service/, in Docker on this P
 
     POST /detect   one JPEG → what it found; waits at most pi.detector.wait_per_picture_sec
     GET  /health   is it ready? Asked now and then while it's off
-    PUT  /model    which model to run (pi.detector). Sent on start, when the computer's settings change,
+    PUT  /model    which model to run (pi.detector). Sent on start, when the app's settings change,
                    and when /health says it's starting from scratch (e.g. a brand-new models folder)
 
-When it can't answer, the picture goes to the computer as `off`, with the reason, and the computer
-detects it itself:
+When it can't answer, the picture goes to the app as `off`, with the reason, and no objects are found in it:
   - No model yet (503; the first conversion to ncnn takes minutes): off until /health says ready.
     That's not a crash, so it doesn't count as a failure.
   - Still busy with an earlier picture (429): this one goes out as `busy`. Not a failure either.
@@ -65,7 +64,7 @@ class DetectorConfig:
 
 @dataclass(frozen=True)
 class Verdict:
-    """What to tell the computer about one picture: ok (with what was found), busy, or off (with why)."""
+    """What to tell the app about one picture: ok (with what was found), busy, or off (with why)."""
 
     state: DetectorState
     reason: str = ''
@@ -96,7 +95,7 @@ class DetectorClient:
         return ''
 
     def want_model(self, model: ModelSettings) -> None:
-        """The computer's settings changed: send the new model settings at the next chance."""
+        """The app's settings changed: send the new model settings at the next chance."""
         self._model = model
         self._model_due = True
 
@@ -167,14 +166,14 @@ class DetectorClient:
         if self._failures >= self.config.failures_before_pause:
             pause = self._pause.next()
             self._off(reason, resume_at=self.clock.monotonic() + pause)
-            log.warning('Stopped asking the detector for %g s (%s). Pictures go to the computer to detect.',
-                        pause, reason)
+            log.warning('Stopped asking the detector for %g s (%s). Pictures still go to the app, with no objects '
+                        'found.', pause, reason)
         return Verdict(DetectorState.OFF, reason)
 
     def _no_model_yet(self, reason: str) -> Verdict:
         if not self.off_now():
-            log.info('The detector has no model yet (%s). Pictures go to the computer to detect until it is ready.',
-                     reason)
+            log.info('The detector has no model yet (%s). Until it is ready, pictures go to the app with no objects '
+                     'found.', reason)
         self._off(reason, resume_at=None)
         return Verdict(DetectorState.OFF, reason)
 
@@ -222,8 +221,8 @@ class DetectorClient:
             log.info('Asked the detector to use %s (%s, %d pixels)', model.model, model.format, model.image_size)
             self._check_version(body)
         else:
-            log.warning("The detector won't use these model settings (%s). Check pi.detector in config/settings.yaml "
-                        'on your computer.', self._error_text(body) or status)
+            log.warning("The detector won't use these model settings (%s). Check pi.detector in config/settings.yaml.",
+                        self._error_text(body) or status)
 
 
     def _check_version(self, body: bytes) -> None:
