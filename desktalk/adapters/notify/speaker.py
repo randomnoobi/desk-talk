@@ -154,6 +154,7 @@ class SpeakerNotifications(QueuedNotifications):
                                                  'once until it works again.', type(error).__name__, error)
         else:
             self._said_problem = ''
+            log.info('Said a message out loud (%s)', title)       # names who, not the words
 
     def _device(self) -> str | None:
         """Where to send the sound right now, or None when the card isn't there."""

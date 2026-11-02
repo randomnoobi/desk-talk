@@ -385,6 +385,16 @@ def test_restore_uses_the_time_of_a_change_row():
     assert (cup.state, cup.since) == ('ABSENT', 1000)
 
 
+def test_restore_says_how_many_in_the_log(caplog):
+    """The Pi's power cut check reads this line: nothing else from outside shows a restored state."""
+    store = InMemoryStateStore()
+    store.append([record(1000, 'cup', 'removed'), record(1000, 'bottle', 'snapshot', 'PRESENT')])
+    tracker, _, _ = make_tracker(store)
+    with caplog.at_level(logging.INFO, logger='desktalk.core.object_states.tracker'):
+        tracker.restore(now=1100)
+    assert 'Picked up 2 object states from before the restart' in caplog.text
+
+
 def test_restore_ignores_old_rows():
     store = InMemoryStateStore()
     store.append([record(1000, 'bottle', 'snapshot', 'PRESENT')])

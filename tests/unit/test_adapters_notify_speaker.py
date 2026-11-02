@@ -291,6 +291,20 @@ def test_the_card_going_away_is_said_again_after_it_came_back(tmp_path, caplog):
     assert len(caplog.records) == 2
 
 
+def test_each_message_said_leaves_a_line_in_the_log_without_the_words(caplog):
+    """The only proof a Pi with nobody listening has that the speak command ran (tests/pi/)."""
+    with caplog.at_level(logging.INFO, logger=speaker_module.__name__):
+        said_by(Recorder(), 'Mind the cup')
+    [line] = [record.getMessage() for record in caplog.records]
+    assert 'Cup' in line and 'out loud' in line and 'Mind the cup' not in line
+
+
+def test_a_message_that_could_not_be_said_is_not_logged_as_said(caplog):
+    with caplog.at_level(logging.INFO, logger=speaker_module.__name__):
+        said_by(Recorder(fail=RuntimeError('no')), 'Mind the cup')
+    assert not [record for record in caplog.records if record.levelno == logging.INFO]
+
+
 def test_the_words_go_in_on_standard_input_and_the_blanks_get_filled():
     run = said_by(Recorder(), 'Mind the "cup"; $(rm -rf /)')
     [(args, text, limit)] = run.calls
