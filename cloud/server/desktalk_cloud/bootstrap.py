@@ -109,13 +109,18 @@ def build(config: CloudConfig) -> Server:
     """The real server. Nothing connects to the database until the first call to it."""
     store = PostgresStore(database_url(config))
 
-    @asynccontextmanager
-    async def close_the_database_at_the_end(_app: FastAPI) -> AsyncIterator[None]:
-        yield
-        store.dispose()
-
     parts = build_parts(config, store, SystemClock())
-    return Server(app=build_app(parts, lifespan=close_the_database_at_the_end), store=store)
+
+    @asynccontextmanager
+    async def close_things_at_the_end(_app: FastAPI) -> AsyncIterator[None]:
+        yield
+        try:
+            if isinstance(parts.chat_forwarder, HttpChatForwarder):
+                await parts.chat_forwarder.aclose()
+        finally:
+            store.dispose()
+
+    return Server(app=build_app(parts, lifespan=close_things_at_the_end), store=store)
 
 
 # ── the weekly report and the clean-up ─────────────────────────────────

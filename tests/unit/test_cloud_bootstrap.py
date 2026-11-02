@@ -101,6 +101,29 @@ def test_stopping_the_server_closes_the_database_connections(monkeypatch):
     assert closed == [server.store]
 
 
+def test_stopping_the_server_closes_the_chat_client(monkeypatch):
+    monkeypatch.setattr(PostgresStore, 'dispose', lambda self: None)
+    server = bootstrap.build(cloud_config(ALL_SET))
+    forwarder = server.app.state.parts.chat_forwarder
+    client = forwarder._client
+    with TestClient(server.app):
+        assert not client.is_closed
+    assert client.is_closed
+
+
+def test_the_database_is_closed_even_if_closing_the_chat_client_fails(monkeypatch):
+    closed = []
+    monkeypatch.setattr(PostgresStore, 'dispose', lambda self: closed.append(self))
+
+    async def breaks(self):
+        raise RuntimeError('boom')
+    monkeypatch.setattr(HttpChatForwarder, 'aclose', breaks)
+    server = bootstrap.build(cloud_config(ALL_SET))
+    with pytest.raises(RuntimeError), TestClient(server.app):
+        pass
+    assert closed == [server.store]
+
+
 # ── who may call what ──────────────────────────────────────────────────
 def every_route(app: FastAPI | None = None) -> list[tuple[str, str]]:
     """Each route of each included router and of the real built app (so one added straight on the app counts too), and
@@ -631,8 +654,13 @@ def test_nginx_waits_longer_than_the_slowest_route():
     config = cloud_config()
     found = re.search(r'proxy_read_timeout\s+(\d+)s;', (CLOUD_FOLDER / 'web' / 'nginx-proxy.conf').read_text('utf-8'))
     assert found is not None
-    assert int(found.group(1)) > config.chat.deadline_sec + config.chat.timeout_sec     # one chat's longest possible
+    assert int(found.group(1)) > config.chat.deadline_sec
     assert int(found.group(1)) > 2 * config.google.timeout_sec      # a login makes two calls to Google
+
+
+def test_a_chat_ends_on_the_server_before_the_pi_gives_up():
+    pi_settings = yaml.safe_load((CLOUD_FOLDER.parent / 'config' / 'settings.yaml').read_text('utf-8'))
+    assert cloud_config().chat.deadline_sec < pi_settings['llm']['timeout_sec']
 
 
 def test_nginx_passes_only_the_three_paths_on_and_to_the_servers_own_port():

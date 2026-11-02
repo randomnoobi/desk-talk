@@ -30,7 +30,7 @@ def test_spec_defaults():
     assert config.site.recent_hours == 24
     assert config.google.auth_url.startswith('https://accounts.google.com/')
     assert config.chat.url and config.chat.model and config.chat.limit_requests > 0
-    assert config.chat.max_at_once > 0 and config.chat.deadline_sec >= config.chat.timeout_sec
+    assert config.chat.max_at_once > 0 and config.chat.deadline_sec > 0
 
 
 def test_missing_session_secret_stops_and_names_it():
@@ -97,9 +97,9 @@ def test_bad_value_gives_a_plain_message_with_its_name(tmp_path):
         load_config(folder, {'SESSION_SECRET': SECRET})
 
 
-def test_a_chat_deadline_shorter_than_one_wait_is_refused(tmp_path):
-    folder = _copy_folder(tmp_path, lambda s: s['chat'].update(timeout_sec=30, deadline_sec=29))
-    with pytest.raises(ConfigError, match='deadline_sec'):
+def test_chat_has_one_limit_on_time_so_a_timeout_is_refused(tmp_path):
+    folder = _copy_folder(tmp_path, lambda s: s['chat'].update(timeout_sec=30))
+    with pytest.raises(ConfigError, match='timeout_sec'):
         load_config(folder, {'SESSION_SECRET': SECRET})
 
 

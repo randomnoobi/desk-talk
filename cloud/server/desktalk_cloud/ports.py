@@ -210,7 +210,7 @@ class ReportWriter(Protocol):
 
 @runtime_checkable
 class ChatForwarder(Protocol):
-    def complete(self, messages: Sequence[Mapping[str, Any]], max_tokens: int | None,
-                 temperature: float | None) -> dict[str, Any]:
+    async def complete(self, messages: Sequence[Mapping[str, Any]], max_tokens: int | None,
+                       temperature: float | None) -> dict[str, Any]:
         """The AI company's reply in the OpenAI chat completion shape. Raises ChatFailed."""
         ...

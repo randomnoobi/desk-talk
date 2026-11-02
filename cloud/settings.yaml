@@ -57,12 +57,14 @@ site:                            # the website
 chat:                            # letting a Pi use this server's AI key for chat (text only)
   url: https://generativelanguage.googleapis.com/v1beta/openai/chat/completions   # the AI company's chat completions address
   model: gemini-2.5-flash        # the model every chat request uses, whatever the Pi asks for
-  timeout_sec: 30                # how long to wait for the AI company to say anything more before giving up
-  deadline_sec: 60               # the most one chat may take start to finish, however slowly the AI company sends its reply.
-                                 # It's looked at each time a piece arrives, so a chat can run over by one wait: at worst
-                                 # deadline_sec + timeout_sec (90 s). Can't be less than timeout_sec. nginx waits longer than that.
+  deadline_sec: 25               # the most one chat may take start to finish, whatever the AI company does: connecting, waiting,
+                                 # or sending its reply a byte at a time. It's the only time limit on a chat. It's shorter than
+                                 # the Pi's own wait (config/settings.yaml: llm.timeout_sec, 30 s), so the Pi gets a plain answer
+                                 # and the chat is over before it tries again. nginx waits a little longer than this
   max_at_once: 10                # the most chats the whole server runs at once; one more is refused straight away, not queued.
-                                 # Each one holds a worker thread, and the rest of the server needs them too (it has 40)
+                                 # A waiting chat costs the server little, so this is about the AI company: how many
+                                 # connections are open to it and how much can be spent with it at one time. A Pi rarely
+                                 # has more than one going (llm.min_interval_sec), so this suits about ten Pis chatting at once
   max_body_kb: 256               # the biggest chat request, and the biggest reply taken back from the AI company, in kilobytes
   max_tokens_cap: 2000           # the longest reply one chat request may ask for, in tokens (a bigger ask is lowered to this)
   limit_requests: 30             # the most chat requests one Pi may make in one window

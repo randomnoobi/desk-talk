@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import gzip
 import json
 import logging
+import time
 
 import httpx
 import pytest
@@ -18,7 +21,7 @@ GOOD_REPLY = {'id': 'x', 'object': 'chat.completion', 'choices': [
 
 def forwarder(handler, *, key: str = 'sk-test-key', **chat_changes):
     settings = cloud_config(chat=chat_changes).chat
-    client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     return HttpChatForwarder(settings, key, FakeClock(), client=client), settings
 
 
@@ -39,7 +42,7 @@ def test_is_a_chat_forwarder():
 def test_sends_settings_model_key_and_no_streaming():
     handler, seen = answers()
     chat, settings = forwarder(handler)
-    reply = chat.complete([{'role': 'user', 'content': 'hello'}], 50, 0.4)
+    reply = asyncio.run(chat.complete([{'role': 'user', 'content': 'hello'}], 50, 0.4))
     assert reply == GOOD_REPLY
     (request,) = seen
     assert str(request.url) == settings.url
@@ -50,7 +53,7 @@ def test_sends_settings_model_key_and_no_streaming():
 
 def test_leaves_out_what_the_pi_did_not_send():
     handler, seen = answers()
-    forwarder(handler)[0].complete([{'role': 'user', 'content': 'hello'}], None, None)
+    asyncio.run(forwarder(handler)[0].complete([{'role': 'user', 'content': 'hello'}], None, None))
     assert set(json.loads(seen[0].content)) == {'model', 'messages', 'stream'}
 
 
@@ -59,7 +62,7 @@ def test_an_error_status_is_a_plain_failure_without_the_reply(status, caplog):
     caplog.set_level(logging.DEBUG)
     handler, _ = answers({'error': {'message': f'bad input: {SECRET_TEXT}'}}, status)
     with pytest.raises(ChatFailed) as raised:
-        forwarder(handler)[0].complete([{'role': 'user', 'content': SECRET_TEXT}], None, None)
+        asyncio.run(forwarder(handler)[0].complete([{'role': 'user', 'content': SECRET_TEXT}], None, None))
     assert SECRET_TEXT not in str(raised.value)
     assert SECRET_TEXT not in caplog.text
     assert 'sk-test-key' not in caplog.text
@@ -72,7 +75,7 @@ def test_a_network_error_is_a_plain_failure_without_its_message(caplog):
     def handler(request):
         raise httpx.ConnectError(f'could not connect while sending {SECRET_TEXT}')
     with pytest.raises(ChatFailed) as raised:
-        forwarder(handler)[0].complete([{'role': 'user', 'content': SECRET_TEXT}], None, None)
+        asyncio.run(forwarder(handler)[0].complete([{'role': 'user', 'content': SECRET_TEXT}], None, None))
     assert SECRET_TEXT not in str(raised.value) and SECRET_TEXT not in caplog.text
     assert raised.value.__cause__ is None and raised.value.__suppress_context__
 
@@ -81,19 +84,20 @@ def test_a_timeout_is_a_plain_failure():
     def handler(request):
         raise httpx.ReadTimeout('too slow')
     with pytest.raises(ChatFailed):
-        forwarder(handler)[0].complete([{'role': 'user', 'content': 'hi'}], None, None)
+        asyncio.run(forwarder(handler)[0].complete([{'role': 'user', 'content': 'hi'}], None, None))
 
 
 @pytest.mark.parametrize('reply', [[], 'text', {'choices': []}, {'choices': 'no'}, {'nothing': 1}, None])
 def test_a_reply_that_is_not_a_chat_reply_is_a_failure(reply):
     handler, _ = answers(reply)
     with pytest.raises(ChatFailed):
-        forwarder(handler)[0].complete([{'role': 'user', 'content': 'hi'}], None, None)
+        asyncio.run(forwarder(handler)[0].complete([{'role': 'user', 'content': 'hi'}], None, None))
 
 
 def test_a_reply_that_is_not_json_is_a_failure():
     with pytest.raises(ChatFailed):
-        forwarder(lambda request: httpx.Response(200, content=b'<html>'))[0].complete([{'role': 'user'}], None, None)
+        asyncio.run(forwarder(lambda request: httpx.Response(200, content=b'<html>'))[0].complete(
+            [{'role': 'user'}], None, None))
 
 
 def test_a_redirect_is_not_followed_so_the_key_goes_nowhere_else():
@@ -103,50 +107,62 @@ def test_a_redirect_is_not_followed_so_the_key_goes_nowhere_else():
         seen.append(str(request.url))
         return httpx.Response(307, headers={'location': 'https://evil.test/steal'})
     with pytest.raises(ChatFailed):
-        forwarder(handler)[0].complete([{'role': 'user', 'content': 'hi'}], None, None)
+        asyncio.run(forwarder(handler)[0].complete([{'role': 'user', 'content': 'hi'}], None, None))
     assert len(seen) == 1
 
 
 def test_logs_only_the_status_and_the_time(caplog):
     caplog.set_level(logging.DEBUG)
     handler, _ = answers()
-    forwarder(handler)[0].complete([{'role': 'user', 'content': SECRET_TEXT}], 7, 0.1)
+    asyncio.run(forwarder(handler)[0].complete([{'role': 'user', 'content': SECRET_TEXT}], 7, 0.1))
     assert SECRET_TEXT not in caplog.text and 'sk-test-key' not in caplog.text and 'Hi' not in caplog.text
     assert '200' in caplog.text
 
 
-# ── the reply is read a piece at a time, so one chat can't run on past its deadline ─────────────
-class FakeStream(httpx.SyncByteStream):
-    """A reply that arrives in pieces. Each piece moves the clock by `each_takes`; `then_raise` is raised at the end."""
+# ── one hard limit on a whole chat, whatever the AI company does ───────
+TINY_DEADLINE = 0.05                                        # a real wait, kept short so the tests are quick
+WELL_PAST_IT = 5                                            # a chat this slow was not stopped by the deadline
+EMPTY_GZIP_BLOCK = b'\x00\x00\x00\xff\xff'                  # makes the gzip reader work and gives nothing out
 
-    def __init__(self, pieces: list[bytes], clock: FakeClock, each_takes: float = 0,
-                 then_raise: Exception | None = None):
+
+class FakeStream(httpx.AsyncByteStream):
+    """A reply that arrives in pieces, `gap` seconds apart. After the last piece it does `then`: raises it, or hangs
+    for ever when it is HANG. `forever` hands out its pieces again and again."""
+
+    def __init__(self, pieces: list[bytes], *, gap: float = 0, then: object = None, forever: bool = False):
         self.pieces = pieces
-        self.clock = clock
-        self.each_takes = each_takes
-        self.then_raise = then_raise
+        self.gap = gap
+        self.then = then
+        self.forever = forever
         self.handed_out = 0
         self.closed = False
 
-    def __iter__(self):
-        for piece in self.pieces:
-            self.clock.advance(self.each_takes)
-            self.handed_out += 1
-            yield piece
-        if self.then_raise is not None:
-            raise self.then_raise
+    async def __aiter__(self):
+        while True:
+            for piece in self.pieces:
+                await asyncio.sleep(self.gap)
+                self.handed_out += 1
+                yield piece
+            if not self.forever:
+                break
+        if self.then is HANG:
+            await asyncio.Event().wait()
+        if isinstance(self.then, Exception):
+            raise self.then
 
-    def close(self):
+    async def aclose(self):
         self.closed = True
 
 
-def streaming(make_stream, *, status=200, **chat_changes):
-    """A forwarder whose AI company answers with the stream `make_stream(clock)` makes. Also gives back the stream."""
+HANG = object()
+
+
+def streaming(stream, *, status=200, headers=None, **chat_changes):
+    """A forwarder whose AI company answers with `stream`."""
     settings = cloud_config(chat=chat_changes).chat
-    clock = FakeClock()
-    stream = make_stream(clock)
-    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(status, stream=stream)))
-    return HttpChatForwarder(settings, 'sk-test-key', clock, client=client), stream, settings
+    client = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: httpx.Response(status, stream=stream, headers=headers)))
+    return HttpChatForwarder(settings, 'sk-test-key', FakeClock(), client=client)
 
 
 def in_pieces(reply=GOOD_REPLY, size=5) -> list[bytes]:
@@ -155,82 +171,120 @@ def in_pieces(reply=GOOD_REPLY, size=5) -> list[bytes]:
 
 
 def ask(chat, text='hi'):
-    return chat.complete([{'role': 'user', 'content': text}], None, None)
+    return asyncio.run(chat.complete([{'role': 'user', 'content': text}], None, None))
+
+
+def fails_at_the_deadline(chat, caplog):
+    """The chat fails in plain fixed words, soon after the deadline, with no chat text in the logs."""
+    caplog.set_level(logging.DEBUG)
+    started = time.monotonic()
+    with pytest.raises(ChatFailed) as raised:
+        ask(chat, SECRET_TEXT)
+    assert time.monotonic() - started < WELL_PAST_IT
+    assert str(raised.value) == 'The AI company took too long.'
+    assert raised.value.__cause__ is None and raised.value.__suppress_context__
+    assert SECRET_TEXT not in caplog.text and 'sk-test-key' not in caplog.text
+
+
+def test_hanging_before_the_headers_fails_at_the_deadline(caplog):
+    async def handler(request) -> httpx.Response:
+        await asyncio.Event().wait()
+        raise AssertionError('never gets here')
+    settings = cloud_config(chat={'deadline_sec': TINY_DEADLINE}).chat
+    chat = HttpChatForwarder(settings, 'sk-test-key', FakeClock(),
+                             client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    fails_at_the_deadline(chat, caplog)
+
+
+def test_hanging_in_the_middle_of_the_reply_fails_at_the_deadline_and_closes_it(caplog):
+    stream = FakeStream([b'{"cho', SECRET_TEXT.encode()], then=HANG)
+    fails_at_the_deadline(streaming(stream, deadline_sec=TINY_DEADLINE), caplog)
+    assert stream.closed
+
+
+def test_a_drip_for_ever_fails_at_the_deadline_and_closes_it(caplog):
+    stream = FakeStream([SECRET_TEXT.encode()], gap=0.001, forever=True)
+    fails_at_the_deadline(streaming(stream, deadline_sec=TINY_DEADLINE), caplog)
+    assert stream.closed and stream.handed_out > 1
+
+
+def test_endless_empty_gzip_blocks_fail_at_the_deadline(caplog):
+    # They give nothing out, so a check made per piece would never run.
+    stream = FakeStream([gzip.compress(b'')[:10], *[EMPTY_GZIP_BLOCK] * 100_000], gap=0.001)
+    fails_at_the_deadline(streaming(stream, headers={'content-encoding': 'gzip'}, deadline_sec=TINY_DEADLINE), caplog)
+    assert stream.closed
+
+
+def test_httpx_has_no_timeout_of_its_own_the_deadline_is_the_one_limit():
+    handler, seen = answers()
+    ask(forwarder(handler)[0])
+    assert set(seen[0].extensions['timeout'].values()) == {None}
 
 
 def test_a_reply_in_pieces_gives_the_same_body_and_is_closed():
-    chat, stream, _ = streaming(lambda clock: FakeStream(in_pieces(), clock, each_takes=0.01))
-    assert ask(chat) == GOOD_REPLY
-    assert stream.closed
-
-
-def test_a_slow_drip_fails_past_the_deadline_with_no_text_in_the_logs(caplog):
-    caplog.set_level(logging.DEBUG)
-    pieces = [SECRET_TEXT.encode()] * 1000
-    chat, stream, settings = streaming(lambda clock: FakeStream(pieces, clock, each_takes=1), deadline_sec=10)
-    with pytest.raises(ChatFailed) as raised:
-        ask(chat, SECRET_TEXT)
-    assert stream.handed_out == settings.deadline_sec + 1           # it stopped at the first piece past the deadline
-    assert stream.closed
-    assert SECRET_TEXT not in str(raised.value) and SECRET_TEXT not in caplog.text
-    assert 'sk-test-key' not in caplog.text
-
-
-def test_a_reply_that_ends_exactly_at_the_deadline_is_fine():
-    chat, _, _ = streaming(lambda clock: FakeStream([json.dumps(GOOD_REPLY).encode()], clock, each_takes=10),
-                           deadline_sec=10)
-    assert ask(chat) == GOOD_REPLY
-
-
-def test_a_last_piece_past_the_deadline_still_fails():
-    chat, stream, _ = streaming(lambda clock: FakeStream([json.dumps(GOOD_REPLY).encode()], clock, each_takes=11),
-                                deadline_sec=10)
-    with pytest.raises(ChatFailed):
-        ask(chat)
+    stream = FakeStream(in_pieces())
+    assert ask(streaming(stream)) == GOOD_REPLY
     assert stream.closed
 
 
 def test_a_reply_bigger_than_the_limit_fails_and_stops_being_read(caplog):
     caplog.set_level(logging.DEBUG)
-    piece = SECRET_TEXT.encode().ljust(1024, b'x')
-    chat, stream, settings = streaming(lambda clock: FakeStream([piece] * 100, clock), max_body_kb=3)
+    stream = FakeStream([SECRET_TEXT.encode().ljust(1024, b'x')] * 100)
     with pytest.raises(ChatFailed) as raised:
-        ask(chat)
-    assert stream.handed_out == settings.max_body_kb + 1
+        ask(streaming(stream, max_body_kb=3))
+    assert stream.handed_out == 4                           # it stopped at the first piece over the 3 kilobytes
     assert stream.closed
     assert SECRET_TEXT not in str(raised.value) and SECRET_TEXT not in caplog.text
 
 
 def test_a_failure_while_reading_is_plain_and_closes_the_reply(caplog):
     caplog.set_level(logging.DEBUG)
-    chat, stream, _ = streaming(lambda clock: FakeStream(
-        [b'{"cho'], clock, then_raise=httpx.ReadTimeout(f'too slow while sending {SECRET_TEXT}')))
+    stream = FakeStream([b'{"cho'], then=httpx.ReadError(f'broke while sending {SECRET_TEXT}'))
     with pytest.raises(ChatFailed) as raised:
-        ask(chat)
+        ask(streaming(stream))
     assert stream.closed
     assert SECRET_TEXT not in str(raised.value) and SECRET_TEXT not in caplog.text
     assert raised.value.__cause__ is None and raised.value.__suppress_context__
-    assert 'ReadTimeout' in caplog.text                     # only the kind of error
+    assert 'ReadError' in caplog.text                       # only the kind of error
 
 
 def test_an_error_status_closes_the_reply_without_reading_it():
-    chat, stream, _ = streaming(lambda clock: FakeStream([SECRET_TEXT.encode()], clock), status=500)
+    stream = FakeStream([SECRET_TEXT.encode()])
     with pytest.raises(ChatFailed):
-        ask(chat)
+        ask(streaming(stream, status=500))
     assert stream.closed and stream.handed_out == 0
 
 
-def test_pieces_that_are_not_json_or_have_no_answer_are_failures():
-    for pieces in ([b'<ht', b'ml>'], in_pieces({'choices': []})):
-        chat, stream, _ = streaming(lambda clock, chunks=pieces: FakeStream(chunks, clock))
-        with pytest.raises(ChatFailed):
-            ask(chat)
-        assert stream.closed
+@pytest.mark.parametrize('pieces', [[b'<ht', b'ml>'], in_pieces({'choices': []})], ids=['not json', 'no answer'])
+def test_pieces_that_are_not_json_or_have_no_answer_are_failures(pieces):
+    stream = FakeStream(pieces)
+    with pytest.raises(ChatFailed):
+        ask(streaming(stream))
+    assert stream.closed
 
 
-def test_asks_for_a_plain_reply_so_each_piece_is_seen_as_it_arrives():
-    # A squeezed (gzip) reply can arrive for a long time before any of it can be unsqueezed, and the deadline is only
-    # looked at when a piece comes out.
+def test_being_cancelled_closes_the_reply_and_is_not_a_chat_failure():
+    stream = FakeStream([b'{"cho'], then=HANG)
+
+    async def run():
+        task = asyncio.create_task(streaming(stream).complete([{'role': 'user', 'content': 'hi'}], None, None))
+        while not stream.handed_out:
+            await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    asyncio.run(run())
+    assert stream.closed
+
+
+def test_asks_for_a_plain_reply():
     handler, seen = answers()
-    forwarder(handler)[0].complete([{'role': 'user', 'content': 'hi'}], None, None)
+    ask(forwarder(handler)[0])
     assert seen[0].headers['accept-encoding'] == 'identity'
+
+
+def test_closing_closes_its_client():
+    client = httpx.AsyncClient(transport=httpx.MockTransport(answers()[0]))
+    chat = HttpChatForwarder(cloud_config().chat, 'sk-x', FakeClock(), client=client)
+    asyncio.run(chat.aclose())
+    assert client.is_closed

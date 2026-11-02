@@ -70,8 +70,8 @@ class FakeChatForwarder:
         self.fail_with: str | None = None
         self.calls: list[tuple[Sequence[Mapping[str, Any]], int | None, float | None]] = []
 
-    def complete(self, messages: Sequence[Mapping[str, Any]], max_tokens: int | None,
-                 temperature: float | None) -> dict[str, Any]:
+    async def complete(self, messages: Sequence[Mapping[str, Any]], max_tokens: int | None,
+                       temperature: float | None) -> dict[str, Any]:
         self.calls.append((messages, max_tokens, temperature))
         if self.fail_with is not None:
             raise ChatFailed(self.fail_with)

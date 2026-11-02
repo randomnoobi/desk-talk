@@ -10,7 +10,6 @@ from collections import deque
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.concurrency import run_in_threadpool
 
 from desktalk_cloud.deps import device_from_token, parts_of, read_json
 from desktalk_cloud.domain import Device
@@ -134,12 +133,11 @@ async def chat_completions(request: Request, device: Annotated[Device, Depends(d
     if not parts.chat_slots.acquire(blocking=False):             # refused at once: waiting would hold the request open
         raise HTTPException(503, messages.chat_busy)
     try:
-        # If the Pi hangs up, this still waits for the thread to end, so the slot is only given back once it's free.
-        return await run_in_threadpool(parts.chat_forwarder.complete, clean, max_tokens, temperature)
+        return await parts.chat_forwarder.complete(clean, max_tokens, temperature)
     except ChatFailed:
         pass
     except Exception as error:                          # its text can hold the chat text: only the kind is logged
         log.warning('The chat forwarder broke (%s)', type(error).__name__)
-    finally:
+    finally:                                            # on a cancel too, which the two lines above let through
         parts.chat_slots.release()
     raise HTTPException(502, messages.chat_failed)
