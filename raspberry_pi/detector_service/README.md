@@ -22,7 +22,7 @@ open on the Pi: only the camera and app containers can reach it, by its name, `d
 | `PUT /model` | Body: the model settings (`model`, `format` ncnn or pt, `image_size`, `confidence`, `half`). Loads that model in the background; the old one keeps answering until it's ready. |
 
 The camera sends `PUT /model` with the `pi.detector` settings from the app (`config/settings.yaml`, with
-`raspberry_pi/settings.pi.yaml` laid over it).
+`raspberry_pi/settings.pi.yaml` and then your own `raspberry_pi/mine/settings.mine.yaml` laid over it).
 The service remembers the last one, so after a restart it loads it again by itself.
 The request and reply shapes are in `shared/desktalk_shared/detector_api.py`.
 
@@ -72,7 +72,7 @@ It never downloads a model on the Pi (`YOLO_OFFLINE=true` in the Dockerfile, whi
    cd ~/desk-talk/raspberry_pi && docker compose cp ~/my-model.pt detector:/models/
    ```
 
-3. Name it in `pi.detector.model` in `raspberry_pi/settings.pi.yaml`, then `docker compose restart app camera`.
+3. Name it in `pi.detector.model` in `raspberry_pi/mine/settings.mine.yaml`, then `docker compose restart app camera`.
 
 ## Settings
 

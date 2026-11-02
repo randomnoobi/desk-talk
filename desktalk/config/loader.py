@@ -40,6 +40,10 @@ ENV_OVERRIDES = {
 # Old .env settings that moved to config/settings.yaml (startup shows a hint if they're set).
 MOVED_ENV = ('CAMERA_SOURCE', 'CAMERA_INDICES', 'PIPELINE_CAMERA', 'EVENT_COOLDOWN', 'APPEAR_FRAMES',
              'DISAPPEAR_FRAMES', 'REMINDER_WARMUP_MIN', 'HABIT_MIN_GAP_SEC', 'IDLE_CHAT_MIN_SEC')
+# The files laid over settings.yaml, in this order, each one only if it is there. The second is the user's own file on
+# a Pi, which raspberry_pi/compose.yaml mounts from the git-ignored raspberry_pi/mine/ folder (a folder, because
+# Docker turns a missing file into a folder, but a missing folder is just empty).
+LOCAL_SETTINGS = ('settings.local.yaml', 'mine/settings.mine.yaml')
 # Settings that are gone. Your own settings.local.yaml may still have them, so they're left out (with a note in the
 # log) instead of stopping startup. agents.join_after_sec and agents.min_confidence became agents.sensitivity_steps;
 # vision_habits went with the posture checks; web.list_sizes.habit_log / log_detections went with the Event log's
@@ -313,10 +317,11 @@ def load_config(root: Path | None = None, environ: Mapping[str, str] | None = No
         return data
 
     data = read('settings.yaml')
-    if (config_dir / 'settings.local.yaml').is_file():
-        local = read('settings.local.yaml')
-        _move_settings(local)
-        _merge(data, local)
+    for name in LOCAL_SETTINGS:
+        if (config_dir / name).is_file():
+            local = read(name)
+            _move_settings(local)
+            _merge(data, local)
     _drop_retired(data)
     problems = [_unknown(sources.last((key,)), (key,), (key,)) for key in data if key in _NOT_FROM_SETTINGS]
     data['protocols'] = read('protocols.yaml', ('protocols',))

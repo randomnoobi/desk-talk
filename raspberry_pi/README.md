@@ -129,8 +129,13 @@ Its `pi` part has what the camera said lately: the detector's state and why, how
 ## Settings
 
 The Pi's own settings are in `raspberry_pi/settings.pi.yaml`, laid over `config/settings.yaml`. Both the app and the
-camera read it (compose mounts it into both as `config/settings.local.yaml`, read-only). It is a file in git, so keep your
-changes to a few lines. After a change, **on the Pi**:
+camera read it (compose mounts it into both as `config/settings.local.yaml`, read-only). It comes with the code and is
+in git, so **don't edit it**: `update.sh`'s `git pull` would stop on it.
+
+Your own changes go in `raspberry_pi/mine/settings.mine.yaml`, laid over both. `install.sh` makes it the first time, from
+`settings.mine.example.yaml`, which has only comments and two examples. It is not in git, `install.sh` and `update.sh`
+never change it once it's there, and the Pi works with it empty or gone. Put just the lines you change in it, in the
+same layout as `config/settings.yaml` (for example `llm:` then `  ai_url: ...`). After a change, **on the Pi**:
 
 ```bash
 cd ~/desk-talk/raspberry_pi && docker compose restart app camera
@@ -151,7 +156,7 @@ match `pi.detector.url` in `settings.pi.yaml`, and `APP_PORT` must be `web.port`
 ### The speaker, and chat
 
 Warnings and reminders are said out loud through a USB speaker (`notifications.output` and `notifications.sound_card` in
-`raspberry_pi/settings.pi.yaml`). Plug it in whenever you like: no restart needed. With none plugged in, the log says so
+`raspberry_pi/settings.pi.yaml`; to change them, put the lines in `raspberry_pi/mine/settings.mine.yaml`). Plug it in whenever you like: no restart needed. With none plugged in, the log says so
 once and the Pi carries on. Quiet hours (the app's Settings page) mute it. A webcam with a microphone has `usb` in its
 name too, and can get picked ahead of the speaker: then set `sound_card` to a word only the speaker's name has
 (**on the Pi**, `cat /proc/asound/cards` lists them). Nobody has heard it on a real USB speaker yet.
@@ -261,7 +266,7 @@ cd ~/desk-talk/raspberry_pi && docker compose stop camera
 then `rpicam-hello` should show a picture (check the ribbon cable if not), and `docker compose up -d` starts the camera
 again. If `rpicam-hello` works but the camera container says it can't open the camera, the numbers for the camera's devices
 in `.env` (`CAMERA_MEDIA_MAJOR`, `CAMERA_DMA_HEAP_MAJOR`) may have changed with a kernel update: running
-`bash ~/desk-talk/raspberry_pi/update.sh` fills them in again. For a USB webcam set `pi.camera: usb` in `settings.pi.yaml`.
+`bash ~/desk-talk/raspberry_pi/update.sh` fills them in again. For a USB webcam set `pi.camera: usb` in `raspberry_pi/mine/settings.mine.yaml`.
 
 "No picture from the camera ... it seems stuck": the camera stopped giving pictures for `pi.restart_after_missed_pictures`
 picture times, so the camera program stopped and Docker started the container again. If it keeps happening, check the
@@ -285,7 +290,7 @@ bash ~/desk-talk/raspberry_pi/update.sh
 
 It runs `git pull`, fills in the camera's device numbers again, since a kernel update can change them, rebuilds, and
 clears old images. Docker's saved build steps are cleared only when the card runs low, since a whole new build takes 12 to
-21 minutes. It takes `--dry-run` too. Your data, the pairing key, the models and `.env` stay. If `git pull` couldn't run
+21 minutes. It takes `--dry-run` too. Your data, the pairing key, the models, `.env` and your own settings (`raspberry_pi/mine/settings.mine.yaml`) stay. If `git pull` couldn't run
 (no internet, or a file you changed by hand), it says so and rebuilds with the code that's there.
 
 All three containers are rebuilt together, so they are always the same version.
@@ -311,7 +316,7 @@ test in [`benchmarks/`](../benchmarks/README.md) finds a better fit:
 2. **On your Mac**, fetch the results and rebuild the summary (also in that README). The **best pick** in
    [benchmarks/results/README.md](../benchmarks/results/README.md) is the fastest combination that keeps up
    with 3 pictures a second and reaches at least 90% of the best accuracy.
-3. Set it **on the Pi**, in `raspberry_pi/settings.pi.yaml`, under `pi:` then `detector:`:
+3. Set it **on the Pi**, in `raspberry_pi/mine/settings.mine.yaml`, under `pi:` then `detector:`:
 
    | Benchmark name, e.g. `yolo11s-480-ncnn-fp16` | Setting |
    |---|---|

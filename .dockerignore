@@ -3,6 +3,7 @@
 # It keeps the build quick, and your keys and data out of what's sent to Docker.
 **/.env
 config/settings.local.yaml
+raspberry_pi/mine
 data
 models
 certs

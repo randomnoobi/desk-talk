@@ -1,0 +1,15 @@
+# Your own settings on the Pi, laid over settings.pi.yaml and config/settings.yaml. install.sh copies this file to
+# raspberry_pi/mine/settings.mine.yaml the first time and never touches that copy again. The copy is not in git, so
+# `git pull` in update.sh never trips over it. Put only what you change in the copy, in the same layout as
+# config/settings.yaml, then run `docker compose restart app camera` (on the Pi, in raspberry_pi).
+#
+# For example, to add chat AI from your own computer or your cloud server (nothing is sent anywhere until you do),
+# take the # off the next two lines:
+#
+# llm:
+#   ai_url: http://my-laptop.local:11434/v1
+#
+# Or to use a USB webcam instead of the Pi's camera:
+#
+# pi:
+#   camera: usb

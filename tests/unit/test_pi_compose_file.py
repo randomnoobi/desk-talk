@@ -117,6 +117,18 @@ def test_both_programs_that_read_the_settings_get_the_pi_settings_read_only(serv
         assert line == './settings.pi.yaml:/desk-talk/config/settings.local.yaml:ro'
 
 
+def test_both_get_the_users_own_settings_folder_read_only(services):
+    """A folder, not a file: Docker makes a missing folder, but a missing file becomes a folder and breaks the mount."""
+    for name in ('app', 'camera'):
+        assert mounts(services[name])['/desk-talk/config/mine'] == './mine:/desk-talk/config/mine:ro'
+
+
+def test_the_users_own_settings_are_not_in_git():
+    lines = (ROOT / '.gitignore').read_text(encoding='utf-8').splitlines()
+    assert 'raspberry_pi/mine/' in lines
+    assert (PI / 'settings.mine.example.yaml').is_file()
+
+
 def test_the_data_folder_location_comes_from_the_env_file(services):
     assert mounts(services['app'])['/desk-talk/data'] == '${DESKTALK_DATA}:/desk-talk/data'
     assert env_file(PI / '.env.example')['DESKTALK_DATA'] == '../data'      # next to the repo's raspberry_pi/ folder
@@ -193,7 +205,7 @@ def test_the_app_image_can_see_no_keys_or_data():
 
 def test_without_buildkit_the_top_list_keeps_the_same_things_out():
     lines = (ROOT / '.dockerignore').read_text(encoding='utf-8').splitlines()
-    assert {'**/.env', 'config/settings.local.yaml', 'data', 'certs', 'models'} <= set(lines)
+    assert {'**/.env', 'config/settings.local.yaml', 'raspberry_pi/mine', 'data', 'certs', 'models'} <= set(lines)
 
 
 def test_the_camera_gets_as_few_rights_as_it_can_work_with(services):

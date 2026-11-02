@@ -142,7 +142,7 @@ def pi(tmp_path) -> FakePi:
     (root / 'config').mkdir()
     (root / 'data').mkdir()
     for name in ('install.sh', 'update.sh', 'link_pi.py', '.env.example', 'settings.pi.yaml', 'model_checksums.txt',
-                 'compose.yaml'):
+                 'compose.yaml', 'settings.mine.example.yaml'):
         if (PI / name).exists():
             shutil.copy(PI / name, root / 'raspberry_pi' / name)
     shutil.copy(ROOT / 'config' / 'settings.yaml', root / 'config' / 'settings.yaml')
@@ -437,6 +437,39 @@ def test_settings_pi_yaml_beats_settings_yaml_for_the_model(pi):
     text = extra.read_text(encoding='utf-8').replace('  detector:\n', '  detector:\n    model: pi-only.pt\n')
     extra.write_text(text, encoding='utf-8')
     assert 'pi-only.pt' in pi.run('--dry-run').out
+
+
+# ── The user's own settings ──
+
+def test_the_users_own_settings_file_is_made_from_the_example_and_left_alone_after(pi):
+    mine = pi.root / 'raspberry_pi' / 'mine' / 'settings.mine.yaml'
+    assert pi.run().code == 0
+    assert mine.read_text(encoding='utf-8') == (PI / 'settings.mine.example.yaml').read_text(encoding='utf-8')
+    mine.write_text('llm:\n  ai_url: http://my-laptop.local:11434/v1\n', encoding='utf-8')
+    for args in ((), ('--update',)):
+        assert pi.run(*args).code == 0
+        assert 'my-laptop' in mine.read_text(encoding='utf-8')
+
+
+def test_update_sh_keeps_the_users_own_settings(pi):
+    mine = pi.root / 'raspberry_pi' / 'mine' / 'settings.mine.yaml'
+    mine.parent.mkdir()
+    mine.write_text('llm:\n  ai_url: http://my-laptop.local:11434/v1\n', encoding='utf-8')
+    assert pi.run(script='update.sh').code == 0
+    assert 'my-laptop' in mine.read_text(encoding='utf-8')
+
+
+def test_a_dry_run_makes_no_settings_file(pi):
+    result = pi.run('--dry-run')
+    assert result.code == 0 and 'settings.mine.yaml' in result.out
+    assert not (pi.root / 'raspberry_pi' / 'mine').exists()
+
+
+def test_the_users_own_settings_beat_settings_pi_yaml_for_the_model(pi):
+    mine = pi.root / 'raspberry_pi' / 'mine' / 'settings.mine.yaml'
+    mine.parent.mkdir()
+    mine.write_text('pi:\n  detector:\n    model: mine-only.pt\n', encoding='utf-8')
+    assert 'mine-only.pt' in pi.run('--dry-run').out
 
 
 # ── The .env file ──

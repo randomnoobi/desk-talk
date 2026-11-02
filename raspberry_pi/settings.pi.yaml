@@ -1,6 +1,7 @@
 # The app's and the camera's settings on the Pi, laid over config/settings.yaml. compose.yaml mounts this file
 # read-only as config/settings.local.yaml in both containers. Nothing here turns on an AI: the Pi works with none.
-# To add chat, set llm.ai_url (config/settings.yaml says how).
+# Don't edit this file (a git pull would stop on it). Your own changes, such as llm.ai_url to add chat, go in
+# raspberry_pi/mine/settings.mine.yaml, which install.sh makes and which is laid over this one.
 
 detector:
   enabled: false                 # the detector container does the finding, so the app needs no PyTorch or YOLO

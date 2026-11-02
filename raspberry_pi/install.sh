@@ -3,7 +3,8 @@
 #
 #     bash raspberry_pi/install.sh [--tz Europe/Paris] [--server <address>]
 #
-# Safe to run again: it only changes what needs it, and never touches the data folder, the pairing key or the models.
+# Safe to run again: it only changes what needs it, and never touches the data folder, the pairing key, the models or
+# your own settings (raspberry_pi/mine/settings.mine.yaml).
 #
 #   --tz <zone>        your time zone (normally taken from the Pi)
 #   --server <address> link this Pi to your cloud server, using the code from its website. The Pi needs no cloud.
@@ -25,6 +26,8 @@ PI_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(dirname "$PI_DIR")
 ENV_FILE=$PI_DIR/.env
 EXAMPLE=$PI_DIR/.env.example
+MINE_EXAMPLE=$PI_DIR/settings.mine.example.yaml
+MINE_FILE=$PI_DIR/mine/settings.mine.yaml      # the user's own settings: not in git, so a git pull never trips on it
 CHECKSUMS=$PI_DIR/model_checksums.txt
 PROC=${DESKTALK_PROC:-/proc}                # only tests change this
 ZONES=/usr/share/zoneinfo
@@ -151,13 +154,15 @@ yaml_value() {
         }' "$1"
 }
 
-# From the Pi's settings on top of config/settings.yaml, as the app and the camera read them.
+# From the user's own settings on top of the Pi's, on top of config/settings.yaml, as the app and the camera read them.
 pi_setting() {
-    local value
-    value=$(yaml_value "$PI_DIR/settings.pi.yaml" "$1")
-    if [ -z "$value" ]; then
-        value=$(yaml_value "$ROOT/config/settings.yaml" "$1")
-    fi
+    local value file
+    for file in "$MINE_FILE" "$PI_DIR/settings.pi.yaml" "$ROOT/config/settings.yaml"; do
+        value=$(yaml_value "$file" "$1")
+        if [ -n "$value" ]; then
+            break
+        fi
+    done
     printf '%s' "$value"
 }
 
@@ -390,6 +395,23 @@ write_env() {
         else
             say "  TZ=$(setting TZ) (the Pi doesn't say its time zone. Change it with --tz)"
         fi
+    fi
+}
+
+# ── Your own settings ──
+
+# raspberry_pi/mine/settings.mine.yaml starts as a copy of settings.mine.example.yaml, which has only comments. Once it
+# is there it is the user's: nothing here ever changes it, and update.sh's git pull doesn't see it (it is in .gitignore).
+make_my_settings() {
+    if [ -f "$MINE_FILE" ]; then
+        say "Your own settings: raspberry_pi/mine/settings.mine.yaml (kept as it is)."
+    elif [ "$DRY_RUN" = 1 ]; then
+        would "make raspberry_pi/mine/settings.mine.yaml, for your own settings, from settings.mine.example.yaml."
+    else
+        mkdir -p "$(dirname "$MINE_FILE")"
+        cp "$MINE_EXAMPLE" "$MINE_FILE" || stop "raspberry_pi/mine/settings.mine.yaml can't be made. If Docker made the folder raspberry_pi/mine, run: sudo rmdir raspberry_pi/mine"
+        chmod 644 "$MINE_FILE"
+        say "Made raspberry_pi/mine/settings.mine.yaml for your own settings, such as llm.ai_url."
     fi
 }
 
@@ -783,6 +805,7 @@ main() {
     check_sound
     check_old_camera_program
     write_env
+    make_my_settings
     PI_NAME=$(short_hostname)
     if [ "$UPDATE" = 0 ]; then
         set_hostname

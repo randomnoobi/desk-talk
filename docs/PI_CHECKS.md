@@ -128,7 +128,7 @@ No test can tell if speech sounds right, so this is by ear.
 
    You should see `Said a message out loud (Lens)`. `No sound card with "usb" in its name` means it didn't find the speaker, and `Could not say a message out loud` says why it failed.
 
-A webcam with a microphone can get picked ahead of the speaker, as its name has `usb` in it too. If so, set `notifications.sound_card` in `raspberry_pi/settings.pi.yaml` to a word only the speaker's name has: **on the Pi**, `cat /proc/asound/cards` lists them.
+A webcam with a microphone can get picked ahead of the speaker, as its name has `usb` in it too. If so, set `notifications.sound_card` in `raspberry_pi/mine/settings.mine.yaml` to a word only the speaker's name has: **on the Pi**, `cat /proc/asound/cards` lists them.
 
 ## Close the laptop while chat is on
 

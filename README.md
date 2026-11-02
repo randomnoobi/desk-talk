@@ -64,8 +64,8 @@ More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 **No AI needed.** Warnings, habit reminders, the characters joining and leaving, the event log and the habits all
 work with no AI at all, in their ready-made words. An AI only adds **chat** with the characters and nicer wording.
-No AI runs on the Pi, and AI keys never go on it. To add one, set `llm.ai_url` in `raspberry_pi/settings.pi.yaml`
-on the Pi, then **on the Pi** run `cd ~/desk-talk/raspberry_pi && docker compose restart app`:
+No AI runs on the Pi, and AI keys never go on it. To add one, set `llm.ai_url` in `raspberry_pi/mine/settings.mine.yaml`
+(your own settings file, which `install.sh` made; it isn't in git) on the Pi, then **on the Pi** run `cd ~/desk-talk/raspberry_pi && docker compose restart app`:
 
 - **Ollama on your own computer**: `ai_url: http://<your computer>:11434/v1`, and `llm.ollama_model` for the model
   (`ollama pull` it first). Text only goes there: your chat messages, and the words the characters say by themselves
@@ -391,7 +391,7 @@ demo where four characters join the chat.
 | `config/protocols.yaml` | the habit rules from *Protocols* and your day (wake / bed) |
 | `config/prompts.yaml` | every word Desk Talk says or tells the AI: the prompts, Lens's lines, habit nudges and tips, desk alerts, the replies when the AI is down. The code only fills in the blanks (`{on_waking_ml}` ...) |
 | `config/safety_rules.json` | danger zones and desk corners (the Settings page writes this) |
-| `config/settings.local.yaml` | your own overrides on a computer (optional, not uploaded). On the Pi the same job is done by `raspberry_pi/settings.pi.yaml`, which the containers mount in its place: the Pi's own settings, such as `llm.ai_url`, go there |
+| `config/settings.local.yaml` | your own overrides on a computer (optional, not uploaded). On the Pi the same job is done by `raspberry_pi/mine/settings.mine.yaml` (not in git, made by `install.sh`, kept by `update.sh`), laid over `raspberry_pi/settings.pi.yaml`, the Pi's own settings that come with the code. Changes such as `llm.ai_url` go in your file |
 | `config/benchmark.yaml` | what the YOLO speed test in `benchmarks/` tries |
 | `raspberry_pi/.env` | the Pi's three containers: ports, memory limits, Docker's health checks, log file sizes, and the install command's numbers (no secrets). The install command makes it from `raspberry_pi/.env.example`; it isn't in git |
 | `.env` | on a computer only: AI keys / `OLLAMA_URL` (never uploaded). Nothing like it goes on the Pi |
@@ -524,7 +524,7 @@ desk-talk/
 │   ├── web/                  #   FastAPI: app.py, routers/ (one file per area), schemas.py, serve.py (uvicorn)
 │   └── util.py               #   small helpers
 ├── shared/desktalk_shared/   # used in the Pi's containers and on a computer: Detection, the upload format, the detector's API, backoff, clock, worker thread
-├── raspberry_pi/             # what runs on the Pi (raspberry_pi/README.md): compose.yaml, install.sh, update.sh, settings.pi.yaml, .env.example
+├── raspberry_pi/             # what runs on the Pi (raspberry_pi/README.md): compose.yaml, install.sh, update.sh, settings.pi.yaml, settings.mine.example.yaml, .env.example
 │   ├── app/                  #   the `app` container: Dockerfile and start.sh
 │   ├── camera/               #   the `camera` container: the camera program, cli.py, main.py, workers.py ...
 │   └── detector_service/     #   the `detector` container: YOLO, Dockerfile, desktalk_detector/

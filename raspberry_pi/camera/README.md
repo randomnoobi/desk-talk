@@ -58,7 +58,7 @@ from its environment.
 ## Settings
 
 The camera program asks the app for its settings (`config/settings.yaml`, the `pi:` section, with
-`raspberry_pi/settings.pi.yaml` laid over it) when it starts, and again every `pi.settings_check_every_sec`. New
+`raspberry_pi/settings.pi.yaml` and then your own `raspberry_pi/mine/settings.mine.yaml` laid over it) when it starts, and again every `pi.settings_check_every_sec`. New
 `pi.detector` settings are passed to the detector right away; for anything else, restart the camera
 (`docker compose restart camera`). If the app can't be reached at the start, it uses the copy of `config/settings.yaml`
 inside its image. Flags win over both:
@@ -97,7 +97,7 @@ The log (`docker compose logs --tail 50 camera`, **on the Pi**, in `~/desk-talk/
   tries again after a short wait that grows each time (up to `pi.upload_retry_max_sec`).
 - **"Pairing key does not match"**: the app made a new key. Run `docker compose up -d` again, or `docker compose restart camera`.
 - **"camera.source: phone"**: the app is set to take its pictures from a phone or webcam. On the Pi it shouldn't be:
-  `raspberry_pi/settings.pi.yaml` leaves it at `pi`, so look for a `camera:` line you added.
+  `raspberry_pi/settings.pi.yaml` leaves it at `pi`, so look for a `camera:` line in `raspberry_pi/mine/settings.mine.yaml`.
 - **"Stopped asking the detector"**: the detector isn't answering. `docker compose ps` and `docker compose logs detector`.
   The camera checks again by itself and goes back to using it once it's ready. The detector has no open port, so
   `curl http://127.0.0.1:8100` on the Pi doesn't answer; the detector's [README](../detector_service/README.md) shows how

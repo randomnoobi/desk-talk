@@ -179,15 +179,16 @@ def _model(detector: Mapping[str, Any]) -> ModelSettings:
 
 
 # ── where the settings come from ──────────────────────────────────────
-LOCAL_SETTINGS = 'settings.local.yaml'
+LOCAL_SETTINGS = ('settings.local.yaml', 'mine/settings.mine.yaml')    # the same two files as the app, in this order
 
 
 def read_repo_settings(path: str | Path) -> dict[str, Any]:
-    """The pi: section of config/settings.yaml in this repo ({} if there's no such file), with the pi: section of
-    settings.local.yaml next to it laid over it. In Docker that file is raspberry_pi/settings.pi.yaml, so the
-    camera has the right addresses and folders even when it starts before the app does, as it can after a reboot."""
+    """The pi: section of config/settings.yaml in this repo ({} if there's no such file), with the pi: sections of
+    the files next to it laid over it, in order. In Docker the first is raspberry_pi/settings.pi.yaml and the second
+    the user's own raspberry_pi/mine/settings.mine.yaml, so the camera has the right addresses and folders even when
+    it starts before the app does, as it can after a reboot."""
     path = Path(path)
-    return merge(_pi_section(path), _pi_section(path.with_name(LOCAL_SETTINGS)))
+    return merge(_pi_section(path), *(_pi_section(path.parent / name) for name in LOCAL_SETTINGS))
 
 
 def _pi_section(path: Path) -> dict[str, Any]:

@@ -3,12 +3,13 @@
 #
 #  Every number the app uses lives in this file, grouped by what it does.
 #  Change a value, save, and restart the app: on a computer, `uv run python server.py`; on the Pi it runs in Docker and
-#  its own settings are in raspberry_pi/settings.pi.yaml, so there run `docker compose restart app camera`. (A change to
-#  this file itself is built into the images: run `docker compose up -d --build` in raspberry_pi/, or update.sh.)
+#  its own settings are in raspberry_pi/settings.pi.yaml and yours in raspberry_pi/mine/settings.mine.yaml, so there
+#  run `docker compose restart app camera`. (A change to this file itself is built into the images: run
+#  `docker compose up -d --build` in raspberry_pi/, or update.sh.)
 #
 #  Your own overrides: put just the lines you change in
 #  config/settings.local.yaml (same layout). That file is not uploaded
-#  to GitHub, so personal tweaks don't end up in the repo.
+#  to GitHub, so personal tweaks don't end up in the repo. (On the Pi, yours is raspberry_pi/mine/settings.mine.yaml.)
 #
 #  API keys go in .env (see .env.example), never in this file.
 #  Other config files:
