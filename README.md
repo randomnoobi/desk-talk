@@ -17,19 +17,19 @@ or installed: no computer, no AI, no account. Phones and computers on your Wi-Fi
 
 ```
 Raspberry Pi (docker compose, raspberry_pi/compose.yaml)
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│ camera                  detector                      app                            │
-│  3 pictures a second,   YOLO, finds what is in        one detection event per        │
-│  kept on the Pi,        each picture (no open port:   picture → event log           │
-│  deleted every 10 min   only camera and app reach it) (data/events/) → characters   │
-│       │ picture  ▲ what's in it                       join / leave the chat,         │
-│       ├─────────▶│                                    safety warnings, habit        │
-│       └──────────┼─────── picture + what was found ─▶ reminders, said out loud on    │
-│                  │                                    the speaker; page on :5000    │
-└──────────────────────────────────────────────────────────────────────────────────────┘
-        ▲ the page: http://desktalk.local:5000, from any phone or computer on your Wi-Fi
-        │ optional, text only: chat → an AI on your own computer (Ollama) or on your cloud server
-        │ optional, events only (never pictures or to-do text): your cloud server
+ camera                      detector                       app
+ ──────                      ────────                       ───
+ 3 pictures a second,   ───▶ YOLO: what is in this picture? ──┐
+ kept on the Pi,        ◀─── (no open port: only camera       │
+ deleted every 10 min        and app can reach it)            ▼
+        │                                          event log (data/events/), characters
+        └── picture + what was found, one upload ─▶ join and leave the chat, safety warnings,
+            for each picture                        habit reminders said on the speaker,
+                                                    the page on port 5000
+                                                        ▲
+   http://desktalk.local:5000, from any phone or computer on your Wi-Fi
+   optional, text only: chat → an AI on your own computer (Ollama) or on your cloud server
+   optional, events only (never pictures or to-do text): your cloud server
 ```
 
 - **`camera`** (`raspberry_pi/camera/`) takes the pictures, keeps them on the Pi, deletes them every 10 minutes,
