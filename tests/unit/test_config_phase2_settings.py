@@ -30,14 +30,42 @@ def test_the_producers_old_error_pause_is_gone():
     assert not hasattr(load_config(root=ROOT, environ={}).camera, 'pause_after_error_sec')
 
 
-def test_the_public_address_is_empty_unless_set_and_has_no_http(tmp_path):
+def project_with_local(tmp_path, local: dict | None = None, *, copy_from: Path | None = None):
+    """A project folder with the real config files, and a settings.local.yaml (a dict, or a copy of a file)."""
     (tmp_path / 'config').mkdir()
     for name in CONFIG_FILES:
         shutil.copy(ROOT / 'config' / name, tmp_path / 'config' / name)
-    assert load_config(root=tmp_path, environ={}).web.public_address == ''
-    local = tmp_path / 'config' / 'settings.local.yaml'
-    local.write_text(yaml.safe_dump({'web': {'public_address': ' desktalk.local:5000 '}}))
-    assert load_config(root=tmp_path, environ={}).web.public_address == 'desktalk.local:5000'
-    local.write_text(yaml.safe_dump({'web': {'public_address': 'http://desktalk.local:5000'}}))
-    with pytest.raises(ConfigError, match='public_address'):
-        load_config(root=tmp_path, environ={})
+    target = tmp_path / 'config' / 'settings.local.yaml'
+    if copy_from is not None:
+        shutil.copy(copy_from, target)
+    elif local is not None:
+        target.write_text(yaml.safe_dump(local))
+    return tmp_path
+
+
+def test_the_public_address_is_empty_unless_set(tmp_path):
+    assert load_config(root=project_with_local(tmp_path), environ={}).web.public_address == ''
+
+
+def test_the_public_address_is_a_host_and_the_web_port(tmp_path):
+    project = project_with_local(tmp_path, {'web': {'public_address': ' desktalk.local:5000 '}})
+    assert load_config(root=project, environ={}).web.public_address == 'desktalk.local:5000'
+
+
+def test_the_pis_settings_file_has_a_good_public_address(tmp_path):
+    project = project_with_local(tmp_path, copy_from=ROOT / 'raspberry_pi' / 'settings.pi.yaml')
+    config = load_config(root=project, environ={})
+    assert config.web.public_address == f'desktalk.local:{config.web.port}'
+
+
+@pytest.mark.parametrize('address', [
+    'desktalk.local',                       # no port: the link would open port 80
+    'desktalk.local:5001',                  # not the port the app listens on (web.port)
+    'desktalk.local:abc', 'desktalk.local:', ':5000',
+    'http://desktalk.local:5000', 'desktalk.local:5000/page', 'desktalk.local:5000?x=1',
+    'desktalk.local:5000#top', 'me@desktalk.local:5000', 'desk talk.local:5000',
+])
+def test_a_public_address_that_would_not_open_the_app_is_refused(tmp_path, address):
+    project = project_with_local(tmp_path, {'web': {'public_address': address}})
+    with pytest.raises(ConfigError, match=r'public_address must be a name and the port.*like desktalk\.local:5000'):
+        load_config(root=project, environ={})

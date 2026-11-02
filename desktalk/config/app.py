@@ -5,6 +5,7 @@ What each setting means is in the comments of config/settings.yaml.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -677,11 +678,14 @@ class PageRefresh(_Section):
     log: PositiveInt
 
 
+_HOST_NAME = re.compile(r'[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?')     # desktalk.local, 192.168.1.20
+
+
 class WebSettings(_Section):
     cors_origins: list[str]
     host: str
     port: Port
-    public_address: str               # how other devices reach the app, like desktalk.local:5000; '' = work it out
+    public_address: str               # how others reach the app: name and web.port (desktalk.local:5000); '' = work out
     app_folder: Path
     phone_folder: Path
     stop_wait_sec: PositiveNumber
@@ -710,11 +714,19 @@ class WebSettings(_Section):
 
     @field_validator('public_address')
     @classmethod
-    def _is_host_and_port(cls, value: str) -> str:
-        value = value.strip()
-        if '://' in value or '/' in value or ' ' in value:
-            raise ValueError(f'must be like desktalk.local:5000, without http:// or a path (got {value!r})')
-        return value
+    def _without_spaces_around(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode='after')
+    def _public_address_is_host_and_web_port(self):
+        """Like desktalk.local:5000: a name, a colon and web.port. Without a port the link would open port 80;
+        a path, ?, #, @ or a space would give a link that goes somewhere else."""
+        if self.public_address:
+            host, _, port = self.public_address.partition(':')
+            if not (_HOST_NAME.fullmatch(host) and port == str(self.port)):
+                raise ValueError(f'public_address must be a name and the port the app listens on (web.port, '
+                                 f'{self.port}), like desktalk.local:{self.port} (got {self.public_address!r})')
+        return self
 
 
 class NotificationsSettings(_Section):

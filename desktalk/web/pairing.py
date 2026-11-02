@@ -21,7 +21,7 @@ import ipaddress
 import logging
 import socket
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
 
@@ -58,7 +58,7 @@ class Links:
 
     address: str
     web_port: int
-    pair_key: str
+    pair_key: str = field(repr=False)        # never printed: a Links in a log line or a traceback must not show it
     phone_port: int | None = None
     public_address: str = ''
 

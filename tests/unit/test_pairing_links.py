@@ -19,3 +19,9 @@ def test_a_public_address_replaces_the_address_and_there_is_no_pi_command():
     links = Links('172.18.0.3', 5000, KEY, public_address='desktalk.local:5000')
     assert links.web_url == 'http://desktalk.local:5000'
     assert links.pi_command == '' and links.pi_command_with_key_file('pair-key.txt') == ''
+
+
+def test_the_pairing_key_is_not_in_how_links_print():
+    """A Links that lands in a log line, a traceback or a test failure must not show the key."""
+    links = Links('192.168.1.20', 5000, KEY, phone_port=5443, public_address='desktalk.local:5000')
+    assert KEY not in repr(links) and KEY not in str(links)

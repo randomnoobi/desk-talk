@@ -54,6 +54,14 @@ def test_live_with_a_public_address_has_no_pi_command(tmp_path):
     assert web_client(rig.app).get('/api/ui_settings').json()['pi']['public_address'] == 'desktalk.local:5000'
 
 
+def test_ui_settings_never_carries_the_pairing_key(tmp_path):
+    """The page's settings go to anyone on the Wi-Fi, so the key must not be in them."""
+    config = changed(desk_config(tmp_path), 'web', public_address='desktalk.local:5000')
+    rig = DeskRig(tmp_path, config=config)
+    reply = web_client(rig.app, from_ip=ON_THE_WIFI).get('/api/ui_settings')
+    assert reply.status_code == 200 and PAIR_KEY not in reply.text
+
+
 def test_the_latest_picture_and_proof_photos_are_served(tmp_path):
     rig = DeskRig(tmp_path)
     client = web_client(rig.app)
