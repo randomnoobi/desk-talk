@@ -5,6 +5,9 @@ out in minutes, and Docker's install and the first build take far longer. So thi
 
     DESKTALK_LINK_CODE=ABCD-EFGH python3 raspberry_pi/link_pi.py --data data --server http://192.168.1.9:8080
 
+A Pi already linked to that server stays as it is, so the same command can be run again after a build that failed: the
+code it holds has been used by then. A link the app has found dead (`stopped`) doesn't count, and is linked again.
+
 It is scripts/link_cloud.py's `run`, with what that gets from the app's settings read here without pydantic or a YAML
 reader. The app reads the file it saves in the data folder, every round, so no restart is needed. Only the Pi's own
 user may read that file: it holds the token. (tests/unit/test_pi_install_script.py runs this with no packages.)
@@ -81,6 +84,12 @@ class LinkFile:
             raise
 
 
+def already_linked(link: Any, server: str) -> bool:
+    """Does this saved link work for that server, as far as this Pi knows?"""
+    return (isinstance(link, dict) and link.get('server') == server.strip().rstrip('/') and link.get('stopped') is False
+            and all(isinstance(link.get(name), str) and link[name] for name in ('token', 'device_id')))
+
+
 def main() -> int:
     from desktalk.adapters.cloud import claim
     from desktalk_shared.clock import SystemClock
@@ -88,6 +97,7 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description='Link this Pi to a cloud server, with no packages installed.')
     parser.add_argument('--data', required=True, type=Path, help="the app's data folder on the Pi")
+    parser.add_argument('--server', required=True, help="the cloud server's address")
     args, rest = parser.parse_known_args()
     # Checked first: the code works once, so nothing may fail after it is used.
     try:
@@ -96,8 +106,12 @@ def main() -> int:
     except OSError as exc:
         sys.stdout.write(f"Can't save the link in {args.data} ({exc.strerror}), so the code wasn't used.\n")
         return 1
-    return run(rest, config=settings_for_the_linker(ROOT), store=LinkFile(args.data), clock=SystemClock(),
-               claim=claim, say=print)
+    config, store = settings_for_the_linker(ROOT), LinkFile(args.data)
+    if already_linked(store.load(config.cloud.link_key), args.server):
+        sys.stdout.write(f'This Pi is already linked to {args.server}, so the code was not needed.\n')
+        return 0
+    return run(['--server', args.server, *rest], config=config, store=store, clock=SystemClock(), claim=claim,
+               say=print)
 
 
 if __name__ == '__main__':

@@ -180,17 +180,36 @@ check_64_bit() {
     [ "$bits" = 64 ] || stop "this is a 32-bit system on a 64-bit processor. Desk Talk needs Raspberry Pi OS 64-bit."
 }
 
-images_built() {
-    local image ask=(docker)
+# Can Docker be asked anything yet? The docker group only starts at the next login, so a second run soon after the first
+# may need sudo. A dry run never uses sudo, so there the answer may be no.
+can_ask_docker() {
     docker compose version > /dev/null 2>&1 || return 1
-    if ! docker info > /dev/null 2>&1; then
-        # The docker group only starts at the next login, so a second run soon after the first may need sudo.
-        [ "$DRY_RUN" = 0 ] || return 1
-        ask=(sudo docker)
-    fi
+    docker info > /dev/null 2>&1 && return 0
+    [ "$DRY_RUN" = 0 ] || return 1
+    USE_SUDO=1
+}
+
+images_built() {
+    local image
+    can_ask_docker || return 1
     for image in $IMAGES; do
-        "${ask[@]}" image inspect "$image" > /dev/null 2>&1 || return 1
+        docker_ image inspect "$image" > /dev/null 2>&1 || return 1
     done
+}
+
+# How many MB of images and build steps Docker holds already: a build that stopped part-way doesn't need that room again.
+docker_holds_mb() {
+    can_ask_docker || { echo 0; return; }
+    { docker_ system df --format '{{.Type}}={{.Size}}' 2> /dev/null || true; } | awk -F= '
+        $1 == "Images" || $1 == "Build Cache" {
+            size = $2 + 0
+            if ($2 ~ /kB$/) size /= 1000
+            else if ($2 ~ /GB$/) size *= 1000
+            else if ($2 ~ /TB$/) size *= 1000000
+            else if ($2 !~ /MB$/) size = 0
+            total += size
+        }
+        END { print int(total) }'
 }
 
 free_disk() {
@@ -199,15 +218,23 @@ free_disk() {
 
 # The first build needs far more room than running this again, or rebuilding what changed.
 check_disk() {
-    local need free
+    local need free holds
+    free=$(free_disk)
     if images_built; then
         need=$(setting INSTALL_MIN_DISK_BUILT_MB)
-    else
-        need=$(setting INSTALL_MIN_DISK_MB)
+        [ "$free" -ge "$need" ] || stop "there is $free MB of free disk and it needs $need MB. Free some space and run this again."
+        say "Free disk: $free MB (needs $need)."
+        return
     fi
-    free=$(free_disk)
-    [ "$free" -ge "$need" ] || stop "there is $free MB of free disk and it needs $need MB. Free some space and run this again."
-    say "Free disk: $free MB (needs $need)."
+    need=$(setting INSTALL_MIN_DISK_MB)
+    holds=$(docker_holds_mb)
+    if [ "$((free + holds))" -lt "$need" ]; then
+        if [ "$holds" -gt 0 ]; then
+            stop "the first build needs $need MB. There is $free MB of free disk, and Docker holds $holds MB from earlier builds. Free some space and run this again, or clear those and start the build over with: sudo docker builder prune -af"
+        fi
+        stop "the first build needs $need MB and there is $free MB of free disk. Free some space, or use a bigger card, and run this again."
+    fi
+    say "Free disk: $free MB, and Docker holds $holds MB already (needs $need)."
 }
 
 check_memory() {
@@ -382,7 +409,8 @@ compose_() {
 
 download() {
     curl -fsSL --retry "$(setting INSTALL_DOWNLOAD_TRIES)" --connect-timeout "$(setting INSTALL_DOWNLOAD_CONNECT_SEC)" \
-        --max-time "$(setting INSTALL_DOWNLOAD_MAX_SEC)" -o "$1" "$2"
+        --max-time "$(setting INSTALL_DOWNLOAD_MAX_SEC)" --speed-limit "$(setting INSTALL_DOWNLOAD_SLOWEST_BYTES_SEC)" \
+        --speed-time "$(setting INSTALL_DOWNLOAD_STALL_SEC)" -o "$1" "$2"
 }
 
 install_docker() {
@@ -515,10 +543,17 @@ the_address() {
     printf 'http://%s.local:%s' "$1" "$(setting APP_HOST_PORT)"
 }
 
+# Without any domain after a dot: on the Wi-Fi the Pi is always <this>.local.
+short_hostname() {
+    local name
+    name=$(hostname)
+    printf '%s' "${name%%.*}"
+}
+
 # Only a Pi still called the stock name gets renamed. Anyone who named theirs has chosen.
 set_hostname() {
     local now wanted
-    now=$(hostname)
+    now=$(short_hostname)
     wanted=$(setting INSTALL_HOSTNAME)
     [[ "$wanted" =~ ^[A-Za-z0-9-]+$ ]] || stop "INSTALL_HOSTNAME=$wanted isn't a name a Pi can have (letters, numbers and - only)."
     PI_NAME=$now
@@ -642,17 +677,25 @@ place_model() {
 
 # ── Linking to the cloud ──
 
+# Stops with the reason if it can't be made: the app can't start without it.
+data_folder() {
+    local wanted
+    wanted=$(setting DESKTALK_DATA)
+    (cd "$PI_DIR" && mkdir -p -- "$wanted" && cd -- "$wanted" && pwd) \
+        || stop "the data folder $wanted (DESKTALK_DATA in raspberry_pi/.env, from raspberry_pi) can't be made."
+}
+
 # On the Pi's own Python, before Docker and the build: the code runs out in minutes, and they take far longer. The
 # code reaches the linker in its environment, which the list of running programs doesn't show, and never as an argument.
 # The file it saves is this user's, the same user the app runs as, in the folder compose gives the app.
 link_to_cloud() {
     [ -n "$SERVER" ] || return 0
     if [ "$DRY_RUN" = 1 ]; then
-        would "link this Pi to $SERVER, with the code you gave, before anything else."
+        would "link this Pi to $SERVER before anything else, with the code you gave, unless it's already linked there."
         return
     fi
     local said data status=0
-    data=$(cd "$PI_DIR" && mkdir -p -- "$(setting DESKTALK_DATA)" && cd "$(setting DESKTALK_DATA)" && pwd)
+    data=$(data_folder)
     say "Linking this Pi to $SERVER ..."
     said=$(DESKTALK_LINK_CODE=$CODE python3 "$PI_DIR/link_pi.py" --data "$data" --server "$SERVER" --name "$PI_NAME" 2>&1) || status=$?
     say "${said//"$CODE"/(the code)}"
@@ -677,7 +720,7 @@ start_containers() {
         return
     fi
     # Made here so it belongs to the Pi's user, not to Docker. Its place is relative to this folder, as in compose.
-    (cd "$PI_DIR" && mkdir -p -- "$(setting DESKTALK_DATA)")
+    data_folder > /dev/null
     say "Building and starting the containers. The first time takes a while ..."
     if ! compose_ up -d --build; then
         if [ "$REBOOT_NEEDED" = 1 ]; then
@@ -740,7 +783,7 @@ main() {
     check_sound
     check_old_camera_program
     write_env
-    PI_NAME=$(hostname)
+    PI_NAME=$(short_hostname)
     if [ "$UPDATE" = 0 ]; then
         set_hostname
         link_to_cloud

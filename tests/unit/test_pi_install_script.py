@@ -72,6 +72,7 @@ case "$name" in
     case "$*" in
       "compose version") exit 0 ;;
       "image inspect "*) [ -e "$FAKE/images_built" ] ;;
+      "system df "*) cat "$FAKE/docker_holds" 2>/dev/null; exit 0 ;;
       info) [ -e "$FAKE/docker_group_active" ] || [ -n "${FAKE_SUDO:-}" ] ;;
       "ps -aq --filter label=com.docker.compose.project=desktalk-detector") cat "$FAKE/old_containers" 2>/dev/null; exit 0 ;;
       "volume ls -q "*"project=desktalk-detector"*) cat "$FAKE/old_volume" 2>/dev/null; exit 0 ;;
@@ -296,6 +297,30 @@ def test_the_images_it_asks_about_are_the_ones_compose_builds(pi):
     asked = [line.split()[-1] for line in pi.run().calls if line.startswith('docker image inspect')]
     services = yaml.safe_load((PI / 'compose.yaml').read_text(encoding='utf-8'))['services']
     assert sorted(asked) == sorted(service['image'] for service in services.values())
+
+
+def test_what_docker_already_holds_counts_towards_a_first_build(pi):
+    pi.change_example('INSTALL_MIN_DISK_MB', '14000')
+    pi.state('free_mb', '11000')
+    pi.state('docker_holds', 'Images=1.5GB\nContainers=651.3kB\nLocal Volumes=9GB\nBuild Cache=2.5GB\n')
+    result = pi.run()
+    assert result.code == 0 and 'docker compose up -d --build' in result.calls
+
+
+def test_a_refusal_counts_only_images_and_build_steps_and_says_what_to_run(pi):
+    pi.change_example('INSTALL_MIN_DISK_MB', '14000')
+    pi.state('free_mb', '11000')
+    pi.state('docker_holds', 'Images=0B\nContainers=1GB\nLocal Volumes=9GB\nBuild Cache=900MB\n')
+    result = pi.run()
+    assert result.code == 1 and '14000' in result.out and '900' in result.out
+    assert 'docker builder prune' in result.out
+
+
+def test_a_card_too_small_with_nothing_from_docker_doesnt_talk_about_pruning(pi):
+    pi.change_example('INSTALL_MIN_DISK_MB', '14000')
+    pi.state('free_mb', '11000')
+    result = pi.run()
+    assert result.code == 1 and 'prune' not in result.out
 
 
 def test_update_checks_the_disk_too(pi):
@@ -641,6 +666,17 @@ def test_keep_hostname_keeps_the_stock_name_and_later_runs_remember(pi):
     assert pi.values()['PUBLIC_NAME'] == 'raspberrypi.local'
 
 
+def test_a_name_with_a_dot_gives_one_local(pi):
+    pi.state('hostname', 'kitchen.example.com\n')
+    result = pi.run()
+    assert pi.values()['PUBLIC_NAME'] == 'kitchen.local' and 'http://kitchen.local:5000' in result.out
+
+
+def test_the_stock_name_with_a_dot_still_counts_as_the_stock_name(pi):
+    pi.state('hostname', 'raspberrypi.lan\n')
+    assert 'sudo hostnamectl set-hostname desktalk' in pi.run().calls
+
+
 def test_the_address_follows_the_port_in_env(pi):
     pi.run()
     text = pi.env_path.read_text(encoding='utf-8')
@@ -667,7 +703,10 @@ def test_fetches_the_chosen_model_and_copies_it_in(pi):
     assert result.code == 0
     assert (pi.fake / 'models' / model_name()).read_text(encoding='utf-8') == 'the model'
     fetch = next(line for line in result.calls if line.startswith('curl ') and model_name() in line)
-    assert f"--max-time {env_file(PI / '.env.example')['INSTALL_DOWNLOAD_MAX_SEC']}" in fetch
+    example = env_file(PI / '.env.example')
+    assert f"--max-time {example['INSTALL_DOWNLOAD_MAX_SEC']}" in fetch
+    assert f"--speed-limit {example['INSTALL_DOWNLOAD_SLOWEST_BYTES_SEC']}" in fetch
+    assert f"--speed-time {example['INSTALL_DOWNLOAD_STALL_SEC']}" in fetch
     assert any(line.startswith('docker compose cp ') for line in result.calls)
     assert not list((pi.fake / 'models').glob('.*'))
 
@@ -824,6 +863,38 @@ def test_a_data_folder_it_cant_write_to_doesnt_use_up_the_code(unlinked, cloud):
     assert result.code == 3 and cloud.claims == []
 
 
+def test_running_the_same_command_again_after_a_failed_build_stays_linked(unlinked, cloud):
+    unlinked.env_vars['DESKTALK_LINK_CODE'] = CODE
+    unlinked.state('up_fails')
+    assert unlinked.run('--server', cloud.url).code == 1
+    (unlinked.fake / 'up_fails').unlink()
+    before = saved_link(unlinked)
+    result = unlinked.run('--server', cloud.url + '/')
+    assert result.code == 0 and 'already linked' in result.out and 'NOT linked' not in result.out
+    assert len(cloud.claims) == 1 and saved_link(unlinked) == before
+
+
+def link_file(pi: FakePi, **changes) -> None:
+    link = {'server': 'http://old:1', 'device_id': 'dev-0', 'token': 'old', 'stopped': False, 'place_ts': 1.0,
+            'start_ts': 1.0, 'recent_ids': []}
+    (pi.root / 'data' / 'cloud.json').write_text(json.dumps({**link, **changes}), encoding='utf-8')
+
+
+@pytest.mark.parametrize('changes', [{}, {'stopped': True}, {'token': ''}, {'device_id': 5}])
+def test_a_link_to_another_server_or_a_dead_one_is_linked_again(unlinked, cloud, changes):
+    link_file(unlinked, server=cloud.url if changes else 'http://elsewhere:1', **changes)
+    unlinked.env_vars['DESKTALK_LINK_CODE'] = CODE
+    assert unlinked.run('--server', cloud.url).code == 0
+    assert len(cloud.claims) == 1 and saved_link(unlinked)['token'] == TOKEN
+
+
+def test_a_data_folder_that_cant_be_made_says_why(unlinked, cloud):
+    unlinked.change_example('DESKTALK_DATA', '../data/events.jsonl/inside')
+    unlinked.env_vars['DESKTALK_LINK_CODE'] = CODE
+    result = unlinked.run('--server', cloud.url)
+    assert result.code == 1 and 'events.jsonl/inside' in result.out and cloud.claims == []
+
+
 def test_no_flags_means_no_link(pi):
     assert not any(line.startswith('python3 ') for line in pi.run().calls)
 
@@ -856,10 +927,47 @@ def test_the_website_gives_the_install_command_with_the_code_out_of_the_argument
     assert '--code' not in words
 
 
-def test_the_website_command_works_on_a_clean_card_and_on_an_old_clone():
-    words = website_command()
-    assert 'apt-get install -y git' in words and 'command -v git' in words
-    assert 'pull --ff-only' in words and 'git clone' in words
+def run_website_command(tmp_path: Path, pull_status: int, *, clone_made: bool) -> subprocess.CompletedProcess[str]:
+    """The website's words, really run in bash, with a stand-in git and a made-up home folder."""
+    home, bin_folder = tmp_path / 'home', tmp_path / 'bin'
+    home.mkdir()
+    bin_folder.mkdir()
+    git = bin_folder / 'git'
+    git.write_text(f'''#!/bin/bash
+echo "git $*" >> "$HOME/git-calls"
+case "$*" in *pull*) echo "the reason git gives" >&2; exit {pull_status} ;; esac
+mkdir -p "$HOME/desk-talk/.git" "$HOME/desk-talk/raspberry_pi"
+echo 'echo "install got code $DESKTALK_LINK_CODE and $*"' > "$HOME/desk-talk/raspberry_pi/install.sh"
+''', encoding='utf-8')
+    git.chmod(0o755)
+    if clone_made:
+        (home / 'desk-talk' / '.git').mkdir(parents=True)
+    command = website_command().format(server_url='http://x:1', code=CODE)
+    return subprocess.run(['/bin/bash', '-c', command], capture_output=True, text=True, timeout=30, check=False,
+                          env={'HOME': str(home), 'PATH': f'{bin_folder}:/usr/bin:/bin'})
+
+
+def test_the_website_command_clones_on_a_clean_card(tmp_path):
+    done = run_website_command(tmp_path, 0, clone_made=False)
+    assert 'clone' in (tmp_path / 'home' / 'git-calls').read_text(encoding='utf-8')
+    assert f'install got code {CODE} and --server http://x:1' in done.stdout
+    assert 'cannot change' not in done.stderr
+
+
+def test_the_website_command_pulls_an_old_clone(tmp_path):
+    run_website_command(tmp_path, 0, clone_made=True)
+    calls = (tmp_path / 'home' / 'git-calls').read_text(encoding='utf-8')
+    assert 'pull --ff-only' in calls and 'clone' not in calls
+
+
+def test_the_website_command_shows_a_failed_pull_and_says_what_to_do(tmp_path):
+    done = run_website_command(tmp_path, 1, clone_made=True)
+    assert 'the reason git gives' in done.stderr
+    assert 'run this again' in done.stdout + done.stderr
+
+
+def test_the_website_command_gets_git_if_the_card_has_none():
+    assert 'command -v git' in website_command() and 'apt-get install -y git' in website_command()
 
 
 # ── update.sh ──
