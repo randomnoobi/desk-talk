@@ -10,5 +10,5 @@ from desktalk.adapters.llm.openai_compatible import OllamaKeepAlive, OpenAICompa
 from desktalk.adapters.llm.resilient import ResilientChatModel
 from desktalk.adapters.llm.unprompted import UnpromptedChatModel
 
-__all__ = ['AIRefused', 'OllamaKeepAlive', 'OpenAICompatibleChatModel', 'ResilientChatModel', 'UnpromptedChatModel', 'friendly_ai_error',
-           'is_rate_limit']
+__all__ = ['AIRefused', 'OllamaKeepAlive', 'OpenAICompatibleChatModel', 'ResilientChatModel', 'UnpromptedChatModel',
+           'friendly_ai_error', 'is_rate_limit']
