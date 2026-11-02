@@ -304,13 +304,28 @@ def test_update_checks_the_disk_too(pi):
     assert pi.run(script='update.sh').code == 1
 
 
-def test_a_good_build_clears_old_builds_but_a_failed_one_doesnt(pi):
+def test_a_good_build_clears_old_images_and_keeps_the_build_steps_while_there_is_room(pi):
     calls = pi.run().calls
-    keep = env_file(PI / '.env.example')['INSTALL_BUILD_CACHE_KEEP_MB']
-    prune = f'docker builder prune -af --reserved-space {keep}MB'
-    assert prune in calls and 'docker image prune -f' in calls
-    assert calls.index('docker compose up -d --build') < calls.index(prune)
+    assert 'docker image prune -f' in calls
+    assert calls.index('docker compose up -d --build') < calls.index('docker image prune -f')
+    assert not any('builder prune' in line for line in calls)
+
+
+def test_a_filling_card_gets_its_build_steps_cleared(pi):
+    pi.state('images_built')
+    pi.change_example('INSTALL_MIN_DISK_BUILT_MB', '100')
+    pi.change_example('INSTALL_CLEAR_BUILDS_BELOW_MB', '3000')
+    pi.state('free_mb', '2999')
+    assert 'docker builder prune -af' in pi.run().calls
+    pi.state('free_mb', '3000')
+    assert not any('builder prune' in line for line in pi.run().calls)
+
+
+def test_a_failed_build_clears_nothing(pi):
     pi.state('up_fails')
+    pi.state('free_mb', '12500')
+    pi.change_example('INSTALL_MIN_DISK_MB', '12000')
+    pi.change_example('INSTALL_CLEAR_BUILDS_BELOW_MB', '13000')
     assert not any('prune' in line for line in pi.run().calls)
 
 

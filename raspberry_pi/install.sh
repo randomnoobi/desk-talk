@@ -193,6 +193,10 @@ images_built() {
     done
 }
 
+free_disk() {
+    df -Pm "$ROOT" | awk 'NR == 2 { print $4 }'
+}
+
 # The first build needs far more room than running this again, or rebuilding what changed.
 check_disk() {
     local need free
@@ -201,7 +205,7 @@ check_disk() {
     else
         need=$(setting INSTALL_MIN_DISK_MB)
     fi
-    free=$(df -Pm "$ROOT" | awk 'NR == 2 { print $4 }')
+    free=$(free_disk)
     [ "$free" -ge "$need" ] || stop "there is $free MB of free disk and it needs $need MB. Free some space and run this again."
     say "Free disk: $free MB (needs $need)."
 }
@@ -684,12 +688,16 @@ start_containers() {
     clear_old_builds
 }
 
-# After a good build only, so the card can't fill up over many updates. Old images go, and the build steps used longest
-# ago, down to a set amount. Clearing them all would mean downloading PyTorch and the voice again on every update, and a
-# failed download would then stop an update that only changed the code. Volumes are never touched.
+# After a good build only, so the card can't fill up over many updates. Old images always go. Docker's build steps stay
+# until the card runs low: measured on a Pi, clearing them after every build, even only the unused ones or down to a set
+# size, means each update takes 12 to 21 minutes, downloads PyTorch again and restarts the containers, even with no new
+# code. Volumes are never touched.
 clear_old_builds() {
     docker_ image prune -f > /dev/null 2>&1 || say "Old images couldn't be cleared. It's safe to go on."
-    docker_ builder prune -af --reserved-space "$(setting INSTALL_BUILD_CACHE_KEEP_MB)MB" > /dev/null 2>&1 || say "Old build steps couldn't be cleared. It's safe to go on."
+    if [ "$(free_disk)" -lt "$(setting INSTALL_CLEAR_BUILDS_BELOW_MB)" ]; then
+        say "The card is getting full, so Docker's saved build steps are being cleared. The next update takes longer."
+        docker_ builder prune -af > /dev/null 2>&1 || say "They couldn't be cleared. It's safe to go on."
+    fi
 }
 
 finish() {

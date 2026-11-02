@@ -47,8 +47,8 @@ bash ~/desk-talk/raspberry_pi/install.sh
 ```
 
 It checks the Pi (64-bit, free disk, memory, sound), installs Docker if it's missing, makes `raspberry_pi/.env` from
-`.env.example` with this Pi's own numbers, fetches the model and starts the three containers. It needs about 12 GB free
-the first time: a 32 GB card is plenty, and a 16 GB card only works with Raspberry Pi OS Lite. A Pi still called
+`.env.example` with this Pi's own numbers, fetches the model and starts the three containers. It needs about 14 GB free
+the first time, so use a 32 GB card: a 16 GB one is too small. A Pi still called
 `raspberrypi` is renamed `desktalk`; a Pi you named keeps its name.
 It's safe to run again, and never touches the data folder, the pairing key or the models. It says if the Pi needs a
 restart, and only does that by itself with `--reboot`.
@@ -67,8 +67,8 @@ anywhere you saved it, such as your Mac's `~/.ssh/config`. The links the app sho
 `APP_HOST_PORT`, which it writes to `.env` as `PUBLIC_NAME`.
 
 To get new code later, **on the Pi**: `bash ~/desk-talk/raspberry_pi/update.sh`. It runs `git pull`, fills in the camera's
-device numbers again, since a kernel update can change them, rebuilds, and clears old images and old build steps so the card
-doesn't fill up. It takes `--dry-run` too.
+device numbers again, since a kernel update can change them, rebuilds, and clears old images. Docker's saved build steps are
+cleared only when the card runs low, since a whole new build takes 12 to 21 minutes. It takes `--dry-run` too.
 
 `raspberry_pi/.env` is yours and isn't in git. New settings from `.env.example` get added to it by these two scripts,
 and what's already in it stays. The model's checksum is in `raspberry_pi/model_checksums.txt`: a model that isn't
