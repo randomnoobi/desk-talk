@@ -12,45 +12,73 @@ focus time, following Andrew Huberman's *Protocols*.
 
 ## How it works
 
+Everything runs on the Raspberry Pi, in three Docker containers from one compose file. Nothing else needs to be on
+or installed: no computer, no AI, no account. Phones and computers on your Wi-Fi only open the app's page.
+
 ```
-Raspberry Pi                                     Your computer (uv run python server.py)
-┌───────────────────────────────────┐            ┌──────────────────────────────────────────────┐
-│ camera program                    │ picture +  │ one detection event per picture              │
-│   3 pictures a second, kept       │ what was   │ event stream → event log (data/events/)      │
-│   on the Pi, deleted every 10 min │ found      │   → agents join / leave the chat             │
-│       │ picture   ▲ what's in it  │ ─────────▶ │   → safety alerts, habit reminders           │
-│       ▼           │               │   Wi-Fi    │ YOLO here only when the Pi's detector is off │
-│ detector (YOLO, in Docker)        │            │ app at http://localhost:5000                 │
-└───────────────────────────────────┘            └──────────────────────────────────────────────┘
+Raspberry Pi (docker compose, raspberry_pi/compose.yaml)
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│ camera                  detector                      app                            │
+│  3 pictures a second,   YOLO, finds what is in        one detection event per        │
+│  kept on the Pi,        each picture (no open port:   picture → event log           │
+│  deleted every 10 min   only camera and app reach it) (data/events/) → characters   │
+│       │ picture  ▲ what's in it                       join / leave the chat,         │
+│       ├─────────▶│                                    safety warnings, habit        │
+│       └──────────┼─────── picture + what was found ─▶ reminders, said out loud on    │
+│                  │                                    the speaker; page on :5000    │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+        ▲ the page: http://desktalk.local:5000, from any phone or computer on your Wi-Fi
+        │ optional, text only: chat → an AI on your own computer (Ollama) or on your cloud server
+        │ optional, events only (never pictures or to-do text): your cloud server
 ```
 
-- **The Pi** runs two things. The **camera program** (`raspberry_pi/camera/`) takes the pictures, keeps
-  them on the Pi and deletes them every 10 minutes. The **detector** (`raspberry_pi/detector_service/`)
-  runs YOLO in a Docker container on the Pi and tells the camera program what's in each picture. Each
-  picture then goes to your computer together with what was found, in one upload.
-- **Your computer** (`uv run python server.py`) turns every picture into a detection event. When the Pi's
-  detector is off (not started, still loading its model, crashed), your computer runs YOLO on the
-  picture itself. Events flow through an **event stream** to separate consumers (decoupled, so a slow AI
-  reply never holds up the camera), and are saved in the **event log**. Every 10 minutes the log is
-  compacted: per-picture events become "the cup was on the desk from 2:02 to 2:31" intervals.
-- A phone (the page in `phone_camera/`, over Wi-Fi) or a webcam can still be the camera instead:
-  `camera.source` in `config/settings.yaml`. Then your computer does all the detecting.
+- **`camera`** (`raspberry_pi/camera/`) takes the pictures, keeps them on the Pi, deletes them every 10 minutes,
+  asks the detector what's in each one, and hands each picture with what was found to the app.
+- **`detector`** (`raspberry_pi/detector_service/`) runs YOLO. It has no open port: only the other two containers
+  can reach it. If it is still loading its model, or has crashed, the app gets the pictures with nothing found
+  (the live view still works), Lens says the detector is off, and Docker starts it again. There is no second
+  detector to fall back on.
+- **`app`** (`desktalk/`) turns every picture into a detection event. Events flow through an **event stream** to
+  separate consumers (decoupled, so a slow AI reply never holds up the camera), and are saved in the **event log**.
+  Every 10 minutes the log is compacted: per-picture events become "the cup was on the desk from 2:02 to 2:31"
+  intervals. It also serves the page.
+- **Pictures never leave the Pi**, except to a page someone opens on your own Wi-Fi. No AI gets one, and the cloud
+  server never does. There is no login on the Wi-Fi: anyone who can join your Wi-Fi can open the page.
+- **A phone** (the page in `phone_camera/`) or a **webcam** can be the camera instead, and you can run the app on
+  a computer: that is for working on Desk Talk (see [On a computer](#on-a-computer-for-working-on-it)).
 
 Inside, every part is written against small interfaces (`desktalk/ports.py`). One file,
 `desktalk/bootstrap.py`, builds the real parts and connects them; the tests build the same parts with
 fakes. Background jobs (reminders, Lens, small talk ...) start again by themselves after a crash, and
-the AI, the Pi's detector or the network going away never stops the rest.
+the AI, the detector or the Wi-Fi going away never stops the rest.
 
-> **Not tried on a real Pi yet.** The new camera program and the detector container are tested on the
-> Mac, but they haven't run on a Raspberry Pi so far, and the detector's Docker image hasn't been built
-> yet. Expect the Pi steps to need fixing the first time.
+> **What has and hasn't been tried on a real Pi.** Tried on a real Pi 5: all three containers together with
+> the real camera, pictures flowing to events, one container restarting by itself, the update command, the
+> install command in a dry run, the speak command (with a stand-in for the speaker, so nobody has heard
+> it), and that no picture goes out. **Not tried yet:** the install command from a fresh card, a real USB speaker,
+> a real object on the desk, a power cut, a start with no Wi-Fi, no network at all, a real phone, a real
+> cloud link, and closing the laptop an AI runs on. Those are the steps in [docs/PI_CHECKS.md](docs/PI_CHECKS.md);
+> until they pass, expect the Pi steps to need fixing the first time.
 
 More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-**No account needed.** Desk Talk runs without any account or cloud service. A cloud server is optional: you
-run it yourself, in Docker, and it keeps your habit events (never pictures, never to-do text) and writes a
-weekly report you read on its website. Until you link to one with `scripts/link_cloud.py`, nothing is sent.
-See [cloud/README.md](cloud/README.md).
+**No AI needed.** Warnings, habit reminders, the characters joining and leaving, the event log and the habits all
+work with no AI at all, in their ready-made words. An AI only adds **chat** with the characters and nicer wording.
+No AI runs on the Pi, and AI keys never go on it. To add one, set `llm.ai_url` in `raspberry_pi/settings.pi.yaml`
+on the Pi, then **on the Pi** run `cd ~/desk-talk/raspberry_pi && docker compose restart app`:
+
+- **Ollama on your own computer**: `ai_url: http://<your computer>:11434/v1`, and `llm.ollama_model` for the model
+  (`ollama pull` it first). Text only goes there: your chat messages, and the words the characters say by themselves
+  (reminders, small talk, the recap), which can include the text of your to-dos. Pictures never go: the Pi keeps
+  `llm.send_pictures: false`. If the computer sleeps, warnings still come at once in their ready-made words, and a
+  reminder waits at most `llm.reminder_wait_sec` for it.
+- **Your cloud server**: `ai_url: <its address>/v1`, after linking it. Only chat you start yourself goes there, as
+  text, and the server doesn't store or log it. Reminders, small talk and the recap don't use it.
+
+**An account is not needed either.** A cloud server is optional: you run it yourself, in Docker, and it keeps your
+habit events (never pictures, never to-do text) and writes a weekly report you read on its website. Until you link
+the Pi to one, nothing is sent: the install command does it (`--server`, see the Pi guide), or on a computer
+`scripts/link_cloud.py`. See [cloud/README.md](cloud/README.md).
 
 ---
 
@@ -84,14 +112,15 @@ People, chairs and the desk itself are never counted at all.
 blocked, something cut off, the Pi stopped sending pictures) and says thanks when it's fixed. "Blocked" means
 it can't see the desk: the picture went black, it shows nothing at all (paper or a hand on the lens), or one
 thing held up to the lens fills most of it.
-It also tells you when the Pi runs hot, when its clock is off, and when the Pi's own detector is off
-(your computer then does the detecting), and it gives the desk warnings that nobody in the chat can give.
+It also tells you when the Pi runs hot or is slowing itself down, and when the detector is off (no objects are
+found until it's back), and it gives the desk warnings that nobody in the chat can give.
 It doesn't use the AI.
 
-**Mac notifications**: warnings, habit reminders and the sips the camera sees also pop up as the Mac's own
-notifications, so you see them with the app page closed. They come through the Mac's built-in `osascript`
-(macOS may ask once to allow notifications from "Script Editor"), wait during your quiet hours, and each kind can
-be switched off in the `notifications:` section of `config/settings.yaml`. On other systems nothing pops up.
+**The speaker**: warnings, habit reminders and the sips the camera sees are also said out loud, so you hear them
+with the app page closed. Plug a USB speaker into the Pi (any time: no restart needed). They wait during your quiet
+hours, and each kind can be switched off in the `notifications:` section of `config/settings.yaml`. With no speaker
+plugged in the Pi says so once in its log and carries on. (A Mac running the app for development shows them as its
+own pop-ups instead, through `osascript`.)
 
 ## Character Relationships
 
@@ -253,7 +282,8 @@ One window, three columns:
    how sure the camera was each time, and the picture taken at each step with its box drawn on (for "went
    away", the empty spot with its last box). The pictures are kept in `data/trace_photos/`
    (settings → `object_story`).
-   Until the camera connects it shows the command to run on the Pi.
+   Until the camera connects it says so. (Only an app running on a computer, for development, shows the command to
+   run on the Pi.)
 
 **Event log** page: what happened each day, newest first: sips, breaks, food, finished to-dos, sunlight,
 reminders, warnings and camera problems, with filters for habits, reminders and warnings.
@@ -268,12 +298,13 @@ things on the desk can join the chat, and things near a real edge get a warning.
 | | |
 |---|---|
 | Model | **YOLO26 medium, Objects365** (`yolo26m-objv1-150.pt`): 365 kinds of objects, including earphones, keys, pens, watches, glasses and notepaper. The old `yolo26n.pt` knew 80. |
-| Where it runs | With the Pi as the camera: **on the Pi**, in Docker, as an ncnn model (the fastest kind on the Pi's processor), set in `pi.detector`. Your computer runs the same model (`detector`) for the phone and the webcam, and for any Pi picture whose detector was off. Both turn YOLO's results into boxes with the same shared code, so the names and boxes match. |
-| Speed | 3 pictures a second. On an Apple-chip Mac it runs on the GPU (`device: auto`); too slow there? `yolo26s-objv1-150.pt`. On the Pi the medium model may only manage about one picture a second; the Pi speed test in [`benchmarks/`](benchmarks/README.md) will pick its final model. When the Pi's detector is slower than the camera, the pictures in between are only shown in the live view. |
+| Where it runs | **On the Pi**, in the `detector` container, as an ncnn model (the fastest kind on the Pi's processor), set in `pi.detector`. There is no backup: if the detector is off, no objects are found until it is back. On a computer running the app for development, the phone and the webcam are detected by the app itself (`detector`), with the same model and the same shared code that turns YOLO's results into boxes. |
+| Speed | The camera takes 3 pictures a second. Measured on a Pi 5 (8 GB) with the real camera and the whole stack running: all 3 a second reach the app, and the detector answered about 1.5 a second with the medium model at 640 pixels (it is slower while the Pi is speaking). That is not the final number: the Pi speed test in [`benchmarks/`](benchmarks/README.md) will pick the Pi's final model. When the detector is slower than the camera, the pictures in between are only shown in the live view. On an Apple-chip Mac the app's own detector runs on the GPU (`device: auto`); too slow there? `yolo26s-objv1-150.pt`. |
 | Joining | seen 3 s → joins; gone 45 s → leaves (habit rules use a shorter 1 s / 2.5 s) |
 | Safety | danger zones, desk edges, chain reactions, objects approaching (`desktalk/core/vision/`, tuned in `config/safety_rules.json` and the Settings page) |
 
-**On your Mac**, in the `desk-talk` folder:
+**On your Mac** (this is for the app's own detector there; the Pi's install command fetches its model itself), in the
+`desk-talk` folder:
 
 ```bash
 uv run python scripts/download_models.py --test    # download the model and time it on your computer
@@ -284,56 +315,65 @@ uv run python scripts/download_models.py --list    # every object it can detect
 
 ## Getting started
 
-### On your computer
+### On the Raspberry Pi
 
-Install [uv](https://docs.astral.sh/uv/) once (`brew install uv`, or see its page). Then, **on your Mac**,
-in the `desk-talk` folder:
+This is how people run Desk Talk. The full guide, with what to do when something goes wrong:
+[raspberry_pi/README.md](raspberry_pi/README.md). You need:
+
+- a Raspberry Pi with the camera module, running 64-bit Raspberry Pi OS, on your Wi-Fi. Only a Pi 5 with 8 GB has
+  been tried; the install stops on a Pi with under about 2 GB of memory, and says to lower the detector's memory
+  below about 3.5 GB;
+- **a 32 GB SD card or larger.** The first install needs about 14 GB free (the three images and Docker's saved
+  build steps take about 12.6 GB), so a 16 GB card is too small and the install stops and says so;
+- a USB speaker, if you want to hear warnings and reminders (nothing else needs it).
+
+**On the Pi**, one command:
 
 ```bash
-uv sync --all-packages                   # Python 3.12 and every package, exactly as in uv.lock
-cp .env.example .env                     # add an AI key, or OLLAMA_URL for Ollama
+git clone https://github.com/randomnoobi/desk-talk ~/desk-talk && bash ~/desk-talk/raspberry_pi/install.sh
+```
+
+It checks the Pi, installs Docker if it's missing, makes `raspberry_pi/.env` with this Pi's own numbers, fetches
+the model and starts the three containers, which start again by themselves when the Pi boots. The first time
+takes a while (it builds the images). It is safe to run again. At the end it prints the address to open, usually
+**http://desktalk.local:5000**, on a phone or computer on the same Wi-Fi. To get new code later, **on the Pi**:
+`bash ~/desk-talk/raspberry_pi/update.sh`.
+
+The install command has not been run on a fresh card yet (see the note above); its dry run (`--dry-run`) and the
+update command have been run on a real Pi.
+
+### On a computer (for working on it)
+
+`uv run python server.py` is for development: the tests, the phone camera and the webcam use it. It is no longer how
+people run the app. Install [uv](https://docs.astral.sh/uv/) once (`brew install uv`, or see its page). Then,
+**on your Mac**, in the `desk-talk` folder:
+
+```bash
+uv sync --all-packages                   # Python 3.12 and every package, YOLO included, exactly as in uv.lock
+cp .env.example .env                     # add an AI key, or OLLAMA_URL for Ollama (optional)
 uv run python server.py                  # the first start downloads the YOLO model (about 45 MB) into models/
 ```
 
-Open **http://localhost:5000**. `server.py` prints the command to run on the Pi, with your computer's
-address and the pairing key. A setting with a typo or a bad value stops it at the start, with a message
-that names the file and the setting.
+Plain `uv sync` no longer brings YOLO (PyTorch is big, and the Pi's app image doesn't want it). To run YOLO on a
+computer you need `uv sync --all-packages` (everything) or `uv sync --extra computer-detector` (just the app and
+YOLO); without it `server.py` stops and says so. Or set `detector.enabled: false` to run with no detector of its own.
 
-### On the Raspberry Pi
+Open **http://localhost:5000**. A setting with a typo or a bad value stops it at the start, with a message that
+names the file and the setting. With the Pi as the camera, the page shows the command to run on the Pi; the
+pairing key is on the page only, never in the log or the terminal.
 
-The full guide, with what to do when something goes wrong:
-[raspberry_pi/README.md](raspberry_pi/README.md). It needs 64-bit Raspberry Pi OS and about 3 GB free
-on the SD card. In short:
-
-1. **On the Pi**, the camera program's packages and the code:
-
-   ```bash
-   sudo apt update && sudo apt install -y git python3-picamera2 python3-opencv python3-yaml
-   git clone https://github.com/randomnoobi/desk-talk.git ~/desk-talk
-   ```
-
-2. **On the Pi**, Docker (then log out and back in) and the detector container:
-
-   ```bash
-   curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker $USER
-   ```
-
-   ```bash
-   cd ~/desk-talk/raspberry_pi && docker compose up -d --build
-   ```
-
-3. **On the Pi**, check everything, then start the camera program with the address and key that
-   `server.py` printed:
-
-   ```bash
-   cd ~/desk-talk && python3 -m raspberry_pi.camera --self-test --server http://<your computer>:5000 --key <key>
-   ```
-
-   ```bash
-   python3 -m raspberry_pi.camera --server http://<your computer>:5000 --key <key>
-   ```
-
-Without the detector container the camera program still works: your computer then does all the detecting.
+> **If you ran an older version on a computer.** Older versions wrote the pairing key into `data/logs/` (in the
+> Pi command and the phone link). A key that is only in your own log is a small risk, but clear it if you share the
+> folder or back it up. **On your Mac**, in the `desk-talk` folder, find the lines, delete them, and make a new key
+> (restart `server.py` after; the phone page and any Pi started by hand need the new key):
+>
+> ```bash
+> grep -l -e '--key' -e 'phone?key=' data/logs/* 2>/dev/null
+> sed -i '' -E '/--key|phone\?key=/d' data/logs/desktalk.log*
+> rm certs/pair-key.txt
+> ```
+>
+> (On Linux, `sed -i -E ...` with no `''`.) Anything you copied from the terminal's scrollback is yours to clear.
 
 ### Demo without a server
 
@@ -351,23 +391,24 @@ demo where four characters join the chat.
 | `config/protocols.yaml` | the habit rules from *Protocols* and your day (wake / bed) |
 | `config/prompts.yaml` | every word Desk Talk says or tells the AI: the prompts, Lens's lines, habit nudges and tips, desk alerts, the replies when the AI is down. The code only fills in the blanks (`{on_waking_ml}` ...) |
 | `config/safety_rules.json` | danger zones and desk corners (the Settings page writes this) |
-| `config/settings.local.yaml` | your own overrides (optional, not uploaded) |
+| `config/settings.local.yaml` | your own overrides on a computer (optional, not uploaded). On the Pi the same job is done by `raspberry_pi/settings.pi.yaml`, which the containers mount in its place: the Pi's own settings, such as `llm.ai_url`, go there |
 | `config/benchmark.yaml` | what the YOLO speed test in `benchmarks/` tries |
-| `raspberry_pi/.env` | the Pi's detector container: its port, memory limit, retry waits, Docker's health check and log file sizes (no secrets) |
-| `.env` | AI keys / `OLLAMA_URL` (never uploaded) |
+| `raspberry_pi/.env` | the Pi's three containers: ports, memory limits, Docker's health checks, log file sizes, and the install command's numbers (no secrets). The install command makes it from `raspberry_pi/.env.example`; it isn't in git |
+| `.env` | on a computer only: AI keys / `OLLAMA_URL` (never uploaded). Nothing like it goes on the Pi |
 
 Areas of `config/settings.yaml` that came with the new design:
 
 | Area | What it's for |
 |---|---|
-| `pi` | the camera program on the Pi: pictures a second, cleanup, upload waits, temperature and clock warnings. The Pi asks your computer for this section, so you only change it here. |
+| `pi` | the `camera` container: pictures a second, cleanup, upload waits, temperature warnings. It asks the app for this section, so you only change it in the settings. |
 | `pi.detector` | the Pi's detector container: model, format (`ncnn` or `pt`), picture size, how long to wait per picture, when to stop asking a container that keeps failing |
-| `detector` | YOLO on your computer (phone, webcam, and the backup for the Pi) |
+| `detector` | YOLO inside the app itself, for a computer running it with a phone or webcam. Off on the Pi (`raspberry_pi/settings.pi.yaml`): the `detector` container does the finding |
 | `supervisor` | how background jobs start again after a crash: 1 s, then doubling up to 60 s |
 | `event_stream` | how many events may wait per consumer before old picture events are dropped |
 | `web` | the web server: port, upload size limits, live updates, and the app page's refresh times, waits and list sizes (the page asks for them at `GET /api/ui_settings`) |
 | `drawing` | the boxes and desk drawings on the live view: colors, line widths, writing sizes, how see-through |
-| `notifications` | the Mac's own pop-ups: on or off, which kinds (warnings, reminders, sips), how long one may take to show |
+| `notifications` | the speaker on the Pi (`output: speaker`) or the Mac's own pop-ups: on or off, which kinds (warnings, reminders, sips), how long one may take |
+| `llm` | the optional AI: `ai_url` (an AI on your computer or your cloud server), the waits and limits |
 | `logging` | the log file in `data/logs/` |
 | `storage` | where preferences, habit days and learned personalities are kept (`data/`) |
 
@@ -387,7 +428,8 @@ uv run pytest tests/contracts              # the fakes behave like the real part
 uv run pytest -m slow                      # the real YOLO model, and ncnn against .pt (needs the models in models/)
 uv run playwright install chromium         # once, for the browser tests
 uv run pytest -m e2e                       # the real app page in a browser
-uv run pytest -m docker                    # build and start the Pi's detector image (needs Docker and the internet)
+uv run pytest -m docker                    # build the Pi's three images and start them (needs Docker and the internet)
+DESKTALK_PI=pi uv run pytest -m pi -v -rs  # against the real Pi over ssh (docs/PI_CHECKS.md; every test skips without DESKTALK_PI)
 uv run ruff check .                        # lint
 uv run pyright                             # type check: 0 errors
 uv run vulture                             # dead code check: prints nothing
@@ -405,8 +447,9 @@ it (`npm test` and `npm run build` in `dev_ui/`).
 | `tests/integration/` | the whole app built by `desktalk/bootstrap.py` with a fake detector and a fake AI: pictures through the whole pipeline, the web API, background jobs |
 | `tests/characterization/` | every route of both web servers: status code, headers and JSON shape, saved in `snapshots/`. A route without a case fails the tests |
 | `tests/slow/` | the real model: the ncnn model finds the same objects as the `.pt`, and the detector service with a real model (`-m slow`) |
-| `tests/docker/` | builds the detector's Docker image, starts it and asks it for detections (`-m docker`, opt-in) |
+| `tests/docker/` | builds the Pi's three images and the cloud server's, starts them and asks them questions (`-m docker`, opt-in) |
 | `tests/e2e/` | the real app page in a browser, against the whole app with a fake detector and a fake AI (`-m e2e`, opt-in); `test_full_stack.py` sends pictures from the camera program through the detector container to the page (`-m docker`) |
+| `tests/pi/` | the real Pi over ssh: the three containers, pictures flowing, restarts, the log files, no picture leaving (`-m pi`, opt-in). What only a person can do is in [docs/PI_CHECKS.md](docs/PI_CHECKS.md) |
 | `tests/fakes/` | the fakes: `FakeClock`, `FakeDetector`, `FakeChatModel`, `SyncEventBus` ... |
 
 The benchmark tool has its own tests: see [benchmarks/README.md](benchmarks/README.md).
@@ -415,7 +458,7 @@ The benchmark tool has its own tests: see [benchmarks/README.md](benchmarks/READ
 
 ## Developer page
 
-A second page, for working on Desk Talk rather than using it ([docs/CHECKING.md](docs/CHECKING.md) says how to
+A second page, for working on Desk Talk rather than using it, on a computer running `server.py`. It is switched off on the Pi (`dev.enabled: false` in `raspberry_pi/settings.pi.yaml`) ([docs/CHECKING.md](docs/CHECKING.md) says how to
 check everything with it). It has five tabs:
 
 - **Checks**: one button that runs the fast tests, the lint, the type check, the dead code check and the page's
@@ -425,8 +468,8 @@ check everything with it). It has five tabs:
   for its whole trace: when it joined the chat, left or was turned away (and why: how sure, how long, the
   sensitivity), its state changes, each with the picture taken then and its box (the same story the app
   page shows, kept in `data/trace_photos/`).
-- **System**: how the Pi is doing (pictures a second, temperature, disk, its detector) and every part on
-  this computer (background jobs, timed jobs, the event stream, detection, the AI).
+- **System**: how the Pi is doing (pictures a second, temperature, disk, its detector) and every part of the
+  app (background jobs, timed jobs, the event stream, detection, the AI).
 - **Database**: the tables in the SQLite databases, and a box to run a query that only reads.
 - **Storage**: what this browser keeps for the app page (localStorage), and the files in `data/`.
 
@@ -455,10 +498,10 @@ To work on the page itself, `npm run dev` in `dev_ui/` serves it at http://local
 
 ```
 desk-talk/
-├── server.py                 # start Desk Talk on your computer: uv run python server.py
+├── server.py                 # start the app on a computer, for working on it: uv run python server.py (on the Pi, Docker runs it)
 ├── pyproject.toml, uv.lock   # the uv workspace: desktalk, desktalk-shared, desktalk-detector, desktalk-cloud
 ├── config/                   # every setting: settings.yaml, agents.yaml, protocols.yaml, prompts.yaml (the wording), safety_rules.json
-├── desktalk/                 # the app that runs on your computer
+├── desktalk/                 # the app (the `app` container on the Pi)
 │   ├── bootstrap.py          #   builds every part and connects them (the only place that knows the real classes)
 │   ├── config/               #   reads config/ and .env into typed settings, one file per config file; a bad value stops the start
 │   ├── ports.py              #   the interfaces between the parts
@@ -472,28 +515,29 @@ desk-talk/
 │   │   └── chat/             #     message generator and its voices, message hub, chat context; workers/: idle chat, lost items, Lens, recap
 │   ├── adapters/             #   the real things behind the interfaces
 │   │   ├── camera/           #     the Pi, phone and webcam as picture sources
-│   │   ├── detector/         #     YOLO on this computer (Ultralytics)
-│   │   ├── llm/              #     the AI (Gemini / OpenAI / Groq / Ollama), with time limits, retries and a breaker
+│   │   ├── detector/         #     YOLO inside the app (Ultralytics), for a computer; off on the Pi
+│   │   ├── llm/              #     the optional AI (Gemini / OpenAI / Groq / Ollama, or `llm.ai_url`), with time limits, retries and a breaker; text only on the Pi
 │   │   ├── picture/          #     OpenCV: the picture tools, and the drawing on the live view
 │   │   ├── storage/          #     the event log files and small JSON files (preferences, habit days)
 │   │   └── dev/              #     for the developer page: the test runner, the read-only database and data folder
 │   ├── runtime/              #   Supervisor (starts crashed background jobs again), Scheduler, clock, logging
 │   ├── web/                  #   FastAPI: app.py, routers/ (one file per area), schemas.py, serve.py (uvicorn)
 │   └── util.py               #   small helpers
-├── shared/desktalk_shared/   # used on the Pi and here: Detection, the upload format, the detector's API, backoff, clock, worker thread
-├── raspberry_pi/             # what runs on the Pi (raspberry_pi/README.md)
-│   ├── camera/               #   the camera program, on the Pi's own python3 (no Docker): cli.py, main.py, workers.py ...
-│   └── detector_service/     #   YOLO in Docker: Dockerfile, desktalk_detector/
+├── shared/desktalk_shared/   # used in the Pi's containers and on a computer: Detection, the upload format, the detector's API, backoff, clock, worker thread
+├── raspberry_pi/             # what runs on the Pi (raspberry_pi/README.md): compose.yaml, install.sh, update.sh, settings.pi.yaml, .env.example
+│   ├── app/                  #   the `app` container: Dockerfile and start.sh
+│   ├── camera/               #   the `camera` container: the camera program, cli.py, main.py, workers.py ...
+│   └── detector_service/     #   the `detector` container: YOLO, Dockerfile, desktalk_detector/
 ├── cloud/                    # the optional cloud server, in Docker: its server, website and settings (cloud/README.md)
 ├── benchmarks/               # times YOLO models on your Mac and on the Pi, to pick the Pi's model
 ├── web_app/                  # the app you open at localhost:5000 (HTML / CSS / JS, art, fonts)
-├── phone_camera/             # the page a phone opens to be the camera instead of the Pi
+├── phone_camera/             # the page a phone opens to be the camera instead of the Pi (when the app runs on a computer)
 ├── dev_ui/                   # the developer page at localhost:5000/dev/ (Vite + React + TypeScript; dev_ui/README.md)
 ├── models/                   # YOLO model files (downloaded, not uploaded)
-├── tests/                    # unit, contracts, integration, characterization, slow, docker, e2e; fakes/, e2e_kit/
-├── scripts/                  # download_models.py, camera_preview.py, yolo_webcam_detect.py, capture_app_screenshots.py
-├── docs/                     # ARCHITECTURE.md, AGENT_SYSTEM.md, plans/
-└── data/                     # event log, habit days, preferences, log files (made when it runs, not uploaded)
+├── tests/                    # unit, contracts, integration, characterization, slow, docker, e2e, pi; fakes/, e2e_kit/
+├── scripts/                  # download_models.py, link_cloud.py, camera_preview.py, yolo_webcam_detect.py, capture_app_screenshots.py
+├── docs/                     # ARCHITECTURE.md, API.md, AGENT_SYSTEM.md, PI_CHECKS.md, plans/
+└── data/                     # event log, habit days, preferences, log files (made when it runs, not uploaded; on the Pi it's the app container's data folder)
 ```
 
 ---
@@ -518,8 +562,10 @@ Pushing to **`main`** runs [`.github/workflows/deploy-pages.yml`](.github/workfl
 3. Open the **Actions** tab and confirm the **Deploy site to GitHub Pages** workflow succeeds.
 4. Your site URL will be `https://<username>.github.io/<repo>/` (unless you use a custom domain).
 
-Model files (`*.pt`) are gitignored. `server.py` downloads the one it needs into **`models/`** the first
-time it starts (or `uv run python scripts/download_models.py` does it ahead of time).
+Model files (`*.pt`) are gitignored. On a computer, `server.py` downloads the one it needs into **`models/`** the
+first time it starts (or `uv run python scripts/download_models.py` does it ahead of time). On the Pi, the install
+command fetches the Pi's model once and copies it into the detector's volume; the detector never downloads anything
+itself.
 
 ---
 
