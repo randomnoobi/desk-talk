@@ -73,7 +73,8 @@ def test_writes_from_its_own_page_and_from_programs_work(client):
 
 
 def test_its_own_page_may_use_capital_letters(client):
-    assert client.post(A_WRITE[0], json=A_WRITE[1], headers={'Origin': own_page(client)['Origin'].upper()}).status_code == 204
+    shouted = {'Origin': own_page(client)['Origin'].upper()}
+    assert client.post(A_WRITE[0], json=A_WRITE[1], headers=shouted).status_code == 204
 
 
 def test_a_site_in_the_settings_may_read_and_write(tmp_path):

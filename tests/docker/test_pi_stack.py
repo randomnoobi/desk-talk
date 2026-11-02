@@ -44,6 +44,11 @@ HOUR_THERE = 17
 QUICK_HEALTH = '3s'              # so the test doesn't wait for the Pi's slower health checks
 LOCAL_HOUR = ('from desktalk.runtime import SystemClock; '
               f'print(SystemClock().local_hour({TEST_MOMENT}))')
+ANALYTICS = ('from ultralytics.utils import ONLINE, SETTINGS; from ultralytics.utils.events import events; '
+             "print(ONLINE, SETTINGS['sync'], events.enabled)")
+HANG = ('import os, signal; [os.kill(int(p), signal.SIGSTOP) for p in os.listdir("/proc") if p.isdigit() '
+        'and open(f"/proc/{p}/stat").read().rsplit(")", 1)[1].split()[1] == "1"]')
+BACK_SEC = 120                   # a hung program noticed, ended, started again and healthy
 ASK_THE_DETECTOR = ('import json, urllib.request; print(json.load(urllib.request.urlopen('
                     "'http://detector:' + __import__('os').environ['ASK_PORT'] + '/health'))['state'])")
 
@@ -94,7 +99,9 @@ def stack(request) -> Iterator[Stack]:
     port = free_port()
     env = {**os.environ, 'TZ': TIME_ZONE, 'APP_HOST_PORT': str(port), 'DESKTALK_DATA': str(work / 'data'),
            'PI_TEST_PICTURES': str(pictures), 'APP_HEALTH_INTERVAL': QUICK_HEALTH,
-           'DETECTOR_HEALTH_INTERVAL': QUICK_HEALTH, 'CAMERA_HEALTH_INTERVAL': QUICK_HEALTH}
+           'DETECTOR_HEALTH_INTERVAL': QUICK_HEALTH, 'CAMERA_HEALTH_INTERVAL': QUICK_HEALTH,
+           'APP_HEALTH_GRACE_SEC': '10', 'DETECTOR_HEALTH_GRACE_SEC': '10',
+           'DETECTOR_HEALTH_FAILS_BEFORE_RESTART': '3', 'APP_HEALTH_FAILS_BEFORE_RESTART': '3'}
     stack = Stack(f'http://127.0.0.1:{port}', work / 'data', env)
     try:
         stack.compose('up', '--detach', '--build', '--wait', timeout=BUILD_AND_START_SEC)
@@ -152,7 +159,7 @@ def test_the_app_can_reach_the_detector_by_name(stack):
 
 def test_the_app_saves_in_the_data_folder_as_the_pi_user(stack):
     assert (stack.data / 'logs').is_dir()
-    done = stack.compose('exec', '-T', 'app', 'stat', '-c', '%u', '/proc/1')
+    done = stack.compose('exec', '-T', 'app', 'sh', '-c', 'stat -c %u /proc/$(cut -d" " -f1 /proc/1/task/1/children)')
     assert done.stdout.strip() == env_file(PI / '.env')['PI_USER_ID']
 
 
@@ -183,3 +190,37 @@ def test_no_container_but_the_camera_has_the_devices(stack):
         found = subprocess.run(['docker', 'inspect', '--format', shown, container],
                                capture_output=True, text=True, check=True).stdout
         assert '/dev:/dev' not in found and found.strip().endswith('false')
+
+
+def test_ultralytics_sends_nothing_home(stack):
+    assert stack.compose('exec', '-T', 'detector', 'python', '-c', ANALYTICS).stdout.split()[-3:] == ['False'] * 3
+
+
+def test_the_camera_runs_with_no_rights_and_private_folders_over_the_shared_ones(stack):
+    found = stack.compose('exec', '-T', 'camera', 'sh', '-c', 'grep CapEff /proc/1/status; cat /proc/mounts').stdout
+    assert 'CapEff:\t0000000000000000' in found
+    for folder in ('/dev/shm', '/dev/pts', '/dev/mqueue'):
+        assert f'tmpfs {folder} tmpfs' in found
+
+
+@pytest.mark.parametrize('name', ['detector', 'app'])
+def test_a_hung_program_comes_back_by_itself(stack, name):
+    """Runs last: it restarts containers."""
+    container = stack.compose('ps', '--quiet', name).stdout.strip()
+
+    def state() -> tuple[int, str]:
+        shown = '{{.RestartCount}} {{.State.Health.Status}}'
+        out = subprocess.run(['docker', 'inspect', '--format', shown, container], capture_output=True, text=True,
+                             check=True).stdout.split()
+        return int(out[0]), out[1]
+
+    before, _ = state()
+    time.sleep(12)                # past the grace time, so the failures count
+    stack.compose('exec', '-T', name, 'python', '-c', HANG)
+    give_up = time.monotonic() + BACK_SEC
+    while True:
+        count, health = state()
+        if count > before and health == 'healthy':
+            break
+        assert time.monotonic() < give_up, f'{name}: restarts {count}, {health}'
+        time.sleep(2)

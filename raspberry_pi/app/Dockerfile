@@ -36,6 +36,7 @@ COPY scripts/link_cloud.py scripts/
 RUN uv sync --frozen --package desktalk --no-dev
 
 COPY raspberry_pi/app/start.sh /usr/local/bin/desktalk-start
+COPY raspberry_pi/health_check.py /usr/local/bin/desktalk-health
 RUN chmod 755 /usr/local/bin/desktalk-start
 
 ENV PATH=/opt/venv/bin:$PATH \

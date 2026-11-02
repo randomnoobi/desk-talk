@@ -156,3 +156,40 @@ def test_the_app_image_can_see_no_keys_or_data():
 def test_without_buildkit_the_top_list_keeps_the_same_things_out():
     lines = (ROOT / '.dockerignore').read_text(encoding='utf-8').splitlines()
     assert {'**/.env', 'config/settings.local.yaml', 'data', 'certs', 'models'} <= set(lines)
+
+
+def test_the_camera_gets_as_few_rights_as_it_can_work_with(services):
+    camera = services['camera']
+    assert all(rule.endswith(' rw') for rule in camera['device_cgroup_rules'])
+    assert camera['cap_drop'] == ['ALL'] and camera['security_opt'] == ['no-new-privileges:true']
+    assert {line.split(':')[0] for line in camera['tmpfs']} == {'/dev/shm', '/dev/pts', '/dev/mqueue'}
+
+
+@pytest.mark.parametrize('name', ['app', 'detector'])
+def test_a_hung_program_ends_itself_so_docker_starts_it_again(services, name):
+    service = services[name]
+    assert service['init'] is True          # without it the program is PID 1, which can't be stopped from inside
+    assert service['healthcheck']['test'] == ['CMD', 'python', '/usr/local/bin/desktalk-health']
+    environment = {key: no_fallbacks(value) for key, value in service['environment'].items()}
+    prefix = name.upper()
+    assert environment['HEALTH_ANSWER_WAIT_SEC'] == f'${{{prefix}_HEALTH_ANSWER_WAIT_SEC}}'
+    assert environment['HEALTH_GRACE_SEC'] == f'${{{prefix}_HEALTH_GRACE_SEC}}'
+    assert environment['HEALTH_FAILS_BEFORE_RESTART'] == f'${{{prefix}_HEALTH_FAILS_BEFORE_RESTART}}'
+
+
+@pytest.mark.parametrize('name', ['APP', 'DETECTOR'])
+def test_the_health_check_gives_up_on_an_answer_before_docker_gives_up_on_it(name):
+    values = env_file(PI / '.env')
+    assert float(values[f'{name}_HEALTH_ANSWER_WAIT_SEC']) < int(values[f'{name}_HEALTH_TIMEOUT'].removesuffix('s'))
+
+
+def test_a_detector_changing_a_model_has_minutes_before_it_could_be_ended():
+    values = env_file(PI / '.env')
+    every = int(values['DETECTOR_HEALTH_INTERVAL'].removesuffix('s'))
+    assert every * int(values['DETECTOR_HEALTH_FAILS_BEFORE_RESTART']) >= 5 * 60
+    assert int(values['DETECTOR_HEALTH_GRACE_SEC']) >= 5 * 60
+
+
+def test_ultralytics_sends_nothing_home():
+    text = (PI / 'detector_service' / 'Dockerfile').read_text(encoding='utf-8')
+    assert 'YOLO_OFFLINE=true' in text and 'sync=False' in text

@@ -7,10 +7,17 @@ set -e
 chown "$PI_USER_ID:$PI_GROUP_ID" data /pairing || echo "Could not give data and /pairing to user $PI_USER_ID"
 
 # The desk's danger zones are saved in the data folder here (raspberry_pi/settings.pi.yaml). A new Pi starts from the
-# ones in git.
-if [ ! -e data/safety_rules.json ]; then
-    cp config/safety_rules.json data/safety_rules.json
-    chown "$PI_USER_ID:$PI_GROUP_ID" data/safety_rules.json || true
+# ones in git. All or nothing, and a failure (a full disk) doesn't stop the app: it then uses its built-in ones and
+# this is tried again on the next start.
+rules=data/safety_rules.json
+if [ ! -s "$rules" ]; then
+    rm -f "$rules" || true
+    if cp config/safety_rules.json "$rules.new" && mv "$rules.new" "$rules"; then
+        chown "$PI_USER_ID:$PI_GROUP_ID" "$rules" || true
+    else
+        rm -f "$rules.new" || true
+        echo "Could not copy the danger zones to $rules, so the built-in ones are used for now"
+    fi
 fi
 
 exec setpriv --reuid="$PI_USER_ID" --regid="$PI_GROUP_ID" --clear-groups "$@"

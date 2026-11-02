@@ -13,6 +13,7 @@
 !server.py
 !scripts/link_cloud.py
 !raspberry_pi/app/start.sh
+!raspberry_pi/health_check.py
 !raspberry_pi/detector_service/pyproject.toml
 !cloud/server/pyproject.toml
 config/settings.local.yaml

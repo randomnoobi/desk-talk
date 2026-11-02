@@ -26,8 +26,7 @@ The request and reply shapes are in `shared/desktalk_shared/detector_api.py`.
 
 The first time a model is used with ncnn, the service converts the `.pt` to ncnn. That takes a few
 minutes on the Pi; the result is kept in the `models` volume, so it happens once per model, picture size
-and precision. Ultralytics' own models (`yolo11n.pt`, `yolo26m-objv1-150.pt` ...) are downloaded the first
-time too. Until a model is ready, `/detect` replies 503 and your computer does the detecting.
+and precision. Until a model is ready, `/detect` replies 503 and your computer does the detecting.
 
 YOLO26 models: ncnn can't run their end-to-end head, so Ultralytics runs them with their other head plus the
 usual overlap filter. They find slightly different boxes than the `.pt` run the normal way.
@@ -77,7 +76,7 @@ curl -X POST http://127.0.0.1:8100/detect -H 'Content-Type: image/jpeg' --data-b
 
 ## Your own model file
 
-Models that Ultralytics can't download need copying into the `models` volume.
+It never downloads a model on the Pi (`YOLO_OFFLINE=true` in the Dockerfile, which also stops Ultralytics sending usage data), so every model needs copying into the `models` volume.
 
 1. **On your Mac**, in the `desk-talk` folder (use your Pi's address):
 
@@ -107,8 +106,11 @@ The container's settings are in `raspberry_pi/.env`, next to `raspberry_pi/compo
 | `DETECTOR_HEALTH_TIMEOUT` | 5s | ... how long one answer may take ... |
 | `DETECTOR_HEALTH_START_PERIOD` | 60s | ... how long after a start failed answers don't count yet (loading PyTorch is slow) ... |
 | `DETECTOR_HEALTH_RETRIES` | 3 | ... and how many failed answers in a row make it `unhealthy` |
-| `DETECTOR_LOG_FILE_SIZE` | 10m | start a new log file at this size (m = MB, 1024 × 1024 bytes) ... |
-| `DETECTOR_LOG_FILES` | 3 | ... and keep this many, so logs can't fill the SD card |
+| `DETECTOR_HEALTH_FAILS_BEFORE_RESTART` | 10 | Docker leaves an unhealthy container hung, so after this many failed answers in a row the check starts it again (`raspberry_pi/health_check.py`) ... |
+| `DETECTOR_HEALTH_GRACE_SEC` | 300 | ... not counting this long after a start ... |
+| `DETECTOR_HEALTH_ANSWER_WAIT_SEC` | 4 | ... and giving one answer this long, less than `DETECTOR_HEALTH_TIMEOUT` |
+| `LOG_FILE_SIZE` | 10m | start a new log file at this size (m = MB, 1024 × 1024 bytes) ... |
+| `LOG_FILES` | 3 | ... and keep this many, so logs can't fill the SD card |
 
 Which model it runs comes from the camera program (`PUT /model`), not from here.
 
@@ -122,7 +124,7 @@ Which model it runs comes from the camera program (`PUT /model`), not from here.
 | `docker compose ps` | is it running and healthy? |
 | `git pull && docker compose up -d --build` | update it |
 | `docker compose down` | stop it (the models stay in the volume) |
-| `docker compose down --volumes` | stop it and delete the models volume (the next start downloads and converts again) |
+| `docker compose down --volumes` | stop it and delete the models volume (you need to copy the models in again) |
 
 ## On your Mac (for working on it)
 

@@ -20,7 +20,10 @@ services:
     environment:
       TZ: ${TZ:-America/Los_Angeles}
       HOME: /tmp
-      APP_PORT: ${APP_PORT:-5000}                             # only for the health check below; the app reads web.port
+      HEALTH_URL: http://127.0.0.1:${APP_PORT:-5000}/api/status    # for the health check; the app reads web.port
+      HEALTH_ANSWER_WAIT_SEC: ${APP_HEALTH_ANSWER_WAIT_SEC:-4}
+      HEALTH_GRACE_SEC: ${APP_HEALTH_GRACE_SEC:-60}
+      HEALTH_FAILS_BEFORE_RESTART: ${APP_HEALTH_FAILS_BEFORE_RESTART:-5}
       PI_USER_ID: ${PI_USER_ID:-1000}                         # start.sh hands over to this user
       PI_GROUP_ID: ${PI_GROUP_ID:-1000}
     ports:
@@ -31,9 +34,9 @@ services:
       - pairing:/pairing                                # the app writes the pairing key, the camera reads it
     mem_limit: ${APP_MEMORY_LIMIT:-1g}                      # over this, Docker stops it and starts it again ...
     memswap_limit: ${APP_MEMORY_LIMIT:-1g}                  # ... instead of it swapping and slowing the whole Pi down
+    init: true                                          # so a hung program can be ended (raspberry_pi/health_check.py)
     healthcheck:                                        # "healthy" = it answers, so the pairing key has been written
-      test: ["CMD", "python", "-c",
-             "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ['APP_PORT'] + '/api/status')"]
+      test: ["CMD", "python", "/usr/local/bin/desktalk-health"]
       interval: ${APP_HEALTH_INTERVAL:-30s}
       timeout: ${APP_HEALTH_TIMEOUT:-5s}
       start_period: ${APP_HEALTH_START_PERIOD:-60s}
@@ -57,14 +60,18 @@ services:
       DETECTOR_MAX_PICTURE_MB: ${DETECTOR_MAX_PICTURE_MB:-10}
       DETECTOR_RETRY_FIRST_SEC: ${DETECTOR_RETRY_FIRST_SEC:-5}
       DETECTOR_RETRY_MAX_SEC: ${DETECTOR_RETRY_MAX_SEC:-300}
+      HEALTH_URL: http://127.0.0.1:${DETECTOR_PORT:-8100}/health
+      HEALTH_ANSWER_WAIT_SEC: ${DETECTOR_HEALTH_ANSWER_WAIT_SEC:-4}
+      HEALTH_GRACE_SEC: ${DETECTOR_HEALTH_GRACE_SEC:-300}
+      HEALTH_FAILS_BEFORE_RESTART: ${DETECTOR_HEALTH_FAILS_BEFORE_RESTART:-10}
     # No ports: only the other two containers can reach it, at http://detector:<DETECTOR_PORT>.
     volumes:
       - models:/models                                  # DETECTOR_MODELS_DIR in the Dockerfile
     mem_limit: ${DETECTOR_MEMORY_LIMIT:-2g}
     memswap_limit: ${DETECTOR_MEMORY_LIMIT:-2g}
+    init: true
     healthcheck:                                        # "healthy" = it answers /health, with or without a model
-      test: ["CMD", "python", "-c",
-             "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ['DETECTOR_PORT'] + '/health')"]
+      test: ["CMD", "python", "/usr/local/bin/desktalk-health"]
       interval: ${DETECTOR_HEALTH_INTERVAL:-30s}
       timeout: ${DETECTOR_HEALTH_TIMEOUT:-5s}
       start_period: ${DETECTOR_HEALTH_START_PERIOD:-60s}
@@ -105,9 +112,17 @@ services:
       - pairing:/pairing:ro
       - photos:/photos
     device_cgroup_rules:
-      - c ${CAMERA_VIDEO_MAJOR:-81}:* rmw
-      - c ${CAMERA_MEDIA_MAJOR:-510}:* rmw
-      - c ${CAMERA_DMA_HEAP_MAJOR:-252}:* rmw
+      - c ${CAMERA_VIDEO_MAJOR:-81}:* rw                # read and write the devices, but not make new ones
+      - c ${CAMERA_MEDIA_MAJOR:-510}:* rw
+      - c ${CAMERA_DMA_HEAP_MAJOR:-252}:* rw
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:                                              # /dev:/dev would share these with the Pi; it needs none of them
+      - /dev/shm:mode=1777
+      - /dev/pts
+      - /dev/mqueue
     mem_limit: ${CAMERA_MEMORY_LIMIT:-512m}
     memswap_limit: ${CAMERA_MEMORY_LIMIT:-512m}
     healthcheck:                                        # "healthy" = it saved a picture in the last few minutes

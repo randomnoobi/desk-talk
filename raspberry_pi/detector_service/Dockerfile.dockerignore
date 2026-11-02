@@ -6,5 +6,6 @@
 !.python-version
 !shared
 !raspberry_pi/detector_service
+!raspberry_pi/health_check.py
 **/__pycache__
 **/*.pyc
