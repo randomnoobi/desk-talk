@@ -1,0 +1,19 @@
+# The app's and the camera's settings on the Pi, laid over config/settings.yaml. compose.yaml mounts this file
+# read-only as config/settings.local.yaml in both containers. Nothing here turns on an AI: the Pi works with none.
+
+detector:
+  enabled: false                 # the detector container does the finding, so the app needs no PyTorch or YOLO
+
+dev:
+  enabled: false                 # no developer page on the Pi
+
+camera:
+  pair_key_file: /pairing/pair-key.txt   # on the volume the camera reads it from (compose.yaml)
+
+storage:
+  rules_folder: data             # the app can't write to config/ in its image, and a rebuild would lose it
+
+pi:
+  photo_dir: /photos             # the camera's own volume (compose.yaml), so pictures don't sit inside the container
+  detector:
+    url: http://detector:8100    # the detector container's name. The port is DETECTOR_PORT in .env

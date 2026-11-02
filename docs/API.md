@@ -12,7 +12,7 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 |---|---|---|---|
 | **Main server** | Your computer (`uv run python server.py`) | `web.port` in `config/settings.yaml`, 5000 | The app page (`web_app/`) and everything it asks for, the Pi's uploads, and the developer page (`dev_ui/`, at `/dev/`). |
 | **Phone camera server** | Your computer, in a thread of the main one. Only runs when the phone is the camera. | `camera.phone_port`, 5443, **https** | The phone camera page (`phone_camera/`). Phones only allow the camera on https pages, so it has its own certificate. |
-| **Detector service** | The Pi, in Docker | `DETECTOR_PORT` in `raspberry_pi/detector_service/.env`, 8100; only reachable from the Pi itself | YOLO object detection for the Pi's camera program. |
+| **Detector service** | The Pi, in Docker | `DETECTOR_PORT` in `raspberry_pi/.env`, 8100; only reachable from the other two containers | YOLO object detection for the Pi's camera program. |
 | **Cloud server** (optional) | Wherever you run it, in Docker (`cloud/`) | `WEB_PORT` in `cloud/.env`, 8080, through nginx | Keeps what a linked computer or Pi may send, shows it on its website, and writes a weekly report. |
 
 ### Finding a route in the code

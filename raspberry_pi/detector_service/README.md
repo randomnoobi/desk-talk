@@ -5,7 +5,7 @@ the ncnn model format (the fastest choice on the Pi's CPU) inside a Docker conta
 rest can't clash with the Pi's own packages.
 
 ```
-camera program (on the Pi) ── POST /detect, picture ──▶ detector service (Docker, 127.0.0.1 only)
+camera program (on the Pi) ── POST /detect, picture ──▶ detector service (Docker, no open port)
                            ◀──────── detections ───────
 ```
 
@@ -53,7 +53,7 @@ Needs 64-bit Raspberry Pi OS and about 3 GB free on the SD card. A Pi with 4 GB 
 3. **On the Pi**, build and start the service. The first build downloads PyTorch and Ultralytics, so it takes a while:
 
    ```bash
-   cd ~/desk-talk/raspberry_pi/detector_service && docker compose up -d --build
+   cd ~/desk-talk/raspberry_pi && docker compose up -d --build
    ```
 
 4. **On the Pi**, check it answers. It says `starting` until the camera program tells it which model to run:
@@ -88,17 +88,17 @@ Models that Ultralytics can't download need copying into the `models` volume.
 2. **On the Pi**:
 
    ```bash
-   cd ~/desk-talk/raspberry_pi/detector_service && docker compose cp ~/my-model.pt detector:/models/
+   cd ~/desk-talk/raspberry_pi && docker compose cp ~/my-model.pt detector:/models/
    ```
 
 ## Settings
 
-The container's settings are in `.env` next to `compose.yaml`. After changing one, run
+The container's settings are in `raspberry_pi/.env`, next to `raspberry_pi/compose.yaml`. After changing one, run
 `docker compose up -d` again **on the Pi**.
 
 | Setting | Default | What it does |
 |---|---|---|
-| `DETECTOR_PORT` | 8100 | the port, on the Pi's 127.0.0.1 only. Must match `pi.detector.url` in `config/settings.yaml` (the camera program gets it from there). |
+| `DETECTOR_PORT` | 8100 | the port, open only to the other two containers. Must match `pi.detector.url` in `raspberry_pi/settings.pi.yaml`. |
 | `DETECTOR_MEMORY_LIMIT` | 2g | most memory the container may use; over it Docker restarts it instead of the Pi freezing |
 | `DETECTOR_MAX_PICTURE_MB` | 10 | biggest picture `/detect` accepts (1 MB = 1024 × 1024 bytes) |
 | `DETECTOR_RETRY_FIRST_SEC` | 5 | wait before trying a model that failed to load again; doubles each time ... |
@@ -118,7 +118,7 @@ Which model it runs comes from the camera program (`PUT /model`), not from here.
 
 | | |
 |---|---|
-| `docker compose logs -f` | see what it's doing |
+| `docker compose logs -f detector` | see what it's doing |
 | `docker compose ps` | is it running and healthy? |
 | `git pull && docker compose up -d --build` | update it |
 | `docker compose down` | stop it (the models stay in the volume) |
@@ -138,7 +138,7 @@ Run the service without Docker (models in `models/`):
 
 ```bash
 DETECTOR_HOST=127.0.0.1 DETECTOR_MODELS_DIR=models \
-    uv run --env-file raspberry_pi/detector_service/.env python -m desktalk_detector
+    uv run --env-file raspberry_pi/.env python -m desktalk_detector
 ```
 
 Apple Silicon Macs are 64-bit ARM like the Pi, so `docker compose up -d --build` builds the same image there.

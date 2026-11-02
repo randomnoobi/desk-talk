@@ -1,0 +1,21 @@
+# What the app image's build may see. The build starts at the repo's top folder, so everything
+# else (.venv, models, data, certs, the .env with your API keys ...) is left out here.
+*
+!pyproject.toml
+!uv.lock
+!.python-version
+!README.md
+!shared
+!desktalk
+!config
+!web_app
+!phone_camera
+!server.py
+!scripts/link_cloud.py
+!raspberry_pi/app/start.sh
+!raspberry_pi/detector_service/pyproject.toml
+!cloud/server/pyproject.toml
+config/settings.local.yaml
+**/.env
+**/__pycache__
+**/*.pyc

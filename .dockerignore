@@ -1,7 +1,8 @@
-# What docker builds never need from the repo's top folder (the cloud server's image builds from it; the detector's has
-# its own list, raspberry_pi/detector_service/Dockerfile.dockerignore).
+# What docker builds never need from the repo's top folder. The cloud server's image builds from it, and so does any
+# image when Docker has no BuildKit, which ignores the images' own lists (raspberry_pi/*/Dockerfile.dockerignore).
 # It keeps the build quick, and your keys and data out of what's sent to Docker.
 **/.env
+config/settings.local.yaml
 data
 models
 certs
@@ -15,8 +16,6 @@ benchmarks
 docs
 tests
 dev_ui
-web_app
-phone_camera
 **/node_modules
 **/dist
 **/__pycache__

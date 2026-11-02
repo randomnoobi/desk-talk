@@ -186,7 +186,7 @@ The test used the Piper 2023.11.14-2 program in a throwaway container with `/dev
 
 ### Docker on this Pi
 
-9. **`mem_limit` does nothing right now.** The Pi starts with `cgroup_disable=memory` (`/proc/cmdline`). Compose says so when it starts the detector: `Your kernel does not support memory limit capabilities ... Limitation discarded`. So nothing stops a container using all the memory, and `docker stats` shows no memory. The fix needs sudo and a reboot, so I didn't run it and it is **untested**. **On the Pi**:
+9. **Fixed on 2026-11-01:** the user turned memory limits on and rebooted, and a test container over its limit now gets stopped (exit 137). What follows is how it was. **`mem_limit` did nothing.** The Pi started with `cgroup_disable=memory` (`/proc/cmdline`). Compose says so when it starts the detector: `Your kernel does not support memory limit capabilities ... Limitation discarded`. So nothing stops a container using all the memory, and `docker stats` shows no memory. The fix needs sudo and a reboot, so I didn't run it and it is **untested**. **On the Pi**:
 
    ```bash
    sudo sed -i '$ s/$/ cgroup_enable=memory cgroup_memory=1/' /boot/firmware/cmdline.txt && sudo reboot

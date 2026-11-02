@@ -319,7 +319,7 @@ on the SD card. In short:
    ```
 
    ```bash
-   cd ~/desk-talk/raspberry_pi/detector_service && docker compose up -d --build
+   cd ~/desk-talk/raspberry_pi && docker compose up -d --build
    ```
 
 3. **On the Pi**, check everything, then start the camera program with the address and key that
@@ -353,7 +353,7 @@ demo where four characters join the chat.
 | `config/safety_rules.json` | danger zones and desk corners (the Settings page writes this) |
 | `config/settings.local.yaml` | your own overrides (optional, not uploaded) |
 | `config/benchmark.yaml` | what the YOLO speed test in `benchmarks/` tries |
-| `raspberry_pi/detector_service/.env` | the Pi's detector container: its port, memory limit, retry waits, Docker's health check and log file sizes (no secrets) |
+| `raspberry_pi/.env` | the Pi's detector container: its port, memory limit, retry waits, Docker's health check and log file sizes (no secrets) |
 | `.env` | AI keys / `OLLAMA_URL` (never uploaded) |
 
 Areas of `config/settings.yaml` that came with the new design:
@@ -483,7 +483,7 @@ desk-talk/
 ├── shared/desktalk_shared/   # used on the Pi and here: Detection, the upload format, the detector's API, backoff, clock, worker thread
 ├── raspberry_pi/             # what runs on the Pi (raspberry_pi/README.md)
 │   ├── camera/               #   the camera program, on the Pi's own python3 (no Docker): cli.py, main.py, workers.py ...
-│   └── detector_service/     #   YOLO in Docker: Dockerfile, compose.yaml, .env, desktalk_detector/
+│   └── detector_service/     #   YOLO in Docker: Dockerfile, desktalk_detector/
 ├── cloud/                    # the optional cloud server, in Docker: its server, website and settings (cloud/README.md)
 ├── benchmarks/               # times YOLO models on your Mac and on the Pi, to pick the Pi's model
 ├── web_app/                  # the app you open at localhost:5000 (HTML / CSS / JS, art, fonts)

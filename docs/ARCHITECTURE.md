@@ -157,7 +157,7 @@ reply only holds up the message generator's own queue, never the camera or the o
 | `desktalk/web/routers/dev.py` | The developer page's routes, `/api/dev/...` (the list is in [API.md](API.md#developer-page-this-computer-only-15)). Every one only answers this computer, and only its own page (`DevOnly` in `deps.py`: the `FromHere` check plus a `Host` and an `Origin` check). It's only added to the main server when `dev.enabled` is on, never to the phone's. `app.py` serves the built page (`dev.ui_folder`) at `/dev/`, or a line saying how to build it. |
 | `shared/desktalk_shared/` | Used on the Pi and on this computer, standard library only: `detection.py` (`Detection`, `BBox`), `wire.py` (the upload format), `detector_api.py` (the detector service's requests and replies), `ultralytics_results.py` (YOLO results → `Detection`s, the same on both sides), `backoff.py` (`Backoff`: the wait after each failure in a row, doubling up to a most), `clock.py` (`SystemClock`, the one real clock), `workers.py` (`WorkerThread`: a job in a thread of its own that starts again after a crash). |
 | `raspberry_pi/camera/` | The camera program: `cli.py` (the command line and loading the settings), `main.py` (the loop: take, save, ask, send), `workers.py` (the threads, and `build_program`, which connects the parts), `cameras.py`, `photo_store.py`, `cleaner.py`, `detector_client.py`, `uploader.py`, `health.py`, `watchdog.py`, `self_test.py`, `settings.py`. [README](../raspberry_pi/camera/README.md). |
-| `raspberry_pi/detector_service/` | The detector service: `Dockerfile`, `compose.yaml`, `.env`, and `desktalk_detector/` (FastAPI: `POST /detect`, `GET /health`, `PUT /model`; converts `.pt` models to ncnn and keeps the last good one). [README](../raspberry_pi/detector_service/README.md). |
+| `raspberry_pi/detector_service/` | The detector service: `Dockerfile` and `desktalk_detector/` (FastAPI: `POST /detect`, `GET /health`, `PUT /model`; converts `.pt` models to ncnn and keeps the last good one). [README](../raspberry_pi/detector_service/README.md). |
 | `desktalk/core/cloud/`, `desktalk/adapters/cloud/`, `scripts/link_cloud.py` | The sender to the optional cloud server (see [The cloud server](#the-cloud-server)). `CloudUploader` is a background job; the adapter is the line to the server; the script links this computer once. |
 | `cloud/` | The optional cloud server, a program of its own in Docker: `server/desktalk_cloud/` (FastAPI, Postgres, the weekly report), `web/` (its website, behind nginx), `compose.yaml`, `settings.yaml`, `prompts.yaml`. [README](../cloud/README.md). |
 | `benchmarks/` | `deskbench`: times YOLO models on the Mac and on the Pi (in its own Docker image), to pick the Pi's model. [README](../benchmarks/README.md). |
@@ -427,7 +427,7 @@ by Docker (`restart: unless-stopped`).
 | **Bad input on `/api/pi/frame`** | Wrong pairing key: 403. Too big (`web.pi_upload_max_mb`): 413. The `info` part is checked by `desktalk_shared.wire`: 400 with what's wrong. Not a JPEG: 400. Boxes outside the picture are dropped. |
 
 Every number in this table is in `config/settings.yaml` (or, for the container, in
-`raspberry_pi/detector_service/.env`). Logs go to the terminal and to a rotating file (`data/logs/` on this
+`raspberry_pi/.env`). Logs go to the terminal and to a rotating file (`data/logs/` on this
 computer; `journalctl -u desk-talk-camera` and `docker compose logs` on the Pi).
 
 ## The cloud server
@@ -494,7 +494,7 @@ repo on the Pi, then what your computer sends (`/api/pi/config`, asked again eve
 `pi.settings_check_every_sec`), then its command-line flags. New `pi.detector` settings go to the
 container right away (`PUT /model`); anything else needs the camera program restarted. The container's own
 settings (port, memory limit, retry waits, Docker's health check, log file sizes) are in
-`raspberry_pi/detector_service/.env`.
+`raspberry_pi/.env`.
 
 ## Tests
 

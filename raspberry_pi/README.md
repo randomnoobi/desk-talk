@@ -104,13 +104,13 @@ docker compose version
 **On the Pi**. The first build downloads PyTorch and Ultralytics, so it takes a while:
 
 ```bash
-cd ~/desk-talk/raspberry_pi/detector_service && docker compose up -d --build
+cd ~/desk-talk/raspberry_pi && docker compose up -d --build
 ```
 
 Check that it answers, **on the Pi**. After a minute or so `docker compose ps` should say `healthy`:
 
 ```bash
-cd ~/desk-talk/raspberry_pi/detector_service && docker compose ps
+cd ~/desk-talk/raspberry_pi && docker compose ps
 ```
 
 ```bash
@@ -210,7 +210,7 @@ the `--camera` flag beats it), and `pi.error_text_chars` is how much of a reply 
 log (200 letters).
 
 The container's own settings (its port, memory limit, retry waits, how often Docker checks its `/health`,
-and how big its log files get) are in `raspberry_pi/detector_service/.env`; the detector's
+and how big its log files get) are in `raspberry_pi/.env`; the detector's
 [README](detector_service/README.md) lists them all. After changing one, run `docker compose up -d` again **on the Pi**, in
 `~/desk-talk/raspberry_pi/detector_service`. The port must match `pi.detector.url` on your computer.
 
@@ -233,17 +233,17 @@ container now and then by itself and goes back to it once it's ready.
 **On the Pi**, see whether it's running, and what it said last:
 
 ```bash
-cd ~/desk-talk/raspberry_pi/detector_service && docker compose ps
+cd ~/desk-talk/raspberry_pi && docker compose ps
 ```
 
 ```bash
-cd ~/desk-talk/raspberry_pi/detector_service && docker compose logs --tail 50
+cd ~/desk-talk/raspberry_pi && docker compose logs --tail 50
 ```
 
 **On the Pi**, start it again:
 
 ```bash
-cd ~/desk-talk/raspberry_pi/detector_service && docker compose up -d
+cd ~/desk-talk/raspberry_pi && docker compose up -d
 ```
 
 - **`/health` says `error`**: the message says why. Often the model name is wrong, or it's your own model
@@ -342,7 +342,7 @@ you get a message saying which side to update.
    `uv.lock` changed:
 
    ```bash
-   cd ~/desk-talk/raspberry_pi/detector_service && docker compose up -d --build
+   cd ~/desk-talk/raspberry_pi && docker compose up -d --build
    ```
 
 5. **On the Pi**, check everything (stop the service first, or the camera may be busy):

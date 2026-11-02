@@ -22,7 +22,7 @@ How it got this way (history): the refactor, [docs/plans/2026-10-21-refactor-pla
 - Show the test, ruff, pyright and vulture output. Don't just say they passed.
 
 ## Config, not code
-- IMPORTANT: Never hardcode a number, timing, threshold, path or model name. Add it to `config/settings.yaml`, with a plain-language comment, and a typed field in `desktalk/config/app.py`; parts get their typed section passed in (`config.camera.fps`, etc.). The Pi's numbers go in the `pi:` section (the camera program reads it from the `app` container); the detector container's in `raspberry_pi/detector_service/.env`.
+- IMPORTANT: Never hardcode a number, timing, threshold, path or model name. Add it to `config/settings.yaml`, with a plain-language comment, and a typed field in `desktalk/config/app.py`; parts get their typed section passed in (`config.camera.fps`, etc.). The Pi's numbers go in the `pi:` section (the camera program reads it from the `app` container); the containers' own numbers (ports, memory limits, health checks) in `raspberry_pi/.env` (and `.env.example`).
 - User-facing wording goes in `config/prompts.yaml` (code only fills in the blanks). A new blank also goes in `BLANKS` in `desktalk/config/prompts.py`.
 - The web pages keep no copies of settings: `web_app/` reads `GET /api/ui_settings`, `phone_camera/` reads `GET /api/phone/config`.
 - Habit rules go in `config/protocols.yaml`, characters in `config/agents.yaml`, and API keys in `.env` (also add new keys to `.env.example`). Never put keys in YAML.

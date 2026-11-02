@@ -1,6 +1,6 @@
 # The detector service, for the Raspberry Pi (64-bit Raspberry Pi OS): FastAPI + Ultralytics, running ncnn models.
-# Built from the repo's top folder, so uv sees the whole workspace and uv.lock; compose.yaml does that:
-#   cd raspberry_pi/detector_service && docker compose up -d --build
+# Built from the repo's top folder, so uv sees the whole workspace and uv.lock; raspberry_pi/compose.yaml does that:
+#   cd raspberry_pi && docker compose up -d --build
 # Same package versions as on the computer: uv installs them from uv.lock.
 FROM python:3.12.14-slim-bookworm
 
@@ -36,8 +36,8 @@ USER detector
 WORKDIR /home/detector
 
 # YOLO_AUTOINSTALL=false: a missing package fails with a clear message instead of being pip-installed while it runs.
-# DETECTOR_HOST=0.0.0.0 is inside the container only: compose.yaml opens the port on the Pi's 127.0.0.1 alone.
-# The other settings (port, picture size limit, waits) come from .env, through compose.yaml.
+# DETECTOR_HOST=0.0.0.0 is inside the container only: compose.yaml opens no port on the Pi.
+# The other settings (port, picture size limit, waits) come from raspberry_pi/.env, through compose.yaml.
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     YOLO_AUTOINSTALL=false \

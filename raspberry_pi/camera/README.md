@@ -87,9 +87,8 @@ Give it the computer's address and the pairing key like this, instead of `--serv
 - `DESKTALK_PAIR_KEY_FILE`: the path, inside the container, of a file with the pairing key in it (or use
   `--key-file <path>`). This keeps the key out of `docker ps`.
 
-A flag always beats the environment, and `--key` beats the key file. The compose file that sets all this up
-comes with the Pi standalone plan's compose task; until then, the commands in
-[the first-run notes](../../docs/plans/2026-10-30-pi-first-run-notes.md) show how to run the image by hand.
+A flag always beats the environment, and `--key` beats the key file. [`raspberry_pi/compose.yaml`](../compose.yaml)
+sets all this up, with the camera's devices.
 
 ## If something's wrong
 
@@ -101,7 +100,7 @@ The log (in the terminal, or `docker logs -f <the camera container>` **on the Pi
 - **"Pairing key does not match"**: copy the key `server.py` printed again.
 - **"camera.source: phone"**: set `camera: source: pi` in `config/settings.yaml` on your computer and restart it.
 - **"Stopped asking the detector"**: the container isn't answering. **On the Pi**:
-  `cd ~/desk-talk/raspberry_pi/detector_service && docker compose ps` and `docker compose logs`.
+  `cd ~/desk-talk/raspberry_pi && docker compose ps` and `docker compose logs`.
   The camera program checks again by itself and goes back to using it once it's ready.
 - **"The detector has no model yet"**: the first time a model is used, the container converts it, which takes
   a few minutes. Your computer detects the pictures until then.

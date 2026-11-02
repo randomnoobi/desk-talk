@@ -77,7 +77,7 @@ cd ~/desk-talk && git pull
 ```
 
 ```bash
-cd ~/desk-talk/raspberry_pi/detector_service && docker compose config >/dev/null && docker compose up -d --build && docker compose ps
+cd ~/desk-talk/raspberry_pi && docker compose config >/dev/null && docker compose up -d --build && docker compose ps
 ```
 
 `docker compose ps` should say `healthy` after a minute or so.

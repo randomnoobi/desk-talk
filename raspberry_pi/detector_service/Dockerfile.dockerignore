@@ -8,4 +8,3 @@
 !raspberry_pi/detector_service
 **/__pycache__
 **/*.pyc
-raspberry_pi/detector_service/.env

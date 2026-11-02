@@ -1,0 +1,129 @@
+# Everything on the Pi: the camera, the detector and the app, in Docker. Nothing else needs to run.
+# The numbers you may want to change (ports, memory limits, health checks, log sizes ...) are in .env next to this
+# file; docker compose reads it from there by itself. The value after :- below is used when .env doesn't have that
+# name (an .env edited by hand before the name was added); it is the same as in .env.
+#
+# On the Pi, in desk-talk/raspberry_pi:
+#   docker compose up -d --build      build (the first time takes a while) and start; they start again on boot
+#   docker compose ps                 is each one running and healthy?
+#   docker compose logs -f app        see what one of them is doing
+#   docker compose down               stop them (the data folder and the volumes stay)
+name: desktalk
+
+services:
+  app:
+    build:
+      context: ..                                       # the repo's top folder: the uv workspace and uv.lock
+      dockerfile: raspberry_pi/app/Dockerfile
+    image: desktalk-app:local
+    restart: unless-stopped                             # starts again after a crash, and when the Pi boots
+    environment:
+      TZ: ${TZ:-America/Los_Angeles}
+      HOME: /tmp
+      APP_PORT: ${APP_PORT:-5000}                             # only for the health check below; the app reads web.port
+      PI_USER_ID: ${PI_USER_ID:-1000}                         # start.sh hands over to this user
+      PI_GROUP_ID: ${PI_GROUP_ID:-1000}
+    ports:
+      - "${APP_HOST_PORT:-5000}:${APP_PORT:-5000}"                  # the one door: phones and computers on your Wi-Fi come in here
+    volumes:
+      - ./settings.pi.yaml:/desk-talk/config/settings.local.yaml:ro
+      - ${DESKTALK_DATA:-../data}:/desk-talk/data                # a plain folder, so it can be backed up or copied with scp
+      - pairing:/pairing                                # the app writes the pairing key, the camera reads it
+    mem_limit: ${APP_MEMORY_LIMIT:-1g}                      # over this, Docker stops it and starts it again ...
+    memswap_limit: ${APP_MEMORY_LIMIT:-1g}                  # ... instead of it swapping and slowing the whole Pi down
+    healthcheck:                                        # "healthy" = it answers, so the pairing key has been written
+      test: ["CMD", "python", "-c",
+             "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ['APP_PORT'] + '/api/status')"]
+      interval: ${APP_HEALTH_INTERVAL:-30s}
+      timeout: ${APP_HEALTH_TIMEOUT:-5s}
+      start_period: ${APP_HEALTH_START_PERIOD:-60s}
+      start_interval: ${APP_HEALTH_START_INTERVAL:-2s}
+      retries: ${APP_HEALTH_RETRIES:-3}
+    logging:                                            # a few small log files, so logs can't fill the SD card
+      driver: json-file
+      options:
+        max-size: ${LOG_FILE_SIZE:-10m}
+        max-file: ${LOG_FILES:-3}
+
+  detector:
+    build:
+      context: ..
+      dockerfile: raspberry_pi/detector_service/Dockerfile
+    image: desktalk-detector:local
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-America/Los_Angeles}
+      DETECTOR_PORT: ${DETECTOR_PORT:-8100}
+      DETECTOR_MAX_PICTURE_MB: ${DETECTOR_MAX_PICTURE_MB:-10}
+      DETECTOR_RETRY_FIRST_SEC: ${DETECTOR_RETRY_FIRST_SEC:-5}
+      DETECTOR_RETRY_MAX_SEC: ${DETECTOR_RETRY_MAX_SEC:-300}
+    # No ports: only the other two containers can reach it, at http://detector:<DETECTOR_PORT>.
+    volumes:
+      - models:/models                                  # DETECTOR_MODELS_DIR in the Dockerfile
+    mem_limit: ${DETECTOR_MEMORY_LIMIT:-2g}
+    memswap_limit: ${DETECTOR_MEMORY_LIMIT:-2g}
+    healthcheck:                                        # "healthy" = it answers /health, with or without a model
+      test: ["CMD", "python", "-c",
+             "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ['DETECTOR_PORT'] + '/health')"]
+      interval: ${DETECTOR_HEALTH_INTERVAL:-30s}
+      timeout: ${DETECTOR_HEALTH_TIMEOUT:-5s}
+      start_period: ${DETECTOR_HEALTH_START_PERIOD:-60s}
+      retries: ${DETECTOR_HEALTH_RETRIES:-3}
+    logging:
+      driver: json-file
+      options:
+        max-size: ${LOG_FILE_SIZE:-10m}
+        max-file: ${LOG_FILES:-3}
+
+  camera:
+    build:
+      context: ..
+      dockerfile: raspberry_pi/camera/Dockerfile
+      args:
+        PI_USER_ID: ${PI_USER_ID:-1000}                       # who owns /photos in the image, and so in the volume
+    image: desktalk-camera:local
+    restart: unless-stopped
+    user: ${PI_USER_ID:-1000}:${PI_GROUP_ID:-1000}
+    group_add:
+      - ${CAMERA_VIDEO_GROUP:-44}                           # the Pi's video group, which may use the camera's devices
+    environment:
+      TZ: ${TZ:-America/Los_Angeles}
+      HOME: /tmp
+      DESKTALK_SERVER: http://app:${APP_PORT:-5000}
+      DESKTALK_PAIR_KEY_FILE: /pairing/pair-key.txt
+    depends_on:
+      app:
+        condition: service_healthy                      # the key exists by then, so the first start doesn't fail
+      detector:
+        condition: service_started
+    # Only this container gets the devices. Compose can't list /dev/video* by wildcard, and there are over 30 names
+    # whose numbers can change, so it sees all of /dev but may open only the kinds of device named here.
+    volumes:
+      - /dev:/dev
+      - /run/udev:/run/udev:ro
+      - ./settings.pi.yaml:/desk-talk/config/settings.local.yaml:ro
+      - pairing:/pairing:ro
+      - photos:/photos
+    device_cgroup_rules:
+      - c ${CAMERA_VIDEO_MAJOR:-81}:* rmw
+      - c ${CAMERA_MEDIA_MAJOR:-510}:* rmw
+      - c ${CAMERA_DMA_HEAP_MAJOR:-252}:* rmw
+    mem_limit: ${CAMERA_MEMORY_LIMIT:-512m}
+    memswap_limit: ${CAMERA_MEMORY_LIMIT:-512m}
+    healthcheck:                                        # "healthy" = it saved a picture in the last few minutes
+      test: ["CMD-SHELL", "find /photos -name '*.jpg' -mmin -${CAMERA_HEALTH_RECENT_MIN:-2} | grep -q ."]
+      interval: ${CAMERA_HEALTH_INTERVAL:-30s}
+      timeout: ${CAMERA_HEALTH_TIMEOUT:-5s}
+      start_period: ${CAMERA_HEALTH_START_PERIOD:-60s}
+      start_interval: ${CAMERA_HEALTH_START_INTERVAL:-2s}
+      retries: ${CAMERA_HEALTH_RETRIES:-3}
+    logging:
+      driver: json-file
+      options:
+        max-size: ${LOG_FILE_SIZE:-10m}
+        max-file: ${LOG_FILES:-3}
+
+volumes:
+  models:                                               # the models and their ncnn versions
+  pairing:                                              # the pairing key, and nothing else
+  photos:                                               # the camera's pictures; they get deleted on a schedule

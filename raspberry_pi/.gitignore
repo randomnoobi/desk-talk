@@ -1,0 +1,2 @@
+# .env here holds the containers' settings (ports, memory limits ...), not secrets, so it is kept in git.
+!.env
