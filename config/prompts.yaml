@@ -842,6 +842,8 @@ dev:
   other_computer: The developer page only answers this computer.
   # a request sent by some other web page open in your browser
   other_web_page: The developer page only answers its own page, not other web pages.
+  # any change sent by a page from some other web site, on the app's or the phone camera's server
+  other_site: Desk Talk only takes changes from its own page, not from other web sites.
   # the storage tab asked for a file: {path} is the path it asked for, inside the data folder
   outside_data_folder: '{path} is outside the data folder, so it is never read.'
   is_a_folder: '{path} is a folder, not a file.'

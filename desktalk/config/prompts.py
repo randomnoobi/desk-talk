@@ -719,6 +719,7 @@ class DevWords(_Section):
     run_already_going: str
     other_computer: str
     other_web_page: str
+    other_site: str
     outside_data_folder: str
     is_a_folder: str
     no_such_file: str

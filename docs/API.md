@@ -33,7 +33,7 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 - Errors are `{"error": "plain words"}`, never `{"detail": ...}`. A body that doesn't fit is a 400 (not
   422); a request bigger than `web.max_request_mb` is a 413.
-- Every reply has `Access-Control-Allow-Origin: *`, so any page may ask. (The phone server's replies don't.)
+- No other web site may read a reply or send a write. A write whose `Origin` isn't the address it was sent to, and isn't in `web.cors_origins` (empty by default), gets 403. Programs send no `Origin`, and pass.
 - A trailing slash is not forgiven: `/api/live/` is a 404.
 - Only `GET` routes exist for the page's files, so `POST` or `PUT` to a path that isn't a route gets 405.
 

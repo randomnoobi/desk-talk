@@ -267,17 +267,9 @@ def test_the_list_has_every_dev_route(rig):
 def test_other_web_pages_get_403(rig, origin):
     client = web_client(rig.app)
     reply = client.post('/api/dev/runs', json={'check': True}, headers={'Origin': origin})
-    assert (reply.status_code, reply.json()) == (403, {'error': rig.config.prompts.dev.other_web_page})
+    assert (reply.status_code, reply.json()) == (403, {'error': rig.config.prompts.dev.other_site})
     assert client.get('/api/dev/settings', headers={'Origin': origin}).status_code == 403
     assert runner(rig).started == []
-
-
-@pytest.mark.parametrize('address', OWN_ADDRESSES)
-def test_the_page_itself_may_ask(rig, address):
-    origin = f'http://{own(address, rig)}'
-    reply = web_client(rig.app).post('/api/dev/runs', json={'check': True}, headers={'Origin': origin})
-    assert reply.status_code == 200
-    assert runner(rig).started == [('check', [])]
 
 
 @pytest.mark.parametrize('address', OWN_ADDRESSES)

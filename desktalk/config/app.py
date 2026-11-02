@@ -678,6 +678,7 @@ class PageRefresh(_Section):
 
 
 class WebSettings(_Section):
+    cors_origins: list[str]
     host: str
     port: Port
     public_address: str               # how other devices reach the app, like desktalk.local:5000; '' = work it out

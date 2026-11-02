@@ -301,12 +301,10 @@ def test_removed_routes_answer_404(tmp_path):
         assert reply.status_code == (404 if method == 'GET' else 405), f'{method} {path}'
 
 
-def test_errors_say_error_not_detail_and_every_reply_allows_any_page(tmp_path):
+def test_errors_say_error_not_detail(tmp_path):
     client = web_client(DeskRig(tmp_path).app)
     missing = client.get('/api/nothing-here')
     assert missing.status_code == 404 and set(missing.json()) == {'error'}
-    assert missing.headers['access-control-allow-origin'] == '*'
-    assert client.get('/api/status').headers['access-control-allow-origin'] == '*'
 
 
 def test_a_route_that_crashes_still_answers_with_an_error(tmp_path, monkeypatch):

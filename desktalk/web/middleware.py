@@ -1,8 +1,8 @@
 """
 What every request on a server goes through, besides its route:
 
-    AnyPageMayAsk      Access-Control-Allow-Origin: * on every reply of the main server, as the Flask server
-                       sent it (Starlette's CORSMiddleware only adds it when the request says where it's from)
+    OwnPagesOnly       403 for a write sent by a page from another web site. Without this a site open on a phone
+                       on the same Wi-Fi could change things here: a simple POST needs no permission first
     SizeLimit          a request bigger than its limit gets 413, before the route reads it all
     LogFailedRequests  only requests that failed are logged: the Pi sends 3 pictures a second and the app
                        asks for news every 1.5 s, so logging every request would bury everything else
@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import json
 import logging
+from urllib.parse import urlsplit
 
-from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -27,22 +27,34 @@ def too_big(limit_bytes: int) -> HTTPException:
     return HTTPException(413, f'This request is bigger than the {limit_bytes / MB:g} MB this computer takes.')
 
 
-class AnyPageMayAsk:
-    def __init__(self, app: ASGIApp):
+class OwnPagesOnly:
+    """A browser says which site's page sent a request (Origin). A write is refused unless that is this server, by
+    the address the browser used (Host), or a site in `allowed`. Programs like the camera send no Origin, and pass."""
+
+    READS = (b'GET', b'HEAD', b'OPTIONS')
+
+    def __init__(self, app: ASGIApp, allowed: list[str], refusal: str):
         self.app = app
+        self.allowed = {site.lower() for site in allowed}
+        self.refusal = refusal
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope['type'] != 'http':
+        if scope['type'] != 'http' or scope['method'].encode() in self.READS or self._may_write(scope):
             await self.app(scope, receive, send)
             return
+        body = json.dumps({'error': self.refusal}).encode()
+        await send({'type': 'http.response.start', 'status': 403,
+                    'headers': [(b'content-type', b'application/json'),
+                                (b'content-length', str(len(body)).encode())]})
+        await send({'type': 'http.response.body', 'body': body})
 
-        async def send_with_header(message: Message) -> None:
-            if message['type'] == 'http.response.start':
-                headers = MutableHeaders(scope=message)
-                headers.setdefault('access-control-allow-origin', '*')
-            await send(message)
-
-        await self.app(scope, receive, send_with_header)
+    def _may_write(self, scope: Scope) -> bool:
+        headers = dict(scope['headers'])
+        origin = headers.get(b'origin')
+        if origin is None:
+            return True
+        site = origin.decode('latin-1').lower()
+        return site in self.allowed or urlsplit(site).netloc == headers.get(b'host', b'').decode('latin-1').lower()
 
 
 class SizeLimit:

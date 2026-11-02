@@ -14,7 +14,7 @@ desk by hand.)
 The replies are as the Flask server gave them (tests/characterization/ checks each one):
 - errors are {"error": "..."} with the same status codes, never {"detail": ...}; a body that doesn't fit is a
   400 (not 422), and a request bigger than web.max_request_mb a 413;
-- every main-server reply has Access-Control-Allow-Origin: *; the phone server's don't;
+- no other web site may read a reply or send a write, unless it is listed in web.cors_origins (none are);
 - /api/live/ (a trailing slash) is a 404, not a redirect.
 """
 
@@ -32,7 +32,7 @@ from starlette.exceptions import HTTPException
 
 from desktalk.bootstrap import DeskTalk
 from desktalk.web.files import BuiltPage, PageFiles, page
-from desktalk.web.middleware import MB, AnyPageMayAsk, LogFailedRequests, SizeLimit
+from desktalk.web.middleware import MB, LogFailedRequests, OwnPagesOnly, SizeLimit
 from desktalk.web.pairing import Links
 from desktalk.web.routers import DEV_SERVER, MAIN_SERVER, PHONE_SERVER
 from desktalk.web.streams import LiveStreams
@@ -54,8 +54,8 @@ def create_app(desktalk: DeskTalk, links: Links) -> FastAPI:
     """The main server: the app's page and everything it asks for, and the Pi's uploads."""
     app = _new_app(desktalk, 'main', lifespan=run_background_jobs)
     app.state.links = links
-    app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_methods=['*'], allow_headers=['*'])
-    app.add_middleware(AnyPageMayAsk)
+    app.add_middleware(CORSMiddleware, allow_origins=desktalk.config.web.cors_origins, allow_methods=['*'],
+                       allow_headers=['*'])
     for router in MAIN_SERVER:
         app.include_router(router)
     config = desktalk.config
@@ -98,7 +98,9 @@ def _new_app(desktalk: DeskTalk, name: str,
                   redirect_slashes=False, lifespan=lifespan)
     app.state.desktalk = desktalk
     app.state.streams = LiveStreams()
-    app.add_middleware(SizeLimit, limit_bytes=int(desktalk.config.web.max_request_mb * MB))
+    config = desktalk.config
+    app.add_middleware(OwnPagesOnly, allowed=config.web.cors_origins, refusal=config.prompts.dev.other_site)
+    app.add_middleware(SizeLimit, limit_bytes=int(config.web.max_request_mb * MB))
     app.add_middleware(LogFailedRequests, server=name)
     app.add_exception_handler(HTTPException, _error_reply)
     app.add_exception_handler(RequestValidationError, _bad_request)

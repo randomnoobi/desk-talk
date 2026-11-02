@@ -575,6 +575,10 @@ web:
                               # and then no command to start the Pi's camera is shown
   app_folder: web_app         # the app's page and files (what you open at http://localhost:5000)
   phone_folder: phone_camera  # the page a phone opens to be the camera
+  cors_origins: []            # other web sites allowed to read from this app and change things, like
+                              # http://example.com. Leave this empty: anyone's phone on your Wi-Fi could open a site
+                              # that sends your desk's picture away. The app's own pages need nothing here, and
+                              # neither does `npm run dev` for the developer page, which passes its requests on
   stop_wait_sec: 3            # when the server stops, requests still running get this long to finish
   max_request_mb: 8           # biggest request the app and the phone page may send
   pi_upload_max_mb: 4         # biggest picture upload the Pi may send to /api/pi/frame

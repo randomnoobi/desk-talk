@@ -74,7 +74,7 @@ OUTLINE = [[0, 0.5], [1, 0.5], [1, 1], [0, 1]]
 # may ask (the server's own and the Vite dev server's, settings → web.port and dev.vite_port as in git).
 DEV_TEST_ID = 'tests/unit/test_example.py::test_one'
 OTHER_PAGE = {'Origin': 'https://example.com'}
-VITE_PAGE = {'Origin': 'http://localhost:5173'}
+VITE_PAGE = {'Origin': 'http://localhost:5173', 'Host': 'localhost:5173'}
 # a web site whose name was pointed at 127.0.0.1: its page reaches the server from this computer, with no Origin
 OTHER_ADDRESS = {'Host': 'evil.example:5000'}
 
