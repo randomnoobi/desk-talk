@@ -34,7 +34,8 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 - Errors are `{"error": "plain words"}`, never `{"detail": ...}`. A body that doesn't fit is a 400 (not
   422); a request bigger than `web.max_request_mb` is a 413.
 - No other web site may read a reply or send a write. A reply carries no `Access-Control-Allow-Origin` unless the site is listed in `web.cors_origins` (empty by default; the app's own pages and `npm run dev` for the developer page need nothing in it), so a page from another site can't read it. A write whose `Origin` isn't the address it was sent to, and isn't in that list, gets 403. Programs send no `Origin`, and pass, so the camera container's uploads and `curl` work. This used to be a `*` header on every reply that let any site in; it is gone.
-- Two things this does not stop: a site that points its own name at the Pi's address by DNS ("rebinding") looks, to the browser, like the Pi's own page, so it passes both checks; and there is no login, so anyone on the same Wi-Fi can call the routes marked "anyone on the network".
+- A request sent to a name the server doesn't go by gets 403, on the main server and the phone camera's. The `Host` (without the port) must be a number address (IPv4 or IPv6), `localhost`, a name ending in `.local`, the name in `web.public_address`, or one in `web.allowed_hosts` (empty by default; for a reverse proxy, and `app` on the Pi for the camera container). So a site that points its own name at the Pi's address by DNS ("rebinding") can't read or change anything.
+- What this does not stop: there is no login, so anyone on the same Wi-Fi can call the routes marked "anyone on the network".
 - A trailing slash is not forgiven: `/api/live/` is a 404.
 - Only `GET` routes exist for the page's files, so `POST` or `PUT` to a path that isn't a route gets 405.
 

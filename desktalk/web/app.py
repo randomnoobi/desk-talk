@@ -15,6 +15,8 @@ The replies are as the Flask server gave them (tests/characterization/ checks ea
 - errors are {"error": "..."} with the same status codes, never {"detail": ...}; a body that doesn't fit is a
   400 (not 422), and a request bigger than web.max_request_mb a 413;
 - no other web site may read a reply or send a write, unless it is listed in web.cors_origins (none are);
+- a request sent to a name this server doesn't go by is a 403 (KnownNamesOnly), so a site that points its own name
+  at this server's address gets nothing;
 - /api/live/ (a trailing slash) is a 404, not a redirect.
 """
 
@@ -32,7 +34,7 @@ from starlette.exceptions import HTTPException
 
 from desktalk.bootstrap import DeskTalk
 from desktalk.web.files import BuiltPage, PageFiles, page
-from desktalk.web.middleware import MB, LogFailedRequests, OwnPagesOnly, SizeLimit
+from desktalk.web.middleware import MB, KnownNamesOnly, LogFailedRequests, OwnPagesOnly, SizeLimit
 from desktalk.web.pairing import Links
 from desktalk.web.routers import DEV_SERVER, MAIN_SERVER, PHONE_SERVER
 from desktalk.web.streams import LiveStreams
@@ -100,6 +102,9 @@ def _new_app(desktalk: DeskTalk, name: str,
     app.state.streams = LiveStreams()
     config = desktalk.config
     app.add_middleware(OwnPagesOnly, allowed=config.web.cors_origins, refusal=config.prompts.dev.other_site)
+    public_name = config.web.public_address.partition(':')[0]
+    app.add_middleware(KnownNamesOnly, names=[public_name, *config.web.allowed_hosts],
+                       refusal=config.prompts.dev.other_name)
     app.add_middleware(SizeLimit, limit_bytes=int(config.web.max_request_mb * MB))
     app.add_middleware(LogFailedRequests, server=name)
     app.add_exception_handler(HTTPException, _error_reply)

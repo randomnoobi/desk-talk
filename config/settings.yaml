@@ -595,6 +595,10 @@ web:
                               # Empty: it is worked out from the Wi-Fi address of the machine the app runs on. The Pi sets it (inside
                               # Docker that can't be seen), and then no command to start the Pi's camera is shown
   outside_port: 0             # the port others use, when Docker opens a different one for the port above. 0 = the same
+  allowed_hosts: []           # other names this app may be opened under, like desk.example.com behind a reverse proxy.
+                              # It always answers at a number address (192.168.1.20), localhost, a name ending in
+                              # .local and the name in public_address. Any other name gets a 403, so a web site can't
+                              # point its own name at this app's address and read your to-dos
   app_folder: web_app         # the app's page and files (what you open at http://localhost:5000)
   phone_folder: phone_camera  # the page a phone opens to be the camera
   cors_origins: []            # other web sites allowed to read from this app and change things, like

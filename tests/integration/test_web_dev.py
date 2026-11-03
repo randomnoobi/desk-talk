@@ -284,16 +284,21 @@ def test_each_own_address_may_ask(rig, address):
 
 @pytest.mark.parametrize('method, path, body', EVERY_ROUTE, ids=[f'{m} {p}' for m, p, _ in EVERY_ROUTE])
 def test_another_address_gets_403(rig, method, path, body):
-    """A web site whose name was pointed at 127.0.0.1: its own page asks this computer, with no Origin on a GET."""
+    """A web site whose name was pointed at 127.0.0.1: its own page asks this computer, with no Origin on a GET. The
+    whole server refuses a name it doesn't go by (desktalk/web/middleware.py, KnownNamesOnly)."""
     reply = web_client(rig.app, address='evil.example:{web}').request(method, path, json=body)
-    assert (reply.status_code, reply.json()) == (403, {'error': rig.config.prompts.dev.other_web_page})
+    assert (reply.status_code, reply.json()) == (403, {'error': rig.config.prompts.dev.other_name})
     assert runner(rig).started == []
 
 
 @pytest.mark.parametrize('address', OTHER_ADDRESSES)
 def test_other_addresses_get_403(rig, address):
+    """A name the server doesn't go by is refused by the whole server; its own names at another port, or its Wi-Fi
+    address, by the developer page."""
+    words = rig.config.prompts.dev
     reply = web_client(rig.app, address=address).get('/api/dev/files/preview?path=preferences.json')
-    assert (reply.status_code, reply.json()) == (403, {'error': rig.config.prompts.dev.other_web_page})
+    expected = words.other_name if 'evil' in address else words.other_web_page
+    assert (reply.status_code, reply.json()) == (403, {'error': expected})
 
 
 def test_no_address_gets_403(rig):
@@ -301,14 +306,15 @@ def test_no_address_gets_403(rig):
     assert reply.status_code == 403
 
 
-def test_the_page_files_answer_any_address(tmp_path):
+def test_the_page_files_answer_any_of_the_servers_addresses(tmp_path):
     """The page's own files are the same for everyone (they're built from dev_ui/ in git) and hold nothing
-    from this computer, so /dev/ doesn't check the address: only its /api/dev/ routes do."""
+    from this computer, so /dev/ doesn't check which of the server's addresses it was sent to: only its /api/dev/
+    routes do."""
     built = tmp_path / 'dist'
     built.mkdir()
     (built / 'index.html').write_text('<!DOCTYPE html><title>Desk Talk developer page</title>')
     rig = DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'dev', ui_folder=built))
-    assert web_client(rig.app, address='evil.example:{web}').get('/dev/').status_code == 200
+    assert web_client(rig.app, address='192.168.1.20:{web}').get('/dev/').status_code == 200
 
 
 def test_dev_off_means_no_routes(tmp_path):

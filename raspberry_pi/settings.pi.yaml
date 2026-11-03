@@ -9,6 +9,10 @@ detector:
 dev:
   enabled: false                 # no developer page on the Pi
 
+web:
+  allowed_hosts: [app]           # the camera container reaches the app by this name, on Docker's own network
+                                 # (DESKTALK_SERVER in compose.yaml)
+
 storage:
   rules_folder: data             # the app can't write to config/ in its image, and a rebuild would lose it
 

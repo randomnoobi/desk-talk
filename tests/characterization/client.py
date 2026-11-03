@@ -28,7 +28,7 @@ from desktalk.web.pairing import Links
 
 THIS_COMPUTER = '127.0.0.1'         # where the browser on this computer connects from
 CLIENT_PORT = 50000                 # the port the requests seem to come from (nothing listens on it)
-TEST_ADDRESS = 'http://testserver'  # where requests go when no address is given (FastAPI's TestClient's own)
+TEST_ADDRESS = 'http://127.0.0.1'   # where requests go when no address is given (the servers only answer known names)
 STREAM_TIMEOUT_SEC = 10             # give up on a live stream (SSE, video) after this long
 STREAM_MAX_BYTES = 2_000_000        # never read more than this from a live stream
 AUTOMATIC_METHODS = {'HEAD', 'OPTIONS'}   # the web framework answers these by itself

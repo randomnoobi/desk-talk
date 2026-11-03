@@ -60,10 +60,10 @@ may go to the cloud server (see [The cloud server](#the-cloud-server)), and only
 **What the app does not do on its own.** It has no login: anyone on your Wi-Fi can open the page and see the live picture,
 and change settings. It refuses writes sent by a page from another web site (a 403, see [API.md](API.md)), and sends no
 `Access-Control-Allow-Origin`, so a web site open in a phone's browser can't read the Pi's pictures or send them away. It
-does not stop a site that aims its own name at the Pi's address by DNS (called "rebinding"): the browser then thinks the
-Pi is that site's own, so it passes both checks. That needs a site made for your network and a person on your Wi-Fi who
-opens it. The developer page, which has a `Host` check, is switched off on the Pi. A check of the `Host` for the main page
-could come later.
+also answers only the names it goes by (the `Host` a browser sends): a number address, `localhost`, a name ending in
+`.local`, `web.public_address`, and any in `web.allowed_hosts` (for a reverse proxy; on the Pi also `app`, the name the
+camera container uses). So a site that aims its own name at the Pi's address by DNS (called "rebinding") gets a 403,
+not the to-dos or the picture.
 
 ## In the app
 

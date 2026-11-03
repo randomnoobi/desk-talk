@@ -722,6 +722,7 @@ class DevWords(_Section):
     other_computer: str
     other_web_page: str
     other_site: str
+    other_name: str
     outside_data_folder: str
     is_a_folder: str
     no_such_file: str

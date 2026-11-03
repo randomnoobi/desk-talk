@@ -851,6 +851,8 @@ dev:
   other_web_page: The developer page only answers its own page, not other web pages.
   # any change sent by a page from some other web site, on the app's or the phone camera's server
   other_site: Desk Talk only takes changes from its own page, not from other web sites.
+  # a request to a name the app doesn't go by (a web site pointing its own name at it), on either server
+  other_name: "Desk Talk only answers at its own addresses: a number address, localhost, a name ending in .local, or web.public_address. To open it under another name, such as a reverse proxy's, add that name to web.allowed_hosts in your settings."
   # the storage tab asked for a file: {path} is the path it asked for, inside the data folder
   outside_data_folder: '{path} is outside the data folder, so it is never read.'
   is_a_folder: '{path} is a folder, not a file.'

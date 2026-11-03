@@ -693,6 +693,7 @@ class WebSettings(_Section):
     port: Port
     public_address: str               # how others reach the app: name and web.port (desktalk.local:5000); '' = work out
     outside_port: Annotated[int, Field(ge=0, le=65535)]   # the port others use, if Docker opens another; 0 = web.port
+    allowed_hosts: list[Annotated[str, Field(pattern=_HOST_NAME.pattern)]]   # more names it answers at (a proxy)
     app_folder: Path
     phone_folder: Path
     stop_wait_sec: PositiveNumber

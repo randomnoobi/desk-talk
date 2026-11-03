@@ -106,6 +106,12 @@ def test_the_camera_waits_for_the_app_to_be_healthy_and_uses_its_address(service
     assert no_fallbacks(camera['environment']['DESKTALK_SERVER']) == 'http://app:${APP_PORT}'
 
 
+def test_the_app_answers_the_camera_at_the_name_it_uses(services, pi_settings):
+    """The app answers only names it knows (web.allowed_hosts); the camera reaches it as `app` on Docker's network."""
+    server = no_fallbacks(services['camera']['environment']['DESKTALK_SERVER'])
+    assert server.split('//')[1].split(':')[0] in pi_settings['web']['allowed_hosts']
+
+
 def test_the_cameras_pictures_are_kept_in_memory_where_the_settings_say(compose, services, pi_settings):
     """In memory, not on the SD card: about 3 pictures a second, each written once and deleted minutes later, would
     write hundreds of MB an hour to the card for nothing."""

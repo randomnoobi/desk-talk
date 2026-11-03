@@ -91,3 +91,54 @@ def test_the_phone_camera_page_can_send_and_another_site_cant(tmp_path):
     key = {'X-Desk-Key': PAIR_KEY}
     assert phone.post('/api/phone/stop', headers={**key, **own_page(phone)}).status_code == 200
     assert phone.post('/api/phone/stop', headers={**key, **OTHER_SITE}).status_code == 403
+
+
+# ── a web site that points its own name at this server (DNS "rebinding") ──
+WEB_PORT = 5000
+OWN_NAMES = ['127.0.0.1:{port}', 'localhost:{port}', 'LocalHost:{port}', '[::1]:{port}', '192.168.1.20:{port}',
+             '[fe80::1]:{port}', '10.0.0.5', 'desktalk.local:{port}', 'DeskTalk.Local:{port}', 'desktalk.local.:{port}']
+OTHER_NAMES = ['evil.example:{port}', 'evil.example', 'localhost.evil.example:{port}', '127.0.0.1.evil.example:{port}',
+               'desktalk.local.evil.example:{port}', 'testserver', 'app:{port}', '[::1', '']
+
+
+def at(name: str, client) -> dict[str, str]:
+    """What a browser sends when it opened this server under `name`: the Host, and its page as the Origin."""
+    host = name.format(port=WEB_PORT)
+    return {'Host': host, 'Origin': f'http://{host}'}
+
+
+@pytest.mark.parametrize('name', OWN_NAMES)
+def test_its_own_names_and_addresses_may_read_and_write(client, name):
+    assert client.get('/api/todos', headers={'Host': name.format(port=WEB_PORT)}).status_code == 200
+    assert client.post(A_WRITE[0], json=A_WRITE[1], headers=at(name, client)).status_code == 204
+
+
+@pytest.mark.parametrize('name', OTHER_NAMES)
+def test_another_name_can_neither_read_nor_write(tmp_path, name):
+    rig = DeskRig(tmp_path)
+    client = web_client(rig.app)
+    refused = (403, {'error': rig.config.prompts.dev.other_name})
+    reply = client.get('/api/todos', headers={'Host': name.format(port=WEB_PORT)})
+    assert (reply.status_code, reply.json()) == refused
+    reply = client.post(A_WRITE[0], json=A_WRITE[1], headers=at(name, client))
+    assert (reply.status_code, reply.json()) == refused
+
+
+def test_the_public_address_and_the_names_in_the_settings_work(tmp_path):
+    config = changed(desk_config(tmp_path), 'web', public_address=f'desk.home:{WEB_PORT}', port=WEB_PORT,
+                     allowed_hosts=['proxy.example.com'])
+    client = web_client(DeskRig(tmp_path, config=config).app)
+    for name in ('desk.home:{port}', 'proxy.example.com', 'Proxy.Example.com:443'):
+        assert client.get('/api/status', headers={'Host': name.format(port=WEB_PORT)}).status_code == 200
+    assert client.get('/api/status', headers={'Host': 'evil.example'}).status_code == 403
+
+
+def test_no_other_name_is_allowed_by_default(tmp_path):
+    assert desk_config(tmp_path).web.allowed_hosts == []
+
+
+def test_the_phone_camera_server_checks_the_name_too(tmp_path):
+    rig = DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'camera', source='phone'))
+    phone = web_client(create_phone_app(rig.app))
+    assert phone.get('/api/phone/config', headers={'Host': '192.168.1.20:8443'}).status_code != 403
+    assert phone.get('/api/phone/config', headers={'Host': 'evil.example:8443'}).status_code == 403
