@@ -29,12 +29,17 @@ Raspberry Pi (docker compose)
 Pictures never leave the Pi, except to a page someone opens on your own Wi-Fi. The app has no login on the Wi-Fi:
 anyone who can join your Wi-Fi can open the page, and only the Wi-Fi's password keeps them out.
 
-> **What has and hasn't been tried on a real Pi.** Tried on a Pi 5 (8 GB): the three containers together with the real
-> camera, pictures flowing into events, one container restarting by itself, `update.sh`, a dry run of `install.sh`,
-> the speak command with a stand-in for the speaker (so nobody has heard it), and that no picture leaves the Pi.
-> **Not tried yet:** `install.sh` on a fresh card, a real USB speaker, a real object on the desk, a power cut, a
-> start with no Wi-Fi, no network at all, a real phone, a real cloud link, and closing the laptop an AI runs on.
-> They are the steps in [docs/PI_CHECKS.md](../docs/PI_CHECKS.md).
+> **What has and hasn't been tried on a real Pi.** Tried on a Pi 5 (8 GB): `install.sh` from a fresh clone at
+> `~/desk-talk` with Docker emptied first (exit 0 in about 9 minutes, including the model), running it again (4 seconds,
+> the pairing key kept), `update.sh` (5 seconds and nothing restarted when there is no new code; all three containers
+> rebuilt and made again with a new commit), all three containers coming back by themselves after `sudo reboot`, the
+> three containers together with the real camera, pictures flowing into events, the speak command with a stand-in for
+> the speaker (so nobody has heard it), and that no picture leaves the Pi. `DESKTALK_PI=pi uv run pytest -m pi` gave 7
+> passed and 5 skipped; the skipped ones need a person.
+> **Not tried yet:** `install.sh` on a blank card (this card already had Docker, the lines in the boot files for the
+> memory limits and the camera, and the new name, put in by hand, so it skipped those), a real USB speaker, a real
+> object on the desk, a power cut, a start with no Wi-Fi, no network at all, a real phone, a real cloud link, and
+> closing the laptop an AI runs on. They are the steps in [docs/PI_CHECKS.md](../docs/PI_CHECKS.md).
 
 More detail: the camera's [README](camera/README.md) and the detector's [README](detector_service/README.md).
 

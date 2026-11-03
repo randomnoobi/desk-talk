@@ -106,7 +106,7 @@ detector:
   # yolo26m-objv1-150.pt knows 365 kinds of objects (Objects365), including
   # earphones, keys, pens, watches, glasses and notepaper. The old yolo26n.pt only knew 80.
   # Other choices (scripts/download_models.py fetches any of them):
-  #   models/yolo26s-objv1-150.pt  faster, a bit less accurate (older laptops)
+  #   models/yolo26s-objv1-150.pt  faster, a bit less accurate (older laptops; the Pi uses this one)
   #   models/yolo26l-objv1-150.pt  slower, most accurate
   #   models/yolo26m.pt            80 everyday COCO objects
   model: models/yolo26m-objv1-150.pt
@@ -495,8 +495,9 @@ daily_summary:
   objects_listed: 8           # most objects named in the recap
 
 # ── The cloud server (optional) ─────────────────────────────────────
-# Nothing here does anything until you link this Pi (or computer) to a cloud server: on the Pi, with the install command's
-# --server (raspberry_pi/README.md); on a computer, with scripts/link_cloud.py. Then a background job sends it your habit events (never pictures or to-do text).
+# Nothing here does anything until you link this Pi (or computer) to a cloud server: on the Pi, by running the install
+# command with --server and --code (raspberry_pi/README.md); on a computer, with scripts/link_cloud.py. Then a background
+# job sends it your habit events (never pictures or to-do text).
 cloud:
   link_key: cloud             # the link (the server's address and your token) is saved as data/cloud.json
   send_every_sec: 30          # how often it sends what is new

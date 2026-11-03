@@ -120,10 +120,10 @@ No test can tell if speech sounds right, so this is by ear.
 1. Plug the USB speaker in while the app is running. Don't restart anything.
 2. Put your hand over the camera's lens for 10 seconds.
 3. Listen: do you hear Lens within a few seconds, and can you understand the words?
-4. **On the Pi**, in the compose folder, see that the app noticed:
+4. **On the Pi**, see that the app noticed:
 
    ```bash
-   docker compose logs --since 5m app | grep "out loud"
+   cd ~/desk-talk/raspberry_pi && docker compose logs --since 5m app | grep "out loud"
    ```
 
    You should see `Said a message out loud (Lens)`. `No sound card with "usb" in its name` means it didn't find the speaker, and `Could not say a message out loud` says why it failed.

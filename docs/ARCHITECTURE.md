@@ -3,13 +3,15 @@
 How a picture on the Raspberry Pi turns into "Cup joined the chat", what each part does, how the parts
 talk to each other, and what happens when one of them fails.
 
-> **What has and hasn't been tried on a real Pi.** Tried on a Pi 5: the three containers together with the real
-> camera, pictures flowing into events, one container restarting by itself, the update command, a dry run of the
-> install command, the speak command with a stand-in for the speaker (nobody has heard it), and that no picture
-> leaves the Pi. Not tried yet: the install command from a fresh card, a real USB speaker, a real object on the desk, a
-> power cut, a start with no Wi-Fi, no network at all, a real phone, a real cloud link, and closing the laptop an
-> AI runs on. They are the steps in [PI_CHECKS.md](PI_CHECKS.md). Where this page says what happens in one of those
-> cases, it is how it's built to work.
+> **What has and hasn't been tried on a real Pi.** Tried on a Pi 5: the install command from a fresh clone with
+> Docker emptied first, running it again, the update command (with and without a new commit), all three containers
+> coming back by themselves after a reboot, the three containers together with the real camera, pictures flowing into
+> events, and that no picture leaves the Pi. The speak command was tried with a stand-in for the speaker (nobody has
+> heard it). Not tried yet: the install command on a blank card (Docker's own install, the lines it adds to the boot
+> files and the renaming were done by hand on this card), a real USB speaker, a real object on the desk, a power cut,
+> a start with no Wi-Fi, no network at all, a real phone, a real cloud link, and closing the laptop an AI runs on.
+> They are the steps in [PI_CHECKS.md](PI_CHECKS.md). Where this page says what happens in one of those cases, it is
+> how it's built to work.
 
 ## On the Pi: three containers
 

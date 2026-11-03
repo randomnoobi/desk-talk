@@ -52,13 +52,15 @@ Inside, every part is written against small interfaces (`desktalk/ports.py`). On
 fakes. Background jobs (reminders, Lens, small talk ...) start again by themselves after a crash, and
 the AI, the detector or the Wi-Fi going away never stops the rest.
 
-> **What has and hasn't been tried on a real Pi.** Tried on a real Pi 5: all three containers together with
-> the real camera, pictures flowing to events, one container restarting by itself, the update command, the
-> install command in a dry run, the speak command (with a stand-in for the speaker, so nobody has heard
-> it), and that no picture goes out. **Not tried yet:** the install command from a fresh card, a real USB speaker,
-> a real object on the desk, a power cut, a start with no Wi-Fi, no network at all, a real phone, a real
-> cloud link, and closing the laptop an AI runs on. Those are the steps in [docs/PI_CHECKS.md](docs/PI_CHECKS.md);
-> until they pass, expect the Pi steps to need fixing the first time.
+> **What has and hasn't been tried on a real Pi.** Tried on a real Pi 5 (8 GB): the install command from a fresh
+> clone with Docker emptied first (about 9 minutes, including the model), running it again (4 seconds, and the
+> pairing key stays), the update command (5 seconds with nothing new, and a rebuild of all three containers with a
+> new commit), all three containers coming back by themselves after a reboot, the real camera, pictures flowing to
+> events, the speak command (with a stand-in for the speaker, so nobody has heard it), and that no picture goes
+> out. **Not tried yet:** the install command on a blank card (Docker's own install, the lines it adds to the boot
+> files and the renaming were done by hand on this card, so it skipped them), a real USB speaker, a real object on
+> the desk, a power cut, a start with no Wi-Fi, no network at all, a real phone, a real cloud link, and closing the
+> laptop an AI runs on. Those are the steps in [docs/PI_CHECKS.md](docs/PI_CHECKS.md).
 
 More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
