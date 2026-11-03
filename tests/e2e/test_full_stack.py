@@ -55,7 +55,8 @@ def env_file() -> dict[str, str]:
 
 
 def compose(*args: str, timeout: float = 300, check: bool = True) -> str:
-    command = ['docker', 'compose', '-p', PROJECT, '-f', str(PI / 'compose.yaml'), '-f', str(OPEN_PORT), *args]
+    command = ['docker', 'compose', '-p', PROJECT, '--env-file', str(PI / '.env.example'),     # .env is the Pi's own
+               '-f', str(PI / 'compose.yaml'), '-f', str(OPEN_PORT), *args]
     done = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
     if check and done.returncode != 0:
         raise AssertionError(f'docker compose {" ".join(args)} failed:\n{done.stdout}\n{done.stderr}')
