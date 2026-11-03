@@ -140,10 +140,23 @@ def test_a_refusal_is_not_tried_again(llm):
 def test_no_new_try_starts_after_the_time_limit(llm):
     clock = FakeClock()
     inner = Scripted(clock, DOWN, takes=20)       # each try hangs for 20 s before failing
-    model = resilient(inner, clock, llm, time_limit_sec=30)
+    model = resilient(inner, clock, llm, chat_time_limit=lambda: 30)
     fails(model)
     # try 1: 0-20 s; wait 2 s; try 2: 22-42 s; a third would start after the 30 s limit
     assert len(inner.calls) == 2
+
+
+def test_the_time_limit_is_asked_for_each_call(llm):
+    """The AI behind it can change while the app runs (linking to the cloud server), and its limit with it."""
+    clock = FakeClock()
+    limit = [90.0]
+    inner = Scripted(clock, DOWN, DOWN, DOWN, DOWN, takes=20)
+    model = resilient(inner, clock, llm, chat_time_limit=lambda: limit[0])
+    fails(model)
+    asked_first = len(inner.calls)
+    limit[0] = 21.0
+    fails(model)
+    assert asked_first == 3 and len(inner.calls) - asked_first == 1
 
 
 def test_the_time_limit_defaults_to_the_settings(llm):
@@ -320,7 +333,7 @@ def test_picture_questions_on_ollama_get_ollamas_longer_time_limit(llm):
     """The chat runs on a cloud AI (30 s), but Ollama on this computer may take up to 90 s on a picture."""
     clock = FakeClock()
     inner = Scripted(clock, DOWN, takes=40, local_vision=True)        # each try hangs 40 s, then fails
-    model = resilient(inner, clock, llm.model_copy(update={'ollama_timeout_sec': 90}), time_limit_sec=30)
+    model = resilient(inner, clock, llm.model_copy(update={'ollama_timeout_sec': 90}), chat_time_limit=lambda: 30)
     with pytest.raises(AIUnavailable):
         look(model)
     # try 1: 0-40 s; wait 1 s; try 2: 41-81 s; wait 2 s; try 3 starts at 83 s, inside 90 s
@@ -330,7 +343,7 @@ def test_picture_questions_on_ollama_get_ollamas_longer_time_limit(llm):
 def test_cloud_picture_questions_keep_the_cloud_time_limit(llm):
     clock = FakeClock()
     inner = Scripted(clock, DOWN, takes=40)
-    model = resilient(inner, clock, llm.model_copy(update={'ollama_timeout_sec': 90}), time_limit_sec=30)
+    model = resilient(inner, clock, llm.model_copy(update={'ollama_timeout_sec': 90}), chat_time_limit=lambda: 30)
     with pytest.raises(AIUnavailable):
         look(model)
     assert len(inner.calls) == 1

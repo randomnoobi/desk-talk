@@ -1,7 +1,7 @@
 """
 ResilientChatModel: wraps any ChatModel so a slow, broken or out-of-quota AI never stalls Desk Talk.
 
-    model = ResilientChatModel(OpenAICompatibleChatModel(...), clock, config.llm, time_limit_sec=ai.time_limit_sec,
+    model = ResilientChatModel(ai, clock, config.llm, chat_time_limit=lambda: ai.time_limit_sec,
                                replies=config.prompts.replies)
 
 What it adds (numbers: config/settings.yaml → llm):
@@ -9,7 +9,8 @@ What it adds (numbers: config/settings.yaml → llm):
 - A failed call is tried again after retry_start_sec, doubling up to retry_max_sec, max_retries tries in all.
   A refusal (bad key, unknown model) is not tried again. A failed picture question waits
   vision_retry_sec × the try number instead.
-- Time limit: no new try starts once a call has been going for time_limit_sec. Picture questions have
+- Time limit: no new try starts once a call has been going for chat_time_limit(), asked for each call, since the
+  AI behind it can change while the app runs (linking to the cloud server). Picture questions have
   their own limit: ollama_timeout_sec when they go to Ollama on this computer, else timeout_sec. (Each
   single request is cut off at its own limit by the OpenAI client's `timeout` option.)
 - Rate limits: when you're waiting on a reply, one more try after rate_limit_retry_sec. Background calls
@@ -95,14 +96,15 @@ class ResilientChatModel:
     says when the AI keeps failing or is resting after a rate limit)."""
 
     def __init__(self, inner: ChatModel, clock: Clock, settings: LlmSettings, *, replies: Replies,
-                 time_limit_sec: float | None = None):
+                 chat_time_limit: Callable[[], float] | None = None):
         self._inner = inner
         self._words = replies.ai_errors
         self._clock = clock
         self._s = settings
-        self._time_limit = {
-            CHAT: settings.timeout_sec if time_limit_sec is None else time_limit_sec,
-            VISION: settings.ollama_timeout_sec if self.local_vision else settings.timeout_sec,
+        vision_limit = settings.ollama_timeout_sec if self.local_vision else settings.timeout_sec
+        self._time_limit: dict[str, Callable[[], float]] = {
+            CHAT: chat_time_limit or (lambda: settings.timeout_sec),
+            VISION: lambda: vision_limit,
         }
         self._lock = threading.Lock()
         self._breakers = {kind: _Breaker(settings.breaker_failures, settings.breaker_open_sec)
@@ -165,7 +167,7 @@ class ResilientChatModel:
             except AIUnavailable as err:
                 wait = self._wait_before_next_try(kind, err, attempt, background, rate_limit_retried)
                 elapsed = self._clock.monotonic() - started
-                if wait is None or attempt + 1 >= tries or elapsed + wait > self._time_limit[kind]:
+                if wait is None or attempt + 1 >= tries or elapsed + wait > self._time_limit[kind]():
                     self._failed(kind, err)
                     raise
                 log.info('AI %s failed (%s); trying again in %g s', kind, err.reason, wait)

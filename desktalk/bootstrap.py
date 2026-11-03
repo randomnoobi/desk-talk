@@ -485,7 +485,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     # `asked_model` is only for the chat you asked for. Everything else gets `model`, which never reaches the cloud
     # server: you allowed chat to pass through it, and nothing else. A new part that calls the AI by itself uses
     # `model`.
-    asked_model = ResilientChatModel(ai, clock, config.llm, time_limit_sec=ai.time_limit_sec,
+    asked_model = ResilientChatModel(ai, clock, config.llm, chat_time_limit=lambda: ai.time_limit_sec,
                                      replies=config.prompts.replies)
     model = UnpromptedChatModel(asked_model, goes_to_cloud=lambda: ai.uses_cloud,
                                 reason=config.prompts.replies.ai_errors.cloud_chat_only)

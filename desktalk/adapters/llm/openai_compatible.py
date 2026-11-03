@@ -141,8 +141,9 @@ class OpenAICompatibleChatModel:
 
     @property
     def time_limit_sec(self) -> float:
-        """The longest wait for one chat reply."""
-        return self._settings.ollama_timeout_sec if self._local else self._settings.timeout_sec
+        """The longest wait for one chat reply right now: Ollama's, or the cloud's once llm.ai_url is the linked
+        server's address (read each time, so linking needs no restart)."""
+        return self._settings.ollama_timeout_sec if self.is_local else self._settings.timeout_sec
 
     def problem(self) -> str | None:
         """The current AI problem in plain words, or None if the last call worked."""

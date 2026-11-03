@@ -197,6 +197,32 @@ def test_linking_later_needs_no_restart_and_linking_again_uses_the_new_token():
     assert factory.asked()[-1].api_key == 'new-token-456'
 
 
+def test_the_time_limit_follows_the_link_with_no_restart():
+    """Marked as your computer, it waits Ollama's limit; once linked to that address, the cloud's."""
+    model, _, store = make(f'{SERVER}/v1', ai_on_my_computer=True, timeout_sec=30, ollama_timeout_sec=90)
+    assert model.time_limit_sec == 90
+    store.save(CONFIG.cloud.link_key, linked())
+    assert model.time_limit_sec == 30
+
+
+def test_a_cloud_chat_through_resilient_waits_the_clouds_limit():
+    """Each try takes 29 s and fails: with the cloud's 30 s limit there is no second try (Ollama's 90 s would allow
+    three)."""
+    clock = FakeClock()
+
+    def slow_failure(_request):
+        clock.advance(29)
+        return ValueError('Error code: 502 too slow')
+
+    model, factory, _ = make(f'{SERVER}/v1', link=linked(), ai_on_my_computer=True, timeout_sec=30,
+                             ollama_timeout_sec=90, reply=slow_failure)
+    resilient = ResilientChatModel(model, clock, CONFIG.llm.model_copy(update={'min_interval_sec': 0}),
+                                   replies=CONFIG.prompts.replies, chat_time_limit=lambda: model.time_limit_sec)
+    with pytest.raises(AIUnavailable):
+        resilient.chat(HELLO, max_tokens=50, temperature=0.7)
+    assert sum(len(c.requests) for c in factory.clients) == 1
+
+
 def test_a_damaged_link_sends_no_token():
     model, factory, _ = make(f'{SERVER}/v1', link={'server': SERVER, 'token': 'has a space'})
     say_hello(model)
@@ -243,7 +269,7 @@ def test_a_server_with_no_ai_key_trips_the_breaker():
     clock = FakeClock()
     model, factory, _ = make(f'{SERVER}/v1', link=linked(), reply=ValueError('Error code: 503 no AI here'))
     resilient = ResilientChatModel(model, clock, CONFIG.llm.model_copy(update={'min_interval_sec': 0}),
-                                   replies=CONFIG.prompts.replies, time_limit_sec=0.1)
+                                   replies=CONFIG.prompts.replies, chat_time_limit=lambda: 0.1)
     for _ in range(CONFIG.llm.breaker_failures):
         with pytest.raises(AIUnavailable):
             resilient.chat(HELLO, max_tokens=50, temperature=0.7)
