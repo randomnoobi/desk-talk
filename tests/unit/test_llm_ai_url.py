@@ -78,11 +78,49 @@ def test_nothing_set_means_no_ai():
 
 
 def test_ai_url_wins_over_ollama_url_and_uses_ollamas_model_name():
-    model, factory, _ = make('http://laptop.test:11434/v1', ollama='http://ollama.test/v1')
+    model, factory, _ = make('http://laptop.test:11434/v1', ollama='http://ollama.test/v1', ai_on_my_computer=True)
     say_hello(model)
     [client] = factory.asked()
     assert client.base_url == 'http://laptop.test:11434/v1' and client.requests[0]['model'] == 'small-model'
     assert model.is_local and model.keepalive_worker() is not None
+
+
+# ── is it an AI on your own computer? Only when llm.ai_on_my_computer says so ──
+@pytest.mark.parametrize('ai_url, link', [
+    ('https://desk.example.com/v1', None),                                  # set before linking
+    ('https://203.0.113.7/v1', linked('https://desk.example.com')),         # the server written by its address
+    (f'{SERVER}/v1/chat/completions', linked()),                            # a longer path than the link's
+    ('http://cloud.example.org/v1', linked()),                              # http, but the link saved https
+    ('http://laptop.test:11434/v1', None),                                  # even Ollama, until it's marked
+])
+def test_an_ai_url_not_marked_as_on_my_computer_counts_as_the_cloud(ai_url, link):
+    model, factory, _ = make(ai_url, link=link)
+    assert model.uses_cloud and not model.is_local
+    assert model.keepalive_worker() is None and 'Ollama' not in model.label
+    say_hello(model)                               # chat you asked for still goes
+    [request] = factory.asked()[0].requests
+    assert 'extra_body' not in request and request['timeout'] == CONFIG.llm.timeout_sec
+    assert model.time_limit_sec == CONFIG.llm.timeout_sec
+
+
+def test_an_unmarked_ai_url_gets_no_keep_alive_ping():
+    model, factory, _ = make('http://laptop.test:11434/v1')
+    model.ping()
+    assert factory.asked() == []
+
+
+def test_marked_as_on_my_computer_it_is_ollama():
+    model, factory, _ = make('http://laptop.test:11434/v1', ai_on_my_computer=True)
+    assert not model.uses_cloud and model.is_local and model.label == 'Ollama small-model'
+    model.ping()
+    assert len(factory.asked()) == 1
+
+
+def test_the_linked_servers_address_is_the_cloud_even_when_marked_as_on_my_computer():
+    model, factory, _ = make(f'{SERVER}/v1', link=linked(), ai_on_my_computer=True)
+    assert model.uses_cloud and not model.is_local
+    say_hello(model)
+    assert factory.asked()[0].api_key == TOKEN
 
 
 # ── text only ─────────────────────────────────────────────────────────
@@ -123,7 +161,7 @@ def test_the_token_goes_to_the_linked_servers_chat_address():
                                     'https://cloud.example.org:8443/v1', 'https://cloud.example.org/elsewhere/v1',
                                     'https://cloud.example.org.evil.test/v1', 'http://laptop.test:11434/v1'])
 def test_no_other_address_ever_sees_the_token(ai_url):
-    model, factory, _ = make(ai_url, link=linked())
+    model, factory, _ = make(ai_url, link=linked(), ai_on_my_computer=True)
     say_hello(model)
     assert all(c.api_key != TOKEN for c in factory.clients)
     assert model.is_local
@@ -146,7 +184,7 @@ def test_what_counts_as_the_servers_chat_address(ai_url, server, same):
 
 
 def test_linking_later_needs_no_restart_and_linking_again_uses_the_new_token():
-    model, factory, store = make(f'{SERVER}/v1')
+    model, factory, store = make(f'{SERVER}/v1', ai_on_my_computer=True)
     assert model.is_local
     say_hello(model)
     assert factory.asked()[-1].api_key != TOKEN
@@ -218,13 +256,13 @@ def test_a_server_with_no_ai_key_trips_the_breaker():
 # ── a model that thinks before it answers ─────────────────────────────
 def test_ollama_can_be_told_not_to_think_first():
     """A thinking model uses up max_tokens on its thoughts and answers with nothing."""
-    model, factory, _ = make('http://laptop.test:11434/v1', ollama_reasoning_effort='none')
+    model, factory, _ = make('http://laptop.test:11434/v1', ollama_reasoning_effort='none', ai_on_my_computer=True)
     say_hello(model)
     assert factory.asked()[0].requests[0]['extra_body']['reasoning_effort'] == 'none'
 
 
 def test_nothing_is_said_about_thinking_unless_the_setting_asks():
-    model, factory, _ = make('http://laptop.test:11434/v1')
+    model, factory, _ = make('http://laptop.test:11434/v1', ai_on_my_computer=True)
     say_hello(model)
     assert 'reasoning_effort' not in factory.asked()[0].requests[0]['extra_body']
 

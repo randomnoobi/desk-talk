@@ -234,9 +234,9 @@ def test_with_the_cloud_as_the_ai_a_warning_calls_nothing(tmp_path):
     assert rig.desktop.shown and sent(rig) == []
 
 
-def small_talk_round(tmp_path: Path, ai_url: str) -> DeskRig:
+def small_talk_round(tmp_path: Path, ai_url: str, *, on_my_computer: bool = False) -> DeskRig:
     """Everything small talk needs, including a to-do in a character's memory, for two rounds of small talk."""
-    config = changed(desk_config(tmp_path), 'llm', ai_url=ai_url)
+    config = changed(desk_config(tmp_path), 'llm', ai_url=ai_url, ai_on_my_computer=on_my_computer)
     config = changed(config, 'reminders', warmup_min=1)
     config = changed(config, 'idle_chat', min_sec=30, max_sec=30)
     rig = DeskRig(tmp_path, config=config, ai_reply=small_talk_ai(config.prompts.small_talk))
@@ -255,7 +255,11 @@ def test_with_the_cloud_as_the_ai_idle_chat_calls_nothing(tmp_path):
 
 
 def test_with_ollama_on_your_own_computer_idle_chat_still_talks(tmp_path):
-    assert sent(small_talk_round(tmp_path, 'http://laptop.test:11434/v1'))
+    assert sent(small_talk_round(tmp_path, 'http://laptop.test:11434/v1', on_my_computer=True))
+
+
+def test_an_ai_url_not_marked_as_on_your_computer_gets_no_small_talk(tmp_path):
+    assert sent(small_talk_round(tmp_path, 'http://laptop.test:11434/v1')) == []
 
 
 def test_with_the_cloud_as_the_ai_the_recap_and_a_lost_item_call_nothing(tmp_path):
@@ -276,18 +280,28 @@ def test_with_the_cloud_as_the_ai_chat_you_asked_for_does_go(tmp_path):
     assert [c.api_key for c in rig.ai_clients if c.requests] == ['device-token']
 
 
-def test_linking_later_stops_the_unprompted_calls_with_no_restart(tmp_path):
+def test_before_linking_the_cloud_servers_address_gets_no_reminders_either(tmp_path):
     rig = cloud_rig(tmp_path, linked=False)
     remind(rig)
+    assert rig.desktop.shown[-1][1] == READY_WORDS and sent(rig) == []
+
+
+def test_linking_later_stops_the_unprompted_calls_with_no_restart(tmp_path):
+    """Marked as on your computer, then linked: the link wins, with no restart."""
+    config = changed(desk_config(tmp_path), 'llm', ai_url=f'{CLOUD}/v1', ai_on_my_computer=True,
+                     reminder_wait_sec=PLENTY_SEC)
+    rig = on_the_desk(DeskRig(tmp_path, config=config, ai_reply='Time to stretch those legs, you have been here ages.'))
+    remind(rig)
     before = len(sent(rig))
-    assert before == 1, 'not linked, so this address counts as an AI of the user\'s own'
+    assert before == 1, 'not linked and marked as on your computer, so it counts as your own AI'
     link(rig)
     remind(rig)
     assert len(sent(rig)) == before
 
 
 def test_ollama_on_your_own_computer_still_gets_reminders(tmp_path):
-    config = changed(desk_config(tmp_path), 'llm', ai_url='http://laptop.test:11434/v1', reminder_wait_sec=PLENTY_SEC)
+    config = changed(desk_config(tmp_path), 'llm', ai_url='http://laptop.test:11434/v1', ai_on_my_computer=True,
+                     reminder_wait_sec=PLENTY_SEC)
     rig = on_the_desk(DeskRig(tmp_path, config=config, ai_reply='Time to stretch those legs, you have been here ages.'))
     link(rig)
     remind(rig)

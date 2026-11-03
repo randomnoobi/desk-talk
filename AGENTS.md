@@ -51,7 +51,7 @@ Desk Talk runs entirely on the Pi, in Docker; see [the Pi standalone plan](docs/
 - `shared/desktalk_shared/` is used on the Pi and on this computer. It must stay standard library only and work on Python 3.11.
 - The Pi works by itself, with no computer and no AI: nothing on the Pi may need either. A computer or the cloud may add chat AI, but it's optional. No AI runs on the Pi, and API keys never go on the Pi; AI keys stay on the cloud server.
 - Only events, state and goals may leave the Pi. No pictures, no to-do text. There are two exceptions, both text only and both off until the user sets `llm.ai_url`:
-  - An AI on the user's own computer (Ollama) gets chat and the words the characters say by themselves (reminders, small talk, the recap), so to-do text may go to it.
+  - An AI on the user's own computer (Ollama) gets chat and the words the characters say by themselves (reminders, small talk, the recap), so to-do text may go to it. Only when the user also sets `llm.ai_on_my_computer: true`; any other `llm.ai_url` gets only chat the user asked for.
   - Chat the user has turned on may pass through their cloud server, never stored or logged there. Reminders, small talk and the recap don't go through the cloud server.
 - Code gets to the Pi with `bash raspberry_pi/update.sh` on the Pi, which runs `git pull` and then rebuilds with `docker compose up -d --build`. A new Pi gets it with `bash raspberry_pi/install.sh`, one command that replaces the old apt, systemd and `--server` / `--key` by-hand steps.
 - Agents run things on the Pi with `ssh pi`, using a key login only. Never type or write down the Pi's password anywhere. If the key login fails, stop and ask the user.

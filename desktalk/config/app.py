@@ -372,6 +372,7 @@ class LlmSettings(_Section):
     gemini_url: str
     groq_url: str
     ai_url: Annotated[str, Field(pattern=r'^(https?://\S+)?$')]     # empty = .env decides (see config/settings.yaml)
+    ai_on_my_computer: bool           # ai_url is Ollama on the user's own computer, so it may get to-do text
     send_pictures: bool
     reminder_wait_sec: PositiveNumber
     ollama_reasoning_effort: str      # empty = say nothing about it

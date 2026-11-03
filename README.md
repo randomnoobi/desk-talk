@@ -69,9 +69,11 @@ work with no AI at all, in their ready-made words. An AI only adds **chat** with
 No AI runs on the Pi, and AI keys never go on it. To add one, set `llm.ai_url` in `raspberry_pi/mine/settings.mine.yaml`
 (your own settings file, which `install.sh` made; it isn't in git) on the Pi, then **on the Pi** run `cd ~/desk-talk/raspberry_pi && docker compose restart app`:
 
-- **Ollama on your own computer**: `ai_url: http://<your computer>:11434/v1`, and `llm.ollama_model` for the model
-  (`ollama pull` it first). Text only goes there: your chat messages, and the words the characters say by themselves
-  (reminders, small talk, the recap), which can include the text of your to-dos. Pictures never go: the Pi keeps
+- **Ollama on your own computer**: `ai_url: http://<your computer>:11434/v1`, `ai_on_my_computer: true`, and
+  `llm.ollama_model` for the model (`ollama pull` it first). Text only goes there: your chat messages, and, because
+  `ai_on_my_computer` says it's your own computer, the words the characters say by themselves (reminders, small talk,
+  the recap), which can include the text of your to-dos. Without `ai_on_my_computer: true` only chat you start
+  yourself goes, as for the cloud server. Pictures never go: the Pi keeps
   `llm.send_pictures: false`. If the computer sleeps, warnings still come at once in their ready-made words, and a
   reminder waits at most `llm.reminder_wait_sec` for it.
 - **Your cloud server**: `ai_url: <its address>/v1`, after linking it. Only chat you start yourself goes there, as

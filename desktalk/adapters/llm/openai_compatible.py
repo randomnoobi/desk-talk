@@ -8,7 +8,10 @@ is off. Model names and limits: config/settings.yaml → llm.
 
 llm.ai_url gets text only, never a picture. It may be Ollama on the user's computer, or the linked cloud server. Only
 when it matches the server of the saved link does a request carry the link's token, read for each request so linking
-later needs no restart; any other address never sees it. The token is never logged.
+later needs no restart; any other address never sees it. The token is never logged. It counts as Ollama on the user's
+own computer (kept loaded, its time limit, `uses_cloud` false so the characters' own words may go there) only when
+llm.ai_on_my_computer says so and it isn't the linked server's address. Anything else may be the cloud server, so
+only chat the user asked for goes there (UnpromptedChatModel).
 
 Each request has a time limit (llm.timeout_sec, or llm.ollama_timeout_sec for Ollama), set with the
 OpenAI client's own `timeout` option. Every failure is raised as AIUnavailable in plain words.
@@ -76,7 +79,7 @@ class OpenAICompatibleChatModel:
         self._model_name = ''
         self._label = replies.no_ai_label
         self._is_gemini = False
-        self._local = False              # the chat runs on Ollama, on this computer (or the one llm.ai_url names)
+        self._local = False              # the chat runs on Ollama, on this computer (or the user's, llm.ai_url)
         self._ai_url = settings.ai_url.strip()
         self._cloud_link = cloud_link
         self._factory = client_factory or openai_client
@@ -95,7 +98,8 @@ class OpenAICompatibleChatModel:
         s = self._settings
         if self._ai_url:
             self._client = factory(api_key=_NO_KEY, base_url=self._ai_url)
-            self._model_name, self._label, self._local = s.ollama_model, f'Ollama {s.ollama_model}', True
+            self._model_name, self._local = s.ollama_model, s.ai_on_my_computer
+            self._label = f'Ollama {s.ollama_model}' if self._local else self._words.ai_url_label
             return
         ollama_url = secrets.ollama_url.strip()
         if ollama_url and s.send_pictures:
@@ -146,8 +150,9 @@ class OpenAICompatibleChatModel:
 
     @property
     def uses_cloud(self) -> bool:
-        """llm.ai_url is the linked cloud server's chat address right now."""
-        return bool(self._token())
+        """llm.ai_url may be the cloud server right now: it's set and not marked as the user's own computer
+        (llm.ai_on_my_computer), or it's the linked server's chat address."""
+        return bool(self._ai_url) and (not self._local or bool(self._token()))
 
     def _token(self) -> str:
         """The token, when llm.ai_url is the linked cloud server's chat address right now; otherwise ''."""

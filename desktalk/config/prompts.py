@@ -256,6 +256,7 @@ class Replies(_Section):
     nobody_here: str
     no_ai_label: str
     cloud_ai_label: str
+    ai_url_label: str
     pictures_stay_home: str
     no_picture: str
     ask_for_a_sentence: str

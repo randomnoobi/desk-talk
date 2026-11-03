@@ -169,10 +169,11 @@ name too, and can get picked ahead of the speaker: then set `sound_card` to a wo
 Chat with the characters is optional and needs an AI somewhere else, since none runs on the Pi. Set `llm.ai_url` in that
 same file (`config/settings.yaml` says how), then `docker compose restart app`:
 
-- **Ollama on your own computer**: `http://<your computer>:11434/v1`. Text only goes there: your chat messages, and the
-  words the characters say by themselves (reminders, small talk, the recap), which can include the text of your
-  to-dos. A reminder waits at most `llm.reminder_wait_sec` for it, then uses its ready-made words, and warnings never
-  wait for it at all.
+- **Ollama on your own computer**: `http://<your computer>:11434/v1`, plus `ai_on_my_computer: true` under `llm:`.
+  Text only goes there: your chat messages, and the words the characters say by themselves (reminders, small talk,
+  the recap), which can include the text of your to-dos. Without `ai_on_my_computer: true` it gets only chat you start
+  yourself. A reminder waits at most `llm.reminder_wait_sec` for it, then uses its ready-made words, and warnings
+  never wait for it at all.
 - **Your cloud server**: `<its address>/v1`, once the Pi is linked to it. Only chat you start yourself goes there,
   as text, and the server doesn't store or log it.
 

@@ -132,7 +132,7 @@ A webcam with a microphone can get picked ahead of the speaker, as its name has 
 
 ## Close the laptop while chat is on
 
-Only for a Pi with `llm.ai_url` pointing at an AI on your laptop. Shows warnings don't wait for an AI that has gone away.
+Only for a Pi with `llm.ai_url` pointing at an AI on your laptop, and `llm.ai_on_my_computer: true`. Shows warnings don't wait for an AI that has gone away.
 
 1. Send a chat message from the page and see the AI answer.
 2. Close the laptop, and wait until it has gone to sleep.

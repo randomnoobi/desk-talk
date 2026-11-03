@@ -324,12 +324,15 @@ llm:
   # Which AI answers: ai_url when it's set, or else the first one with a key in .env:
   # Gemini → OpenAI → Groq → Ollama (OLLAMA_URL, no key needed)
   ai_url: ''                  # an AI's address, text only, for the Pi, which keeps no keys. Ollama on your computer:
-                              # http://<computer>:11434/v1, with ollama_model below. Your linked cloud server:
-                              # <its address>/v1. Only this setting may point at the cloud server, and only an address
-                              # matching the saved link (data/cloud.json) gets the token; that needs no restart.
-                              # Only text goes: never a picture. Ollama also gets the characters' own words (reminders,
-                              # small talk, the recap), which can include your to-dos; the cloud server only gets chat
-                              # you start yourself.
+                              # http://<computer>:11434/v1, with ollama_model below and ai_on_my_computer: true.
+                              # Your linked cloud server: <its address>/v1. Only this setting may point at the cloud
+                              # server, and only an address matching the saved link (data/cloud.json) gets the token;
+                              # that needs no restart. Only text goes: never a picture. Only chat you start yourself
+                              # goes here, unless ai_on_my_computer below says it's your own computer
+  ai_on_my_computer: false    # true = ai_url is Ollama on your own computer. Then it also gets the characters' own words
+                              # (reminders, small talk, the recap), which can include your to-dos, and is kept loaded.
+                              # Leave it false for anything else: they then use their ready-made words. An address that
+                              # matches your cloud link always counts as the cloud server, whatever this says
   send_pictures: true         # false = pictures never go to any AI. They only ever go to OLLAMA_URL, never ai_url
   reminder_wait_sec: 400      # longest a reminder waits for the AI's words before using its ready-made ones (here
                               # longer than the AI's own limits; the Pi's is short, in raspberry_pi/settings.pi.yaml)

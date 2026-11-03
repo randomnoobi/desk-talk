@@ -29,6 +29,7 @@ replies:
   nobody_here: Nobody is on the desk yet. Put something in front of the camera, or @mention someone who was here earlier.
   no_ai_label: "Chat isn't set up (optional)"
   cloud_ai_label: Cloud server AI
+  ai_url_label: The AI at llm.ai_url
   # someone asked an AI about a picture, or tried to send one, where pictures must stay home
   pictures_stay_home: Pictures stay here and aren't sent to any AI.
   no_picture: There is no picture to look at yet.
@@ -48,8 +49,8 @@ replies:
     no_connection: Could not reach the AI service. Check the internet connection and try again.
     ollama_no_connection: Could not reach Ollama. Check that the computer running it is awake and the Ollama app is open, then try again.
     cloud_refused: "The cloud server said no to this link. Link again: on a Pi, run the install command again with a new code from the website; on a computer, use scripts/link_cloud.py."
-    # only ever in the log: something tried to use the AI by itself while the AI is the cloud server
-    cloud_chat_only: Only chat you asked for goes to the cloud server.
+    # only ever in the log: something tried to use the AI by itself while llm.ai_url may be the cloud server
+    cloud_chat_only: "Only chat you asked for goes to the AI at llm.ai_url. If it's Ollama on your own computer, set llm.ai_on_my_computer: true."
     # an error it doesn't know, shown as it came ({error}, cut to settings → llm.error_text_chars)
     other: 'The AI returned an error: {error}'
     no_pictures: 'The model "{model}" cannot look at pictures. Set llm.vision_model in config/settings.yaml to a vision model (for example `ollama pull llava`).'
