@@ -57,6 +57,8 @@ camera:
                               # is done): the live view keeps the later one, unless it hasn't changed for this long
   pi_clock_pictures: 30       # the Pi's clock is judged by the quickest of its last this many pictures (the others
                               # waited for its detector or a slow Wi-Fi)
+  detection_off_after_sec: 5  # detection counts as not working (on the health page and in the log) only once nothing
+                              # has been found for this long: the Pi's detector can miss a picture now and then
 
 # ── Raspberry Pi (read by the camera program on the Pi, raspberry_pi/camera/) ─
 pi:

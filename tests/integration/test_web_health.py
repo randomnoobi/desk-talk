@@ -13,6 +13,7 @@ def test_health_shows_the_pi_its_detector_and_detection_here(tmp_path):
     rig.picture(UploadInfo(frame_id='pi-000009', taken_at=rig.clock.now(), detector=DetectorState.OFF,
                            detector_reason='the detector container is not answering'))
     rig.detector.fail = 'the model file is missing'
+    rig.clock.advance(rig.config.camera.detection_off_after_sec)       # a failure is only said after a quiet spell
     rig.picture()
     health = web_client(rig.app).get('/api/health').json()
     assert health['pi']['last_frame_id'] == 'pi-000009'

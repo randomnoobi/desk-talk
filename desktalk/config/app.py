@@ -60,6 +60,7 @@ class CameraSettings(_Section):
     pair_key_file: Path
     keep_newer_picture_sec: ZeroOrMore
     pi_clock_pictures: PositiveInt
+    detection_off_after_sec: ZeroOrMore   # a detection failure is only reported once none has worked for this long
 
 
 class PiDetector(_Section):

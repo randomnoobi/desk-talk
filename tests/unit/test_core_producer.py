@@ -471,6 +471,33 @@ def test_the_no_detector_problem_goes_away_when_the_pi_detector_starts_answering
     assert 'works again' in caplog.text
 
 
+def test_a_pi_detector_missing_a_picture_now_and_then_is_not_a_problem(caplog):
+    """On the Pi the app has no detector of its own: a picture the Pi's detector missed (off, a timeout) between ok
+    ones says nothing, so the health page and the log don't flip with each one."""
+    caplog.set_level(logging.INFO)
+    rig = Rig(detector=NoDetector(), detection_off_after_sec=5)
+    step = 1 / rig.producer._camera.fps                                 # noqa: SLF001
+    for n in range(12):
+        found = from_pi(DetectorState.OK, [LAPTOP], frame_id=f'pi-{n:06d}')
+        rig.picture(info=found if n % 2 == 0 else from_pi(DetectorState.OFF, frame_id=f'pi-{n:06d}'))
+        assert rig.producer.problem is None
+        rig.clock.advance(step)
+    assert 'failed' not in caplog.text and 'works again' not in caplog.text
+
+
+def test_a_pi_detector_off_for_a_while_is_a_problem_said_once(caplog):
+    caplog.set_level(logging.INFO)
+    rig = Rig(detector=NoDetector(), detection_off_after_sec=5)
+    rig.picture(info=from_pi(DetectorState.OK, [LAPTOP], frame_id='pi-000001'))
+    for n in range(2, 30):
+        rig.clock.advance(0.5)
+        rig.picture(info=from_pi(DetectorState.OFF, frame_id=f'pi-{n:06d}'))
+    assert 'detector.enabled' in (rig.producer.problem or '')
+    assert caplog.text.count('failed') == 1
+    rig.picture(info=from_pi(DetectorState.OK, [LAPTOP], frame_id='pi-000031'))
+    assert rig.producer.problem is None and caplog.text.count('works again') == 1
+
+
 def test_a_detection_problem_is_logged_once_and_again_when_it_is_fixed(caplog):
     caplog.set_level(logging.INFO)
     rig = Rig(kind='webcam', detector=FakeDetector(fail='the model file is missing'))
