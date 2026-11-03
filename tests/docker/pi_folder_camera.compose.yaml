@@ -7,5 +7,4 @@ services:
     volumes: !override
       - ./settings.pi.yaml:/desk-talk/config/settings.local.yaml:ro
       - pairing:/pairing:ro
-      - photos:/photos
       - ${PI_TEST_PICTURES}:/test-pictures:ro

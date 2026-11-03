@@ -18,9 +18,9 @@ Raspberry Pi (docker compose)
                        http://desktalk.local:5000, from a phone or computer on your Wi-Fi
 ```
 
-- **`camera`** takes **3 pictures a second**, keeps them on the Pi and **deletes them every 10 minutes**, asks the
-  detector what's in each one, and sends each picture with what was found to the app. Only this container gets the
-  camera's devices.
+- **`camera`** takes **3 pictures a second**, keeps them in the Pi's memory (not on the SD card) and **deletes them
+  every 10 minutes**, asks the detector what's in each one, and sends each picture with what was found to the app.
+  Only this container gets the camera's devices.
 - **`detector`** runs YOLO. If it is still loading, or down, the camera sends the pictures anyway, with nothing
   found, and Lens says the detector is off. Docker starts it again. There is no other detector to fall back on.
 - **`app`** is the same Desk Talk code that runs on a computer. It is the only container with an open port, and it
@@ -307,9 +307,13 @@ If that computer wrote its pairing key into `data/logs/` (older versions did), s
 
 ## Choosing the model
 
-The model the Pi runs isn't picked yet. By default it's `yolo26m-objv1-150.pt` (365 kinds of objects, at 640 pixels),
-which answered about 1.5 pictures a second on a Pi 5 alongside the camera and the app. That is not a final number. The speed
-test in [`benchmarks/`](../benchmarks/README.md) finds a better fit:
+The Pi runs `yolo26s-objv1-150.pt` at 640 pixels (`pi.detector` in `raspberry_pi/settings.pi.yaml`). It knows the
+same 365 kinds of objects as the computer's model, so the words in `config/agents.yaml` mean the same here. Measured
+on a Pi 5 (8 GB) with all three containers running, it looked at all 3 pictures a second, 200 to 215 ms each, using about
+2 of the 4 cores, and stayed under 62 °C with the fan. The bigger `yolo26m-objv1-150.pt` at 640 managed only 1.5 a second,
+and at 480 2.4 a second. The numbers are in [the first-run notes](../docs/plans/2026-10-30-pi-first-run-notes.md).
+
+To try another, the speed test in [`benchmarks/`](../benchmarks/README.md) helps:
 
 1. Run the benchmark on the Pi, in its own Docker image. The steps, each labelled **on the Pi** or
    **on your Mac**, are in [benchmarks/README.md](../benchmarks/README.md); the full run takes a few hours.
@@ -334,7 +338,7 @@ Things to know when you pick:
 - The detector container runs only the **`ncnn`** and **`pt`** formats. The benchmark also tries `onnx`, but
   an `onnx` pick can't be used there; take the best `ncnn` (or `pt`) one.
 - The `yolo11` models only know the 80 everyday COCO objects: no keys, earphones or pens, which the lost
-  items and some characters need. To try models that know those (the Objects365 ones, like the default),
+  items and some characters need. To try models that know those (the Objects365 ones, like the Pi's),
   add them to `config/benchmark.yaml` and run the benchmark again.
 - A model file of your own (not one Ultralytics can download) has to be copied into the detector's
   `models` volume: see the detector's [README](detector_service/README.md).

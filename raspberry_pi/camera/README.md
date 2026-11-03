@@ -45,12 +45,14 @@ To check everything, with the camera container stopped first (only one program c
 
 ```bash
 docker compose stop camera
-docker compose run --rm camera python3 -m raspberry_pi.camera --self-test
+docker compose run --rm -T camera python3 -m raspberry_pi.camera --self-test
 docker compose up -d
 ```
 
 The self-test checks the camera, the detector, the Pi's temperature and that the app answers, one line each, and says what
-to do about any problem. It sends no pictures. (This form of the command hasn't been tried on a real Pi yet.)
+to do about any problem. It sends no pictures. Tried on a Pi 5: "All good." The `-T` matters: without it Docker gives the
+container a terminal, and the camera container has none to give (compose.yaml keeps its own empty `/dev/pts`), so it
+stops with `open /dev/pts/ptmx: no such file or directory`.
 
 `python3 -m raspberry_pi.camera --help` lists every flag, but you rarely need them: the container gets what it needs
 from its environment.
@@ -67,7 +69,7 @@ inside its image. Flags win over both:
 |---|---|
 | `--camera` | `auto`, `picamera2` (camera module), `usb` / `usb:1` (USB webcam), `folder:<dir>` or `video:<file>` for testing. Without it: `pi.camera` in the settings (`auto`) |
 | `--fps` | pictures per second |
-| `--photo-dir` | where the pictures are saved (the container's `/photos` volume) |
+| `--photo-dir` | where the pictures are saved (`/photos`, in the container's memory: compose.yaml's `tmpfs`) |
 | `--delete-every-min` | delete the saved pictures this often (0 = never) |
 | `--keep-last-min` | minutes of pictures a cleanup keeps (0 = delete them all) |
 | `--min-free-mb` | if the disk gets this full, delete the oldest pictures right away |

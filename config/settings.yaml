@@ -86,7 +86,7 @@ pi:
                               # video:<file>; the camera program's --camera flag beats it
   error_text_chars: 200       # a reply the Pi can't read (not JSON): at most this many letters of it go in its log
   detector:                   # object detection on the Pi itself, in Docker (raspberry_pi/detector_service/)
-    model: yolo26m-objv1-150.pt  # in the container's models folder; the Pi speed test (benchmarks/) picks the final one
+    model: yolo26m-objv1-150.pt  # in the container's models folder. The Pi's own pick is in raspberry_pi/settings.pi.yaml
     format: ncnn              # ncnn = fastest on the Pi's processor; pt = plain PyTorch, to compare
     image_size: 640           # pictures are shrunk to this many pixels before detection (smaller = faster)
     confidence: 0.35          # lowest confidence a box needs to be kept at all

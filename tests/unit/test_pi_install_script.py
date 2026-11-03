@@ -232,7 +232,9 @@ def nothing_listening() -> str:
 
 
 def model_name() -> str:
-    return load_config(root=ROOT, environ={}).pi.detector.model
+    """The model install.sh fetches: settings.pi.yaml's, else config/settings.yaml's (the user's own file aside)."""
+    pi = yaml.safe_load((PI / 'settings.pi.yaml').read_text(encoding='utf-8'))
+    return pi.get('pi', {}).get('detector', {}).get('model') or load_config(root=ROOT, environ={}).pi.detector.model
 
 
 def files_in(folder: Path) -> dict[str, bytes]:
@@ -426,10 +428,20 @@ def test_a_dry_run_takes_the_same_checks_with_docker_not_yet_there(pi):
 
 
 def test_the_model_name_in_the_script_is_the_one_the_settings_give(pi):
-    settings = pi.root / 'config' / 'settings.yaml'
+    settings = pi.root / 'raspberry_pi' / 'settings.pi.yaml'
     text = settings.read_text(encoding='utf-8').replace(f'model: {model_name()}', 'model: another-model.pt')
     settings.write_text(text, encoding='utf-8')
     assert 'another-model.pt' in pi.run('--dry-run').out
+
+
+def test_with_no_model_in_settings_pi_yaml_the_one_in_settings_yaml_is_used(pi):
+    extra = pi.root / 'raspberry_pi' / 'settings.pi.yaml'
+    extra.write_text(extra.read_text(encoding='utf-8').replace(f'model: {model_name()}', ''), encoding='utf-8')
+    settings = pi.root / 'config' / 'settings.yaml'
+    old = load_config(root=ROOT, environ={}).pi.detector.model
+    settings.write_text(settings.read_text(encoding='utf-8').replace(f'model: {old}', 'model: from-settings.pt'),
+                        encoding='utf-8')
+    assert 'from-settings.pt' in pi.run('--dry-run').out
 
 
 def test_settings_pi_yaml_beats_settings_yaml_for_the_model(pi):

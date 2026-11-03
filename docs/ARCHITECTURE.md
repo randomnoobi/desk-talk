@@ -28,7 +28,7 @@ Docker, and nothing else needs to be on: no computer, no AI.
  ─────────────────────────────────────────────────────────────────────────────────────────────
   camera                              detector                        app
   camera → picture, 3 a second,
-  kept on the Pi (/photos volume)
+  kept on the Pi (/photos, in memory)
      │
      ├──▶ POST /detect ──────────────▶ YOLO: what's in it
      │    (one picture at a time;      (no open port; only

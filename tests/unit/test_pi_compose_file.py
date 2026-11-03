@@ -106,9 +106,14 @@ def test_the_camera_waits_for_the_app_to_be_healthy_and_uses_its_address(service
     assert no_fallbacks(camera['environment']['DESKTALK_SERVER']) == 'http://app:${APP_PORT}'
 
 
-def test_the_cameras_pictures_are_kept_where_the_settings_say(services, pi_settings):
+def test_the_cameras_pictures_are_kept_in_memory_where_the_settings_say(compose, services, pi_settings):
+    """In memory, not on the SD card: about 3 pictures a second, each written once and deleted minutes later, would
+    write hundreds of MB an hour to the card for nothing."""
     folder = pi_settings['pi']['photo_dir']
-    assert mounts(services['camera'])[folder] == f'photos:{folder}'
+    camera = services['camera']
+    assert folder not in mounts(camera) and 'photos' not in compose.get('volumes', {})
+    tmpfs = {line.split(':')[0]: no_fallbacks(line) for line in camera['tmpfs']}
+    assert tmpfs[folder] == f'{folder}:size=${{CAMERA_PHOTOS_SIZE}},uid=${{PI_USER_ID}},gid=${{PI_GROUP_ID}},mode=0700'
 
 
 def test_both_programs_that_read_the_settings_get_the_pi_settings_read_only(services):
@@ -212,7 +217,7 @@ def test_the_camera_gets_as_few_rights_as_it_can_work_with(services):
     camera = services['camera']
     assert all(rule.endswith(' rw') for rule in camera['device_cgroup_rules'])
     assert camera['cap_drop'] == ['ALL'] and camera['security_opt'] == ['no-new-privileges:true']
-    assert {line.split(':')[0] for line in camera['tmpfs']} == {'/dev/shm', '/dev/pts', '/dev/mqueue'}
+    assert {line.split(':')[0] for line in camera['tmpfs']} == {'/dev/shm', '/dev/pts', '/dev/mqueue', '/photos'}
 
 
 @pytest.mark.parametrize('name', ['app', 'detector'])

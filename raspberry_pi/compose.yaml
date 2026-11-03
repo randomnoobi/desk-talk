@@ -99,7 +99,7 @@ services:
       context: ..
       dockerfile: raspberry_pi/camera/Dockerfile
       args:
-        PI_USER_ID: ${PI_USER_ID:-1000}                       # who owns /photos in the image, and so in the volume
+        PI_USER_ID: ${PI_USER_ID:-1000}                       # who owns /photos in the image
     image: desktalk-camera:local
     restart: unless-stopped
     user: ${PI_USER_ID:-1000}:${PI_GROUP_ID:-1000}
@@ -123,7 +123,6 @@ services:
       - ./settings.pi.yaml:/desk-talk/config/settings.local.yaml:ro
       - ./mine:/desk-talk/config/mine:ro                 # your own settings (settings.mine.yaml); not in git
       - pairing:/pairing:ro
-      - photos:/photos
     device_cgroup_rules:
       - c ${CAMERA_VIDEO_MAJOR:-81}:* rw                # read and write the devices, but not make new ones
       - c ${CAMERA_MEDIA_MAJOR:-510}:* rw
@@ -136,6 +135,9 @@ services:
       - /dev/shm:mode=1777
       - /dev/pts
       - /dev/mqueue
+      # The pictures, in memory and not on the SD card: about 3 a second, each deleted within minutes, would write
+      # hundreds of MB an hour to the card for nothing. They count towards CAMERA_MEMORY_LIMIT, and go with a restart.
+      - /photos:size=${CAMERA_PHOTOS_SIZE:-300m},uid=${PI_USER_ID:-1000},gid=${PI_GROUP_ID:-1000},mode=0700
     mem_limit: ${CAMERA_MEMORY_LIMIT:-512m}
     memswap_limit: ${CAMERA_MEMORY_LIMIT:-512m}
     healthcheck:                                        # "healthy" = it saved a picture in the last few minutes
@@ -154,4 +156,3 @@ services:
 volumes:
   models:                                               # the models and their ncnn versions
   pairing:                                              # the pairing key, and nothing else
-  photos:                                               # the camera's pictures; they get deleted on a schedule

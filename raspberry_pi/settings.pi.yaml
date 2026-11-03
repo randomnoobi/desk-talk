@@ -9,9 +9,6 @@ detector:
 dev:
   enabled: false                 # no developer page on the Pi
 
-camera:
-  pair_key_file: /pairing/pair-key.txt   # on the volume the camera reads it from (compose.yaml)
-
 storage:
   rules_folder: data             # the app can't write to config/ in its image, and a rebuild would lose it
 
@@ -32,7 +29,22 @@ llm:
   ollama_timeout_sec: 30         # a laptop that went to sleep shouldn't keep your chat waiting for long
   ollama_reasoning_effort: none  # answer at once: a reminder only waits a moment, and thinking can use up the reply
 
+camera:
+  pair_key_file: /pairing/pair-key.txt   # on the volume the camera reads it from (compose.yaml)
+  fps: 3                         # the same as pi.fps: the app looks at every picture the Pi takes
+
 pi:
-  photo_dir: /photos             # the camera's own volume (compose.yaml), so pictures don't sit inside the container
+  fps: 3                         # pictures a second. Measured on a Pi 5 (Task 10): the detector below looks at every
+                                 # one. 4 a second kept the processor 68% busy, not 53%; and the detector only takes
+                                 # pictures as they come, so a slower model gets few more from a faster camera
+  photo_dir: /photos             # in the camera container's memory (compose.yaml), not on the SD card
+  min_free_mb: 30                # /photos is CAMERA_PHOTOS_SIZE in .env, so "full" means within this much of that
   detector:
     url: http://detector:8100    # the detector container's name. The port is DETECTOR_PORT in .env
+    # Measured on a Pi 5 with all three containers running (Task 10): 210 ms a picture, so all 3 a second, using
+    # about 2 of the 4 cores. It knows the same 365 kinds of things as the computer's model (Objects365), so the words
+    # in agents.yaml mean the same here. The medium one (yolo26m-objv1-150) at 640 managed 1.5 a second
+    # and at 480 2.4 a second; fp16 (half: true) was no faster here.
+    model: yolo26s-objv1-150.pt
+    image_size: 640
+    half: false
