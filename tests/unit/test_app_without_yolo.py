@@ -88,7 +88,7 @@ BUILD_WITHOUT_YOLO = textwrap.dedent('''
     from tests.fakes import FakeClock
 
     config = load_config(root=Path({root!r}), environ={{}}, dotenv=Path('/nonexistent'))
-    config = changed(config, 'detector', enabled={enabled})
+    config = changed(config, 'detector', enabled={enabled}, device={device!r})
     with tempfile.TemporaryDirectory() as folder:
         app = build(config, clock=FakeClock(), data_folder=Path(folder), pair_key='k', synchronous_events=True,
                     set_up_logging=False)
@@ -100,15 +100,17 @@ BUILD_WITHOUT_YOLO = textwrap.dedent('''
 
 
 def test_builds_without_ultralytics_or_torch():
-    script = BUILD_WITHOUT_YOLO.format(heavy=HEAVY, root=str(ROOT), enabled=False)
+    script = BUILD_WITHOUT_YOLO.format(heavy=HEAVY, root=str(ROOT), enabled=False, device='auto')
     done = subprocess.run([sys.executable, '-c', script], cwd=ROOT, capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, done.stderr[-2000:]
     assert 'built without' in done.stdout
 
 
-def test_a_computer_without_the_extra_still_builds_with_the_detector_on_and_says_what_to_do():
-    """A fresh clone with a plain `uv sync` and detector.enabled: true: no raw ModuleNotFoundError from build()."""
-    script = BUILD_WITHOUT_YOLO.format(heavy=HEAVY, root=str(ROOT), enabled=True)
+@pytest.mark.parametrize('device', ['auto', 'cpu'])
+def test_a_computer_without_the_extra_still_builds_with_the_detector_on_and_says_what_to_do(device):
+    """A fresh clone with a plain `uv sync` and detector.enabled: true: no raw ModuleNotFoundError from build(),
+    whatever detector.device says (only 'auto' asks PyTorch before the model is loaded)."""
+    script = BUILD_WITHOUT_YOLO.format(heavy=HEAVY, root=str(ROOT), enabled=True, device=device)
     done = subprocess.run([sys.executable, '-c', script], cwd=ROOT, capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, done.stderr[-2000:]
     assert 'built without' in done.stdout
@@ -125,9 +127,21 @@ def test_make_detector_says_what_to_do_when_yolo_is_not_installed(tmp_path, monk
     assert '--extra computer-detector' in caplog.text and 'detector.enabled: false' in caplog.text
 
 
+def test_a_missing_yolo_is_not_taken_for_a_broken_model_file(tmp_path):
+    """With detector.device set to cpu, YOLO is first imported while loading the model: that must still reach
+    make_detector as 'not installed', not be kept as a model that won't load."""
+    def missing(path):
+        raise ModuleNotFoundError("No module named 'ultralytics'", name='ultralytics')
+
+    settings = desk_config(tmp_path).detector.model_copy(update={'device': 'cpu'})
+    with pytest.raises(ImportError):
+        UltralyticsDetector(tmp_path / 'model.pt', settings, end2end=False, rect=False, load_model=missing)
+
+
 def test_the_blocker_in_that_test_really_stops_the_imports():
     script = BUILD_WITHOUT_YOLO.split('from desktalk.adapters')[0] + 'import torch'
-    done = subprocess.run([sys.executable, '-c', script.format(heavy=HEAVY, root=str(ROOT), enabled=False)],
+    done = subprocess.run([sys.executable, '-c', script.format(heavy=HEAVY, root=str(ROOT), enabled=False,
+                                                               device='auto')],
                           cwd=ROOT, capture_output=True, text=True, timeout=60)
     assert done.returncode != 0 and 'blocked' in done.stderr
 

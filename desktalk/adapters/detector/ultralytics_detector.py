@@ -70,6 +70,8 @@ class UltralyticsDetector:
         try:
             self._model = load_model(self._path)
             self._names = dict(self._model.names)
+        except ImportError:
+            raise           # YOLO or PyTorch isn't installed: make_detector() says what to do and uses no detector
         except Exception as exc:
             self._problem = f'The detection model {self._path.name} could not be loaded ({plain_error(exc)})'
             log.error('%s', self._problem)
