@@ -207,6 +207,7 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'camera.cutoff_title': ('object', 'side'),
     'ui.sensitivity_step': ('name', 'sure', 'join_sec', 'appear_sec', 'gone_sec', 'move_percent', 'leave_min',
                             'new_sure', 'new_join_sec'),
+    'server.other_camera': ('source', 'kind'),
     'dev.outside_data_folder': ('path',),
     'dev.is_a_folder': ('path',),
     'dev.no_such_file': ('path',),
@@ -687,6 +688,23 @@ class NotificationWords(_Section):
     sip_title: str
 
 
+class ServerWords(_Section):
+    """What the app's web servers answer (desktalk/web/): a crash, a wrong pairing key, the other camera."""
+
+    something_went_wrong: str
+    pi_key_problem: str
+    phone_key_problem: str
+    phone_stop_key_problem: str
+    other_camera: str                 # blanks in BLANKS
+
+
+class DetectionWords(_Section):
+    """NoDetector's words (desktalk/adapters/detector/no_detector.py): the app has no detector of its own."""
+
+    none_label: str
+    none_reason: str
+
+
 class CloudWords(_Section):
     """The cloud sender's words: the status line on the Settings page, its log lines, and what
     scripts/link_cloud.py says (desktalk/core/cloud/, scripts/link_cloud.py)."""
@@ -769,6 +787,8 @@ class Prompts(_Section):
     object_story: ObjectStoryWords
     notifications: NotificationWords
     cloud: CloudWords
+    server: ServerWords
+    detection: DetectionWords
     dev: DevWords
 
 

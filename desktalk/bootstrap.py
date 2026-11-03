@@ -366,7 +366,7 @@ def make_detector(config: AppConfig) -> Detector:
     won't load leaves the Pi's own detections working. With detector.enabled off there is none (NoDetector), and
     ultralytics and torch are never imported: only the Pi's detections count."""
     if not config.detector.enabled:
-        return NoDetector()
+        return NoDetector(config.prompts.detection)
     try:
         detector = UltralyticsDetector(config.resolve(config.detector.model), config.detector,
                                        end2end=config.detector.end2end, rect=config.detector.rect)
@@ -374,7 +374,7 @@ def make_detector(config: AppConfig) -> Detector:
         log.warning('YOLO (%s) is not installed, so this app has no detector of its own. To get it, run '
                     '`uv sync --extra computer-detector` (or `uv sync --all-packages`); to run without it, set '
                     'detector.enabled: false in config/settings.yaml.', exc.name or exc)
-        return NoDetector()
+        return NoDetector(config.prompts.detection)
     detector.warmup()
     return detector
 

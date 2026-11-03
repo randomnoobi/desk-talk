@@ -39,8 +39,6 @@ from desktalk.web.pairing import Links
 from desktalk.web.routers import DEV_SERVER, MAIN_SERVER, PHONE_SERVER
 from desktalk.web.streams import LiveStreams
 
-SOMETHING_WENT_WRONG = 'Something went wrong in Desk Talk. The details are in the log.'
-
 
 @asynccontextmanager
 async def run_background_jobs(app: FastAPI) -> AsyncIterator[None]:
@@ -128,4 +126,5 @@ async def _bad_request(request: Request, exc: RequestValidationError) -> JSONRes
 
 async def _crashed(request: Request, exc: Exception) -> JSONResponse:
     """A route crashed: uvicorn logs it with the details; the page gets a plain {"error"} like any other."""
-    return JSONResponse({'error': SOMETHING_WENT_WRONG}, status_code=500)
+    desktalk: DeskTalk = request.app.state.desktalk
+    return JSONResponse({'error': desktalk.config.prompts.server.something_went_wrong}, status_code=500)

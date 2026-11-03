@@ -14,7 +14,7 @@ import yaml
 from desktalk.adapters.camera import PiFrameSource
 from desktalk.adapters.detector import NoDetector
 from desktalk.adapters.picture import OpenCvPictureTools
-from desktalk.config import CameraSettings
+from desktalk.config import CameraSettings, load_config
 from desktalk.core.vision.producer import DetectionProducer
 from desktalk.domain import BBox, Detection, DetectionEvent, DetectorState, Light, SeenObject, Size, UploadInfo
 from tests.fakes import (
@@ -30,6 +30,7 @@ from tests.fakes.vision import FAKE_JPEG
 from tests.unit.test_core_vision_kit import FakeDesk
 
 ROOT = Path(__file__).resolve().parents[2]
+WORDS = load_config(environ={}, dotenv=Path('/nonexistent')).prompts.detection
 TOOLS = OpenCvPictureTools()
 
 LAPTOP = Detection('laptop', 0.9, BBox(200, 200, 400, 350))
@@ -443,7 +444,7 @@ def test_off_picture_gets_live_view_and_no_event():
     """The app with no detector of its own (detector.enabled: false) and a Pi whose detector is off: the live view
     goes on, nothing is said about what is on the desk."""
     painter = MarkingPainter()
-    rig = Rig(detector=NoDetector(), painter=painter)
+    rig = Rig(detector=NoDetector(WORDS), painter=painter)
     rig.picture(info=from_pi(DetectorState.OFF))
     assert rig.events() == [] and rig.lens.samples == []
     assert painter.given == [[]]
@@ -452,7 +453,7 @@ def test_off_picture_gets_live_view_and_no_event():
 
 
 def test_a_pi_detection_still_gets_through_when_the_app_has_no_detector():
-    rig = Rig(detector=NoDetector())
+    rig = Rig(detector=NoDetector(WORDS))
     rig.picture(info=from_pi(DetectorState.OK, [LAPTOP]))
     assert [e.detections for e in rig.events()] == [(LAPTOP,)]
     assert rig.producer.problem is None
@@ -462,7 +463,7 @@ def test_the_no_detector_problem_goes_away_when_the_pi_detector_starts_answering
     """The Pi's detector is off while it loads: the first picture reaches NoDetector and sets the problem. Once the
     Pi's detections arrive the problem is gone, and the log says so."""
     caplog.set_level(logging.INFO)
-    rig = Rig(detector=NoDetector())
+    rig = Rig(detector=NoDetector(WORDS))
     rig.picture(info=from_pi(DetectorState.OFF))
     assert 'detector.enabled' in (rig.producer.problem or '')
     caplog.clear()
@@ -475,7 +476,7 @@ def test_a_pi_detector_missing_a_picture_now_and_then_is_not_a_problem(caplog):
     """On the Pi the app has no detector of its own: a picture the Pi's detector missed (off, a timeout) between ok
     ones says nothing, so the health page and the log don't flip with each one."""
     caplog.set_level(logging.INFO)
-    rig = Rig(detector=NoDetector(), detection_off_after_sec=5)
+    rig = Rig(detector=NoDetector(WORDS), detection_off_after_sec=5)
     step = 1 / rig.producer._camera.fps                                 # noqa: SLF001
     for n in range(12):
         found = from_pi(DetectorState.OK, [LAPTOP], frame_id=f'pi-{n:06d}')
@@ -487,7 +488,7 @@ def test_a_pi_detector_missing_a_picture_now_and_then_is_not_a_problem(caplog):
 
 def test_a_pi_detector_off_for_a_while_is_a_problem_said_once(caplog):
     caplog.set_level(logging.INFO)
-    rig = Rig(detector=NoDetector(), detection_off_after_sec=5)
+    rig = Rig(detector=NoDetector(WORDS), detection_off_after_sec=5)
     rig.picture(info=from_pi(DetectorState.OK, [LAPTOP], frame_id='pi-000001'))
     for n in range(2, 30):
         rig.clock.advance(0.5)

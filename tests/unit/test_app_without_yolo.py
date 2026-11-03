@@ -17,24 +17,25 @@ import yaml
 
 from desktalk.adapters.detector import NoDetector, UltralyticsDetector
 from desktalk.bootstrap import make_detector
-from desktalk.config import DetectorSettings
+from desktalk.config import DetectorSettings, load_config
 from desktalk.domain import DetectorUnavailable
 from tests.contracts.detector_contract import UnavailableDetectorContract
 from tests.integration.app_kit import changed, desk_config
 
 ROOT = Path(__file__).resolve().parents[2]
+WORDS = load_config(environ={}, dotenv=Path('/nonexistent')).prompts.detection
 HEAVY = ('ultralytics', 'torch', 'torchvision')
 
 
 class TestNoDetectorContract(UnavailableDetectorContract):
     @pytest.fixture
     def detector(self):
-        return NoDetector()
+        return NoDetector(WORDS)
 
 
 def test_the_reason_says_the_detector_is_off_and_where_to_turn_it_on():
     with pytest.raises(DetectorUnavailable) as err:
-        NoDetector().detect(np.zeros((8, 8, 3), np.uint8))
+        NoDetector(WORDS).detect(np.zeros((8, 8, 3), np.uint8))
     assert 'detector.enabled' in str(err.value)
 
 

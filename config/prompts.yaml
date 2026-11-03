@@ -841,6 +841,26 @@ notifications:
   # the title of the pop-up when the camera saw you drink
   sip_title: Sip logged
 
+# ── What the app's web servers answer the camera, the phone and the page ───
+server:
+  # a route crashed: the details go to the log, never to the page
+  something_went_wrong: Something went wrong in Desk Talk. The details are in the log.
+  # the camera program sent a pairing key that isn't this app's (the app made a new one)
+  pi_key_problem: 'Pairing key does not match. The app made a new key, so restart the camera to read it (on the Pi: docker compose restart camera).'
+  # the phone camera page sent a picture with a pairing key that isn't this app's
+  phone_key_problem: Pairing key does not match. Scan the QR code on your computer again.
+  # the phone camera page said it stopped, with a pairing key that isn't this app's
+  phone_stop_key_problem: Pairing key does not match.
+  # a picture from a camera the settings don't use: {source} is settings → camera.source, {kind} the one that sent it
+  other_camera: 'The app is set to camera.source: {source}, so pictures from {kind} go nowhere. Set camera.source to {kind} in its settings (settings.local.yaml; on the Pi, raspberry_pi/mine/settings.mine.yaml) and restart it.'
+
+# ── Detection when the app has no detector of its own (settings → detector.enabled: false) ───
+detection:
+  # what the health page shows as the app's detector
+  none_label: none (turned off in this app)
+  # why a picture the camera sent no detections with wasn't looked at (the health page and the log)
+  none_reason: This app has no detector of its own (settings → detector.enabled is off), and the camera sent no detections.
+
 # ── The developer page's server messages (http://localhost:5000/dev/, settings → dev) ───
 dev:
   # a second "Run" while a run of the tests or the checks is still going

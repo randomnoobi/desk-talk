@@ -22,6 +22,7 @@ from fastapi import Depends, HTTPException, Request
 
 from desktalk.bootstrap import DeskTalk
 from desktalk.config import ListSize
+from desktalk.config.prompts import ServerWords
 from desktalk.web.middleware import MB, too_big
 from desktalk.web.pairing import Links
 from desktalk.web.streams import LiveStreams
@@ -81,22 +82,20 @@ def dev_only(request: Request, app: App) -> None:
 DevOnly = Depends(dev_only)
 
 
-def key_check(problem: str) -> Callable[[Request, DeskTalk], None]:
-    """A dependency: 403 {"error": problem} unless X-Desk-Key is the pairing key."""
+def key_check(problem: Callable[[ServerWords], str]) -> Callable[[Request, DeskTalk], None]:
+    """A dependency: 403 {"error": problem(config/prompts.yaml → server)} unless X-Desk-Key is the pairing key."""
     def check(request: Request, app: App) -> None:
         given = request.headers.get('X-Desk-Key')
         # Compared in a way that takes as long for a near miss as for a wild guess, so the key can't be
         # worked out bit by bit from how fast the replies come. As bytes, so any letters in the header work.
         if given is None or not secrets.compare_digest(given.encode(), app.pair_key.encode()):
-            raise HTTPException(403, problem)
+            raise HTTPException(403, problem(app.config.prompts.server))
     return check
 
 
 def other_camera(app: DeskTalk, kind: str) -> HTTPException:
     """409: the camera in the settings is another one, so an upload from `kind` would go nowhere."""
-    return HTTPException(409, f'The app is set to camera.source: {app.source_kind}, so pictures from {kind} '
-                              f'go nowhere. Set camera.source to {kind} in its settings '
-                              '(settings.local.yaml; on the Pi, raspberry_pi/mine/settings.mine.yaml) and restart it.')
+    return HTTPException(409, app.config.prompts.server.other_camera.format(source=app.source_kind, kind=kind))
 
 
 async def read_upload(request: Request, limit_mb: float) -> bytes:

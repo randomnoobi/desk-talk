@@ -5,16 +5,20 @@ from __future__ import annotations
 
 from typing import Any
 
+from desktalk.config.prompts import DetectionWords
 from desktalk.domain import Detection, DetectorUnavailable
 
 
 class NoDetector:
-    """A Detector (desktalk/ports.py) that never answers: detect() always raises DetectorUnavailable."""
+    """A Detector (desktalk/ports.py) that never answers: detect() always raises DetectorUnavailable.
+    `words`: config/prompts.yaml → detection."""
+
+    def __init__(self, words: DetectionWords):
+        self._words = words
 
     @property
     def label(self) -> str:
-        return 'none (turned off in this app)'
+        return self._words.none_label
 
     def detect(self, picture: Any) -> list[Detection]:
-        raise DetectorUnavailable('This app has no detector of its own (settings → detector.enabled is off), '
-                                  'and the camera sent no detections.')
+        raise DetectorUnavailable(self._words.none_reason)
