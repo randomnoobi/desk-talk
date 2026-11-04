@@ -10,18 +10,18 @@ from tests.pi.on_the_pi import (
     _address,
     app_stopped_cleanly,
     check_data,
+    clock_behind_warning_sec,
     expected_restore,
     first_wifi_after_boot,
     how_boot_ended,
     off_the_pi,
     pages_on_the_wifi,
     parse_proc_net,
-    parse_start_probe,
     problems,
-    process_start_ticks,
     read_json_lines,
     real_start_time,
-    restored_since,
+    restore_time_text,
+    restored_at_this_start,
     speak_result,
 )
 
@@ -192,24 +192,37 @@ def test_no_earlier_journal_says_nothing(text):
 
 
 # ── the app's log, which outlives each start ──
+# Each run says "Picked up" once, early, before it's healthy. The tests only read the log once the app is healthy, so
+# the last "Picked up" line starts this run. The times can't be used to tell runs apart: after a power cut the clock
+# starts behind, so the run before can carry later times than this one.
 RESTORED = 'INFO desktalk.core.object_states.tracker: Picked up {} object states from before the restart\n'
+WARNED = ('{} WARNING desktalk.core.object_states.tracker: The clock is behind the newest saved object state by '
+          'about {} seconds, so every object starts over\n')
 RUN_1 = ('2026-11-01 10:00:00 ' + RESTORED.format(3) +
          '2026-11-01 10:00:01 INFO uvicorn.error: Started server process [7]\n')
 STOPPED = '2026-11-01 10:05:00 INFO uvicorn.error: Shutting down\n'
 RUN_2 = ('2026-11-01 10:06:00 ' + RESTORED.format(1) +
          '2026-11-01 10:06:01 INFO uvicorn.error: Started server process [7]\n')
+# The run before a power cut, started (by update.sh, say) a few minutes before it, by a clock that was right
+RUN_BEFORE_CUT = ('2026-11-01 10:20:00 ' + RESTORED.format(2) +
+                  '2026-11-01 10:20:01 INFO uvicorn.error: Started server process [7]\n')
+STOPPED_LATE = '2026-11-01 10:25:00 INFO uvicorn.error: Shutting down\n'
 
 
-def test_only_a_line_from_this_start_counts():
-    assert restored_since(RUN_1 + STOPPED + RUN_2, '2026-11-01 10:06:00') == 1
+def test_only_the_line_from_this_start_counts():
+    assert restored_at_this_start(RUN_1 + STOPPED + RUN_2) == 1
 
 
-def test_an_older_line_doesnt_stand_in_for_this_start():
-    assert restored_since(RUN_1 + STOPPED, '2026-11-01 10:06:00') is None
+def test_this_start_is_the_last_one_in_the_file_even_when_the_run_before_has_later_times():
+    assert restored_at_this_start(RUN_1 + RUN_BEFORE_CUT + RUN_2) == 1
+
+
+def test_no_picked_up_line_says_nothing():
+    assert restored_at_this_start('2026-11-01 10:06:01 INFO uvicorn.error: Started server process [7]\n') is None
 
 
 def test_lines_with_no_time_on_them_dont_count():
-    assert restored_since('Picked up 3 object states from before the restart\n', '2026-11-01 10:06:00') is None
+    assert restored_at_this_start('Picked up 3 object states from before the restart\n') is None
 
 
 @pytest.mark.parametrize(('log', 'stopped'), [
@@ -217,53 +230,56 @@ def test_lines_with_no_time_on_them_dont_count():
     (RUN_1 + RUN_2, False),                             # no goodbye: the plug, or a kill
     (STOPPED + RUN_1 + RUN_2, False),                   # an older run's goodbye doesn't count
     (RUN_2, None),                                      # nothing ran before this
+    (RUN_1 + RUN_BEFORE_CUT + RUN_2, False),            # a power cut: the run before has later times than this one
+    (RUN_BEFORE_CUT + STOPPED_LATE + RUN_2, True),      # the same, with a goodbye
 ])
 def test_did_the_run_before_this_start_stop_cleanly(log, stopped):
-    assert app_stopped_cleanly(log, '2026-11-01 10:06:00') is stopped
+    assert app_stopped_cleanly(log) is stopped
+
+
+def test_the_restore_time_is_the_time_on_this_runs_picked_up_line():
+    assert restore_time_text(RUN_BEFORE_CUT + RUN_2) == '2026-11-01 10:06:00'
+    assert restore_time_text(STOPPED) is None
+
+
+def test_the_clock_behind_warning_comes_just_before_this_runs_picked_up_line():
+    log = RUN_BEFORE_CUT + WARNED.format('2026-11-01 10:06:00', 840) + RUN_2
+    assert clock_behind_warning_sec(log) == 840
+
+
+def test_a_warning_from_an_earlier_run_doesnt_count():
+    log = WARNED.format('2026-11-01 09:59:59', 300) + RUN_1 + RUN_2
+    assert clock_behind_warning_sec(log) is None
+    assert clock_behind_warning_sec(RUN_1 + RUN_2) is None
 
 
 # ── when the app really started, whatever the Pi's clock says ──
-def stat_line(name: str, ticks: int) -> str:
-    """A /proc/<pid>/stat line: field 22 is the start time. After the name come 19 more fields (3 to 21)."""
-    return f'123 ({name}) S ' + ' '.join(['1'] * 18) + f' {ticks} 5000 6000 18446744073709551615'
-
-
-@pytest.mark.parametrize('name', ['python3', 'my app', 'a) b (c', 'x)'])
-def test_process_start_ticks_ignores_the_brackets_in_the_name(name):
-    assert process_start_ticks(stat_line(name, 98765)) == 98765
-
-
 def test_real_start_is_now_minus_uptime_plus_start_since_boot():
-    # booted 1000 s ago; the app started 40 s after the boot (4000 ticks at 100 per second)
-    assert real_start_time(now=5000.0, uptime=1000.0, start_ticks=4000, ticks_per_sec=100) == pytest.approx(4040.0)
+    # /proc/uptime then `date +%s.%N`: booted 1000.5 s ago; the app started 40 s after the boot
+    assert real_start_time('1000.50 3000.0\n5000.5\n', 40.0) == pytest.approx(5000.5 - 1000.5 + 40.0)
 
 
-def test_parse_start_probe_reads_the_four_answers():
-    out = f'{stat_line("python3", 4000)}\n1000.50 3000.0\n5000.5\n100\n'
-    assert parse_start_probe(out) == pytest.approx(5000.5 - 1000.5 + 40.0)
-
-
-# ── what the app should have picked up ──
-START = 10_000.0        # when the app really started
+# ── what the app should have picked up, all by the app's own clock ──
+RESTORED_AT = 10_000.0      # the time on this run's "Picked up" line
 MAX_AGE = 300.0
 SLACK = 30.0
 
 
 def rows(**ages: float) -> list[dict[str, float | str]]:
-    """Saved states, each `age` seconds before the real start."""
-    return [{'object': name, 'ts': START - age} for name, age in ages.items()]
+    """Saved states, each `age` seconds before the restore."""
+    return [{'object': name, 'ts': RESTORED_AT - age} for name, age in ages.items()]
 
 
-def expect(saved, own_start=START):
-    return expected_restore(saved, START, own_start, MAX_AGE, SLACK)
+def expect(saved, *, warned=None, lag=0.0):
+    return expected_restore(saved, restored_at=RESTORED_AT, warned_behind_sec=warned, lag_sec=lag,
+                            restore_max_age_sec=MAX_AGE, slack_sec=SLACK)
 
 
-def test_normal_start_uses_the_window_from_the_real_start():
+def test_normal_start_uses_the_window_from_the_restore():
     e = expect(rows(fresh=20, edge=300, stale=400, old=900))
     assert e.case == 'normal'
     assert e.must_be == {'fresh'}               # 'edge' is within the slack either way
     assert e.could_be == {'fresh', 'edge'}      # 'stale' (400 s) is past 300 + 30
-    assert e.behind_sec == 0
 
 
 def test_normal_start_could_be_stops_at_the_slack():
@@ -272,22 +288,31 @@ def test_normal_start_could_be_stops_at_the_slack():
     assert e.must_be == {'a'}
 
 
-def test_rows_after_the_real_start_are_left_out():
-    e = expect([{'object': 'late', 'ts': START + 5}, {'object': 'ok', 'ts': START - 5}])
-    assert e.could_be == {'ok'}
+def test_rows_this_run_wrote_after_its_restore_are_left_out():
+    e = expect([{'object': 'new', 'ts': RESTORED_AT + 5}, {'object': 'old', 'ts': RESTORED_AT - 5}])
+    assert e.could_be == {'old'} and e.must_be == {'old'}
 
 
-def test_clock_behind_means_exactly_zero():
-    # the app's own clock thought it started 540 s earlier, so rows from 100 s before the real start look "newer"
-    e = expect(rows(fresh=100), own_start=START - 540)
+def test_a_row_in_the_same_second_as_the_restore_may_be_old_or_new():
+    # The log's times are whole seconds, so the restore was somewhere in the second after RESTORED_AT
+    e = expect([{'object': 'same_second', 'ts': RESTORED_AT + 0.5}])
+    assert e.could_be == {'same_second'}
+    assert e.must_be == set()
+
+
+def test_the_clock_behind_warning_means_exactly_zero():
+    e = expect(rows(fresh=20), warned=840, lag=900.0)
     assert e.case == 'clock behind'
     assert e.must_be == set() and e.could_be == set()
-    assert e.behind_sec == pytest.approx(540)
 
 
-def test_clock_behind_when_any_saved_row_is_newer_than_the_own_start():
-    e = expect(rows(newer=100, older=600), own_start=START - 200)
-    assert e.case == 'clock behind'
+def test_a_slow_clock_the_app_didnt_notice_is_its_own_case():
+    e = expect(rows(fresh=20), lag=SLACK + 1)
+    assert e.case == 'clock behind, not noticed'
+
+
+def test_a_lag_within_the_slack_is_a_normal_start():
+    assert expect(rows(fresh=20), lag=SLACK - 1).case == 'normal'
 
 
 def test_nothing_saved_in_the_window_is_its_own_case():

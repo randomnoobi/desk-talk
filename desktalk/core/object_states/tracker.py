@@ -301,7 +301,9 @@ class ObjectStateTracker:
         """Start each object in its newest saved state, if that's recent enough. Returns how many."""
         latest = self._store.latest_states(now - self._restore_max_age_sec)
         restored = 0
-        newest = max((row.ts for row in latest.values()), default=None)
+        # The recent-states query skips `moved` rows, so look at the change rows after `now` too.
+        newest = max([row.ts for row in latest.values()] + [row.ts for row in self._store.changes(now)],
+                     default=None)
         if newest is not None and newest > now:
             # This app writes rows with its own clock, so a newer row means the clock went back (a Pi with no
             # clock battery boots slow). Which rows are recent can't be told, so every object starts over.

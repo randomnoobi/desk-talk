@@ -424,6 +424,15 @@ def test_restore_warns_when_the_clock_is_behind(caplog):
     assert 'Picked up 0 object states from before the restart' in caplog.text
 
 
+def test_restore_starts_over_when_only_a_moved_row_is_newer_than_the_clock():
+    """The recent-states query skips `moved` rows, but they still prove the clock went back."""
+    store = InMemoryStateStore()
+    store.append([record(1000, 'bottle', 'snapshot', 'PRESENT'), record(1160, 'bottle', 'moved', 'PRESENT')])
+    tracker, _, _ = make_tracker(store)
+    assert tracker.restore(now=1100) == 0
+    assert tracker.snapshot().objects == {}
+
+
 def test_restore_accepts_a_row_exactly_at_now():
     store = InMemoryStateStore()
     store.append([record(1100, 'bottle', 'snapshot', 'PRESENT')])
