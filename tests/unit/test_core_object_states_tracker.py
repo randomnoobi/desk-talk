@@ -402,6 +402,44 @@ def test_restore_ignores_old_rows():
     assert make_tracker(store)[0].restore(now=1300) == 1
 
 
+def test_restore_starts_over_when_the_clock_is_behind_the_saved_rows():
+    """A Pi with no clock battery boots with a slow clock: rows saved before the cut look like the future."""
+    store = InMemoryStateStore()
+    store.append([record(1000, 'bottle', 'snapshot', 'PRESENT'), record(1200, 'cup', 'snapshot', 'PRESENT')])
+    tracker, _, _ = make_tracker(store)
+    assert tracker.restore(now=1100) == 0
+    assert tracker.snapshot().objects == {}
+
+
+def test_restore_warns_when_the_clock_is_behind(caplog):
+    store = InMemoryStateStore()
+    store.append([record(1000, 'bottle', 'snapshot', 'PRESENT'), record(1160, 'cup', 'snapshot', 'PRESENT')])
+    tracker, _, _ = make_tracker(store)
+    with caplog.at_level(logging.INFO, logger='desktalk.core.object_states.tracker'):
+        tracker.restore(now=1100)
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert 'behind' in warnings[0].getMessage()
+    assert '60' in warnings[0].getMessage()
+    assert 'Picked up 0 object states from before the restart' in caplog.text
+
+
+def test_restore_starts_over_when_only_a_moved_row_is_newer_than_the_clock():
+    """The recent-states query skips `moved` rows, but they still prove the clock went back."""
+    store = InMemoryStateStore()
+    store.append([record(1000, 'bottle', 'snapshot', 'PRESENT'), record(1160, 'bottle', 'moved', 'PRESENT')])
+    tracker, _, _ = make_tracker(store)
+    assert tracker.restore(now=1100) == 0
+    assert tracker.snapshot().objects == {}
+
+
+def test_restore_accepts_a_row_exactly_at_now():
+    store = InMemoryStateStore()
+    store.append([record(1100, 'bottle', 'snapshot', 'PRESENT')])
+    tracker, _, _ = make_tracker(store)
+    assert tracker.restore(now=1100) == 1
+
+
 def test_changes_survive_a_restart():
     first, bus, store = make_tracker()
     feed(first, 1000, [[o('bottle', 0.6)]] * SETTLE)

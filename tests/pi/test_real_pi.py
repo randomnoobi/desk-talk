@@ -22,14 +22,19 @@ import yaml
 
 from tests.pi.conftest import SERVICES, Pi, wait_for
 from tests.pi.on_the_pi import (
+    CLOCK_PROBE,
     RESULTS,
     app_stopped_cleanly,
+    clock_behind_warning_sec,
+    expected_restore,
     first_wifi_after_boot,
     how_boot_ended,
     off_the_pi,
     pages_on_the_wifi,
     problems,
-    restored_since,
+    real_start_time,
+    restore_time_text,
+    restored_at_this_start,
     speak_result,
 )
 
@@ -95,15 +100,10 @@ def latest_camera_status(pi: Pi) -> tuple[int, ...]:
     return tuple(int(n) for n in found[-1])
 
 
-def _started_local(pi: Pi) -> str:
-    """When the app's container last started, the way the app's log writes the time."""
-    return pi.run(f"date -d {shlex.quote(pi.state('app')['StartedAt'])} '+%F %T'").strip()
-
-
 def restored_count(pi: Pi) -> int | None:
     """How many object states the app says it picked up at its last start. The log outlives restarts, so a line from
     before that start doesn't count."""
-    return restored_since(pi.app_log(), _started_local(pi))
+    return restored_at_this_start(pi.app_log())
 
 
 def _power_cut_evidence(pi: Pi) -> str | None:
@@ -115,7 +115,7 @@ def _power_cut_evidence(pi: Pi) -> str | None:
     assert ended != 'clean', 'The journal shows the boot before this one shut down cleanly, so this was no power cut'
     if ended == 'not clean':
         return None
-    stopped = app_stopped_cleanly(pi.app_log(), _started_local(pi))
+    stopped = app_stopped_cleanly(pi.app_log())
     assert stopped is not True, ("The app's log shows it was stopped cleanly before this start, so this was a reboot "
                                  'or a shut-down and not a power cut')
     if stopped is None:
@@ -201,21 +201,41 @@ def test_starts_after_power_cut(pi: Pi):
         pytest.skip('Started and readable, but there was no SQLite file, so restored states could not be checked.')
 
     settings = pi.settings()
-    started = _started_wall_time(pi)
-    oldest = started - settings['restore_max_age_sec']
-    rows = [r for r in data['states']['rows'] if r['ts'] < started]
-    could_be = {r['object'] for r in rows if r['ts'] >= oldest - RESTORE_TIME_SLACK_SEC}
-    must_be = {r['object'] for r in rows if r['ts'] >= oldest + RESTORE_TIME_SLACK_SEC}
-    if not could_be:
+    log = pi.app_log()
+    restored, restored_at = restored_at_this_start(log), restore_time_text(log)
+    assert restored is not None and restored_at is not None, 'The app\'s log has no "Picked up" line'
+    warned = clock_behind_warning_sec(log)
+    restored_epoch = _local_time_to_epoch(pi, restored_at)
+    # How far behind the app's clock was when it restored: the real start is a little before the restore, so a clock
+    # that was right by then comes out at about 0 or below, even if it was still behind when the container started.
+    lag = _real_start_time(pi) - restored_epoch
+    expected = expected_restore(data['states']['rows'], restored_at=restored_epoch,
+                                warned_behind_sec=warned, lag_sec=lag,
+                                restore_max_age_sec=settings['restore_max_age_sec'], slack_sec=RESTORE_TIME_SLACK_SEC)
+    if expected.case == 'clock behind':
+        assert lag > 0, (f'The app said its clock was about {warned} s behind the saved states, but it was measured '
+                         f'{lag:.0f} s behind when it restored')
+    if expected.case == 'clock behind, not noticed':
+        pytest.skip(f"Started and readable, but the app's clock was {lag:.0f} s behind when it restored and no saved "
+                    'state looked newer, so it could not tell. That happens when the plug is pulled within about a '
+                    f"minute of the Pi's last clock save, so restored states could not be checked ({STEPS}).")
+    if expected.case == 'nothing saved':
         pytest.skip('Started and readable, but nothing was saved in the 5 minutes before the cut, so restored states '
                     f'could not be checked. Put a cup on the desk first and plug back in sooner ({STEPS}).')
-    restored = restored_count(pi)
-    assert restored is not None, 'The app\'s log has no "Picked up" line'
-    assert len(must_be) <= restored <= len(could_be), f'picked up {restored}; saved: {could_be}, sure: {must_be}'
+    assert len(expected.must_be) <= restored <= len(expected.could_be), (
+        f'{expected.case}: the app warned its clock was {warned} s behind, measured {lag:.0f} s; picked up '
+        f'{restored}; saved: {expected.could_be}, sure: {expected.must_be}')
 
 
-def _started_wall_time(pi: Pi) -> float:
-    return float(pi.run(f"date -d {shlex.quote(pi.state('app')['StartedAt'])} +%s"))
+def _real_start_time(pi: Pi) -> float:
+    """When the app really started by the Pi's clock now. A clock jump after the start can't change it."""
+    return real_start_time(pi.run(CLOCK_PROBE), pi.started_after_boot_sec('app'))
+
+
+def _local_time_to_epoch(pi: Pi, text: str) -> float:
+    """A time the way the app's log writes it, in seconds since 1970. `date` on the Pi uses its time zone, as the
+    log does."""
+    return float(pi.run(f'date -d {shlex.quote(text)} +%s'))
 
 
 def _first_wifi_after_boot_sec(pi: Pi) -> float | None:

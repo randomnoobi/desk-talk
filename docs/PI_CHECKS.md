@@ -56,7 +56,7 @@ It checks that the Pi has only just booted, that all three are healthy and start
 
 It also checks the power really was cut, so a `sudo reboot` fails on purpose. The Pi's journal is kept in memory, so the boot before this one is normally gone (Raspberry Pi OS sets `Storage=volatile`). The proof is then the app's log: a clean shut-down lets the app write `Shutting down` before it stops, and a pulled plug doesn't. Stopping the containers yourself first also fails it, for the same reason.
 
-The clock can be wrong after a power cut with no clock battery. That's known, and not part of this check.
+The Pi has no clock battery, so after a power cut its clock starts behind and jumps forward once it reaches the internet. When the app starts with its clock behind, every object starts over: nothing is picked up, and the check expects exactly that. The check works out when the app really started from the Pi's uptime, not from Docker's start time, because Docker took that from the wrong clock. Everything else it reads by the app's own clock: the app's log tells which run is this one by the order of its lines, not their times, and the saved states are compared with the time on this run's `Picked up` line. The Pi saves its clock now and then, so if the plug was pulled within about a minute of a save, no saved state looks newer and the app can't tell its clock is behind. The check then skips and says how many seconds behind the clock was.
 
 ## No Wi-Fi at boot
 
