@@ -46,7 +46,9 @@ DETECTION_SEC = 60               # a picture's detections reach /api/live
 CAMERA_STOP_SEC = 30
 POLL_SEC = 1
 PI_FINDS = {'bus', 'person'}     # what YOLO finds in Ultralytics' bus.jpg (the camera program's only picture)
-COMPUTER_FINDS = Detection('cup', 0.9, BBox(300, 600, 380, 720))       # what this computer's fake detector finds
+# What this computer's fake detector finds. Scissors have a block in config/agents.yaml but aren't on settings →
+# agents.can_join, so they never stay on in the chat: they show only in `extras`, for presence.disappear_after_sec.
+COMPUTER_FINDS = Detection('scissors', 0.9, BBox(300, 600, 380, 720))
 
 
 def env_file() -> dict[str, str]:
@@ -85,10 +87,10 @@ def pi_detector(url: str) -> str | None:
 
 
 def labels_on_live(url: str) -> set[str]:
-    """Every label /api/live shows, agents and other things alike."""
+    """Every label /api/live shows, agents on the desk and other things alike."""
     live = httpx.get(f'{url}/api/live').json()
-    return ({agent['label_seen'] for agent in live['agents'] if 'label_seen' in agent}
-            | {extra['yolo_class'] for extra in live['detections']['extras']})
+    return ({a['label_seen'] for a in live['agents'] if a['on_desk']}
+            | {e['yolo_class'] for e in live['detections']['extras']})
 
 
 @dataclass
@@ -152,6 +154,9 @@ def test_camera_program_to_page_through_the_container(stack):
 def test_container_stopped_falls_back_to_off(stack):
     wait_until(lambda: pi_detector(stack.url) == DetectorState.OK.value, READY_SEC,
                "The Pi's detector saying ok", stack.camera_log)
+    # Until the container has its model the camera program says off, so this computer may have found them already.
+    wait_until(lambda: COMPUTER_FINDS.label not in labels_on_live(stack.url), DETECTION_SEC,
+               "This computer's earlier detections going from /api/live", stack.camera_log)
     analysed = httpx.get(f'{stack.url}/api/health').json()['detection']['pictures_analysed']
     compose('stop')
     wait_until(lambda: pi_detector(stack.url) == DetectorState.OFF.value, FALL_BACK_SEC,
