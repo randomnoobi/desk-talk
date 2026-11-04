@@ -1,11 +1,11 @@
 """
 The camera program's loop: take a picture every 1/fps seconds, save it on the Pi, ask the detector
-container what's in it (one picture at a time), and send it to the computer.
+container what's in it (one picture at a time), and send it to the app.
 
 Four background threads keep the camera's pace steady: the detector worker, the uploader, the cleaner
 (deletes stored pictures) and the settings watcher (workers.py starts them). Each one only waits on its own
 job, so a slow detector, Wi-Fi or SD card never holds up the camera. Another, the watchdog, ends the program
-when the camera stops giving pictures, so systemd starts it again. The command line is in cli.py.
+when the camera stops giving pictures, so Docker starts the container again. The command line is in cli.py.
 
 A picture that can't be saved on the Pi is still detected and sent, and a cleanup that fails never stops
 the camera: each problem is logged once, until it goes away.
@@ -108,7 +108,7 @@ class CameraProgram:
 
     def _save(self, picture: Picture) -> None:
         """Keep the picture on the Pi. If that fails (disk full, a folder root owns ...), the picture still goes
-        to the detector and the computer; the problem is logged once, until saving works again."""
+        to the detector and the app; the problem is logged once, until saving works again."""
         try:
             self.store.save(picture.jpeg, picture.taken_at, picture.frame_id)
         except OSError as exc:
@@ -122,7 +122,7 @@ class CameraProgram:
             self._save_problem = ''
 
     def deliver(self, picture: Picture, verdict: Verdict) -> None:
-        """Send a picture to the computer with what the detector said (called from the detector's thread too)."""
+        """Send a picture to the app with what the detector said (called from the detector's thread too)."""
         with self._lock:
             self.verdicts[verdict.state] += 1
         if self.uploader is None:

@@ -49,6 +49,25 @@ def test_ncnn_converts_the_pt_once_and_opens_the_ncnn_folder(folder, yolo, tmp_p
     assert (ncnn / 'model.ncnn.param').is_file()
 
 
+def test_the_task_comes_from_the_metadata_the_conversion_wrote(folder, yolo, tmp_path):
+    ncnn = tmp_path / 'yolo11n_480_fp16_ncnn_model'
+    ncnn.mkdir()
+    (ncnn / 'metadata.yaml').write_text('description: YOLOE\ntask: segment\nimgsz: [640, 640]\n')
+    folder.open(settings())
+    assert yolo.opened[-1] == (ncnn, 'segment')
+
+
+@pytest.mark.parametrize('metadata', [None, 'description: YOLO\nimgsz: [640, 640]\n', 'task:\n', 'just words',
+                                      'task: [1, 2', 'task: 5'])
+def test_a_metadata_that_does_not_name_the_task_means_detect(folder, yolo, tmp_path, metadata):
+    ncnn = tmp_path / 'yolo11n_480_fp16_ncnn_model'
+    ncnn.mkdir()
+    if metadata is not None:
+        (ncnn / 'metadata.yaml').write_text(metadata)
+    folder.open(settings())
+    assert yolo.opened[-1] == (ncnn, 'detect')
+
+
 def test_each_picture_size_and_precision_gets_its_own_ncnn_folder(folder, yolo, tmp_path):
     a = folder.open(settings(image_size=640, half=False))
     b = folder.open(settings(image_size=480, half=True))

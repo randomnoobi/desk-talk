@@ -103,7 +103,7 @@ def ui_settings_from(c: AppConfig) -> UiSettings:
         desk=UiDesk(edge_proximity=safety.edge_proximity, desk_border_share=safety.desk_border_share,
                     min_desk_corners=safety.min_desk_corners, max_desk_corners=safety.max_desk_corners),
         quiet_hours=c.reminders.quiet_hours,
-        pi=UiPi(fps=c.pi.fps, delete_every_min=c.pi.delete_every_min),
+        pi=UiPi(fps=c.pi.fps, delete_every_min=c.pi.delete_every_min, public_address=web.public_address),
         phone=phone_settings(c.camera),
         lens_card=UiLensCard(id=LENS, **c.prompts.lens.card.model_dump()),
         list_sizes=UiListSizes(on_desk_shown=sizes.on_desk_shown, camera_issues_shown=sizes.camera_issues_shown,

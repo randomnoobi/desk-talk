@@ -1,7 +1,6 @@
 {
   "content_type": "image/jpeg",
   "headers": {
-    "access-control-allow-origin": "*",
     "cache-control": "no-cache, no-store, must-revalidate, max-age=0",
     "expires": "0",
     "pragma": "no-cache"

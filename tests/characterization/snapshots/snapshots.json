@@ -1,8 +1,6 @@
 {
   "content_type": "application/json",
-  "headers": {
-    "access-control-allow-origin": "*"
-  },
+  "headers": {},
   "json": {
     "items": [
       {

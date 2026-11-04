@@ -1,0 +1,17 @@
+# Your own settings on the Pi, laid over settings.pi.yaml and config/settings.yaml. install.sh copies this file to
+# raspberry_pi/mine/settings.mine.yaml the first time and never touches that copy again. The copy is not in git, so
+# `git pull` in update.sh never trips over it. Put only what you change in the copy, in the same layout as
+# config/settings.yaml, then run `docker compose restart app camera` (on the Pi, in raspberry_pi).
+#
+# For example, to add chat AI from Ollama on your own computer (nothing is sent anywhere until you do), take the # off
+# the next three lines. For your cloud server, use <its address>/v1 and leave out ai_on_my_computer: then only chat you
+# start yourself goes there.
+#
+# llm:
+#   ai_url: http://my-laptop.local:11434/v1
+#   ai_on_my_computer: true
+#
+# Or to use a USB webcam instead of the Pi's camera:
+#
+# pi:
+#   camera: usb

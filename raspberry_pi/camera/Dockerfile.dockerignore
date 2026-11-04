@@ -1,0 +1,8 @@
+# What the camera image's build may see. The build starts at the repo's top folder, so everything
+# else (.venv, models, data, the .env with your API keys ...) is left out here.
+*
+!shared/desktalk_shared
+!raspberry_pi/camera
+!config/settings.yaml
+**/__pycache__
+**/*.pyc

@@ -116,6 +116,19 @@ def test_an_unexpected_failure_while_detecting_is_500_with_the_reason(client, re
     assert 'ncnn crashed' in r.json()['detail']
 
 
+def test_health_stops_saying_ready_once_detections_fail(client, ready, yolo):
+    def crash():
+        raise RuntimeError('ncnn crashed')
+
+    yolo.during_predict = crash
+    post_picture(client, jpeg())
+    health = DetectorHealth.from_dict(client.get('/health').json())
+    assert health.state is ServiceState.ERROR and 'ncnn crashed' in health.message
+    yolo.during_predict = None
+    assert post_picture(client, jpeg()).status_code == 200
+    assert client.get('/health').json()['state'] == 'ready'
+
+
 def test_a_picture_sent_while_another_is_being_detected_is_429_busy_at_once(client, ready, yolo):
     answers, sent = [], []
 

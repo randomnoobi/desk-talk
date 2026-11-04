@@ -311,4 +311,5 @@ class ObjectStateTracker:
                 self._hysteresis.pop(label, None)
                 self._windows.pop(label, None)
                 restored += 1
+        log.info('Picked up %d object states from before the restart', restored)
         return restored

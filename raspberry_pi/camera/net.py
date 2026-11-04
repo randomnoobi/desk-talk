@@ -44,11 +44,11 @@ def error_text(body: bytes, most_chars: int | None) -> str:
 
 
 def computer_away(server: str, why: NoAnswer) -> str:
-    return f'Cannot reach the computer at {server} ({why}). Is server.py running, and on the same Wi-Fi?'
+    return f'Cannot reach the app at {server} ({why}). Is it running?'
 
 
 def computer_said_no(status: int, body: bytes, most_chars: int | None) -> str:
-    return f'The computer said no ({status}): {error_text(body, most_chars) or "it gave no reason"}'
+    return f'The app said no ({status}): {error_text(body, most_chars) or "it gave no reason"}'
 
 
 def _plain(exc: BaseException, timeout: float) -> str:

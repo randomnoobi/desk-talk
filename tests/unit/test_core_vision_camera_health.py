@@ -231,7 +231,7 @@ def test_lens_speaks_for_the_pi_when_pictures_stop():
     assert h.issues()[0]['fix'].startswith('Check the Pi')
 
 
-def test_lost_pi_pictures_name_the_camera_program_that_runs_on_the_pi_now():
+def test_lost_pi_pictures_name_the_camera_container_that_runs_on_the_pi_now():
     h = health('pi')
     run(h, 2, bright())
     said = []
@@ -239,7 +239,7 @@ def test_lost_pi_pictures_name_the_camera_program_that_runs_on_the_pi_now():
         said += h.check(t, connected=False)
     fix = h.issues()[0]['fix']
     for words in (said[0]['text'], fix):
-        assert 'python3 -m raspberry_pi.camera' in words and 'camera_node' not in words
+        assert 'docker compose' in words and 'systemctl' not in words and 'camera_node' not in words
 
 
 @pytest.mark.parametrize('source, words, fix', [

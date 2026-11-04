@@ -3,7 +3,8 @@
 #
 #  Every prompt the AI gets, Lens's wording, the habit nudges and the
 #  fixed replies. Change the words here; the code only fills in the blanks.
-#  Restart `uv run python server.py` after a change.
+#  Restart the app after a change: on a computer, `uv run python server.py`; on the Pi these words are built into the
+#  app's image, so run `docker compose up -d --build` in raspberry_pi/ (or update.sh).
 #
 #  Blanks are written {like_this}. Each text can only use the blanks its
 #  code fills in (the list is in desktalk/config/prompts.py, BLANKS); a
@@ -23,10 +24,14 @@
 
 # ── Fixed replies (no AI needed) ────────────────────────────────────
 replies:
-  needs_an_ai: The characters need an AI to chat. Add a key to .env (GEMINI_API_KEY is free; or set OLLAMA_URL) and restart the server.
+  needs_an_ai: "Chat isn't set up. It's optional: warnings, reminders and habit tracking all work without it. The README says how to add it."
   empty_reply: The AI sent back an empty reply. Try saying it again.
   nobody_here: Nobody is on the desk yet. Put something in front of the camera, or @mention someone who was here earlier.
-  no_ai_label: No AI (add a key to .env)
+  no_ai_label: "Chat isn't set up (optional)"
+  cloud_ai_label: Cloud server AI
+  ai_url_label: The AI at llm.ai_url
+  # someone asked an AI about a picture, or tried to send one, where pictures must stay home
+  pictures_stay_home: Pictures stay here and aren't sent to any AI.
   no_picture: There is no picture to look at yet.
   # added to the message when a small AI sent back nothing
   ask_for_a_sentence: |2-
@@ -42,7 +47,10 @@ replies:
     too_slow: '{who} took too long to answer. Try again in a moment.'
     ollama_too_slow: Ollama took too long to answer (it may still be loading the model). Try again in a moment.
     no_connection: Could not reach the AI service. Check the internet connection and try again.
-    ollama_no_connection: Could not reach Ollama. Open the Ollama app, then try again.
+    ollama_no_connection: Could not reach Ollama. Check that the computer running it is awake and the Ollama app is open, then try again.
+    cloud_refused: "The cloud server said no to this link. Link again: on a Pi, run the install command again with a new code from the website; on a computer, use scripts/link_cloud.py."
+    # only ever in the log: something tried to use the AI by itself while llm.ai_url may be the cloud server
+    cloud_chat_only: "Only chat you asked for goes to the AI at llm.ai_url. If it's Ollama on your own computer, set llm.ai_on_my_computer: true."
     # an error it doesn't know, shown as it came ({error}, cut to settings → llm.error_text_chars)
     other: 'The AI returned an error: {error}'
     no_pictures: 'The model "{model}" cannot look at pictures. Set llm.vision_model in config/settings.yaml to a vision model (for example `ollama pull llava`).'
@@ -134,7 +142,7 @@ chat:
     - When widget data is shown, tie your reply to it (open todos, breaks, sips, snacks). Use @mentions only when natural.
     - When the user asks you to DO something (add a task, log a break, etc.), you MUST include the action tag — talking about it is not enough.
     {action_instructions}
-  # for AIs on this computer (Ollama): they do better with fewer rules
+  # for small AIs (Ollama): they do better with fewer rules
   identity_short: |-
     You are {name}, a {object} on someone's desk. You text with the desk owner.
 
@@ -309,7 +317,7 @@ trackers:
   behavior: |2-
 
     BEHAVIOR: The user opened this panel {count} time(s) in the last hour. If nothing was completed or changed, gently point that out.
-  # the to-do tracker starts with today's date (this computer's day), so "due Friday" becomes a real day
+  # the to-do tracker starts with today's date (the app's own day), so "due Friday" becomes a real day
   todo_today: |2-
 
     TODAY IS {weekday} {day}. Work out "tomorrow", "Friday" or "next week" from this day.
@@ -644,17 +652,16 @@ lens:
   pi_hot: The Raspberry Pi is running hot ({temp:.0f}°C), so it may slow down. Give it some air or a small fan.
   pi_slowed: The Raspberry Pi is slowing itself down because it's too hot. Give it some air or a small fan.
   pi_power: The Raspberry Pi's power supply is too weak, so it's slowing itself down. The official Raspberry Pi power supply fixes this.
-  pi_clock: 'The Raspberry Pi''s clock is {seconds} seconds {way} this computer''s. I go by this computer''s time, but turning on network time on the Pi fixes it: sudo timedatectl set-ntp true'
+  pi_clock: 'The Raspberry Pi''s clock is {seconds} seconds {way} the app''s. I go by the app''s time, but turning on network time on the Pi fixes it (on the Pi): sudo timedatectl set-ntp true'
   pi_clock_behind: behind
   pi_clock_ahead: ahead of
-  pi_detector: The Raspberry Pi isn't finding the objects itself right now{why}. This computer is doing it instead, so everything still works.
-  pi_detector_why: ': {reason}'
+  pi_detector: The Raspberry Pi isn't finding the objects right now. Until it does, I can't see what is on the desk, but the live view still works. On the Pi, check that the detector is running (docker compose ps).
   # when a Pi problem is gone
   pi_fixed:
     pi_hot: The Raspberry Pi has cooled down and is running normally again. Thanks!
     pi_power: The Raspberry Pi has enough power again. Thanks!
-    pi_clock: The Raspberry Pi's clock matches this computer's again.
-    pi_detector: The Raspberry Pi is finding the objects itself again.
+    pi_clock: The Raspberry Pi's clock matches the app's again.
+    pi_detector: The Raspberry Pi is finding the objects again.
 
 # ── Lens's camera checks: what it says, and the app's camera panel ───
 camera:
@@ -670,7 +677,7 @@ camera:
     slow: The pictures are only coming through at about {fps:.1f} a second. Keeping the camera near the Wi-Fi router (and plugged in) helps.
   # no pictures: what to check depends on the camera (settings → camera.source)
   lost:
-    pi: I lost the pictures from the Raspberry Pi. Is it still on and connected to the Wi-Fi? On the Pi, check that the camera program is still running (sudo systemctl status desk-talk-camera, or start it with python3 -m raspberry_pi.camera).
+    pi: I lost the pictures from the Raspberry Pi camera. Is the Pi still on? On the Pi, check that the camera container is running (docker compose ps), and start it with docker compose up -d if it is not.
     phone: I lost the video from the phone. Is its screen still on? Phones stop the camera when they lock, so keep the Desk Talk page open on it.
     webcam: I lost the webcam picture. Is it still plugged in, or is another app using it?
   # when a problem is gone
@@ -721,7 +728,7 @@ camera:
       fix: Move the camera (or the Wi-Fi router) closer, and keep it plugged in.
   lost_title: No pictures from the camera
   lost_fix:
-    pi: Check the Pi is on, on the Wi-Fi, and running the camera program (python3 -m raspberry_pi.camera).
+    pi: Check the Pi is on and its camera container is running (docker compose ps, then docker compose up -d).
     phone: Keep the phone unlocked with the Desk Talk page open.
     webcam: Plug the webcam back in or close other apps using it.
   cutoff_title: '{object} is cut off ({side})'
@@ -788,19 +795,19 @@ ui:
 # ── The cloud server (optional; settings → cloud) ───────────────────
 cloud:
   # the status line on the Settings page
-  status_off: Not linked to a cloud server. Nothing leaves this computer.
+  status_off: Not linked to a cloud server. Nothing leaves this device.
   status_on: Linked to a cloud server. Habit events go to it in the background.
   # {count} is how many events are waiting to be sent
   status_waiting: '{count} events are waiting to be sent (the server may be off).'
-  status_stopped: The cloud server doesn't know this computer any more, so nothing is sent. Link it again with scripts/link_cloud.py.
+  status_stopped: "The cloud server doesn't know this device any more, so nothing is sent. Link it again: on a Pi, run the install command again with a new code from the website; on a computer, use scripts/link_cloud.py."
   # in the log: the server did not answer ({error} says why) and the sender waits {seconds} seconds
   log_unreachable: "The cloud server didn't answer well ({error}). Trying again in {seconds:g} s."
   # in the log: the server answered but said no to the upload ({error} says why). That will not mend itself, so check
   # the server; the sender tries again in {seconds} seconds
   log_rejected: "The cloud server refused the upload ({error}). Trying again in {seconds:g} s, but this needs a fix."
   # in the log: the saved link (data/cloud.json) cannot be used, so nothing is sent until you link again
-  log_bad_link: The saved cloud link is damaged, so it counts as not linked. Link again with scripts/link_cloud.py.
-  log_not_linked: The cloud server says it doesn't know this computer any more. Sending stops until you link it again with scripts/link_cloud.py.
+  log_bad_link: "The saved cloud link is damaged, so it counts as not linked. Link again: on a Pi, run the install command again with a new code from the website; on a computer, use scripts/link_cloud.py."
+  log_not_linked: "The cloud server says it doesn't know this device any more. Sending stops until you link it again: on a Pi, run the install command again with a new code from the website; on a computer, use scripts/link_cloud.py."
   # in the log: the server kept the rest but would not keep {count} events; {reasons} says why
   log_refused: "The cloud server did not keep {count} events: {reasons}"
   # what scripts/link_cloud.py says: it worked ({server}, {device_id}), the code was not accepted, or nothing answered
@@ -834,6 +841,26 @@ notifications:
   # the title of the pop-up when the camera saw you drink
   sip_title: Sip logged
 
+# ── What the app's web servers answer the camera, the phone and the page ───
+server:
+  # a route crashed: the details go to the log, never to the page
+  something_went_wrong: Something went wrong in Desk Talk. The details are in the log.
+  # the camera program sent a pairing key that isn't this app's (the app made a new one)
+  pi_key_problem: 'Pairing key does not match. The app made a new key, so restart the camera to read it (on the Pi: docker compose restart camera).'
+  # the phone camera page sent a picture with a pairing key that isn't this app's
+  phone_key_problem: Pairing key does not match. Scan the QR code on your computer again.
+  # the phone camera page said it stopped, with a pairing key that isn't this app's
+  phone_stop_key_problem: Pairing key does not match.
+  # a picture from a camera the settings don't use: {source} is settings → camera.source, {kind} the one that sent it
+  other_camera: 'The app is set to camera.source: {source}, so pictures from {kind} go nowhere. Set camera.source to {kind} in its settings (settings.local.yaml; on the Pi, raspberry_pi/mine/settings.mine.yaml) and restart it.'
+
+# ── Detection when the app has no detector of its own (settings → detector.enabled: false) ───
+detection:
+  # what the health page shows as the app's detector
+  none_label: none (turned off in this app)
+  # why a picture the camera sent no detections with wasn't looked at (the health page and the log)
+  none_reason: This app has no detector of its own (settings → detector.enabled is off), and the camera sent no detections.
+
 # ── The developer page's server messages (http://localhost:5000/dev/, settings → dev) ───
 dev:
   # a second "Run" while a run of the tests or the checks is still going
@@ -842,6 +869,10 @@ dev:
   other_computer: The developer page only answers this computer.
   # a request sent by some other web page open in your browser
   other_web_page: The developer page only answers its own page, not other web pages.
+  # any change sent by a page from some other web site, on the app's or the phone camera's server
+  other_site: Desk Talk only takes changes from its own page, not from other web sites.
+  # a request to a name the app doesn't go by (a web site pointing its own name at it), on either server
+  other_name: "Desk Talk only answers at its own addresses: a number address, localhost, a name ending in .local, or web.public_address. To open it under another name, such as a reverse proxy's, add that name to web.allowed_hosts in your settings."
   # the storage tab asked for a file: {path} is the path it asked for, inside the data folder
   outside_data_folder: '{path} is outside the data folder, so it is never read.'
   is_a_folder: '{path} is a folder, not a file.'

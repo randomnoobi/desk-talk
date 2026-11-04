@@ -296,7 +296,7 @@ export interface PiInfo {
   disk_free_mb?: number
   last_cleanup_ts?: number
   cpu_temp_c?: number
-  throttled?: string               // the Pi's slow-down flags: '0x0' is fine
+  throttled?: string               // the Pi's slow-down flags: '0x0' is fine; '' = the Pi could not read them
 }
 
 export interface PiStatus extends PiInfo {

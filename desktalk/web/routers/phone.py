@@ -69,8 +69,7 @@ def phone_config(app: App) -> PhoneSettings:
 
 
 @phone_router.post('/api/phone/frame', response_model=PhoneFrameReply, response_model_exclude_none=True,
-                   dependencies=[Depends(key_check('Pairing key does not match. Scan the QR code on your computer '
-                                                   'again.'))])
+                   dependencies=[Depends(key_check(lambda words: words.phone_key_problem))])
 async def phone_frame(request: Request, app: App) -> PhoneFrameReply:
     inbox, phone = app.phone_inbox, app.phone
     if inbox is None or phone is None:
@@ -83,7 +82,7 @@ async def phone_frame(request: Request, app: App) -> PhoneFrameReply:
     return PhoneFrameReply(fps=app.source.fps, tip=app.camera_health.phone_tip())
 
 
-@phone_router.post('/api/phone/stop', dependencies=[Depends(key_check('Pairing key does not match.'))])
+@phone_router.post('/api/phone/stop', dependencies=[Depends(key_check(lambda words: words.phone_stop_key_problem))])
 def phone_stop(app: App) -> Ok:
     phone = app.phone
     if phone is None:

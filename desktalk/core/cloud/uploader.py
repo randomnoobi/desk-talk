@@ -119,6 +119,13 @@ class _Pending:
         self.remember = remember
 
 
+def linked_server(store: KeyValueStore, link_key: str) -> tuple[str, str] | None:
+    """(the server's address, the token) of the saved link, or None when there's no link fit to use. Read fresh each
+    time, so a link made while the app runs counts at once."""
+    saved = store.load(link_key)
+    return (saved['server'], saved['token']) if _well_formed(saved) else None
+
+
 class CloudUploader:
     """The CloudSending job (desktalk/ports.py).
 

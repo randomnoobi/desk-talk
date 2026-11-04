@@ -227,6 +227,7 @@ class UiDesk(BaseModel):
 class UiPi(BaseModel):
     fps: float
     delete_every_min: float
+    public_address: str              # web.public_address: when set, the Pi starts its own camera
 
 
 class UiCloud(BaseModel):

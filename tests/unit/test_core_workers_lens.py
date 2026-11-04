@@ -4,6 +4,7 @@ or its own object detection is off."""
 from __future__ import annotations
 
 import calendar
+import logging
 from pathlib import Path
 
 from desktalk.config import LensSettings, LensWaits, PiSettings, load_config
@@ -365,7 +366,7 @@ def test_the_pi_is_not_checked_before_its_first_picture():
 NO_CONTAINER = 'the detector container is not answering'
 
 
-def test_lens_says_why_the_pis_own_detection_is_off_once_it_has_been_off_a_while():
+def test_lens_says_the_pis_own_detection_is_off_once_it_has_been_off_a_while():
     rig = Rig(pi=PiReports())
     rig.pi.picture(rig.clock.now(), detector=DetectorState.OFF, reason=NO_CONTAINER)
     rig.tick()
@@ -373,8 +374,32 @@ def test_lens_says_why_the_pis_own_detection_is_off_once_it_has_been_off_a_while
     assert rig.said() == []
     rig.tick(after=1)
     [(kind, text)] = rig.said()
-    assert kind == 'problem' and NO_CONTAINER in text and 'This computer' in text
+    assert kind == 'problem' and 'This computer' not in text and 'docker compose' in text
     assert [(n.key, n.kind) for n in rig.bus.of_type(CameraNotice)] == [('pi_detector', 'problem')]
+
+
+def test_the_raw_reason_goes_in_the_log_and_is_never_said(caplog):
+    """It gets read out on the Pi's speaker, and "[Errno -2] Name or service not known" means nothing to anyone."""
+    raw = "the detector isn't answering: [Errno -2] Name or service not known"
+    rig = Rig(pi=PiReports())
+    rig.pi.picture(rig.clock.now(), detector=DetectorState.OFF, reason=raw)
+    with caplog.at_level(logging.WARNING, logger='desktalk.core.chat.workers.lens'):
+        rig.tick()
+        rig.tick(after=60)
+        rig.tick(after=5)
+    [(_, text)] = rig.said()
+    assert 'Errno' not in text and "isn't answering" not in text
+    assert caplog.text.count('[Errno -2] Name or service not known') == 1      # once, not at every look
+
+
+def test_a_new_reason_goes_in_the_log_too(caplog):
+    rig = Rig(pi=PiReports())
+    with caplog.at_level(logging.WARNING, logger='desktalk.core.chat.workers.lens'):
+        rig.pi.picture(rig.clock.now(), detector=DetectorState.OFF, reason='first reason')
+        rig.tick()
+        rig.pi.picture(rig.clock.now(), detector=DetectorState.OFF, reason='second reason')
+        rig.tick(after=5)
+    assert 'first reason' in caplog.text and 'second reason' in caplog.text
 
 
 def test_busy_is_not_off():
@@ -432,7 +457,7 @@ def test_lens_still_warns_when_the_pis_detector_is_off_because_it_failed():
     rig.tick()
     rig.tick(after=60)
     [(kind, text)] = rig.said()
-    assert kind == 'problem' and "isn't answering" in text
+    assert kind == 'problem' and "isn't finding the objects" in text
 
 
 def test_no_thanks_when_a_failed_detector_is_then_turned_off_on_purpose():

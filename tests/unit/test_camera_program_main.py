@@ -302,7 +302,7 @@ def test_the_watchdog_stops_the_program_when_no_picture_comes(caplog):
     clock.advance(0.1)
     dog.tick()
     assert stops == [19.0]
-    assert 'systemd' in caplog.text
+    assert 'Docker' in caplog.text and 'systemd' not in caplog.text
 
 
 def test_each_picture_taken_keeps_the_watchdog_quiet(tmp_path, container, computer):

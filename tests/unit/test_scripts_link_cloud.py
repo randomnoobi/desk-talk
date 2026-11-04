@@ -73,6 +73,19 @@ def test_link_script_saves_token_and_place():
     assert 'dev-1' in said[0] and 'http://192.168.1.9:8000' in said[0]
 
 
+def test_link_script_can_take_the_code_from_the_environment(monkeypatch):
+    monkeypatch.setenv('DESKTALK_LINK_CODE', 'RIGHT-CODE')
+    claims = Claims()
+    code, _, _ = run(['--server', 'http://x:1', '--name', 'Desk'], claims)
+    assert code == 0 and claims.calls == [('http://x:1', 'RIGHT-CODE', 'Desk')]
+
+
+def test_link_script_needs_a_code_from_one_or_the_other(monkeypatch):
+    monkeypatch.delenv('DESKTALK_LINK_CODE', raising=False)
+    with pytest.raises(SystemExit):
+        run(['--server', 'http://x:1'], Claims())
+
+
 def test_link_script_never_prints_the_token():
     _, _, said = run(['--server', 'http://x:1', '--code', 'RIGHT-CODE'], Claims())
     assert TOKEN not in ' '.join(said)

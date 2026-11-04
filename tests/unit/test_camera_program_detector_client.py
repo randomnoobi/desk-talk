@@ -1,6 +1,6 @@
 """
 raspberry_pi/camera/detector_client.py: asking the detector container (in Docker on the Pi) what's in
-each picture, and giving up quickly when it can't answer, so pictures keep flowing to the computer.
+each picture, and giving up quickly when it can't answer, so pictures keep flowing to the app.
 """
 
 import json
@@ -315,7 +315,7 @@ def test_worker_says_busy_while_the_detector_is_working_on_a_picture(container, 
     assert container.paths('POST') == ['/detect']
 
 
-def test_worker_delivers_a_failed_picture_as_off_so_the_computer_detects_it(container, client):
+def test_worker_delivers_a_failed_picture_as_off(container, client):
     container.routes[('POST', '/detect')] = lambda req: (500, {'detail': 'the model crashed'})
     delivered = []
     worker = DetectorWorker(client, lambda pic, verdict: delivered.append(verdict))
@@ -350,3 +350,20 @@ def test_offering_a_picture_wakes_the_worker(client):
 def test_no_detector_sends_every_picture_as_off():
     verdict = NoDetector('detection on the Pi is turned off (--no-detector)').offer(picture(1))
     assert (verdict.state, verdict.reason) == (DetectorState.OFF, 'detection on the Pi is turned off (--no-detector)')
+
+
+def test_the_log_doesnt_promise_something_else_will_detect(container, client, caplog):
+    """Nothing else detects any more: with the detector off the pictures go to the app with no objects found."""
+    with caplog.at_level(logging.INFO):
+        container.routes[('POST', '/detect')] = lambda req: (500, {'detail': 'the model crashed'})
+        fail(client, 3)
+    assert 'Stopped asking the detector' in caplog.text
+    assert 'computer' not in caplog.text and 'to detect' not in caplog.text
+
+
+def test_the_log_says_the_same_when_there_is_no_model_yet(container, client, caplog):
+    container.detect_status = 503
+    with caplog.at_level(logging.INFO):
+        client.detect(JPEG)
+    assert 'no model yet' in caplog.text
+    assert 'computer' not in caplog.text and 'to detect' not in caplog.text

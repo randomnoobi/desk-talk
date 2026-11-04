@@ -1,7 +1,7 @@
 """
 Habit reminders in an agent's voice. The habit rules decide when a reminder is due (and give its reason
 and the book's tip); this asks the AI to say it as the agent, with the agent's tracker. When the AI can't
-help, the reminder's own ready-made text is used.
+help, or hasn't answered within llm.reminder_wait_sec, the reminder's own ready-made text is used.
 """
 
 from __future__ import annotations
@@ -54,9 +54,8 @@ class NudgeVoice:
                                utc_offset_sec=self._clock.utc_offset_sec(now), today=self._clock.local_day(now))
         system = prompts.habit_system(w.habit_reminder, a, prompts.habit_area(w.habit_areas, a), block,
                                       nudge.evidence, nudge.tip, short=self._local)
-        text = self._ai.ask([{'role': 'system', 'content': system},
-                             {'role': 'user', 'content': w.habit_reminder.ask}],
-                            'nudge', a, background=True)
+        text = self._ai.ask_briefly([{'role': 'system', 'content': system},
+                                     {'role': 'user', 'content': w.habit_reminder.ask}], 'nudge', a)
         if not text or looks_cut_off(text, self._chat.min_reply_words):
             return None
         return self._ai.one_speaker(text, a) or None

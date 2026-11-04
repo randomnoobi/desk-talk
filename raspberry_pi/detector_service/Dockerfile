@@ -1,6 +1,6 @@
 # The detector service, for the Raspberry Pi (64-bit Raspberry Pi OS): FastAPI + Ultralytics, running ncnn models.
-# Built from the repo's top folder, so uv sees the whole workspace and uv.lock; compose.yaml does that:
-#   cd raspberry_pi/detector_service && docker compose up -d --build
+# Built from the repo's top folder, so uv sees the whole workspace and uv.lock; raspberry_pi/compose.yaml does that:
+#   cd raspberry_pi && docker compose up -d --build
 # Same package versions as on the computer: uv installs them from uv.lock.
 FROM python:3.12.14-slim-bookworm
 
@@ -29,6 +29,8 @@ COPY shared/ shared/
 COPY raspberry_pi/detector_service/ raspberry_pi/detector_service/
 RUN uv sync --frozen --package desktalk-detector --no-dev --no-editable
 
+COPY raspberry_pi/health_check.py /usr/local/bin/desktalk-health
+
 # It runs as a user without root rights. /models becomes a Docker volume (compose.yaml), so the
 # models and their ncnn versions survive restarts and rebuilds.
 RUN useradd --create-home detector && mkdir /models && chown detector /models
@@ -36,12 +38,18 @@ USER detector
 WORKDIR /home/detector
 
 # YOLO_AUTOINSTALL=false: a missing package fails with a clear message instead of being pip-installed while it runs.
-# DETECTOR_HOST=0.0.0.0 is inside the container only: compose.yaml opens the port on the Pi's 127.0.0.1 alone.
-# The other settings (port, picture size limit, waits) come from .env, through compose.yaml.
+# YOLO_OFFLINE=true: Ultralytics sends no usage data and checks for no updates, and it fetches no model either, so
+# models are copied in. sync=False below is the same promise in its own settings file.
+# DETECTOR_HOST=0.0.0.0 is inside the container only: compose.yaml opens no port on the Pi.
+# The other settings (port, picture size limit, waits) come from raspberry_pi/.env, through compose.yaml.
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     YOLO_AUTOINSTALL=false \
+    YOLO_OFFLINE=true \
+    YOLO_CONFIG_DIR=/home/detector/.config \
     DETECTOR_HOST=0.0.0.0 \
     DETECTOR_MODELS_DIR=/models
+
+RUN mkdir -p "$YOLO_CONFIG_DIR" && python -c "from ultralytics.utils import SETTINGS; SETTINGS.update(sync=False)"
 
 CMD ["python", "-m", "desktalk_detector"]

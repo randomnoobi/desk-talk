@@ -37,13 +37,16 @@ messages:
   chat_no_key: Chat is not set up on this server (no CHAT_API_KEY).
   chat_no_images: This server's chat takes text only. Pictures are refused.
   chat_too_many: Too many chat requests from this Pi. Wait a moment.
+  chat_busy: The server is answering as many chats as it can right now. Try again in a moment.
   chat_failed: The AI company did not answer. Try again.
   report_no_key: No key is set for the weekly report. Put REPORT_API_KEY in cloud/.env.
   report_pi_removed: This Pi was removed, so its report can't be run again. Link the Pi again first.
 
 # The website's "Add a Pi" box (the code only fills in {server_url} and {code})
 site:
-  setup_command: uv run python scripts/link_cloud.py --server {server_url} --code {code}
+  # Run on the Pi. It gets git if the card has none, gets Desk Talk or its new code, then installs. On a Pi that has it
+  # already, that just links it. The code is in an environment name, because the list of running programs doesn't show those.
+  setup_command: 'command -v git > /dev/null || (sudo apt-get update && sudo apt-get install -y git); if [ -d ~/desk-talk/.git ]; then git -C ~/desk-talk pull --ff-only || echo "Could not get the new code, for the reason above. If install.sh is then missing, fix that, or move ~/desk-talk away, and run this again."; else git clone https://github.com/randomnoobi/desk-talk ~/desk-talk; fi; DESKTALK_LINK_CODE={code} bash ~/desk-talk/raspberry_pi/install.sh --server {server_url}'
   needs_json: This request must be sent as JSON (content type application/json).
 
 # The weekly report. `prompt` is what the AI is told (the data is added after it, between <data> and </data>).

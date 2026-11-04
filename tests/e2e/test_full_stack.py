@@ -8,7 +8,7 @@ into an ncnn model the first time), and takes several minutes the first time.
     uv run pytest -m docker tests/e2e
 
 It uses its own compose project name, so it never touches a detector you already run (but it does need the
-container's port in raspberry_pi/detector_service/.env to be free); the test's containers and models volume
+container's port in raspberry_pi/.env to be free); the test's containers and models volume
 are removed at the end.
 """
 
@@ -35,7 +35,8 @@ from tests.integration.app_kit import PAIR_KEY, changed
 pytestmark = pytest.mark.docker
 
 ROOT = Path(__file__).resolve().parents[2]
-SERVICE = ROOT / 'raspberry_pi' / 'detector_service'
+PI = ROOT / 'raspberry_pi'
+OPEN_PORT = ROOT / 'tests' / 'docker' / 'pi_detector_port_open.compose.yaml'    # the app here is outside the stack
 PROJECT = 'desktalk-e2e-test'
 MODEL = {'model': 'yolo11n.pt', 'format': 'ncnn', 'image_size': 320}     # small, and Ultralytics hands it out
 BUILD_AND_START_SEC = 3600       # the first build downloads PyTorch and friends
@@ -51,13 +52,14 @@ COMPUTER_FINDS = Detection('scissors', 0.9, BBox(300, 600, 380, 720))
 
 
 def env_file() -> dict[str, str]:
-    lines = (SERVICE / '.env').read_text(encoding='utf-8').splitlines()
+    lines = (PI / '.env.example').read_text(encoding='utf-8').splitlines()
     return dict(line.split('=', 1) for line in lines if line.strip() and not line.lstrip().startswith('#'))
 
 
 def compose(*args: str, timeout: float = 300, check: bool = True) -> str:
-    done = subprocess.run(['docker', 'compose', '-p', PROJECT, '-f', str(SERVICE / 'compose.yaml'), *args],
-                          capture_output=True, text=True, timeout=timeout, check=False)
+    command = ['docker', 'compose', '-p', PROJECT, '--env-file', str(PI / '.env.example'),     # .env is the Pi's own
+               '-f', str(PI / 'compose.yaml'), '-f', str(OPEN_PORT), *args]
+    done = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
     if check and done.returncode != 0:
         raise AssertionError(f'docker compose {" ".join(args)} failed:\n{done.stdout}\n{done.stderr}')
     return done.stdout.strip()
@@ -118,7 +120,7 @@ def stack(request, tmp_path_factory) -> Iterator[Stack]:
     def to_the_container(config: AppConfig) -> AppConfig:
         return changed(config, 'pi.detector', url=detector_url, **MODEL)
 
-    compose('up', '--detach', '--build', '--wait', timeout=BUILD_AND_START_SEC)
+    compose('up', '--detach', '--build', '--wait', 'detector', timeout=BUILD_AND_START_SEC)
     try:
         with app_server(tmp, pictures=[photos / 'bus.jpg'], found={1: [COMPUTER_FINDS]},
                         change=to_the_container) as server:

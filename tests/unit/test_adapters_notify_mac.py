@@ -10,9 +10,10 @@ import time
 from desktalk.adapters.notify.mac import MacNotifications, NoNotifications, applescript_string, make_notifications
 from desktalk.config import NotificationsSettings
 from desktalk.ports import DesktopNotifications
+from tests.fakes import FakeClock
 
 QUEUE = 4
-SETTINGS = NotificationsSettings.model_construct(enabled=True, warnings=True, reminders=True, sips=True,
+SETTINGS = NotificationsSettings.model_construct(output='mac', enabled=True, warnings=True, reminders=True, sips=True,
                                                  time_limit_sec=5.0, command='osascript')
 
 
@@ -107,18 +108,18 @@ def test_a_different_kind_of_error_is_logged_too(caplog):
 
 def test_not_a_mac_gives_no_notifications(caplog):
     with caplog.at_level(logging.INFO):
-        notifications = make_notifications(SETTINGS, 'linux', queue_size=QUEUE)
+        notifications = make_notifications(SETTINGS, 'linux', queue_size=QUEUE, clock=FakeClock())
     assert isinstance(notifications, NoNotifications) and notifications.show('Cup', 'x') is None
-    assert len([r for r in caplog.records if 'only work on a Mac' in r.message]) == 1
+    assert len([r for r in caplog.records if 'Pop-ups only work on a Mac' in r.message]) == 1
 
 
 def test_switched_off_gives_no_notifications():
     off = NotificationsSettings.model_construct(**{**SETTINGS.model_dump(), 'enabled': False})
-    assert isinstance(make_notifications(off, 'darwin', queue_size=QUEUE), NoNotifications)
+    assert isinstance(make_notifications(off, 'darwin', queue_size=QUEUE, clock=FakeClock()), NoNotifications)
 
 
 def test_a_mac_gets_the_real_one():
-    mac = make_notifications(SETTINGS, 'darwin', queue_size=QUEUE, runner=Runner())
+    mac = make_notifications(SETTINGS, 'darwin', queue_size=QUEUE, clock=FakeClock(), runner=Runner())
     assert isinstance(mac, MacNotifications)
     mac.close()
 
@@ -145,3 +146,24 @@ def test_close_gives_up_when_the_queue_stays_full():
     mac.close()
     assert time.monotonic() - started < 1
     stuck.set()
+
+
+def test_a_full_queue_still_drops_the_new_pop_up_on_a_mac(caplog):
+    stuck, let_go = threading.Event(), threading.Event()
+    shown = []
+
+    def held_up(args, **kwargs):
+        stuck.set()
+        let_go.wait(5)
+        shown.append(args[-1])
+
+    mac = MacNotifications(SETTINGS, queue_size=1, runner=held_up)
+    mac.show('Cup', 'one')
+    assert stuck.wait(5)
+    mac.show('Cup', 'two')
+    with caplog.at_level(logging.WARNING):
+        mac.show('Cup', 'three')
+    assert 'dropped' in caplog.text
+    let_go.set()
+    mac.close()
+    assert ['one' in s for s in shown] == [True, False] and 'two' in shown[1]

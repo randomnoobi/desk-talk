@@ -64,7 +64,7 @@ def test_an_older_pi_settings_file_without_error_text_chars_still_asks_the_compu
 def test_without_error_text_chars_the_computers_whole_reason_is_shown(tmp_path, computer, caplog):
     computer.key = 'another key'
     args = parse_args(['--server', computer.url, '--key', KEY])
-    with pytest.raises(ComputerProblem, match='Copy the command printed by server.py'):
+    with pytest.raises(ComputerProblem, match='restart the camera to read it'):
         load_settings(args, older_repo_file(tmp_path, 'error_text_chars'), need_computer=True)
 
 
@@ -87,7 +87,7 @@ def test_computer_away_at_start_uses_the_repos_settings(tmp_path, computer, capl
     computer.away = True
     args = parse_args(['--server', computer.url, '--key', KEY])
     assert load_settings(args, repo_file(tmp_path, fps=6)).fps == 6
-    assert 'Cannot reach the computer' in caplog.text
+    assert 'Cannot reach the app' in caplog.text
 
 
 def test_offline_does_not_ask_the_computer(tmp_path, computer):
@@ -98,7 +98,83 @@ def test_offline_does_not_ask_the_computer(tmp_path, computer):
 
 def test_missing_server_says_where_to_get_the_command(caplog):
     assert main([]) == 2
-    assert 'server.py' in caplog.text
+    assert "The app's page shows the address and the key" in caplog.text
+
+
+@pytest.fixture(autouse=True)
+def no_container_settings(monkeypatch):
+    """The container's own environment must not leak into these tests."""
+    for name in ('DESKTALK_SERVER', 'DESKTALK_PAIR_KEY_FILE'):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_key_comes_from_the_key_file(tmp_path):
+    key_file = tmp_path / 'pair-key.txt'
+    key_file.write_text(KEY + '\n')
+    assert parse_args(['--key-file', str(key_file)]).key == KEY
+
+
+def test_key_file_with_a_windows_line_ending_and_spaces(tmp_path):
+    key_file = tmp_path / 'pair-key.txt'
+    key_file.write_text(f'  {KEY}  \r\n')
+    assert parse_args(['--key-file', str(key_file)]).key == KEY
+
+
+def test_the_key_flag_beats_the_key_file(tmp_path):
+    key_file = tmp_path / 'pair-key.txt'
+    key_file.write_text('from the file\n')
+    assert parse_args(['--key', KEY, '--key-file', str(key_file)]).key == KEY
+
+
+def test_the_server_and_key_file_can_come_from_the_environment(tmp_path, monkeypatch):
+    key_file = tmp_path / 'pair-key.txt'
+    key_file.write_text(KEY + '\n')
+    monkeypatch.setenv('DESKTALK_SERVER', 'http://192.168.1.20:5000')
+    monkeypatch.setenv('DESKTALK_PAIR_KEY_FILE', str(key_file))
+    args = parse_args([])
+    assert (args.server, args.key) == ('http://192.168.1.20:5000', KEY)
+
+
+def test_flag_beats_the_environment(tmp_path, monkeypatch):
+    env_file = tmp_path / 'env-key.txt'
+    env_file.write_text('from the environment\n')
+    flag_file = tmp_path / 'flag-key.txt'
+    flag_file.write_text('from the flag\n')
+    monkeypatch.setenv('DESKTALK_SERVER', 'http://environment:5000')
+    monkeypatch.setenv('DESKTALK_PAIR_KEY_FILE', str(env_file))
+    args = parse_args(['--server', 'http://flag:5000', '--key-file', str(flag_file)])
+    assert (args.server, args.key) == ('http://flag:5000', 'from the flag')
+    assert parse_args(['--key', 'typed']).key == 'typed'                 # --key beats the environment's file too
+
+
+def test_missing_key_file_says_so(tmp_path, capsys):
+    missing = tmp_path / 'nowhere' / 'pair-key.txt'
+    with pytest.raises(SystemExit) as stop:
+        parse_args(['--key-file', str(missing)])
+    assert stop.value.code == 2
+    assert str(missing) in capsys.readouterr().err
+
+
+def test_missing_key_file_from_the_environment_says_so_too(tmp_path, monkeypatch, capsys):
+    missing = tmp_path / 'pair-key.txt'
+    monkeypatch.setenv('DESKTALK_PAIR_KEY_FILE', str(missing))
+    with pytest.raises(SystemExit):
+        parse_args([])
+    assert str(missing) in capsys.readouterr().err
+
+
+def test_an_empty_key_file_says_so(tmp_path, capsys):
+    key_file = tmp_path / 'pair-key.txt'
+    key_file.write_text('\n')
+    with pytest.raises(SystemExit):
+        parse_args(['--key-file', str(key_file)])
+    err = capsys.readouterr().err
+    assert str(key_file) in err and 'empty' in err
+
+
+def test_missing_server_says_how_to_give_it_in_docker(caplog):
+    assert main([]) == 2
+    assert 'DESKTALK_SERVER' in caplog.text and 'DESKTALK_PAIR_KEY_FILE' in caplog.text
 
 
 def test_bad_settings_stop_it_with_the_reason(tmp_path, caplog):

@@ -4,6 +4,11 @@ Link this computer to a cloud server, so Desk Talk can send it your habit events
 
     uv run python scripts/link_cloud.py --server http://192.168.1.9:8080 --code ABCD-EFGH
     uv run python scripts/link_cloud.py --server http://192.168.1.9:8080 --code ABCD-EFGH --name "My desk"
+    DESKTALK_LINK_CODE=ABCD-EFGH uv run python scripts/link_cloud.py --server http://192.168.1.9:8080
+
+The code can come from DESKTALK_LINK_CODE instead of --code, which keeps it out of the list of running programs.
+On a Pi, install.sh does this before anything else (raspberry_pi/link_pi.py), so this file's `run` and what it imports
+must work with the standard library only.
 
 Get the code from the cloud server's website ("Add a Pi", or "Link again" on a Pi it already knows). A code works
 once and runs out after a few minutes. The server's reply holds a token; it is saved in data/cloud.json (settings →
@@ -17,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import socket
 import sys
 from collections.abc import Callable, Sequence
@@ -26,6 +32,7 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+CODE_NAME = 'DESKTALK_LINK_CODE'
 
 
 def _number(value: Any, fallback: float) -> float:
@@ -77,7 +84,9 @@ def run(argv: Sequence[str], *, config: Any, store: Any, clock: Any, claim: Call
 
     parser = argparse.ArgumentParser(description='Link this computer to a cloud server.')
     parser.add_argument('--server', required=True, help='the cloud server\'s address, like http://192.168.1.9:8080')
-    parser.add_argument('--code', required=True, help='the one-time code from the cloud server\'s website')
+    from_environment = os.environ.get(CODE_NAME, '')
+    parser.add_argument('--code', required=not from_environment, default=from_environment,
+                        help=f'the one-time code from the cloud server\'s website (or set {CODE_NAME})')
     parser.add_argument('--name', default=socket.gethostname(), help='what to call this computer on the website')
     args = parser.parse_args(list(argv))
 

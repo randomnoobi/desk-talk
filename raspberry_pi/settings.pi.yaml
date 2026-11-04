@@ -1,0 +1,54 @@
+# The app's and the camera's settings on the Pi, laid over config/settings.yaml. compose.yaml mounts this file
+# read-only as config/settings.local.yaml in both containers. Nothing here turns on an AI: the Pi works with none.
+# Don't edit this file (a git pull would stop on it). Your own changes, such as llm.ai_url to add chat, go in
+# raspberry_pi/mine/settings.mine.yaml, which install.sh makes and which is laid over this one.
+
+detector:
+  enabled: false                 # the detector container does the finding, so the app needs no PyTorch or YOLO
+
+dev:
+  enabled: false                 # no developer page on the Pi
+
+web:
+  allowed_hosts: [app]           # the camera container reaches the app by this name, on Docker's own network
+                                 # (DESKTALK_SERVER in compose.yaml)
+
+storage:
+  rules_folder: data             # the app can't write to config/ in its image, and a rebuild would lose it
+
+notifications:
+  output: speaker                # warnings and reminders are said out loud
+  sound_card: usb                # ALSA's own choice here is the HDMI socket, so name the card: any with usb in its name
+  sound_cards_file: /sound-cards   # /proc/asound/cards, which compose.yaml lets in here (Docker hides it from the app)
+  queue_size: 5                  # things said out loud take seconds each, so don't let old ones pile up
+  speak_time_limit_sec: 15       # plenty for a sentence or two, and a stuck sound card only holds things up this long
+  speak_max_age_sec: 20          # a warning said later than this is no use, so it's skipped
+
+chat:
+  ai_writes_warnings: false      # a warning must come at once, in its ready-made words
+
+llm:
+  send_pictures: false           # pictures never leave the Pi, whatever AI is set up
+  reminder_wait_sec: 3           # a reminder waits this long for an AI, then uses its ready-made words
+  ollama_timeout_sec: 30         # a laptop that went to sleep shouldn't keep your chat waiting for long
+  ollama_reasoning_effort: none  # answer at once: a reminder only waits a moment, and thinking can use up the reply
+
+camera:
+  pair_key_file: /pairing/pair-key.txt   # on the volume the camera reads it from (compose.yaml)
+  fps: 3                         # the same as pi.fps: the app looks at every picture the Pi takes
+
+pi:
+  fps: 3                         # pictures a second. Measured on a Pi 5 (Task 10): the detector below looks at every
+                                 # one. 4 a second kept the processor 68% busy, not 53%; and the detector only takes
+                                 # pictures as they come, so a slower model gets few more from a faster camera
+  photo_dir: /photos             # in the camera container's memory (compose.yaml), not on the SD card
+  min_free_mb: 30                # /photos is CAMERA_PHOTOS_SIZE in .env, so "full" means within this much of that
+  detector:
+    url: http://detector:8100    # the detector container's name. The port is DETECTOR_PORT in .env
+    # Measured on a Pi 5 with all three containers running (Task 10): 210 ms a picture, so all 3 a second, using
+    # about 2 of the 4 cores. It knows the same 365 kinds of things as the computer's model (Objects365), so the words
+    # in agents.yaml mean the same here. The medium one (yolo26m-objv1-150) at 640 managed 1.5 a second
+    # and at 480 2.4 a second; fp16 (half: true) was no faster here.
+    model: yolo26s-objv1-150.pt
+    image_size: 640
+    half: false

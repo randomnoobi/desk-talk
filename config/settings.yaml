@@ -2,11 +2,14 @@
 #  Desk Talk settings
 #
 #  Every number the app uses lives in this file, grouped by what it does.
-#  Change a value, save, and restart `uv run python server.py`.
+#  Change a value, save, and restart the app: on a computer, `uv run python server.py`; on the Pi it runs in Docker and
+#  its own settings are in raspberry_pi/settings.pi.yaml and yours in raspberry_pi/mine/settings.mine.yaml, so there
+#  run `docker compose restart app camera`. (A change to this file itself is built into the images: run
+#  `docker compose up -d --build` in raspberry_pi/, or update.sh.)
 #
 #  Your own overrides: put just the lines you change in
 #  config/settings.local.yaml (same layout). That file is not uploaded
-#  to GitHub, so personal tweaks don't end up in the repo.
+#  to GitHub, so personal tweaks don't end up in the repo. (On the Pi, yours is raspberry_pi/mine/settings.mine.yaml.)
 #
 #  API keys go in .env (see .env.example), never in this file.
 #  Other config files:
@@ -18,9 +21,9 @@
 
 # ── Camera ──────────────────────────────────────────────────────────
 camera:
-  # pi     = Raspberry Pi camera (the camera program, raspberry_pi/camera/, runs on the Pi and sends pictures here)
+  # pi     = Raspberry Pi camera (the camera container, raspberry_pi/camera/, sends its pictures to the app)
   # phone  = a phone streams over Wi-Fi (scan the QR code; the page is phone_camera/)
-  # webcam = a USB / built-in webcam on this computer
+  # webcam = a USB / built-in webcam on the computer running the app (for working on Desk Talk)
   source: pi
   fps: 3                      # pictures analysed per second (the Pi takes pictures at this rate too)
   disconnect_after_sec: 3     # no picture for this long = camera is off, analysis pauses
@@ -29,14 +32,14 @@ camera:
   phone_cert_folder: certs    # the phone page's own HTTPS certificate is made and kept here
   phone_cert_days: 365        # a new certificate is good for this long (a new one is made when it runs out)
   phone_cert_file: desk-talk.crt  # the certificate's file name in phone_cert_folder...
-  phone_key_file: desk-talk.key   # ...and its secret key's (made on this computer, never leaves it)
+  phone_key_file: desk-talk.key   # ...and its secret key's (made here, never leaves it)
   phone_max_side: 960         # the phone shrinks each picture so its longest side is at most this many pixels
   phone_jpeg_quality: 70      # JPEG quality of the pictures the phone sends (1-100)
   phone_tilt_max: 50          # a phone tilt reading above this (m/s², on any axis) isn't a real one (gravity is 9.8)
   phone_capture_width: 1280   # the picture size the phone page asks its camera for (the phone picks the nearest
   phone_capture_height: 720   # size it has; each picture is then shrunk to phone_max_side)
   wait_for_picture_sec: 1.0   # analysis waits this long for a new picture, then checks again
-  jpeg_quality: 78            # JPEG quality when this computer makes the picture itself (webcam)
+  jpeg_quality: 78            # JPEG quality when the app makes the picture itself (webcam)
   boxes_jpeg_quality: 70      # JPEG quality of the live view with boxes ("Boxes" in the app)
   light_measure_width: 64     # pictures are shrunk to this width to measure how bright the room is
   moved_within_sec: 1.5       # Lens saw movement this recently = "something moved" in this picture
@@ -54,6 +57,8 @@ camera:
                               # is done): the live view keeps the later one, unless it hasn't changed for this long
   pi_clock_pictures: 30       # the Pi's clock is judged by the quickest of its last this many pictures (the others
                               # waited for its detector or a slow Wi-Fi)
+  detection_off_after_sec: 5  # detection counts as not working (on the health page and in the log) only once nothing
+                              # has been found for this long: the Pi's detector can miss a picture now and then
 
 # ── Raspberry Pi (read by the camera program on the Pi, raspberry_pi/camera/) ─
 pi:
@@ -66,40 +71,44 @@ pi:
   keep_last_min: 0            # minutes of pictures a cleanup leaves behind (0 = delete them all)
   min_free_mb: 300            # if the Pi's disk gets this full, delete the oldest pictures right away
   upload_timeout_sec: 5
-  upload_retry_start_sec: 1   # this computer didn't take a picture: wait this long before sending again...
+  upload_retry_start_sec: 1   # the app didn't take a picture: wait this long before sending again...
   upload_retry_max_sec: 10    # ...a little longer after each miss, up to this
   hot_warning_c: 75           # Lens mentions it when the Pi's processor is this hot (°C); it slows down at about 80
-  clock_off_warning_sec: 5    # Lens mentions it when the Pi's clock is this far from this computer's
+  clock_off_warning_sec: 5    # Lens mentions it when the camera's clock is this far from the app's
   camera_warmup_sec: 1        # the Pi camera gets this long to settle its exposure when it starts
   pause_after_error_sec: 0.5  # a picture (or a background job on the Pi) failed: wait this long before trying again
   status_every_sec: 30        # how often the camera program writes a status line
   health_every_sec: 3         # how often the Pi checks its disk, temperature and stored pictures
-  settings_check_every_sec: 60  # how often the Pi asks this computer for new settings (new detector settings go
+  settings_check_every_sec: 60  # how often the camera asks the app for new settings (new detector settings go
                               # to the container right away; others need the camera program restarted)
   restart_after_missed_pictures: 30  # no new picture for this many picture times (30 at 3 a second = 10 s): the
-                              # camera seems stuck, so the camera program stops and systemd starts it again
+                              # camera seems stuck, so the camera program stops and Docker starts it again
+                              # (the compose file says restart: unless-stopped)
   camera: auto                # which camera: auto, picamera2, usb (usb:1 for the second one), folder:<dir> or
                               # video:<file>; the camera program's --camera flag beats it
   error_text_chars: 200       # a reply the Pi can't read (not JSON): at most this many letters of it go in its log
   detector:                   # object detection on the Pi itself, in Docker (raspberry_pi/detector_service/)
-    model: yolo26m-objv1-150.pt  # in the container's models folder; the Pi speed test (benchmarks/) picks the final one
+    model: yolo26m-objv1-150.pt  # in the container's models folder. The Pi's own pick is in raspberry_pi/settings.pi.yaml
     format: ncnn              # ncnn = fastest on the Pi's processor; pt = plain PyTorch, to compare
     image_size: 640           # pictures are shrunk to this many pixels before detection (smaller = faster)
     confidence: 0.35          # lowest confidence a box needs to be kept at all
     half: false               # true = smaller 16-bit numbers: a smaller model file, sometimes faster
-    url: http://127.0.0.1:8100  # the container, on the Pi itself only (other computers can't reach it)
-    wait_per_picture_sec: 2   # no answer within this long: the picture goes to this computer to detect instead
+    url: http://127.0.0.1:8100  # the container. On the Pi it is http://detector:8100 (raspberry_pi/settings.pi.yaml)
+    wait_per_picture_sec: 2   # no answer within this long: the picture goes to the app with no objects found
     failures_before_pause: 3  # this many failures in a row: stop asking the container for a while...
     pause_start_sec: 5        # ...this long at first...
     pause_max_sec: 60         # ...doubling each time, up to this
     health_check_every_sec: 10  # while paused, ask the container's /health this often
 
-# ── Object detection (runs on this computer) ───────────────────────
+# ── Object detection (YOLO in the app itself) ──────────────────────
 detector:
+  enabled: true               # false = the app has no detector of its own and needs no PyTorch or YOLO: only the
+                              # Pi's detector counts. (A computer gets YOLO from `uv sync --all-packages`, or from
+                              # `uv sync --extra computer-detector`.)
   # yolo26m-objv1-150.pt knows 365 kinds of objects (Objects365), including
   # earphones, keys, pens, watches, glasses and notepaper. The old yolo26n.pt only knew 80.
   # Other choices (scripts/download_models.py fetches any of them):
-  #   models/yolo26s-objv1-150.pt  faster, a bit less accurate (older laptops)
+  #   models/yolo26s-objv1-150.pt  faster, a bit less accurate (older laptops; the Pi uses this one)
   #   models/yolo26l-objv1-150.pt  slower, most accurate
   #   models/yolo26m.pt            80 everyday COCO objects
   model: models/yolo26m-objv1-150.pt
@@ -107,7 +116,7 @@ detector:
   image_size: 640
   device: auto                # auto = Apple GPU (mps) or NVIDIA (cuda) when available, else cpu
   end2end: false              # false = run YOLO26 the way the Pi's ncnn model runs (its second head plus the
-                              # overlap filter), so the Pi and this computer find the same objects
+                              # overlap filter), so the Pi and a computer running the app find the same objects
   rect: false                 # false = always pad pictures to a square, like the Pi's ncnn model
 
 # ── Agents joining and leaving the group chat ──────────────────────
@@ -198,7 +207,7 @@ event_stream:
   queue_size: 2000            # events waiting per consumer; when full, the oldest picture events are dropped
                               # (joins, alerts and habit events are never dropped)
 event_log:
-  folder: data/events         # one folder per day on this computer
+  folder: data/events         # one folder per day in the data folder
   compact_every_min: 10       # turn per-picture events into "on the desk from … to …" intervals
   merge_gap_sec: 3            # gaps shorter than this don't split an interval
   keep_days: 30               # older days are deleted
@@ -298,7 +307,7 @@ reminders:
   warmup_min: 15              # no reminders until the camera has watched this long
   min_gap_sec: 600            # at least this long between any two reminders
   check_every_sec: 30
-  # In quiet hours habit reminders wait and no Mac pop-up shows (warnings too); safety warnings still show
+  # In quiet hours habit reminders wait and nothing is said out loud or popped up (warnings too); safety warnings still show
   # in the chat.
   quiet_hours:
     enabled: false
@@ -313,8 +322,22 @@ rule_engine:
 
 # ── AI (keys are in .env) ──────────────────────────────────────────
 llm:
-  # Which AI answers: the first one with a key in .env wins:
+  # Chat AI is optional: with none, warnings and reminders still go out in their ready-made words.
+  # Which AI answers: ai_url when it's set, or else the first one with a key in .env:
   # Gemini → OpenAI → Groq → Ollama (OLLAMA_URL, no key needed)
+  ai_url: ''                  # an AI's address, text only, for the Pi, which keeps no keys. Ollama on your computer:
+                              # http://<computer>:11434/v1, with ollama_model below and ai_on_my_computer: true.
+                              # Your linked cloud server: <its address>/v1. Only this setting may point at the cloud
+                              # server, and only an address matching the saved link (data/cloud.json) gets the token;
+                              # that needs no restart. Only text goes: never a picture. Only chat you start yourself
+                              # goes here, unless ai_on_my_computer below says it's your own computer
+  ai_on_my_computer: false    # true = ai_url is Ollama on your own computer. Then it also gets the characters' own words
+                              # (reminders, small talk, the recap), which can include your to-dos, and is kept loaded.
+                              # Leave it false for anything else: they then use their ready-made words. An address that
+                              # matches your cloud link always counts as the cloud server, whatever this says
+  send_pictures: true         # false = pictures never go to any AI. They only ever go to OLLAMA_URL, never ai_url
+  reminder_wait_sec: 400      # longest a reminder waits for the AI's words before using its ready-made ones (here
+                              # longer than the AI's own limits; the Pi's is short, in raspberry_pi/settings.pi.yaml)
   gemini_model: gemini-2.5-flash
   openai_model: gpt-4o-mini
   groq_model: llama-3.3-70b-versatile
@@ -326,7 +349,7 @@ llm:
   chat_history_turns: 6       # recent messages sent word for word; older ones are summarized
   memory_per_agent: 8         # things each agent remembers saying
   timeout_sec: 30             # longest wait for one reply from a cloud AI
-  ollama_timeout_sec: 90      # Ollama runs on this computer and can be slow to load a model
+  ollama_timeout_sec: 90      # Ollama runs on your own computer and can be slow to load a model (the Pi's is shorter)
   retry_start_sec: 2          # a failed AI call is tried again after this long...
   retry_max_sec: 30           # ...doubling each time, up to this (max_retries tries in all)
   breaker_failures: 3         # this many failed calls in a row = the AI is down: stop calling it...
@@ -337,6 +360,8 @@ llm:
   vision_retry_sec: 1         # a failed picture question is tried again after this long (times the try number)
   ollama_keepalive_sec: 240   # ask Ollama something tiny this often, so the model stays loaded
   ollama_keepalive_start_sec: 10
+  ollama_reasoning_effort: '' # none = a model that thinks before it answers skips that. Without it such a model can use
+                              # up its whole reply on thinking and send nothing back. Empty = say nothing about it
   gemini_url: https://generativelanguage.googleapis.com/v1beta/openai/
   groq_url: https://api.groq.com/openai/v1
   gemini_thinking_budget: 0   # 0 = Gemini answers straight away, without "thinking" first (faster, cheaper)
@@ -383,6 +408,7 @@ chat:
   panel_views_window_sec: 3600  # opened this often within this long...
   panel_views_min: 2          # ...at least this many times = the agent mentions it
   panel_action_max_chars: 40  # what the app says you did in a panel ("view", "close" ...) is cut to this many letters
+  ai_writes_warnings: true    # false = danger warnings use their ready-made words and never wait for an AI
 
 # ── Small talk between agents ──────────────────────────────────────
 idle_chat:
@@ -464,7 +490,7 @@ lens:
     cutoff: 45                # an object cut off at the side of the picture
     slow: 30
     pi: 10                    # the Pi is too hot, its power supply is weak, or its clock is off
-    pi_detector: 60           # the Pi's own object detection is off (this computer detects instead)
+    pi_detector: 60           # the Pi's own object detection is off (no objects are found until it's back)
 
 # ── Daily recap ─────────────────────────────────────────────────────
 daily_summary:
@@ -474,12 +500,13 @@ daily_summary:
   objects_listed: 8           # most objects named in the recap
 
 # ── The cloud server (optional) ─────────────────────────────────────
-# Nothing here does anything until you link this computer to a cloud server with
-# scripts/link_cloud.py. Then a background job sends it your habit events (never pictures or to-do text).
+# Nothing here does anything until you link this Pi (or computer) to a cloud server: on the Pi, by running the install
+# command with --server and --code (raspberry_pi/README.md); on a computer, with scripts/link_cloud.py. Then a background
+# job sends it your habit events (never pictures or to-do text).
 cloud:
   link_key: cloud             # the link (the server's address and your token) is saved as data/cloud.json
   send_every_sec: 30          # how often it sends what is new
-  idle_check_every_sec: 60    # while this computer isn't linked, look again this often (it calls nothing)
+  idle_check_every_sec: 60    # while this app isn't linked, look again this often (it calls nothing)
   idle_beat_min: 15           # with nothing to send, tell a linked server "I've caught up" at most this often, so its weekly report isn't held up by an empty desk
   batch_size: 500             # most events in one send; the rest go on the next round
   overlap_sec: 120            # each round looks back this far, so an event written a little late still goes
@@ -564,10 +591,22 @@ habit_tracker:
 
 # ── Web server ──────────────────────────────────────────────────────
 web:
-  host: 0.0.0.0               # listen on every network this computer is on, so the Pi and the phone can connect
+  host: 0.0.0.0               # listen on every network the app is on, so phones and computers on your Wi-Fi can open it
   port: 5000
+  public_address: ''          # how other devices reach this app: a name and the port above, like desktalk.local:5000.
+                              # Empty: it is worked out from the Wi-Fi address of the machine the app runs on. The Pi sets it (inside
+                              # Docker that can't be seen), and then no command to start the Pi's camera is shown
+  outside_port: 0             # the port others use, when Docker opens a different one for the port above. 0 = the same
+  allowed_hosts: []           # other names this app may be opened under, like desk.example.com behind a reverse proxy.
+                              # It always answers at a number address (192.168.1.20), localhost, a name ending in
+                              # .local and the name in public_address. Any other name gets a 403, so a web site can't
+                              # point its own name at this app's address and read your to-dos
   app_folder: web_app         # the app's page and files (what you open at http://localhost:5000)
   phone_folder: phone_camera  # the page a phone opens to be the camera
+  cors_origins: []            # other web sites allowed to read from this app and change things, like
+                              # http://example.com. Leave this empty: anyone's phone on your Wi-Fi could open a site
+                              # that sends your desk's picture away. The app's own pages need nothing here, and
+                              # neither does `npm run dev` for the developer page, which passes its requests on
   stop_wait_sec: 3            # when the server stops, requests still running get this long to finish
   max_request_mb: 8           # biggest request the app and the phone page may send
   pi_upload_max_mb: 4         # biggest picture upload the Pi may send to /api/pi/frame
@@ -616,30 +655,48 @@ web:
   # The colors the page knows. Agents (agents.yaml) use the first eight; ink is the group chat's.
   palette: [cobalt, teal, tang, mustard, coral, plum, moss, slate, ink]
 
-# ── Mac notifications (only on a Mac) ───────────────────────────────
-# Desk Talk itself shows the Mac's own pop-up, so it comes whether or not an app page is open. Quiet hours (the
-# app's Settings page) mute them all. The first one may ask once to allow notifications from "Script Editor".
+# ── Notifications: pop-ups on a Mac, or said out loud on the Pi ─────
+# Desk Talk does this itself, so it comes whether or not an app page is open. Quiet hours (the app's Settings page) mute
+# them all. On a Mac, the first one may ask once to allow notifications from "Script Editor".
 notifications:
-  enabled: true               # false = no pop-ups at all (and none show in quiet hours: reminders → quiet_hours)
+  output: mac                 # mac = the Mac's pop-ups, speaker = said out loud (the Pi), none = only in the chat
+  enabled: true               # false = no pop-ups or speech at all (and none in quiet hours: reminders → quiet_hours)
   warnings: true              # danger warnings, and Lens saying the camera needs fixing
   reminders: true             # water, breaks, phone-free time, light, screens, food and to-dos
   sips: true                  # "Sip logged" when the camera saw you drink (not the buttons or the chat)
   time_limit_sec: 5           # a pop-up that takes longer than this to show is given up on (it never holds up the chat)
   command: osascript          # the Mac's built-in program that shows them
-  queue_size: 20              # how many pop-ups can wait to be shown; any more are dropped (and that is logged)
+  queue_size: 20              # how many can wait their turn; past that one is dropped (and that is logged): the new
+                              # pop-up on a Mac, the oldest waiting when said out loud
+  # The rest is only for output: speaker. The command gets the words on its standard input, and {voice} and {device}
+  # filled in. Piper's "medium" voices make 22050 sounds a second, so the voice and -r go together.
+  speak_command:
+    - bash
+    - -c
+    - set -o pipefail; piper --quiet --model "$1" --output_raw | aplay -q -D "$2" -t raw -f S16_LE -c 1 -r 22050
+    - speak
+    - '{voice}'
+    - '{device}'
+  voice_model: /opt/piper/en_US-lessac-medium.onnx   # the voice, in the Pi's app image (raspberry_pi/app/Dockerfile)
+  sound_card: ''              # a word in the sound card's name, looked for each time (usb). Empty = the system's choice
+  sound_cards_file: /proc/asound/cards   # where the system lists its sound cards
+  speak_time_limit_sec: 30    # a message still being said after this long is stopped (it never holds up the chat)
+  speak_stop_wait_sec: 2      # ...and if it hasn't stopped this long after that, it's left behind so speech carries on
+  speak_max_age_sec: 60       # a message that has waited its turn longer than this is skipped (and that is logged)
 
 # ── Logs ────────────────────────────────────────────────────────────
 logging:
-  folder: data/logs           # on this computer (on the Pi: journalctl and docker compose logs)
+  folder: data/logs           # in the data folder (on the Pi, docker compose logs shows the same lines)
   level: INFO                 # DEBUG (everything), INFO, WARNING or ERROR (problems only)
   file_size_mb: 5             # start a new log file at this size...
   files_kept: 5               # ...and keep this many old ones
   file_name: desktalk.log     # the log file's name in the folder (old ones get .1, .2 ... added)
   preview_chars: 120          # a log line quoting an AI reply or a chat line shows at most this many letters
 
-# ── Your data on this computer ──────────────────────────────────────
+# ── Your data ──────────────────────────────────────
 storage:
   folder: data                # preferences.json, habits/<day>.json and learned_personalities.json live here
+  rules_folder: config        # safety_rules.json (the desk's corners and danger zones) is read and saved here
 
 # ── An object's story (click something under "On the desk", or an object on the developer page's live tab) ──
 # What happened to it, step by step, with a picture for each step and its box drawn on.
@@ -722,4 +779,4 @@ dev:
     pi_cpu_warn_c: 70           # the Pi's CPU this hot (°C) turns amber...
     pi_cpu_bad_c: 80            # ...and this hot turns red
     pi_disk_warn_mb: 1000       # less free space than this on the Pi's card turns amber
-    detect_warn_ms: 500         # finding things in one picture on this computer taking longer turns amber
+    detect_warn_ms: 500         # finding things in one picture here (the app's own YOLO) taking longer turns amber

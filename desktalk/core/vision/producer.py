@@ -7,6 +7,9 @@ About 3 times a second (settings → camera.fps) it takes the newest picture and
     the Pi's detector said busy  live view only: the Pi is still detecting an earlier picture
     off, or not a Pi camera      detect it here (UltralyticsDetector)
 
+A failure is only reported (`problem`, and once in the log) when nothing has been found for
+camera.detection_off_after_sec, so a Pi detector that misses a picture now and then doesn't flip it.
+
 A second name the detector gave the same box (a laptop also called "book") is left out first (one_name.py,
 settings → agents.same_thing_overlap; a word with its own agent in agents.yaml beats a new thing's word), so the
 event, Lens's checks and the live view all get one name per thing.
@@ -106,7 +109,8 @@ class DetectionProducer:
         self._one_name = OneNameEach(same_thing_overlap, ignore_labels, known_labels)
         self._last_analysed_at: float | None = None
         self._newest: list[Detection] = []          # from the newest analysed picture, for busy pictures
-        self._detecting = _Trouble('Detection on this computer')
+        self._detecting = _Trouble('Detection in the app')
+        self._found_at: float | None = None          # clock.monotonic() when detection last worked, here or on the Pi
         self._drawing = _Trouble('Drawing the live view')
         self._analysed = 0
         self._detect_ms: float | None = None
@@ -125,7 +129,8 @@ class DetectionProducer:
 
     @property
     def problem(self) -> str | None:
-        """Why detection on this computer isn't working, in plain words (None = it works)."""
+        """Why detection isn't working (the Pi's didn't answer and the app has none, or its own failed), in plain
+        words (None = it works)."""
         return self._detecting.reason
 
     def tick(self, now: float) -> float:
@@ -165,16 +170,28 @@ class DetectionProducer:
             size = self._pictures.size(frame.picture)
             if pi.detect_ms is not None:
                 self._detect_ms = pi.detect_ms
+            self._worked()
             return keep_inside(frame.pi_detections, size.width, size.height), 'pi'
         started = self._clock.monotonic()
         try:
             detections = self._detector.detect(frame.picture)
         except DetectorUnavailable as exc:
-            self._detecting.failed(str(exc))
+            if not self._found_lately():          # one missed picture between found ones says nothing
+                self._detecting.failed(str(exc))
             return None
-        self._detecting.worked()
+        self._worked()
         self._detect_ms = (self._clock.monotonic() - started) * 1000
         return detections, 'computer'
+
+    def _worked(self) -> None:
+        self._found_at = self._clock.monotonic()
+        self._detecting.worked()
+
+    def _found_lately(self) -> bool:
+        """Detection worked within camera.detection_off_after_sec, so a failure now isn't reported yet: on the Pi
+        the app has no detector of its own, and the Pi's can miss a picture now and then."""
+        return (self._found_at is not None
+                and self._clock.monotonic() - self._found_at < self._camera.detection_off_after_sec)
 
     def _event(self, frame: Frame, detections: list[Detection], where: str, now: float) -> DetectionEvent:
         size = self._pictures.size(frame.picture)

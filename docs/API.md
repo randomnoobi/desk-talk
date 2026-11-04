@@ -10,9 +10,9 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 | Server | Where it runs | Port | What it's for |
 |---|---|---|---|
-| **Main server** | Your computer (`uv run python server.py`) | `web.port` in `config/settings.yaml`, 5000 | The app page (`web_app/`) and everything it asks for, the Pi's uploads, and the developer page (`dev_ui/`, at `/dev/`). |
-| **Phone camera server** | Your computer, in a thread of the main one. Only runs when the phone is the camera. | `camera.phone_port`, 5443, **https** | The phone camera page (`phone_camera/`). Phones only allow the camera on https pages, so it has its own certificate. |
-| **Detector service** | The Pi, in Docker | `DETECTOR_PORT` in `raspberry_pi/detector_service/.env`, 8100; only reachable from the Pi itself | YOLO object detection for the Pi's camera program. |
+| **Main server** | The Pi, in the `app` container (a computer runs it with `uv run python server.py`, for development) | `web.port` in `config/settings.yaml`, 5000; the Pi opens it as `APP_HOST_PORT` in `raspberry_pi/.env` | The app page (`web_app/`) and everything it asks for, the camera container's uploads, and (on a computer only) the developer page (`dev_ui/`, at `/dev/`). |
+| **Phone camera server** | A computer running `server.py`, in a thread of the main one. Only runs when the phone is the camera; not on the Pi. | `camera.phone_port`, 5443, **https** | The phone camera page (`phone_camera/`). Phones only allow the camera on https pages, so it has its own certificate. |
+| **Detector service** | The Pi, in the `detector` container | `DETECTOR_PORT` in `raspberry_pi/.env`, 8100, inside Docker's own network only: it is not open on the Pi, so only the other two containers reach it | YOLO object detection for the Pi's camera program. |
 | **Cloud server** (optional) | Wherever you run it, in Docker (`cloud/`) | `WEB_PORT` in `cloud/.env`, 8080, through nginx | Keeps what a linked computer or Pi may send, shows it on its website, and writes a weekly report. |
 
 ### Finding a route in the code
@@ -33,7 +33,9 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 - Errors are `{"error": "plain words"}`, never `{"detail": ...}`. A body that doesn't fit is a 400 (not
   422); a request bigger than `web.max_request_mb` is a 413.
-- Every reply has `Access-Control-Allow-Origin: *`, so any page may ask. (The phone server's replies don't.)
+- No other web site may read a reply or send a write. A reply carries no `Access-Control-Allow-Origin` unless the site is listed in `web.cors_origins` (empty by default; the app's own pages and `npm run dev` for the developer page need nothing in it), so a page from another site can't read it. A write whose `Origin` isn't the address it was sent to, and isn't in that list, gets 403. Programs send no `Origin`, and pass, so the camera container's uploads and `curl` work. This used to be a `*` header on every reply that let any site in; it is gone.
+- A request sent to a name the server doesn't go by gets 403, on the main server and the phone camera's. The `Host` (without the port) must be a number address (IPv4 or IPv6), `localhost`, a name ending in `.local`, the name in `web.public_address`, or one in `web.allowed_hosts` (empty by default; for a reverse proxy, and `app` on the Pi for the camera container). So a site that points its own name at the Pi's address by DNS ("rebinding") can't read or change anything.
+- What this does not stop: there is no login, so anyone on the same Wi-Fi can call the routes marked "anyone on the network".
 - A trailing slash is not forgiven: `/api/live/` is a 404.
 - Only `GET` routes exist for the page's files, so `POST` or `PUT` to a path that isn't a route gets 405.
 
@@ -41,10 +43,10 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 | Access | Meaning |
 |---|---|
-| **anyone on the network** | No check. The main server listens on every network this computer is on (`web.host`), so anyone on the same Wi-Fi can call these. |
-| **pairing key** | The request must carry the key in the `X-Desk-Key` header, or it gets 403. The key is made on start and printed in the Pi command and the phone link (`desktalk/web/pairing.py`). Checked by `key_check` in `deps.py`. |
-| **this computer only** | Not a block: the route answers everyone, but leaves out some parts of its reply unless the request comes from `127.0.0.1` or `::1` (`FromHere` in `deps.py`). Today only `GET /api/live` does this: the Pi command and the phone link (and its QR code) are only shown on this computer. |
-| **this computer and its own page only** | A block. A request that doesn't come from `127.0.0.1` or `::1` gets 403. So does one whose `Host` header isn't one of this computer's own addresses (`localhost`, `127.0.0.1` or `[::1]`, on `web.port` or `dev.vite_port`), so a web site that points its own name at this computer can't read the routes, and one whose `Origin` header is set to anything but those same addresses, so another web page open in your browser can't start a test run or a query. Checked by `DevOnly` in `deps.py`, on top of the `*` cross-origin header every reply has. Only the developer page's routes use it. |
+| **anyone on the network** | No check. The main server listens on every network the machine is on (`web.host`), so anyone on the same Wi-Fi can call these. |
+| **pairing key** | The request must carry the key in the `X-Desk-Key` header, or it gets 403. The app makes the key on its first start and keeps it (`camera.pair_key_file`; on the Pi in the `pairing` volume, which the camera container reads). On a computer the page shows it in the Pi command and the phone link (`desktalk/web/pairing.py`); it is never in a log. Checked by `key_check` in `deps.py`. |
+| **this computer only** | Not a block: the route answers everyone, but leaves out some parts of its reply unless the request comes from `127.0.0.1` or `::1` (`FromHere` in `deps.py`). Today only `GET /api/live` does this: the Pi command and the phone link (and its QR code) are only shown on the computer running `server.py`. On the Pi no one is "this computer" (the app is in its container), so they are never shown there. |
+| **this computer and its own page only** | A block. A request that doesn't come from `127.0.0.1` or `::1` gets 403. So does one whose `Host` header isn't one of this computer's own addresses (`localhost`, `127.0.0.1` or `[::1]`, on `web.port` or `dev.vite_port`), so a web site that points its own name at this computer can't read the routes, and one whose `Origin` header is set to anything but those same addresses, so another web page open in your browser can't start a test run or a query. Checked by `DevOnly` in `deps.py`. Only the developer page's routes use it, and it is switched off on the Pi (`dev.enabled: false`). |
 
 ---
 
@@ -88,7 +90,7 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 | Method | Path | What it does | Called by | Access |
 |---|---|---|---|---|
-| GET | `/api/live` | Only what the desk cam panel shows, in one request (the app asks every 1.5 s): `camera`, `camera_source`, `camera_index`, `agents`, `detections.extras` (the other things on the desk, not in the chat: `[{"yolo_class", "ignored"}]`), `safety.explanations` (the "Heads up" sentences), `camera_issues`, `ai: {ready, problem}`, and `phone: {url, qr_svg}` or `pi_command`. `?qr=1` adds the phone link's QR code. | `web_app/app.js`, `tests/e2e/` | anyone on the network; the Pi command, the phone link and the QR code **this computer only** |
+| GET | `/api/live` | Only what the desk cam panel shows, in one request (the app asks every 1.5 s): `camera`, `camera_source`, `camera_index`, `agents`, `detections.extras` (the other things on the desk, not in the chat: `[{"yolo_class", "ignored"}]`), `safety.explanations` (the "Heads up" sentences), `camera_issues`, `ai: {ready, problem}`, and `phone: {url, qr_svg}` or `pi_command` (left out when `web.public_address` is set: the Pi starts its own camera). `?qr=1` adds the phone link's QR code. | `web_app/app.js`, `tests/e2e/` | anyone on the network; the Pi command, the phone link and the QR code **this computer only** |
 | GET | `/api/status` | A short summary: running, camera, agents, safety state, uptime. | `web_app/app.js` (once, when the page starts) | anyone on the network |
 
 ### An object's story (2)
@@ -153,7 +155,7 @@ number, kept between 1 and the most `web.list_sizes` allows; anything else is a 
 |---|---|---|---|---|
 | GET | `/api/rules` | The danger rules and the desk corners, plus the objects a zone can be set for. | `web_app/app.js` | anyone on the network |
 | PUT | `/api/rules` | Change some of them. When the desk corners are marked, it also notes how the phone was tilted. | `web_app/app.js` | anyone on the network |
-| GET | `/api/ui_settings` | The numbers and words the app page uses (refresh times, waits, list sizes, the sensitivity steps, the starter to-do and counters, Lens's card ...), so the page keeps no copies of its own. | `web_app/app.js` (on start), `tests/e2e/test_page.py` | anyone on the network |
+| GET | `/api/ui_settings` | The numbers and words the app page uses (refresh times, waits, list sizes, the sensitivity steps, the starter to-do and counters, Lens's card ...), so the page keeps no copies of its own. Its `pi` part is `{fps, delete_every_min, public_address}`: `public_address` is `web.public_address` (`desktalk.local:5000` on the Pi, empty on a computer), and when it is set the page says the Pi starts its own camera instead of showing a command to run. | `web_app/app.js` (on start), `tests/e2e/test_page.py` | anyone on the network |
 
 - `PUT /api/rules`: `{"danger_zones": ..., "edge_proximity": ..., "chain_reaction": ..., "temporal": ...,
   "desk_outline": [[x, y], ...]}`. Only the parts sent change; each corner is 0 to 1 of the picture. An
@@ -161,7 +163,7 @@ number, kept between 1 and the most `web.list_sizes` allows; anything else is a 
 
 ### Pi (2)
 
-The Pi's camera program (`raspberry_pi/camera/`) is the only caller. Both routes need the pairing key.
+The camera container (`raspberry_pi/camera/`) is the only caller. Both routes need the pairing key.
 
 | Method | Path | What it does | Called by | Access |
 |---|---|---|---|---|
@@ -173,7 +175,7 @@ The Pi's camera program (`raspberry_pi/camera/`) is the only caller. Both routes
   state `ok` / `busy` / `off` and its detections) and `picture` (the JPEG). Read by
   `desktalk_shared.wire.decode_upload`. Replies `{"ok": true, "fps": 3, "tip": null or "..."}`.
 - **Upload format 1** (the old `camera_node.py`): any other content type; the body is the JPEG and a few
-  `X-...` headers carry the rest. Its detector counts as `off`, so this computer detects the picture.
+  `X-...` headers carry the rest. Its detector counts as `off`, so the app detects the picture (if it can).
   Kept for old Pis; nothing in this repo sends it any more except the tests.
 - Errors: 400 not a JPEG or a bad `info`, 403 wrong key, 409 `camera.source` is not `pi`, 413 bigger than
   `web.pi_upload_max_mb`.
@@ -182,7 +184,7 @@ The Pi's camera program (`raspberry_pi/camera/`) is the only caller. Both routes
 
 | Method | Path | What it does | Called by | Access |
 |---|---|---|---|---|
-| GET | `/api/cloud/status` | Whether this computer is linked to a cloud server: `{"linked", "stopped", "last_sent_ts", "waiting"}`. `stopped` means the server no longer knows this computer, so it needs linking again. `waiting` is how many events were still to go at its last try, so it doesn't count ones written since. | `web_app/app.js` (the line in Settings) | anyone on the network |
+| GET | `/api/cloud/status` | Whether this Pi (or computer) is linked to a cloud server: `{"linked", "stopped", "last_sent_ts", "waiting"}`. `stopped` means the server no longer knows it, so it needs linking again. `waiting` is how many events were still to go at its last try, so it doesn't count ones written since. | `web_app/app.js` (the line in Settings) | anyone on the network |
 
 ### Developer page (this computer only) (20)
 
@@ -314,23 +316,28 @@ The 6 page routes are `/`, `/phone`, `/phone/` and the three file folders; with 
 ## Detector service (on the Pi)
 
 Built by `create_app` in `raspberry_pi/detector_service/desktalk_detector/app.py`. The only caller is the
-Pi's camera program (`raspberry_pi/camera/detector_client.py`). There is no pairing key: Docker only
-publishes the port on the Pi itself (`127.0.0.1`), so other computers can't reach it. Errors are
+camera container (`raspberry_pi/camera/detector_client.py`), apart from Docker's health check inside the detector itself.
+There is no pairing key: Docker doesn't open the port on the Pi at all, so only the other two containers can reach it, at
+`http://detector:8100`. A `curl http://127.0.0.1:8100` on the Pi, or from another computer, gets no answer; ask from inside
+the container instead (the detector's [README](../raspberry_pi/detector_service/README.md) shows how). Errors are
 `{"detail": "plain words"}` here, not `{"error": ...}`.
 
 ### Detector (3)
 
 | Method | Path | What it does | Called by | Access |
 |---|---|---|---|---|
-| POST | `/detect` | Finds the objects in one picture. | The Pi's camera program, for each picture | the Pi only |
-| GET | `/health` | `starting`, `loading`, `ready` or `error`, which model answers, and a message. | The Pi's camera program (while the detector is off); Docker's health check | the Pi only |
-| PUT | `/model` | Which model to run. It loads in the background; the old one keeps answering until the new one is ready. | The Pi's camera program, on start and when the computer's `pi.detector` settings change | the Pi only |
+| POST | `/detect` | Finds the objects in one picture. | The camera container, for each picture | the other containers only |
+| GET | `/health` | `starting`, `loading`, `ready` or `error`, which model answers, and a message. | The camera container (while the detector is off); Docker's health check | the other containers only |
+| PUT | `/model` | Which model to run. It loads in the background; the old one keeps answering until the new one is ready. | The camera container, on start and when the app's `pi.detector` settings change | the other containers only |
 
 - `POST /detect`: the body is one JPEG. Replies `{"detections": [...], "detect_ms", "width", "height",
   "model"}`. Errors: 400 not a JPEG, 413 bigger than `DETECTOR_MAX_PICTURE_MB`, 429 still busy with another
   picture, 503 no model yet.
 - `PUT /model`: JSON `{"model": "yolo26m-objv1-150.pt", "format": "ncnn", "image_size": 640, "confidence":
   0.35, "half": false}`. Replies like `/health`. 400 for settings that don't fit.
+- `GET /health`: `{"state", "model", "message", "detections_done", "last_detect_ms", ...}`. `state` is `error` when there
+  is no working model, **and also when a model is loaded but the last picture failed**: then `model` still names the
+  loaded model and the message says the last picture failed. It goes back to `ready` by itself as soon as one picture works.
 - FastAPI's own pages (`/docs`, `/redoc`, `/openapi.json`) are also switched on here; they are not counted.
 
 ---
@@ -356,7 +363,7 @@ The optional server in `cloud/`. Its own access rules:
 | POST | `/v1/events` | Send events. Each goes through `to_cloud_event()` again. Replies how many were kept, repeated and refused. An empty list is fine: it updates when the Pi was last seen and, with `caught_up: true`, when it last had nothing left to send. | Pi token |
 | GET | `/v1/devices/{device_id}/state` | The Pi, when it was last seen, its goals, its last camera problem and its objects, and `recent_hours` (`site.recent_hours`, how far back the website lists events). | Pi token or owner |
 | GET | `/v1/devices/{device_id}/events` | Its events, oldest first. `?since=`, `?after_id=`, `?limit=`. | Pi token or owner |
-| POST | `/v1/chat/completions` | Chat through this server's AI key, text only. Off without `CHAT_API_KEY`. | Pi token |
+| POST | `/v1/chat/completions` | Chat through this server's AI key, text only. Off without `CHAT_API_KEY`. 503 in plain words when `chat.max_at_once` chats are already running on the server, and 502 when the AI company goes past `chat.deadline_sec` or fails. | Pi token |
 
 ### Logging in (4)
 

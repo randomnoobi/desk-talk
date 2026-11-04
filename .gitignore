@@ -18,6 +18,8 @@ data/
 
 # Personal settings overrides
 config/settings.local.yaml
+# The same on a Pi: the folder compose.yaml mounts as config/mine (install.sh makes it from settings.mine.example.yaml)
+raspberry_pi/mine/
 
 # Large / local-only (GitHub file limit; use Releases or external hosting for video / weights)
 *.mp4

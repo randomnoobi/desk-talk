@@ -1,9 +1,9 @@
 """
 The camera program's settings: the `pi:` section of config/settings.yaml. Later wins:
 
-    config/settings.yaml in this repo on the Pi  →  the computer's settings (/api/pi/config)  →  flags
+    config/settings.yaml in this repo on the Pi  →  the app's settings (/api/pi/config)  →  flags
 
-So settings only need changing on the computer: the Pi asks for them when it starts, and again every
+So settings only need changing in the app's files: the Pi asks for them when it starts, and again every
 pi.settings_check_every_sec. New detector settings go to the container right away; anything else
 needs a restart of the camera program (it says so in its log).
 """
@@ -33,7 +33,7 @@ class SettingsError(ValueError):
 
 
 class ComputerProblem(Exception):
-    """The computer can't be reached or said no. The text says why, in plain words."""
+    """The app can't be reached or said no. The text says why, in plain words."""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -94,7 +94,7 @@ DETECTOR_FIELDS = {
     'pause_max_sec': POSITIVE, 'health_check_every_sec': POSITIVE,
 }
 MODEL_FIELDS = ('model', 'format', 'image_size', 'confidence', 'half')
-# Settings newer than some Pis' config/settings.yaml: when the Pi's copy is older and the computer can't be asked
+# Settings newer than some Pis' config/settings.yaml: when the Pi's copy is older and the app can't be asked
 # (or --offline), these are used, the same as pi: in config/settings.yaml and what the program used before them.
 IF_OLDER = {'camera': 'auto', 'error_text_chars': 200}
 IN_ORDER = (('upload_retry_start_sec', 'upload_retry_max_sec'),)        # (smaller, larger)
@@ -132,19 +132,19 @@ def from_layers(*layers: Mapping[str, Any] | None) -> CameraSettings:
 
 
 def upload_timeout(pi: Mapping[str, Any]) -> float:
-    """pi.upload_timeout_sec on its own: needed to ask the computer for the rest."""
+    """pi.upload_timeout_sec on its own: needed to ask the app for the rest."""
     return _check(pi, {'upload_timeout_sec': POSITIVE}, 'pi.', ())['upload_timeout_sec']
 
 
 def error_text_chars(pi: Mapping[str, Any]) -> int | None:
-    """pi.error_text_chars on its own, for asking the computer for the rest. None (show the whole reason) when the
-    Pi's settings are older than this setting: the computer's settings have it, and are used after that."""
+    """pi.error_text_chars on its own, for asking the app for the rest. None (show the whole reason) when the
+    Pi's settings are older than this setting: the app's settings have it, and are used after that."""
     if pi.get('error_text_chars') is None:
         return None
     return _check(pi, {'error_text_chars': WHOLE}, 'pi.', ())['error_text_chars']
 
 
-_WHERE = ': it belongs in config/settings.yaml on the computer (git pull gets the newest one, on the Pi too)'
+_WHERE = ': it belongs in config/settings.yaml (git pull gets the newest one)'
 
 
 def _check(section: Mapping[str, Any], fields: Mapping[str, _Kind], where: str,
@@ -179,10 +179,21 @@ def _model(detector: Mapping[str, Any]) -> ModelSettings:
 
 
 # ── where the settings come from ──────────────────────────────────────
+LOCAL_SETTINGS = ('settings.local.yaml', 'mine/settings.mine.yaml')    # the same two files as the app, in this order
+
+
 def read_repo_settings(path: str | Path) -> dict[str, Any]:
-    """The pi: section of config/settings.yaml in this repo ({} if there's no such file)."""
+    """The pi: section of config/settings.yaml in this repo ({} if there's no such file), with the pi: sections of
+    the files next to it laid over it, in order. In Docker the first is raspberry_pi/settings.pi.yaml and the second
+    the user's own raspberry_pi/mine/settings.mine.yaml, so the camera has the right addresses and folders even when
+    it starts before the app does, as it can after a reboot."""
+    path = Path(path)
+    return merge(_pi_section(path), *(_pi_section(path.parent / name) for name in LOCAL_SETTINGS))
+
+
+def _pi_section(path: Path) -> dict[str, Any]:
     try:
-        text = Path(path).read_text(encoding='utf-8')
+        text = path.read_text(encoding='utf-8')
     except FileNotFoundError:
         return {}
     try:
@@ -198,7 +209,7 @@ def read_repo_settings(path: str | Path) -> dict[str, Any]:
 
 
 def computer_config(server: str, key: str, timeout: float, error_text_chars: int | None) -> dict[str, Any]:
-    """The computer's /api/pi/config reply: {"pi": {...}, "camera_source": ...}. Raises ComputerProblem.
+    """The app's /api/pi/config reply: {"pi": {...}, "camera_source": ...}. Raises ComputerProblem.
     error_text_chars: how much of a reply it can't read goes into the problem's text (None: all of it)."""
     server = server.rstrip('/')
     try:
@@ -212,12 +223,12 @@ def computer_config(server: str, key: str, timeout: float, error_text_chars: int
     except ValueError:
         data = None
     if not isinstance(data, dict):
-        raise ComputerProblem(f"The computer at {server} sent settings this program can't read")
+        raise ComputerProblem(f"The app at {server} sent settings this program can't read")
     return data
 
 
 class SettingsWatcher:
-    """Asks the computer for its settings every `every_sec` (load() does the asking and layering).
+    """Asks the app for its settings every `every_sec` (load() does the asking and layering).
     New detector model settings go to the container; other changes need a restart, and it says so."""
 
     def __init__(self, load: Callable[[], CameraSettings], current: CameraSettings, detector: DetectorClient | None,
@@ -237,18 +248,18 @@ class SettingsWatcher:
         try:
             new = self.load()
         except ComputerProblem as exc:
-            log.debug('Could not ask the computer for new settings: %s', exc)
+            log.debug('Could not ask the app for new settings: %s', exc)
             return self.every_sec
         except SettingsError as exc:
-            log.warning("The computer's new settings have a problem, so they're not used: %s", exc)
+            log.warning("The app's new settings have a problem, so they're not used: %s", exc)
             return self.every_sec
         if new.detector.model != self.current.detector.model and self.detector is not None:
             model = new.detector.model
-            log.info('New detector settings from the computer: %s (%s, %d pixels)', model.model, model.format,
+            log.info('New detector settings from the app: %s (%s, %d pixels)', model.model, model.format,
                      model.image_size)
             self.detector.want_model(model)
         if _without_model(new) != _without_model(self.current):
-            log.info('The computer has new camera settings: restart the camera program to use them')
+            log.info('The app has new camera settings: restart the camera program to use them')
         self.current = new
         return self.every_sec
 

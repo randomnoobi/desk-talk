@@ -68,4 +68,4 @@ def test_error_text_cuts_a_reply_that_is_not_json_to_the_setting():
 
 
 def test_computer_said_no_uses_the_same_cut():
-    assert net.computer_said_no(502, b'Bad Gateway from the proxy', most_chars=3) == 'The computer said no (502): Bad'
+    assert net.computer_said_no(502, b'Bad Gateway from the proxy', most_chars=3) == 'The app said no (502): Bad'

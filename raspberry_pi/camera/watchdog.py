@@ -1,6 +1,7 @@
 """
 The watchdog: ends the camera program when no picture has come for a while (settings →
-pi.restart_after_missed_pictures picture times), so systemd starts it again (Restart=always).
+pi.restart_after_missed_pictures picture times), so Docker starts it again (the camera container's compose
+setting restart: unless-stopped brings it back after any exit).
 
 A camera that hangs inside capture() can't be stopped from Python, and the program would wait for good.
 So a thread of its own checks, and when it's time it ends the whole process at once.
@@ -42,7 +43,7 @@ class Watchdog:
         quiet = self.clock.monotonic() - self._last
         if quiet < self.limit_sec:
             return self.limit_sec - quiet
-        log.error('No picture from the camera for %.0f s: it seems stuck. Stopping the camera program, so systemd '
-                  'starts it again.', quiet)
+        log.error('No picture from the camera for %.0f s: it seems stuck. Stopping the camera program, so Docker '
+                  'starts the camera container again.', quiet)
         self.stop_now()
         return self.limit_sec

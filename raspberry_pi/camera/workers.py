@@ -56,7 +56,7 @@ class Workers:
 def build_program(settings: CameraSettings, camera: Any, *, server: str | None, key: str | None, offline: bool,
                   no_detector: bool, clock: Clock, sys_root: str | Path = '/',
                   reload: Callable[[], CameraSettings] | None = None) -> tuple[CameraProgram, Workers]:
-    """All the parts, connected. `reload` asks the computer for its settings again (for the settings watcher)."""
+    """All the parts, connected. `reload` asks the app for its settings again (for the settings watcher)."""
     store = PhotoStore(settings.photo_dir, keep_last_sec=settings.keep_last_min * 60, min_free_mb=settings.min_free_mb)
     uploader = None
     if not offline:

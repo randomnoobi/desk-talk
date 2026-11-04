@@ -1,8 +1,11 @@
 """
 What every request on a server goes through, besides its route:
 
-    AnyPageMayAsk      Access-Control-Allow-Origin: * on every reply of the main server, as the Flask server
-                       sent it (Starlette's CORSMiddleware only adds it when the request says where it's from)
+    KnownNamesOnly     403 for a request sent to a name this server doesn't go by. Without this a web site could
+                       point its own name at this server's address (DNS "rebinding"): its page would then pass as
+                       this server's own, and read the to-dos and send changes
+    OwnPagesOnly       403 for a write sent by a page from another web site. Without this a site open on a phone
+                       on the same Wi-Fi could change things here: a simple POST needs no permission first
     SizeLimit          a request bigger than its limit gets 413, before the route reads it all
     LogFailedRequests  only requests that failed are logged: the Pi sends 3 pictures a second and the app
                        asks for news every 1.5 s, so logging every request would bury everything else
@@ -10,10 +13,12 @@ What every request on a server goes through, besides its route:
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
+from collections.abc import Iterable
+from urllib.parse import urlsplit
 
-from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -27,22 +32,73 @@ def too_big(limit_bytes: int) -> HTTPException:
     return HTTPException(413, f'This request is bigger than the {limit_bytes / MB:g} MB this computer takes.')
 
 
-class AnyPageMayAsk:
-    def __init__(self, app: ASGIApp):
+async def _refuse(send: Send, refusal: str) -> None:
+    body = json.dumps({'error': refusal}).encode()
+    await send({'type': 'http.response.start', 'status': 403,
+                'headers': [(b'content-type', b'application/json'),
+                            (b'content-length', str(len(body)).encode())]})
+    await send({'type': 'http.response.body', 'body': body})
+
+
+class KnownNamesOnly:
+    """A request is answered only when the name it was sent to (Host, without the port) is a number address (IPv4
+    or IPv6), localhost, a name ending in .local, or one of `names` (web.public_address's and web.allowed_hosts).
+    A web site can't make a browser send any of those as Host for its own page: it can only point its own name
+    at this server."""
+
+    LOCAL_NAMES = ('localhost',)
+    LOCAL_ENDING = '.local'
+
+    def __init__(self, app: ASGIApp, names: Iterable[str], refusal: str):
         self.app = app
+        self.names = {name.lower().rstrip('.') for name in names if name}
+        self.refusal = refusal
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope['type'] != 'http':
+        if scope['type'] != 'http' or self._known(dict(scope['headers']).get(b'host', b'').decode('latin-1')):
             await self.app(scope, receive, send)
             return
+        await _refuse(send, self.refusal)
 
-        async def send_with_header(message: Message) -> None:
-            if message['type'] == 'http.response.start':
-                headers = MutableHeaders(scope=message)
-                headers.setdefault('access-control-allow-origin', '*')
-            await send(message)
+    def _known(self, host: str) -> bool:
+        try:
+            name = (urlsplit(f'//{host}').hostname or '').rstrip('.')
+        except ValueError:              # a [ without its ]
+            return False
+        if not name:
+            return False
+        try:
+            ipaddress.ip_address(name)
+            return True
+        except ValueError:
+            pass
+        return name in self.LOCAL_NAMES or name.endswith(self.LOCAL_ENDING) or name in self.names
 
-        await self.app(scope, receive, send_with_header)
+
+class OwnPagesOnly:
+    """A browser says which site's page sent a request (Origin). A write is refused unless that is this server, by
+    the address the browser used (Host), or a site in `allowed`. Programs like the camera send no Origin, and pass."""
+
+    READS = (b'GET', b'HEAD', b'OPTIONS')
+
+    def __init__(self, app: ASGIApp, allowed: list[str], refusal: str):
+        self.app = app
+        self.allowed = {site.lower() for site in allowed}
+        self.refusal = refusal
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope['type'] != 'http' or scope['method'].encode() in self.READS or self._may_write(scope):
+            await self.app(scope, receive, send)
+            return
+        await _refuse(send, self.refusal)
+
+    def _may_write(self, scope: Scope) -> bool:
+        headers = dict(scope['headers'])
+        origin = headers.get(b'origin')
+        if origin is None:
+            return True
+        site = origin.decode('latin-1').lower()
+        return site in self.allowed or urlsplit(site).netloc == headers.get(b'host', b'').decode('latin-1').lower()
 
 
 class SizeLimit:

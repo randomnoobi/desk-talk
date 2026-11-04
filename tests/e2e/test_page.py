@@ -101,7 +101,7 @@ def test_the_story_of_something_on_the_desk_shows_each_step_with_its_picture(pag
         picture = steps.first.locator('.story-pic')
         expect(picture.locator('img')).to_have_attribute('src', re.compile(r'^/api/objects/photo/'))
         expect(picture.locator('svg rect')).to_have_count(1)                   # its box, drawn by the page
-        assert page.evaluate("document.querySelector('#story .story-pic img').naturalWidth") > 0
+        page.wait_for_function("document.querySelector('#story .story-pic img')?.naturalWidth > 0")     # it has loaded
         picture.click()                                                         # a bigger look
         expect(picture).to_have_class(re.compile(r'\bbig\b'))
         story.get_by_role('button', name='Close').click()
@@ -199,6 +199,19 @@ def test_page_shows_the_servers_numbers(page, tmp_path, pictures):
     with app_server(tmp_path, pictures=pictures, change=change) as server:
         open_app(page, server.url)                  # no pictures yet: the desk cam says how to start the Pi
         expect(page.locator('#cam-stage')).to_contain_text('deletes them every 7 minutes')
+
+
+def test_pi_page_uses_the_public_address_and_shows_no_command(page, tmp_path, pictures):
+    """On the Pi the camera starts itself: the desk cam says where to open the app, with no command or key."""
+    def change(config):
+        return changed(config, 'web', public_address='desktalk.local:5000')
+
+    with app_server(tmp_path, pictures=pictures, change=change) as server:
+        open_app(page, server.url)
+        stage = page.locator('#cam-stage')
+        expect(stage).to_contain_text('http://desktalk.local:5000')
+        expect(stage).not_to_contain_text('raspberry_pi.camera')
+        expect(stage.locator('#copy-pi')).to_have_count(0)
 
 
 def watch_for_errors(page: Any) -> list[str]:

@@ -1,16 +1,22 @@
-"""server.py's start-up lines (the settings, the Pi command, the phone link): through logging, so they reach
-the log file too, and shown in the terminal as they are, whatever the log level."""
+"""server.py's start-up lines (the settings, the address, the camera): through logging, so they reach the log
+file too, and shown in the terminal as they are, whatever the log level. The pairing key is never in them."""
 
 from __future__ import annotations
 
 import logging
 from logging.handlers import RotatingFileHandler
+from types import SimpleNamespace
 
 import pytest
 
 import server
 from desktalk.config import ConfigError
+from desktalk.web.pairing import Links
 from tests.integration.app_kit import changed, desk_config
+
+KEY = 'Zq7Wk3mRtx'                    # a pairing key no other line would contain by chance
+PUBLIC = 'desktalk.local:5000'
+DOCKER_ADDRESS = '172.18.0.3'          # what lan_ip() finds inside a container
 
 
 @pytest.fixture(autouse=True)
@@ -60,3 +66,58 @@ def test_the_log_file_is_named_by_the_settings(tmp_path):
     config = changed(desk_config(tmp_path), 'logging', file_name='my-desk.log')
     log_file = server.start_logging(config)
     assert log_file == config.resolve(config.logging.folder) / 'my-desk.log'
+
+
+def shown_lines(config, source_kind, capsys):
+    """What `address_lines` says for a camera source: the terminal's lines, as they are."""
+    server.start_logging(config)
+    links = Links(DOCKER_ADDRESS, config.web.port, KEY, public_address=config.web.public_address)
+    server.address_lines(config, links, source_kind)
+    return capsys.readouterr().err.splitlines()
+
+
+def test_startup_shows_the_public_address(tmp_path, capsys):
+    config = changed(desk_config(tmp_path), 'web', public_address=PUBLIC)
+    shown = shown_lines(config, 'pi', capsys)
+    assert any(PUBLIC in line and 'Open' in line for line in shown)
+    assert not any('localhost' in line or DOCKER_ADDRESS in line for line in shown)
+
+
+def test_startup_in_docker_skips_the_pi_command(tmp_path, capsys):
+    config = changed(desk_config(tmp_path), 'web', public_address=PUBLIC)
+    shown = shown_lines(config, 'pi', capsys)
+    assert not any('raspberry_pi.camera' in line for line in shown)
+
+
+def test_startup_on_a_computer_points_to_the_page_and_the_key_file_for_the_pi(tmp_path, capsys):
+    config = desk_config(tmp_path)
+    shown = shown_lines(config, 'pi', capsys)
+    assert any('http://localhost:5000' in line for line in shown)
+    [by_hand] = [line for line in shown if 'raspberry_pi.camera' in line]
+    assert f'--server http://{DOCKER_ADDRESS}:5000' in by_hand and '--key-file' in by_hand and '--key ' not in by_hand
+    assert any(str(config.resolve(config.camera.pair_key_file)) in line for line in shown)
+
+
+@pytest.mark.parametrize('public', ['', PUBLIC])
+@pytest.mark.parametrize('source_kind', ['pi', 'phone', 'webcam'])
+def test_the_pairing_key_is_not_in_the_start_up_lines(tmp_path, capsys, source_kind, public):
+    config = changed(desk_config(tmp_path), 'web', public_address=public)
+    shown = shown_lines(config, source_kind, capsys)
+    assert shown and not any(KEY in line for line in shown)
+    log_file = config.resolve(config.logging.folder) / config.logging.file_name
+    assert KEY not in log_file.read_text()
+
+
+@pytest.mark.parametrize('source_kind', ['pi', 'phone'])
+def test_a_whole_start_never_logs_the_pairing_key(tmp_path, monkeypatch, capsys, source_kind):
+    config = changed(desk_config(tmp_path), 'camera', source=source_kind)
+    desktalk = SimpleNamespace(detector=SimpleNamespace(label='fake'), model=SimpleNamespace(label='fake'),
+                               safety_rules=SimpleNamespace(loaded=False), source_kind=source_kind, pair_key=KEY)
+    monkeypatch.setattr(server, 'load_config', lambda: config)
+    monkeypatch.setattr(server, 'build', lambda cfg: desktalk)
+    monkeypatch.setattr(server, 'lan_ip', lambda: DOCKER_ADDRESS)
+    monkeypatch.setattr(server, 'ensure_cert', lambda *a, **k: None)
+    monkeypatch.setattr(server, 'run', lambda *a: None)
+    assert server.main() == 0
+    log_file = config.resolve(config.logging.folder) / config.logging.file_name
+    assert KEY not in log_file.read_text() and KEY not in capsys.readouterr().err

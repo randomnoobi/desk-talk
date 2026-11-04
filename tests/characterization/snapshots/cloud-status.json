@@ -1,8 +1,6 @@
 {
   "content_type": "application/json",
-  "headers": {
-    "access-control-allow-origin": "*"
-  },
+  "headers": {},
   "json": {
     "last_sent_ts": "null",
     "linked": "bool",

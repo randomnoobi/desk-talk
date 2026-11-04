@@ -5,14 +5,14 @@ What each setting means is in the comments of config/settings.yaml.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 
 from desktalk.config.agents import AgentsFile
 from desktalk.config.base import (
-    CONFIG_FOLDER,
     Count,
     Fraction,
     Hour,
@@ -60,6 +60,7 @@ class CameraSettings(_Section):
     pair_key_file: Path
     keep_newer_picture_sec: ZeroOrMore
     pi_clock_pictures: PositiveInt
+    detection_off_after_sec: ZeroOrMore   # a detection failure is only reported once none has worked for this long
 
 
 class PiDetector(_Section):
@@ -106,6 +107,7 @@ class PiSettings(_Section):
 
 
 class DetectorSettings(_Section):
+    enabled: bool
     model: str
     confidence: Fraction
     image_size: PositiveInt
@@ -370,6 +372,11 @@ class LlmSettings(_Section):
     ollama_keepalive_start_sec: ZeroOrMore
     gemini_url: str
     groq_url: str
+    ai_url: Annotated[str, Field(pattern=r'^(https?://\S+)?$')]     # empty = .env decides (see config/settings.yaml)
+    ai_on_my_computer: bool           # ai_url is Ollama on the user's own computer, so it may get to-do text
+    send_pictures: bool
+    reminder_wait_sec: PositiveNumber
+    ollama_reasoning_effort: str      # empty = say nothing about it
     gemini_thinking_budget: Count
     error_text_chars: PositiveInt
     error_log_chars: PositiveInt
@@ -410,6 +417,7 @@ class ChatSettings(_Section):
     panel_views_window_sec: PositiveNumber
     panel_views_min: PositiveInt
     panel_action_max_chars: PositiveInt
+    ai_writes_warnings: bool
 
 
 class IdleChatSettings(_Section):
@@ -463,6 +471,7 @@ class LostItemsSettings(_Section):
 
 class StorageSettings(_Section):
     folder: Path
+    rules_folder: Path
 
 
 class LensWaits(_Section):
@@ -676,9 +685,16 @@ class PageRefresh(_Section):
     log: PositiveInt
 
 
+_HOST_NAME = re.compile(r'[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?')     # desktalk.local, 192.168.1.20
+
+
 class WebSettings(_Section):
+    cors_origins: list[str]
     host: str
     port: Port
+    public_address: str               # how others reach the app: name and web.port (desktalk.local:5000); '' = work out
+    outside_port: Annotated[int, Field(ge=0, le=65535)]   # the port others use, if Docker opens another; 0 = web.port
+    allowed_hosts: list[Annotated[str, Field(pattern=_HOST_NAME.pattern)]]   # more names it answers at (a proxy)
     app_folder: Path
     phone_folder: Path
     stop_wait_sec: PositiveNumber
@@ -705,17 +721,47 @@ class WebSettings(_Section):
     new_zone_px: PositiveInt
     palette: Words
 
+    @field_validator('public_address')
+    @classmethod
+    def _without_spaces_around(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode='after')
+    def _public_address_is_host_and_web_port(self):
+        """Like desktalk.local:5000: a name, a colon and web.port (or outside_port, when Docker opens another one
+        for it). Without a port the link would open port 80; a path, ?, #, @ or a space would give a link that goes
+        somewhere else."""
+        if self.public_address:
+            host, _, port = self.public_address.partition(':')
+            opened = self.outside_port or self.port
+            if not (_HOST_NAME.fullmatch(host) and port == str(opened)):
+                raise ValueError(f'public_address must be a name and the port the app listens on (web.port, '
+                                 f'{opened}), like desktalk.local:{opened} (got {self.public_address!r})')
+        return self
+
+
+Command = Annotated[tuple[str, ...], Field(min_length=1)]    # a program and its arguments, run without a shell
+
 
 class NotificationsSettings(_Section):
-    """The Mac's own pop-up notifications (desktalk/adapters/notify/): which kinds, and how they're shown."""
+    """Warnings and reminders outside the chat (desktalk/adapters/notify/): the Mac's own pop-ups or the Pi's speaker,
+    which kinds, and how they're given."""
 
+    output: Literal['mac', 'speaker', 'none']
     enabled: bool
     warnings: bool
     reminders: bool
     sips: bool
     time_limit_sec: PositiveNumber
     command: str                      # the program that shows them (the Mac's osascript)
-    queue_size: PositiveInt           # pop-ups that can wait to be shown (more are dropped)
+    queue_size: PositiveInt           # messages that can wait their turn (more are dropped)
+    speak_command: Command            # what says the words it gets on standard input; blanks: {voice} {device}
+    voice_model: str                  # the voice, for {voice}
+    sound_card: str                   # a word in the sound card's name; empty = the system's own choice
+    sound_cards_file: Path            # where the system lists its sound cards
+    speak_time_limit_sec: PositiveNumber
+    speak_stop_wait_sec: PositiveNumber
+    speak_max_age_sec: PositiveNumber
 
 
 class LoggingSettings(_Section):
@@ -725,9 +771,6 @@ class LoggingSettings(_Section):
     files_kept: Count
     file_name: str
     preview_chars: PositiveInt
-
-
-Command = Annotated[tuple[str, ...], Field(min_length=1)]    # a program and its arguments, run without a shell
 
 
 class DevCheck(_Section):
@@ -889,8 +932,3 @@ class AppConfig(_Section):
         """A path from the settings: absolute paths and ~ stay as they are, others are under the project folder."""
         path = Path(path).expanduser()
         return path if path.is_absolute() else self.root / path
-
-    @property
-    def config_folder(self) -> Path:
-        """The folder the config files came from (config/safety_rules.json is kept there too)."""
-        return self.root / CONFIG_FOLDER

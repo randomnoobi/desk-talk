@@ -1,8 +1,6 @@
 {
   "content_type": "application/json",
-  "headers": {
-    "access-control-allow-origin": "*"
-  },
+  "headers": {},
   "json": {
     "chat": {
       "history_from_app": "number",
@@ -78,7 +76,8 @@
     },
     "pi": {
       "delete_every_min": "number",
-      "fps": "number"
+      "fps": "number",
+      "public_address": "str"
     },
     "quiet_hours": {
       "enabled": "bool",

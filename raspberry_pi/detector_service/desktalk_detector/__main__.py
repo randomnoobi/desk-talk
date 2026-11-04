@@ -1,6 +1,6 @@
 """
 Starts the detector service: python -m desktalk_detector (the Docker image runs this).
-The settings come from the environment: see raspberry_pi/detector_service/.env and README.md.
+The settings come from the environment: see raspberry_pi/.env and README.md.
 """
 
 from __future__ import annotations

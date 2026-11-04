@@ -141,3 +141,9 @@ def test_a_pi_camera_module_that_cannot_start_says_so_in_plain_words(monkeypatch
     monkeypatch.setitem(sys.modules, 'picamera2', types.SimpleNamespace(Picamera2=picamera2))
     with pytest.raises(CameraError, match=f'Pi camera module could not start.*{why}'):
         open_kind('picamera2')
+
+
+def test_a_camera_that_cannot_start_also_points_at_the_containers_devices(monkeypatch):
+    monkeypatch.setitem(sys.modules, 'picamera2', types.SimpleNamespace(Picamera2=NoCameraAttached))
+    with pytest.raises(CameraError, match=r'camera container is given the camera devices.*/dev/dma_heap.*/run/udev'):
+        open_kind('picamera2')

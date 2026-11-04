@@ -120,7 +120,8 @@ class SiteSettings(_Section):
 class ChatSettings(_Section):
     url: str
     model: str
-    timeout_sec: PositiveNumber
+    deadline_sec: PositiveNumber
+    max_at_once: PositiveInt
     max_body_kb: PositiveInt
     max_tokens_cap: PositiveInt
     limit_requests: PositiveInt
@@ -169,6 +170,7 @@ class Messages(_Section):
     chat_no_key: str
     chat_no_images: str
     chat_too_many: str
+    chat_busy: str
     chat_failed: str
     report_no_key: str
     report_pi_removed: str

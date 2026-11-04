@@ -41,7 +41,7 @@ export function CodeBox({ reply }: { reply: CodeReply }) {
       <p>Your one-time code:</p>
       <p className="bigcode"><code>{reply.code}</code></p>
       {reply.expires_at !== null && <p className="muted small">It works once, until {formatTime(reply.expires_at)}.</p>}
-      <p>Run this to link it:</p>
+      <p>Run this on the Pi. It installs Desk Talk if needed, and links it:</p>
       <pre className="printout">{reply.command}</pre>
       {isThisComputer(reply.server_url) && (
         <p className="warning" role="alert">

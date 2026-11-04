@@ -65,14 +65,16 @@ class MessageGenerator:
     reply_max_chars (longest AI reply kept), prompts (config/prompts.yaml), drink_labels (safety.liquids:
     the drinks when no agent speaks for hydration), preview_chars (logging: the longest reply quoted in
     the log). todos: the server's to-do list, which the AI is told about. local_model: the AI is a small model
-    on this computer (Ollama), which gets shorter prompts and fewer earlier messages."""
+    on this computer (Ollama), which gets shorter prompts and fewer earlier messages. unprompted_model: the AI for
+    what nobody asked for (warnings, reminders, personalities); `model` is for answering you. Not given: the same."""
 
     def __init__(self, model: ChatModel, notifier: Notifier, roster: RosterView, profiles: Profiles,
                  habits: HabitsView, desk: ChatDesk, clock: Clock, *, status: DeskStatus, habit_log: HabitLog,
                  todos: TodoList,
                  llm: LlmSettings, chat: ChatSettings, agents: AgentsSettings, sunlight_default_min: float,
                  reply_max_chars: int, prompts: Prompts, drink_labels: Iterable[str], preview_chars: int,
-                 local_model: bool = False, rng: random.Random | None = None):
+                 local_model: bool = False, rng: random.Random | None = None,
+                 unprompted_model: ChatModel | None = None):
         self._notifier = notifier
         self._roster = roster
         self._profiles = profiles
@@ -84,13 +86,14 @@ class MessageGenerator:
         self._agents = agents
         self._words = prompts
         self._greeted: dict[str, float] = {}                # agent id → last hello
-        self._ai = AgentAI(model, profiles, llm, reply_max_chars)
+        self._ai = AgentAI(unprompted_model or model, profiles, llm, reply_max_chars)
         memory = ChatMemory(desk, keep=llm.memory_per_agent, reply_chars=chat.memory_reply_chars,
                             user_chars=chat.memory_user_chars, words=prompts.memory)
         self._alerts = AlertVoice(self._ai, profiles, desk, self.live_context, prompts.alert, chat, drink_labels)
         self._nudges = NudgeVoice(self._ai, profiles, habits, desk, memory, clock, prompts, chat, todos=todos,
                                   local=local_model)
-        self._answers = ChatAnswers(self._ai, model, notifier, roster, profiles, habits, desk, memory,
+        self._answers = ChatAnswers(AgentAI(model, profiles, llm, reply_max_chars), model, notifier, roster, profiles,
+                                    habits, desk, memory,
                                     TrackerPanels(desk, chat), clock, self.live_context, habit_log=habit_log,
                                     todos=todos, words=prompts, llm=llm, chat=chat,
                                     sunlight_default_min=sunlight_default_min, preview_chars=preview_chars,

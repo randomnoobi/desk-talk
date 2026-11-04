@@ -1,4 +1,4 @@
-"""The detector service reads its settings from the environment (raspberry_pi/detector_service/.env in Docker)."""
+"""The detector service reads its settings from the environment (raspberry_pi/.env in Docker)."""
 
 from __future__ import annotations
 

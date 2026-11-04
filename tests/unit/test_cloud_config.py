@@ -30,6 +30,7 @@ def test_spec_defaults():
     assert config.site.recent_hours == 24
     assert config.google.auth_url.startswith('https://accounts.google.com/')
     assert config.chat.url and config.chat.model and config.chat.limit_requests > 0
+    assert config.chat.max_at_once > 0 and config.chat.deadline_sec > 0
 
 
 def test_missing_session_secret_stops_and_names_it():
@@ -93,6 +94,19 @@ def _copy_folder(tmp_path: Path, change) -> Path:
 def test_bad_value_gives_a_plain_message_with_its_name(tmp_path):
     folder = _copy_folder(tmp_path, lambda s: s['ingest'].update(max_batch=0))
     with pytest.raises(ConfigError, match='ingest.max_batch'):
+        load_config(folder, {'SESSION_SECRET': SECRET})
+
+
+def test_chat_has_one_limit_on_time_so_a_timeout_is_refused(tmp_path):
+    folder = _copy_folder(tmp_path, lambda s: s['chat'].update(timeout_sec=30))
+    with pytest.raises(ConfigError, match='timeout_sec'):
+        load_config(folder, {'SESSION_SECRET': SECRET})
+
+
+@pytest.mark.parametrize('name', ['max_at_once', 'deadline_sec'])
+def test_chat_limits_must_be_above_zero(tmp_path, name):
+    folder = _copy_folder(tmp_path, lambda s: s['chat'].update({name: 0}))
+    with pytest.raises(ConfigError, match=f'chat.{name}'):
         load_config(folder, {'SESSION_SECRET': SECRET})
 
 

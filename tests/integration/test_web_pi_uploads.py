@@ -99,5 +99,6 @@ def test_uploads_are_refused_when_the_camera_is_not_the_pi(tmp_path):
     rig = DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'camera', source='phone'))
     reply = pi_upload(web_client(rig.app), desk_jpeg(), info(rig, DetectorState.OFF))
     assert reply.status_code == 409
-    assert reply.json() == {'error': 'This computer is set to camera.source: phone. '
-                                     'Set it to pi in config/settings.yaml.'}
+    assert reply.json() == {'error': 'The app is set to camera.source: phone, so pictures from pi go nowhere. '
+                                     'Set camera.source to pi in its settings (settings.local.yaml; on the Pi, '
+                                     'raspberry_pi/mine/settings.mine.yaml) and restart it.'}

@@ -1,0 +1,9 @@
+# Laid over raspberry_pi/compose.yaml by the tests that talk to the detector from outside its containers.
+# On the Pi nothing does this: there the port is open only inside the stack.
+# These tests also let it fetch their small test model, which it never does on the Pi.
+services:
+  detector:
+    environment:
+      YOLO_OFFLINE: "false"
+    ports:
+      - "127.0.0.1:${DETECTOR_PORT}:${DETECTOR_PORT}"

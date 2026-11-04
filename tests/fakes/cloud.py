@@ -3,6 +3,7 @@ fake report writer and fake chat forwarder, and a quick way to link a Pi without
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -69,8 +70,8 @@ class FakeChatForwarder:
         self.fail_with: str | None = None
         self.calls: list[tuple[Sequence[Mapping[str, Any]], int | None, float | None]] = []
 
-    def complete(self, messages: Sequence[Mapping[str, Any]], max_tokens: int | None,
-                 temperature: float | None) -> dict[str, Any]:
+    async def complete(self, messages: Sequence[Mapping[str, Any]], max_tokens: int | None,
+                       temperature: float | None) -> dict[str, Any]:
         self.calls.append((messages, max_tokens, temperature))
         if self.fail_with is not None:
             raise ChatFailed(self.fail_with)
@@ -87,7 +88,8 @@ def make_parts(config: CloudConfig | None = None, *, store: Store | None = None,
     return CloudParts(
         config=config, store=store or MemoryStore(), clock=clock, google=google, chat_forwarder=chat_forwarder,
         claim_limiter=RateLimiter(config.limits.claim_tries, config.limits.claim_window_sec, clock),
-        chat_limiter=RateLimiter(config.chat.limit_requests, config.chat.limit_window_sec, clock))
+        chat_limiter=RateLimiter(config.chat.limit_requests, config.chat.limit_window_sec, clock),
+        chat_slots=threading.BoundedSemaphore(config.chat.max_at_once))
 
 
 @dataclass(frozen=True)

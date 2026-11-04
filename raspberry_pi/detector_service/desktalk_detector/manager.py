@@ -68,12 +68,14 @@ class ModelManager:
         self._wait = retry_first_sec            # before the next try, if this one fails
         self._detections_done = 0
         self._last_detect_ms: float | None = None
+        self._detect_problem: str | None = None     # why the last picture failed, until one works
         self._wake = threading.Event()          # a new model was asked for, or it's time to stop
         self._stopping = False
 
     def health(self) -> DetectorHealth:
         with self._lock:
             current, wanted, problem = self._current, self._wanted, self._problem
+            detect_problem = self._detect_problem
             counts = {'detections_done': self._detections_done, 'last_detect_ms': self._last_detect_ms}
         if wanted is not None:
             doing = problem or f'Loading {describe(wanted)}.' + (
@@ -84,6 +86,9 @@ class ModelManager:
                 return DetectorHealth(state=state, model=None, message=doing, **counts)
             return DetectorHealth(state=ServiceState.LOADING, model=current.settings,
                                   message=f'{doing} {describe(current.settings)} answers meanwhile.', **counts)
+        if current is not None and detect_problem:
+            return DetectorHealth(state=ServiceState.ERROR, model=current.settings,
+                                  message=f'{describe(current.settings)} loaded, but {detect_problem}', **counts)
         if current is not None:
             return DetectorHealth(state=ServiceState.READY, model=current.settings,
                                   message=f'Running {describe(current.settings)}.{_note(current.settings)}', **counts)
@@ -154,6 +159,7 @@ class ModelManager:
             if self._wanted != wanted:
                 return 0                        # asked for another model meanwhile: load that one now
             self._current, self._wanted, self._problem = _Loaded(wanted, model), None, None
+            self._detect_problem = None
         log.info('running %s', describe(wanted))
         return None
 
@@ -171,10 +177,17 @@ class ModelManager:
                                             verbose=False)
             found = detections_from_results(results)
             ms = round((self._clock() - start) * 1000, 1)
+        except Exception as exc:    # say so in /health, not only to this one caller
+            with self._lock:
+                if self._current is current:
+                    self._detect_problem = f'the last picture failed: {exc!r}'
+            raise
         finally:
             self._one_at_a_time.release()
         with self._lock:
             self._detections_done += 1
+            if self._current is current:
+                self._detect_problem = None
             self._last_detect_ms = ms
         height, width = picture.shape[:2]
         return DetectReply(detections=found, detect_ms=ms, width=width, height=height, model=describe(s))

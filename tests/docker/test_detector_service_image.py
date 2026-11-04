@@ -23,7 +23,9 @@ from desktalk_shared.detector_api import DetectorHealth, DetectReply, ModelSetti
 
 pytestmark = pytest.mark.docker
 
-SERVICE = Path(__file__).resolve().parents[2] / 'raspberry_pi' / 'detector_service'
+ROOT = Path(__file__).resolve().parents[2]
+PI = ROOT / 'raspberry_pi'
+OPEN_PORT = ROOT / 'tests' / 'docker' / 'pi_detector_port_open.compose.yaml'    # on the Pi the port isn't open at all
 PROJECT = 'desktalk-detector-test'
 MODEL = ModelSettings(model='yolo11n.pt', format='ncnn', image_size=320, confidence=0.35, half=True)
 BUILD_AND_START_SEC = 3600       # the first build downloads PyTorch and friends
@@ -31,13 +33,14 @@ READY_SEC = 900                  # downloading yolo11n.pt and converting it to n
 
 
 def env_file() -> dict[str, str]:
-    lines = (SERVICE / '.env').read_text(encoding='utf-8').splitlines()
+    lines = (PI / '.env.example').read_text(encoding='utf-8').splitlines()
     return dict(line.split('=', 1) for line in lines if line.strip() and not line.lstrip().startswith('#'))
 
 
 def compose(*args: str, timeout: float = 300, check: bool = True) -> str:
-    done = subprocess.run(['docker', 'compose', '-p', PROJECT, '-f', str(SERVICE / 'compose.yaml'), *args],
-                          capture_output=True, text=True, timeout=timeout, check=False)
+    command = ['docker', 'compose', '-p', PROJECT, '--env-file', str(PI / '.env.example'),     # .env is the Pi's own
+               '-f', str(PI / 'compose.yaml'), '-f', str(OPEN_PORT), *args]
+    done = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
     if check and done.returncode != 0:
         raise AssertionError(f'docker compose {" ".join(args)} failed:\n{done.stdout}\n{done.stderr}')
     return done.stdout.strip()
@@ -52,7 +55,7 @@ def url(request):
         pytest.skip('opt-in: uv run pytest -m docker tests/docker')
     if subprocess.run(['docker', 'info'], capture_output=True, check=False).returncode != 0:
         pytest.skip("Docker isn't running")
-    compose('up', '--detach', '--build', '--wait', timeout=BUILD_AND_START_SEC)
+    compose('up', '--detach', '--build', '--wait', 'detector', timeout=BUILD_AND_START_SEC)
     try:
         yield f'http://127.0.0.1:{env_file()["DETECTOR_PORT"]}'
     finally:
@@ -63,11 +66,6 @@ def test_health_answers_before_it_has_a_model(url):
     import httpx
     health = DetectorHealth.from_dict(httpx.get(f'{url}/health').json())
     assert health.state is ServiceState.STARTING and health.model is None
-
-
-def test_the_port_is_open_on_127_0_0_1_only(url):
-    port = env_file()['DETECTOR_PORT']
-    assert compose('port', 'detector', port) == f'127.0.0.1:{port}'
 
 
 def test_the_container_has_a_memory_limit(url):

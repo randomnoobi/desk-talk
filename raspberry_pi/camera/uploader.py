@@ -1,9 +1,9 @@
 """
-Sends pictures to the computer: one POST to /api/pi/frame per picture, in upload format 2
+Sends pictures to the app: one POST to /api/pi/frame per picture, in upload format 2
 (desktalk_shared.wire: the JPEG plus what the Pi's detector found, and how the Pi is doing).
 
 Only the newest picture waits to be sent, so a slow Wi-Fi skips pictures instead of falling behind.
-When the computer is away it waits a little longer after each miss (pi.upload_retry_start_sec,
+When the app is away it waits a little longer after each miss (pi.upload_retry_start_sec,
 doubling up to pi.upload_retry_max_sec), and then sends only the newest picture: no catching up
 on old ones, which would make the characters react minutes late.
 """
@@ -77,7 +77,7 @@ class Uploader:
         return wait
 
     def _send(self, jpeg: bytes, info: UploadInfo) -> str | None:
-        """None if the computer took the picture, else what went wrong in plain words."""
+        """None if the app took the picture, else what went wrong in plain words."""
         body, content_type = encode_upload(jpeg, info)
         try:
             status, reply = net.call('POST', self.url, body=body, timeout=self.timeout_sec,

@@ -133,4 +133,4 @@ def test_says_when_pictures_reach_the_computer_again(computer, uploader, clock, 
         uploader.offer(JPEG, info(3))
         uploader.tick()
     assert caplog.text.count('pictures are reaching') == 2
-    assert caplog.text.count('Cannot reach the computer') == 1
+    assert caplog.text.count('Cannot reach the app') == 1

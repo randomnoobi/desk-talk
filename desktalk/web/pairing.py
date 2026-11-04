@@ -1,8 +1,10 @@
 """
-How the Pi and the phone find this computer:
+How the Pi and the phone find the app:
 
-    links = Links(lan_ip(), web_port, pair_key, phone_port=5443)
+    links = Links(lan_ip(), web_port, pair_key, phone_port=5443, public_address='')
+    links.web_url         # http://192.168.1.20:5000  (http://desktalk.local:5000 when public_address says so)
     links.pi_command      # python3 -m raspberry_pi.camera --server http://192.168.1.20:5000 --key AbC123xY
+                          # ('' when public_address is set: the Pi starts its own camera)
     links.phone_url       # https://192.168.1.20:5443/phone?key=AbC123xY  ('' when the phone isn't the camera)
     links.phone_qr_svg    # that link as a QR code, for the app to show
 
@@ -15,12 +17,11 @@ made by ensure_cert() for this computer's Wi-Fi address and kept for the next st
 from __future__ import annotations
 
 import datetime
-import io
 import ipaddress
 import logging
 import socket
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
 
@@ -35,7 +36,6 @@ THIS_COMPUTER = '127.0.0.1'
 RSA_KEY_BITS = 2048                 # the usual size for a certificate's key
 RSA_PUBLIC_EXPONENT = 65537         # the value everyone uses
 QR_BORDER_IN_APP = 2                # the empty border around the QR code, in squares
-QR_BORDER_IN_TERMINAL = 1
 
 
 def lan_ip() -> str:
@@ -52,17 +52,35 @@ def lan_ip() -> str:
 
 @dataclass(frozen=True)
 class Links:
-    """address: this computer on the Wi-Fi. phone_port: the phone page's HTTPS port, when its server runs."""
+    """address: the app's computer on the Wi-Fi. phone_port: the phone page's HTTPS port, when its server runs.
+    public_address: how other devices reach the app, like desktalk.local:5000 (web.public_address); '' when it
+    isn't set. Inside Docker the address above is Docker's own, so this is what people are told to open."""
 
     address: str
     web_port: int
-    pair_key: str
+    pair_key: str = field(repr=False)        # never printed: a Links in a log line or a traceback must not show it
     phone_port: int | None = None
+    public_address: str = ''
+
+    @property
+    def web_url(self) -> str:
+        """Where other devices open the app."""
+        return f'http://{self.public_address or f"{self.address}:{self.web_port}"}'
+
+    def pi_command_with_key_file(self, key_file: str) -> str:
+        """What to run on the Pi, in the desk-talk folder, with the key read from a file there (so it is never
+        written to a log). '' when public_address is set: the Pi starts its own camera."""
+        if self.public_address:
+            return ''
+        return f'python3 -m raspberry_pi.camera --server {self.web_url} --key-file {key_file}'
 
     @property
     def pi_command(self) -> str:
-        """What to run on the Pi, in the desk-talk folder."""
-        return f'python3 -m raspberry_pi.camera --server http://{self.address}:{self.web_port} --key {self.pair_key}'
+        """What to run on the Pi, in the desk-talk folder, with the key in it. Only for the page, shown on this
+        computer; never log it. '' when public_address is set."""
+        if self.public_address:
+            return ''
+        return f'python3 -m raspberry_pi.camera --server {self.web_url} --key {self.pair_key}'
 
     @property
     def phone_url(self) -> str:
@@ -83,18 +101,6 @@ def qr_svg(text: str) -> str:
     svg = qrcode.make(text, image_factory=qrcode.image.svg.SvgPathImage, border=QR_BORDER_IN_APP)
     out = svg.to_string(encoding='unicode')
     return out[out.find('<svg'):]          # without the <?xml ...?> line
-
-
-def qr_for_terminal(text: str) -> str:
-    """`text` as a QR code drawn with characters, to scan from the terminal."""
-    import qrcode
-
-    qr = qrcode.QRCode(border=QR_BORDER_IN_TERMINAL)
-    qr.add_data(text)
-    qr.make(fit=True)
-    out = io.StringIO()
-    qr.print_ascii(out=out, invert=True)
-    return out.getvalue()
 
 
 # ── the phone page's HTTPS certificate ───────────────────────────────

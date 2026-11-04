@@ -1,12 +1,15 @@
 """
-The camera program's command line: python3 -m raspberry_pi.camera (in the desk-talk folder). --help shows
-the flags. Settings come from config/settings.yaml (pi:), then the computer's settings, then the flags.
+The camera program's command line: python3 -m raspberry_pi.camera (in the desk-talk folder, or what the
+camera container runs). --help shows the flags. Settings come from config/settings.yaml (pi:), then the
+app's settings, then the flags. In Docker the app's address and pairing key can come from the
+environment instead (DESKTALK_SERVER, DESKTALK_PAIR_KEY_FILE), so the key never shows in `docker ps`.
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
+import os
 import signal
 from pathlib import Path
 from typing import Any
@@ -33,6 +36,8 @@ from raspberry_pi.camera.workers import build_program
 log = logging.getLogger(__name__)
 
 REPO_SETTINGS = Path(__file__).resolve().parents[2] / 'config' / 'settings.yaml'
+SERVER_ENV = 'DESKTALK_SERVER'                 # stands in for --server
+PAIR_KEY_FILE_ENV = 'DESKTALK_PAIR_KEY_FILE'   # stands in for --key-file
 RUN_COMMAND = 'python3 -m raspberry_pi.camera --server http://192.168.1.20:5000 --key AbC123xY'
 # Settings a flag can override (flag --jpeg-quality → pi.jpeg_quality)
 FLAG_SETTINGS = ('fps', 'width', 'height', 'jpeg_quality', 'photo_dir', 'delete_every_min', 'keep_last_min',
@@ -44,7 +49,7 @@ def flag_settings(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def load_settings(args: argparse.Namespace, repo_settings: Path, *, need_computer: bool = False) -> CameraSettings:
-    """config/settings.yaml in the repo → the computer's settings → flags. If the computer can't be reached,
+    """config/settings.yaml in the repo → the app's settings → flags. If the app can't be reached,
     the repo's settings are used (unless need_computer: then ComputerProblem is raised)."""
     repo = read_repo_settings(repo_settings)
     flags = flag_settings(args)
@@ -62,15 +67,29 @@ def load_settings(args: argparse.Namespace, repo_settings: Path, *, need_compute
     return from_layers(repo, computer, flags)
 
 
+def read_key_file(path: str) -> str:
+    """The pairing key in this file, without spaces or the line ending. OSError if it can't be read."""
+    return Path(path).expanduser().read_text(encoding='utf-8').strip()
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """The flags. Afterwards args.server and args.key are final: a flag beats the environment, and --key beats
+    --key-file. A key file that can't be read stops the program with a message that names it."""
     p = argparse.ArgumentParser(
         prog='python3 -m raspberry_pi.camera', formatter_class=argparse.RawDescriptionHelpFormatter,
         description=f'Desk Talk camera program for the Raspberry Pi. In the desk-talk folder on the Pi, run:\n\n'
                     f'    {RUN_COMMAND}\n\n'
-                    f"server.py on your computer prints this command with your computer's address and pairing key.\n"
-                    f'Settings come from config/settings.yaml (pi:) on your computer; these flags override them.')
-    p.add_argument('--server', help='your computer, e.g. http://192.168.1.20:5000 (printed by server.py)')
-    p.add_argument('--key', help='pairing key (printed by server.py)')
+                    f"The app's page (open it in a browser) shows this command with the address "
+                    f'and key.\n'
+                    f'In Docker, set {SERVER_ENV} and {PAIR_KEY_FILE_ENV} (a file with the key in it) instead of '
+                    f'--server and --key; a flag beats the environment.\n'
+                    f'Settings come from config/settings.yaml (pi:) ; these flags override them.')
+    p.add_argument('--server', help=f"the app, e.g. http://app:5000 in Docker. "
+                                    f'If not given: {SERVER_ENV}')
+    p.add_argument('--key', help="pairing key (shown on the app's page, and saved in the app's pairing key file)")
+    p.add_argument('--key-file', dest='key_file',
+                   help=f'a file with the pairing key in it (so it stays out of the command). '
+                        f'If neither this nor --key is given: {PAIR_KEY_FILE_ENV}')
     p.add_argument('--camera', help='auto | picamera2 | usb[:index] | folder:<dir> | video:<file> '
                                     '(if not given: pi.camera in config/settings.yaml)')
     p.add_argument('--fps', type=float, help='pictures per second')
@@ -86,12 +105,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help='if the disk gets this full, delete the oldest pictures right away')
     p.add_argument('--upload-timeout-sec', dest='upload_timeout_sec', type=float)
     p.add_argument('--no-detector', action='store_true',
-                   help="don't use the detector container: the computer detects every picture")
+                   help="don't use the detector container: pictures go to the app with no objects found")
     p.add_argument('--offline', action='store_true', help='only take and save pictures; send nothing')
     p.add_argument('--self-test', action='store_true',
-                   help='check the camera, the detector container, the temperature and the computer, then stop')
+                   help='check the camera, the detector container, the temperature and the app, then stop')
     p.add_argument('--max-pictures', type=int, help='stop after this many (for testing)')
-    return p.parse_args(argv)
+    args = p.parse_args(argv)
+    args.server = args.server or os.environ.get(SERVER_ENV) or None
+    key_file = args.key_file or os.environ.get(PAIR_KEY_FILE_ENV)
+    if not args.key and key_file:
+        try:
+            args.key = read_key_file(key_file)
+        except OSError as exc:
+            p.error(f"can't read the pairing key file {key_file}: {exc.strerror or exc}")
+        except UnicodeDecodeError:
+            p.error(f"can't read the pairing key file {key_file}: it is not text")
+        if not args.key:
+            p.error(f'the pairing key file {key_file} is empty')
+    return args
 
 
 def main(argv: list[str] | None = None, *, repo_settings: Path = REPO_SETTINGS, clock: Clock | None = None,
@@ -99,7 +130,9 @@ def main(argv: list[str] | None = None, *, repo_settings: Path = REPO_SETTINGS, 
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%H:%M:%S')
     args = parse_args(argv)
     if not args.offline and not args.self_test and not (args.server and args.key):
-        log.error('Missing --server and --key. Start server.py on your computer: it prints the full command.')
+        log.error('Missing the app to send to: give --server and --key (or --key-file), or set %s and %s. '
+                  "The app's page shows the address and the key (the key is also saved in the app's pairing key file).",
+                  SERVER_ENV, PAIR_KEY_FILE_ENV)
         return 2
     clock = clock or SystemClock()
     try:

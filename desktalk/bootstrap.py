@@ -38,10 +38,10 @@ from typing import Any
 
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource, make_pair_key
 from desktalk.adapters.cloud import HttpCloudLink
-from desktalk.adapters.detector import UltralyticsDetector
+from desktalk.adapters.detector import NoDetector, UltralyticsDetector
 from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser
-from desktalk.adapters.llm import OpenAICompatibleChatModel, ResilientChatModel
-from desktalk.adapters.notify import MacNotifications, make_notifications
+from desktalk.adapters.llm import OpenAICompatibleChatModel, ResilientChatModel, UnpromptedChatModel
+from desktalk.adapters.notify import QueuedNotifications, make_notifications
 from desktalk.adapters.picture import DeskPainter, OpenCvPictureTools
 from desktalk.adapters.storage import EventLog, JsonFileStore, SqliteStateStore
 from desktalk.adapters.storage.json_files import SUFFIX as JSON_SUFFIX
@@ -58,7 +58,7 @@ from desktalk.core.chat.workers import (
     Lens,
     LostItems,
 )
-from desktalk.core.cloud import CloudUploader
+from desktalk.core.cloud import CloudUploader, linked_server
 from desktalk.core.demo import DemoFirer, ScenarioRunner
 from desktalk.core.desk import Album, DangerBoard, LiveView, Memories, Scene, WholeDesk
 from desktalk.core.events import EventStream
@@ -145,7 +145,7 @@ class DeskTalk:
     event_log         the event log: days(), events(), counts() (/api/log/...)
     store             the data folder: preferences, habit days, the to-do list, learned personalities, the daily
                       recap's day
-    config_store      the config folder: safety_rules.json
+    config_store      settings → storage.rules_folder: safety_rules.json
     profiles          every agent: get(), for_label(), is_ignored() for the app's agent list and the live view
     preferences       wake time, bedtime, quiet hours, sensitivity: all(), update() and quiet_now()
                       (/api/preferences)
@@ -198,8 +198,8 @@ class DeskTalk:
                       (/api/dev/scenarios...), and the background job that fires them once their countdown is over
                       (None when settings → dev.enabled is false)
     todos             the to-do list the server keeps: items(), replace(), has_list() (/api/todos, /api/chat_todos)
-    desktop           the Mac's own pop-ups (warnings, reminders, sips): nothing on the web uses it; stop() lets
-                      its thread finish
+    desktop           the Mac's pop-ups or the Pi's speaker (warnings, reminders, sips): nothing on the web uses it;
+                      stop() lets its thread finish
     """
 
     config: AppConfig
@@ -305,7 +305,7 @@ class DeskTalk:
         self._shutdown_step('save the object states', lambda: self.object_states.save_snapshot(self.clock.now()))
         self._shutdown_step('save the habits', lambda: self.habits.save(force=True))
         self._shutdown_step('compact the event log', lambda: self.event_log.compact(self.clock.now()))
-        if isinstance(self.desktop, MacNotifications):
+        if isinstance(self.desktop, QueuedNotifications):
             self._shutdown_step('show the last notifications', self.desktop.close)
         still_running += self.bus.close(wait)
         if isinstance(self.source, WebcamSource):
@@ -361,11 +361,20 @@ def cloud_goals(protocols: Protocols) -> dict[str, float]:
         'screens_off_before_bed_min': light.screens_off_before_bed_min}
 
 
-def make_detector(config: AppConfig) -> UltralyticsDetector:
-    """Object detection on this computer (settings → detector), warmed up so the first picture isn't slow.
-    A model that won't load leaves the Pi's own detections working."""
-    detector = UltralyticsDetector(config.resolve(config.detector.model), config.detector,
-                                   end2end=config.detector.end2end, rect=config.detector.rect)
+def make_detector(config: AppConfig) -> Detector:
+    """Object detection in this app (settings → detector), warmed up so the first picture isn't slow. A model that
+    won't load leaves the Pi's own detections working. With detector.enabled off there is none (NoDetector), and
+    ultralytics and torch are never imported: only the Pi's detections count."""
+    if not config.detector.enabled:
+        return NoDetector(config.prompts.detection)
+    try:
+        detector = UltralyticsDetector(config.resolve(config.detector.model), config.detector,
+                                       end2end=config.detector.end2end, rect=config.detector.rect)
+    except ImportError as exc:      # PyTorch or YOLO isn't installed (a plain `uv sync` leaves them out)
+        log.warning('YOLO (%s) is not installed, so this app has no detector of its own. To get it, run '
+                    '`uv sync --extra computer-detector` (or `uv sync --all-packages`); to run without it, set '
+                    'detector.enabled: false in config/settings.yaml.', exc.name or exc)
+        return NoDetector(config.prompts.detection)
     detector.warmup()
     return detector
 
@@ -380,21 +389,21 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
 
     The keyword arguments are for tests; left out, the real things are made from `config`:
         clock               the computer's clock
-        detector            UltralyticsDetector (settings → detector), warmed up
+        detector            UltralyticsDetector (settings → detector), warmed up; NoDetector if detector.enabled is off
         client_factory      makes the OpenAI-compatible client (openai.OpenAI)
         source              the camera in settings → camera.source (one passed in is only a camera: not the
                             Pi's or the phone's uploads)
         data_folder         where the files this run writes go (the store, the event log, the object states
                             database, the log files):
                             the folders in the settings are taken under it instead of the project folder
-        config_store        the store for config/safety_rules.json (a JsonFileStore of the config folder)
+        config_store        the store for safety_rules.json (a JsonFileStore of settings → storage.rules_folder)
         pair_key            the key in settings → camera.pair_key_file (made and saved the first time)
         synchronous_events  the event stream hands each event to its consumers right inside publish(),
                             with no threads, so tests are exact
         set_up_logging      log to the terminal and to the log folder (settings → logging)
         test_runner         the developer page's test runner (PytestRunner on this project), when settings →
                             dev.enabled is on
-        desktop             the computer's own pop-ups (the Mac's, through osascript; nothing on other systems)
+        desktop             pop-ups on a Mac or the Pi's speaker, as settings → notifications.output says
         cloud_link_factory  makes the line to the cloud server from its address and token (HttpCloudLink); only
                             called once the computer is linked"""
     clock = clock or SystemClock()
@@ -411,7 +420,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
 
     # ── storage and the desk right now ──
     store = JsonFileStore(data_path(config.storage.folder))
-    config_store = config_store if config_store is not None else JsonFileStore(config.config_folder)
+    config_store = (config_store if config_store is not None
+                    else JsonFileStore(config.resolve(config.storage.rules_folder)))
     live_pictures, scene, safety_board = LiveView(), Scene(), DangerBoard()
     character_memory, photo_album = Memories(), Album(keep=config.snapshots.max_kept)
     # For the parts that still ask for several desk interfaces in one object; it passes each call on.
@@ -470,15 +480,24 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
 
     # ── the AI and the chat ──
     ai = OpenAICompatibleChatModel(config.llm, config.secrets, clock, client_factory=client_factory,
-                                   replies=config.prompts.replies)
-    model = ResilientChatModel(ai, clock, config.llm, time_limit_sec=ai.time_limit_sec, replies=config.prompts.replies)
-    vision = model if model.local_vision else None       # pictures only go to an AI on this computer (no quota)
+                                   replies=config.prompts.replies,
+                                   cloud_link=lambda: linked_server(store, config.cloud.link_key))
+    # `asked_model` is only for the chat you asked for. Everything else gets `model`, which never reaches the cloud
+    # server: you allowed chat to pass through it, and nothing else. A new part that calls the AI by itself uses
+    # `model`.
+    asked_model = ResilientChatModel(ai, clock, config.llm, chat_time_limit=lambda: ai.time_limit_sec,
+                                     replies=config.prompts.replies)
+    model = UnpromptedChatModel(asked_model, goes_to_cloud=lambda: ai.uses_cloud,
+                                reason=config.prompts.replies.ai_errors.cloud_chat_only)
+    # Pictures only go to an AI on this computer (no quota), and never with llm.send_pictures off or to llm.ai_url.
+    vision = model if model.local_vision else None
     hub = MessageHub(clock, recent_kept=config.chat.recent_kept, queue_size=config.web.live_queue_size)
-    # Warnings, reminders and sips the camera saw go to the chat through `feed`, which also pops them up on the Mac.
+    # Warnings, reminders and sips the camera saw go to the chat through `feed`, which also pops them up on the Mac
+    # or says them through the Pi's speaker.
     # The web keeps reading the hub.
     notifications = config.notifications
     if desktop is None:
-        desktop = make_notifications(notifications, sys.platform, queue_size=notifications.queue_size)
+        desktop = make_notifications(notifications, sys.platform, queue_size=notifications.queue_size, clock=clock)
     feed = DesktopAlerts(hub, desktop, preferences, profiles, notifications, clock,
                          lens_name=config.prompts.lens.card.name, sip_title=config.prompts.notifications.sip_title)
     default_temperature = config.agents_file.default.temperature
@@ -486,12 +505,12 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                            config.llm.replies, photos=photos, default_temperature=default_temperature,
                            pictures=pictures, prompts=config.prompts.lost_items,
                            photos_kept=config.snapshots.max_kept, phone_is_camera=phone_is_camera)
-    generator = MessageGenerator(model, feed, roster, profiles, habits, desk, clock, status=desk_status,
+    generator = MessageGenerator(asked_model, feed, roster, profiles, habits, desk, clock, status=desk_status,
                                  habit_log=habits, todos=todos, llm=config.llm, chat=config.chat, agents=config.agents,
                                  sunlight_default_min=config.habit_tracker.sunlight_default_min,
                                  reply_max_chars=config.chat.reply_max_chars, prompts=config.prompts,
                                  drink_labels=config.safety.liquids, preview_chars=config.logging.preview_chars,
-                                 local_model=ai.is_local)
+                                 local_model=ai.is_local, unprompted_model=model)
     generator.subscribe_to(bus)
 
     # ── the background jobs ──
@@ -556,7 +575,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         pi_inbox=camera.pi, pi=camera.pi, phone_inbox=camera.phone, phone=camera.phone, pair_key=pair_key,
         safety_rules=safety_rules, camera_health=camera_health, photos=photos, detector=detector,
         producer=producer, object_states=object_states, state_store=state_store, roster=roster,
-        desk_status=desk_status, habits=habits, ai=ai, model=model, hub=hub, generator=generator,
+        desk_status=desk_status, habits=habits, ai=ai, model=asked_model, hub=hub, generator=generator,
         rule_runner=rule_runner, reminders=reminders, lens=lens, idle_chat=idle_chat,
         lost_items=lost_items, daily_summary=daily_summary, cloud=cloud, scheduler=scheduler,
         supervisor=supervisor, started_at=clock.now(), keepalive=ai.keepalive_worker(), log_file=log_file,

@@ -98,6 +98,24 @@ def test_reads_the_pi_section_of_the_repos_settings_file(tmp_path):
     assert read_repo_settings(path) == {'fps': 3, 'detector': {'image_size': 640}}
 
 
+def test_a_settings_local_file_next_to_it_is_laid_over_it(tmp_path):
+    path = tmp_path / 'settings.yaml'
+    path.write_text('pi:\n  fps: 3\n  photo_dir: ~/here\n'
+                    '  detector:\n    url: http://127.0.0.1:8100\n    image_size: 640\n')
+    (tmp_path / 'settings.local.yaml').write_text('camera:\n  fps: 9\npi:\n  photo_dir: /photos\n'
+                                                  '  detector:\n    url: http://detector:8100\n')
+    assert read_repo_settings(path) == {'fps': 3, 'photo_dir': '/photos',
+                                        'detector': {'url': 'http://detector:8100', 'image_size': 640}}
+
+
+def test_a_broken_settings_local_file_says_so(tmp_path):
+    path = tmp_path / 'settings.yaml'
+    path.write_text('pi:\n  fps: 3\n')
+    (tmp_path / 'settings.local.yaml').write_text('pi: [unclosed\n')
+    with pytest.raises(SettingsError, match='settings.local.yaml'):
+        read_repo_settings(path)
+
+
 def test_no_settings_file_gives_nothing(tmp_path):
     assert read_repo_settings(tmp_path / 'missing.yaml') == {}
 
@@ -125,7 +143,7 @@ def test_a_wrong_key_is_a_plain_problem():
 def test_a_computer_that_is_away_is_a_plain_problem():
     with FakeComputer() as computer:
         computer.away = True
-        with pytest.raises(ComputerProblem, match='Cannot reach the computer'):
+        with pytest.raises(ComputerProblem, match='Cannot reach the app'):
             computer_config(computer.url, KEY, timeout=2, error_text_chars=200)
 
 
@@ -250,3 +268,20 @@ def test_a_cut_error_text_from_the_computer_follows_the_setting():
         with pytest.raises(ComputerProblem) as problem:
             computer_config(computer.url, KEY, timeout=2, error_text_chars=7)
     assert str(problem.value).endswith(': xxxxxxx')
+
+
+def test_my_own_file_in_the_mine_folder_is_laid_over_the_others(tmp_path):
+    path = tmp_path / 'settings.yaml'
+    path.write_text('pi:\n  fps: 3\n  photo_dir: ~/here\n  detector:\n    url: http://127.0.0.1:8100\n')
+    (tmp_path / 'settings.local.yaml').write_text('pi:\n  photo_dir: /photos\n'
+                                                  '  detector:\n    url: http://detector:8100\n')
+    (tmp_path / 'mine').mkdir()
+    (tmp_path / 'mine' / 'settings.mine.yaml').write_text('pi:\n  fps: 2\n  detector:\n    url: http://other:8100\n')
+    assert read_repo_settings(path) == {'fps': 2, 'photo_dir': '/photos', 'detector': {'url': 'http://other:8100'}}
+
+
+def test_a_mine_folder_with_nothing_in_it_changes_nothing(tmp_path):
+    path = tmp_path / 'settings.yaml'
+    path.write_text('pi:\n  fps: 3\n')
+    (tmp_path / 'mine').mkdir()
+    assert read_repo_settings(path) == {'fps': 3}

@@ -121,6 +121,7 @@ class Lens:
         self._preview_chars = preview_chars
         self._phone = phone
         self._pi = pi_uploads
+        self._detector_reason_logged: str | None = None
         waits = settings.wait_before_saying_sec
         timing = {'repeat': settings.repeat_after_min * 60, 'fixed_after': settings.fixed_after_sec}
         fixed = prompts.pi_fixed
@@ -189,8 +190,10 @@ class Lens:
         purpose (--no-detector) or the Pi runs the old camera program, which has none."""
         if info.detector is not DetectorState.OFF or info.detector_reason in OFF_ON_PURPOSE:
             return ''
-        why = self._words.pi_detector_why.format(reason=info.detector_reason) if info.detector_reason else ''
-        return self._words.pi_detector.format(why=why)
+        if info.detector_reason != self._detector_reason_logged:     # for whoever looks into it, never said out loud
+            self._detector_reason_logged = info.detector_reason
+            log.warning("The Pi's detector is off: %s", info.detector_reason or 'it gave no reason')
+        return self._words.pi_detector
 
     # ── saying it ──
     def say_problem(self, key: str, text: str, now: float, *, demo: bool = False) -> None:

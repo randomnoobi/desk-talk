@@ -59,6 +59,13 @@ describe('healthRows', () => {
     expect(row(healthRows(health(), log, limits, NOW), 'Pi', 'slowed down').level).toBe('ok')
   })
 
+  it("says it can't tell when the Pi could not read its slow-down flags (an empty string)", () => {
+    const cant = row(healthRows(health({ pi: pi({ throttled: '' }) }), log, limits, NOW), 'Pi', 'slowed down')
+    expect(cant.value).toBe("can't tell")
+    expect(cant.level).toBe('off')
+    expect(cant.value).not.toContain('yes')
+  })
+
   it('turns a consumer that dropped events amber, and one with errors red', () => {
     const dropped = health({ events: [{ name: 'habits', handled: 100, waiting: 0, dropped: 3, errors: 0 }] })
     expect(row(healthRows(dropped, log, limits, NOW), 'Event stream', 'habits').level).toBe('warn')
@@ -83,7 +90,7 @@ describe('healthRows', () => {
 
   it('turns slow detection on this computer amber', () => {
     const slow = health({ detection: { pictures_analysed: 3, detect_ms: 700, problem: null, model: 'yolo11n' } })
-    expect(row(healthRows(slow, log, limits, NOW), 'Detection on this computer', 'detect ms').level).toBe('warn')
+    expect(row(healthRows(slow, log, limits, NOW), 'Detection in the app', 'detect ms').level).toBe('warn')
   })
 
   it('shows the Pi detector off with its reason, and a missing camera as red', () => {

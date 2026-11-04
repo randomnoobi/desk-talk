@@ -58,6 +58,12 @@ def test_build_uses_the_real_parts_from_the_settings():
     assert parts.chat_limiter.hit('a') and not parts.chat_limiter.hit('a')
 
 
+def test_build_makes_one_set_of_chat_slots_from_the_settings():
+    slots = bootstrap.build(cloud_config(ALL_SET, chat={'max_at_once': 2})).app.state.parts.chat_slots
+    assert slots.acquire(blocking=False) and slots.acquire(blocking=False)
+    assert not slots.acquire(blocking=False)
+
+
 @pytest.mark.parametrize('missing', ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'])
 def test_no_google_without_both_of_its_values(missing):
     env = {name: value for name, value in ALL_SET.items() if name != missing}
@@ -92,6 +98,29 @@ def test_stopping_the_server_closes_the_database_connections(monkeypatch):
     server = bootstrap.build(cloud_config(ALL_SET))
     with TestClient(server.app):
         assert closed == []
+    assert closed == [server.store]
+
+
+def test_stopping_the_server_closes_the_chat_client(monkeypatch):
+    monkeypatch.setattr(PostgresStore, 'dispose', lambda self: None)
+    server = bootstrap.build(cloud_config(ALL_SET))
+    forwarder = server.app.state.parts.chat_forwarder
+    client = forwarder._client
+    with TestClient(server.app):
+        assert not client.is_closed
+    assert client.is_closed
+
+
+def test_the_database_is_closed_even_if_closing_the_chat_client_fails(monkeypatch):
+    closed = []
+    monkeypatch.setattr(PostgresStore, 'dispose', lambda self: closed.append(self))
+
+    async def breaks(self):
+        raise RuntimeError('boom')
+    monkeypatch.setattr(HttpChatForwarder, 'aclose', breaks)
+    server = bootstrap.build(cloud_config(ALL_SET))
+    with pytest.raises(RuntimeError), TestClient(server.app):
+        pass
     assert closed == [server.store]
 
 
@@ -625,8 +654,13 @@ def test_nginx_waits_longer_than_the_slowest_route():
     config = cloud_config()
     found = re.search(r'proxy_read_timeout\s+(\d+)s;', (CLOUD_FOLDER / 'web' / 'nginx-proxy.conf').read_text('utf-8'))
     assert found is not None
-    assert int(found.group(1)) > config.chat.timeout_sec
+    assert int(found.group(1)) > config.chat.deadline_sec
     assert int(found.group(1)) > 2 * config.google.timeout_sec      # a login makes two calls to Google
+
+
+def test_a_chat_ends_on_the_server_before_the_pi_gives_up():
+    pi_settings = yaml.safe_load((CLOUD_FOLDER.parent / 'config' / 'settings.yaml').read_text('utf-8'))
+    assert cloud_config().chat.deadline_sec < pi_settings['llm']['timeout_sec']
 
 
 def test_nginx_passes_only_the_three_paths_on_and_to_the_servers_own_port():

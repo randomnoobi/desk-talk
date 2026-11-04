@@ -3,6 +3,7 @@ knows the real parts."""
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -20,7 +21,8 @@ __all__ = ['CloudParts', 'create_app']
 @dataclass(frozen=True, kw_only=True)
 class CloudParts:
     """What the routes use. `google` and `chat_forwarder` are None when they aren't set up. `claim_limiter` counts
-    tries to use a code per address (and admin login tries); `chat_limiter` counts chat requests per Pi."""
+    tries to use a code per address (and admin login tries); `chat_limiter` counts chat requests per Pi; `chat_slots`
+    holds one slot for each chat running now, on the whole server (it is one process, so counting here is enough)."""
 
     config: CloudConfig
     store: Store
@@ -29,6 +31,7 @@ class CloudParts:
     chat_forwarder: ChatForwarder | None
     claim_limiter: RateLimiter
     chat_limiter: RateLimiter
+    chat_slots: threading.BoundedSemaphore
 
 
 def create_app(parts: CloudParts, routers: Sequence[APIRouter], *, lifespan: Any = None) -> FastAPI:

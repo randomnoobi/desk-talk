@@ -1,6 +1,6 @@
 """
 The detector service's own settings, read from the environment. In Docker they come from
-raspberry_pi/detector_service/.env (through compose.yaml) and the Dockerfile. Which model to run
+raspberry_pi/.env (through raspberry_pi/compose.yaml) and the Dockerfile. Which model to run
 is not here: the camera program sends it with PUT /model.
 """
 
@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 BYTES_PER_MB = 1024 * 1024
-WHERE = 'raspberry_pi/detector_service/.env'
+WHERE = 'raspberry_pi/.env'
 
 
 class SettingsError(ValueError):

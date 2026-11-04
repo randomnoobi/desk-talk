@@ -29,12 +29,13 @@ THIS_COMPUTER = '127.0.0.1'
 ON_THE_WIFI = '192.168.1.50'
 ADDRESS = '192.168.1.20'          # this computer on the Wi-Fi, as the Pi command and the phone link show it
 CLIENT_PORT = 50000
-TEST_ADDRESS = 'http://testserver'      # where FastAPI's TestClient sends requests unless told otherwise
+TEST_ADDRESS = 'http://127.0.0.1'       # where requests go unless told otherwise (the servers only answer known names)
 
 
 def links_for(app: DeskTalk, *, phone_page: bool = False) -> Links:
     return Links(ADDRESS, app.config.web.port, app.pair_key,
-                 phone_port=app.config.camera.phone_port if phone_page else None)
+                 phone_port=app.config.camera.phone_port if phone_page else None,
+                 public_address=app.config.web.public_address)
 
 
 def web_client(app: DeskTalk | FastAPI, *, from_ip: str = THIS_COMPUTER) -> TestClient:

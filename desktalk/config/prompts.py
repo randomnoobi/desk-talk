@@ -201,14 +201,13 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'cloud.link_no_answer': ('server', 'error'),
     'lens.pi_hot': ('temp',),
     'lens.pi_clock': ('seconds', 'way'),
-    'lens.pi_detector': ('why',),
-    'lens.pi_detector_why': ('reason',),
     'camera.problems.bumped': ('degrees',),
     'camera.problems.cutoff': ('object', 'side', 'hint'),
     'camera.problems.slow': ('fps',),
     'camera.cutoff_title': ('object', 'side'),
     'ui.sensitivity_step': ('name', 'sure', 'join_sec', 'appear_sec', 'gone_sec', 'move_percent', 'leave_min',
                             'new_sure', 'new_join_sec'),
+    'server.other_camera': ('source', 'kind'),
     'dev.outside_data_folder': ('path',),
     'dev.is_a_folder': ('path',),
     'dev.no_such_file': ('path',),
@@ -242,6 +241,8 @@ class AiErrors(_Section):
     ollama_too_slow: str
     no_connection: str
     ollama_no_connection: str
+    cloud_refused: str
+    cloud_chat_only: str
     other: str
     no_pictures: str
     resting: str
@@ -255,6 +256,9 @@ class Replies(_Section):
     empty_reply: str
     nobody_here: str
     no_ai_label: str
+    cloud_ai_label: str
+    ai_url_label: str
+    pictures_stay_home: str
     no_picture: str
     ask_for_a_sentence: str
     ai_errors: AiErrors
@@ -586,7 +590,6 @@ class LensPrompts(_Section):
     pi_clock_behind: str
     pi_clock_ahead: str
     pi_detector: str
-    pi_detector_why: str
     pi_fixed: PiFixed
 
 
@@ -685,6 +688,23 @@ class NotificationWords(_Section):
     sip_title: str
 
 
+class ServerWords(_Section):
+    """What the app's web servers answer (desktalk/web/): a crash, a wrong pairing key, the other camera."""
+
+    something_went_wrong: str
+    pi_key_problem: str
+    phone_key_problem: str
+    phone_stop_key_problem: str
+    other_camera: str                 # blanks in BLANKS
+
+
+class DetectionWords(_Section):
+    """NoDetector's words (desktalk/adapters/detector/no_detector.py): the app has no detector of its own."""
+
+    none_label: str
+    none_reason: str
+
+
 class CloudWords(_Section):
     """The cloud sender's words: the status line on the Settings page, its log lines, and what
     scripts/link_cloud.py says (desktalk/core/cloud/, scripts/link_cloud.py)."""
@@ -719,6 +739,8 @@ class DevWords(_Section):
     run_already_going: str
     other_computer: str
     other_web_page: str
+    other_site: str
+    other_name: str
     outside_data_folder: str
     is_a_folder: str
     no_such_file: str
@@ -765,6 +787,8 @@ class Prompts(_Section):
     object_story: ObjectStoryWords
     notifications: NotificationWords
     cloud: CloudWords
+    server: ServerWords
+    detection: DetectionWords
     dev: DevWords
 
 

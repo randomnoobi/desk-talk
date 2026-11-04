@@ -1,0 +1,10 @@
+# Laid over raspberry_pi/compose.yaml by tests/docker/test_pi_stack.py: the camera plays pictures from a folder, so
+# the test needs no camera devices. Paths with ./ start at raspberry_pi/, the folder of the first compose file.
+services:
+  camera:
+    command: ["python3", "-m", "raspberry_pi.camera", "--camera", "folder:/test-pictures"]
+    device_cgroup_rules: !reset []
+    volumes: !override
+      - ./settings.pi.yaml:/desk-talk/config/settings.local.yaml:ro
+      - pairing:/pairing:ro
+      - ${PI_TEST_PICTURES}:/test-pictures:ro

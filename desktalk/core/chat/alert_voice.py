@@ -5,7 +5,8 @@ An alert that carries its own text (a pet, clutter, a lost item ...) is sent as 
 alert is put into words by the AI, grounded in the detector's own words for both objects; when the AI
 can't help (or its line is cut off, dramatic or for another agent), the agent's own too_close line is used.
 A follow-up of the same alert replies to what was said before. When nothing in the chat can say it, Lens does,
-without the AI: "Heads up: scissors next to the cell phone".
+without the AI: "Heads up: scissors next to the cell phone". With chat.ai_writes_warnings off (the Pi) the AI is never
+asked, so a warning can't wait for one.
 """
 
 from __future__ import annotations
@@ -60,7 +61,7 @@ class AlertVoice:
         near = d.get('near') or ''
         key = f'proximity_{pid}_{near}'
         prev = self._said_about.get(key) if follow_up > 0 else None
-        text = self._ai_alert(a, d, prev, follow_up)
+        text = self._ai_alert(a, d, prev, follow_up) if self._chat.ai_writes_warnings else None
         if not text:
             other = self._profiles.get(near)
             if other:

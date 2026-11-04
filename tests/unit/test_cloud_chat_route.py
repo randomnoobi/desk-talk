@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-import threading
 
 import httpx
 import pytest
@@ -14,6 +14,7 @@ from openai import OpenAI
 from desktalk_cloud.app import create_app
 from desktalk_cloud.chat_forwarder import HttpChatForwarder
 from desktalk_cloud.config import ConfigError, load_config
+from desktalk_cloud.ports import ChatFailed
 from desktalk_cloud.routers import chat_v1
 from tests.fakes.clock import FakeClock
 from tests.fakes.cloud import (
@@ -27,16 +28,16 @@ from tests.fakes.cloud import (
 
 SECRET_TEXT = 'remember-to-feed-the-purple-giraffe'
 USER = [{'role': 'user', 'content': 'hello'}]
-thread_router = APIRouter()
+other_router = APIRouter()
 
 
-@thread_router.get('/_test/thread')
-async def _thread():
-    return {'thread': threading.get_ident()}
+@other_router.get('/_test/other')
+async def _other():
+    return {'served': True}
 
 
 def build(parts):
-    return TestClient(create_app(parts, [chat_v1.router, thread_router]))
+    return TestClient(create_app(parts, [chat_v1.router, other_router]))
 
 
 def auth(token):
@@ -120,7 +121,7 @@ def test_model_from_settings_not_request():
         return httpx.Response(200, json={'choices': [{'message': {'role': 'assistant', 'content': 'ok'}}]})
     config = cloud_config()
     chat = HttpChatForwarder(config.chat, 'sk-x', FakeClock(),
-                             client=httpx.Client(transport=httpx.MockTransport(handler)))
+                             client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
     parts = make_parts(config, chat_forwarder=chat)
     ann = link_device(parts, 'ann')
     reply = post(build(parts), ann.token, {'model': 'gpt-5-huge', 'messages': USER, 'stream': True,
@@ -281,7 +282,7 @@ def test_the_cap_reaches_the_ai_company_when_no_max_tokens_is_sent():
         seen.append(request)
         return httpx.Response(200, json={'choices': [{'message': {'role': 'assistant', 'content': 'ok'}}]})
     config = cloud_config(chat={'max_tokens_cap': 123})
-    client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     parts = make_parts(config, chat_forwarder=HttpChatForwarder(config.chat, 'sk-x', FakeClock(), client=client))
     ann = link_device(parts, 'ann')
     assert post(build(parts), ann.token, {'messages': USER}).status_code == 200
@@ -357,7 +358,7 @@ def test_upstream_error_gets_a_plain_502(client, ann, fake, parts):
 
 def test_any_other_failure_in_the_forwarder_is_also_a_plain_502(ann, parts):
     class Broken:
-        def complete(self, messages, max_tokens, temperature):
+        async def complete(self, messages, max_tokens, temperature):
             raise RuntimeError(f'boom {SECRET_TEXT}')
     broken = make_parts(chat_forwarder=Broken())
     linked = link_device(broken, 'ann')
@@ -373,7 +374,7 @@ def _tables_text(parts) -> str:
 
 def real_forwarder_parts(handler):
     config = cloud_config()
-    client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     chat = HttpChatForwarder(config.chat, 'sk-x', FakeClock(), client=client)
     parts = make_parts(config, chat_forwarder=chat)
     return parts, link_device(parts, 'ann')
@@ -448,18 +449,152 @@ def test_a_refused_request_logs_none_of_its_text(client, ann, caplog):
     assert SECRET_TEXT not in caplog.text
 
 
-def test_the_forwarder_runs_off_the_event_loop_thread(ann, parts):
-    seen: list[int] = []
+# ── while a chat waits for the AI company ──────────────────────────────
+ONE_AT_ONCE = {'max_at_once': 1}
+WAIT_SEC = 10                                               # a test that goes wrong fails after this, it doesn't hang
 
-    class Watching(FakeChatForwarder):
-        def complete(self, messages, max_tokens, temperature):
-            seen.append(threading.get_ident())
-            return super().complete(messages, max_tokens, temperature)
-    watching = make_parts(chat_forwarder=Watching(), clock=parts.clock)
-    linked = link_device(watching, 'ann')
-    # `with` keeps one loop thread alive for every request. Without it each request gets its own,
-    # and a finished thread's id can come back on a worker thread.
-    with build(watching) as client:
-        loop = client.get('/_test/thread').json()['thread']
-        assert post(client, linked.token, {'messages': USER}).status_code == 200
-    assert seen and all(thread != loop for thread in seen)
+
+class Waiting(FakeChatForwarder):
+    """Stays in the call until `finish` is set. Make it inside the running test: the events belong to that loop."""
+
+    def __init__(self):
+        super().__init__()
+        self.started = asyncio.Event()
+        self.finish = asyncio.Event()
+
+    async def complete(self, messages, max_tokens, temperature):
+        self.started.set()
+        await self.finish.wait()
+        return await super().complete(messages, max_tokens, temperature)
+
+
+def async_client(parts):
+    """Talks to the app on the test's own loop, so a test can hold one request open while it makes others."""
+    app = create_app(parts, [chat_v1.router, other_router])
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://testserver')
+
+
+def posting(client, token):
+    return client.post('/v1/chat/completions', json={'messages': USER}, headers=auth(token))
+
+
+def test_other_requests_are_served_while_a_chat_waits():
+    async def run():
+        waiting = Waiting()
+        parts = make_parts(chat_forwarder=waiting)
+        ann = link_device(parts, 'ann')
+        async with async_client(parts) as client:
+            chat = asyncio.create_task(posting(client, ann.token))
+            await asyncio.wait_for(waiting.started.wait(), WAIT_SEC)
+            other = await asyncio.wait_for(client.get('/_test/other'), WAIT_SEC)
+            assert other.json() == {'served': True} and not chat.done()
+            waiting.finish.set()
+            assert (await asyncio.wait_for(chat, WAIT_SEC)).status_code == 200
+    asyncio.run(run())
+
+
+def test_the_chat_past_the_cap_gets_503_and_the_forwarder_is_not_called():
+    async def run():
+        waiting = Waiting()
+        parts = make_parts(cloud_config(chat=ONE_AT_ONCE), chat_forwarder=waiting)
+        ann, bob = link_device(parts, 'ann'), link_device(parts, 'bob')
+        async with async_client(parts) as client:
+            first = asyncio.create_task(posting(client, ann.token))
+            await asyncio.wait_for(waiting.started.wait(), WAIT_SEC)
+            reply = await posting(client, bob.token)                # another Pi: this limit is for the whole server
+            assert reply.status_code == 503
+            assert reply.json()['detail'] == parts.config.messages.chat_busy
+            assert len(waiting.calls) == 0
+            waiting.finish.set()
+            assert (await asyncio.wait_for(first, WAIT_SEC)).status_code == 200
+            assert len(waiting.calls) == 1
+            assert (await posting(client, bob.token)).status_code == 200
+    asyncio.run(run())
+
+
+def test_a_slot_comes_back_when_the_chat_is_cancelled():
+    # A cancel is what reaches a chat when the server stops it part way, however it comes about.
+    async def run():
+        waiting = Waiting()
+        parts = make_parts(cloud_config(chat=ONE_AT_ONCE), chat_forwarder=waiting)
+        ann = link_device(parts, 'ann')
+        async with async_client(parts) as client:
+            chat = asyncio.create_task(posting(client, ann.token))
+            await asyncio.wait_for(waiting.started.wait(), WAIT_SEC)
+            assert not parts.chat_slots.acquire(blocking=False)     # it is taken
+            chat.cancel()
+            await asyncio.gather(chat, return_exceptions=True)
+        assert chat.cancelled()
+        assert parts.chat_slots.acquire(blocking=False)
+    asyncio.run(run())
+
+
+def test_a_slot_comes_back_after_a_deadline_failure(caplog):
+    caplog.set_level(logging.DEBUG)
+
+    async def hangs(request) -> httpx.Response:
+        await asyncio.Event().wait()
+        raise AssertionError('never gets here')
+    config = cloud_config(chat={'max_at_once': 1, 'deadline_sec': 0.05})
+    chat = HttpChatForwarder(config.chat, 'sk-x', FakeClock(),
+                             client=httpx.AsyncClient(transport=httpx.MockTransport(hangs)))
+    parts = make_parts(config, chat_forwarder=chat)
+    client, ann = build(parts), link_device(parts, 'ann')
+    for _ in range(2):
+        reply = post(client, ann.token, {'messages': [{'role': 'user', 'content': SECRET_TEXT}]})
+        assert reply.status_code == 502 and reply.json()['detail'] == parts.config.messages.chat_failed
+        assert SECRET_TEXT not in reply.text and SECRET_TEXT not in caplog.text
+    assert parts.chat_slots.acquire(blocking=False)
+
+
+def test_the_other_checks_come_before_the_cap():
+    fake = FakeChatForwarder()
+    parts = make_parts(cloud_config(chat={'max_at_once': 1, 'limit_requests': 4}), chat_forwarder=fake)
+    client, ann = build(parts), link_device(parts, 'ann')
+    assert parts.chat_slots.acquire(blocking=False)              # the server is full
+    assert client.post('/v1/chat/completions', json={'messages': USER}).status_code == 401
+    assert post(client, ann.token, {'messages': []}).status_code == 400
+    assert post(client, ann.token, {'messages': [{'role': 'user', 'content': IMAGE}]}).status_code == 400
+    too_big = 'x' * (parts.config.chat.max_body_kb * 1024)
+    assert post(client, ann.token, {'messages': [{'role': 'user', 'content': too_big}]}).status_code == 413
+    assert post(client, ann.token, {'messages': USER}).status_code == 503
+    assert post(client, ann.token, {'messages': USER}).status_code == 429   # the limit per Pi is checked first
+    assert fake.calls == []
+
+
+def test_no_key_is_still_said_when_the_server_is_full():
+    parts = make_parts(cloud_config(chat=ONE_AT_ONCE), chat_forwarder=None)
+    ann = link_device(parts, 'ann')
+    assert parts.chat_slots.acquire(blocking=False)
+    reply = post(build(parts), ann.token, {'messages': USER})
+    assert reply.status_code == 503 and reply.json()['detail'] == parts.config.messages.chat_no_key
+
+
+class _Answers(FakeChatForwarder):
+    """Raises `raising` from every call, unless it is None."""
+    raising: Exception | None = None
+
+    async def complete(self, messages, max_tokens, temperature):
+        if self.raising is not None:
+            raise self.raising
+        return await super().complete(messages, max_tokens, temperature)
+
+
+@pytest.mark.parametrize(('raising', 'status'), [(None, 200), (ChatFailed('no'), 502), (RuntimeError('boom'), 502)],
+                         ids=['success', 'ChatFailed', 'unexpected'])
+def test_a_slot_comes_back_however_the_chat_ends(raising, status):
+    answers = _Answers()
+    answers.raising = raising
+    parts = make_parts(cloud_config(chat=ONE_AT_ONCE), chat_forwarder=answers)
+    client, ann = build(parts), link_device(parts, 'ann')
+    assert [post(client, ann.token, {'messages': USER}).status_code for _ in range(3)] == [status] * 3
+    assert parts.chat_slots.acquire(blocking=False)              # given back, once each: the one slot is free
+    assert not parts.chat_slots.acquire(blocking=False)
+
+
+def test_a_refused_chat_takes_no_slot(client, ann, parts):
+    for _ in range(parts.config.chat.max_at_once + 1):
+        assert post(client, ann.token, {'messages': []}).status_code == 400
+    for _ in range(parts.config.chat.max_at_once):
+        assert parts.chat_slots.acquire(blocking=False)
+    assert not parts.chat_slots.acquire(blocking=False)

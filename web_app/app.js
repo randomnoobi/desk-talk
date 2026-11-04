@@ -577,7 +577,7 @@ async function send(text) {
     if (!state.waiting[chatId]) hideTyping(chatId);
   }
   if (!res) {
-    addMessage(chatId, { note: true, text: 'Couldn’t reach Desk Talk. Is it still running on this computer?' });
+    addMessage(chatId, { note: true, text: 'Couldn’t reach Desk Talk. Is it still running?' });
     return;
   }
   for (const r of res.messages || []) {
@@ -872,7 +872,7 @@ async function renderLog(poll = false) {
   const head = `<header><h1 class="page-title">Event log</h1>
     <p class="page-intro">What happened at your desk: sips, breaks, food, to-dos ticked off, reminders and warnings.</p></header>`;
   if (!state.live) {
-    paint(page, `${head}<p class="muted">Start Desk Talk on this computer to keep an event log.</p>`);
+    paint(page, `${head}<p class="muted">Start Desk Talk to keep an event log.</p>`);
     return;
   }
   const filter = LOG_FILTERS.find((f) => f[0] === state.logFilter) || LOG_FILTERS[0];
@@ -908,7 +908,7 @@ async function renderCaptures(poll = false) {
   const page = $('#view-captures');
   const head = `<header><h1 class="page-title">Captures</h1>
     <p class="page-intro">Photos the desk cam took: proof for warnings, and pictures of easy-to-lose things when they show up. They’re kept until Desk Talk restarts.</p></header>`;
-  if (!state.live) { paint(page, `${head}<p class="muted">Start Desk Talk on this computer to collect desk photos.</p>`); return; }
+  if (!state.live) { paint(page, `${head}<p class="muted">Start Desk Talk to collect desk photos.</p>`); return; }
   let items = null;
   try { items = (await api('/api/snapshots')).items || []; } catch { /* says so below */ }
   if (state.view !== 'captures') return;
@@ -1197,7 +1197,7 @@ function renderCamStage() {
   stage.classList.toggle('has-video', state.live && state.camOk && videoShown);
   if (!state.live) {
     stage.innerHTML = '<img class="scene" src="art/desk-scene.svg" alt="Illustration of the desk characters">';
-    stage.insertAdjacentHTML('afterend', '<p class="cam-caption" id="cam-caption">This is a demo. Start Desk Talk on this computer and turn on the camera to see your real desk.</p>');
+    stage.insertAdjacentHTML('afterend', '<p class="cam-caption" id="cam-caption">This is a demo. Start Desk Talk and turn on the camera to see your real desk.</p>');
     return;
   }
   if (state.camOk) {
@@ -1206,6 +1206,15 @@ function renderCamStage() {
   }
   if (state.cameraSource === 'webcam') {
     stage.innerHTML = '<p class="cam-caption">No webcam found. Check that one is plugged in, then restart Desk Talk.</p>';
+    return;
+  }
+  if (state.cameraSource === 'pi' && ui.pi.public_address) {
+    // On the Pi the camera starts by itself, so there is no command (and no pairing key) to show.
+    stage.innerHTML = `<div class="pair">
+      <h3>The Pi's camera</h3>
+      <p>It starts by itself when the Pi does. Open Desk Talk from any phone or computer on the same Wi-Fi at:</p>
+      <pre class="json pi-cmd">http://${esc(ui.pi.public_address)}</pre>
+      <p class="pair-url">It takes ${ui.pi.fps} pictures a second${ui.pi.delete_every_min ? `, keeps them on the Pi, and deletes them every ${ui.pi.delete_every_min} minutes` : ' and keeps them on the Pi'}.</p></div>`;
     return;
   }
   if (state.cameraSource === 'pi') {
@@ -1384,7 +1393,7 @@ function showOffline(on) {
 function renderAi(ai) {
   if (!ai) return;
   let text = '';
-  if (!ai.ready) text = 'The characters need an AI to chat. Set one up on this computer (the README says how), then restart Desk Talk.';
+  if (!ai.ready) text = 'Chat isn’t set up. It’s optional: warnings, reminders and habit tracking all work without it. The README says how to add it.';
   else if (ai.problem) text = ai.problem;
   if (text === state.aiText) return;
   state.aiText = text;
@@ -1487,7 +1496,7 @@ async function startLive(status) {
 // ————— Demo (no server, e.g. GitHub Pages) —————
 // Everything below is the demo's made-up story. The numbers in it are only for the story: the real app takes its
 // numbers from the server (GET /api/ui_settings).
-const DEMO_HOW_TO_RUN = 'Start Desk Talk on this computer and open the address it shows to use your real desk.';
+const DEMO_HOW_TO_RUN = 'Start Desk Talk and open the address it shows to use your real desk.';
 // The settings the demo needs to tell its story (in the real app they come from the server).
 const DEMO_UI = {
   web: {
