@@ -1,11 +1,13 @@
 """
-The developer page's trace pictures on disk (settings → dev.trace_photos_folder), one folder per kind of object:
+Each object's story pictures on disk (settings → object_story.photos_folder), one folder per kind of object:
 
     data/trace_photos/cup/index.json                 what each picture is: when, why, the box (oldest first)
     data/trace_photos/cup/1760000000123-appeared-a1b2c3.jpg
     data/trace_photos/pen-pencil/...                 a detector word with a slash or a space gets a plain name
 
-Only the newest few per kind of object are kept (settings → dev.trace_photos_kept), so they can't fill the disk.
+Only the newest few timed pictures per kind of object are kept (object_story.timed_photos_kept) and, apart from
+them, the newest few step pictures (object_story.step_photos_kept), so they can't fill the disk and a long stay
+never pushes out how the object got there.
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from desktalk.adapters.storage.files import write_atomically
-from desktalk.domain import TracePhoto
+from desktalk.domain import TracePhoto, newest_trace_photos
 
 log = logging.getLogger(__name__)
 
@@ -64,13 +66,14 @@ class TracePhotoFiles:
     """The TracePhotos (desktalk/ports.py), kept as files. add() is called from the TracePhotoTaker's own thread
     and the reads from the web server's, so a lock keeps an index from being read half-changed."""
 
-    def __init__(self, folder: Path, kept: int):
+    def __init__(self, folder: Path, timed_kept: int, steps_kept: int):
         self._folder = Path(folder)
-        self._kept = kept
+        self._timed_kept = timed_kept
+        self._steps_kept = steps_kept
         self._lock = threading.Lock()
 
     def add(self, photo: TracePhoto, jpeg: bytes) -> None:
-        """Keep a picture, and delete the oldest of that kind of object beyond the newest `kept`.
+        """Keep a picture, and delete the ones of that kind of object newest_trace_photos leaves out.
         Raises OSError when the disk fails (the taker logs it)."""
         if not _PLAIN_ID.fullmatch(photo.id):
             raise ValueError(f'{photo.id!r} is not a plain picture id (letters, digits, - and _)')
@@ -78,9 +81,8 @@ class TracePhotoFiles:
         with self._lock:
             where.mkdir(parents=True, exist_ok=True)
             _write_bytes(where / f'{photo.id}{PICTURE}', jpeg)
-            photos = [p for p in self._read(where) if p.id != photo.id] + [photo]
-            photos.sort(key=lambda p: p.ts)
-            photos = photos[-self._kept:]
+            photos = newest_trace_photos([p for p in self._read(where) if p.id != photo.id] + [photo],
+                                         self._timed_kept, self._steps_kept)
             write_atomically(where / INDEX, json.dumps([asdict(p) for p in photos], indent=1))
             # Every picture not in the index goes: the ones just pushed out, and any left by a broken index.
             kept = {p.id for p in photos}

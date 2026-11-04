@@ -1,0 +1,7 @@
+{
+  "content_type": "image/jpeg",
+  "headers": {
+    "access-control-allow-origin": "*"
+  },
+  "request": "GET /api/objects/photo/{story_photo_id} (main server, busy desk)"
+}

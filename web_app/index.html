@@ -88,6 +88,14 @@
 
   <div class="toast" id="toast" role="status" hidden></div>
   <dialog class="photo" id="photo"><img alt="Desk photo"><button type="button" class="btn-quiet" id="photo-close">Close</button></dialog>
+  <!-- An object's story: click something under "On the desk" -->
+  <dialog class="story" id="story" aria-labelledby="story-title">
+    <header class="story-head">
+      <h2 id="story-title">How the camera saw it</h2>
+      <button type="button" class="btn-quiet" id="story-close">Close</button>
+    </header>
+    <div class="story-body" id="story-body"></div>
+  </dialog>
 
   <script src="app.js"></script>
 </body>

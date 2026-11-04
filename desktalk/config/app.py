@@ -115,17 +115,34 @@ class DetectorSettings(_Section):
 
 
 class SensitivityStep(_Section):
-    """One step of the Settings page's sensitivity slider: how sure, and for how long, before an object joins."""
+    """One step of the Settings page's sensitivity slider: how sure, and for how long, before an object joins, and
+    how much to stretch the waits that keep flicker from counting (`steady`, 1 = as written)."""
 
     name: str
     min_confidence: Fraction
     join_after_sec: ZeroOrMore
+    steady: PositiveNumber
+
+
+class NewThingsSettings(_Section):
+    """What an object with no block of its own in agents.yaml needs on top of the slider's step."""
+
+    extra_confidence: Fraction
+    max_confidence: Fraction
+    extra_wait_sec: ZeroOrMore
+
+    def bar(self, needed: float) -> float:
+        """How sure a box of a new thing must be, when a known one would need `needed`: higher by
+        extra_confidence, but not above max_confidence (a bar already above it stays as it is)."""
+        return max(needed, min(needed + self.extra_confidence, self.max_confidence))
 
 
 class AgentsSettings(_Section):
     can_join: Words                   # agent ids (config/agents.yaml) that may join the chat
     sensitivity_steps: Annotated[tuple[SensitivityStep, ...], Field(min_length=1)]   # from picky to eager
     sensitivity_default: Count        # the step used until the slider is moved (an index into sensitivity_steps)
+    new_things: NewThingsSettings     # objects without their own block in agents.yaml need more
+    same_thing_overlap: Annotated[float, Field(gt=0, le=1)]   # two names on this much the same box are one thing
     on_desk_after_sec: ZeroOrMore     # the warnings' own "on the desk" list (the slider doesn't change these)
     on_desk_min_confidence: Fraction
     leave_after_sec: ZeroOrMore
@@ -147,6 +164,16 @@ class AgentsSettings(_Section):
     def default_step(self) -> SensitivityStep:
         """The sensitivity step used until the Settings page's slider is moved."""
         return self.sensitivity_steps[self.sensitivity_default]
+
+    def step_at(self, value: object) -> SensitivityStep | None:
+        """The step a saved slider value (Preferences 'sensitivity') points at; None when it isn't one."""
+        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < len(self.sensitivity_steps):
+            return self.sensitivity_steps[value]
+        return None
+
+    def leave_wait(self, step: SensitivityStep) -> float:
+        """How long an agent must be gone before it leaves the chat, at this step."""
+        return self.leave_after_sec * step.steady
 
 
 class PresenceSettings(_Section):
@@ -173,6 +200,11 @@ class ObjectStatesSettings(_Section):
     restore_max_age_sec: PositiveNumber
     database: Path
     trace_pictures: PositiveInt
+
+    def steady_rules(self, steady: float) -> tuple[float, float, float]:
+        """(appear_sec, gone_sec, move_fraction) for an object (not the person) at a sensitivity step's `steady`:
+        each multiplied by it, so a pickier step waits longer and needs a bigger move."""
+        return self.appear_sec * steady, self.gone_sec * steady, self.move_fraction * steady
 
 
 class SupervisorSettings(_Section):
@@ -452,6 +484,8 @@ class LensWaits(_Section):
 class LensSettings(_Section):
     sample_every_sec: PositiveNumber
     covered_below: Level
+    covered_detail_below: ZeroOrMore
+    covered_by_box_share: Annotated[float, Field(gt=0, le=1)]
     dark_below: Level
     glare_above: Fraction
     blur_below: ZeroOrMore
@@ -695,6 +729,66 @@ class DevHealthLimits(_Section):
     detect_warn_ms: PositiveNumber
 
 
+DEMO_NEEDS = {                    # what each kind of pretend warning fills in (settings → dev.scenarios.items)
+    'edge_warning': ('object', 'edge', 'distance_px'),
+    'danger_zone': ('object', 'near'),
+    'drink_reminder': ('minutes',),
+    'camera_covered': (),
+    'sip': (),
+    'lost_object': ('object', 'minutes'),
+}
+
+
+class DemoScenario(_Section):
+    """One pretend warning on the developer page's Demo tab. Which other settings it needs depends on `fires`."""
+
+    name: str
+    label: str
+    fires: Literal['edge_warning', 'danger_zone', 'drink_reminder', 'camera_covered', 'sip', 'lost_object']
+    object: str = ''                  # an agent (edge_warning, danger_zone) or a lost_items item (lost_object)
+    near: str = ''                    # danger_zone: the agent it's too close to
+    edge: str = ''                    # edge_warning: front, back, left or right
+    distance_px: ZeroOrMore | None = None
+    minutes: PositiveNumber | None = None
+
+    @model_validator(mode='after')
+    def _has_what_it_needs(self):
+        missing = [key for key in DEMO_NEEDS[self.fires] if getattr(self, key) in ('', None)]
+        if missing:
+            raise ValueError(f'{self.name} fires {self.fires}, which needs {", ".join(missing)}')
+        return self
+
+
+class DemoSettings(_Section):
+    """The developer page's Demo tab: pretend warnings fired on purpose after a countdown."""
+
+    _in_order = (('countdown_default_sec', 'countdown_max_sec'),)
+    countdown_default_sec: ZeroOrMore
+    countdown_max_sec: PositiveNumber
+    waiting_max: PositiveInt
+    check_every_sec: PositiveNumber
+    items: Annotated[tuple[DemoScenario, ...], Field(min_length=1)]
+
+    @model_validator(mode='after')
+    def _names_differ(self):
+        names = [item.name for item in self.items]
+        twice = sorted({name for name in names if names.count(name) > 1})
+        if twice:
+            raise ValueError(f'two pretend warnings are called {", ".join(twice)}')
+        return self
+
+
+class ObjectStorySettings(_Section):
+    """An object's story: its state changes, chat joins and pictures (the app page and the developer page)."""
+
+    photos_folder: Path
+    photo_every_sec: PositiveNumber
+    timed_photos_kept: PositiveInt
+    step_photos_kept: PositiveInt
+    events_kept: PositiveInt
+    photo_match_sec: PositiveNumber
+
+
 class DevSettings(_Section):
     """The developer page at /dev/ (only from this computer): running the tests, the database, the data folder."""
 
@@ -715,10 +809,7 @@ class DevSettings(_Section):
     flicker_flips_per_min: Count
     flips_window_min: PositiveNumber
     table_counts_every_sec: PositiveNumber
-    trace_photos_folder: Path
-    trace_photos_kept: PositiveInt
-    trace_photo_every_sec: PositiveNumber
-    trace_events_kept: PositiveInt
+    scenarios: DemoSettings
     health: DevHealthLimits
 
 
@@ -765,6 +856,7 @@ class AppConfig(_Section):
     notifications: NotificationsSettings
     logging: LoggingSettings
     storage: StorageSettings
+    object_story: ObjectStorySettings
     dev: DevSettings
     protocols: Protocols
     agents_file: AgentsFile

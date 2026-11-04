@@ -225,7 +225,9 @@ def test_ui_settings_has_sensitivity_steps(tmp_path):
     c = rig.config
     ui = web_client(rig.app).get('/api/ui_settings').json()
     assert [s['name'] for s in ui['sensitivity_steps']] == ['Picky', 'Careful', 'Normal', 'Easy', 'Eager']
-    assert ui['sensitivity_steps'][0] == {'name': 'Picky', 'min_confidence': 0.65, 'join_after_sec': 10}
+    picky = ui['sensitivity_steps'][0]
+    assert {k: picky[k] for k in ('name', 'min_confidence', 'join_after_sec')} == {
+        'name': 'Picky', 'min_confidence': 0.65, 'join_after_sec': 10}
     assert ui['sensitivity_default'] == c.agents.sensitivity_default == 2      # the page keeps no default of its own
     assert ui['list_sizes'] == {
         'on_desk_shown': 8, 'camera_issues_shown': 2, 'risk_lines_shown': 6, 'side_photos_shown': 6,
@@ -233,6 +235,23 @@ def test_ui_settings_has_sensitivity_steps(tmp_path):
     assert (ui['web']['camera_note_after_sec'], ui['web']['saved_note_sec'], ui['web']['retry_start_sec']) == (5, 4, 3)
     assert ui['starter_todo'] == c.prompts.ui.starter_todo
     assert ui['starter_counters'] == list(c.prompts.ui.starter_counters)
+
+
+def test_each_sensitivity_step_says_what_it_does_with_the_numbers_it_uses(tmp_path):
+    """The Settings page shows the words from prompts.yaml (ui.sensitivity_step), filled in for each step: the
+    join bar and wait, the flicker waits (object_states times the step's steady), the leave wait, and what a new
+    thing needs (agents.new_things)."""
+    rig = DeskRig(tmp_path)
+    c = rig.config
+    ui = web_client(rig.app).get('/api/ui_settings').json()
+    assert ui['sensitivity_intro'] == c.prompts.ui.sensitivity_intro
+    picky, normal = ui['sensitivity_steps'][0]['says'], ui['sensitivity_steps'][2]['says']
+    assert picky == c.prompts.ui.sensitivity_step.format(
+        name='Picky', sure=65, join_sec='10', appear_sec='6', gone_sec='6', move_percent=40, leave_min='4',
+        new_sure=80, new_join_sec='12')
+    assert normal == c.prompts.ui.sensitivity_step.format(
+        name='Normal', sure=45, join_sec='3', appear_sec='3', gone_sec='3', move_percent=20, leave_min='2',
+        new_sure=60, new_join_sec='5')
 
 
 def test_ui_settings_leaves_out_what_the_page_no_longer_reads(tmp_path):

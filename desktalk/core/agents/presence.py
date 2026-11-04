@@ -8,7 +8,7 @@ No camera, no threads, no clock: the caller passes the time of each picture.
 
 from __future__ import annotations
 
-from collections.abc import Hashable, Iterable
+from collections.abc import Hashable, Iterable, Mapping
 
 
 class PresenceTracker:
@@ -22,8 +22,10 @@ class PresenceTracker:
         self._last_seen: dict[Hashable, float] = {}    # key → last time it was in a picture
         self._present: set[Hashable] = set()
 
-    def update(self, seen_keys: Iterable[Hashable], now: float) -> tuple[list, list]:
-        """One picture's keys. Returns (keys that just appeared, keys that just went)."""
+    def update(self, seen_keys: Iterable[Hashable], now: float, *,
+               waits: Mapping[Hashable, float] | None = None) -> tuple[list, list]:
+        """One picture's keys. Returns (keys that just appeared, keys that just went). `waits`: keys that wait a
+        different time than appear_sec before they appear."""
         seen = list(seen_keys)
         appeared, gone = [], []
         for k in seen:
@@ -31,7 +33,8 @@ class PresenceTracker:
             if last is None or now - last > self.gone_sec:
                 self._run_start[k] = now
             self._last_seen[k] = now
-            if k not in self._present and now - self._run_start[k] >= self.appear_sec:
+            wait = waits.get(k, self.appear_sec) if waits else self.appear_sec
+            if k not in self._present and now - self._run_start[k] >= wait:
                 self._present.add(k)
                 appeared.append(k)
         seen_set = set(seen)

@@ -11,13 +11,22 @@ import sqlite3
 
 import pytest
 
-from desktalk.config import ObjectStatesSettings
+from desktalk.config import AgentsSettings, ObjectStatesSettings
 from desktalk.core.object_states import ObjectStateTracker
-from desktalk.domain import BBox, Detection, DetectionEvent, ObjectStateChanged, Phase, StateChange, StateRecord
+from desktalk.domain import (
+    AgentProfile,
+    BBox,
+    Detection,
+    DetectionEvent,
+    ObjectStateChanged,
+    Phase,
+    StateChange,
+    StateRecord,
+)
 from desktalk.domain.events import Light
 from tests.contracts.dev_contracts import SmoothingTraceContract
 from tests.contracts.object_states_contract import ObjectStatesContract
-from tests.fakes import FakeClock, InMemoryStateStore, SyncEventBus
+from tests.fakes import FakeClock, FakePreferences, FakeProfiles, InMemoryStateStore, SyncEventBus
 
 SETTINGS = {
     'on_confidence': 0.5,
@@ -37,6 +46,30 @@ SETTINGS = {
     'database': 'data/object_states.sqlite',
     'trace_pictures': 90,
 }
+# The sensitivity slider's steps (settings → agents): `steady` stretches appear_sec, gone_sec and move_fraction.
+AGENTS = {
+    'can_join': [],
+    'sensitivity_steps': [
+        {'name': 'Picky', 'min_confidence': 0.65, 'join_after_sec': 10, 'steady': 2.0},
+        {'name': 'Normal', 'min_confidence': 0.45, 'join_after_sec': 3, 'steady': 1.0},
+        {'name': 'Eager', 'min_confidence': 0.35, 'join_after_sec': 2, 'steady': 0.5},
+    ],
+    'sensitivity_default': 1,
+    'new_things': {'extra_confidence': 0.15, 'max_confidence': 0.95, 'extra_wait_sec': 2},
+    'same_thing_overlap': 0.7,
+    'on_desk_after_sec': 3,
+    'on_desk_min_confidence': 0.45,
+    'leave_after_sec': 120,
+    'only_on_desk': True,
+    'max_agents': 12,
+    'announce': True,
+    'greet_on_join': True,
+    'greet_again_after_min': 30,
+    'invent_personality': True,
+    'personality_max_chars': 400,
+}
+PICKY, NORMAL, EAGER = 0, 1, 2
+STAPLER = AgentProfile(id='stapler', name='Stapler', labels=['stapler'], auto=True)   # a new thing
 STEP = 1 / 3          # 3 pictures a second
 SETTLE = 15           # pictures it takes to settle into a state (5 s)
 
@@ -53,12 +86,15 @@ def o(label, conf, x=320, y=240):
     return Detection(label, conf, BBox(x - 20, y - 20, x + 20, y + 20))
 
 
-def make_tracker(store=None, utc_offset_hours=8, **changes):
+def make_tracker(store=None, utc_offset_hours=8, sensitivity=None, prefs=None, **changes):
     bus = SyncEventBus()
     store = InMemoryStateStore() if store is None else store
     settings = ObjectStatesSettings.model_validate({**SETTINGS, **changes})
+    prefs = prefs or FakePreferences({} if sensitivity is None else {'sensitivity': sensitivity})
     tracker = ObjectStateTracker(settings, bus, store, device_id='pi', new_session_after_sec=300,
-                                 clock=FakeClock(utc_offset_hours=utc_offset_hours))
+                                 clock=FakeClock(utc_offset_hours=utc_offset_hours),
+                                 agents=AgentsSettings.model_validate(AGENTS), prefs=prefs,
+                                 profiles=FakeProfiles([STAPLER]))
     return tracker, bus, store
 
 
@@ -490,6 +526,79 @@ def test_every_number_comes_from_the_settings():
     feed(tracker, t, [[]] * (8 * 3))                                   # gone for 8 s
     assert state_of(tracker, 'bottle') == 'PRESENT'
     assert changes(bus) == [('appeared', 'bottle')]
+
+
+# ── the sensitivity slider ──
+
+def change_ts(bus, kind, label):
+    return next(e.ts for e in bus.of_type(ObjectStateChanged) if (e.change, e.label) == (kind, label))
+
+
+def appear_and_go(sensitivity, label='bottle'):
+    """Seen for 10 s, then gone for 10 s from t=1000. Returns (when it appeared, how long after it went)."""
+    tracker, bus, _ = make_tracker(sensitivity=sensitivity)
+    t = feed(tracker, 1000, [[o(label, 0.9)]] * 30)
+    feed(tracker, t, [[]] * 30)
+    return change_ts(bus, 'appeared', label), change_ts(bus, 'removed', label) - t
+
+
+def test_normal_keeps_the_settings_waits():
+    appear, gone = appear_and_go(NORMAL)
+    assert appear - 1000 == pytest.approx(SETTINGS['appear_sec'], abs=2 * STEP)
+    assert gone == pytest.approx(SETTINGS['gone_sec'], abs=4 * STEP)        # the vote adds a picture or two
+
+
+def test_picky_waits_longer_and_eager_less_before_a_change_counts():
+    normal_appear, normal_gone = appear_and_go(NORMAL)
+    picky_appear, picky_gone = appear_and_go(PICKY)
+    eager_appear, eager_gone = appear_and_go(EAGER)
+    assert picky_appear - normal_appear == pytest.approx(SETTINGS['appear_sec'], abs=STEP)        # 6 s, not 3
+    assert picky_gone - normal_gone == pytest.approx(SETTINGS['gone_sec'], abs=STEP)
+    assert normal_appear - eager_appear == pytest.approx(SETTINGS['appear_sec'] / 2, abs=STEP)    # 1.5 s
+    assert normal_gone - eager_gone == pytest.approx(SETTINGS['gone_sec'] / 2, abs=STEP)
+
+
+def test_moving_the_slider_works_at_once():
+    prefs = FakePreferences({'sensitivity': NORMAL})
+    tracker, _, _ = make_tracker(prefs=prefs)
+    t = feed(tracker, 1000, [[o('bottle', 0.9)]] * SETTLE)
+    prefs.update({'sensitivity': PICKY})
+    t = feed(tracker, t, [[]] * (5 * 3))                                  # gone 5 s: not enough at Picky
+    assert state_of(tracker, 'bottle') == 'PRESENT'
+    feed(tracker, t, [[]] * (3 * 3))
+    assert state_of(tracker, 'bottle') == 'ABSENT'
+
+
+def test_how_far_a_box_must_move_follows_the_slider():
+    def moved(sensitivity, share):
+        tracker, bus, _ = make_tracker(sensitivity=sensitivity)
+        t = feed(tracker, 1000, [[o('bottle', 0.9, x=100)]] * SETTLE)
+        feed(tracker, t, [[o('bottle', 0.9, x=100 + share * 640)]] * SETTLE)
+        return ('moved', 'bottle') in changes(bus)
+
+    move = SETTINGS['move_fraction']                                      # 0.2 of the picture
+    assert moved(NORMAL, move * 1.25) and not moved(NORMAL, move * 0.75)
+    assert not moved(PICKY, move * 1.5)                                   # Picky needs 0.4
+    assert moved(EAGER, move * 0.75)                                      # Eager only 0.1
+
+
+def test_the_persons_waits_do_not_follow_the_slider():
+    def appeared(sensitivity):
+        tracker, bus, _ = make_tracker(sensitivity=sensitivity)
+        feed(tracker, 1000, [[o('person', 0.9)]] * 30)
+        return change_ts(bus, 'appeared', 'person')
+
+    assert appeared(PICKY) == appeared(NORMAL) == appeared(EAGER)
+
+
+def test_a_new_thing_waits_longer_to_appear():
+    """An object without its own block in agents.yaml waits new_things.extra_wait_sec more, at every step."""
+    extra = AGENTS['new_things']['extra_wait_sec']
+    for sensitivity in (NORMAL, PICKY):
+        bottle, bottle_gone = appear_and_go(sensitivity)
+        stapler, stapler_gone = appear_and_go(sensitivity, label='stapler')
+        assert stapler - bottle == pytest.approx(extra, abs=STEP)
+        assert stapler_gone == pytest.approx(bottle_gone, abs=STEP)       # going isn't slower
 
 
 # ── what the rule engine reads ──

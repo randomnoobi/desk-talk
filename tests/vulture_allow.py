@@ -21,6 +21,7 @@ from desktalk.config.habits import _ComputerZone
 from desktalk.config.prompts import (
     ByCamera,
     HabitAreas,
+    ObjectStoryWords,
 )
 from desktalk.core.habits.habit_days import HabitDay
 from desktalk.core.habits.sun_times import SunTimes
@@ -89,3 +90,5 @@ _developer_page = (
 _ = EventLog.recent_detections
 # A test's result, sent to the developer page as JSON (dataclasses.asdict) and shown by dev_ui/ (the Checks tab).
 _ = TestOutcome.duration_sec
+# The words for each step of an object's story, picked by the step's kind (desktalk/web/stories.py, getattr).
+_ = ObjectStoryWords.refused

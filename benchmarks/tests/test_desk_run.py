@@ -32,6 +32,17 @@ def test_desk_row_scores_at_app_threshold_and_low():
     assert row['your_desk_score'] is None
 
 
+def test_desk_row_leaves_out_a_second_name_for_the_same_box():
+    kinds = {'kinds': {'laptop': {'coco': ['laptop']}, 'book': {'coco': ['book']}},
+             'low_confidence': 0.25, 'min_photos_per_cell': 1}
+    pictures = [{'id': 1, 'answers': {'laptop': 'there', 'book': 'not there'}, 'scenes': ['tidy']}]
+    detections = {'1': [['laptop', 0.95, 574, 183, 1094, 713], ['book', 0.52, 574, 180, 1126, 716]]}
+    thresholds = {'laptop': 0.45, 'book': 0.45}
+    row = desk_row(COCO, detections, pictures, [], kinds, thresholds, one_name=(0.7, frozenset(), frozenset()))
+    assert row['false_book'] == 0 and row['found_laptop'] == 1
+    assert desk_row(COCO, detections, pictures, [], kinds, thresholds)['false_book'] == 1    # without the rule
+
+
 def test_desk_row_scores_your_own_photos_separately():
     yours = [{'id': 'desk_01.jpg', 'answers': {'phone': 'there', 'AirPods': 'not there'}, 'scenes': ['your desk']}]
     row = desk_row(COCO, {'desk_01.jpg': [['cell phone', 0.9]]}, [], yours, DESK, {'phone': 0.45, 'AirPods': 0.45})

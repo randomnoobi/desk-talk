@@ -9,6 +9,7 @@ from pathlib import Path
 from desktalk.config import LensSettings, LensWaits, PiSettings, load_config
 from desktalk.core.chat.workers.lens import Lens
 from desktalk.domain import CameraNotice, DetectorState, PiHealth, UploadInfo
+from desktalk.ports import CameraWarnings
 from desktalk_shared.wire import DETECTOR_TURNED_OFF, info_from_v1_headers
 from tests.fakes import (
     FakeCameraHealth,
@@ -446,3 +447,16 @@ def test_no_thanks_when_a_failed_detector_is_then_turned_off_on_purpose():
     rig.tick(after=5)
     rig.tick(after=SETTINGS.repeat_after_min * 60)
     assert [kind for kind, _ in rig.said()] == ['problem']
+
+
+# ── a warning said on purpose (the developer page's Demo tab) ──
+def test_say_problem_goes_out_like_a_found_problem():
+    """The Demo tab's pretend "camera covered" goes the same way as a real one: the chat (with the warning
+    pop-up mark) and a CameraNotice in the event log."""
+    rig = Rig()
+    assert isinstance(rig.lens, CameraWarnings)
+    rig.lens.say_problem('covered', 'Everything just went black.', rig.clock.now())
+    assert [(m['character'], m['text'], m['lens'], m['toast'], m['notify']) for m in rig.notifier.sent] == [
+        ('lens', 'Everything just went black.', 'problem', True, 'warning')]
+    assert [(n.key, n.kind, n.text) for n in rig.bus.of_type(CameraNotice)] == [
+        ('covered', 'problem', 'Everything just went black.')]

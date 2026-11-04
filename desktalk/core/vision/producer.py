@@ -7,6 +7,10 @@ About 3 times a second (settings → camera.fps) it takes the newest picture and
     the Pi's detector said busy  live view only: the Pi is still detecting an earlier picture
     off, or not a Pi camera      detect it here (UltralyticsDetector)
 
+A second name the detector gave the same box (a laptop also called "book") is left out first (one_name.py,
+settings → agents.same_thing_overlap; a word with its own agent in agents.yaml beats a new thing's word), so the
+event, Lens's checks and the live view all get one name per thing.
+
 Then it publishes one DetectionEvent and updates the live view. Everything else (agents joining,
 alerts, habits, the event log) happens in the parts that subscribe to the event.
 
@@ -18,9 +22,11 @@ still for camera.keep_newer_picture_sec (so a Pi clock that jumps back can't fre
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from typing import Protocol
 
 from desktalk.config import CameraSettings
+from desktalk.core.vision.one_name import OneNameEach
 from desktalk.domain import (
     Detection,
     DetectionEvent,
@@ -83,7 +89,8 @@ class DetectionProducer:
 
     def __init__(self, source: FrameSource, detector: Detector, bus: EventBus, desk: ProducerDesk, clock: Clock,
                  lens: PictureCheck, painter: LiveViewPainter, camera: CameraSettings, *,
-                 new_session_after_sec: float, pictures: PictureTools, camera_index: int = 0):
+                 new_session_after_sec: float, pictures: PictureTools, same_thing_overlap: float,
+                 ignore_labels: Iterable[str], known_labels: Iterable[str], camera_index: int = 0):
         self._source = source
         self._detector = detector
         self._bus = bus
@@ -96,6 +103,7 @@ class DetectionProducer:
         self._new_session_after = new_session_after_sec
         self._cam = camera_index
         self._interval = 1.0 / camera.fps
+        self._one_name = OneNameEach(same_thing_overlap, ignore_labels, known_labels)
         self._last_analysed_at: float | None = None
         self._newest: list[Detection] = []          # from the newest analysed picture, for busy pictures
         self._detecting = _Trouble('Detection on this computer')
@@ -141,6 +149,7 @@ class DetectionProducer:
             self._show(frame, jpeg, [])                 # detection failed: we don't know what's there
             return
         detections, where = found
+        detections = self._one_name(detections)
         self._lens.sample(picture, detections, now)
         event = self._event(frame, detections, where, now)
         self._update_desk(event)

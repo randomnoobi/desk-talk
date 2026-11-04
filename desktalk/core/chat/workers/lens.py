@@ -193,6 +193,11 @@ class Lens:
         return self._words.pi_detector.format(why=why)
 
     # ── saying it ──
+    def say_problem(self, key: str, text: str, now: float) -> None:
+        """Say a camera problem now, the way a found one is said (CameraWarnings: the Demo tab's pretend
+        "camera covered")."""
+        self._say({'key': key, 'kind': 'problem', 'text': text}, now)
+
     def _say(self, found: dict[str, Any], now: float) -> None:
         kind, text = found['kind'], found['text']
         message = {'type': 'group_message', 'character': LENS, 'text': text, 'lens': kind, 'toast': kind == 'problem'}

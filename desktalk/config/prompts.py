@@ -40,6 +40,7 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'alert.lens_zone': ('intruder', 'target', 'zone'),
     'alert.lens_edge': ('object',),
     'desk_rules.too_few_corners': ('corners',),
+    'object_story.never_seen': ('object',),
     'replies.ai_errors.rate_limit': ('who',),
     'replies.ai_errors.bad_key': ('who',),
     'replies.ai_errors.no_model': ('who',),
@@ -198,6 +199,8 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'camera.problems.cutoff': ('object', 'side', 'hint'),
     'camera.problems.slow': ('fps',),
     'camera.cutoff_title': ('object', 'side'),
+    'ui.sensitivity_step': ('name', 'sure', 'join_sec', 'appear_sec', 'gone_sec', 'move_percent', 'leave_min',
+                            'new_sure', 'new_join_sec'),
     'dev.outside_data_folder': ('path',),
     'dev.is_a_folder': ('path',),
     'dev.no_such_file': ('path',),
@@ -209,6 +212,13 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'dev.query_refused': ('reason',),
     'dev.query_failed': ('reason',),
     'dev.query_timed_out': ('seconds',),
+    'dev.unknown_scenario': ('name',),
+    'dev.countdown_out_of_range': ('most',),
+    'dev.too_many_waiting': ('count',),
+    'dev.unknown_waiting': ('scenario_id',),
+    'dev.cannot_fire': ('name', 'thing', 'where'),
+    'dev.scenarios.drink_evidence': ('minutes',),
+    'dev.scenarios.drink_text': ('minutes',),
 }
 
 
@@ -644,12 +654,35 @@ class UiWords(_Section):
 
     starter_todo: str
     starter_counters: Words
+    sensitivity_intro: str            # the Settings page: what the sensitivity slider covers...
+    sensitivity_step: str             # ...and what one step does (blanks in BLANKS)
+
+
+class ObjectStoryWords(_Section):
+    """An object's story, step by step (desktalk/web/stories.py: the app page and the developer page's trace)."""
+
+    appeared: str
+    joined: str
+    moved: str
+    removed: str
+    left: str
+    refused: str
+    every: str
+    never_seen: str
 
 
 class NotificationWords(_Section):
     """The Mac's own pop-up notifications."""
 
     sip_title: str
+
+
+class DemoWords(_Section):
+    """What the Demo tab's pretend warnings say where the real ones fill in what the camera saw."""
+
+    zone: str
+    drink_evidence: str
+    drink_text: str
 
 
 class DevWords(_Section):
@@ -672,6 +705,12 @@ class DevWords(_Section):
     query_failed: str
     query_timed_out: str
     not_built: str
+    unknown_scenario: str
+    countdown_out_of_range: str
+    too_many_waiting: str
+    unknown_waiting: str
+    cannot_fire: str
+    scenarios: DemoWords
 
 
 class Prompts(_Section):
@@ -695,6 +734,7 @@ class Prompts(_Section):
     photos: PhotoWords
     desk_checks: DeskCheckWords
     ui: UiWords
+    object_story: ObjectStoryWords
     notifications: NotificationWords
     dev: DevWords
 

@@ -54,6 +54,10 @@ export function postJSON<T>(path: string, body: unknown): Promise<T> {
   return send<T>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 }
 
+export function deleteJSON<T>(path: string): Promise<T> {
+  return send<T>(path, { method: 'DELETE' })
+}
+
 // ── the replies ──
 
 /** settings → dev.health: when the System tab turns a number amber or red. */
@@ -64,7 +68,8 @@ export interface HealthLimits {
   detect_warn_ms: number
 }
 
-/** settings → object_states: the numbers the smoothing chart draws its lines at. */
+/** settings → object_states: the numbers the smoothing chart draws its lines at. appear_sec and gone_sec are the
+ *  waits in use now: the sensitivity slider's step stretches them (a new thing waits a little longer to appear). */
 export interface SmoothingSettings {
   on_confidence: number
   off_confidence: number
@@ -88,9 +93,40 @@ export interface DevSettings {
   output_keep_kb: number           // settings → dev.output_keep_kb: how much of a run's printout the Checks tab keeps
   flips_window_min: number         // settings → dev.flips_window_min: how far back the ready-made "flips" query looks
   table_counts_every_sec: number   // settings → dev.table_counts_every_sec: the Database and Storage tabs count again this often
-  trace_events_kept: number        // settings → dev.trace_events_kept: an object's trace keeps this many changes and chat joins
-  trace_photos_kept: number        // settings → dev.trace_photos_kept: and this many pictures
+  trace_events_kept: number        // settings → object_story.events_kept: an object's trace keeps this many changes and chat joins
+  trace_photos_kept: number        // settings → object_story.timed_photos_kept: this many timed pictures...
+  trace_step_photos_kept: number   // settings → object_story.step_photos_kept: ...and this many step pictures
   object_states: SmoothingSettings
+  scenarios: DemoLimits
+}
+
+/** settings → dev.scenarios: the Demo tab's countdowns. */
+export interface DemoLimits {
+  countdown_default_sec: number    // the countdown the Demo tab starts with
+  countdown_max_sec: number        // the longest one the server takes
+  waiting_max: number              // how many can count down at once
+}
+
+/** A pretend warning the Demo tab can fire (settings → dev.scenarios.items). */
+export interface Scenario {
+  name: string
+  label: string
+  fires: string                    // edge_warning, danger_zone, drink_reminder, camera_covered, sip, lost_object
+}
+
+/** A pretend warning counting down. */
+export interface WaitingScenario {
+  id: string
+  name: string
+  label: string
+  fires_at: number                 // seconds since 1970
+  seconds_left: number             // when the server answered
+}
+
+/** GET /api/dev/scenarios */
+export interface Scenarios {
+  scenarios: Scenario[]
+  waiting: WaitingScenario[]       // the soonest first
 }
 
 export type Phase = 'PRESENT' | 'ABSENT' | 'UNKNOWN'
@@ -128,25 +164,29 @@ export interface SmoothingStep {
   waiting_sec: number | null
 }
 
-/** One thing that happened to an object (GET /api/dev/objects/{label}): a state change ('state') or a chat join,
- *  leave or refusal ('chat'), with why. A value the server doesn't know is null. */
+/** One thing that happened to an object (GET /api/dev/objects/{label}): a state change ('state'), a chat join,
+ *  leave or refusal ('chat'), or a picture that goes with no other step ('photo'), with why and the picture taken
+ *  for it. A value the server doesn't know is null. */
 export interface TraceRow {
   ts: number
-  source: 'state' | 'chat'
-  kind: string                     // state: appeared, removed, moved; chat: joined, left, refused
+  source: 'state' | 'chat' | 'photo'
+  kind: string                     // state: appeared, removed, moved; chat: joined, left, refused; photo: its why
   confidence: number | null        // how sure the detector was (for a state change: the average while seen)
   seen_for_sec: number | null      // how long it had been seen
   on_desk: boolean | null          // inside the marked desk (a chat row's null: no desk corners marked)
   step: string | null              // the sensitivity step in use (chat rows)
   before: Phase | null             // the state before and after (state rows)
   after: Phase | null
+  photo: TracePhoto | null         // the picture taken for this step (null: none was)
+  what: string                     // the server's plain words for it (config/prompts.yaml → object_story)
 }
 
-/** A picture kept of an object, with its box in the picture's own pixels. */
+/** A picture kept of an object, with its box in the picture's own pixels. 'removed' is the picture where it was
+ *  gone, with its last box: the empty spot. */
 export interface TracePhoto {
   id: string
   ts: number
-  why: 'appeared' | 'joined' | 'every'
+  why: 'appeared' | 'joined' | 'moved' | 'removed' | 'every'
   confidence: number
   box: [number, number, number, number]   // left, top, right, bottom
   size: [number, number]                  // the picture's width, height
@@ -353,6 +393,18 @@ export const getFiles = async () => (await getJSON<{ files: DataFile[] }>('/api/
 /** The start of a file in the data folder. 400 for a path outside it, 404 when nothing is there. */
 export const getPreview = async (path: string) =>
   (await getJSON<{ path: string, text: string }>(`/api/dev/files/preview?path=${q(path)}`)).text
+
+export const getScenarios = () => getJSON<Scenarios>('/api/dev/scenarios')
+
+/** Starts a pretend warning counting down. 400 for a name not in the list, seconds out of range, or too many
+ *  counting down already. */
+export const startScenario = (name: string, afterSec: number) =>
+  postJSON<WaitingScenario>('/api/dev/scenarios', { name, after_sec: afterSec })
+
+/** Stops one counting down. 404 once it has gone off. */
+export const cancelScenario = async (id: string): Promise<void> => {
+  await deleteJSON<{ ok: boolean }>(`/api/dev/scenarios/${q(id)}`)
+}
 
 export const getHealth = () => getJSON<Health>('/api/health')
 

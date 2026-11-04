@@ -18,8 +18,9 @@ def run(spec: dict) -> dict:
     detections = {}
     for pid, path in spec['pictures']:
         r = model.predict(path, imgsz=spec['image_size'], conf=spec['floor'], device=spec['device'], verbose=False)[0]
-        boxes = zip(r.boxes.cls, r.boxes.conf, strict=True)
-        detections[pid] = [[r.names[int(c)], round(float(p), 4)] for c, p in boxes]
+        boxes = zip(r.boxes.cls, r.boxes.conf, r.boxes.xyxy, strict=True)
+        detections[pid] = [[r.names[int(c)], round(float(p), 4), *(round(float(v), 1) for v in xyxy)]
+                           for c, p, xyxy in boxes]
     return {'detections': detections, 'names': list(model.names.values())}
 
 

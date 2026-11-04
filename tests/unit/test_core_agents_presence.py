@@ -1,5 +1,7 @@
 """Seen / not seen → steady present / gone (desktalk/core/agents/presence.py)."""
 
+from collections.abc import Hashable
+
 from desktalk.core.agents.presence import PresenceTracker
 
 
@@ -40,3 +42,12 @@ def test_dropped_key_appears_again_on_the_next_sighting():
     p.drop('cup')
     assert not p.is_present('cup')
     assert p.update({'cup'}, 4) == (['cup'], [])           # still seen without a gap: back at once
+
+
+def test_a_key_can_have_a_longer_wait_of_its_own():
+    p = PresenceTracker(appear_sec=3, gone_sec=10)
+    waits: dict[Hashable, float] = {'stapler': 5}
+    assert p.update(['cup', 'stapler'], 0, waits=waits) == ([], [])
+    assert p.update(['cup', 'stapler'], 3, waits=waits) == (['cup'], [])
+    assert p.update(['cup', 'stapler'], 4.9, waits=waits) == ([], [])
+    assert p.update(['cup', 'stapler'], 5, waits=waits) == (['stapler'], [])

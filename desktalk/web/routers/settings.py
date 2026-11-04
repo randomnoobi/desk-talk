@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from desktalk.config import AppConfig
+from desktalk.config import AppConfig, SensitivityStep
 from desktalk.domain import LENS
 from desktalk.web.deps import App
 from desktalk.web.routers.phone import phone_settings
@@ -41,6 +41,8 @@ ZONE_OBJECTS = [
 RULE_PARTS = ('danger_zones', 'edge_proximity', 'chain_reaction', 'temporal')
 TILT_DECIMALS = 2
 MS = 1000
+PERCENT = 100
+MINUTE = 60
 
 router = APIRouter()
 
@@ -109,11 +111,32 @@ def ui_settings_from(c: AppConfig) -> UiSettings:
                                mention_max_chars=sizes.mention_max_chars,
                                counter_label_chars=sizes.counter_label_chars),
         starter_todo=c.prompts.ui.starter_todo, starter_counters=list(c.prompts.ui.starter_counters),
-        sensitivity_steps=[UiSensitivityStep(**step.model_dump()) for step in c.agents.sensitivity_steps],
+        sensitivity_steps=[sensitivity_step(c, step) for step in c.agents.sensitivity_steps],
+        sensitivity_intro=c.prompts.ui.sensitivity_intro,
         sensitivity_default=c.agents.sensitivity_default,
         chat_reply_timeout_ms=min(most_ai_calls_per_message(c) * round(c.llm.longest_reply_sec() * MS)
                                   + web.request_timeout_ms, web.chat_reply_max_ms),
     )
+
+
+def _number(value: float) -> str:
+    """3.0 → '3', 1.5 → '1.5'."""
+    return f'{value:g}'
+
+
+def sensitivity_step(c: AppConfig, step: SensitivityStep) -> UiSensitivityStep:
+    """One step of the slider, with what it does in words (prompts.yaml → ui.sensitivity_step): the same numbers
+    the roster and the object states use at this step."""
+    appear_sec, gone_sec, move = c.object_states.steady_rules(step.steady)
+    new = c.agents.new_things
+    says = c.prompts.ui.sensitivity_step.format(
+        name=step.name, sure=round(step.min_confidence * PERCENT), join_sec=_number(step.join_after_sec),
+        appear_sec=_number(appear_sec), gone_sec=_number(gone_sec), move_percent=round(move * PERCENT),
+        leave_min=_number(c.agents.leave_wait(step) / MINUTE),
+        new_sure=round(new.bar(step.min_confidence) * PERCENT),
+        new_join_sec=_number(step.join_after_sec + new.extra_wait_sec))
+    return UiSensitivityStep(name=step.name, min_confidence=step.min_confidence, join_after_sec=step.join_after_sec,
+                             says=says)
 
 
 def most_ai_calls_per_message(c: AppConfig) -> int:

@@ -25,6 +25,19 @@ def config(tmp_path_factory):
     return load_config(root, environ={})
 
 
+@pytest.fixture(scope='module')
+def strict_cup_config(tmp_path_factory):
+    """The real settings, with agents.yaml giving the cup a stricter min_confidence of its own (0.55)."""
+    root = tmp_path_factory.mktemp('strict')
+    (root / 'config').mkdir()
+    for name in ('settings.yaml', 'protocols.yaml', 'prompts.yaml'):
+        shutil.copy(ROOT / 'config' / name, root / 'config' / name)
+    agents = (ROOT / 'config' / 'agents.yaml').read_text()
+    agents = agents.replace('    tracker: hydration\n', '    tracker: hydration\n    min_confidence: 0.55\n', 1)
+    (root / 'config' / 'agents.yaml').write_text(agents)
+    return load_config(root, environ={})
+
+
 class Rig:
     """A roster on a synchronous bus, fed made-up pictures."""
 
@@ -41,7 +54,7 @@ class Rig:
             steps[agents.sensitivity_default] = agents.default_step().model_copy(update=step)
             agents = agents.model_copy(update={'sensitivity_steps': tuple(steps)})
         self.roster = Roster(self.bus, self.profiles, self.desk, agents, config.presence, self.prefs,
-                             on_desk=on_desk, joins_kept=joins_kept or config.dev.trace_events_kept)
+                             on_desk=on_desk, joins_kept=joins_kept or config.object_story.events_kept)
 
     def see(self, ts, *dets, size=(640, 480)):
         self.bus.publish(DetectionEvent(ts=ts, frame_id=f'pi-{ts}', source='pi', size=size, detections=tuple(dets),
@@ -163,7 +176,6 @@ def test_slider_change_works_at_once(config):
 
 
 def test_weak_box_counts_at_eager_not_picky(config):
-    # the laptop has no min_confidence of its own (the cup's own 0.55 would win over both steps)
     eager = Rig(config, sensitivity=4)
     eager.run(0.0, 4, d('laptop', 0.4))
     assert [e.agent for e in eager.joined()] == ['computer']
@@ -172,7 +184,8 @@ def test_weak_box_counts_at_eager_not_picky(config):
     assert picky.joined() == []
 
 
-def test_profile_own_min_confidence_wins_when_stricter(config):
+def test_profile_own_min_confidence_wins_when_stricter(strict_cup_config):
+    config = strict_cup_config
     eager = Rig(config, sensitivity=4)                        # Eager wants 0.35, the cup itself 0.55
     eager.run(0.0, 10, d('cup', 0.5))
     assert eager.joined() == []
@@ -196,6 +209,58 @@ def test_bad_sensitivity_uses_default(config, bad):
     weak.prefs.values['sensitivity'] = bad
     weak.run(0.0, 10, d('laptop', 0.44))
     assert weak.joined() == []
+
+
+def test_the_leave_wait_follows_the_sliders_steadiness(config):
+    """agents.leave_after_sec times the step's steady: Picky (2.0) waits twice as long, Eager (0.5) half."""
+    leave = config.agents.leave_after_sec
+    for sensitivity, steady in ((0, 2.0), (2, 1.0), (4, 0.5)):
+        r = Rig(config, sensitivity=sensitivity)
+        t = r.run(0.0, 11, d('laptop'))
+        r.run(t, leave * steady + 5)
+        assert r.left()[0].ts - t == pytest.approx(leave * steady, abs=0.5)
+
+
+def test_moving_the_slider_changes_the_leave_wait_at_once(config):
+    leave = config.agents.leave_after_sec
+    r = Rig(config, sensitivity=2)
+    t = r.run(0.0, 4, d('laptop'))
+    r.prefs.update({'sensitivity': 4})                        # Eager: gone half as long is enough
+    r.run(t, leave / 2 + 2)
+    assert r.left()[0].ts - t == pytest.approx(leave / 2, abs=0.5)
+
+
+def test_a_new_thing_waits_longer_to_join(config):
+    """An object without its own block in agents.yaml waits agents.new_things.extra_wait_sec more."""
+    extra = config.agents.new_things.extra_wait_sec
+    r = Rig(config, can_join=('stapler', 'cup'))
+    r.seen_until(0.0, 3 + extra + 1, d('stapler'), d('cup', box=(300, 300, 350, 350)))
+    joined = {e.agent: e.ts for e in r.joined()}
+    assert joined['cup'] == pytest.approx(3.0)                # Normal's 3 s
+    assert joined['stapler'] == pytest.approx(3.0 + extra)
+    assert r.roster.joins('stapler')[-1].seen_for_sec == pytest.approx(3.0 + extra)
+
+
+def test_a_new_thing_needs_a_surer_box_to_join(config):
+    new = config.agents.new_things
+    normal = config.agents.default_step().min_confidence
+    between = round(normal + new.extra_confidence / 2, 3)     # enough for a cup, not for something new
+    r = Rig(config, can_join=('stapler', 'cup'))
+    r.run(0.0, 10, d('stapler', between), d('cup', between, box=(300, 300, 350, 350)))
+    assert [e.agent for e in r.joined()] == ['cup']
+    r.run(10.0, 10, d('stapler', normal + new.extra_confidence + 0.01))
+    assert [e.agent for e in r.joined()] == ['cup', 'stapler']
+
+
+def test_a_new_things_wait_and_bar_follow_the_slider(config):
+    new = config.agents.new_things
+    picky = config.agents.sensitivity_steps[0]
+    r = Rig(config, sensitivity=0, can_join=('stapler',))
+    r.run(0.0, 30, d('stapler', picky.min_confidence + 0.01))      # sure enough for a known thing only
+    assert r.joined() == []
+    sure = min(picky.min_confidence + new.extra_confidence, new.max_confidence) + 0.01
+    r.seen_until(40.0, 40.0 + picky.join_after_sec + new.extra_wait_sec, d('stapler', sure))
+    assert first_join_ts(r) == pytest.approx(40.0 + picky.join_after_sec + new.extra_wait_sec)
 
 
 def test_on_desk_list_has_non_chat_objects(config):
@@ -263,9 +328,15 @@ def test_only_the_newest_joins_are_kept(config):
 def test_weak_detections_dont_count(config):
     r = Rig(config)
     for i in range(15):
-        r.see(i / 3, d('cup', 0.5))           # cup needs 0.55 (agents.yaml)
-        r.see(i / 3, d('laptop', 0.3))        # below the Normal step's 0.45
+        r.see(i / 3, d('cup', 0.44), d('laptop', 0.3, box=(300, 300, 400, 400)))   # below the Normal step's 0.45
     assert r.joined() == []
+
+
+def test_a_cup_follows_the_slider_like_everything_else(config):
+    # the camera often sees a water bottle as a cup at about 0.46: enough for the Normal step
+    r = Rig(config)
+    r.run(0.0, 4, d('cup', 0.46))
+    assert [e.agent for e in r.joined()] == ['cup']
 
 
 def test_general_confidence_comes_from_the_settings(config):

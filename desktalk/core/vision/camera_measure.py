@@ -1,6 +1,7 @@
 """
 Lens's numbers: how bright, how much glare and how sharp a picture is, how much it changed since the last one
-(all through the picture tools), which side a box is cut off at, and how far the phone tilted.
+(all through the picture tools), which side a box is cut off at, how much of the picture a box covers, and how
+far the phone tilted.
 """
 
 from __future__ import annotations
@@ -55,6 +56,17 @@ def cut_off_side(box: Sequence[float], size: tuple[int, int], touch_px: float, f
     gaps = {'left': x1, 'top': y1, 'right': fw - x2, 'bottom': fh - y2}
     side, gap = min(gaps.items(), key=lambda kv: kv[1])
     return side if gap <= touch_px else None
+
+
+def box_share(box: Sequence[float], size: tuple[int, int]) -> float:
+    """How much of the picture (0-1) a box covers. Only the part inside the picture counts."""
+    x1, y1, x2, y2 = box
+    fw, fh = size
+    if fw <= 0 or fh <= 0:
+        return 0.0
+    w = max(0.0, min(x2, fw) - max(x1, 0))
+    h = max(0.0, min(y2, fh) - max(y1, 0))
+    return w * h / (fw * fh)
 
 
 def tilt_degrees(g1: Sequence[float], g2: Sequence[float], *, trusted: float) -> float:

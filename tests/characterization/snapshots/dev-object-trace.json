@@ -26,10 +26,23 @@
         "confidence": "number",
         "kind": "str",
         "on_desk": "null",
+        "photo": {
+          "box": [
+            "number"
+          ],
+          "confidence": "number",
+          "id": "str",
+          "size": [
+            "number"
+          ],
+          "ts": "number",
+          "why": "str"
+        },
         "seen_for_sec": "null|number",
         "source": "str",
         "step": "null|str",
-        "ts": "number"
+        "ts": "number",
+        "what": "str"
       }
     ]
   },

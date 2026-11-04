@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getDevSettings, NO_ANSWER, type DevSettings } from './api'
 import Checks from './tabs/Checks'
 import Database from './tabs/Database'
+import Demo from './tabs/Demo'
 import Live from './tabs/Live'
 import Storage from './tabs/Storage'
 import System from './tabs/System'
@@ -21,6 +22,7 @@ export const TABS = [
   { id: 'system', name: 'System', Tab: System },
   { id: 'database', name: 'Database', Tab: Database },
   { id: 'storage', name: 'Storage', Tab: Storage },
+  { id: 'demo', name: 'Demo', Tab: Demo },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']

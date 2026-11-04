@@ -1,7 +1,9 @@
 """Lens's camera checks: brightness, glare, blur, things cut off, the camera moving, slow or lost video."""
 
+import json
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -29,7 +31,14 @@ def bright():
 DARK = (bright() * 0.15).astype(np.uint8)
 BLACK = np.zeros((360, 480, 3), np.uint8)
 WHITE = np.full((360, 480, 3), 255, np.uint8)
-FLAT = np.full((360, 480, 3), 140, np.uint8)        # nothing sharp in it: blurry
+FLAT = np.full((360, 480, 3), 140, np.uint8)        # nothing at all in it: a plain cover (paper, a hand)
+GLARE = bright()
+GLARE[:, 240:] = 255                                # half the picture pure white, the other half the desk
+# soft stripes: there are shapes, but nothing has a sharp edge (sharpness about 16): blurry, not covered
+SOFT = np.repeat((140 + 60 * np.sin(np.arange(480) * 2 * np.pi / 48)).round().astype(np.uint8)[None, :, None],
+                 360, 0).repeat(3, 2)
+BOOK_IN_FRONT = Detection('book', 0.9, BBox(10, 5, 470, 355))      # one thing filling almost the whole picture
+REAL_DESK = Path(__file__).parent.parent / 'fixtures' / 'real_drinks_2026_10_25.json'
 
 
 def health(source='phone', lens=LENS, words=WORDS, **kw):
@@ -82,18 +91,66 @@ def test_thanks_only_after_the_problem_stays_gone():
 def test_covered_lens_hides_the_dark_and_blurry_problems():
     h = health()
     assert run(h, 30, BLACK) == ['covered:problem']
-    assert h.issues() == [{'key': 'covered', 'title': 'Camera is covered',
-                           'fix': 'Check nothing is on the lens and the camera is facing the desk.'}]
+    assert h.issues() == [{'key': 'covered', 'title': 'Camera is blocked',
+                           'fix': 'Move whatever is in front of the lens, and point the camera at the desk.'}]
 
 
 def test_glare():
     h = health()
-    said = run(h, 10, WHITE)
+    said = run(h, 10, GLARE)
     assert said == ['glare:problem']
 
 
 def test_blurry():
-    assert run(health(), 13, FLAT) == ['blurry:problem']
+    assert run(health(), 13, SOFT) == ['blurry:problem']
+
+
+@pytest.mark.parametrize('picture', [WHITE, FLAT], ids=['white', 'gray'])
+def test_a_plain_cover_at_any_brightness_is_covered_not_glare_or_blurry(picture):
+    """White paper or a well-lit hand on the lens: bright, but with no detail at all."""
+    assert run(health(), 30, picture) == ['covered:problem']
+
+
+def test_a_dim_plain_picture_is_dark_not_covered():
+    """A dim evening desk with little contrast has little detail too, but it is too dark, not a blocked lens."""
+    dim = np.full((360, 480, 3), 30, np.uint8)       # between covered_below (12) and dark_below (45)
+    assert run(health(), 30, dim) == ['dark:problem']
+
+
+def test_how_little_detail_counts_as_covered_comes_from_the_settings():
+    assert run(health(lens=LENS.model_copy(update={'covered_detail_below': 0})), 13, FLAT) == ['blurry:problem']
+
+
+def test_one_thing_held_in_front_of_the_lens_is_covered():
+    h = health()
+    assert run(h, 4, bright(), things=(BOOK_IN_FRONT,)) == []
+    assert run(h, 2, bright(), things=(BOOK_IN_FRONT,), start=1004) == ['covered:problem']
+
+
+def test_how_much_of_the_picture_one_thing_must_fill_comes_from_the_settings():
+    h = health(lens=LENS.model_copy(update={'covered_by_box_share': 0.05}))     # the cup is about 6%
+    assert run(h, 10, bright()) == ['covered:problem']
+
+
+def test_a_person_or_the_desk_filling_the_picture_is_not_covered():
+    near = Detection('person', 0.9, BBox(0, 0, 480, 360))
+    desk = Detection('dining table', 0.9, BBox(0, 0, 480, 360))
+    said = run(health(ignore_labels={'dining table'}), 30, bright(), things=(CUP, near, desk))
+    assert 'covered:problem' not in said
+
+
+def test_the_things_on_a_real_desk_are_not_covered():
+    """The user's desk on 25 October: the laptop is the biggest box, about a quarter of the picture."""
+    pictures = json.loads(REAL_DESK.read_text())
+    width, height = pictures[0]['size']
+    desk = np.full((height, width, 3), 140, np.uint8)
+    desk[::8] = 30
+    h, said = health(), []
+    for t, p in enumerate(pictures, start=1000):
+        things = [Detection(d['label'], d['conf'], BBox(*d['bbox'])) for d in p['detections']]
+        h.sample(desk, things, t)
+        said += [m['key'] for m in h.check(t, connected=True, fps=3.0)]
+    assert 'covered' not in said
 
 
 def test_nothing_recognized_for_minutes():
@@ -257,7 +314,7 @@ def test_phone_tip_shows_the_most_important_problem():
     h = health()
     assert h.phone_tip() is None
     run(h, 30, BLACK)
-    assert h.phone_tip() == 'Camera is covered'
+    assert h.phone_tip() == 'Camera is blocked'
 
 
 # ── the camera moving (so "things moved" isn't the desk changing) ──
@@ -335,8 +392,8 @@ def test_a_problem_still_there_after_quiet_hours_is_said_then():
 TILTED = {'gravity': (0, 9.8, 0), 'reference_gravity': (0, 9.8, 4)}
 PROBLEMS = {     # key: (picture, things in it, check arguments)
     'dark': (DARK, (CUP,), {}),
-    'glare': (WHITE, (CUP,), {}),
-    'blurry': (FLAT, (CUP,), {}),
+    'glare': (GLARE, (CUP,), {}),
+    'blurry': (SOFT, (CUP,), {}),
     'covered': (BLACK, (CUP,), {}),
     'empty': (bright(), (), {}),
     'slow': (bright(), (CUP,), {'fps': 1.0}),
@@ -362,8 +419,8 @@ def first_words(h, key, start=1000, most=400):
      {}, 'Glare', 'Angle the camera away from windows or bright lights.'),
     ('blurry', 12, 'Everything looks blurry to me. Could you wipe my lens, or move me back a little so I can focus?',
      {}, 'Blurry picture', 'Wipe the lens, or move the camera back a little so it can focus.'),
-    ('covered', 4, 'Everything just went black. Is something covering my lens, or did the camera get turned away?',
-     {}, 'Camera is covered', 'Check nothing is on the lens and the camera is facing the desk.'),
+    ('covered', 4, "I can't see the desk anymore. Is something in front of my lens, or did the camera get turned "
+     'away?', {}, 'Camera is blocked', 'Move whatever is in front of the lens, and point the camera at the desk.'),
     ('empty', 181, "I can't spot anything I recognize on the desk. Am I pointed at it? Tilt me so the whole desk "
      'top is in the picture.', {}, 'Nothing recognized', 'Tilt the camera so the whole desk top is in the picture.'),
     ('slow', 30, 'The pictures are only coming through at about 1.0 a second. Keeping the camera near the Wi-Fi '

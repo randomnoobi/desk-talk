@@ -36,6 +36,14 @@ def test_glasses_never_join_but_the_cup_does(tmp_path):
     assert [j.kind for j in rig.app.chat_joins.joins('cup')] == ['joined']
 
 
+def test_a_mug_also_seen_as_a_slightly_surer_vase_still_joins_as_the_cup(tmp_path):
+    rig = DeskRig(tmp_path)
+    cup = Detection('cup', 0.50, CUP_FAR.bbox)
+    vase = Detection('vase', 0.52, CUP_FAR.bbox)                     # no block of its own in agents.yaml
+    rig.watch(rig.config.agents.leave_after_sec / 2, vase, cup)
+    assert rig.app.roster.member_ids() == ['cup']
+
+
 def test_a_sip_the_camera_sees_is_logged_once_and_pops_up(tmp_path):
     rig = DeskRig(tmp_path)
     rig.watch(4, LAPTOP, CUP_FAR)

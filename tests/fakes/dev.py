@@ -20,6 +20,7 @@ from desktalk.domain import (
     TestItem,
     TestOutcome,
     TracePhoto,
+    newest_trace_photos,
 )
 from tests.fakes.clock import FakeClock
 
@@ -197,20 +198,22 @@ class FakeSmoothingTrace:
 
 
 class FakeTracePhotos:
-    """Each object's trace pictures, in memory: add(photo, jpeg) keeps one, and only the newest `kept` per kind of
-    object stay (like the real files)."""
+    """Each object's story pictures, in memory: add(photo, jpeg) keeps one, and only the newest `timed_kept` timed
+    pictures and `steps_kept` step pictures per kind of object stay (like the real files)."""
 
-    def __init__(self, kept: int = 6):
-        self._kept = kept
+    def __init__(self, timed_kept: int = 6, steps_kept: int = 24):
+        self._timed_kept = timed_kept
+        self._steps_kept = steps_kept
         self._photos: dict[str, list[TracePhoto]] = {}
         self._jpegs: dict[str, bytes] = {}
 
     def add(self, photo: TracePhoto, jpeg: bytes) -> None:
-        photos = sorted([*self._photos.get(photo.label, []), photo], key=lambda p: p.ts)
-        for gone in photos[:-self._kept]:
-            self._jpegs.pop(gone.id, None)
-        self._photos[photo.label] = photos[-self._kept:]
         self._jpegs[photo.id] = jpeg
+        everything = [*self._photos.get(photo.label, []), photo]
+        kept = newest_trace_photos(everything, self._timed_kept, self._steps_kept)
+        for gone in {p.id for p in everything} - {p.id for p in kept}:
+            self._jpegs.pop(gone, None)
+        self._photos[photo.label] = kept
 
     def photos(self, label: str) -> list[TracePhoto]:
         return list(self._photos.get(label, []))

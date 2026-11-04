@@ -54,7 +54,7 @@ class HabitTracker:
         self._phone_counts = phone_counts                         # off when the phone itself is the camera
         self._lock = threading.RLock()     # the camera's events, the web routes and the background jobs all come here
         self._days = HabitDays(store, clock)
-        self._reader = HabitReader(clock, profiles, desk, protocols, settings, presence, agents, words,
+        self._reader = HabitReader(clock, profiles, desk, protocols, settings, presence, agents, prefs, words,
                                    phone_counts=phone_counts)
         self._last_fire: dict[str, float] = {}          # nudge key / 'habit:<name>' → when it was sent
         self._task_turn = 0                     # to-do check-ins sent: the next one names the to-do after

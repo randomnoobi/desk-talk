@@ -54,8 +54,12 @@ More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 Nobody is in the chat at first. Only Computer, Cup, Phone, Snack and Book can join
 (`agents.can_join` in `config/settings.yaml`). One joins once the camera is sure enough of it for long enough,
 which is the **Sensitivity** slider in Settings: from Picky (65% sure, for 10 seconds) to Eager (35%, 2 seconds);
-Normal is 45% for 3 seconds. It leaves when it's been gone 2 minutes. These objects have their own personalities
-(`config/agents.yaml`):
+Normal is 45% for 3 seconds. It leaves when it's been gone 2 minutes. The same slider sets how much flicker
+(things flashing on and off, boxes jumping about) is let through: Picky waits twice as long before something
+counts as put down, taken away or moved, or leaves the chat, and Eager half as long (each step's `steady`).
+Something new, with no character of its own, needs a surer box and a longer wait at every step
+(`agents.new_things`: at Normal, 60% sure instead of 45%, and 2 seconds longer). The Settings page says what each step does, with its numbers.
+These objects have their own personalities (`config/agents.yaml`):
 
 | Character | Objects | Personality | Looks after |
 |-----------|---------|-------------|-------------|
@@ -72,7 +76,9 @@ still watch it: scissors next to the phone get a "Heads up" from Lens even when 
 People, chairs and the desk itself are never counted at all.
 
 **Lens** is the camera. It speaks up when the view needs fixing (too dark, glare, blurry,
-covered, something cut off, the Pi stopped sending pictures) and says thanks when it's fixed.
+blocked, something cut off, the Pi stopped sending pictures) and says thanks when it's fixed. "Blocked" means
+it can't see the desk: the picture went black, it shows nothing at all (paper or a hand on the lens), or one
+thing held up to the lens fills most of it.
 It also tells you when the Pi runs hot, when its clock is off, and when the Pi's own detector is off
 (your computer then does the detecting), and it gives the desk warnings that nobody in the chat can give.
 It doesn't use the AI.
@@ -214,7 +220,7 @@ All numbers are in `config/protocols.yaml`, with the chapter each one comes from
 
 | Habit | What the book says | What the desk does |
 |---|---|---|
-| **Water** (Nutrition Protocol 2) | 18–24 oz on waking; ~80 oz (2.4 L) in the first 10 hours; less in the hours before bed | A sip counts when the drink is lifted, then put back where it was (a hand over the cup or a covered camera isn't a sip). Nudges when you're behind pace and haven't sipped in 45 min; quiet in the 2 hours before bed. |
+| **Water** (Nutrition Protocol 2) | 18–24 oz on waking; ~80 oz (2.4 L) in the first 10 hours; less in the hours before bed | A sip counts when the drink is lifted and put back, or goes out of the picture and comes back near where it was but moved a little (a cup the camera only missed for a moment, or a hand covered, comes back exactly where it was, so that isn't a sip; nor is a covered camera, or a cup that seems to move while nobody is at the desk). Nudges when you're behind pace and haven't sipped in 45 min; quiet in the 2 hours before bed. |
 | **Breaks** (Exercise Protocol 1, Learning Protocol 5) | Walk 5 min for every 30 min sitting; 5–10 min after meals; no phone during breaks | Counts sitting time; a break logs itself when you're away 5 min. Nudges after 30 min, and after food leaves the desk. |
 | **Light, day and night** (Sleep 1–3, Light 1–3, Sleep 14) | Sunlight within an hour of waking (10/20/30 min clear/cloudy/overcast); light before sunset; dim lights and no screens in the last hour before bed | Asks about morning sunlight, reminds before sunset, notices a bright room at night (the Pi camera measures lux) or a dim room in the day, and says "screens off" an hour before bed. |
 | **Phone-free time** (Learning Protocol 1) | Put your phone away; even having it nearby costs focus | Tracks phone-free desk time and streaks; nudges when the phone sits on the desk while you work, and in the last hour before bed. |
@@ -238,6 +244,10 @@ One window, three columns:
 2. **Conversation (middle)**: join / leave notes, colored bubbles, proof photos, @mentions.
    Each 1-on-1 chat has its tracker on top (Cup's water, Computer's breaks, Book's to-do list…).
 3. **Desk cam (right)**: the live picture with boxes, who's on the desk, current risks, proof photos.
+   Click anything under "On the desk" for its story: when it appeared, joined the chat, moved or went away,
+   how sure the camera was each time, and the picture taken at each step with its box drawn on (for "went
+   away", the empty spot with its last box). The pictures are kept in `data/trace_photos/`
+   (settings → `object_story`).
    Until the camera connects it shows the command to run on the Pi.
 
 **Event log** page: what happened each day, newest first: sips, breaks, food, finished to-dos, sunlight,
@@ -408,7 +418,8 @@ check everything with it). It has five tabs:
 - **Live**: each object's state (present, absent), the changes as they happen, and a chart of how the
   smoothing turned the last pictures into that state, so you can see why something flickers. Click an object
   for its whole trace: when it joined the chat, left or was turned away (and why: how sure, how long, the
-  sensitivity), its state changes, and a few pictures of it with its box (kept in `data/trace_photos/`).
+  sensitivity), its state changes, each with the picture taken then and its box (the same story the app
+  page shows, kept in `data/trace_photos/`).
 - **System**: how the Pi is doing (pictures a second, temperature, disk, its detector) and every part on
   this computer (background jobs, timed jobs, the event stream, detection, the AI).
 - **Database**: the tables in the SQLite databases, and a box to run a query that only reads.
@@ -424,7 +435,9 @@ cd dev_ui && npm install && npm run build
 Then start Desk Talk as usual and open **http://localhost:5000/dev/** (`web.port`, 5000 unless you changed
 it). Only this computer gets answers from it: other devices on the Wi-Fi, and other web pages open in
 your browser, are turned away (403). It can't change anything, apart from starting and stopping a test
-run and deleting a localStorage key after you say yes. The database is opened read-only. To switch it off, set
+run, deleting a localStorage key after you say yes, and the **Demo** tab, which fires pretend warnings on
+purpose after a countdown you set (for testing, or recording a demo video): they go out like real ones, to
+the chat and the Mac pop-ups, and a pretend sip counts in today's water. The database is opened read-only. To switch it off, set
 `dev.enabled: false` in `config/settings.local.yaml`; its other numbers are in the `dev:` section of
 `config/settings.yaml`.
 

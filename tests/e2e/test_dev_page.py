@@ -48,6 +48,7 @@ TABS = {                  # each tab's name, and something it shows once it has 
     'System': ('heading', 'System'),
     'Database': ('heading', 'Databases'),
     'Storage': ('heading', 'In this browser'),
+    'Demo': ('heading', 'Pretend warnings'),
 }
 
 
@@ -136,3 +137,19 @@ def test_run_everything_passes(page, tmp_path, dev_ui_folder):
             expect(printout).to_contain_text(check.name.lower())
         expect(checks.get_by_role('button', name='Run everything')).to_be_enabled()
         expect(checks.get_by_text('passed', exact=True)).to_be_visible()      # the run as a whole
+
+
+def test_demo_tab_fires_a_pretend_sip(page, tmp_path, dev_ui_folder):
+    """A pretend sip with a 1 second countdown counts down on the page, then goes off: the background job fires
+    it and it leaves the list (and today's water has one more sip)."""
+    with dev_server(tmp_path, dev_ui_folder) as server:
+        page.goto(f'{server.url}/dev/#demo', wait_until='domcontentloaded')
+        demo = page.get_by_role('tabpanel', name='Demo')
+        demo.get_by_label('Pretend warning').select_option(label='A sip counted')
+        demo.get_by_label('Seconds').fill('1')
+        demo.get_by_role('button', name='Start').click()
+        expect(demo.get_by_text('A sip counted', exact=True).last).to_be_visible()
+        expect(demo.get_by_text('Nothing is counting down.')).to_be_visible(timeout=RUN_WITHIN_MS)
+        app = server.app
+        assert app is not None
+        assert app.habits.today(app.clock.now())['hydration']['sips'] == 1

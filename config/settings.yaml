@@ -114,19 +114,40 @@ detector:
 agents:
   can_join: [computer, cup, phone, snack, paper]   # only these agents (ids in agents.yaml) may join the chat. The
                               # camera still sees everything else, for the warnings, lost items and the Habits page
-  # How picky joining the chat is. The Settings page's slider picks one of these steps, from picky to eager:
+  # How picky the app is about what it sees. The Settings page's slider picks one of these steps, from picky to
+  # eager, and a change works at once:
   # min_confidence = how sure the detector must be (0-1), join_after_sec = seen this long → "Cup joined the chat".
-  # An agent with a higher min_confidence of its own in agents.yaml keeps it.
+  # An agent with a higher min_confidence of its own in agents.yaml keeps it. The habits (sips, phone-free time,
+  # food) count a box by the same min_confidence; join_after_sec is for the chat only.
+  # steady = how much to stretch the waits that keep flicker (a box flashing on and off, or jumping about) from
+  # counting: object_states.appear_sec, gone_sec and move_fraction (not the person's waits), and leave_after_sec
+  # below are multiplied by it. 1 = as written, 2 = twice as long (and a box must move twice as far to count as
+  # moved), 0.5 = half. More than 0. Below 1, a very long sip can make the cup leave the chat and join again.
   sensitivity_steps:
-    - {name: Picky,   min_confidence: 0.65, join_after_sec: 10}
-    - {name: Careful, min_confidence: 0.55, join_after_sec: 5}
-    - {name: Normal,  min_confidence: 0.45, join_after_sec: 3}
-    - {name: Easy,    min_confidence: 0.40, join_after_sec: 2.5}
-    - {name: Eager,   min_confidence: 0.35, join_after_sec: 2}
+    - {name: Picky,   min_confidence: 0.65, join_after_sec: 10,  steady: 2.0}
+    - {name: Careful, min_confidence: 0.55, join_after_sec: 5,   steady: 1.5}
+    - {name: Normal,  min_confidence: 0.45, join_after_sec: 3,   steady: 1.0}
+    - {name: Easy,    min_confidence: 0.40, join_after_sec: 2.5, steady: 0.75}
+    - {name: Eager,   min_confidence: 0.35, join_after_sec: 2,   steady: 0.5}
   sensitivity_default: 2      # the step used until you move the slider (0 is the first: 2 = Normal)
+  # New things: an object with no block of its own in agents.yaml (the app makes up its character). The detector
+  # is wrong about these more often, so on top of the slider's step they need:
+  new_things:
+    extra_confidence: 0.15    # a box this much surer than the step's min_confidence (Normal 0.45 → 0.60)...
+    max_confidence: 0.95      # ...but never more than this (a bar already higher stays as it is)
+    extra_wait_sec: 2         # and seen this much longer before they join the chat or count as appeared
+  same_thing_overlap: 0.7     # two different names whose boxes are this much the same box (more than 0, up to 1:
+                              # shared area over the area both cover) are one thing named twice, like a laptop
+                              # also called "book": only one name counts, everywhere in the app. A word with its
+                              # own agent in agents.yaml beats a new thing's word (a mug seen as "cup" 0.50 and
+                              # "vase" 0.52 stays a cup); otherwise the surer name wins. Words on
+                              # the ignore list (agents.yaml) take no part. 0 isn't allowed: boxes that don't even
+                              # touch would be one thing. Known limit: two real things about the same size, one
+                              # on top of the other (a big book on a closed laptop), count as one: raise this if so
   on_desk_after_sec: 3        # the warnings' own list of what's on the desk: seen this long = on the desk...
   on_desk_min_confidence: 0.45  # ...with a box at least this sure (the slider doesn't change these two)
-  leave_after_sec: 120        # gone this long → "Cup left the chat" (same as the longest sip, so a sip never leaves)
+  leave_after_sec: 120        # gone this long → "Cup left the chat" (same as the longest sip, so a sip never leaves).
+                              # Times the slider step's steady: Picky 240, Eager 60
   only_on_desk: true          # once desk corners are marked, things off the desk can't join
   max_agents: 12              # most agents in the chat at once
   announce: true              # post "joined / left the chat" notes
@@ -147,6 +168,8 @@ object_states:
   off_confidence: 0.4         # once on, "seen" stays on until the box drops below this
   window_pictures: 5          # the last this many pictures vote on "seen"
   vote_share: 0.5             # more than this share of the votes must say yes
+  # The next three are for the Normal step: the sensitivity slider multiplies them by its step's steady
+  # (agents.sensitivity_steps), and a new thing waits agents.new_things.extra_wait_sec longer to appear
   appear_sec: 3               # seen longer than this → appeared
   gone_sec: 3                 # missing longer than this → removed
   move_fraction: 0.2          # center moved more than this share of the picture → moved
@@ -404,6 +427,13 @@ lost_items:
 lens:
   sample_every_sec: 1.0
   covered_below: 12           # average brightness 0-255
+  # a picture with less detail than this (sharpness, like blur_below) is covered when it isn't dark (brightness
+  # dark_below or more): white paper or a hand right on the lens. A dim plain picture stays "dark", since a dim
+  # evening desk has little detail too. A plain cover measures 0-5; a very blurry desk still has shapes and
+  # measures 10 or more. 0 turns this off.
+  covered_detail_below: 6
+  covered_by_box_share: 0.7   # one thing (not a person or the desk) covering this share of the picture is
+                              # covered: a book or box held up to the lens. On a real desk the laptop is about 0.26
   dark_below: 45
   glare_above: 0.30           # share of pure-white pixels
   blur_below: 25
@@ -594,6 +624,18 @@ logging:
 storage:
   folder: data                # preferences.json, habits/<day>.json and learned_personalities.json live here
 
+# ── An object's story (click something under "On the desk", or an object on the developer page's live tab) ──
+# What happened to it, step by step, with a picture for each step and its box drawn on.
+object_story:
+  photos_folder: data/trace_photos  # the pictures are kept here, one folder per kind of object
+  photo_every_sec: 120          # a picture when it appears, joins the chat, moves or goes away, and one this often
+                                # while it's there
+  timed_photos_kept: 6          # only the newest this many of the "this often" pictures are kept per kind of object
+  step_photos_kept: 24          # and, apart from those, the newest this many of the others (appeared, joined,
+                                # moved, went away), so a long stay never pushes out how it got there
+  events_kept: 50               # state changes, and chat joins, leaves and refusals, remembered per kind of object
+  photo_match_sec: 10           # a picture taken this close to a step of the story is shown next to that step
+
 # ── Developer page (http://localhost:5000/dev/, only from this computer) ──
 dev:
   enabled: true                 # false = no developer page and no /api/dev routes
@@ -624,11 +666,41 @@ dev:
   flicker_flips_per_min: 4      # the live tab calls an object "flickering" after more flips than this in a minute
   flips_window_min: 10          # the database tab's ready-made "flips per object" query looks back this far
   table_counts_every_sec: 30    # the database and storage tabs count rows and files again this often
-  # Each object's trace (click an object on the live tab): pictures with its box drawn on, and its chat joins
-  trace_photos_folder: data/trace_photos  # the pictures are kept here, one folder per kind of object
-  trace_photos_kept: 6          # only the newest this many pictures per kind of object are kept (older ones go)
-  trace_photo_every_sec: 120    # one when it appears, one when it joins the chat, and one this often while it's there
-  trace_events_kept: 50         # chat joins, leaves and refusals remembered per kind of object
+  # The Demo tab: pretend warnings you fire on purpose after a countdown, for testing and for recording a demo
+  # video. Each one goes the same way the real thing does (the chat, the Mac pop-up, the event log), so it looks
+  # exactly like what a user would see. The pretend sip is counted in today's water like a real one.
+  scenarios:
+    countdown_default_sec: 5    # the countdown the Demo tab starts with
+    countdown_max_sec: 600      # the longest countdown you can set
+    waiting_max: 10             # at most this many can be counting down at once
+    check_every_sec: 0.25       # how often the countdowns are checked (a pretend warning fires this late at most)
+    items:                      # name (for the page and the API), label (shown on the Demo tab), and what it fires:
+      - name: cup_at_edge       # edge_warning: the object's character warns that it's near the desk edge
+        label: Cup near the desk edge
+        fires: edge_warning
+        object: cup             # an agent in config/agents.yaml
+        edge: front             # which edge: front, back, left or right
+        distance_px: 12         # how far from the edge it is, in the picture
+      - name: drink_by_laptop   # danger_zone: something in another thing's danger zone
+        label: Drink next to the laptop
+        fires: danger_zone
+        object: cup             # the thing that's too close (an agent)...
+        near: computer          # ...and what it's too close to (a fragile one, like the computer, does the talking)
+      - name: drink_reminder    # drink_reminder: a habit reminder to drink, like the real one after a long time
+        label: Time for a drink
+        fires: drink_reminder
+        minutes: 50             # "no drink seen in this many minutes"
+      - name: camera_covered    # camera_covered: Lens says the picture went black
+        label: Camera covered
+        fires: camera_covered
+      - name: sip               # sip: a sip seen by the camera (counted in today's water)
+        label: A sip counted
+        fires: sip
+      - name: keys_missing      # lost_object: something you keep on the desk hasn't been seen for a while
+        label: Keys gone missing
+        fires: lost_object
+        object: keys            # an item in lost_items.items
+        minutes: 20             # "hasn't been seen for this many minutes"
   health:                       # when the system tab turns a number amber or red
     pi_cpu_warn_c: 70           # the Pi's CPU this hot (°C) turns amber...
     pi_cpu_bad_c: 80            # ...and this hot turns red

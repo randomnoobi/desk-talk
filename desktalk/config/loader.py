@@ -47,6 +47,15 @@ RETIRED_SETTINGS: tuple[tuple[str, ...], ...] = (('agents', 'join_after_sec'), (
                                                  ('vision_habits',), ('web', 'list_sizes', 'habit_log'),
                                                  ('web', 'list_sizes', 'log_detections'),
                                                  ('dev', 'trace_photo_quality'))
+# Settings that moved. Your own settings.local.yaml may still set them in the old place: the value goes to the new
+# place (with a note in the log), unless the file sets the new one too. The object trace became the object's story,
+# which the app page shows too, so its settings left the developer page's section.
+MOVED_SETTINGS: dict[tuple[str, ...], tuple[str, ...]] = {
+    ('dev', 'trace_photos_folder'): ('object_story', 'photos_folder'),
+    ('dev', 'trace_photos_kept'): ('object_story', 'timed_photos_kept'),
+    ('dev', 'trace_photo_every_sec'): ('object_story', 'photo_every_sec'),
+    ('dev', 'trace_events_kept'): ('object_story', 'events_kept'),
+}
 
 log = logging.getLogger(__name__)
 
@@ -270,6 +279,19 @@ def _drop_retired(data: dict) -> None:
                         '.'.join(path))
 
 
+def _move_settings(local: dict) -> None:
+    """Move the settings in MOVED_SETTINGS from where your own file still has them to where they are now."""
+    for old, new in MOVED_SETTINGS.items():
+        section = local.get(old[0])
+        if not isinstance(section, dict) or old[1] not in section:
+            continue
+        value = section.pop(old[1])
+        target = local.setdefault(new[0], {})
+        if isinstance(target, dict) and new[1] not in target:
+            target[new[1]] = value
+        log.warning('Settings: %s is now %s (change it in your settings.local.yaml)', '.'.join(old), '.'.join(new))
+
+
 def load_config(root: Path | None = None, environ: Mapping[str, str] | None = None,
                 dotenv: Path | None = None) -> AppConfig:
     """Build the config from <root>/config/ and <root>/.env. Tests pass a temp folder and environ={}.
@@ -290,7 +312,9 @@ def load_config(root: Path | None = None, environ: Mapping[str, str] | None = No
 
     data = read('settings.yaml')
     if (config_dir / 'settings.local.yaml').is_file():
-        _merge(data, read('settings.local.yaml'))
+        local = read('settings.local.yaml')
+        _move_settings(local)
+        _merge(data, local)
     _drop_retired(data)
     problems = [_unknown(sources.last((key,)), (key,), (key,)) for key in data if key in _NOT_FROM_SETTINGS]
     data['protocols'] = read('protocols.yaml', ('protocols',))
