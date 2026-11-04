@@ -301,6 +301,13 @@ class ObjectStateTracker:
         """Start each object in its newest saved state, if that's recent enough. Returns how many."""
         latest = self._store.latest_states(now - self._restore_max_age_sec)
         restored = 0
+        newest = max((row.ts for row in latest.values()), default=None)
+        if newest is not None and newest > now:
+            # This app writes rows with its own clock, so a newer row means the clock went back (a Pi with no
+            # clock battery boots slow). Which rows are recent can't be told, so every object starts over.
+            log.warning('The clock is behind the newest saved object state by about %d seconds, '
+                        'so every object starts over', round(newest - now))
+            latest = {}
         with self._lock:
             for label, row in latest.items():
                 if row.new_state not in (Phase.PRESENT, Phase.ABSENT):

@@ -10,13 +10,17 @@ from tests.pi.on_the_pi import (
     _address,
     app_stopped_cleanly,
     check_data,
+    expected_restore,
     first_wifi_after_boot,
     how_boot_ended,
     off_the_pi,
     pages_on_the_wifi,
     parse_proc_net,
+    parse_start_probe,
     problems,
+    process_start_ticks,
     read_json_lines,
+    real_start_time,
     restored_since,
     speak_result,
 )
@@ -216,3 +220,77 @@ def test_lines_with_no_time_on_them_dont_count():
 ])
 def test_did_the_run_before_this_start_stop_cleanly(log, stopped):
     assert app_stopped_cleanly(log, '2026-11-01 10:06:00') is stopped
+
+
+# ── when the app really started, whatever the Pi's clock says ──
+def stat_line(name: str, ticks: int) -> str:
+    """A /proc/<pid>/stat line: field 22 is the start time. After the name come 19 more fields (3 to 21)."""
+    return f'123 ({name}) S ' + ' '.join(['1'] * 18) + f' {ticks} 5000 6000 18446744073709551615'
+
+
+@pytest.mark.parametrize('name', ['python3', 'my app', 'a) b (c', 'x)'])
+def test_process_start_ticks_ignores_the_brackets_in_the_name(name):
+    assert process_start_ticks(stat_line(name, 98765)) == 98765
+
+
+def test_real_start_is_now_minus_uptime_plus_start_since_boot():
+    # booted 1000 s ago; the app started 40 s after the boot (4000 ticks at 100 per second)
+    assert real_start_time(now=5000.0, uptime=1000.0, start_ticks=4000, ticks_per_sec=100) == pytest.approx(4040.0)
+
+
+def test_parse_start_probe_reads_the_four_answers():
+    out = f'{stat_line("python3", 4000)}\n1000.50 3000.0\n5000.5\n100\n'
+    assert parse_start_probe(out) == pytest.approx(5000.5 - 1000.5 + 40.0)
+
+
+# ── what the app should have picked up ──
+START = 10_000.0        # when the app really started
+MAX_AGE = 300.0
+SLACK = 30.0
+
+
+def rows(**ages: float) -> list[dict[str, float | str]]:
+    """Saved states, each `age` seconds before the real start."""
+    return [{'object': name, 'ts': START - age} for name, age in ages.items()]
+
+
+def expect(saved, own_start=START):
+    return expected_restore(saved, START, own_start, MAX_AGE, SLACK)
+
+
+def test_normal_start_uses_the_window_from_the_real_start():
+    e = expect(rows(fresh=20, edge=300, stale=400, old=900))
+    assert e.case == 'normal'
+    assert e.must_be == {'fresh'}               # 'edge' is within the slack either way
+    assert e.could_be == {'fresh', 'edge'}      # 'stale' (400 s) is past 300 + 30
+    assert e.behind_sec == 0
+
+
+def test_normal_start_could_be_stops_at_the_slack():
+    e = expect(rows(a=100, b=320, c=340))
+    assert e.could_be == {'a', 'b'}
+    assert e.must_be == {'a'}
+
+
+def test_rows_after_the_real_start_are_left_out():
+    e = expect([{'object': 'late', 'ts': START + 5}, {'object': 'ok', 'ts': START - 5}])
+    assert e.could_be == {'ok'}
+
+
+def test_clock_behind_means_exactly_zero():
+    # the app's own clock thought it started 540 s earlier, so rows from 100 s before the real start look "newer"
+    e = expect(rows(fresh=100), own_start=START - 540)
+    assert e.case == 'clock behind'
+    assert e.must_be == set() and e.could_be == set()
+    assert e.behind_sec == pytest.approx(540)
+
+
+def test_clock_behind_when_any_saved_row_is_newer_than_the_own_start():
+    e = expect(rows(newer=100, older=600), own_start=START - 200)
+    assert e.case == 'clock behind'
+
+
+def test_nothing_saved_in_the_window_is_its_own_case():
+    e = expect(rows(old=900))
+    assert e.case == 'nothing saved'
+    assert e.could_be == set()

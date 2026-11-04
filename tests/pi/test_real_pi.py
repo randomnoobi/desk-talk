@@ -23,11 +23,14 @@ import yaml
 from tests.pi.conftest import SERVICES, Pi, wait_for
 from tests.pi.on_the_pi import (
     RESULTS,
+    START_PROBE,
     app_stopped_cleanly,
+    expected_restore,
     first_wifi_after_boot,
     how_boot_ended,
     off_the_pi,
     pages_on_the_wifi,
+    parse_start_probe,
     problems,
     restored_since,
     speak_result,
@@ -201,21 +204,27 @@ def test_starts_after_power_cut(pi: Pi):
         pytest.skip('Started and readable, but there was no SQLite file, so restored states could not be checked.')
 
     settings = pi.settings()
-    started = _started_wall_time(pi)
-    oldest = started - settings['restore_max_age_sec']
-    rows = [r for r in data['states']['rows'] if r['ts'] < started]
-    could_be = {r['object'] for r in rows if r['ts'] >= oldest - RESTORE_TIME_SLACK_SEC}
-    must_be = {r['object'] for r in rows if r['ts'] >= oldest + RESTORE_TIME_SLACK_SEC}
-    if not could_be:
+    real_start = _real_start_time(pi)
+    expected = expected_restore(data['states']['rows'], real_start, _started_wall_time(pi),
+                                settings['restore_max_age_sec'], RESTORE_TIME_SLACK_SEC)
+    if expected.case == 'nothing saved':
         pytest.skip('Started and readable, but nothing was saved in the 5 minutes before the cut, so restored states '
                     f'could not be checked. Put a cup on the desk first and plug back in sooner ({STEPS}).')
     restored = restored_count(pi)
     assert restored is not None, 'The app\'s log has no "Picked up" line'
-    assert len(must_be) <= restored <= len(could_be), f'picked up {restored}; saved: {could_be}, sure: {must_be}'
+    assert len(expected.must_be) <= restored <= len(expected.could_be), (
+        f'{expected.case}: the app\'s clock was {expected.behind_sec:.0f} s behind at its start; picked up {restored}; '
+        f'saved: {expected.could_be}, sure: {expected.must_be}')
 
 
 def _started_wall_time(pi: Pi) -> float:
+    """When the app's container started by the Pi's clock at that time. It can be wrong after a power cut."""
     return float(pi.run(f"date -d {shlex.quote(pi.state('app')['StartedAt'])} +%s"))
+
+
+def _real_start_time(pi: Pi) -> float:
+    """When the app really started by the Pi's clock now. A clock jump after the start can't change it."""
+    return parse_start_probe(pi.run(START_PROBE % pi.container('app')))
 
 
 def _first_wifi_after_boot_sec(pi: Pi) -> float | None:

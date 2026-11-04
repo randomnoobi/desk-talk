@@ -31,7 +31,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 REPO = Path(__file__).resolve().parent.parent.parent if '__file__' in globals() else Path.cwd()
 CONTAINERS = ('desktalk-app-1', 'desktalk-camera-1', 'desktalk-detector-1')
@@ -383,6 +383,53 @@ def app_stopped_cleanly(log: str, started: str) -> bool | None:
     if last_start is None:
         return None
     return any(APP_STOPPING in line for line in before[last_start:])
+
+
+# ── when the app really started ──
+# Docker's StartedAt comes from the Pi's clock, which has no battery and can jump after a power cut. The process's own
+# start (counted in ticks from the boot) can't jump, so the real start is worked out from that.
+START_PROBE = ("pid=$(docker inspect -f '{{.State.Pid}}' %s) && cat /proc/$pid/stat && cat /proc/uptime && "
+               'date +%%s.%%N && getconf CLK_TCK')
+
+
+def process_start_ticks(stat: str) -> int:
+    """Field 22 of a /proc/<pid>/stat line: when the process started, in ticks after the boot. The name in brackets
+    (field 2) may hold spaces or ')', so the count starts after the last ')'."""
+    after_name = stat[stat.rindex(')') + 1:].split()
+    return int(after_name[22 - 3])          # field 3 is the first one after the name
+
+
+def real_start_time(*, now: float, uptime: float, start_ticks: int, ticks_per_sec: int) -> float:
+    """Seconds since 1970 when the process really started: now, minus the time since boot, plus its start after boot."""
+    return now - uptime + start_ticks / ticks_per_sec
+
+
+def parse_start_probe(output: str) -> float:
+    """The real start time from what START_PROBE printed: the stat line, /proc/uptime, the date, and CLK_TCK."""
+    stat, uptime, now, ticks_per_sec = output.strip().splitlines()[:4]
+    return real_start_time(now=float(now), uptime=float(uptime.split()[0]), start_ticks=process_start_ticks(stat),
+                           ticks_per_sec=int(ticks_per_sec))
+
+
+class ExpectedRestore(NamedTuple):
+    case: str                   # 'normal', 'clock behind' or 'nothing saved'
+    must_be: set[str]           # objects the app surely picked up
+    could_be: set[str]          # objects it may have picked up
+    behind_sec: float           # how far behind the app's clock was at its start (0 if it wasn't)
+
+
+def expected_restore(rows: Iterable[Mapping[str, Any]], real_start: float, own_start: float,
+                     restore_max_age_sec: float, slack_sec: float) -> ExpectedRestore:
+    """What the app should say it picked up. `rows` are the saved states ({'object', 'ts'}). `real_start` is when the
+    app really started, `own_start` when its own clock says it did. A saved state from before the real start that is
+    newer than the app's own start means the app's clock was behind, so it must have picked up nothing."""
+    before = [r for r in rows if r['ts'] < real_start]
+    if any(r['ts'] > own_start for r in before):
+        return ExpectedRestore('clock behind', set(), set(), real_start - own_start)
+    oldest = real_start - restore_max_age_sec
+    could_be = {r['object'] for r in before if r['ts'] >= oldest - slack_sec}
+    must_be = {r['object'] for r in before if r['ts'] >= oldest + slack_sec}
+    return ExpectedRestore('normal' if could_be else 'nothing saved', must_be, could_be, 0.0)
 
 
 def speak_result(results: Mapping[str, Any]) -> str:
