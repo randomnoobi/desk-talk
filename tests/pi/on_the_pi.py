@@ -431,7 +431,7 @@ def expected_restore(rows: Iterable[Mapping[str, Any]], *, restored_at: float, w
 
     `rows` are the saved states ({'object', 'ts'}). `restored_at` is the time on this run's "Picked up" line, in whole
     seconds, so the restore was somewhere in the second after it. `warned_behind_sec` is what the app's clock-behind
-    warning said, or None. `lag_sec` is how far behind the app's clock really was at its start.
+    warning said, or None. `lag_sec` is how far behind the app's clock really was when it restored.
 
     If the app warned, it must have picked up nothing. If it didn't but its clock was behind by more than the slack,
     it missed it: that happens when the plug was pulled within about a minute of the Pi's last clock save, so no saved

@@ -205,28 +205,26 @@ def test_starts_after_power_cut(pi: Pi):
     restored, restored_at = restored_at_this_start(log), restore_time_text(log)
     assert restored is not None and restored_at is not None, 'The app\'s log has no "Picked up" line'
     warned = clock_behind_warning_sec(log)
-    lag = _real_start_time(pi) - _started_wall_time(pi)
-    expected = expected_restore(data['states']['rows'], restored_at=_local_time_to_epoch(pi, restored_at),
+    restored_epoch = _local_time_to_epoch(pi, restored_at)
+    # How far behind the app's clock was when it restored: the real start is a little before the restore, so a clock
+    # that was right by then comes out at about 0 or below, even if it was still behind when the container started.
+    lag = _real_start_time(pi) - restored_epoch
+    expected = expected_restore(data['states']['rows'], restored_at=restored_epoch,
                                 warned_behind_sec=warned, lag_sec=lag,
                                 restore_max_age_sec=settings['restore_max_age_sec'], slack_sec=RESTORE_TIME_SLACK_SEC)
     if expected.case == 'clock behind':
         assert lag > 0, (f'The app said its clock was about {warned} s behind the saved states, but it was measured '
-                         f'{lag:.0f} s behind at its start')
+                         f'{lag:.0f} s behind when it restored')
     if expected.case == 'clock behind, not noticed':
-        pytest.skip(f"Started and readable, but the app's clock was {lag:.0f} s behind at its start and no saved state "
-                    'looked newer, so it could not tell. That happens when the plug is pulled within about a minute '
-                    f"of the Pi's last clock save, so restored states could not be checked ({STEPS}).")
+        pytest.skip(f"Started and readable, but the app's clock was {lag:.0f} s behind when it restored and no saved "
+                    'state looked newer, so it could not tell. That happens when the plug is pulled within about a '
+                    f"minute of the Pi's last clock save, so restored states could not be checked ({STEPS}).")
     if expected.case == 'nothing saved':
         pytest.skip('Started and readable, but nothing was saved in the 5 minutes before the cut, so restored states '
                     f'could not be checked. Put a cup on the desk first and plug back in sooner ({STEPS}).')
     assert len(expected.must_be) <= restored <= len(expected.could_be), (
         f'{expected.case}: the app warned its clock was {warned} s behind, measured {lag:.0f} s; picked up '
         f'{restored}; saved: {expected.could_be}, sure: {expected.must_be}')
-
-
-def _started_wall_time(pi: Pi) -> float:
-    """When the app's container started by the Pi's clock at that time. It can be wrong after a power cut."""
-    return float(pi.run(f"date -d {shlex.quote(pi.state('app')['StartedAt'])} +%s.%N"))
 
 
 def _real_start_time(pi: Pi) -> float:
