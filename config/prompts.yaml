@@ -785,6 +785,33 @@ ui:
     moved when it shifts {move_percent}% of the picture. It leaves the chat after {leave_min} min out of view.
     Something new needs {new_sure}% and {new_join_sec} seconds.
 
+# ── The cloud server (optional; settings → cloud) ───────────────────
+cloud:
+  # the status line on the Settings page
+  status_off: Not linked to a cloud server. Nothing leaves this computer.
+  status_on: Linked to a cloud server. Habit events go to it in the background.
+  # {count} is how many events are waiting to be sent
+  status_waiting: '{count} events are waiting to be sent (the server may be off).'
+  status_stopped: The cloud server doesn't know this computer any more, so nothing is sent. Link it again with scripts/link_cloud.py.
+  # in the log: the server did not answer ({error} says why) and the sender waits {seconds} seconds
+  log_unreachable: "The cloud server didn't answer well ({error}). Trying again in {seconds:g} s."
+  # in the log: the server answered but said no to the upload ({error} says why). That will not mend itself, so check
+  # the server; the sender tries again in {seconds} seconds
+  log_rejected: "The cloud server refused the upload ({error}). Trying again in {seconds:g} s, but this needs a fix."
+  # in the log: the saved link (data/cloud.json) cannot be used, so nothing is sent until you link again
+  log_bad_link: The saved cloud link is damaged, so it counts as not linked. Link again with scripts/link_cloud.py.
+  log_not_linked: The cloud server says it doesn't know this computer any more. Sending stops until you link it again with scripts/link_cloud.py.
+  # in the log: the server kept the rest but would not keep {count} events; {reasons} says why
+  log_refused: "The cloud server did not keep {count} events: {reasons}"
+  # what scripts/link_cloud.py says: it worked ({server}, {device_id}), the code was not accepted, or nothing answered
+  link_saved: "Linked to {server} as device {device_id}. Desk Talk starts sending your habit events from now on."
+  # the server address is not a web address ({server} is what was typed)
+  link_bad_address: "{server} is not a web address. Write it like http://192.168.1.9:8000"
+  # the server said no and gave a reason ({reason})
+  link_refused_because: "The server did not accept that: {reason}"
+  link_code_refused: That code was not accepted. Codes work once and run out after a few minutes, so make a new one on the website.
+  link_no_answer: "Could not reach {server} ({error}). Is the cloud server running, and is the address right?"
+
 # ── An object's story (click something under "On the desk" on the app page; settings → object_story) ───
 # What happened to it, one line per step, e.g. "10:42  appeared  (81% sure)".
 object_story:

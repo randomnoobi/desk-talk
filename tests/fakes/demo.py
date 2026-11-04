@@ -32,13 +32,16 @@ class RecordingFirer:
 
 
 class RecordingCameraWarnings:
-    """Records each camera problem said, as (key, text, now)."""
+    """Records each camera problem said, as (key, text, now); `said_for_demo` says for each whether it was marked
+    as pretend."""
 
     def __init__(self):
         self.said: list[tuple[str, str, float]] = []
+        self.said_for_demo: list[bool] = []
 
-    def say_problem(self, key: str, text: str, now: float) -> None:
+    def say_problem(self, key: str, text: str, now: float, *, demo: bool = False) -> None:
         self.said.append((key, text, now))
+        self.said_for_demo.append(demo)
 
 
 class RecordingReminders:

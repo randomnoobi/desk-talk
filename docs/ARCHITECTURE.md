@@ -152,18 +152,20 @@ reply only holds up the message generator's own queue, never the camera or the o
 | `desktalk/adapters/storage/` | `EventLog` (the files in `data/events/`), `JsonFileStore` (small JSON files, saved all-or-nothing), `SqliteStateStore` (the object states' history, `object_states.database`) and `TracePhotoFiles` (`trace_photo_files.py`: each object's story pictures in `object_story.photos_folder`; per kind of object the newest `object_story.timed_photos_kept` timed ones and, apart from them, the newest `object_story.step_photos_kept` step ones). |
 | `desktalk/adapters/dev/` | For the developer page, only built when `dev.enabled` is on: `PytestRunner` (`test_runner.py`: runs the checks in `dev.checks`, or some tests with `dev.test_command`, in a child process, one run at a time, stopped after `dev.run_timeout_min`), with `pytest_report.py`, a pytest plugin that writes one line per finished test so the page sees each one as it finishes; `SqliteBrowser` (`sqlite_browser.py`: the SQLite databases opened read-only, one statement that only reads, at most `dev.sql_max_rows` rows, stopped after `dev.sql_timeout_sec`); `DataFolder` (`data_files.py`: the files in `data/` and the start of one, never anything outside it). |
 | `desktalk/runtime/` | `Supervisor` (runs the background jobs and starts them again after a crash), `Scheduler`, `SystemClock` (the shared one), logging. |
-| `desktalk/web/` | FastAPI. `app.py` makes the two servers (the main one, and the phone page's own HTTPS one), `routers/` has the routes by area (`pi`, `phone`, `live`, `video`, `chat`, `habits`, `log`, `settings`, `health`, `objects`, `dev`), `stories.py` reads an object's story for both `objects` (the app page) and `dev`, `schemas.py` the request and reply shapes, `streams.py` SSE and the video, `serve.py` runs uvicorn. The routes only see the interfaces, plain data and settings on `DeskTalk`. |
+| `desktalk/web/` | FastAPI. `app.py` makes the two servers (the main one, and the phone page's own HTTPS one), `routers/` has the routes by area (`pi`, `phone`, `live`, `video`, `chat`, `habits`, `log`, `settings`, `health`, `objects`, `cloud`, `dev`), `stories.py` reads an object's story for both `objects` (the app page) and `dev`, `schemas.py` the request and reply shapes, `streams.py` SSE and the video, `serve.py` runs uvicorn. The routes only see the interfaces, plain data and settings on `DeskTalk`. |
 | `desktalk/core/demo/` | The developer page's Demo tab (only when `dev.enabled` is on): `ScenarioRunner` (`scenarios.py`: the pretend warnings in `dev.scenarios`, their countdowns, and a background job that fires each one once its countdown is over) and `DemoFirer` (`firer.py`: sends each one through the same part as the real warning: the desk monitor's `Alert` for the desk edge and danger zones, `HabitReminders.say()` for the drink reminder, `Lens.say_problem()` for the camera covered, the habit tracker's `log()` for a sip, the lost-items `Alert` for keys gone missing). This is the one place the developer page changes what the app does, on purpose. |
 | `desktalk/web/routers/dev.py` | The developer page's routes, `/api/dev/...` (the list is in [API.md](API.md#developer-page-this-computer-only-15)). Every one only answers this computer, and only its own page (`DevOnly` in `deps.py`: the `FromHere` check plus a `Host` and an `Origin` check). It's only added to the main server when `dev.enabled` is on, never to the phone's. `app.py` serves the built page (`dev.ui_folder`) at `/dev/`, or a line saying how to build it. |
 | `shared/desktalk_shared/` | Used on the Pi and on this computer, standard library only: `detection.py` (`Detection`, `BBox`), `wire.py` (the upload format), `detector_api.py` (the detector service's requests and replies), `ultralytics_results.py` (YOLO results → `Detection`s, the same on both sides), `backoff.py` (`Backoff`: the wait after each failure in a row, doubling up to a most), `clock.py` (`SystemClock`, the one real clock), `workers.py` (`WorkerThread`: a job in a thread of its own that starts again after a crash). |
 | `raspberry_pi/camera/` | The camera program: `cli.py` (the command line and loading the settings), `main.py` (the loop: take, save, ask, send), `workers.py` (the threads, and `build_program`, which connects the parts), `cameras.py`, `photo_store.py`, `cleaner.py`, `detector_client.py`, `uploader.py`, `health.py`, `watchdog.py`, `self_test.py`, `settings.py`. [README](../raspberry_pi/camera/README.md). |
 | `raspberry_pi/detector_service/` | The detector service: `Dockerfile`, `compose.yaml`, `.env`, and `desktalk_detector/` (FastAPI: `POST /detect`, `GET /health`, `PUT /model`; converts `.pt` models to ncnn and keeps the last good one). [README](../raspberry_pi/detector_service/README.md). |
+| `desktalk/core/cloud/`, `desktalk/adapters/cloud/`, `scripts/link_cloud.py` | The sender to the optional cloud server (see [The cloud server](#the-cloud-server)). `CloudUploader` is a background job; the adapter is the line to the server; the script links this computer once. |
+| `cloud/` | The optional cloud server, a program of its own in Docker: `server/desktalk_cloud/` (FastAPI, Postgres, the weekly report), `web/` (its website, behind nginx), `compose.yaml`, `settings.yaml`, `prompts.yaml`. [README](../cloud/README.md). |
 | `benchmarks/` | `deskbench`: times YOLO models on the Mac and on the Pi (in its own Docker image), to pick the Pi's model. [README](../benchmarks/README.md). |
 | `web_app/`, `phone_camera/` | The app's page, and the page a phone opens to be the camera. They keep no copies of the settings: the app page asks `GET /api/ui_settings` when it opens (refresh times, limits, the palette, Lens's card, how long a chat reply may take) and shows its "can't reach Desk Talk" note until it gets them; the phone page asks `GET /api/phone/config` (picture size and quality). |
 | `dev_ui/` | The developer page at `http://localhost:5000/dev/`: Checks, Live, System, Database, Storage and Demo tabs. Vite + React + TypeScript, with its own tests (Vitest) and `package-lock.json`; `npm run build` puts it in `dev_ui/dist/`. It keeps no numbers of its own: it asks `GET /api/dev/settings` once when it opens. The app page stays plain JavaScript with no build step. [README](../dev_ui/README.md). |
 
-There are three uv packages in one workspace with one `uv.lock`: `desktalk` (this folder), `desktalk-shared`
-(`shared/`) and `desktalk-detector` (`raspberry_pi/detector_service/`). The camera program isn't installed
+There are four uv packages in one workspace with one `uv.lock`: `desktalk` (this folder), `desktalk-shared`
+(`shared/`), `desktalk-detector` (`raspberry_pi/detector_service/`) and `desktalk-cloud` (`cloud/server/`). The camera program isn't installed
 with uv: it runs on the Pi's own `python3` and finds `desktalk_shared` in the cloned repo's `shared/` folder.
 
 ## Interfaces
@@ -420,12 +422,42 @@ by Docker (`restart: unless-stopped`).
 | **The camera stops** | No pictures, no events: analysis pauses and nobody leaves the chat. Lens says the camera is off; `/api/health` → `camera` shows it. |
 | **A consumer is slow** | Its bounded queue drops the oldest *picture* events (never joins, alerts or habits) and counts the drops. An open app page that stops reading is dropped by the `MessageHub`, and the browser connects again. |
 | **A data file is half-written or broken** | Every save is all-or-nothing (temp file + rename). A broken JSON file reads as empty and is logged; broken lines in `.jsonl` files are skipped and logged, never fatal. |
+| **The cloud server is off, or says no** | `CloudUploader` logs it and waits longer each time; nothing else notices. The events wait in the event log and go when it's back (see [The cloud server](#the-cloud-server)). A 401 stops sending until this computer is linked again. |
 | **Shutdown** | The lifespan stops everything in order, saves the habits and compacts the log (see above). |
 | **Bad input on `/api/pi/frame`** | Wrong pairing key: 403. Too big (`web.pi_upload_max_mb`): 413. The `info` part is checked by `desktalk_shared.wire`: 400 with what's wrong. Not a JPEG: 400. Boxes outside the picture are dropped. |
 
 Every number in this table is in `config/settings.yaml` (or, for the container, in
 `raspberry_pi/detector_service/.env`). Logs go to the terminal and to a rotating file (`data/logs/` on this
 computer; `journalctl -u desk-talk-camera` and `docker compose logs` on the Pi).
+
+## The cloud server
+
+Optional. The app needs no account: until `scripts/link_cloud.py` saves a link in `data/cloud.json`,
+`CloudUploader` calls nothing. It's a `PeriodicWorker`, so `Supervisor` runs it like any other job.
+
+```
+Desk Talk                                                Your cloud server (docker compose, cloud/)
+event log ─▶ CloudUploader ─▶ to_cloud_event() ─ POST ─▶ nginx ─▶ api ─▶ to_cloud_event() again ─▶ Postgres
+             (every cloud.send_every_sec)         /v1/events    (web)                                  │
+                                                                 website ◀── api ◀─────────────────────┤
+                                                                 weekly report ◀── reports ◀───────────┘
+```
+
+- **The event log is the waiting list.** There's no second copy. Each round reads what was written since a saved
+  place, and the place only moves after the server says yes. With the server off the place stays, the wait grows
+  (`cloud.retry_start_sec` up to `cloud.retry_max_sec`), and it catches up later. Days older than
+  `event_log.keep_days` are gone by then.
+- **One filter, run twice.** `to_cloud_event()` (`shared/desktalk_shared/cloud_api.py`) lists the fields that may go.
+  The sender runs it, and the server runs it again on what arrives. So `say`, a to-do's text, a picture and a field
+  nobody has thought of yet stay home.
+- **Nothing goes twice.** Each round looks back `cloud.overlap_sec`, and `recent_ids` stops those from going again.
+  The server's table has one row per Pi and event id as well.
+- **Four containers:** `postgres`, `api` (the website's server and what a Pi talks to), `reports` (the weekly report and
+  the clean-up, exactly one), and `web` (nginx, with the only open port). `cloud/server/desktalk_cloud/bootstrap.py` is
+  the only place there that knows the real classes.
+- `GET /api/cloud/status` tells the app's Settings page whether this computer is linked and how many events wait.
+
+It's plain HTTP, for a home network only, for now.
 
 ## Settings
 

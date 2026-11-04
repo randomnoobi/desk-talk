@@ -2,7 +2,7 @@
 # No network, API keys, camera, Pi, Docker or browser needed: the slow (real YOLO), docker and e2e (browser)
 # tests are skipped. --cov makes the run fail if the tests cover less than fail_under in pyproject.toml.
 # The `page` job runs the developer page's own tests and builds it (dev_ui/, with Node 22), the same way
-# as `npm test` and `npm run build` there.
+# as `npm test` and `npm run build` there, and then does the same for the cloud server's website (cloud/web/).
 name: Tests
 
 on:
@@ -36,7 +36,18 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: dev_ui/package-lock.json
+          cache-dependency-path: |
+            dev_ui/package-lock.json
+            cloud/web/package-lock.json
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: Cloud website, install
+        working-directory: cloud/web
+        run: npm ci
+      - name: Cloud website, tests
+        working-directory: cloud/web
+        run: npm test
+      - name: Cloud website, build
+        working-directory: cloud/web
+        run: npm run build

@@ -5,7 +5,8 @@ from __future__ import annotations
 
 from desktalk_shared.detection import DetectorUnavailable
 
-__all__ = ['AIUnavailable', 'DetectorUnavailable', 'UnknownChat', 'plain_error']
+__all__ = ['AIUnavailable', 'CloudNotLinked', 'CloudRefused', 'CloudUnavailable', 'DetectorUnavailable', 'UnknownChat',
+           'plain_error']
 
 
 class AIUnavailable(RuntimeError):
@@ -19,6 +20,21 @@ class AIUnavailable(RuntimeError):
 
 class UnknownChat(ValueError):
     """The chat was asked to reply in a 1-on-1 chat with an agent that doesn't exist."""
+
+
+class CloudUnavailable(RuntimeError):
+    """The cloud server didn't answer well: it's off, unreachable, too slow, busy (429) or broken (5xx). The
+    sender waits and tries again; nothing else in Desk Talk notices."""
+
+
+class CloudRefused(CloudUnavailable):
+    """The cloud server answered, but said no to this upload (400, 404, 413 ...). That will not fix itself like a
+    server that is off, so the sender logs it apart from "unavailable" (and still waits and tries again)."""
+
+
+class CloudNotLinked(RuntimeError):
+    """The cloud server says it doesn't know this computer (401), or it didn't accept the pairing code. The sender
+    stops until the computer is linked again."""
 
 
 def plain_error(exc: BaseException) -> str:

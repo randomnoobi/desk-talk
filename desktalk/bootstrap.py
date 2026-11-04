@@ -37,14 +37,16 @@ from pathlib import Path
 from typing import Any
 
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource, make_pair_key
+from desktalk.adapters.cloud import HttpCloudLink
 from desktalk.adapters.detector import UltralyticsDetector
 from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser
 from desktalk.adapters.llm import OpenAICompatibleChatModel, ResilientChatModel
 from desktalk.adapters.notify import MacNotifications, make_notifications
 from desktalk.adapters.picture import DeskPainter, OpenCvPictureTools
 from desktalk.adapters.storage import EventLog, JsonFileStore, SqliteStateStore
+from desktalk.adapters.storage.json_files import SUFFIX as JSON_SUFFIX
 from desktalk.adapters.storage.trace_photo_files import TracePhotoFiles
-from desktalk.config import AppConfig, ConfigError
+from desktalk.config import AppConfig, ConfigError, Protocols
 from desktalk.core.agents.profiles import ProfileBook
 from desktalk.core.agents.roster import Roster
 from desktalk.core.chat.desktop_alerts import DesktopAlerts
@@ -56,6 +58,7 @@ from desktalk.core.chat.workers import (
     Lens,
     LostItems,
 )
+from desktalk.core.cloud import CloudUploader
 from desktalk.core.demo import DemoFirer, ScenarioRunner
 from desktalk.core.desk import Album, DangerBoard, LiveView, Memories, Scene, WholeDesk
 from desktalk.core.events import EventStream
@@ -82,6 +85,8 @@ from desktalk.ports import (
     ChatModel,
     ChatReplies,
     Clock,
+    CloudLink,
+    CloudSending,
     DatabaseBrowser,
     DataFiles,
     DemoCountdowns,
@@ -173,6 +178,8 @@ class DeskTalk:
     idle_chat         small talk between agents (a background job)
     lost_items        "have you seen my keys?": is_lost_query(), answer() and the items (/api/chat, /api/live)
     daily_summary     the end-of-day recap (a background job)
+    cloud             sends filtered habit events to a linked cloud server, and does nothing until linked (a
+                      background job): status() (/api/cloud/status)
     scheduler         timed jobs (compacting and pruning the event log, saving habits and object states):
                       status() (/api/health)
     supervisor        runs the background jobs: status() (/api/health)
@@ -234,6 +241,7 @@ class DeskTalk:
     idle_chat: PeriodicWorker
     lost_items: LostItemsView
     daily_summary: PeriodicWorker
+    cloud: CloudSending
     scheduler: ScheduledJobs
     supervisor: Jobs
     started_at: float
@@ -265,6 +273,7 @@ class DeskTalk:
             (self.lost_items, c.lost_items.start_delay_sec),
             (self.lens, c.lens.check_every_sec),
             (self.daily_summary, c.daily_summary.start_delay_sec),
+            (self.cloud, c.cloud.send_every_sec),
         ]
         if self.keepalive is not None:
             jobs.append((self.keepalive, c.llm.ollama_keepalive_start_sec))
@@ -340,6 +349,18 @@ def make_camera(config: AppConfig, clock: Clock) -> Camera:
     return Camera(pi, pi=pi)
 
 
+def cloud_goals(protocols: Protocols) -> dict[str, float]:
+    """The goal numbers the weekly report is judged against, from config/protocols.yaml."""
+    hydration, breaks, phone, light = protocols.hydration, protocols.breaks, protocols.phone_free, protocols.light
+    return {
+        'water_ml': hydration.daily_goal_ml, 'water_window_hours': hydration.goal_window_hours,
+        'sit_limit_min': breaks.sit_limit_min, 'break_min': breaks.break_min,
+        'phone_free_min': phone.goal_min_per_day, 'phone_away_before_bed_min': phone.before_bed_min,
+        'morning_light_window_min': light.morning_window_min,
+        'evening_dim_before_bed_min': light.evening_dim_before_bed_min,
+        'screens_off_before_bed_min': light.screens_off_before_bed_min}
+
+
 def make_detector(config: AppConfig) -> UltralyticsDetector:
     """Object detection on this computer (settings → detector), warmed up so the first picture isn't slow.
     A model that won't load leaves the Pi's own detections working."""
@@ -353,7 +374,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
           client_factory: Callable[..., Any] | None = None, source: FrameSource | None = None,
           data_folder: Path | None = None, config_store: KeyValueStore | None = None, pair_key: str | None = None,
           synchronous_events: bool = False, set_up_logging: bool = True,
-          test_runner: TestRunner | None = None, desktop: DesktopNotifications | None = None) -> DeskTalk:
+          test_runner: TestRunner | None = None, desktop: DesktopNotifications | None = None,
+          cloud_link_factory: Callable[[str, str], CloudLink] | None = None) -> DeskTalk:
     """Every part of Desk Talk, connected. Nothing runs until start().
 
     The keyword arguments are for tests; left out, the real things are made from `config`:
@@ -372,7 +394,9 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         set_up_logging      log to the terminal and to the log folder (settings → logging)
         test_runner         the developer page's test runner (PytestRunner on this project), when settings →
                             dev.enabled is on
-        desktop             the computer's own pop-ups (the Mac's, through osascript; nothing on other systems)"""
+        desktop             the computer's own pop-ups (the Mac's, through osascript; nothing on other systems)
+        cloud_link_factory  makes the line to the cloud server from its address and token (HttpCloudLink); only
+                            called once the computer is linked"""
     clock = clock or SystemClock()
 
     def data_path(path: Path) -> Path:
@@ -486,6 +510,11 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     daily_summary = DailySummary(model, hub, roster, habits, store, config.daily_summary, config.llm.replies,
                                  default_temperature=default_temperature, clock=clock,
                                  prompts=config.prompts.daily_recap, preview_chars=config.logging.preview_chars)
+    def http_line(server: str, token: str) -> CloudLink:
+        return HttpCloudLink(server, token, timeout_sec=config.cloud.timeout_sec,
+                             error_text_chars=config.cloud.error_text_chars)
+    cloud = CloudUploader(cloud_link_factory or http_line, event_log, store, preferences, cloud_goals(config.protocols),
+                          config.cloud, clock, config.prompts.cloud)
     scheduler = Scheduler(clock, longest_wait_sec=config.supervisor.scheduler_longest_wait_sec)
     scheduler.every(config.event_log.compact_every_min * MINUTE, lambda: event_log.compact(clock.now()),
                     'compact event log')
@@ -512,7 +541,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         databases = SqliteBrowser({'object_states': data_path(config.object_states.database)},
                                   max_rows=dev.sql_max_rows, timeout_sec=dev.sql_timeout_sec, clock=clock,
                                   words=config.prompts.dev, check_every_steps=dev.sql_check_every_steps)
-        data_files = DataFolder(data_path(config.storage.folder), dev.file_preview_kb * 1024, words=config.prompts.dev)
+        data_files = DataFolder(data_path(config.storage.folder), dev.file_preview_kb * 1024, words=config.prompts.dev,
+                                hidden=[f'{config.cloud.link_key}{JSON_SUFFIX}'])      # the cloud link holds a token
         firer = DemoFirer(dev.scenarios, bus, habits, lens, reminders, profiles, prompts=config.prompts,
                           lost_item_names={item_id: item.name for item_id, item in config.lost_items.items.items()})
         demo = ScenarioRunner(dev.scenarios, firer, clock, words=config.prompts.dev)
@@ -528,7 +558,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         producer=producer, object_states=object_states, state_store=state_store, roster=roster,
         desk_status=desk_status, habits=habits, ai=ai, model=model, hub=hub, generator=generator,
         rule_runner=rule_runner, reminders=reminders, lens=lens, idle_chat=idle_chat,
-        lost_items=lost_items, daily_summary=daily_summary, scheduler=scheduler,
+        lost_items=lost_items, daily_summary=daily_summary, cloud=cloud, scheduler=scheduler,
         supervisor=supervisor, started_at=clock.now(), keepalive=ai.keepalive_worker(), log_file=log_file,
         test_runner=test_runner, databases=databases, data_files=data_files, chat_joins=roster,
         trace_photos=trace_photos, demo=demo, todos=todos, desktop=desktop)

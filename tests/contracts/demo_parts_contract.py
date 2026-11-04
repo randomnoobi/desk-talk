@@ -57,6 +57,10 @@ class CameraWarningsContract:
         warnings.say_problem('covered', 'Everything just went black.', NOW)
         assert heard() == ['Everything just went black.']
 
+    def test_a_pretend_problem_is_said_just_the_same(self, warnings, heard):
+        warnings.say_problem('covered', 'Everything just went black.', NOW, demo=True)
+        assert heard() == ['Everything just went black.']
+
     def test_each_one_is_said_even_right_after_another(self, warnings, heard):
         warnings.say_problem('covered', 'Everything just went black.', NOW)
         warnings.say_problem('dark', 'It got dark.', NOW)

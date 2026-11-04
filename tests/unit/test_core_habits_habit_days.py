@@ -141,3 +141,14 @@ def test_going_back_to_an_unsaved_day_picks_it_up_again():
     r.days.roll(START + 86400)
     r.days.roll(START)                                               # the clock was put back
     assert r.days.today.water_ml == 240
+
+
+def test_the_pretend_sip_tally_is_in_the_file_only_once_there_is_one():
+    day = HabitDay(day=DAY)
+    assert 'demo_sips' not in day.to_dict() and 'demo_water_ml' not in day.to_dict()
+    day.add_sip(START, 80, 'camera', 10)
+    day.mark_demo_sip(80)
+    saved = day.to_dict()
+    assert (saved['demo_sips'], saved['demo_water_ml']) == (1, 80)
+    again = HabitDay.from_saved(DAY, saved)
+    assert again is not None and (again.demo_sips, again.demo_water_ml) == (1, 80)

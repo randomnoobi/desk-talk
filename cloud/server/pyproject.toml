@@ -1,0 +1,32 @@
+# The cloud server: collects the events a person's Pi may send (see shared/desktalk_shared/cloud_api.py),
+# and writes them a weekly report. Runs in Docker from cloud/compose.yaml. Never imports desktalk/.
+[project]
+name = "desktalk-cloud"
+version = "0.1.0"
+description = "Desk Talk cloud server: links a Pi to a Google account, keeps its events and writes a weekly report"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "desktalk-shared",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "sqlalchemy>=2.0",          # the database, written as SQLAlchemy Core (no ORM)
+    "psycopg[binary]>=3.2",     # talks to Postgres
+    "alembic>=1.13",            # database upgrades
+    "httpx>=0.27",              # Google login and the AI company
+    "anthropic>=0.40",          # the weekly report
+    "argon2-cffi>=23.1",        # admin password and token hashes
+    "itsdangerous>=2.2",        # signed login cookies
+    "pyyaml>=6.0",              # cloud/settings.yaml and cloud/prompts.yaml
+    "tzdata>=2024.1",           # time zones (the Docker image has none of its own)
+]
+
+[tool.uv.sources]
+desktalk-shared = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["desktalk_cloud"]

@@ -1,0 +1,97 @@
+/* ============================================
+   DESK TALK: the cloud website
+   Plain: white paper, dark ink, one blue. Built for a phone first, and the page never scrolls sideways.
+   Words: .stack (a column with gaps) .row (a wrapping line) .list (plain rows) .card .tag .mark (a small label)
+          .btn .btn.primary .btn.danger .input .error .warning .muted .small .printout .report
+   ============================================ */
+
+:root {
+  --ink: #2b2440;
+  --ink-2: #5e5873;
+  --paper: #ffffff;
+  --mist: #f3f4f9;
+  --line: #e4e5ee;
+  --cobalt: #2f5fd0;
+  --cobalt-tint: #e4eafb;
+  --mustard: #7a5600;
+  --mustard-tint: #fcf0cc;
+  --danger: #c8324a;
+  --danger-tint: #fce4e8;
+  --font: ui-rounded, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
+
+body {
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--paper);
+  -webkit-font-smoothing: antialiased;
+  overflow-wrap: anywhere;
+}
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: 0; }
+button:disabled { cursor: default; opacity: 0.6; }
+:focus-visible { outline: 2.5px solid var(--cobalt); outline-offset: 2px; border-radius: 6px; }
+a { color: var(--cobalt); }
+h1 { font-size: 24px; line-height: 1.2; }
+h2 { font-size: 20px; line-height: 1.2; }
+h3 { font-size: 16px; }
+code, pre, .mono { font-family: var(--mono); font-size: 14px; }
+
+.narrow, .wide { margin: 0 auto; padding: 16px; }
+.narrow { max-width: 28rem; }
+.wide { max-width: 48rem; }
+
+.stack { display: flex; flex-direction: column; gap: 14px; }
+.row { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.grow { flex: 1 1 12rem; }
+.muted { color: var(--ink-2); }
+.small { font-size: 14px; }
+
+.list { list-style: none; display: flex; flex-direction: column; }
+.list > li { padding: 10px 0; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.list > li > div { flex-basis: 100%; }
+.events { max-height: 24rem; overflow-y: auto; }
+
+.card { background: var(--mist); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.bigcode code { font-size: 28px; letter-spacing: 0.08em; }
+.printout { background: var(--ink); color: #fff; padding: 12px; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.facts { display: flex; flex-direction: column; gap: 2px; }
+.facts > div { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.facts dt { color: var(--ink-2); min-width: 8rem; }
+
+.tag, .mark { font-size: 13px; border-radius: 999px; padding: 1px 9px; }
+.tag { background: var(--mist); color: var(--ink-2); }
+.mark { background: var(--cobalt); color: #fff; margin-left: 6px; font-weight: 600; }
+
+.btn {
+  display: inline-block; text-decoration: none; text-align: center;
+  padding: 9px 16px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--paper); min-height: 44px;
+}
+.btn.primary { background: var(--cobalt); border-color: var(--cobalt); color: #fff; }
+.btn.danger { color: var(--danger); border-color: var(--danger); }
+.btn.big { font-size: 18px; padding: 12px 22px; }
+.link { color: var(--cobalt); text-decoration: underline; }
+.input { display: block; width: 100%; padding: 9px 12px; border: 1.5px solid var(--line); border-radius: 10px; min-height: 44px; margin-top: 4px; }
+label { display: block; }
+
+.error { color: var(--danger); background: var(--danger-tint); padding: 8px 12px; border-radius: 8px; }
+.warning { color: var(--mustard); background: var(--mustard-tint); padding: 8px 12px; border-radius: 8px; }
+.confirm { border: 1.5px solid var(--line); border-radius: 10px; padding: 14px; background: var(--mist); display: flex; flex-direction: column; gap: 10px; }
+
+.menu { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 0; border-top: 1px solid var(--line); }
+footer { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+
+.report { line-height: 1.6; }
+.report h1, .report h2, .report h3 { margin: 18px 0 6px; }
+.report p, .report ul, .report ol { margin: 8px 0; }
+.report ul, .report ol { padding-left: 22px; }
+.report table { border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; }
+.report th, .report td { border: 1px solid var(--line); padding: 4px 8px; }
+.report pre { overflow-x: auto; background: var(--mist); padding: 10px; border-radius: 8px; }

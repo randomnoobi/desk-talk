@@ -3,6 +3,7 @@
     "desktalk",
     "shared",
     "raspberry_pi",
+    "cloud/server",
     "scripts",
     "tests",
     "server.py"

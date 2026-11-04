@@ -17,3 +17,9 @@ def test_the_runtime_still_offers_the_same_plain_error():
     from desktalk.domain.errors import plain_error as from_domain
     from desktalk.runtime import plain_error as from_runtime
     assert from_runtime is from_domain
+
+
+def test_the_cloud_errors_are_plain_and_can_be_told_apart():
+    from desktalk.domain import CloudNotLinked, CloudUnavailable
+    assert str(CloudUnavailable('no answer within 10 s')) == 'no answer within 10 s'
+    assert not issubclass(CloudNotLinked, CloudUnavailable) and not issubclass(CloudUnavailable, CloudNotLinked)

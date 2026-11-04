@@ -1,0 +1,115 @@
+# The cloud server: Postgres, the website's server, the website, and the weekly report writer.
+# Fill in cloud/.env first (copy .env.example). README.md says how. In this folder:
+#   docker compose up -d --build --wait      build and start it, and wait until it's healthy; it starts again on boot
+#   docker compose logs -f                   see what it's doing
+#   docker compose down                      stop it (the database's volume stays)
+# Only `web` publishes a port. A Pi and a browser both come in through it.
+name: desktalk-cloud
+
+x-cloud-server: &cloud-server
+  image: desktalk-cloud-server:local
+  restart: unless-stopped                 # starts again after a crash, and when the computer boots
+  depends_on:
+    postgres:
+      condition: service_healthy
+  logging: &logging                       # a few small log files, so logs can't fill the disk
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+x-server-environment: &server-environment
+  SESSION_SECRET: ${SESSION_SECRET:?Put SESSION_SECRET in cloud/.env (see .env.example)}
+  DATABASE_URL: postgresql+psycopg://desktalk:${POSTGRES_PASSWORD:?Put POSTGRES_PASSWORD in cloud/.env (see .env.example)}@postgres:5432/desktalk
+  PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+  LOGIN_URL: ${LOGIN_URL:-}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+  ADMIN_USERNAME: ${ADMIN_USERNAME:-}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+  REPORT_API_KEY: ${REPORT_API_KEY:-}
+  CHAT_API_KEY: ${CHAT_API_KEY:-}
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    restart: unless-stopped
+    # Postgres's own log would otherwise show the values in a row it refused.
+    command: ["postgres", "-c", "log_error_verbosity=terse", "-c", "log_min_error_statement=panic"]
+    environment:
+      POSTGRES_USER: desktalk
+      POSTGRES_DB: desktalk
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Put POSTGRES_PASSWORD in cloud/.env (see .env.example)}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # Over the network on purpose: while the image sets itself up, a temporary server listens on a local socket only.
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "desktalk", "-d", "desktalk"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    logging: *logging
+
+  api:
+    <<: *cloud-server
+    build:
+      context: ..                         # the repo's top folder: the uv workspace and uv.lock
+      dockerfile: cloud/server/Dockerfile
+    command: ["python", "-m", "desktalk_cloud.main"]
+    environment:
+      <<: *server-environment
+      FORWARDED_ALLOW_IPS: ${WEB_CONTAINER_ADDRESS:-172.30.87.200}   # only nginx may say who the client is
+    healthcheck:                          # 8000 is settings.yaml's server.port
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 3s
+      timeout: 3s
+      start_period: 60s                   # the database's first set-up happens before the server listens
+      retries: 20
+
+  reports:
+    <<: *cloud-server
+    pull_policy: never                    # the same image `api` builds: two builds of one image at once can fail
+    # Exactly one of these: there's no step where one claims a report, so two would both pay the AI company for it.
+    command: ["python", "-m", "desktalk_cloud.reports_main", "--ready-file", "/tmp/desktalk-reports-ready"]
+    environment: *server-environment
+    # A stop waits for the report being written (settings.yaml: reports.timeout_sec), so it isn't paid for twice.
+    stop_grace_period: 150s
+    healthcheck:                          # the file appears once the database is ready
+      test: ["CMD", "test", "-f", "/tmp/desktalk-reports-ready"]
+      interval: 3s
+      timeout: 3s
+      start_period: 60s
+      retries: 20
+
+  web:
+    build:
+      context: ./web
+    image: desktalk-cloud-web:local
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    networks:
+      default:
+        ipv4_address: ${WEB_CONTAINER_ADDRESS:-172.30.87.200}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+
+networks:
+  default:
+    # nginx needs an address that stays the same, for FORWARDED_ALLOW_IPS. Docker hands out addresses from ip_range as
+    # containers start, so nothing can already be holding nginx's, which is outside it. If this network clashes with
+    # one you use, change these three in .env.
+    ipam:
+      config:
+        - subnet: ${NETWORK_SUBNET:-172.30.87.0/24}
+          ip_range: ${NETWORK_ADDRESSES:-172.30.87.0/25}
+
+volumes:
+  postgres-data:

@@ -10,6 +10,7 @@ A .sqlite file isn't read as text; the message points to the database tab instea
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from pathlib import Path
 
 from desktalk.config.prompts import DevWords
@@ -20,12 +21,26 @@ DATABASE_SUFFIX = '.sqlite'     # the object state history; the database tab sho
 
 class DataFolder:
     """DataFiles over one folder. `preview_bytes` is how much of a file preview() reads (settings →
-    dev.file_preview_kb); `words` are the messages from config/prompts.yaml (prompts → dev)."""
+    dev.file_preview_kb); `words` are the messages from config/prompts.yaml (prompts → dev). `hidden`: files
+    (paths inside the folder) that are never listed or shown, whatever way they are asked for: a file that holds
+    a secret, like the cloud link's token."""
 
-    def __init__(self, folder: Path, preview_bytes: int, *, words: DevWords):
+    def __init__(self, folder: Path, preview_bytes: int, *, words: DevWords, hidden: Iterable[str] = ()):
         self._folder = Path(folder)
         self._preview_bytes = preview_bytes
         self._words = words
+        self._hidden = [self._folder / path for path in hidden]
+
+    def _is_hidden(self, found: Path) -> bool:
+        """`found` is a hidden file: the very same file on the disk, whatever it is called (another spelling on a
+        disk that ignores capital letters, a hard link or a link), so it is compared as a file, not as a name."""
+        for hidden in self._hidden:
+            try:
+                if hidden.exists() and os.path.samefile(found, hidden):
+                    return True
+            except OSError:
+                continue
+        return False
 
     def list(self) -> list[DataFile]:
         root = self._folder.resolve()
@@ -35,7 +50,7 @@ class DataFolder:
         for here, folders, files in os.walk(root):     # doesn't go into symlinked folders
             for name in folders + files:
                 entry = self._describe(root, Path(here) / name)
-                if entry is not None:
+                if entry is not None and not self._is_hidden(_resolve(Path(here) / name) or root):
                     found.append(entry)
         return sorted(found, key=lambda f: f.path)
 
@@ -44,7 +59,7 @@ class DataFolder:
         resolved = _resolve(root / path)
         if resolved is not None and not resolved.is_relative_to(root):
             raise ValueError(self._words.outside_data_folder.format(path=path))
-        if resolved is None or not resolved.exists():
+        if resolved is None or not resolved.exists() or self._is_hidden(resolved):
             raise FileNotFoundError(self._words.no_such_file.format(path=path))
         if resolved.is_dir():
             raise ValueError(self._words.is_a_folder.format(path=path))

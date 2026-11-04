@@ -1018,6 +1018,8 @@ async function renderSettings() {
         <div class="field"><label for="dnd-start">From</label><input type="time" id="dnd-start" step="3600" value="${esc(draft.quiet_start)}"><label for="dnd-end">to</label><input type="time" id="dnd-end" step="3600" value="${esc(draft.quiet_end)}"></div>
       </div></section>
     <div class="save-row"><button type="button" class="btn" id="save-settings">Save settings</button><span class="saved" id="saved" role="status"></span></div>
+    <section><h2>Cloud server</h2>
+      <p class="hint" id="cloud-status" role="status"></p></section>
     <section><h2>Chats</h2>
       <p class="hint">Your chats are saved in this browser so they survive a refresh.</p>
       <button type="button" class="btn-quiet" id="clear-chats">Clear all chats</button></section>`;
@@ -1049,6 +1051,7 @@ async function renderSettings() {
       if (cls) { keepTyped(); zones[cls] = { expand: newZonePx, label: `${plainLabel(cls)} zone` }; draw(); }
     });
     wireEdgeEditor();
+    showCloudStatus();
     $('#clear-chats').addEventListener('click', () => {
       if (!window.confirm('Clear every chat on this page? This can’t be undone.')) return;
       for (const id of Object.keys(state.messages)) { state.messages[id] = []; state.unread[id] = 0; }
@@ -1060,6 +1063,17 @@ async function renderSettings() {
     $('#save-settings').addEventListener('click', save);
   };
 
+  // One line about the optional cloud server link: the words come from ui.cloud (prompts.yaml → cloud).
+  const showCloudStatus = async () => {
+    try {
+      const s = await api('/api/cloud/status');
+      const words = ui.cloud;
+      const line = !s.linked ? words.off : s.stopped ? words.stopped
+        : s.waiting ? words.waiting.replace('{count}', s.waiting) : words.on;
+      const out = $('#cloud-status');
+      if (out) out.textContent = line;
+    } catch { /* the line stays empty; the rest of the page works without it */ }
+  };
   const say = (text, error = false) => {
     const out = $('#saved');
     clearTimeout(savedTimer);

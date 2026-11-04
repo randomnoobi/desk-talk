@@ -15,6 +15,8 @@ import numpy as np
 from desktalk.domain import (
     CHANGE_TYPES,
     AIUnavailable,
+    CloudRefused,
+    CloudUnavailable,
     Detection,
     DetectorUnavailable,
     Event,
@@ -22,6 +24,7 @@ from desktalk.domain import (
     StateRecord,
     UploadInfo,
 )
+from desktalk_shared.cloud_api import IngestReply
 
 E = TypeVar('E', bound=Event)
 
@@ -277,3 +280,43 @@ class FakeDesktopNotifications:
 
     def show(self, title: str, text: str) -> None:
         self.shown.append((title, text))
+
+
+class RecordingCloudLink:
+    """The link to the cloud server, kept in memory (desktalk/ports.py: CloudLink). It records every send in
+    `calls` as (events, caught_up) and keeps the ids it has seen, so a repeat is counted as a repeat.
+
+    `script`: what the next sends do, one entry each: an exception to raise or an IngestReply to give; after
+    that every send is accepted. `failure`: raised by every send (a server that is off, or has forgotten us).
+    `limit`: the most events one send may hold; a bigger one is refused as the real server does (413)."""
+
+    def __init__(self, script: Sequence[Exception | IngestReply] = (), failure: Exception | None = None,
+                 limit: int | None = None):
+        self.calls: list[tuple[list[dict[str, Any]], bool]] = []
+        self.script = list(script)
+        self.failure = failure
+        self.limit = limit
+        self._kept: set[str] = set()
+
+    def send(self, events: Sequence[Mapping[str, Any]], *, caught_up: bool) -> IngestReply:
+        self.calls.append(([dict(e) for e in events], caught_up))
+        if self.failure is not None:
+            raise self.failure
+        if self.limit is not None and len(events) > self.limit:
+            raise CloudRefused(f'the server answered 413: more than {self.limit} events')
+        if self.script:
+            step = self.script.pop(0)
+            if isinstance(step, Exception):
+                raise step
+            return step
+        fresh = [e['id'] for e in events if e['id'] not in self._kept]
+        self._kept.update(fresh)
+        return IngestReply(accepted=len(fresh), repeats=len(events) - len(fresh))
+
+    def sent_ids(self, kind: str | None = None) -> list[str]:
+        """The ids of everything sent so far, in order (only events of one type with `kind`)."""
+        return [e['id'] for events, _ in self.calls for e in events if kind is None or e['type'] == kind]
+
+
+def a_server_that_is_off() -> RecordingCloudLink:
+    return RecordingCloudLink(failure=CloudUnavailable('the cloud server is off'))
