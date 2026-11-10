@@ -102,8 +102,9 @@ def latest_camera_status(pi: Pi) -> tuple[int, ...]:
 
 
 def restored_count(pi: Pi) -> int | None:
-    """How many object states the app says it picked up at its last start. The log outlives restarts, so a line from
-    before that start doesn't count."""
+    """How many object states the app says it picked up at its last start. The log outlives restarts, but this is read
+    only once the app is healthy, and the app restores before it can be healthy, so the last "Picked up" line is this
+    start's."""
     return restored_at_this_start(pi.app_log())
 
 
@@ -209,14 +210,16 @@ def test_starts_after_power_cut(pi: Pi):
     restored_epoch = _local_time_to_epoch(pi, restored_at)
     # How far behind the app's clock was when it restored: the real start is a little before the restore, so a clock
     # that was right by then comes out at about 0 or below, even if it was still behind when the container started.
+    # It also comes out low by the app's start-up time (Python starting), which the slack covers.
     lag = _real_start_time(pi) - restored_epoch
     not_synced = clock_not_synced_at_this_start(log)
     expected = expected_restore(data['states']['rows'], restored_at=restored_epoch,
                                 warned_behind_sec=warned, not_synced=not_synced, lag_sec=lag,
                                 restore_max_age_sec=settings['restore_max_age_sec'], slack_sec=RESTORE_TIME_SLACK_SEC)
     if expected.case == 'clock behind':
-        assert lag > 0, (f'The app said its clock was about {warned} s behind the saved states, but it was measured '
-                         f'{lag:.0f} s behind when it restored')
+        assert lag > -RESTORE_TIME_SLACK_SEC, (f'The app said its clock was about {warned} s behind the saved states, '
+                                               f'but it was measured {lag:.0f} s behind when it restored (the start-up '
+                                               f'time can make this a little low)')
     # The Pi makes its clock flag only once the clock is right, so a clock still behind must have been caught
     assert expected.case != 'clock behind, not noticed', (
         f"The app's clock was {lag:.0f} s behind when it restored, and it didn't say its clock hadn't synced: is "

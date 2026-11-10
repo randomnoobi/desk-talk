@@ -43,6 +43,7 @@ SETTINGS = {
     'person_counts_movement': True,
     'snapshot_every_sec': 60,
     'restore_max_age_sec': 300,
+    'clock_synced_file': None,
     'database': 'data/object_states.sqlite',
     'trace_pictures': 90,
 }
