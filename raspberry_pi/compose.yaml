@@ -43,8 +43,9 @@ services:
       - ${SOUND_DEVICES:-/dev/snd}:/dev/snd
       - ${SOUND_CARDS_FILE:-/proc/asound/cards}:/sound-cards:ro   # Docker hides /proc/asound, and this says which is which
       # Where the Pi says its clock has been set from the internet (a file, `synchronized`). Until then the app brings
-      # back nothing saved. Docker sets this folder up again each time the container starts, and the app reads the file
-      # only when it starts, so a new folder (systemd-timesyncd restarted) changes nothing.
+      # back only what it saved since the Pi booted (it reads the boot id from /proc, which needs nothing here). Docker
+      # sets this folder up again each time the container starts, and the app reads the file only when it starts, so a
+      # new folder (systemd-timesyncd restarted) changes nothing.
       - ${CLOCK_SYNC_FOLDER:-/run/systemd/timesync}:/run/timesync:ro
     device_cgroup_rules:
       - c ${SOUND_DEVICE_MAJOR:-116}:* rw               # read and write sound devices, but not make new ones

@@ -44,6 +44,7 @@ SETTINGS = {
     'snapshot_every_sec': 60,
     'restore_max_age_sec': 300,
     'clock_synced_file': None,
+    'boot_id_file': None,
     'database': 'data/object_states.sqlite',
     'trace_pictures': 90,
 }
@@ -87,7 +88,7 @@ def o(label, conf, x=320, y=240):
     return Detection(label, conf, BBox(x - 20, y - 20, x + 20, y + 20))
 
 
-def make_tracker(store=None, utc_offset_hours=8, sensitivity=None, prefs=None, **changes):
+def make_tracker(store=None, utc_offset_hours=8, sensitivity=None, prefs=None, boot_id=None, **changes):
     bus = SyncEventBus()
     store = InMemoryStateStore() if store is None else store
     settings = ObjectStatesSettings.model_validate({**SETTINGS, **changes})
@@ -95,7 +96,7 @@ def make_tracker(store=None, utc_offset_hours=8, sensitivity=None, prefs=None, *
     tracker = ObjectStateTracker(settings, bus, store, device_id='pi', new_session_after_sec=300,
                                  clock=FakeClock(utc_offset_hours=utc_offset_hours),
                                  agents=AgentsSettings.model_validate(AGENTS), prefs=prefs,
-                                 profiles=FakeProfiles([STAPLER]))
+                                 profiles=FakeProfiles([STAPLER]), boot_id=boot_id)
     return tracker, bus, store
 
 
@@ -123,7 +124,7 @@ def state_of(tracker, label):
     return tracker.snapshot().objects[label].state
 
 
-def record(ts, label, kind, state='PRESENT'):
+def record(ts, label, kind, state='PRESENT', boot_id=None):
     """One row of the state history. A change row gets the states it implies; a snapshot row stays in `state`."""
     prev, new = {
         'appeared': (Phase.ABSENT, Phase.PRESENT),
@@ -131,7 +132,7 @@ def record(ts, label, kind, state='PRESENT'):
         'moved': (Phase.PRESENT, Phase.PRESENT),
     }.get(kind, (Phase(state), Phase(state)))
     return StateRecord(ts=ts, timezone='+08:00', device_id='pi', type=kind, label=label, prev_state=prev,
-                       new_state=new, dwell_sec=0.0)
+                       new_state=new, dwell_sec=0.0, boot_id=boot_id)
 
 
 class BrokenStore(InMemoryStateStore):
@@ -462,6 +463,86 @@ def test_restore_says_why_it_starts_over_when_the_clock_has_not_synced(caplog):
     assert warning == ("The clock hasn't been set from the internet since this computer started, "
                        "so every object starts over")
     assert 'Picked up 0 object states from before the restart' in caplog.text
+
+
+def test_every_saved_row_says_which_boot_saved_it():
+    tracker, _, store = make_tracker(boot_id='boot-a')
+    t = feed(tracker, 1000, [[o('bottle', 0.6)]] * SETTLE)
+    tracker.save_snapshot(t)
+    assert [r.type for r in store.records] == ['appeared', 'snapshot']
+    assert {r.boot_id for r in store.records} == {'boot-a'}
+
+
+def test_before_the_clock_has_synced_rows_from_this_boot_still_come_back():
+    """Only the app restarted (the watchdog, the memory limit): the clock ran on without a break since the boot, so
+    what this boot saved is as good as ever, even on a Pi that never reaches the internet."""
+    store = InMemoryStateStore()
+    store.append([record(1000, 'bottle', 'snapshot', 'PRESENT', boot_id='boot-b'),
+                  record(1050, 'cup', 'removed', boot_id='boot-b')])
+    tracker, _, _ = make_tracker(store, boot_id='boot-b')
+    assert tracker.restore(now=1100, clock_synced=False) == 2
+    assert tracker.snapshot().objects['bottle'].state == 'PRESENT'
+
+
+def test_before_the_clock_has_synced_rows_from_an_earlier_boot_start_over():
+    """A power cut: rows from before it (another boot, or saved before rows kept their boot) aren't trusted."""
+    store = InMemoryStateStore()
+    store.append([record(1000, 'bottle', 'snapshot', 'PRESENT', boot_id='boot-a'),
+                  record(1010, 'cup', 'snapshot', 'PRESENT'),
+                  record(1020, 'pen', 'snapshot', 'PRESENT', boot_id='boot-b')])
+    tracker, _, _ = make_tracker(store, boot_id='boot-b')
+    assert tracker.restore(now=1100, clock_synced=False) == 1
+    assert set(tracker.snapshot().objects) == {'pen'}
+
+
+def test_before_the_clock_has_synced_a_newer_row_from_an_earlier_boot_doesnt_throw_away_this_boots():
+    """The clock started behind after a cut, so the boot before wrote rows that look like the future. They say
+    nothing about this boot's clock, which ran on without a break."""
+    store = InMemoryStateStore()
+    store.append([record(5000, 'bottle', 'snapshot', 'PRESENT', boot_id='boot-a'),
+                  record(5010, 'bottle', 'moved', boot_id='boot-a'),
+                  record(1050, 'bottle', 'snapshot', 'PRESENT', boot_id='boot-b')])
+    tracker, _, _ = make_tracker(store, boot_id='boot-b')
+    assert tracker.restore(now=1100, clock_synced=False) == 1
+    assert tracker.snapshot().objects['bottle'].since == pytest.approx(1050)
+
+
+def test_before_the_clock_has_synced_a_row_from_this_boot_newer_than_the_clock_still_starts_over():
+    """Someone set the clock back by hand: which rows are recent can't be told."""
+    store = InMemoryStateStore()
+    store.append([record(1000, 'bottle', 'snapshot', 'PRESENT', boot_id='boot-b'),
+                  record(1200, 'cup', 'snapshot', 'PRESENT', boot_id='boot-b')])
+    tracker, _, _ = make_tracker(store, boot_id='boot-b')
+    assert tracker.restore(now=1100, clock_synced=False) == 0
+
+
+def test_with_no_boot_id_nothing_comes_back_before_the_clock_has_synced():
+    """A computer that can't say which boot it is in can't tell a restart from a power cut."""
+    store = InMemoryStateStore()
+    store.append([record(1000, 'bottle', 'snapshot', 'PRESENT')])
+    tracker, _, _ = make_tracker(store, boot_id=None)
+    assert tracker.restore(now=1100, clock_synced=False) == 0
+
+
+def test_once_the_clock_has_synced_rows_from_every_boot_come_back():
+    store = InMemoryStateStore()
+    store.append([record(1000, 'bottle', 'snapshot', 'PRESENT', boot_id='boot-a'),
+                  record(1010, 'cup', 'snapshot', 'PRESENT')])
+    tracker, _, _ = make_tracker(store, boot_id='boot-b')
+    assert tracker.restore(now=1100, clock_synced=True) == 2
+
+
+def test_restore_says_it_keeps_only_this_boots_rows_when_the_clock_has_not_synced(caplog):
+    """The Pi's power cut check reads the start of this line, the same as when everything starts over."""
+    store = InMemoryStateStore()
+    store.append([record(1000, 'bottle', 'snapshot', 'PRESENT', boot_id='boot-b')])
+    tracker, _, _ = make_tracker(store, boot_id='boot-b')
+    with caplog.at_level(logging.INFO, logger='desktalk.core.object_states.tracker'):
+        tracker.restore(now=1100, clock_synced=False)
+    [warning] = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert warning == ("The clock hasn't been set from the internet since this computer started, "
+                       "so only states saved since it started are picked up")
+    assert 'Picked up 1 object states from before the restart' in caplog.text
 
 
 def test_changes_survive_a_restart():

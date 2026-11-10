@@ -213,9 +213,13 @@ def test_starts_after_power_cut(pi: Pi):
     # It also comes out low by the app's start-up time (Python starting), which the slack covers.
     lag = _real_start_time(pi) - restored_epoch
     not_synced = clock_not_synced_at_this_start(log)
+    # Before the clock has synced only rows saved in this boot may come back; the rows from before the cut have the
+    # boot before's id, so none of those
+    this_boot = pi.app_boot_id(settings['boot_id_file'])
     expected = expected_restore(data['states']['rows'], restored_at=restored_epoch,
                                 warned_behind_sec=warned, not_synced=not_synced, lag_sec=lag,
-                                restore_max_age_sec=settings['restore_max_age_sec'], slack_sec=RESTORE_TIME_SLACK_SEC)
+                                restore_max_age_sec=settings['restore_max_age_sec'], slack_sec=RESTORE_TIME_SLACK_SEC,
+                                this_boot=this_boot)
     if expected.case == 'clock behind':
         assert lag > -RESTORE_TIME_SLACK_SEC, (f'The app said its clock was about {warned} s behind the saved states, '
                                                f'but it was measured {lag:.0f} s behind when it restored (the start-up '
@@ -228,8 +232,8 @@ def test_starts_after_power_cut(pi: Pi):
         pytest.skip('Started and readable, but nothing was saved in the 5 minutes before the cut, so restored states '
                     f'could not be checked. Put a cup on the desk first and plug back in sooner ({STEPS}).')
     assert len(expected.must_be) <= restored <= len(expected.could_be), (
-        f'{expected.case}: the app warned its clock was {warned} s behind (not synced: {not_synced}), measured '
-        f'{lag:.0f} s; picked up '
+        f'{expected.case}: the app warned its clock was {warned} s behind (not synced: {not_synced}, this boot: '
+        f'{this_boot}), measured {lag:.0f} s; picked up '
         f'{restored}; saved: {expected.could_be}, sure: {expected.must_be}')
 
 
@@ -319,6 +323,37 @@ def test_app_restart_needs_no_camera_restart(stack: Pi):
     camera_after = pi.state('camera')
     assert camera_after['StartedAt'] == camera_before['StartedAt'], 'the camera got restarted'
     assert camera_after['RestartCount'] == camera_before['RestartCount'], 'the camera got restarted'
+
+
+def test_app_restart_before_the_clock_has_synced_keeps_this_boots_states(stack: Pi):
+    """A Pi that hasn't reached the internet since it booted: restarting only the app (the watchdog, the memory limit)
+    still brings back what this boot saved, since the clock ran on without a break."""
+    pi = stack
+    settings = pi.settings()
+    synced_file = settings['clock_synced_file']
+    if synced_file is None or pi.app_sees_file(synced_file):
+        pytest.skip("The Pi's clock has been set from the internet this boot, so this would show nothing. Do the "
+                    f'steps in {STEPS} ("An app restart before the clock has synced").')
+    this_boot = pi.app_boot_id(settings['boot_id_file'])
+    assert this_boot, "The app's container can't read a boot id: is object_states.boot_id_file set?"
+    pi.run(f'docker restart {pi.container("app")}')
+    pi.wait_until_healthy()
+    log = pi.app_log()
+    restored, restored_at = restored_at_this_start(log), restore_time_text(log)
+    assert restored is not None and restored_at is not None, 'The app\'s log has no "Picked up" line'
+    assert clock_not_synced_at_this_start(log), ("The app didn't say its clock hadn't synced, though the Pi's flag "
+                                                 "isn't there")
+    data = assert_data_readable(pi)
+    expected = expected_restore(data['states']['rows'], restored_at=_local_time_to_epoch(pi, restored_at),
+                                warned_behind_sec=clock_behind_warning_sec(log), not_synced=True, lag_sec=0.0,
+                                restore_max_age_sec=settings['restore_max_age_sec'], slack_sec=RESTORE_TIME_SLACK_SEC,
+                                this_boot=this_boot)
+    assert expected.case == 'clock not synced', f'{expected.case}: the app said its clock was behind its own rows'
+    if not expected.could_be:
+        pytest.skip('Nothing was saved in this boot in the last 5 minutes, so there was nothing to keep. Put a cup on '
+                    f'the desk 2 minutes before ({STEPS}).')
+    assert len(expected.must_be) <= restored <= len(expected.could_be), (
+        f'picked up {restored}; saved in this boot ({this_boot}): {expected.could_be}, sure: {expected.must_be}')
 
 
 def test_detector_restart_keeps_live_view(stack: Pi):

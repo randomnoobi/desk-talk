@@ -121,7 +121,7 @@ from desktalk.ports import (
     TracedObjectStates,
     TracePhotos,
 )
-from desktalk.runtime import Scheduler, Supervisor, SystemClock, clock_synced, plain_error, setup_logging
+from desktalk.runtime import Scheduler, Supervisor, SystemClock, boot_id, clock_synced, plain_error, setup_logging
 
 log = logging.getLogger(__name__)
 
@@ -454,9 +454,11 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                                  same_thing_overlap=config.agents.same_thing_overlap,
                                  ignore_labels=config.agents_file.ignore, known_labels=config.agents_file.own_words)
     state_store = SqliteStateStore(data_path(config.object_states.database))
+    boot_file = config.object_states.boot_id_file
     object_states = ObjectStateTracker(config.object_states, bus, state_store, device_id=source.kind,
                                        new_session_after_sec=config.protocols.breaks.break_min * MINUTE, clock=clock,
-                                       agents=config.agents, prefs=preferences, profiles=profiles)
+                                       agents=config.agents, prefs=preferences, profiles=profiles,
+                                       boot_id=boot_id(config.resolve(boot_file) if boot_file else None))
     synced_file = config.object_states.clock_synced_file
     object_states.restore(clock.now(), clock_synced=clock_synced(config.resolve(synced_file) if synced_file else None))
 

@@ -196,10 +196,10 @@ class InMemoryStateStore:
     def append(self, records: Sequence[StateRecord]) -> None:
         self.records.extend(records)
 
-    def latest_states(self, since: float) -> dict[str, StateRecord]:
+    def latest_states(self, since: float, *, boot_id: str | None = None) -> dict[str, StateRecord]:
         latest: dict[str, StateRecord] = {}
         for record in self.records:
-            if record.type == 'moved' or record.ts < since:
+            if record.type == 'moved' or record.ts < since or (boot_id is not None and record.boot_id != boot_id):
                 continue
             if record.label not in latest or record.ts >= latest[record.label].ts:
                 latest[record.label] = record

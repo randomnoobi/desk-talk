@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -102,6 +104,31 @@ def test_a_line_cut_off_by_a_power_cut_is_counted_not_fatal(tmp_path):
     path = tmp_path / 'events.jsonl'
     path.write_text('{"ts": 1}\n\n{"ts": 2\n[1]\n', encoding='utf-8')
     assert read_json_lines(path) == ([{'ts': 1}], 2)
+
+
+def make_database(path, *, boot_ids: bool):
+    with contextlib.closing(sqlite3.connect(path)) as db:
+        boot = ', boot_id TEXT' if boot_ids else ''
+        db.execute('CREATE TABLE events (id INTEGER PRIMARY KEY, ts REAL, type TEXT, object TEXT, '
+                   f'new_state TEXT{boot})')
+        db.execute("INSERT INTO events (ts, type, object, new_state) VALUES (100.0, 'snapshot', 'cup', 'PRESENT')")
+        if boot_ids:
+            db.execute("INSERT INTO events (ts, type, object, new_state, boot_id) "
+                       "VALUES (101.0, 'appeared', 'pen', 'PRESENT', 'boot-a')")
+        db.commit()
+
+
+def test_the_saved_states_say_which_boot_saved_them(tmp_path):
+    make_database(tmp_path / 'object_states.sqlite', boot_ids=True)
+    assert check_data(tmp_path)['states']['rows'] == [
+        {'object': 'cup', 'state': 'PRESENT', 'ts': 100.0, 'type': 'snapshot', 'boot_id': None},
+        {'object': 'pen', 'state': 'PRESENT', 'ts': 101.0, 'type': 'appeared', 'boot_id': 'boot-a'}]
+
+
+def test_a_database_from_before_boot_ids_can_still_be_read(tmp_path):
+    make_database(tmp_path / 'object_states.sqlite', boot_ids=False)
+    assert check_data(tmp_path)['states']['rows'] == [
+        {'object': 'cup', 'state': 'PRESENT', 'ts': 100.0, 'type': 'snapshot', 'boot_id': None}]
 
 
 def test_a_data_folder_with_no_database_says_so(tmp_path):
@@ -278,14 +305,17 @@ MAX_AGE = 300.0
 SLACK = 30.0
 
 
-def rows(**ages: float) -> list[dict[str, float | str]]:
-    """Saved states, each `age` seconds before the restore."""
-    return [{'object': name, 'ts': RESTORED_AT - age} for name, age in ages.items()]
+THIS_BOOT = 'boot-b'
 
 
-def expect(saved, *, warned=None, lag=0.0, not_synced=False):
+def rows(boot_id: str | None = 'boot-a', **ages: float) -> list[dict[str, float | str | None]]:
+    """Saved states, each `age` seconds before the restore, saved in `boot_id` (the boot before this one)."""
+    return [{'object': name, 'ts': RESTORED_AT - age, 'boot_id': boot_id} for name, age in ages.items()]
+
+
+def expect(saved, *, warned=None, lag=0.0, not_synced=False, this_boot: str | None = THIS_BOOT):
     return expected_restore(saved, restored_at=RESTORED_AT, warned_behind_sec=warned, not_synced=not_synced,
-                            lag_sec=lag, restore_max_age_sec=MAX_AGE, slack_sec=SLACK)
+                            lag_sec=lag, restore_max_age_sec=MAX_AGE, slack_sec=SLACK, this_boot=this_boot)
 
 
 def test_normal_start_uses_the_window_from_the_restore():
@@ -319,12 +349,32 @@ def test_the_clock_behind_warning_means_exactly_zero():
     assert e.must_be == set() and e.could_be == set()
 
 
-def test_a_clock_not_yet_synced_means_exactly_zero():
-    """However slow the clock, and whatever looks recent by it."""
+def test_a_clock_not_yet_synced_means_exactly_zero_from_an_earlier_boot():
+    """However slow the clock, and whatever looks recent by it. Rows saved before boot ids count as an earlier boot."""
     for lag in (0.0, 482_612.0):
-        e = expect(rows(fresh=20), lag=lag, not_synced=True)
-        assert e.case == 'clock not synced'
-        assert e.must_be == set() and e.could_be == set()
+        for saved in (rows(fresh=20), rows(None, fresh=20)):
+            e = expect(saved, lag=lag, not_synced=True)
+            assert e.case == 'clock not synced'
+            assert e.must_be == set() and e.could_be == set()
+
+
+def test_a_clock_not_yet_synced_still_brings_back_this_boots_rows():
+    """Only the app restarted since the boot: what this boot saved comes back, by the window, whatever the lag."""
+    saved = rows(THIS_BOOT, fresh=20, stale=400) + rows(earlier=10)
+    e = expect(saved, lag=482_612.0, not_synced=True)
+    assert e.case == 'clock not synced'
+    assert e.must_be == {'fresh'} and e.could_be == {'fresh'}
+
+
+def test_a_clock_behind_this_boots_rows_means_exactly_zero_even_before_it_has_synced():
+    e = expect(rows(THIS_BOOT, fresh=20), warned=60, not_synced=True)
+    assert e.case == 'clock behind'
+    assert e.must_be == set() and e.could_be == set()
+
+
+def test_with_no_boot_id_a_clock_not_yet_synced_means_exactly_zero():
+    e = expect(rows(None, fresh=20), not_synced=True, this_boot=None)
+    assert e.must_be == set() and e.could_be == set()
 
 
 def test_a_slow_clock_the_app_didnt_notice_is_its_own_case():

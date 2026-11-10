@@ -56,7 +56,28 @@ It checks that the Pi has only just booted, that all three are healthy and start
 
 It also checks the power really was cut, so a `sudo reboot` fails on purpose. The Pi's journal is kept in memory, so the boot before this one is normally gone (Raspberry Pi OS sets `Storage=volatile`). The proof is then the app's log: a clean shut-down lets the app write `Shutting down` before it stops, and a pulled plug doesn't. Stopping the containers yourself first also fails it, for the same reason.
 
-The Pi has no clock battery, so after a power cut its clock starts behind and jumps forward once it reaches the internet. So the app brings back nothing saved until the Pi says its clock has been set from the internet (the file `/run/systemd/timesync/synchronized`, which compose.yaml lets the app see). After a power cut the app almost always starts before that, so it says its clock hasn't synced, picks up nothing, and the check expects exactly that. The check works out when the app really started from the Pi's uptime, not from Docker's start time, because Docker took that from the wrong clock. Everything else it reads by the app's own clock: the app's log tells which run is this one by the order of its lines, not their times, and the saved states are compared with the time on this run's `Picked up` line. If the app's clock was still behind when it restored and the app didn't say so, the check fails.
+The Pi has no clock battery, so after a power cut its clock starts behind and jumps forward once it reaches the internet. So until the Pi says its clock has been set from the internet (the file `/run/systemd/timesync/synchronized`, which compose.yaml lets the app see), the app brings back only states saved since this boot: each saved state keeps the Pi's boot id (`/proc/sys/kernel/random/boot_id`), which is new after every boot. After a power cut the app almost always starts before the clock is set, so it says its clock hasn't synced, picks up nothing from before the cut, and the check expects exactly that. It reads the boot id the app sees, so if the app was restarted again since the boot, what that boot saved may come back, and the check allows for it. The check works out when the app really started from the Pi's uptime, not from Docker's start time, because Docker took that from the wrong clock. Everything else it reads by the app's own clock: the app's log tells which run is this one by the order of its lines, not their times, and the saved states are compared with the time on this run's `Picked up` line. If the app's clock was still behind when it restored and the app didn't say so, the check fails.
+
+## An app restart before the clock has synced
+
+Shows that restarting only the app (as the watchdog or the memory limit does) keeps its saved states on a Pi that hasn't reached the internet since it booted. The clock ran on without a break since the boot, so what this boot saved is still good. A power cut is the other case, above.
+
+The Pi must be on the Wi-Fi, so the test can reach it, but must not have set its clock from the internet since it booted. Either:
+
+- **With a router:** unplug the router's internet cable (keep the router itself on), then pull the Pi's plug and put it back. Plug the internet cable back in only after the test.
+- **Without one:** **on the Pi**, `sudo systemctl stop systemd-timesyncd && sudo rm -f /run/systemd/timesync/synchronized`. This only pretends: the clock is still right. Afterwards, **on the Pi**, `sudo systemctl start systemd-timesyncd` (it makes the file again once it reaches the internet).
+
+Then:
+
+1. **On your Mac**, check the Pi's clock hasn't synced: `ssh pi ls /run/systemd/timesync/` must not list `synchronized`.
+2. Put a cup on the desk and wait 2 minutes, so its state gets saved.
+3. **On your Mac**:
+
+   ```bash
+   DESKTALK_PI=pi uv run pytest -m pi -v -rs -k test_app_restart_before_the_clock_has_synced
+   ```
+
+It restarts the app, then checks the app said its clock hadn't synced, and still picked up what this boot saved in the last `object_states.restore_max_age_sec` (the cup). It skips if the clock has synced, or if nothing was saved.
 
 ## No Wi-Fi at boot
 
