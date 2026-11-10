@@ -121,7 +121,7 @@ from desktalk.ports import (
     TracedObjectStates,
     TracePhotos,
 )
-from desktalk.runtime import Scheduler, Supervisor, SystemClock, plain_error, setup_logging
+from desktalk.runtime import Scheduler, Supervisor, SystemClock, clock_synced, plain_error, setup_logging
 
 log = logging.getLogger(__name__)
 
@@ -457,7 +457,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     object_states = ObjectStateTracker(config.object_states, bus, state_store, device_id=source.kind,
                                        new_session_after_sec=config.protocols.breaks.break_min * MINUTE, clock=clock,
                                        agents=config.agents, prefs=preferences, profiles=profiles)
-    object_states.restore(clock.now())
+    synced_file = config.object_states.clock_synced_file
+    object_states.restore(clock.now(), clock_synced=clock_synced(config.resolve(synced_file) if synced_file else None))
 
     # ── the consumers of detection events (each subscribes itself, in this order) ──
     def on_desk(x: float, y: float, width: int, height: int) -> bool | None:

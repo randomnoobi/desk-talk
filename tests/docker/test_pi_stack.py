@@ -99,9 +99,12 @@ def stack(request) -> Iterator[Stack]:
     no_sound, no_cards = work / 'no-sound', work / 'no-cards'     # a computer's Docker has no sound card to share
     no_sound.mkdir()
     no_cards.write_text('--- no soundcards ---\n', encoding='utf-8')
+    clock_folder = work / 'timesync'                           # a computer's Docker can't share /run/systemd/timesync
+    clock_folder.mkdir()
     port = free_port()
     env = {**os.environ, 'TZ': TIME_ZONE, 'APP_HOST_PORT': str(port), 'DESKTALK_DATA': str(work / 'data'),
            'PI_TEST_PICTURES': str(pictures), 'SOUND_DEVICES': str(no_sound), 'SOUND_CARDS_FILE': str(no_cards),
+           'CLOCK_SYNC_FOLDER': str(clock_folder),
            'APP_HEALTH_INTERVAL': QUICK_HEALTH,
            'DETECTOR_HEALTH_INTERVAL': QUICK_HEALTH, 'CAMERA_HEALTH_INTERVAL': QUICK_HEALTH,
            'APP_HEALTH_GRACE_SEC': '10', 'DETECTOR_HEALTH_GRACE_SEC': '10',

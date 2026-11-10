@@ -258,7 +258,7 @@ power supply is too weak, use the official Raspberry Pi power supply.
 The Pi keeps going: it takes pictures, finds objects, saves events and says warnings on the speaker. The cloud server
 (if linked) gets its events later, and an AI on another computer can't be reached, so chat says so. Nobody can open the
 page until the Wi-Fi is back. Without a network, the Pi's clock can be wrong after a power cut (it has no clock
-battery) until the network is back. Starting with no Wi-Fi hasn't been tried on a real Pi yet
+battery) until the network is back, so objects start over instead of picking up where they were. Starting with no Wi-Fi hasn't been tried on a real Pi yet
 ([docs/PI_CHECKS.md](../docs/PI_CHECKS.md)).
 
 ### Camera problem

@@ -191,6 +191,10 @@ object_states:
   # Saving
   snapshot_every_sec: 60      # save every object's state this often (restart + heartbeat)
   restore_max_age_sec: 300    # after a restart, saved states older than this start over as UNKNOWN
+  # A file that is there only once this computer's clock has been set from the internet since it started. Until
+  # then nothing saved is brought back: a Pi has no clock battery, so after a power cut its clock starts at the
+  # moment the power went off, maybe days behind. Empty (a Mac): the clock is always trusted.
+  clock_synced_file: null
   database: data/object_states.sqlite     # where the states are saved
   trace_pictures: 90          # the developer page shows each object's last this many pictures of smoothing
 

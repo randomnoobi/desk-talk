@@ -200,6 +200,7 @@ class ObjectStatesSettings(_Section):
     person_counts_movement: bool
     snapshot_every_sec: PositiveNumber
     restore_max_age_sec: PositiveNumber
+    clock_synced_file: Path | None = None
     database: Path
     trace_pictures: PositiveInt
 

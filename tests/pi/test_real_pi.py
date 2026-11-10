@@ -26,6 +26,7 @@ from tests.pi.on_the_pi import (
     RESULTS,
     app_stopped_cleanly,
     clock_behind_warning_sec,
+    clock_not_synced_at_this_start,
     expected_restore,
     first_wifi_after_boot,
     how_boot_ended,
@@ -209,21 +210,23 @@ def test_starts_after_power_cut(pi: Pi):
     # How far behind the app's clock was when it restored: the real start is a little before the restore, so a clock
     # that was right by then comes out at about 0 or below, even if it was still behind when the container started.
     lag = _real_start_time(pi) - restored_epoch
+    not_synced = clock_not_synced_at_this_start(log)
     expected = expected_restore(data['states']['rows'], restored_at=restored_epoch,
-                                warned_behind_sec=warned, lag_sec=lag,
+                                warned_behind_sec=warned, not_synced=not_synced, lag_sec=lag,
                                 restore_max_age_sec=settings['restore_max_age_sec'], slack_sec=RESTORE_TIME_SLACK_SEC)
     if expected.case == 'clock behind':
         assert lag > 0, (f'The app said its clock was about {warned} s behind the saved states, but it was measured '
                          f'{lag:.0f} s behind when it restored')
-    if expected.case == 'clock behind, not noticed':
-        pytest.skip(f"Started and readable, but the app's clock was {lag:.0f} s behind when it restored and no saved "
-                    'state looked newer, so it could not tell. That happens when the plug is pulled within about a '
-                    f"minute of the Pi's last clock save, so restored states could not be checked ({STEPS}).")
+    # The Pi makes its clock flag only once the clock is right, so a clock still behind must have been caught
+    assert expected.case != 'clock behind, not noticed', (
+        f"The app's clock was {lag:.0f} s behind when it restored, and it didn't say its clock hadn't synced: is "
+        f"object_states.clock_synced_file set, and its folder shared in compose.yaml? Picked up {restored}")
     if expected.case == 'nothing saved':
         pytest.skip('Started and readable, but nothing was saved in the 5 minutes before the cut, so restored states '
                     f'could not be checked. Put a cup on the desk first and plug back in sooner ({STEPS}).')
     assert len(expected.must_be) <= restored <= len(expected.could_be), (
-        f'{expected.case}: the app warned its clock was {warned} s behind, measured {lag:.0f} s; picked up '
+        f'{expected.case}: the app warned its clock was {warned} s behind (not synced: {not_synced}), measured '
+        f'{lag:.0f} s; picked up '
         f'{restored}; saved: {expected.could_be}, sure: {expected.must_be}')
 
 

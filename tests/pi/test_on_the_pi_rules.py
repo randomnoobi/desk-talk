@@ -11,6 +11,7 @@ from tests.pi.on_the_pi import (
     app_stopped_cleanly,
     check_data,
     clock_behind_warning_sec,
+    clock_not_synced_at_this_start,
     expected_restore,
     first_wifi_after_boot,
     how_boot_ended,
@@ -207,6 +208,8 @@ RUN_2 = ('2026-11-01 10:06:00 ' + RESTORED.format(1) +
 RUN_BEFORE_CUT = ('2026-11-01 10:20:00 ' + RESTORED.format(2) +
                   '2026-11-01 10:20:01 INFO uvicorn.error: Started server process [7]\n')
 STOPPED_LATE = '2026-11-01 10:25:00 INFO uvicorn.error: Shutting down\n'
+NOT_SYNCED = ("{} WARNING desktalk.core.object_states.tracker: The clock hasn't been set from the internet since "
+              'this computer started, so every object starts over\n')
 
 
 def test_only_the_line_from_this_start_counts():
@@ -253,6 +256,16 @@ def test_a_warning_from_an_earlier_run_doesnt_count():
     assert clock_behind_warning_sec(RUN_1 + RUN_2) is None
 
 
+def test_the_not_synced_warning_comes_just_before_this_runs_picked_up_line():
+    assert clock_not_synced_at_this_start(RUN_BEFORE_CUT + NOT_SYNCED.format('2026-11-01 10:06:00') + RUN_2) is True
+    assert clock_not_synced_at_this_start(RUN_BEFORE_CUT + RUN_2) is False
+
+
+def test_a_not_synced_warning_from_an_earlier_run_doesnt_count():
+    assert clock_not_synced_at_this_start(NOT_SYNCED.format('2026-11-01 09:59:59') + RUN_1 + RUN_2) is False
+    assert clock_not_synced_at_this_start(NOT_SYNCED.format('2026-11-01 09:59:59') + RUN_2) is True   # the only run
+
+
 # ── when the app really started, whatever the Pi's clock says ──
 def test_real_start_is_now_minus_uptime_plus_start_since_boot():
     # /proc/uptime then `date +%s.%N`: booted 1000.5 s ago; the app started 40 s after the boot
@@ -270,9 +283,9 @@ def rows(**ages: float) -> list[dict[str, float | str]]:
     return [{'object': name, 'ts': RESTORED_AT - age} for name, age in ages.items()]
 
 
-def expect(saved, *, warned=None, lag=0.0):
-    return expected_restore(saved, restored_at=RESTORED_AT, warned_behind_sec=warned, lag_sec=lag,
-                            restore_max_age_sec=MAX_AGE, slack_sec=SLACK)
+def expect(saved, *, warned=None, lag=0.0, not_synced=False):
+    return expected_restore(saved, restored_at=RESTORED_AT, warned_behind_sec=warned, not_synced=not_synced,
+                            lag_sec=lag, restore_max_age_sec=MAX_AGE, slack_sec=SLACK)
 
 
 def test_normal_start_uses_the_window_from_the_restore():
@@ -304,6 +317,14 @@ def test_the_clock_behind_warning_means_exactly_zero():
     e = expect(rows(fresh=20), warned=840, lag=900.0)
     assert e.case == 'clock behind'
     assert e.must_be == set() and e.could_be == set()
+
+
+def test_a_clock_not_yet_synced_means_exactly_zero():
+    """However slow the clock, and whatever looks recent by it."""
+    for lag in (0.0, 482_612.0):
+        e = expect(rows(fresh=20), lag=lag, not_synced=True)
+        assert e.case == 'clock not synced'
+        assert e.must_be == set() and e.could_be == set()
 
 
 def test_a_slow_clock_the_app_didnt_notice_is_its_own_case():

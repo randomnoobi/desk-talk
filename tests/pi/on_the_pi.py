@@ -60,6 +60,7 @@ SHUTDOWN_LINE = re.compile(r'Reached target (shutdown|reboot|poweroff|halt|final
 LOG_TIME = re.compile(r'\d{4}-\d\d-\d\d \d\d:\d\d:\d\d')
 RESTORED_LINE = re.compile(r'Picked up (\d+) object states from before the restart')
 CLOCK_BEHIND_LINE = re.compile(r'The clock is behind the newest saved object state by about (\d+) seconds')
+CLOCK_NOT_SYNCED_LINE = "The clock hasn't been set from the internet since this computer started"
 LOG_TIME_STEP_SEC = 1               # the app's log writes whole seconds
 APP_STOPPING = 'uvicorn.error: Shutting down'
 
@@ -388,13 +389,22 @@ def restore_time_text(log: str) -> str | None:
     return found[0] if found else None
 
 
-def clock_behind_warning_sec(log: str) -> int | None:
-    """How far behind the saved states the app said its clock was at this start, or None if it didn't say. The warning
-    comes just before this run's "Picked up" line, so it's looked for after the run before's "Picked up" line: that run
-    could only have warned before its own."""
+def _before_this_restore(log: str) -> str:
+    """The lines a warning about this start can be in: it comes just before this run's "Picked up" line, so after the
+    run before's "Picked up" line (that run could only have warned before its own)."""
     lines, starts = _starts(log)
-    found = CLOCK_BEHIND_LINE.findall('\n'.join(lines[starts[-2] + 1:] if len(starts) > 1 else lines))
+    return '\n'.join(lines[starts[-2] + 1:] if len(starts) > 1 else lines)
+
+
+def clock_behind_warning_sec(log: str) -> int | None:
+    """How far behind the saved states the app said its clock was at this start, or None if it didn't say."""
+    found = CLOCK_BEHIND_LINE.findall(_before_this_restore(log))
     return int(found[-1]) if found else None
+
+
+def clock_not_synced_at_this_start(log: str) -> bool:
+    """Did the app say at this start that its clock hadn't been set from the internet yet (so it picked up nothing)?"""
+    return CLOCK_NOT_SYNCED_LINE in _before_this_restore(log)
 
 
 def app_stopped_cleanly(log: str) -> bool | None:
@@ -420,22 +430,27 @@ def real_start_time(probe: str, started_after_boot_sec: float) -> float:
 
 
 class ExpectedRestore(NamedTuple):
-    case: str                   # 'normal', 'nothing saved', 'clock behind' or 'clock behind, not noticed'
+    case: str                   # 'normal', 'nothing saved', 'clock not synced', 'clock behind' or
+                                # 'clock behind, not noticed'
     must_be: set[str]           # objects the app surely picked up
     could_be: set[str]          # objects it may have picked up
 
 
 def expected_restore(rows: Iterable[Mapping[str, Any]], *, restored_at: float, warned_behind_sec: float | None,
-                     lag_sec: float, restore_max_age_sec: float, slack_sec: float) -> ExpectedRestore:
+                     not_synced: bool, lag_sec: float, restore_max_age_sec: float,
+                     slack_sec: float) -> ExpectedRestore:
     """What the app should say it picked up, all by the app's own clock, which also wrote the rows' `ts`.
 
     `rows` are the saved states ({'object', 'ts'}). `restored_at` is the time on this run's "Picked up" line, in whole
     seconds, so the restore was somewhere in the second after it. `warned_behind_sec` is what the app's clock-behind
-    warning said, or None. `lag_sec` is how far behind the app's clock really was when it restored.
+    warning said, or None. `not_synced`: did the app say its clock hadn't been set from the internet yet? `lag_sec` is
+    how far behind the app's clock really was when it restored.
 
-    If the app warned, it must have picked up nothing. If it didn't but its clock was behind by more than the slack,
-    it missed it: that happens when the plug was pulled within about a minute of the Pi's last clock save, so no saved
-    row looks newer. Otherwise this run wrote only after its restore, so rows from before it are the run before's."""
+    If the app said either, it must have picked up nothing. If it didn't but its clock was behind by more than the
+    slack, it missed it. Otherwise this run wrote only after its restore, so rows from before it are the run
+    before's."""
+    if not_synced:
+        return ExpectedRestore('clock not synced', set(), set())
     if warned_behind_sec is not None:
         return ExpectedRestore('clock behind', set(), set())
     if lag_sec > slack_sec:

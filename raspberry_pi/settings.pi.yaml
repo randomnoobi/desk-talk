@@ -33,6 +33,11 @@ llm:
   ollama_timeout_sec: 30         # a laptop that went to sleep shouldn't keep your chat waiting for long
   ollama_reasoning_effort: none  # answer at once: a reminder only waits a moment, and thinking can use up the reply
 
+object_states:
+  clock_synced_file: /run/timesync/synchronized   # compose.yaml lets the Pi's flag folder in here: after a power cut
+                                                  # the clock starts days behind, so nothing saved is brought back
+                                                  # until this file is there
+
 camera:
   pair_key_file: /pairing/pair-key.txt   # on the volume the camera reads it from (compose.yaml)
   fps: 3                         # the same as pi.fps: the app looks at every picture the Pi takes

@@ -197,6 +197,23 @@ def test_the_card_list_is_where_the_settings_look(pi_settings, compose):
     assert pi_settings['notifications']['sound_cards_file'] == inside
 
 
+def test_the_app_can_see_whether_the_pis_clock_has_synced(compose):
+    """systemd-timesyncd makes `synchronized` in this folder once the clock is set from the internet."""
+    binds = [str(v) for v in compose['services']['app']['volumes']]
+    assert '${CLOCK_SYNC_FOLDER:-/run/systemd/timesync}:/run/timesync:ro' in binds
+
+
+def test_the_clock_flag_is_where_the_settings_look(pi_settings, compose):
+    inside = next(v for v in compose['services']['app']['volumes'] if 'CLOCK_SYNC_FOLDER' in str(v)).split(':')[-2]
+    assert pi_settings['object_states']['clock_synced_file'] == f'{inside}/synchronized'
+
+
+def test_a_computer_trusts_its_own_clock():
+    """Only the Pi names a flag file: a Mac keeps its time with no internet."""
+    settings = yaml.safe_load((ROOT / 'config' / 'settings.yaml').read_text(encoding='utf-8'))
+    assert settings['object_states']['clock_synced_file'] is None
+
+
 def test_the_voice_is_in_the_image_where_the_settings_say():
     config = load_config(environ={}, dotenv=ROOT / 'no-such-file')
     dockerfile = (PI / 'app' / 'Dockerfile').read_text(encoding='utf-8')
