@@ -271,3 +271,15 @@ def test_a_detector_changing_a_model_has_minutes_before_it_could_be_ended():
 def test_ultralytics_sends_nothing_home():
     text = (PI / 'detector_service' / 'Dockerfile').read_text(encoding='utf-8')
     assert 'YOLO_OFFLINE=true' in text and 'sync=False' in text
+
+
+def test_only_the_pi_reads_a_boot_id():
+    """The Pi tells a restart of only the app from a power cut by its boot id. A computer with no flag file trusts its
+    clock anyway, so it names no boot id file, and the tests run the same on a Mac and on Linux."""
+    settings = yaml.safe_load((ROOT / 'config' / 'settings.yaml').read_text(encoding='utf-8'))
+    assert settings['object_states']['boot_id_file'] is None
+
+
+def test_the_pi_reads_the_kernels_boot_id(pi_settings):
+    """/proc needs nothing in compose.yaml: every container shares the Pi's kernel, so it shows the Pi's own id."""
+    assert pi_settings['object_states']['boot_id_file'] == '/proc/sys/kernel/random/boot_id'

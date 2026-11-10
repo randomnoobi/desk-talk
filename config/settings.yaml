@@ -197,9 +197,9 @@ object_states:
   clock_synced_file: null
   # A file that says which boot this is (a new id after every boot; Linux makes it, and Docker shows the Pi's own).
   # Each saved state keeps it, so when only the app restarts, before the clock has synced (a Pi with no Wi-Fi), it
-  # still gets back what it saved since the boot. No such file (a Mac) or empty: nothing saved is brought back
-  # until the clock has synced, as before.
-  boot_id_file: /proc/sys/kernel/random/boot_id
+  # still gets back what it saved since the boot. Empty (a Mac, or a computer whose clock is always trusted, so it
+  # never needs one): nothing saved is brought back until the clock has synced.
+  boot_id_file: null
   database: data/object_states.sqlite     # where the states are saved
   trace_pictures: 90          # the developer page shows each object's last this many pictures of smoothing
 

@@ -407,7 +407,8 @@ def clock_behind_warning_sec(log: str) -> int | None:
 
 
 def clock_not_synced_at_this_start(log: str) -> bool:
-    """Did the app say at this start that its clock hadn't been set from the internet yet (so it picked up nothing)?"""
+    """Did the app say at this start that its clock hadn't been set from the internet yet? Then it picked up only what
+    this boot saved, which after a power cut is nothing."""
     return CLOCK_NOT_SYNCED_LINE in _before_this_restore(log)
 
 

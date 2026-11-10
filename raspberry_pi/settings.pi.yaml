@@ -37,6 +37,8 @@ object_states:
   clock_synced_file: /run/timesync/synchronized   # compose.yaml lets the Pi's flag folder in here: after a power cut
                                                   # the clock starts days behind, so until this file is there only
                                                   # states saved since the boot are brought back
+  boot_id_file: /proc/sys/kernel/random/boot_id   # new after every boot, the same while only the app restarts: it tells
+                                                  # an app restart (keep the states) from a power cut (start over)
 
 camera:
   pair_key_file: /pairing/pair-key.txt   # on the volume the camera reads it from (compose.yaml)

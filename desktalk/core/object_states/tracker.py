@@ -309,20 +309,19 @@ class ObjectStateTracker:
         boot are trusted: the clock has run on without a break since they were written (only the app restarted).
         With no boot id, nothing is."""
         boot = None                                     # whose rows count: None is every boot's
+        latest: dict[str, StateRecord] = {}
+        later: list[float] = []
         if not clock_synced:
-            if self._boot_id is None:
-                log.warning("The clock hasn't been set from the internet since this computer started, "
-                            "so every object starts over")
-                log.info('Picked up 0 object states from before the restart')
-                return 0
-            log.warning("The clock hasn't been set from the internet since this computer started, "
-                        "so only states saved since it started are picked up")
+            log.warning("The clock hasn't been set from the internet since this computer started, so %s",
+                        'only states saved since it started are picked up' if self._boot_id is not None
+                        else 'every object starts over')
             boot = self._boot_id
-        latest = self._store.latest_states(now - self._restore_max_age_sec, boot_id=boot)
+        if clock_synced or boot is not None:
+            latest = self._store.latest_states(now - self._restore_max_age_sec, boot_id=boot)
+            # The recent-states query skips `moved` rows, so look at the change rows after `now` too. Rows from
+            # another boot don't count when only this boot's are picked up: their clock may have been off.
+            later = [row.ts for row in self._store.changes(now) if boot is None or row.boot_id == boot]
         restored = 0
-        # The recent-states query skips `moved` rows, so look at the change rows after `now` too. Rows from another
-        # boot don't count when only this boot's are picked up: they were written by a clock that may have been off.
-        later = [row.ts for row in self._store.changes(now) if boot is None or row.boot_id == boot]
         newest = max([row.ts for row in latest.values()] + later, default=None)
         if newest is not None and newest > now:
             # This app writes rows with its own clock, so a newer row means the clock went back (a Pi with no

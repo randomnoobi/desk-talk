@@ -215,7 +215,7 @@ def test_starts_after_power_cut(pi: Pi):
     not_synced = clock_not_synced_at_this_start(log)
     # Before the clock has synced only rows saved in this boot may come back; the rows from before the cut have the
     # boot before's id, so none of those
-    this_boot = pi.app_boot_id(settings['boot_id_file'])
+    this_boot = pi.app_boot_id()
     expected = expected_restore(data['states']['rows'], restored_at=restored_epoch,
                                 warned_behind_sec=warned, not_synced=not_synced, lag_sec=lag,
                                 restore_max_age_sec=settings['restore_max_age_sec'], slack_sec=RESTORE_TIME_SLACK_SEC,
@@ -331,13 +331,16 @@ def test_app_restart_before_the_clock_has_synced_keeps_this_boots_states(stack: 
     pi = stack
     settings = pi.settings()
     synced_file = settings['clock_synced_file']
+    not_synced = (f"The Pi's clock has been set from the internet this boot, so this would show nothing. Do the steps "
+                  f'in {STEPS} ("An app restart before the clock has synced").')
     if synced_file is None or pi.app_sees_file(synced_file):
-        pytest.skip("The Pi's clock has been set from the internet this boot, so this would show nothing. Do the "
-                    f'steps in {STEPS} ("An app restart before the clock has synced").')
-    this_boot = pi.app_boot_id(settings['boot_id_file'])
+        pytest.skip(not_synced)
+    this_boot = pi.app_boot_id()
     assert this_boot, "The app's container can't read a boot id: is object_states.boot_id_file set?"
     pi.run(f'docker restart {pi.container("app")}')
     pi.wait_until_healthy()
+    if pi.app_sees_file(synced_file):       # the clock was set while the app restarted: Docker shows the new flag
+        pytest.skip(not_synced)
     log = pi.app_log()
     restored, restored_at = restored_at_this_start(log), restore_time_text(log)
     assert restored is not None and restored_at is not None, 'The app\'s log has no "Picked up" line'

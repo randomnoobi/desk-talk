@@ -74,7 +74,7 @@ def test_a_restart_before_the_clock_has_synced_starts_over_with_no_boot_id(tmp_p
     rig = DeskRig(tmp_path)
     rig.watch(settle_sec(rig), CUP_FAR)
     rig.app.stop(timeout=1)
-    config = changed(rig.config, 'object_states', clock_synced_file=tmp_path / 'not-synced-yet', boot_id_file=None)
+    config = changed(rig.config, 'object_states', clock_synced_file=tmp_path / 'not-synced-yet')
     rig2 = DeskRig(tmp_path, config=config, start=rig.clock.now() + 10)
     assert 'cup' not in rig2.app.object_states.snapshot().objects
     rig2.app.stop(timeout=1)

@@ -30,7 +30,7 @@ _TYPES = (*CHANGE_TYPES, 'snapshot')
 _TYPE_LIST = ', '.join(f"'{t}'" for t in _TYPES)
 _CHANGE_LIST = ', '.join(f"'{t}'" for t in CHANGE_TYPES)
 _COLUMNS = 'ts, timezone, device_id, type, object, prev_state, new_state, conf_avg, bbox, dwell_sec, boot_id'
-_BLANKS = ', '.join('?' * len(_COLUMNS.split(', ')))
+_BLANKS = ', '.join(['?'] * len(_COLUMNS.split(', ')))
 
 _SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS events (
@@ -90,7 +90,11 @@ class SqliteStateStore:
             self._db.executescript(_SCHEMA)
             columns = {row[1] for row in self._db.execute('PRAGMA table_info(events)')}
             if 'boot_id' not in columns:        # a file from before rows kept their boot
-                self._db.execute('ALTER TABLE events ADD COLUMN boot_id TEXT')
+                try:
+                    self._db.execute('ALTER TABLE events ADD COLUMN boot_id TEXT')
+                except sqlite3.OperationalError as exc:
+                    if 'duplicate column' not in str(exc):      # another program opening it just added it
+                        raise
         log.info('Object states are kept in %s', self.path)
 
     def append(self, records: Sequence[StateRecord]) -> None:
