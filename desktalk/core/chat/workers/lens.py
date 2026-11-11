@@ -24,7 +24,7 @@ import logging
 from typing import Any
 
 from desktalk.config import LensSettings, PiSettings
-from desktalk.config.prompts import LensPrompts
+from desktalk.config.prompts import ByCamera, LensPrompts
 from desktalk.core.habits.preferences import quiet_hours_now
 from desktalk.domain import LENS, CameraNotice, CheckLevel, DetectorState, HealthMeasure, PiHealth, UploadInfo
 from desktalk.ports import (
@@ -88,12 +88,11 @@ class _PiWatch:
                 return {'key': self.key, 'kind': 'problem', 'text': text}
             return None
         self._since = None
-        self._said_rank = 0
-        if self._open:
+        if self._open:                          # (how bad it was is kept until the thanks: a short dip isn't a fix)
             if self._gone_since is None:
                 self._gone_since = now
             if now - self._gone_since >= self._fixed_after:
-                self._open, self._gone_since = False, None
+                self._open, self._gone_since, self._said_rank = False, None, 0
                 return {'key': self.key, 'kind': 'fixed', 'text': self._fixed}
         return None
 
@@ -138,12 +137,13 @@ class Lens:
         waits = settings.wait_before_saying_sec
         timing = {'repeat': settings.repeat_after_min * 60, 'fixed_after': settings.fixed_after_sec}
         fixed = prompts.pi_fixed
+        self._card_low, self._card_full = self._for_camera(prompts.card_low), self._for_camera(prompts.card_full)
         self._pi_watches = [_PiWatch('pi_hot', fixed.pi_hot, wait=waits.pi, **timing),
                             _PiWatch('pi_power', fixed.pi_power, wait=waits.pi, **timing),
                             _PiWatch('pi_clock', fixed.pi_clock, wait=waits.pi, **timing),
                             _PiWatch('pi_detector', fixed.pi_detector, wait=waits.pi_detector, **timing),
                             _PiWatch('detections', fixed.detections, wait=0, **timing),
-                            _PiWatch('card', fixed.card, wait=0, **timing),
+                            _PiWatch('card', self._for_camera(fixed.card), wait=0, **timing),
                             _PiWatch('pi_heartbeat', fixed.pi_heartbeat, wait=0, **timing)]
 
     def tick(self, now: float) -> float:
@@ -217,8 +217,13 @@ class Lens:
             return None
         if m.level not in RANK or m.value is None:
             return '', 0
-        words = self._words.card_full if m.level is CheckLevel.SERIOUS else self._words.card_low
+        words = self._card_full if m.level is CheckLevel.SERIOUS else self._card_low
         return words.format(free_mb=m.value), RANK[m.level]
+
+    def _for_camera(self, words: ByCamera) -> str:
+        """The card's wording for this camera: the app runs on the Pi when the Pi is the camera (its SD card), and
+        on this computer with a webcam or the phone (its disk)."""
+        return words.model_dump().get(self._source.kind, words.webcam)
 
     def _heartbeat_text(self, m: HealthMeasure | None) -> tuple[str, int] | None:
         if m is None or m.level is CheckLevel.UNKNOWN:

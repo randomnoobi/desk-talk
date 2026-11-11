@@ -202,8 +202,12 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'lens.pi_hot': ('temp',),
     'lens.pi_clock': ('seconds', 'way'),
     'lens.pi_very_hot': ('temp',),
-    'lens.card_low': ('free_mb',),
-    'lens.card_full': ('free_mb',),
+    'lens.card_low.pi': ('free_mb',),
+    'lens.card_low.phone': ('free_mb',),
+    'lens.card_low.webcam': ('free_mb',),
+    'lens.card_full.pi': ('free_mb',),
+    'lens.card_full.phone': ('free_mb',),
+    'lens.card_full.webcam': ('free_mb',),
     'lens.no_detections': ('minutes',),
     'lens.no_detections_long': ('minutes',),
     'lens.pi_heartbeat': ('seconds',),
@@ -572,6 +576,14 @@ class PhotoWords(_Section):
     no_label: str
 
 
+class ByCamera(_Section):
+    """One text for each camera (settings → camera.source)."""
+
+    pi: str
+    phone: str
+    webcam: str
+
+
 class LensCard(_Section):
     name: str
     art: str
@@ -585,7 +597,7 @@ class PiFixed(_Section):
     pi_clock: str
     pi_detector: str
     detections: str
-    card: str
+    card: ByCamera
     pi_heartbeat: str
 
 
@@ -600,8 +612,8 @@ class LensPrompts(_Section):
     pi_clock_ahead: str
     pi_detector: str
     pi_very_hot: str
-    card_low: str
-    card_full: str
+    card_low: ByCamera                # the disk the data is saved on: the Pi's SD card, or this computer's disk
+    card_full: ByCamera
     no_detections: str
     no_detections_long: str
     pi_heartbeat: str
@@ -617,14 +629,6 @@ class CameraProblems(_Section):
     empty: str
     cutoff: str
     slow: str
-
-
-class ByCamera(_Section):
-    """One text for each camera (settings → camera.source)."""
-
-    pi: str
-    phone: str
-    webcam: str
 
 
 class CameraFixed(_Section):

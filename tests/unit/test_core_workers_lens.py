@@ -413,6 +413,32 @@ def test_a_pi_that_gets_far_too_hot_is_said_at_once_not_after_the_repeat_time():
     assert len(rig.said()) == 2             # once said, serious again waits for the repeat time
 
 
+def test_a_pi_hovering_around_the_warning_temperature_is_said_once_until_the_repeat_time():
+    """Hot for 20 seconds, cool for one tick, hot again: one short dip isn't a fix, so it's not said again."""
+    rig = Rig(pi=PiReports())
+    for _ in range(5):
+        for _ in range(10):
+            rig.pi.picture(rig.clock.now(), temp=76.0)
+            rig.tick(after=2)
+        rig.pi.picture(rig.clock.now(), temp=74.0)
+        rig.tick(after=2)
+    assert rig.said() == [('problem', WORDS.pi_hot.format(temp=76.0))]
+
+
+def test_a_pi_problem_said_again_after_its_thanks_is_said_at_once():
+    rig = Rig(pi=PiReports())
+    rig.pi.picture(rig.clock.now(), temp=76.0)
+    rig.tick()
+    rig.tick(after=10)
+    rig.pi.picture(rig.clock.now(), temp=60.0)
+    rig.tick(after=2)
+    rig.tick(after=5)
+    rig.pi.picture(rig.clock.now(), temp=77.0)
+    rig.tick(after=2)
+    rig.tick(after=10)
+    assert [kind for kind, _ in rig.said()] == ['problem', 'fixed', 'problem']
+
+
 def test_the_pi_is_not_checked_before_its_first_picture():
     rig = Rig(pi=PiReports())
     rig.tick()
@@ -597,13 +623,43 @@ def test_a_card_getting_full_is_said_and_then_serious():
     rig.tick()
     rig.disk.free = 400.0
     rig.tick(after=2)
-    assert rig.said() == [('problem', WORDS.card_low.format(free_mb=1500.0)),
-                          ('problem', WORDS.card_full.format(free_mb=400.0))]
+    assert rig.said() == [('problem', WORDS.card_low.pi.format(free_mb=1500.0)),
+                          ('problem', WORDS.card_full.pi.format(free_mb=400.0))]
     assert rig.notifier.sent[0]['notify'] == 'warning'
     rig.disk.free = 5000.0
     rig.tick(after=2)
     rig.tick(after=5)
-    assert rig.said()[-1] == ('fixed', WORDS.pi_fixed.card)
+    assert rig.said()[-1] == ('fixed', WORDS.pi_fixed.card.pi)
+
+
+def test_a_card_hovering_around_the_warning_level_is_said_once_until_the_repeat_time():
+    rig = Rig(free_mb=1990.0)
+    for _ in range(5):
+        for _ in range(10):
+            rig.disk.free = 1990.0
+            rig.tick(after=2)
+        rig.disk.free = 2010.0
+        rig.tick(after=2)
+    assert rig.said() == [('problem', WORDS.card_low.pi.format(free_mb=1990.0))]
+
+
+def test_the_card_warning_names_the_pis_sd_card_only_when_the_pi_is_the_camera():
+    """The app runs on the Pi when the Pi is the camera; with a webcam or the phone it's this computer's disk."""
+    for kind in ('pi', 'webcam', 'phone'):
+        rig = Rig(kind=kind, free_mb=1500.0)
+        rig.tick()
+        rig.disk.free = 400.0
+        rig.tick(after=2)
+        rig.disk.free = 5000.0
+        rig.tick(after=2)
+        rig.tick(after=5)
+        texts = [text for _, text in rig.said()]
+        assert len(texts) == 3
+        if kind == 'pi':
+            assert all('SD card' in text for text in texts)
+        else:
+            assert not any('SD card' in text or 'Raspberry Pi' in text for text in texts)
+            assert all("this computer's disk" in text.lower() for text in texts)
 
 
 def test_a_heartbeat_that_stops_while_the_pictures_still_come_is_said():
