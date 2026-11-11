@@ -226,17 +226,19 @@ class FakeComputer(FakeServer):
 
 # ── settings ──────────────────────────────────────────────────────────
 def pi_settings(**changes) -> dict:
-    """A complete `pi:` section, as config/settings.yaml has it (plus the camera program's new settings)."""
+    """A complete `pi:` section, as config/settings.yaml has it (plus the camera program's new settings), with no
+    jitter, so tests can check each wait."""
     pi = {
         'fps': 3, 'width': 1280, 'height': 720, 'jpeg_quality': 80, 'photo_dir': '~/desk-talk-photos',
         'delete_every_min': 10, 'keep_last_min': 0, 'min_free_mb': 300, 'upload_timeout_sec': 5,
-        'upload_retry_start_sec': 1, 'upload_retry_max_sec': 10, 'hot_warning_c': 75, 'clock_off_warning_sec': 5,
+        'upload_retry_start_sec': 1, 'upload_retry_max_sec': 10, 'upload_retry_jitter': 0, 'hot_warning_c': 75,
+        'clock_off_warning_sec': 5,
         'camera_warmup_sec': 1, 'pause_after_error_sec': 0.5, 'status_every_sec': 30, 'health_every_sec': 3,
         'settings_check_every_sec': 60, 'restart_after_missed_pictures': 30, 'camera': 'auto', 'error_text_chars': 200,
         'detector': {
             'model': 'yolo11s.pt', 'format': 'ncnn', 'image_size': 480, 'confidence': 0.35, 'half': False,
             'url': 'http://127.0.0.1:8100', 'wait_per_picture_sec': 2, 'failures_before_pause': 3,
-            'pause_start_sec': 5, 'pause_max_sec': 60, 'health_check_every_sec': 10,
+            'pause_start_sec': 5, 'pause_max_sec': 60, 'pause_jitter': 0, 'health_check_every_sec': 10,
         },
     }
     detector = changes.pop('detector', {})

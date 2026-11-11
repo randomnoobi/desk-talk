@@ -62,6 +62,8 @@ def test_a_missing_detector_setting_is_named():
                                      r'pi\.upload_retry_max_sec \(10\)'),
     ({'detector': {'pause_start_sec': 90}}, r'pi\.detector\.pause_start_sec \(90\) must not be more than '
                                             r'pi\.detector\.pause_max_sec \(60\)'),
+    ({'upload_retry_jitter': 1.5}, r'pi\.upload_retry_jitter must be a number from 0 to 1 \(got 1\.5\)'),
+    ({'detector': {'pause_jitter': -0.1}}, r'pi\.detector\.pause_jitter must be a number from 0 to 1'),
 ])
 def test_a_bad_value_is_named_in_plain_words(changes, message):
     with pytest.raises(SettingsError, match=message):

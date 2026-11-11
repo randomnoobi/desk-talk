@@ -13,9 +13,10 @@ When it can't answer, the picture goes to the app as `off`, with the reason, and
   - A container that speaks another version of the API (api_version in the replies to /health and
     PUT /model): off, with what to run to update it, until /health says the same version as this program.
   - Anything else (crashed, too slow, not running): after failures_before_pause failures in a row it
-    stops asking for a while (pause_start_sec, doubling each time up to pause_max_sec), asks /health
-    every health_check_every_sec meanwhile, and comes back early when it's ready (the count of failures
-    starts again then, but the pause only goes back to pause_start_sec after a picture is detected).
+    stops asking for a while (pause_start_sec, doubling each time up to pause_max_sec, each pause cut by
+    up to pause_jitter of it by chance), asks /health every health_check_every_sec meanwhile, and comes
+    back early when it's ready (the count of failures starts again then, but the pause only goes back to
+    pause_start_sec after a picture is detected). The counting is a desktalk_shared Breaker.
 
 Only one picture is at the detector at a time (DetectorWorker): pictures taken meanwhile go out as
 `busy`, just for the live view, so detection can be slower than the camera without a queue building up.
@@ -29,7 +30,8 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from desktalk_shared.backoff import Backoff
+from desktalk_shared.backoff import Backoff, Chance
+from desktalk_shared.breaker import Breaker
 from desktalk_shared.detection import DetectorUnavailable
 from desktalk_shared.detector_api import API_VERSION, DetectorHealth, DetectReply, ModelSettings, ServiceState
 from desktalk_shared.wire import DetectorState
@@ -59,6 +61,7 @@ class DetectorConfig:
     failures_before_pause: int
     pause_start_sec: float
     pause_max_sec: float
+    pause_jitter: float
     health_check_every_sec: float
 
 
@@ -74,7 +77,7 @@ class Verdict:
 class DetectorClient:
     """Talks to the container. Only the DetectorWorker's thread calls detect() and upkeep()."""
 
-    def __init__(self, config: DetectorConfig, clock: Clock, *, error_text_chars: int):
+    def __init__(self, config: DetectorConfig, clock: Clock, *, error_text_chars: int, rng: Chance | None = None):
         self.config = config
         self.clock = clock
         self.error_text_chars = error_text_chars     # how much of a reply it can't read goes into a reason
@@ -83,8 +86,10 @@ class DetectorClient:
         self._off_reason = ''                # why it's off ('' = send it pictures)
         self._resume_at: float | None = None  # when a pause ends (None: only /health brings it back)
         self._next_health = 0.0
-        self._failures = 0                   # failures in a row
-        self._pause = Backoff(config.pause_start_sec, config.pause_max_sec)   # reset only by a detected picture
+        # Failures in a row, and the pause after too many. The pause goes back to its first length only after a
+        # detected picture (worked()); /health saying ready only starts the count again (back()).
+        self._breaker = Breaker(config.failures_before_pause, Backoff(config.pause_start_sec, config.pause_max_sec,
+                                                                      jitter=config.pause_jitter, rng=rng))
 
     # ── asked from the camera's thread ──
     def off_now(self) -> str:
@@ -162,12 +167,10 @@ class DetectorClient:
         self._next_health = self.clock.monotonic() + self.config.health_check_every_sec
 
     def _failed(self, reason: str) -> Verdict:
-        self._failures += 1
-        if self._failures >= self.config.failures_before_pause:
-            pause = self._pause.next()
-            self._off(reason, resume_at=self.clock.monotonic() + pause)
+        if self._breaker.failed(self.clock.monotonic()):
+            self._off(reason, resume_at=self._breaker.open_until)
             log.warning('Stopped asking the detector for %g s (%s). Pictures still go to the app, with no objects '
-                        'found.', pause, reason)
+                        'found.', self._breaker.pause, reason)
         return Verdict(DetectorState.OFF, reason)
 
     def _no_model_yet(self, reason: str) -> Verdict:
@@ -180,8 +183,7 @@ class DetectorClient:
     def _working(self) -> None:
         if self._off_reason:
             log.info('The detector is answering again')
-        self._failures = 0
-        self._pause.reset()
+        self._breaker.worked()
         self._off_reason = ''
         self._resume_at = None
 
@@ -200,7 +202,7 @@ class DetectorClient:
             # so a detector that keeps coming and going waits longer each time; only a real answer resets it.
             self._off_reason = ''
             self._resume_at = None
-            self._failures = 0
+            self._breaker.back()
             log.info('The detector says it is ready')
         else:
             self._off_reason = health.message or f'the detector is {health.state.value}'

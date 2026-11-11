@@ -62,8 +62,8 @@ def build_program(settings: CameraSettings, camera: Any, *, server: str | None, 
     if not offline:
         uploader = Uploader(server or '', key or '', timeout_sec=settings.upload_timeout_sec,
                             retry_start_sec=settings.upload_retry_start_sec,
-                            retry_max_sec=settings.upload_retry_max_sec, error_text_chars=settings.error_text_chars,
-                            clock=clock)
+                            retry_max_sec=settings.upload_retry_max_sec, retry_jitter=settings.upload_retry_jitter,
+                            error_text_chars=settings.error_text_chars, clock=clock)
     program = CameraProgram(camera=camera, store=store, health=HealthReader(sys_root), uploader=uploader,
                             settings=settings, clock=clock)
     worker = client = None
