@@ -334,8 +334,9 @@ queue building up. An `ok` picture can arrive after `busy` pictures that were ta
 its detections); the live view doesn't jump back to it (`camera.keep_newer_picture_sec`).
 
 After `pi.detector.failures_before_pause` failures in a row the camera stops asking the detector
-for a while (`pause_start_sec`, doubling up to `pause_max_sec`), asks its `/health` every
-`health_check_every_sec` meanwhile, and goes back to it as soon as it's ready. A container that is still
+for a while (`pause_start_sec`, doubling up to `pause_max_sec`, each pause cut by up to `pause_jitter` of it by
+chance), asks its `/health` every `health_check_every_sec` meanwhile, and goes back to it as soon as it's ready.
+(The counting is the `Breaker` in `shared/desktalk_shared/breaker.py`, the same one `ResilientChatModel` uses.) A container that is still
 converting a model, or busy with another picture, doesn't count as failing.
 
 What the camera said lately is in `GET /api/health` → `pi`: upload format, detector state and reason, how long
@@ -397,8 +398,9 @@ round and returns how many seconds to wait before the next. It never starts a th
 The `Supervisor` (`desktalk/runtime/supervisor.py`) runs each job in its own thread. When a round raises,
 it logs the error with the job's name and tries again after `supervisor.restart_start_sec` (1 s), then
 twice that, up to `supervisor.restart_max_sec` (60 s). One good round starts the count over. (The waits come
-from `Backoff` in `shared/desktalk_shared/backoff.py`, the same one the Pi's uploader and detector client use.) It never gives
-up, so one bad AI reply can't switch a feature off until the app restarts. `GET /api/health` → `jobs`
+from `Backoff` in `shared/desktalk_shared/backoff.py`, the same one the Pi's uploader and detector client use. Each
+wait is cut by up to `supervisor.restart_jitter` of it, by chance, so jobs that failed together don't all start
+again at once; every retry has a jitter share like this in its own section.) It never gives up, so one bad AI reply can't switch a feature off until the app restarts. `GET /api/health` → `jobs`
 shows each job: running, waiting after an error, or stopped, with its failures and last error.
 
 The jobs, and how long each waits before its first round (`DeskTalk.background_jobs()`):
