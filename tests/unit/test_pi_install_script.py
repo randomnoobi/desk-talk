@@ -47,7 +47,14 @@ case "$name" in
   hostname) cat "$FAKE/hostname" ;;
   hostnamectl) echo "$2" > "$FAKE/hostname" ;;
   timedatectl) echo Europe/Paris ;;
-  systemctl) [ -e "$FAKE/old_camera_running" ] && [ "$1" = is-active ] ;;
+  systemctl)
+    case "$1" in
+      is-active) [ -e "$FAKE/active_$3" ] || { [ "$3" = desk-talk-camera ] && [ -e "$FAKE/old_camera_running" ]; } ;;
+      is-enabled) [ -e "$FAKE/enabled_$3" ] ;;
+      enable) shift; for unit in "$@"; do touch "$FAKE/enabled_$unit"; done ;;
+      start|restart) [ "$2" = desktalk.service ] && [ -e "$FAKE/start_fails" ] && exit 1; touch "$FAKE/active_$2" ;;
+      *) exit 0 ;;
+    esac ;;
   git) [ "$1" = -C ] && [ "$3" = rev-parse ] && exit "$(cat "$FAKE/git_checkout")"; exit 0 ;;
   sha256sum) "$FAKE_PYTHON" -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest(), sys.argv[1])' "$1" ;;
   curl)
@@ -61,7 +68,8 @@ case "$name" in
     cmd=$1; shift
     case "$cmd" in
       docker) FAKE_SUDO=1 exec "$FAKE/bin/docker" "$@" ;;
-      tee|cp|mv) exec "$cmd" "$@" ;;
+      tee|cp|mv|install|mkdir) exec "$cmd" "$@" ;;
+      systemctl) exec "$FAKE/bin/systemctl" "$@" ;;
       sh) rm -f "$FAKE/no_docker"; touch "$FAKE/docker_group_active" ;;
       hostnamectl) exec "$FAKE/bin/hostnamectl" "$@" ;;
       *) : ;;
@@ -117,6 +125,14 @@ class FakePi:
     def config_txt(self) -> Path:
         return self.fake / 'config.txt'
 
+    @property
+    def service_file(self) -> Path:
+        return self.fake / 'etc' / 'systemd' / 'system' / 'desktalk.service'
+
+    @property
+    def journald_file(self) -> Path:
+        return self.fake / 'etc' / 'systemd' / 'journald.conf.d' / '60-desktalk.conf'
+
     def state(self, name: str, value: str = '') -> None:
         (self.fake / name).write_text(value, encoding='utf-8')
 
@@ -145,6 +161,7 @@ def pi(tmp_path) -> FakePi:
                  'compose.yaml', 'settings.mine.example.yaml'):
         if (PI / name).exists():
             shutil.copy(PI / name, root / 'raspberry_pi' / name)
+    shutil.copytree(PI / 'systemd', root / 'raspberry_pi' / 'systemd')
     shutil.copy(ROOT / 'config' / 'settings.yaml', root / 'config' / 'settings.yaml')
     (root / 'config' / 'prompts.yaml').symlink_to(ROOT / 'config' / 'prompts.yaml')
     for name in ('desktalk', 'shared', 'scripts'):       # what the real linker runs from
@@ -186,6 +203,8 @@ def pi(tmp_path) -> FakePi:
     made.change_example('SOUND_CARDS_FILE', str(proc / 'asound' / 'cards'))
     made.change_example('INSTALL_BOOT_CMDLINE', str(made.cmdline))
     made.change_example('INSTALL_BOOT_CONFIG', str(made.config_txt))
+    made.change_example('INSTALL_SERVICE_FILE', str(made.service_file))
+    made.change_example('INSTALL_JOURNALD_FILE', str(made.journald_file))
     made.env_vars = {'PATH': f'{fake / "bin"}:/usr/bin:/bin', 'FAKE': str(fake), 'FAKE_PYTHON': sys.executable,
                      'DESKTALK_PROC': str(proc), 'HOME': str(tmp_path), 'TMPDIR': str(tmp_path)}
     return made
@@ -1068,3 +1087,112 @@ def test_the_scripts_stop_on_errors_and_can_be_run():
     for name in ('install.sh', 'update.sh'):
         assert 'set -euo pipefail' in (PI / name).read_text(encoding='utf-8')
         assert os.access(PI / name, os.X_OK)
+
+
+# ── Starting on boot, and the journal ──
+
+def unit_lines(path: Path) -> dict[str, str]:
+    lines = path.read_text(encoding='utf-8').splitlines()
+    return dict(line.split('=', 1) for line in lines if '=' in line and not line.startswith('#'))
+
+
+def test_the_service_is_filled_in_for_this_pi_installed_and_switched_on(pi):
+    result = pi.run()
+    assert result.code == 0, result.out
+    unit = unit_lines(pi.service_file)
+    assert unit['User'] == 'sam'
+    assert unit['WorkingDirectory'] == str(pi.root / 'raspberry_pi')
+    assert unit['ExecStart'] == f'{pi.fake / "bin" / "docker"} compose up -d --no-build'
+    assert unit['TimeoutStartSec'] == pi.values()['SERVICE_START_WAIT_SEC']
+    assert unit['RestartSec'] == pi.values()['SERVICE_RETRY_SEC']
+    assert '@' not in pi.service_file.read_text(encoding='utf-8')
+    assert 'sudo install -m 644 ' in ' '.join(result.calls)
+    assert 'sudo systemctl daemon-reload' in result.calls
+    assert 'sudo systemctl enable docker.service containerd.service desktalk.service' in result.calls
+
+
+def test_the_service_is_tried_once_the_containers_are_built_so_its_rights_are_checked(pi):
+    """It runs as the Pi's user with no build, so starting it now shows the user may use Docker without sudo."""
+    calls = pi.run().calls
+    assert calls.index('sudo systemctl start desktalk.service') > calls.index('docker compose up -d --build')
+
+
+def test_a_service_that_cant_start_fails_the_install_and_says_where_to_look(pi):
+    pi.state('start_fails')
+    result = pi.run()
+    assert result.code == 1
+    assert 'journalctl -u desktalk.service' in result.out and 'power cut' in result.out
+
+
+def test_running_again_changes_nothing_for_starting_on_boot(pi):
+    pi.run()
+    calls = pi.run().calls
+    for line in ('sudo systemctl daemon-reload', 'sudo systemctl start desktalk.service',
+                 'sudo systemctl restart systemd-journald'):
+        assert line not in calls
+    assert not any(line.startswith(('sudo install', 'sudo systemctl enable')) for line in calls)
+
+
+def test_a_service_turned_off_by_hand_is_switched_on_again(pi):
+    pi.run()
+    (pi.fake / 'enabled_docker.service').unlink()
+    assert 'sudo systemctl enable docker.service' in pi.run().calls
+
+
+def test_a_folder_with_a_percent_sign_is_written_the_way_systemd_reads_it(pi, tmp_path):
+    """systemd reads %h, %u ... in a unit as names to fill in; %% is a plain %."""
+    moved = tmp_path / '50% done'
+    pi.root.rename(moved)
+    pi.root = moved
+    assert pi.run().code == 0
+    assert unit_lines(pi.service_file)['WorkingDirectory'] == str(moved / 'raspberry_pi').replace('%', '%%')
+
+
+def test_the_journal_is_kept_on_the_card_with_the_numbers_from_env(pi):
+    result = pi.run()
+    journal = unit_lines(pi.journald_file)
+    values = pi.values()
+    assert journal == {'Storage': 'persistent', 'SystemMaxUse': values['JOURNAL_MAX_USE'],
+                       'MaxRetentionSec': values['JOURNAL_KEEP'], 'MaxFileSec': values['JOURNAL_FILE_SPAN']}
+    calls = result.calls
+    assert calls.index('sudo systemctl restart systemd-journald') < calls.index('sudo journalctl --flush')
+
+
+def test_a_new_number_in_env_rewrites_the_journal_file_and_restarts_the_journal(pi):
+    pi.run()
+    text = pi.env_path.read_text(encoding='utf-8')
+    pi.env_path.write_text(text.replace('JOURNAL_MAX_USE=200M', 'JOURNAL_MAX_USE=100M'), encoding='utf-8')
+    result = pi.run()
+    assert unit_lines(pi.journald_file)['SystemMaxUse'] == '100M'
+    assert 'sudo systemctl restart systemd-journald' in result.calls
+
+
+def test_a_dry_run_says_it_would_set_up_starting_on_boot_and_the_journal(pi):
+    result = pi.run('--dry-run')
+    assert 'Would install' in result.out and 'desktalk.service' in result.out and 'journal' in result.out
+    assert not pi.service_file.exists() and not pi.journald_file.exists()
+
+
+def test_update_needs_no_sudo_and_says_when_starting_on_boot_isnt_set_up(pi):
+    result = pi.run(script='update.sh')
+    assert result.code == 0
+    assert not any(line.startswith('sudo') for line in result.calls)
+    assert 'install.sh' in result.out and 'boot' in result.out
+    pi.run()
+    assert "isn't set up" not in pi.run(script='update.sh').out
+
+
+def test_update_says_when_the_service_in_git_is_newer_than_the_one_installed(pi):
+    pi.run()
+    pi.service_file.write_text('[Unit]\nDescription=an older one\n', encoding='utf-8')
+    result = pi.run(script='update.sh')
+    assert result.code == 0 and 'install.sh' in result.out
+    assert not any(line.startswith('sudo') for line in result.calls)
+
+
+@pytest.mark.parametrize('name', ['JOURNAL_MAX_USE', 'SERVICE_RETRY_SEC'])
+def test_a_number_systemd_cant_read_stops_before_anything_is_installed(pi, name):
+    pi.change_example(name, '200 M')
+    result = pi.run()
+    assert result.code == 1 and name in result.out
+    assert not pi.service_file.exists() and not pi.journald_file.exists()

@@ -1,5 +1,5 @@
 # Everything on the Pi: the camera, the detector and the app, in Docker. Nothing else needs to run.
-# The numbers you may want to change (ports, memory limits, health checks, log sizes ...) are in .env next to this
+# The numbers you may want to change (ports, memory limits, health checks ...) are in .env next to this
 # file; docker compose reads it from there by itself. install.sh makes .env from .env.example, which is in git, and
 # fills in this Pi's own numbers; .env itself isn't in git, so `git pull` never trips over it. The value after :- below
 # is used when .env doesn't have that name; it is the same as in .env.example.
@@ -59,11 +59,10 @@ services:
       start_period: ${APP_HEALTH_START_PERIOD:-60s}
       start_interval: ${APP_HEALTH_START_INTERVAL:-2s}
       retries: ${APP_HEALTH_RETRIES:-3}
-    logging:                                            # a few small log files, so logs can't fill the SD card
-      driver: json-file
+    logging:                                            # to the Pi's journal, which keeps at most JOURNAL_MAX_USE
+      driver: journald
       options:
-        max-size: ${LOG_FILE_SIZE:-10m}
-        max-file: ${LOG_FILES:-3}
+        tag: desktalk-app                               # journalctl -t desktalk-app (raspberry_pi/get_logs.sh)
 
   detector:
     build:
@@ -95,10 +94,9 @@ services:
       start_period: ${DETECTOR_HEALTH_START_PERIOD:-60s}
       retries: ${DETECTOR_HEALTH_RETRIES:-3}
     logging:
-      driver: json-file
+      driver: journald
       options:
-        max-size: ${LOG_FILE_SIZE:-10m}
-        max-file: ${LOG_FILES:-3}
+        tag: desktalk-detector
 
   camera:
     build:
@@ -154,10 +152,9 @@ services:
       start_interval: ${CAMERA_HEALTH_START_INTERVAL:-2s}
       retries: ${CAMERA_HEALTH_RETRIES:-3}
     logging:
-      driver: json-file
+      driver: journald
       options:
-        max-size: ${LOG_FILE_SIZE:-10m}
-        max-file: ${LOG_FILES:-3}
+        tag: desktalk-camera
 
 volumes:
   models:                                               # the models and their ncnn versions
