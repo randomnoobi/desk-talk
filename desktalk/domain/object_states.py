@@ -34,4 +34,4 @@ class StateRecord:
     bbox: tuple[float, float, float, float] | None = None   # where it was last seen
     dwell_sec: float | None = None                          # how long it stayed in the old state
     boot_id: str | None = None                              # which run of the computer saved it (None: can't say)
-    clock_synced: bool | None = None                        # was the clock set from the internet then? (None: can't say)
+    clock_synced: bool | None = None                        # had the clock synced from the internet? (None: unknown)
