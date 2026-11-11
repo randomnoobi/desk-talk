@@ -656,12 +656,24 @@ lens:
   pi_clock_behind: behind
   pi_clock_ahead: ahead of
   pi_detector: The Raspberry Pi isn't finding the objects right now. Until it does, I can't see what is on the desk, but the live view still works. On the Pi, check that the detector is running (docker compose ps).
+  pi_very_hot: The Raspberry Pi is far too hot ({temp:.0f}°C) and is slowing itself down to cool off. Give it air or a fan now, or turn it off for a while.
+  # the health checks (settings → health_checks): the disk the data is saved on (the Pi's SD card)...
+  card_low: The SD card is getting full, only {free_mb:.0f} MB left. Please free some space soon, or I can't save what I see.
+  card_full: The SD card is almost full, only {free_mb:.0f} MB left. Soon nothing new can be saved. Please free some space now.
+  # ...pictures arriving, but none going through object detection...
+  no_detections: The camera is on, but no picture has been through object detection for {minutes} minutes, so I can't tell what is on the desk. On the Pi, check that the detector is running (docker compose ps).
+  no_detections_long: Still no object detection after {minutes} minutes. On the Pi, try starting the detector again (docker compose restart detector).
+  # ...and the Pi's heartbeat stopping while its pictures still come
+  pi_heartbeat: The Raspberry Pi's camera program stopped checking in {seconds} seconds ago, though its pictures still come. On the Pi, starting the camera again fixes it (docker compose restart camera).
   # when a Pi problem is gone
   pi_fixed:
     pi_hot: The Raspberry Pi has cooled down and is running normally again. Thanks!
     pi_power: The Raspberry Pi has enough power again. Thanks!
     pi_clock: The Raspberry Pi's clock matches the app's again.
     pi_detector: The Raspberry Pi is finding the objects again.
+    detections: Object detection is working again. I can see what's on the desk.
+    card: There's enough space on the SD card again. Thanks!
+    pi_heartbeat: The Raspberry Pi's camera program is checking in again.
 
 # ── Lens's camera checks: what it says, and the app's camera panel ───
 camera:

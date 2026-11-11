@@ -201,6 +201,12 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'cloud.link_no_answer': ('server', 'error'),
     'lens.pi_hot': ('temp',),
     'lens.pi_clock': ('seconds', 'way'),
+    'lens.pi_very_hot': ('temp',),
+    'lens.card_low': ('free_mb',),
+    'lens.card_full': ('free_mb',),
+    'lens.no_detections': ('minutes',),
+    'lens.no_detections_long': ('minutes',),
+    'lens.pi_heartbeat': ('seconds',),
     'camera.problems.bumped': ('degrees',),
     'camera.problems.cutoff': ('object', 'side', 'hint'),
     'camera.problems.slow': ('fps',),
@@ -578,6 +584,9 @@ class PiFixed(_Section):
     pi_power: str
     pi_clock: str
     pi_detector: str
+    detections: str
+    card: str
+    pi_heartbeat: str
 
 
 class LensPrompts(_Section):
@@ -590,6 +599,12 @@ class LensPrompts(_Section):
     pi_clock_behind: str
     pi_clock_ahead: str
     pi_detector: str
+    pi_very_hot: str
+    card_low: str
+    card_full: str
+    no_detections: str
+    no_detections_long: str
+    pi_heartbeat: str
     pi_fixed: PiFixed
 
 

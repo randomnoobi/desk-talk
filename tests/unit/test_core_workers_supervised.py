@@ -29,6 +29,7 @@ from tests.fakes import (
     FakeDeskStatus,
     FakeFrameSource,
     FakeHabits,
+    FakeHealthCheck,
     FakeLivePictures,
     FakePhotoAlbum,
     FakePhotoTaker,
@@ -84,7 +85,7 @@ def all_workers(clock):
              LensSettings.model_construct(check_every_sec=2.0, repeat_after_min=20.0, fixed_after_sec=5.0,
                                           wait_before_saying_sec=LensWaits.model_construct(pi=10, pi_detector=60)),
              PiSettings.model_construct(hot_warning_c=75.0, clock_off_warning_sec=5.0), clock=clock,
-             prompts=WORDS.lens, preview_chars=120),
+             checks=FakeHealthCheck(), prompts=WORDS.lens, preview_chars=120),
         DailySummary(ai, notifier, roster, FakeHabits(), InMemoryKeyValueStore(), DailySummarySettings(
             hour=21, start_delay_sec=120, check_every_sec=60, objects_listed=8), REPLIES, default_temperature=0.8,
             clock=clock, prompts=WORDS.daily_recap, preview_chars=120),

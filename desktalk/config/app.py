@@ -81,7 +81,7 @@ class PiDetector(_Section):
 
 
 class PiSettings(_Section):
-    _in_order = (('upload_retry_start_sec', 'upload_retry_max_sec'),)
+    _in_order = (('upload_retry_start_sec', 'upload_retry_max_sec'), ('hot_warning_c', 'hot_serious_c'))
     fps: PositiveNumber
     width: PositiveInt
     height: PositiveInt
@@ -94,11 +94,13 @@ class PiSettings(_Section):
     upload_retry_start_sec: PositiveNumber
     upload_retry_max_sec: PositiveNumber
     hot_warning_c: PositiveNumber
+    hot_serious_c: PositiveNumber
     clock_off_warning_sec: PositiveNumber
     camera_warmup_sec: ZeroOrMore
     pause_after_error_sec: ZeroOrMore
     status_every_sec: PositiveNumber
     health_every_sec: PositiveNumber
+    heartbeat_every_sec: PositiveNumber
     settings_check_every_sec: PositiveNumber
     restart_after_missed_pictures: PositiveInt
     camera: str                       # auto | picamera2 | usb[:index] | folder:<dir> | video:<file>, on the Pi
@@ -519,6 +521,18 @@ class LensSettings(_Section):
     wait_before_saying_sec: LensWaits
 
 
+class HealthChecksSettings(_Section):
+    """When each health check (desktalk/core/health/) says warning or serious."""
+
+    _in_order = (('card_serious_below_mb', 'card_warning_below_mb'),
+                 ('no_detections_warning_sec', 'no_detections_serious_sec'))
+    card_warning_below_mb: ZeroOrMore
+    card_serious_below_mb: ZeroOrMore
+    no_detections_warning_sec: PositiveNumber
+    no_detections_serious_sec: PositiveNumber
+    pi_heartbeat_late_sec: PositiveNumber
+
+
 class DailySummarySettings(_Section):
     hour: Hour
     start_delay_sec: ZeroOrMore
@@ -785,9 +799,6 @@ class DevCheck(_Section):
 class DevHealthLimits(_Section):
     """When the developer page's system tab turns a number amber or red."""
 
-    _in_order = (('pi_cpu_warn_c', 'pi_cpu_bad_c'),)
-    pi_cpu_warn_c: PositiveNumber
-    pi_cpu_bad_c: PositiveNumber
     pi_disk_warn_mb: ZeroOrMore
     detect_warn_ms: PositiveNumber
 
@@ -911,6 +922,7 @@ class AppConfig(_Section):
     idle_chat: IdleChatSettings
     lost_items: LostItemsSettings
     lens: LensSettings
+    health_checks: HealthChecksSettings
     daily_summary: DailySummarySettings
     cloud: CloudSettings
     snapshots: SnapshotsSettings

@@ -214,7 +214,8 @@ def test_other_changed_settings_need_a_restart_and_say_so_once(parts, caplog):
 
 # ── the Pi's settings check and the computer's agree ─────────────────
 # Settings in pi: that only the computer uses. The Pi gets them in /api/pi/config but doesn't check them.
-COMPUTER_ONLY = {'clock_off_warning_sec'}         # Lens compares the Pi's clock with this computer's
+# Lens compares the Pi's clock with this computer's; the health checks call the Pi's temperature serious
+COMPUTER_ONLY = {'clock_off_warning_sec', 'hot_serious_c'}
 
 
 def test_pi_settings_match_the_server_model():
@@ -230,7 +231,8 @@ def test_pi_settings_match_the_server_model():
     nested = [name for name, field in PiSettings.model_fields.items()
               if isinstance(field.annotation, type) and issubclass(field.annotation, BaseModel)]
     assert nested == ['detector']                     # a new section needs its own check on the Pi
-    assert PiSettings._in_order == pi_check.IN_ORDER
+    on_the_pi = tuple(pair for pair in PiSettings._in_order if not set(pair) & COMPUTER_ONLY)
+    assert on_the_pi == pi_check.IN_ORDER
     assert detector._in_order == pi_check.DETECTOR_IN_ORDER    # type: ignore[attr-defined]
 
 
@@ -249,6 +251,19 @@ def test_an_older_settings_file_gets_the_values_the_program_had_and_says_so(miss
     assert "The Pi's config/settings.yaml is older than its camera program" in caplog.text
     for name in missing:
         assert f'pi.{name}' in caplog.text
+
+
+def test_an_older_settings_file_without_the_heartbeat_gets_the_same_one_as_settings_yaml(caplog):
+    repo = {name: value for name, value in pi_settings().items() if name != 'heartbeat_every_sec'}
+    with caplog.at_level(logging.WARNING):
+        settings = from_layers(repo)
+    assert settings.heartbeat_every_sec == IF_OLDER['heartbeat_every_sec'] == 30
+    assert 'pi.heartbeat_every_sec' in caplog.text
+
+
+def test_the_heartbeat_needs_a_time_above_0():
+    with pytest.raises(SettingsError, match=r'pi\.heartbeat_every_sec'):
+        from_layers(pi_settings(heartbeat_every_sec=0))
 
 
 def test_a_new_enough_settings_file_says_nothing_about_being_older(caplog):

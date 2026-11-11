@@ -8,6 +8,8 @@ GET /api/health: how every part is doing, in one reply.
     pi          what the Pi said lately: upload format, its detector (ok / busy / off and why), detect time,
                 model, how far its clock is off (null when the camera isn't the Pi)
     detection   detection on this computer: pictures analysed, how long the last one took, what's wrong
+    checks      each health check on its own (camera, detections, pi_temperature, card, pi_heartbeat): its level
+                (ok, warning, serious, unknown), its number and the number's unit
     ai          the AI: ready, which one, the current problem
 """
 
@@ -38,4 +40,6 @@ def health(app: App) -> dict[str, Any]:
         'detection': {'pictures_analysed': producer.pictures_analysed, 'detect_ms': producer.last_detect_ms,
                       'problem': producer.problem, 'model': app.detector.label},
         'ai': ai(app),
+        'checks': {m.key: {'level': m.level.value, 'value': m.value, 'unit': m.unit}
+                   for m in app.health_checks.measures()},
     }

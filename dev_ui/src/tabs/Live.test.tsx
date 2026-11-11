@@ -14,7 +14,7 @@ vi.mock('../SmoothingChart', () => ({
 const settings: DevSettings = {
   poll_sec: 2,
   checks: ['Fast tests'],
-  health: { pi_cpu_warn_c: 70, pi_cpu_bad_c: 80, pi_disk_warn_mb: 1000, detect_warn_ms: 500 },
+  health: { pi_disk_warn_mb: 1000, detect_warn_ms: 500 },
   trace_pictures: 90,
   sql_max_rows: 500,
   data_folder: 'data',
