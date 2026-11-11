@@ -2,6 +2,8 @@
 
 `uv run pytest -m pi` runs against the real Pi over SSH. Most of it runs alone. The rest needs a person, so those tests skip and say which part of this page to do. This page has the steps for each, and what to run afterwards.
 
+When something is wrong for real and needs a person (the camera, the SD card, the clock, the heat), [RUNBOOK.md](RUNBOOK.md) says what to check and what to do.
+
 ## The tests that run alone
 
 They stop and start containers, and put everything back afterwards, even if a test fails. They take about 15 minutes.
@@ -169,3 +171,217 @@ Only for a Pi with `llm.ai_url` pointing at an AI on your laptop, and `llm.ai_on
 3. See the live picture move. Put a cup in view and see it listed under "On the desk".
 4. Add a to-do and press a habit button. Reload the page: both are still there.
 5. Turn the phone sideways, and see that nothing gets cut off.
+
+## Failure hand tests
+
+Five things that go wrong in real life, done on purpose: the power cut and back, the network off, a pulled cable, a
+full SD card, and the clock set back to 1990. Each shows the Pi gets through by itself, or says what's wrong, and
+loses nothing. When one fails, [RUNBOOK.md](RUNBOOK.md) says what to do about it for real. The checks afterwards are in
+`tests/pi/test_failure_checks.py`; none of them breaks or changes anything.
+
+**Before each one**, check the Pi is ready, then take a note of what's there (it's kept on your Mac, so it still works
+when the Pi's clock is wrong). **On your Mac**:
+
+```bash
+DESKTALK_PI=pi uv run pytest -m pi -v -rs -k ready_for_a_hand_test
+```
+
+```bash
+DESKTALK_PI=pi DESKTALK_PI_NOTE_BEFORE=1 uv run pytest -m pi -v -rs -k note_before
+```
+
+The note counts for 24 hours. **After each one**, the command it gives also runs `nothing_deleted`: no event-log day and
+no object-state file has gone since the note, apart from days old enough for the usual clean-up
+(`event_log.keep_days`). Plug in the USB speaker first, to hear what Lens says.
+
+Write down each run in the line at the end of its part: the date, passed or failed, and anything odd.
+
+### 1. Power cut and power back
+
+**Setup**: the note, then a cup on the desk for 2 minutes.
+
+**Steps**: as in "A power cut" above: pull the Pi's plug without shutting it down, plug it back in within about 3
+minutes, touch nothing, wait 3 minutes.
+
+**What should happen**: `desktalk.service` starts the three containers once Docker is up, with no network needed; they
+become healthy by themselves; the event log and the object-state database can be read; saved states don't come back
+until the clock has synced; nothing is deleted. The journal now keeps the boot before: **on the Pi**,
+`journalctl -b -1 -n 30 --no-pager` shows the last lines before the cut, with no shut-down in them.
+<!-- check: task A (desktalk.service, persistent journal, and its own -m pi check that the unit is enabled) -->
+
+**Afterwards**, **on your Mac**, within 30 minutes of plugging it in:
+
+```bash
+DESKTALK_PI=pi DESKTALK_PI_JUST_POWER_CUT=1 uv run pytest -m pi -v -rs -k "starts_after_power_cut or nothing_deleted"
+```
+
+Result: _date, passed / failed, notes_
+
+### 2. The network off
+
+**Setup**: the note. The Pi has to stay on the whole time: this is the network going, not the power.
+
+**Steps**:
+
+1. Switch off your Wi-Fi router. With no router to switch off, **on the Pi** with a keyboard and screen (the Wi-Fi
+   comes back by itself after 10 minutes):
+
+   ```bash
+   sudo sh -c 'nmcli radio wifi off; sleep 600; nmcli radio wifi on'
+   ```
+
+   If your Pi uses a network cable, pull the cable instead. That's safe with the power on. (This Pi uses the Wi-Fi:
+   **on the Pi**, `ip route show default` names `wlan0`.)
+2. After a minute or two, put your hand over the camera's lens for 10 seconds. You should hear Lens.
+3. Wait 10 minutes from when the network went, then switch the router back on (or put the cable back).
+4. Wait until **on your Mac** `ssh pi uptime` answers.
+
+**What should happen**: nothing restarts; the camera keeps taking pictures all the way through and the event log keeps
+filling; Lens speaks on the speaker with no network; a cloud server, if linked, gets the events later, its tries waiting
+longer each time, with a random part. <!-- check: task B (jittered retries and the breaker in the uploaders) -->
+
+**Afterwards**, **on your Mac**:
+
+```bash
+DESKTALK_PI=pi DESKTALK_PI_JUST_NO_NETWORK=1 uv run pytest -m pi -v -rs -k "after_the_network_was_off or nothing_deleted"
+```
+
+It checks the Pi didn't restart and no container did, that the camera never went more than 90 seconds without new
+pictures, and that NetworkManager's journal shows the network really went (your user must be in the `adm` group to read
+it, as the first user is). "No network at all" above is the longer one: it also restarts the app with no network.
+
+Result: _date, passed / failed, notes_
+
+### 3. A pulled cable: the camera's ribbon cable
+
+**Never take the camera cable out or put it in with the power on.** It can break the camera or the Pi. So this is a
+start with no camera, then a start with it back.
+
+**Setup**: the note.
+
+**Steps**:
+
+1. **On the Pi**, `sudo shutdown -h now`. Wait until the green light stops, then pull the plug.
+2. Open the latch on the Pi's camera connector and take the cable out. Leave the other end in the camera.
+3. Plug the Pi back in. Wait 3 minutes, and listen.
+4. **On your Mac**, the first check below.
+5. **On the Pi**, `sudo shutdown -h now` again, pull the plug, put the cable back (all the way in, straight, latch
+   closed), and plug it back in. Wait 3 minutes.
+6. **On your Mac**, the second check below.
+
+**What should happen**: with the cable out, the app and the detector start and are healthy; the camera container keeps
+starting and stopping, its log saying "Camera problem: the Pi camera module could not start ... Check the ribbon
+cable"; Lens says the camera isn't sending pictures, on the speaker and on the page.
+<!-- check: task C (a warning for no pictures when none came since the start: today's "lost" warning only comes after pictures had arrived) -->
+With the cable back, everything starts by itself and pictures come. Nothing is deleted.
+
+**Afterwards**, **on your Mac**, with the cable out (step 4):
+
+```bash
+DESKTALK_PI=pi DESKTALK_PI_CAMERA_CABLE_OUT=1 uv run pytest -m pi -v -rs -k "camera_cable_out or nothing_deleted"
+```
+
+and with it back (step 6):
+
+```bash
+DESKTALK_PI=pi DESKTALK_PI_CAMERA_CABLE_BACK=1 uv run pytest -m pi -v -rs -k "camera_cable_back or nothing_deleted"
+```
+
+A USB webcam can simply be unplugged and plugged in again with the power on; the same checks don't cover that.
+
+Result: _date, passed / failed, notes_
+
+### 4. A full SD card
+
+A big empty file takes the room. `fallocate` sets the room aside at once without writing anything, so it doesn't wear
+the card, and as your own user (no `sudo`) it can't take the room the card keeps back for the system. The file goes in
+your home folder, never in the data folder.
+
+**Setup**: the note. Don't run `update.sh` while the card is filled.
+
+**Steps**:
+
+1. **On the Pi**, fill the card until 1500 MB are free (under the 2000 MB warning level):
+   <!-- check: task C (the SD card levels, 2000 MB and 500 MB) -->
+
+   ```bash
+   free=$(df -m --output=avail ~ | tail -n 1); want=1500; fallocate -l $(( free - want ))M ~/desktalk-fill && df -h ~
+   ```
+
+   `df` should show about 1.5 GB free.
+2. Wait 5 minutes and listen: Lens should say the card is nearly full. <!-- check: task C (how often the card is measured, and the words) -->
+3. **On your Mac**, the check below.
+4. To try the serious level too, **on the Pi**, make the file again for 400 MB free (under 500 MB), wait 5 minutes and
+   run the check again:
+
+   ```bash
+   rm ~/desktalk-fill; free=$(df -m --output=avail ~ | tail -n 1); want=400; fallocate -l $(( free - want ))M ~/desktalk-fill && df -h ~
+   ```
+
+5. **Undo**, **on the Pi**: `rm ~/desktalk-fill`, and `df -h ~` shows the room back. Lens should say it's fine again.
+   Then **on your Mac**, `DESKTALK_PI=pi uv run pytest -m pi -v -rs -k ready_for_a_hand_test`.
+
+**What should happen**: a spoken warning (and a more serious one under 500 MB); nothing restarts; pictures keep coming
+and the event log keeps filling; nothing of yours is deleted to make room: the caps on the data folder go by their own
+size and age, not by the card's free space. <!-- check: task E (the data-folder and object-state caps) -->
+
+**Afterwards**, **on your Mac**, after step 2 (and step 4):
+
+```bash
+DESKTALK_PI=pi DESKTALK_PI_CARD_FILLED=1 uv run pytest -m pi -v -rs -k "card_filled or nothing_deleted"
+```
+
+Result: _date, passed / failed, notes_
+
+### 5. The clock set back to 1990
+
+The Pi's flag that says its clock was set from the internet (`/run/systemd/timesync/synchronized`) stays there when
+network time is turned off, so this shows the app catching a clock that is plainly wrong by itself: before
+`clock.earliest_believable_date`. <!-- check: task D (the setting's name and that it's treated like a clock that hasn't synced) -->
+
+**Setup**: the note, then a cup on the desk for 2 minutes, so there are fresh saved states that mustn't come back.
+
+**Steps**:
+
+1. **On the Pi**, stop network time and set the clock back, then restart the app so it starts with the wrong clock:
+
+   ```bash
+   sudo timedatectl set-ntp false; sudo date -s '1990-01-01 12:00'
+   ```
+
+   ```bash
+   cd ~/desk-talk/raspberry_pi && docker compose restart app
+   ```
+
+2. Wait 2 minutes.
+3. **On your Mac**, the first check below, while the clock is still in 1990.
+4. **Undo**, **on the Pi**:
+
+   ```bash
+   sudo timedatectl set-ntp true
+   ```
+
+   Then wait until `timedatectl` says `System clock synchronized: yes` (a minute or so).
+5. **On your Mac**, the second check below.
+
+**What should happen**: with the clock in 1990, the app says its clock can't be right and picks up no saved states;
+nothing is deleted by date; the camera and the detector don't restart; pictures keep coming; the timed jobs (saving
+states, compacting the event log) keep running, as they go by the time since boot. What happens in 1990 is saved as
+1990, marked with `clock_synced` false, so the event log gets a `1990-01-01` day.
+<!-- check: task D (the app's words for a clock it doesn't believe, clock_synced per row, monotonic scheduler, the event log's day while the clock is wrong) -->
+After the undo, everything carries on with nothing restarted. The `1990-01-01` day can stay, or **on the Pi**,
+`rm -r ~/desk-talk/data/events/1990-01-01` takes it away.
+
+**Afterwards**, **on your Mac**, with the clock still in 1990 (step 3):
+
+```bash
+DESKTALK_PI=pi DESKTALK_PI_CLOCK_1990=1 uv run pytest -m pi -v -rs -k "clock_set_to_1990 or nothing_deleted"
+```
+
+and after the undo (step 5):
+
+```bash
+DESKTALK_PI=pi DESKTALK_PI_CLOCK_BACK=1 uv run pytest -m pi -v -rs -k "clock_back or nothing_deleted"
+```
+
+Result: _date, passed / failed, notes_
