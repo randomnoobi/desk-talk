@@ -42,6 +42,10 @@ services:
       # way a speaker plugged in later shows up with no restart. The rule below lets it open only sound devices.
       - ${SOUND_DEVICES:-/dev/snd}:/dev/snd
       - ${SOUND_CARDS_FILE:-/proc/asound/cards}:/sound-cards:ro   # Docker hides /proc/asound, and this says which is which
+      # Where the Pi says its clock has been set from the internet (a file, `synchronized`). Until then the app brings
+      # back nothing saved. Docker sets this folder up again each time the container starts, and the app reads the file
+      # only when it starts, so a new folder (systemd-timesyncd restarted) changes nothing.
+      - ${CLOCK_SYNC_FOLDER:-/run/systemd/timesync}:/run/timesync:ro
     device_cgroup_rules:
       - c ${SOUND_DEVICE_MAJOR:-116}:* rw               # read and write sound devices, but not make new ones
     mem_limit: ${APP_MEMORY_LIMIT:-1g}                      # over this, Docker stops it and starts it again ...

@@ -45,7 +45,7 @@ How it got this way (history): the refactor, [docs/plans/2026-10-21-refactor-pla
 - Write the failing test first, watch it fail, then write the code (superpowers test-driven-development skill).
 
 ## Raspberry Pi
-Desk Talk runs entirely on the Pi, in Docker; see [the Pi standalone plan](docs/plans/2026-10-30-pi-standalone-refactor-plan.md) for how it got there. What only a person can check on a real Pi (a USB speaker, a cup on the desk, a power cut, a start with no Wi-Fi, a real phone, a real cloud link) is still open: see [docs/PI_CHECKS.md](docs/PI_CHECKS.md), and don't say those work until someone has done them.
+Desk Talk runs entirely on the Pi, in Docker; see [the Pi standalone plan](docs/plans/2026-10-30-pi-standalone-refactor-plan.md) for how it got there. What only a person can check on a real Pi (a USB speaker, a cup on the desk, a start with no Wi-Fi, a real phone, a real cloud link) is still open: see [docs/PI_CHECKS.md](docs/PI_CHECKS.md), and don't say those work until someone has done them.
 - Everything on the Pi runs in Docker, three containers from one compose file: **`camera`** (`raspberry_pi/camera/`), **`detector`** (`raspberry_pi/detector_service/`) and **`app`**, which runs the `desktalk` code. Nothing runs outside Docker.
 - `camera` and `detector` never import `desktalk/`. `camera` uses Debian's Python 3 (3.11 or newer) with apt's `picamera2`, `cv2` and `yaml`, so it is standard library plus those, plus `desktalk_shared`. Import the apt packages inside the function that uses them. `detector` may use anything uv installs, but imports only `desktalk_shared`.
 - `shared/desktalk_shared/` is used on the Pi and on this computer. It must stay standard library only and work on Python 3.11.

@@ -43,6 +43,7 @@ SETTINGS = {
     'person_counts_movement': True,
     'snapshot_every_sec': 60,
     'restore_max_age_sec': 300,
+    'clock_synced_file': None,
     'database': 'data/object_states.sqlite',
     'trace_pictures': 90,
 }
@@ -368,7 +369,7 @@ def test_restart_restores_states_without_new_events():
     assert first.save_snapshot(t) == 1
 
     second, bus, _ = make_tracker(store)
-    assert second.restore(now=t + 30) == 1
+    assert second.restore(now=t + 30, clock_synced=True) == 1
     restored = second.snapshot().objects['bottle']
     assert restored.state == 'PRESENT'
     assert restored.since == pytest.approx(since)
@@ -380,7 +381,7 @@ def test_restore_uses_the_time_of_a_change_row():
     store = InMemoryStateStore()
     store.append([record(1000, 'cup', 'removed')])
     tracker, _, _ = make_tracker(store)
-    assert tracker.restore(now=1100) == 1
+    assert tracker.restore(now=1100, clock_synced=True) == 1
     cup = tracker.snapshot().objects['cup']
     assert (cup.state, cup.since) == ('ABSENT', 1000)
 
@@ -391,15 +392,76 @@ def test_restore_says_how_many_in_the_log(caplog):
     store.append([record(1000, 'cup', 'removed'), record(1000, 'bottle', 'snapshot', 'PRESENT')])
     tracker, _, _ = make_tracker(store)
     with caplog.at_level(logging.INFO, logger='desktalk.core.object_states.tracker'):
-        tracker.restore(now=1100)
+        tracker.restore(now=1100, clock_synced=True)
     assert 'Picked up 2 object states from before the restart' in caplog.text
 
 
 def test_restore_ignores_old_rows():
     store = InMemoryStateStore()
     store.append([record(1000, 'bottle', 'snapshot', 'PRESENT')])
-    assert make_tracker(store)[0].restore(now=1301) == 0
-    assert make_tracker(store)[0].restore(now=1300) == 1
+    assert make_tracker(store)[0].restore(now=1301, clock_synced=True) == 0
+    assert make_tracker(store)[0].restore(now=1300, clock_synced=True) == 1
+
+
+def test_restore_starts_over_when_the_clock_is_behind_the_saved_rows():
+    """A Pi with no clock battery boots with a slow clock: rows saved before the cut look like the future."""
+    store = InMemoryStateStore()
+    store.append([record(1000, 'bottle', 'snapshot', 'PRESENT'), record(1200, 'cup', 'snapshot', 'PRESENT')])
+    tracker, _, _ = make_tracker(store)
+    assert tracker.restore(now=1100, clock_synced=True) == 0
+    assert tracker.snapshot().objects == {}
+
+
+def test_restore_warns_when_the_clock_is_behind(caplog):
+    store = InMemoryStateStore()
+    store.append([record(1000, 'bottle', 'snapshot', 'PRESENT'), record(1160, 'cup', 'snapshot', 'PRESENT')])
+    tracker, _, _ = make_tracker(store)
+    with caplog.at_level(logging.INFO, logger='desktalk.core.object_states.tracker'):
+        tracker.restore(now=1100, clock_synced=True)
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert 'behind' in warnings[0].getMessage()
+    assert '60' in warnings[0].getMessage()
+    assert 'Picked up 0 object states from before the restart' in caplog.text
+
+
+def test_restore_starts_over_when_only_a_moved_row_is_newer_than_the_clock():
+    """The recent-states query skips `moved` rows, but they still prove the clock went back."""
+    store = InMemoryStateStore()
+    store.append([record(1000, 'bottle', 'snapshot', 'PRESENT'), record(1160, 'bottle', 'moved', 'PRESENT')])
+    tracker, _, _ = make_tracker(store)
+    assert tracker.restore(now=1100, clock_synced=True) == 0
+    assert tracker.snapshot().objects == {}
+
+
+def test_restore_accepts_a_row_exactly_at_now():
+    store = InMemoryStateStore()
+    store.append([record(1100, 'bottle', 'snapshot', 'PRESENT')])
+    tracker, _, _ = make_tracker(store)
+    assert tracker.restore(now=1100, clock_synced=True) == 1
+
+
+def test_restore_starts_over_when_the_clock_has_not_synced():
+    """A Pi with no clock battery starts at the time it last saved, maybe days ago: until its clock is set from the
+    internet, a row saved just before the power went off looks recent, so nothing is brought back."""
+    store = InMemoryStateStore()
+    store.append([record(1000, 'bottle', 'snapshot', 'PRESENT'), record(1050, 'cup', 'removed')])
+    tracker, _, _ = make_tracker(store)
+    assert tracker.restore(now=1100, clock_synced=False) == 0
+    assert tracker.snapshot().objects == {}
+
+
+def test_restore_says_why_it_starts_over_when_the_clock_has_not_synced(caplog):
+    """The Pi's power cut check reads both lines."""
+    store = InMemoryStateStore()
+    store.append([record(1000, 'bottle', 'snapshot', 'PRESENT')])
+    tracker, _, _ = make_tracker(store)
+    with caplog.at_level(logging.INFO, logger='desktalk.core.object_states.tracker'):
+        tracker.restore(now=1100, clock_synced=False)
+    [warning] = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert warning == ("The clock hasn't been set from the internet since this computer started, "
+                       "so every object starts over")
+    assert 'Picked up 0 object states from before the restart' in caplog.text
 
 
 def test_changes_survive_a_restart():
@@ -414,7 +476,7 @@ def test_a_restored_object_that_is_gone_gets_removed():
     store = InMemoryStateStore()
     store.append([record(1000, 'bottle', 'snapshot', 'PRESENT')])
     tracker, bus, _ = make_tracker(store)
-    tracker.restore(now=1010)
+    tracker.restore(now=1010, clock_synced=True)
     feed(tracker, 1010, [[]] * SETTLE)                                 # pictures without the bottle
     assert changes(bus) == [('removed', 'bottle')]
 
@@ -633,5 +695,5 @@ class TestObjectStateTracker(ObjectStatesContract):
                 states.on_detection(picture(since, o(label, 0.9)))        # seen once: not decided yet
             else:
                 store.append([record(since, label, 'snapshot', state)])
-                states.restore(now=since + 1)
+                states.restore(now=since + 1, clock_synced=True)
         return put

@@ -21,7 +21,7 @@ and `changes(since)` reads the store (plus any changes not saved yet), so change
 there.
 It also keeps each object's last pictures of smoothing for the developer page (SmoothingTraceView):
 `traced_labels()` and `trace(label)`, up to `trace_pictures` per object.
-`save_snapshot(now)` and `restore(now)` let a restart pick up where the last run left off.
+`save_snapshot(now)` and `restore(now, clock_synced=...)` let a restart pick up where the last run left off.
 """
 
 from __future__ import annotations
@@ -297,10 +297,27 @@ class ObjectStateTracker:
             self._store.append(records)
         return len(records)
 
-    def restore(self, now: float) -> int:
-        """Start each object in its newest saved state, if that's recent enough. Returns how many."""
+    def restore(self, now: float, *, clock_synced: bool) -> int:
+        """Start each object in its newest saved state, if that's recent enough. Returns how many.
+
+        `clock_synced`: has the clock been set from the internet since this computer started? A Pi with no clock
+        battery starts at the time it last saved, which may be days ago, so until then nothing saved is trusted."""
+        if not clock_synced:
+            log.warning("The clock hasn't been set from the internet since this computer started, "
+                        "so every object starts over")
+            log.info('Picked up 0 object states from before the restart')
+            return 0
         latest = self._store.latest_states(now - self._restore_max_age_sec)
         restored = 0
+        # The recent-states query skips `moved` rows, so look at the change rows after `now` too.
+        newest = max([row.ts for row in latest.values()] + [row.ts for row in self._store.changes(now)],
+                     default=None)
+        if newest is not None and newest > now:
+            # This app writes rows with its own clock, so a newer row means the clock went back (a Pi with no
+            # clock battery boots slow). Which rows are recent can't be told, so every object starts over.
+            log.warning('The clock is behind the newest saved object state by about %d seconds, '
+                        'so every object starts over', round(newest - now))
+            latest = {}
         with self._lock:
             for label, row in latest.items():
                 if row.new_state not in (Phase.PRESENT, Phase.ABSENT):

@@ -68,6 +68,29 @@ def test_a_restart_keeps_the_states(tmp_path):
     rig2.app.stop(timeout=1)
 
 
+def test_a_restart_before_the_clock_has_synced_starts_over(tmp_path):
+    """The Pi's clock may be days behind until it reaches the internet, so nothing saved is trusted before then."""
+    rig = DeskRig(tmp_path)
+    rig.watch(settle_sec(rig), CUP_FAR)
+    rig.app.stop(timeout=1)
+    config = changed(rig.config, 'object_states', clock_synced_file=tmp_path / 'not-synced-yet')
+    rig2 = DeskRig(tmp_path, config=config, start=rig.clock.now() + 10)
+    assert 'cup' not in rig2.app.object_states.snapshot().objects
+    rig2.app.stop(timeout=1)
+
+
+def test_a_restart_after_the_clock_has_synced_keeps_the_states(tmp_path):
+    rig = DeskRig(tmp_path)
+    rig.watch(settle_sec(rig), CUP_FAR)
+    rig.app.stop(timeout=1)
+    flag = tmp_path / 'synchronized'
+    flag.touch()
+    rig2 = DeskRig(tmp_path, config=changed(rig.config, 'object_states', clock_synced_file=flag),
+                   start=rig.clock.now() + 10)
+    assert rig2.app.object_states.snapshot().objects['cup'].state == 'PRESENT'
+    rig2.app.stop(timeout=1)
+
+
 def test_object_states_are_saved_every_minute(tmp_path):
     rig = DeskRig(tmp_path)
     [job] = [j for j in rig.app.scheduler.status() if j['name'] == 'save object states']

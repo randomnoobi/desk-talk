@@ -31,7 +31,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 REPO = Path(__file__).resolve().parent.parent.parent if '__file__' in globals() else Path.cwd()
 CONTAINERS = ('desktalk-app-1', 'desktalk-camera-1', 'desktalk-detector-1')
@@ -59,7 +59,9 @@ SHUTDOWN_LINE = re.compile(r'Reached target (shutdown|reboot|poweroff|halt|final
                            r'Journal stopped|Reached target System (Shutdown|Reboot|Power Off|Halt)')
 LOG_TIME = re.compile(r'\d{4}-\d\d-\d\d \d\d:\d\d:\d\d')
 RESTORED_LINE = re.compile(r'Picked up (\d+) object states from before the restart')
-APP_STARTED = 'Picked up '
+CLOCK_BEHIND_LINE = re.compile(r'The clock is behind the newest saved object state by about (\d+) seconds')
+CLOCK_NOT_SYNCED_LINE = "The clock hasn't been set from the internet since this computer started"
+LOG_TIME_STEP_SEC = 1               # the app's log writes whole seconds
 APP_STOPPING = 'uvicorn.error: Shutting down'
 
 
@@ -358,31 +360,106 @@ def how_boot_ended(journal: str) -> str | None:
     return 'clean' if any(SHUTDOWN_LINE.search(line) for line in lines) else 'not clean'
 
 
-def _log_before_and_after(log: str, started: str) -> tuple[list[str], list[str]]:
-    """The app's log lines from before and after `started` ('2026-11-01 10:06:00', the Pi's local time). A line with
-    no time on it is left out."""
-    before, after = [], []
-    for line in log.splitlines():
-        found = LOG_TIME.match(line)
-        if found:
-            (after if found[0] >= started else before).append(line)
-    return before, after
+def _starts(log: str) -> tuple[list[str], list[int]]:
+    """The app's log lines that have a time on them, and where each run's "Picked up" line is among them."""
+    lines = [line for line in log.splitlines() if LOG_TIME.match(line)]
+    return lines, [i for i, line in enumerate(lines) if RESTORED_LINE.search(line)]
 
 
-def restored_since(log: str, started: str) -> int | None:
+def _this_run(log: str) -> list[str]:
+    """This run's lines: from the last "Picked up" line on. Each run says it once, early, before it's healthy, and
+    these are only read once it is. The times can't tell the runs apart: after a power cut the clock starts behind, so
+    the run before can carry later times than this one."""
+    lines, starts = _starts(log)
+    return lines[starts[-1]:] if starts else []
+
+
+def restored_at_this_start(log: str) -> int | None:
     """How many object states the app says it picked up at this start. None if it hasn't said."""
-    found = RESTORED_LINE.findall('\n'.join(_log_before_and_after(log, started)[1]))
+    this = _this_run(log)
+    found = RESTORED_LINE.search(this[0]) if this else None
+    return int(found[1]) if found else None
+
+
+def restore_time_text(log: str) -> str | None:
+    """When the app restored, by its own clock then: the time on this run's "Picked up" line, like
+    '2026-11-01 10:06:00' (the Pi's local time, whole seconds)."""
+    this = _this_run(log)
+    found = LOG_TIME.match(this[0]) if this else None
+    return found[0] if found else None
+
+
+def _before_this_restore(log: str) -> str:
+    """The lines a warning about this start can be in: it comes just before this run's "Picked up" line, so after the
+    run before's "Picked up" line (that run could only have warned before its own)."""
+    lines, starts = _starts(log)
+    return '\n'.join(lines[starts[-2] + 1:] if len(starts) > 1 else lines)
+
+
+def clock_behind_warning_sec(log: str) -> int | None:
+    """How far behind the saved states the app said its clock was at this start, or None if it didn't say."""
+    found = CLOCK_BEHIND_LINE.findall(_before_this_restore(log))
     return int(found[-1]) if found else None
 
 
-def app_stopped_cleanly(log: str, started: str) -> bool | None:
-    """Did the app's run before `started` get to say goodbye? A reboot lets it, and a pulled plug doesn't. None if
-    nothing ran before."""
-    before = _log_before_and_after(log, started)[0]
-    last_start = next((i for i in range(len(before) - 1, -1, -1) if APP_STARTED in before[i]), None)
-    if last_start is None:
+def clock_not_synced_at_this_start(log: str) -> bool:
+    """Did the app say at this start that its clock hadn't been set from the internet yet (so it picked up nothing)?"""
+    return CLOCK_NOT_SYNCED_LINE in _before_this_restore(log)
+
+
+def app_stopped_cleanly(log: str) -> bool | None:
+    """Did the app's run before this start get to say goodbye? A reboot lets it, and a pulled plug doesn't. None if
+    nothing ran before. That run is from the second-to-last "Picked up" line up to the last."""
+    lines, starts = _starts(log)
+    if len(starts) < 2:
         return None
-    return any(APP_STOPPING in line for line in before[last_start:])
+    return any(APP_STOPPING in line for line in lines[starts[-2]:starts[-1]])
+
+
+# ── when the app really started ──
+# Docker's StartedAt comes from the Pi's clock, which has no battery and can jump after a power cut. The time since
+# boot can't jump, so the real start is worked out from that. Both are read in one go, so they match.
+CLOCK_PROBE = 'cat /proc/uptime && date +%s.%N'
+
+
+def real_start_time(probe: str, started_after_boot_sec: float) -> float:
+    """Seconds since 1970, by the Pi's clock now, when a program really started: now, minus the time since boot, plus
+    its start after boot. `probe` is what CLOCK_PROBE printed."""
+    uptime, now = probe.strip().splitlines()[:2]
+    return float(now) - float(uptime.split()[0]) + started_after_boot_sec
+
+
+class ExpectedRestore(NamedTuple):
+    case: str                   # 'normal', 'nothing saved', 'clock not synced', 'clock behind' or
+                                # 'clock behind, not noticed'
+    must_be: set[str]           # objects the app surely picked up
+    could_be: set[str]          # objects it may have picked up
+
+
+def expected_restore(rows: Iterable[Mapping[str, Any]], *, restored_at: float, warned_behind_sec: float | None,
+                     not_synced: bool, lag_sec: float, restore_max_age_sec: float,
+                     slack_sec: float) -> ExpectedRestore:
+    """What the app should say it picked up, all by the app's own clock, which also wrote the rows' `ts`.
+
+    `rows` are the saved states ({'object', 'ts'}). `restored_at` is the time on this run's "Picked up" line, in whole
+    seconds, so the restore was somewhere in the second after it. `warned_behind_sec` is what the app's clock-behind
+    warning said, or None. `not_synced`: did the app say its clock hadn't been set from the internet yet? `lag_sec` is
+    how far behind the app's clock really was when it restored.
+
+    If the app said either, it must have picked up nothing. If it didn't but its clock was behind by more than the
+    slack, it missed it. Otherwise this run wrote only after its restore, so rows from before it are the run
+    before's."""
+    if not_synced:
+        return ExpectedRestore('clock not synced', set(), set())
+    if warned_behind_sec is not None:
+        return ExpectedRestore('clock behind', set(), set())
+    if lag_sec > slack_sec:
+        return ExpectedRestore('clock behind, not noticed', set(), set())
+    oldest = restored_at - restore_max_age_sec
+    saved = list(rows)
+    could_be = {r['object'] for r in saved if oldest - slack_sec <= r['ts'] <= restored_at + LOG_TIME_STEP_SEC}
+    must_be = {r['object'] for r in saved if oldest + LOG_TIME_STEP_SEC + slack_sec <= r['ts'] < restored_at}
+    return ExpectedRestore('normal' if could_be else 'nothing saved', must_be, could_be)
 
 
 def speak_result(results: Mapping[str, Any]) -> str:
