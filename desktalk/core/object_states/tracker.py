@@ -5,7 +5,8 @@ It listens to DetectionEvents (about 3 a second). For each kind of object it pic
 smooths the answer (Hysteresis, then MajorityWindow) and runs `step()`. When something really changes
 (`appeared`, `removed`, `moved`) it publishes an ObjectStateChanged on the event bus first, then writes the
 change to the ObjectStateStore, so a database problem can't hide the event from the app. Changes the store
-couldn't take are kept in memory and saved with the next ones, so the rule engine still sees them.
+couldn't take are kept in memory and saved with the next ones, so the rule engine still sees them; at most
+`unsaved_most` of them, the oldest dropped first, so a card that stays full can't fill the memory too.
 
 The Settings page's sensitivity slider (Preferences 'sensitivity', read with every picture so a change works at
 once) stretches the waits: an object's appear_sec, gone_sec and move_fraction are multiplied by the step's
@@ -125,6 +126,8 @@ class ObjectStateTracker:
         self._last_picture: float | None = None
         self._store_errors_in_row = 0
         self._unsaved: list[StateRecord] = []           # changes the store couldn't take yet, oldest first
+        self._unsaved_most = settings.unsaved_most
+        self._dropping = False                          # dropping the oldest unsaved changes (said once)
         bus.subscribe('object-states', self._on_event, types={DetectionEvent})
 
     # ── helpers ──
@@ -245,7 +248,14 @@ class ObjectStateTracker:
         # Changes the store couldn't take before go first, so the rows stay oldest first.
         with self._lock:
             self._unsaved.extend(self._record(t) for t in transitions)
+            extra = len(self._unsaved) - self._unsaved_most
+            if extra > 0:
+                del self._unsaved[:extra]
             records = list(self._unsaved)
+        if extra > 0 and not self._dropping:
+            log.warning('More than %d object state changes are waiting to be saved, so the oldest are being dropped',
+                        self._unsaved_most)
+        self._dropping = extra > 0 or self._dropping
         try:
             self._store.append(records)
         except Exception as exc:  # a full disk or a locked file must never stop the tracker
@@ -255,6 +265,7 @@ class ObjectStateTracker:
                       exc_info=self._store_errors_in_row == 1)
         else:
             self._store_errors_in_row = 0
+            self._dropping = False
             with self._lock:
                 del self._unsaved[:len(records)]
 

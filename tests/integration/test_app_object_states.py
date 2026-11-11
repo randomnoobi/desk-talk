@@ -128,3 +128,17 @@ def test_object_states_are_saved_every_minute(tmp_path):
     rig = DeskRig(tmp_path)
     [job] = [j for j in rig.app.scheduler.status() if j['name'] == 'save object states']
     assert job['every_sec'] == rig.config.object_states.snapshot_every_sec
+
+
+def test_object_states_older_than_keep_days_are_deleted_on_a_timer(tmp_path):
+    config = changed(desk_config(tmp_path), 'object_states', keep_days=1)
+    rig = DeskRig(tmp_path, config=config)
+    rig.watch(settle_sec(rig), CUP_FAR)
+    assert [row.type for row in rig.app.state_store.changes(0) if row.label == 'cup'] == ['appeared']
+    [job] = [j for j in rig.app.scheduler.status() if j['name'] == 'delete old object states']
+    assert job['every_sec'] == config.object_states.prune_every_min * 60
+    saved = rig.app.state_store.changes(0)
+    rig.tick(rig.app.scheduler, after=0.5 * 24 * 3600)              # half a day: still kept
+    assert rig.app.state_store.changes(0) == saved
+    rig.tick(rig.app.scheduler, after=0.6 * 24 * 3600)              # more than a day: deleted
+    assert rig.app.state_store.changes(0) == []

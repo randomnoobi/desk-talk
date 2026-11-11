@@ -230,7 +230,7 @@ of the settings, for example `Roster(bus, profiles, scene, config.agents, config
 | `RuleNudges` | the rule engine's nudges ready to send (`nudges(now)`), and which one went out (`note_fired()`) | `RuleRunner` (`core/habits/rule_runner.py`) | `FakeRuleNudges` |
 | `DeskStatus` | camera on? someone at the desk? (the person's object state) reminders allowed? | `DeskStatusService` (`core/habits/desk_status.py`) | `FakeDeskStatus` |
 | `ObjectStatesView` | each object's state now (`snapshot()`), what changed lately (`changes(since)`) | `ObjectStateTracker` | `FakeObjectStates` |
-| `ObjectStateStore` | the object states' history: add rows, newest state per object, the changes | `SqliteStateStore` | `InMemoryStateStore` |
+| `ObjectStateStore` | the object states' history: add rows, newest state per object, the changes, delete rows older than `object_states.keep_days` (the only delete) | `SqliteStateStore` | `InMemoryStateStore` |
 | `CameraHealthView`, `PictureCheck` | Lens's checks on the picture | `CameraHealth` | `FakeCameraHealth`, `FakePictureCheck` |
 | `LiveViewPainter` | boxes and desk drawings on the live view | `DeskPainter` | `FakePainter` |
 | `PictureTools` | decode and encode JPEGs, shrink, crop, grey, brightness, glare, sharpness, how much two pictures differ | `OpenCvPictureTools` | `FakePictureTools` |

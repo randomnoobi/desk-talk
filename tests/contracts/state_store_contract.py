@@ -92,5 +92,28 @@ class StateStoreContract:
         store.append([a_record(99.0, boot_id='boot-a')])
         assert store.latest_states(100.0, boot_id='boot-a') == {}
 
+    def test_prune_deletes_the_rows_before_a_time_and_keeps_the_rest(self, store):
+        old = a_record(100.0)
+        old_snapshot = a_record(150.0, type='snapshot', prev_state=Phase.PRESENT, new_state=Phase.PRESENT)
+        at_cutoff = a_record(200.0, label='cup')
+        newer = a_record(300.0, type='removed', prev_state=Phase.PRESENT, new_state=Phase.ABSENT)
+        store.append([old, old_snapshot, at_cutoff, newer])
+        assert store.prune(200.0) == 2
+        assert store.changes(0.0) == [at_cutoff, newer]
+        assert store.latest_states(0.0) == {'cup': at_cutoff, 'bottle': newer}
+
+    def test_prune_with_nothing_old_deletes_nothing(self, store):
+        row = a_record(100.0)
+        store.append([row])
+        assert store.prune(50.0) == 0
+        assert store.changes(0.0) == [row]
+
+    def test_rows_can_be_added_after_a_prune(self, store):
+        store.append([a_record(100.0)])
+        store.prune(150.0)
+        row = a_record(200.0, label='cup')
+        store.append([row])
+        assert store.changes(0.0) == [row]
+
     def test_closing_is_safe(self, store):
         store.close()

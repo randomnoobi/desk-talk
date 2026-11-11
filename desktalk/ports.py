@@ -301,6 +301,11 @@ class ObjectStateStore(Protocol):
         (rows with the same `ts` in the order they were added). With `label`, only that object's rows."""
         ...
 
+    def prune(self, before: float) -> int:
+        """Delete every row with `ts < before`, so the history keeps only its last days. Returns how many.
+        The only way a row ever leaves: nothing else may change or delete one."""
+        ...
+
     def close(self) -> None:
         ...
 

@@ -47,6 +47,9 @@ SETTINGS = {
     'boot_id_file': None,
     'database': 'data/object_states.sqlite',
     'trace_pictures': 90,
+    'keep_days': 30,
+    'prune_every_min': 60,
+    'unsaved_most': 5000,
 }
 # The sensitivity slider's steps (settings → agents): `steady` stretches appear_sec, gone_sec and move_fraction.
 AGENTS = {
@@ -315,6 +318,26 @@ def test_the_store_working_again_brings_back_the_traceback(caplog):
         feed(tracker, t, [[o('bottle', 0.6)]] * SETTLE)
     errors = [r for r in caplog.records if 'disk is full' in r.getMessage()]
     assert [bool(r.exc_info) for r in errors] == [True, True]
+
+
+def test_changes_the_store_could_not_save_are_kept_only_up_to_a_limit(caplog):
+    """A full card can fail every save for days: past unsaved_most the oldest go, so memory can't fill up."""
+    store = BrokenStore()
+    tracker, bus, _ = make_tracker(store, unsaved_most=2)
+    with caplog.at_level(logging.WARNING):
+        t = feed(tracker, 1000, [[o('bottle', 0.6)]] * SETTLE)      # appeared
+        t = feed(tracker, t, [[]] * 16)                               # removed
+        t = feed(tracker, t, [[o('bottle', 0.6)]] * SETTLE)           # appeared again: the first one goes
+        feed(tracker, t, [[]] * 16)                                   # removed again: the second one goes
+    fired = bus.of_type(ObjectStateChanged)
+    assert [c.change for c in fired] == ['appeared', 'removed', 'appeared', 'removed']
+    assert tracker.changes(0) == [StateChange(e.ts, 'bottle', e.change) for e in fired[2:]]
+    dropped = [r for r in caplog.records if 'oldest' in r.getMessage()]
+    assert len(dropped) == 1                                          # said once, not every time
+    store.full = False
+    feed(tracker, 2000, [[o('bottle', 0.6)]] * SETTLE)               # appeared: the newest two are saved
+    assert [(r.type, r.ts) for r in store.records] == [('removed', fired[3].ts), ('appeared', store.records[1].ts)]
+    assert tracker.changes(fired[3].ts) == [StateChange(store.records[1].ts, 'bottle', 'appeared')]
 
 
 def test_changes_include_ones_the_store_could_not_save():

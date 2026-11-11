@@ -19,10 +19,10 @@ gets only the interfaces it asks for (desktalk/ports.py) and its own section of 
                                                    └─► MessageGenerator ──► DesktopAlerts ──► MessageHub ──►
                                                                             (Mac pop-ups)      open app pages
     Background jobs (Supervisor): the producer, the scheduler (compact and prune the event log, save the
-    habits and the object states), the rule engine (the habit rules in protocols.yaml → rules), habit reminders
-    and Lens (both through DesktopAlerts too), small talk, lost items, the daily recap, the Ollama keep-alive
-    when the chat runs on Ollama, and the developer page's Demo tab countdowns (pretend warnings, fired on purpose
-    through the same parts as the real ones).
+    habits and the object states, delete old object states), the rule engine (the habit rules in protocols.yaml →
+    rules), habit reminders and Lens (both through DesktopAlerts too), small talk, lost items, the daily recap, the
+    Ollama keep-alive when the chat runs on Ollama, and the developer page's Demo tab countdowns (pretend warnings,
+    fired on purpose through the same parts as the real ones).
 
 Tests build the same app with fakes through build()'s keyword arguments (see tests/integration/app_kit.py).
 """
@@ -126,6 +126,7 @@ from desktalk.runtime import Scheduler, Supervisor, SystemClock, boot_id, clock_
 log = logging.getLogger(__name__)
 
 MINUTE = 60
+DAY = 24 * 60 * MINUTE
 
 
 @dataclass(eq=False)
@@ -180,8 +181,8 @@ class DeskTalk:
     daily_summary     the end-of-day recap (a background job)
     cloud             sends filtered habit events to a linked cloud server, and does nothing until linked (a
                       background job): status() (/api/cloud/status)
-    scheduler         timed jobs (compacting and pruning the event log, saving habits and object states):
-                      status() (/api/health)
+    scheduler         timed jobs (compacting and pruning the event log, saving habits and object states, deleting
+                      old object states): status() (/api/health)
     supervisor        runs the background jobs: status() (/api/health)
     started_at        when the app was built (how long it has been running)
     keepalive         keeps Ollama's model loaded (None for a cloud AI)
@@ -545,6 +546,9 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     scheduler.every(config.habit_tracker.save_check_every_sec, habits.save, 'save habit day')
     scheduler.every(config.object_states.snapshot_every_sec, lambda: object_states.save_snapshot(clock.now()),
                     'save object states')
+    scheduler.every(config.object_states.prune_every_min * MINUTE,
+                    lambda: state_store.prune(clock.now() - config.object_states.keep_days * DAY),
+                    'delete old object states')
     supervisor = Supervisor(clock, first_retry_sec=config.supervisor.restart_start_sec,
                             max_retry_sec=config.supervisor.restart_max_sec)
 

@@ -201,6 +201,13 @@ object_states:
   # never needs one): nothing saved is brought back until the clock has synced.
   boot_id_file: null
   database: data/object_states.sqlite     # where the states are saved
+  # So the database can't fill the SD card: rows older than this many days are deleted. The habit rules look back
+  # hours at most, so 30 days is plenty (the same as event_log.keep_days).
+  keep_days: 30
+  prune_every_min: 60         # how often rows older than keep_days are deleted
+  # When the database can't save (a full card), changes wait in memory to be saved with the next ones. At most this
+  # many wait (a few MB); past it the oldest are dropped, so memory can't fill up too.
+  unsaved_most: 5000
   trace_pictures: 90          # the developer page shows each object's last this many pictures of smoothing
 
 # ── Keeping background jobs running ────────────────────────────────

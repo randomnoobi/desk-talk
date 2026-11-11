@@ -7,6 +7,13 @@ it gets the column when it opens, and its old rows have none. Rows are only ever
 database refuse any UPDATE or DELETE, so the history can't be rewritten by mistake. WAL mode is on, so reading
 and writing don't block each other.
 
+So the file doesn't fill the SD card, prune(before) deletes the rows older than a time (the scheduler asks for
+everything older than object_states.keep_days). It is the one way a row ever leaves: in one transaction it takes the
+DELETE trigger off, deletes, and puts the trigger back, so no other connection ever sees the table without it, and
+an error puts everything back as it was. The space the old rows took is reused by new rows, so the file stops growing
+at about keep_days of rows. (No VACUUM: it needs as much free space as the file itself, which is what's short when
+the card is full.)
+
 Two questions are asked of it:
 - latest_states(since, boot_id=...): each object's newest appeared / removed / snapshot row (only that boot's,
   when given), for picking up after a restart;
@@ -32,6 +39,9 @@ _CHANGE_LIST = ', '.join(f"'{t}'" for t in CHANGE_TYPES)
 _COLUMNS = 'ts, timezone, device_id, type, object, prev_state, new_state, conf_avg, bbox, dwell_sec, boot_id'
 _BLANKS = ', '.join(['?'] * len(_COLUMNS.split(', ')))
 
+_NO_DELETE = """CREATE TRIGGER IF NOT EXISTS events_no_delete BEFORE DELETE ON events
+BEGIN SELECT RAISE(ABORT, 'events is append-only'); END"""
+
 _SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS events (
     id         INTEGER PRIMARY KEY,
@@ -51,8 +61,7 @@ CREATE INDEX IF NOT EXISTS events_object_ts ON events (object, ts);
 CREATE INDEX IF NOT EXISTS events_ts ON events (ts);
 CREATE TRIGGER IF NOT EXISTS events_no_update BEFORE UPDATE ON events
 BEGIN SELECT RAISE(ABORT, 'events is append-only'); END;
-CREATE TRIGGER IF NOT EXISTS events_no_delete BEFORE DELETE ON events
-BEGIN SELECT RAISE(ABORT, 'events is append-only'); END;
+{_NO_DELETE};
 """
 
 
@@ -123,6 +132,27 @@ class SqliteStateStore:
                 f'SELECT {_COLUMNS} FROM events WHERE type IN ({_CHANGE_LIST}) AND ts > ?{one} ORDER BY ts, id',
                 (since, label) if label is not None else (since,)).fetchall()
         return [_record_of(row) for row in rows]
+
+    def prune(self, before: float) -> int:
+        """Delete the rows with `ts < before`. Returns how many. The DELETE trigger is off only inside this one
+        transaction (see the top of this file)."""
+        with self._lock:
+            self._db.execute('BEGIN IMMEDIATE')
+            try:
+                self._db.execute('DROP TRIGGER IF EXISTS events_no_delete')
+                deleted = self._db.execute('DELETE FROM events WHERE ts < ?', (before,)).rowcount
+                self._db.execute(_NO_DELETE)
+            except BaseException:
+                self._db.rollback()
+                raise
+            self._db.commit()
+            if deleted:
+                # Fold the deletes into the file and shrink the WAL file back, so a big first prune leaves no big
+                # WAL file behind.
+                self._db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+        if deleted:
+            log.info('Deleted %d object state rows from before %s', deleted, before)
+        return deleted
 
     def close(self) -> None:
         with self._lock:

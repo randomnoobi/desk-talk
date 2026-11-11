@@ -209,6 +209,12 @@ class InMemoryStateStore:
         return sorted((r for r in self.records if r.type in CHANGE_TYPES and r.ts > since
                        and (label is None or r.label == label)), key=lambda r: r.ts)
 
+    def prune(self, before: float) -> int:
+        kept = [r for r in self.records if r.ts >= before]
+        deleted = len(self.records) - len(kept)
+        self.records = kept
+        return deleted
+
     def close(self) -> None:
         self.closed = True
 

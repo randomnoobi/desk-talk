@@ -51,6 +51,36 @@ class TestSqliteStateStore(StateStoreContract):
         finally:
             raw.close()
 
+    def test_the_table_is_still_append_only_after_a_prune(self, store, tmp_path):
+        store.append([a_record(100.0), a_record(200.0, label='cup')])
+        assert store.prune(150.0) == 1
+        raw = sqlite3.connect(tmp_path / 'states.sqlite')
+        try:
+            with pytest.raises(sqlite3.DatabaseError, match='append-only'):
+                raw.execute('DELETE FROM events')
+            with pytest.raises(sqlite3.DatabaseError, match='append-only'):
+                raw.execute("UPDATE events SET object = 'pen'")
+        finally:
+            raw.close()
+
+    def test_a_prune_that_fails_deletes_nothing_and_keeps_the_rule(self, store, tmp_path):
+        """The rule is taken off and put back in one transaction: when the delete fails, nothing changes."""
+        store.append([a_record(100.0), a_record(200.0, label='cup')])
+        raw = sqlite3.connect(tmp_path / 'states.sqlite')
+        try:
+            raw.execute("CREATE TRIGGER stop_it BEFORE DELETE ON events BEGIN SELECT RAISE(ABORT, 'stopped'); END")
+            raw.commit()
+            with pytest.raises(sqlite3.DatabaseError, match='stopped'):
+                store.prune(150.0)
+            assert len(store.changes(0.0)) == 2
+            triggers = {row[0] for row in raw.execute("SELECT name FROM sqlite_master WHERE type = 'trigger'")}
+            assert 'events_no_delete' in triggers
+            raw.execute('DROP TRIGGER stop_it')
+            raw.commit()
+        finally:
+            raw.close()
+        assert store.prune(150.0) == 1          # and the store still works
+
     def test_type_must_be_one_of_the_four(self, store, tmp_path):
         raw = sqlite3.connect(tmp_path / 'states.sqlite')
         try:
@@ -93,6 +123,21 @@ class TestSqliteStateStore(StateStoreContract):
             store.close()
         # Opening it again doesn't try to add the column twice
         SqliteStateStore(path).close()
+
+    def test_a_database_from_before_boot_ids_can_be_pruned(self, tmp_path):
+        path = tmp_path / 'states.sqlite'
+        raw = sqlite3.connect(path)
+        raw.executescript(OLD_SCHEMA)
+        raw.execute("INSERT INTO events (ts, timezone, device_id, type, object, prev_state, new_state) "
+                    "VALUES (100.0, '+08:00', 'pi-1', 'appeared', 'bottle', 'ABSENT', 'PRESENT')")
+        raw.commit()
+        raw.close()
+        store = SqliteStateStore(path)
+        try:
+            assert store.prune(150.0) == 1
+            assert store.changes(0.0) == []
+        finally:
+            store.close()
 
     def test_wal_mode_is_on(self, store, tmp_path):
         raw = sqlite3.connect(tmp_path / 'states.sqlite')
