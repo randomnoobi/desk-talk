@@ -203,6 +203,13 @@ object_states:
   database: data/object_states.sqlite     # where the states are saved
   trace_pictures: 90          # the developer page shows each object's last this many pictures of smoothing
 
+# ── The clock (docs/CLOCK.md) ──────────────────────────────────────
+clock:
+  # A clock before this day is plainly wrong (say, set to 1990 by hand, or a Pi that lost its saved time). Until it
+  # is right again, saved object states aren't picked up after a restart and nothing is deleted for being old
+  # (the event log's old days). Any day before this version of Desk Talk came out will do.
+  earliest_believable_date: 2025-01-01
+
 # ── Keeping background jobs running ────────────────────────────────
 supervisor:
   restart_start_sec: 1        # a background job that crashed starts again after this long...
