@@ -40,6 +40,7 @@ reports:                         # the weekly report
   max_tries: 3                   # how many times to try a report before marking it failed
   retry_first_wait_min: 10       # minutes to wait before the second try
   retry_growth: 3                # each wait after that is this many times longer
+  retry_jitter: 0.2              # each of those waits is cut by up to this share of it, by chance (0 = never), so reports that failed together don't all try again at once
   provider: anthropic            # who writes it: anthropic, or openai_compatible (Gemini, OpenAI, Groq, Ollama)
   model: claude-sonnet-5-5       # the model that writes it
   url: ""                        # for openai_compatible: the chat completions address
