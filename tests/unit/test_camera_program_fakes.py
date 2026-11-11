@@ -48,6 +48,10 @@ class FakeClock:
         self._now += seconds
         self._monotonic += seconds
 
+    def set_wall_clock(self, now: float) -> None:
+        """The wall clock jumps to `now` (set by hand, or from the internet); the monotonic clock doesn't move."""
+        self._now = float(now)
+
 
 class FakeCamera:
     """Hands out the given pictures in a loop. Set `broken` to an exception to make capture() fail."""

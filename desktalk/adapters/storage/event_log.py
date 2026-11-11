@@ -7,8 +7,9 @@ The event log, kept on this computer in data/events/<day>/ (the same files as al
 
 Every 10 minutes (settings → event_log.compact_every_min) the scheduler calls compact(): the per-picture
 lines are merged into intervals (desktalk/adapters/storage/intervals.py) and deleted, so the log stays
-small. Days older than event_log.keep_days are deleted by prune(). Lines are JSON, one event per line,
-newest at the bottom.
+small. Days older than event_log.keep_days are deleted by prune(), but never while the clock is plainly wrong
+(before clock.earliest_believable_date), and never the newest keep_days days that have a log, so a clock far ahead
+can't delete them all at once. Lines are JSON, one event per line, newest at the bottom.
 
 When something goes wrong with the files:
 - a line cut off by a crash (or otherwise broken) is skipped and logged, never fatal, and the next event
@@ -24,6 +25,7 @@ import logging
 import os
 import shutil
 import threading
+from collections.abc import Callable
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -52,11 +54,14 @@ class EventLog:
     folder: where the day folders go (config.resolve(config.event_log.folder)).
     settings: merge_gap_sec, keep_days and log_empty_frames are used here; the scheduler uses
     compact_every_min and prune_every_min to call compact() and prune().
-    clock: says which local day a time falls on, so the day folders match the app's "today"."""
+    clock: says which local day a time falls on, so the day folders match the app's "today".
+    believable(now): is the clock right enough to delete days by it (ClockCheck.believable)? None: always."""
 
-    def __init__(self, folder: Path, settings: EventLogSettings, clock: Clock):
+    def __init__(self, folder: Path, settings: EventLogSettings, clock: Clock, *,
+                 believable: Callable[[float], bool] | None = None):
         self.folder = Path(folder)
         self._clock = clock
+        self._believable = believable
         self._merge_gap = settings.merge_gap_sec
         self._keep_days = settings.keep_days
         self._log_empty_frames = settings.log_empty_frames
@@ -152,12 +157,15 @@ class EventLog:
 
     def prune(self, now: float) -> list[str]:
         """Delete the days older than keep_days (today counts as one). Returns the days deleted, oldest first.
-        A day ahead of `now` (after the clock was off) is kept."""
+        A day ahead of `now` (after the clock was off) is kept, and so are the newest keep_days days with a log.
+        Nothing is deleted while the clock isn't believable (the warning about it says so)."""
+        if self._believable is not None and not self._believable(now):
+            return []
         today = date.fromisoformat(self._clock.local_day(now))
         oldest_kept = (today - timedelta(days=self._keep_days - 1)).isoformat()
         removed = []
         with self._lock:
-            for d in sorted(self._day_folders()):
+            for d in sorted(self._day_folders())[:-self._keep_days]:       # keep_days is at least 1
                 if d.name < oldest_kept:
                     try:
                         shutil.rmtree(d)

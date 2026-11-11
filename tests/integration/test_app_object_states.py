@@ -5,6 +5,8 @@ picks up where it left off after a restart, and the person's state switches remi
 
 from __future__ import annotations
 
+from datetime import date
+
 from tests.integration.app_kit import CUP_FAR, LAPTOP, DeskRig, changed, desk_config
 
 
@@ -121,6 +123,29 @@ def test_a_restart_after_the_clock_has_synced_keeps_the_states(tmp_path):
     rig2 = DeskRig(tmp_path, config=changed(rig.config, 'object_states', clock_synced_file=flag),
                    start=rig.clock.now() + 10)
     assert rig2.app.object_states.snapshot().objects['cup'].state == 'PRESENT'
+    rig2.app.stop(timeout=1)
+
+
+def test_saved_rows_say_the_clock_was_synced(tmp_path):
+    rig = DeskRig(tmp_path)
+    rig.watch(settle_sec(rig), CUP_FAR)
+    assert {row.clock_synced for row in rig.app.state_store.changes(0)} == {True}
+    rig.app.stop(timeout=1)
+
+
+def test_a_restart_with_a_clock_that_is_plainly_wrong_starts_over(tmp_path):
+    """The clock set to 1990 by hand: before clock.earliest_believable_date, it counts as not synced, flag file or no
+    flag file, and the rows written meanwhile say so."""
+    rig = DeskRig(tmp_path)
+    rig.watch(settle_sec(rig), CUP_FAR)
+    rig.app.stop(timeout=1)
+    start = rig.clock.now() + 10
+    after_start = date.fromtimestamp(start + 2 * 24 * 3600)
+    rig2 = DeskRig(tmp_path, config=changed(rig.config, 'clock', earliest_believable_date=after_start), start=start)
+    assert 'cup' not in rig2.app.object_states.snapshot().objects
+    rig2.watch(settle_sec(rig2), CUP_FAR)
+    newest = [row for row in rig2.app.state_store.changes(0) if row.label == 'cup'][-1]
+    assert newest.ts >= start and newest.clock_synced is False
     rig2.app.stop(timeout=1)
 
 

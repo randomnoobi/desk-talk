@@ -84,14 +84,35 @@ class TestSqliteStateStore(StateStoreContract):
         store = SqliteStateStore(path)
         try:
             [old] = store.changes(0.0)
-            assert old.boot_id is None
-            new = a_record(101.0, label='cup', boot_id='boot-a')
+            assert old.boot_id is None and old.clock_synced is None
+            new = a_record(101.0, label='cup', boot_id='boot-a', clock_synced=True)
             store.append([new])
             assert store.changes(0.0) == [old, new]
             assert store.latest_states(0.0, boot_id='boot-a') == {'cup': new}
         finally:
             store.close()
         # Opening it again doesn't try to add the column twice
+        SqliteStateStore(path).close()
+
+    def test_a_database_from_before_clock_synced_still_opens(self, tmp_path):
+        """A file that already has boot ids but not clock_synced gets that column too; its old rows say None."""
+        path = tmp_path / 'states.sqlite'
+        raw = sqlite3.connect(path)
+        raw.executescript(OLD_SCHEMA)
+        raw.execute('ALTER TABLE events ADD COLUMN boot_id TEXT')
+        raw.execute("INSERT INTO events (ts, timezone, device_id, type, object, prev_state, new_state, boot_id) "
+                    "VALUES (100.0, '+08:00', 'pi-1', 'appeared', 'bottle', 'ABSENT', 'PRESENT', 'boot-a')")
+        raw.commit()
+        raw.close()
+        store = SqliteStateStore(path)
+        try:
+            [old] = store.changes(0.0)
+            assert (old.boot_id, old.clock_synced) == ('boot-a', None)
+            new = a_record(101.0, label='cup', clock_synced=False)
+            store.append([new])
+            assert store.changes(0.0) == [old, new]
+        finally:
+            store.close()
         SqliteStateStore(path).close()
 
     def test_wal_mode_is_on(self, store, tmp_path):

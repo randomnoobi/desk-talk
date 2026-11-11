@@ -88,7 +88,8 @@ def o(label, conf, x=320, y=240):
     return Detection(label, conf, BBox(x - 20, y - 20, x + 20, y + 20))
 
 
-def make_tracker(store=None, utc_offset_hours=8, sensitivity=None, prefs=None, boot_id=None, **changes):
+def make_tracker(store=None, utc_offset_hours=8, sensitivity=None, prefs=None, boot_id=None, clock_synced=None,
+                 **changes):
     bus = SyncEventBus()
     store = InMemoryStateStore() if store is None else store
     settings = ObjectStatesSettings.model_validate({**SETTINGS, **changes})
@@ -96,7 +97,7 @@ def make_tracker(store=None, utc_offset_hours=8, sensitivity=None, prefs=None, b
     tracker = ObjectStateTracker(settings, bus, store, device_id='pi', new_session_after_sec=300,
                                  clock=FakeClock(utc_offset_hours=utc_offset_hours),
                                  agents=AgentsSettings.model_validate(AGENTS), prefs=prefs,
-                                 profiles=FakeProfiles([STAPLER]), boot_id=boot_id)
+                                 profiles=FakeProfiles([STAPLER]), boot_id=boot_id, clock_synced=clock_synced)
     return tracker, bus, store
 
 
@@ -471,6 +472,25 @@ def test_every_saved_row_says_which_boot_saved_it():
     tracker.save_snapshot(t)
     assert [r.type for r in store.records] == ['appeared', 'snapshot']
     assert {r.boot_id for r in store.records} == {'boot-a'}
+
+
+def test_every_saved_row_says_whether_the_clock_was_synced_when_it_was_written():
+    """Asked again for each row, with the row's own time, so a clock that syncs (or goes wrong) while the app runs
+    shows in the rows written after."""
+    synced_from = 1004.0
+    tracker, _, store = make_tracker(clock_synced=lambda ts: ts >= synced_from)
+    t = feed(tracker, 1000, [[o('bottle', 0.6)]] * SETTLE)
+    tracker.save_snapshot(t)
+    [appeared, snapshot] = store.records
+    assert appeared.ts < synced_from <= snapshot.ts
+    assert (appeared.clock_synced, snapshot.clock_synced) == (False, True)
+
+
+def test_with_nothing_to_ask_rows_cannot_say_whether_the_clock_was_synced():
+    tracker, _, store = make_tracker()
+    t = feed(tracker, 1000, [[o('bottle', 0.6)]] * SETTLE)
+    tracker.save_snapshot(t)
+    assert {r.clock_synced for r in store.records} == {None}
 
 
 def test_before_the_clock_has_synced_rows_from_this_boot_still_come_back():

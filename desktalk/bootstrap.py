@@ -121,7 +121,7 @@ from desktalk.ports import (
     TracedObjectStates,
     TracePhotos,
 )
-from desktalk.runtime import Scheduler, Supervisor, SystemClock, boot_id, clock_synced, plain_error, setup_logging
+from desktalk.runtime import ClockCheck, Scheduler, Supervisor, SystemClock, boot_id, plain_error, setup_logging
 
 log = logging.getLogger(__name__)
 
@@ -407,6 +407,9 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         cloud_link_factory  makes the line to the cloud server from its address and token (HttpCloudLink); only
                             called once the computer is linked"""
     clock = clock or SystemClock()
+    synced_file = config.object_states.clock_synced_file
+    clock_check = ClockCheck(config.resolve(synced_file) if synced_file else None,
+                             config.clock.earliest_believable_date)
 
     def data_path(path: Path) -> Path:
         path = Path(path).expanduser()
@@ -427,7 +430,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     # For the parts that still ask for several desk interfaces in one object; it passes each call on.
     desk = WholeDesk(live_pictures, scene, safety_board, character_memory, photo_album)
     bus = EventStream(config.event_stream, synchronous=synchronous_events)
-    event_log = EventLog(data_path(config.event_log.folder), config.event_log, clock)
+    event_log = EventLog(data_path(config.event_log.folder), config.event_log, clock,
+                         believable=clock_check.believable)
     bus.subscribe('event-log', event_log.write)          # first, so it logs events in the order they happen
     profiles = ProfileBook(config.agents_file, store, personality_max_chars=config.agents.personality_max_chars)
     preferences = PreferencesFile(store, config.protocols.schedule, config.reminders.quiet_hours,
@@ -458,9 +462,10 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     object_states = ObjectStateTracker(config.object_states, bus, state_store, device_id=source.kind,
                                        new_session_after_sec=config.protocols.breaks.break_min * MINUTE, clock=clock,
                                        agents=config.agents, prefs=preferences, profiles=profiles,
-                                       boot_id=boot_id(config.resolve(boot_file) if boot_file else None))
-    synced_file = config.object_states.clock_synced_file
-    object_states.restore(clock.now(), clock_synced=clock_synced(config.resolve(synced_file) if synced_file else None))
+                                       boot_id=boot_id(config.resolve(boot_file) if boot_file else None),
+                                       clock_synced=clock_check.synced)
+    restored_at = clock.now()
+    object_states.restore(restored_at, clock_synced=clock_check.synced(restored_at))
 
     # ── the consumers of detection events (each subscribes itself, in this order) ──
     def on_desk(x: float, y: float, width: int, height: int) -> bool | None:

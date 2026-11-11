@@ -7,7 +7,9 @@ Runs jobs on a timer ("compact the event log every 10 minutes").
 
 Each tick() runs the jobs that are due and says how long until the next one. A job that raises is
 logged and stays scheduled; the other jobs still run. A late tick runs a job once (no catch-up runs)
-and its next turn counts from then.
+and its next turn counts from then. The turns go by the clock's monotonic time, so a wall clock that is set
+back (by hand, or a Pi's clock put right by the internet) never stops the jobs, and one set forward never
+rushes them.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ class _Job:
         self.seconds = float(seconds)
         self.run = run
         self.name = name
-        self.next_run = next_run
+        self.next_run = next_run          # by the monotonic clock
         self.runs = 0
         self.last_run: float | None = None
         self.last_error: str | None = None
@@ -48,16 +50,18 @@ class Scheduler:
         """Run `job()` every `seconds`. The first run is `seconds` from now, or at the next tick with run_now."""
         if seconds <= 0:
             raise ValueError(f'job "{name}": the time between runs must be more than 0 seconds, not {seconds}')
-        now = self._clock.now()
+        mono = self._clock.monotonic()
         with self._lock:
-            self._jobs.append(_Job(seconds, job, name, now if run_now else now + seconds))
+            self._jobs.append(_Job(seconds, job, name, mono if run_now else mono + seconds))
 
     def tick(self, now: float) -> float:
-        """Run the jobs that are due. Returns the seconds until the next one is due."""
+        """Run the jobs that are due (by the monotonic clock). Returns the seconds until the next one is due.
+        `now` (the wall clock) is only kept as each job's last run."""
+        mono = self._clock.monotonic()
         with self._lock:
             jobs = list(self._jobs)
         for job in jobs:
-            if now < job.next_run:
+            if mono < job.next_run:
                 continue
             error = None
             try:
@@ -70,14 +74,14 @@ class Scheduler:
                 job.runs += 1
                 job.last_run = now
                 job.last_error = error
-                job.next_run = now + job.seconds
-        return min([job.next_run - now for job in jobs] + [self._longest_wait])
+                job.next_run = mono + job.seconds
+        return min([job.next_run - mono for job in jobs] + [self._longest_wait])
 
     def status(self) -> list[dict]:
         """One entry per job: name, every_sec, runs, last_run_at, last_error (plain words, or None since its
-        last good run), next_run_at (seconds since 1970) and next_in_sec."""
-        now = self._clock.now()
+        last good run), next_run_at (seconds since 1970, by the wall clock now) and next_in_sec."""
+        now, mono = self._clock.now(), self._clock.monotonic()
         with self._lock:
             return [{'name': j.name, 'every_sec': j.seconds, 'runs': j.runs, 'last_run_at': j.last_run,
-                     'last_error': j.last_error, 'next_run_at': j.next_run,
-                     'next_in_sec': max(0, round(j.next_run - now))} for j in self._jobs]
+                     'last_error': j.last_error, 'next_run_at': now + (j.next_run - mono),
+                     'next_in_sec': max(0, round(j.next_run - mono))} for j in self._jobs]

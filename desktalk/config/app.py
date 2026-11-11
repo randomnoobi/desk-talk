@@ -6,6 +6,7 @@ What each setting means is in the comments of config/settings.yaml.
 from __future__ import annotations
 
 import re
+from datetime import date
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -211,6 +212,10 @@ class ObjectStatesSettings(_Section):
         """(appear_sec, gone_sec, move_fraction) for an object (not the person) at a sensitivity step's `steady`:
         each multiplied by it, so a pickier step waits longer and needs a bigger move."""
         return self.appear_sec * steady, self.gone_sec * steady, self.move_fraction * steady
+
+
+class ClockSettings(_Section):
+    earliest_believable_date: date
 
 
 class SupervisorSettings(_Section):
@@ -904,6 +909,7 @@ class AppConfig(_Section):
     agents: AgentsSettings
     presence: PresenceSettings
     object_states: ObjectStatesSettings
+    clock: ClockSettings
     supervisor: SupervisorSettings
     event_stream: EventStreamSettings
     event_log: EventLogSettings
