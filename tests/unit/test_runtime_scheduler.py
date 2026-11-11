@@ -145,7 +145,7 @@ def test_the_supervisor_runs_the_scheduler_like_any_other_worker():
     sched = Scheduler(clock, longest_wait_sec=3600)
     ran = threading.Event()
     sched.every(600, ran.set, 'compact event log', run_now=True)
-    supervisor = Supervisor(clock, first_retry_sec=3600, max_retry_sec=3600)
+    supervisor = Supervisor(clock, first_retry_sec=3600, max_retry_sec=3600, jitter=0)
     supervisor.add(sched)
     supervisor.start()
     try:

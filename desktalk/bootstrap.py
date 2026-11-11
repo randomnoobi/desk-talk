@@ -546,7 +546,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     scheduler.every(config.object_states.snapshot_every_sec, lambda: object_states.save_snapshot(clock.now()),
                     'save object states')
     supervisor = Supervisor(clock, first_retry_sec=config.supervisor.restart_start_sec,
-                            max_retry_sec=config.supervisor.restart_max_sec)
+                            max_retry_sec=config.supervisor.restart_max_sec, jitter=config.supervisor.restart_jitter)
 
     # ── each object's story pictures (the app page, and the developer page's trace) ──
     story = config.object_story

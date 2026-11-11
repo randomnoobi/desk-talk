@@ -96,7 +96,7 @@ def test_the_job_runs_under_the_supervisors_guard(index):
     clock = FakeClock()
     worker = all_workers(clock)[index]
     assert isinstance(worker, PeriodicWorker)
-    guarded = GuardedWorker(worker, clock, first_retry_sec=1, max_retry_sec=300)
+    guarded = GuardedWorker(worker, clock, first_retry_sec=1, max_retry_sec=300, jitter=0)
     wait = guarded.step()
     assert wait > 0 and guarded.status()['failures_in_row'] == 0
 

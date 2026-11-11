@@ -77,6 +77,7 @@ class PiDetector(_Section):
     failures_before_pause: PositiveInt
     pause_start_sec: PositiveNumber
     pause_max_sec: PositiveNumber
+    pause_jitter: Fraction
     health_check_every_sec: PositiveNumber
 
 
@@ -93,6 +94,7 @@ class PiSettings(_Section):
     upload_timeout_sec: PositiveNumber
     upload_retry_start_sec: PositiveNumber
     upload_retry_max_sec: PositiveNumber
+    upload_retry_jitter: Fraction
     hot_warning_c: PositiveNumber
     clock_off_warning_sec: PositiveNumber
     camera_warmup_sec: ZeroOrMore
@@ -215,6 +217,7 @@ class SupervisorSettings(_Section):
     _in_order = (('restart_start_sec', 'restart_max_sec'),)
     restart_start_sec: PositiveNumber
     restart_max_sec: PositiveNumber
+    restart_jitter: Fraction
     scheduler_longest_wait_sec: PositiveNumber
     stop_wait_sec: PositiveNumber
 
@@ -364,6 +367,7 @@ class LlmSettings(_Section):
     ollama_timeout_sec: PositiveNumber
     retry_start_sec: PositiveNumber
     retry_max_sec: PositiveNumber
+    retry_jitter: Fraction
     breaker_failures: PositiveInt
     breaker_open_sec: PositiveNumber
     rate_limit_retry_sec: ZeroOrMore
@@ -539,6 +543,7 @@ class CloudSettings(_Section):
     timeout_sec: PositiveNumber
     retry_start_sec: PositiveNumber
     retry_max_sec: PositiveNumber
+    retry_jitter: Fraction
     totals_every_min: PositiveNumber
     goals_every_hours: PositiveNumber
     error_text_chars: PositiveInt

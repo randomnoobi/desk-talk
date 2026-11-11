@@ -73,6 +73,8 @@ pi:
   upload_timeout_sec: 5
   upload_retry_start_sec: 1   # the app didn't take a picture: wait this long before sending again...
   upload_retry_max_sec: 10    # ...a little longer after each miss, up to this
+  upload_retry_jitter: 0.2    # each of those waits is cut by up to this share of it, by chance (0 = never, 1 = up
+                              # to all of it), so pictures held up together don't all go again at the same moment
   hot_warning_c: 75           # Lens mentions it when the Pi's processor is this hot (°C); it slows down at about 80
   clock_off_warning_sec: 5    # Lens mentions it when the camera's clock is this far from the app's
   camera_warmup_sec: 1        # the Pi camera gets this long to settle its exposure when it starts
@@ -98,6 +100,7 @@ pi:
     failures_before_pause: 3  # this many failures in a row: stop asking the container for a while...
     pause_start_sec: 5        # ...this long at first...
     pause_max_sec: 60         # ...doubling each time, up to this
+    pause_jitter: 0.2         # each pause is cut by up to this share of it, by chance (0 = never)
     health_check_every_sec: 10  # while paused, ask the container's /health this often
 
 # ── Object detection (YOLO in the app itself) ──────────────────────
@@ -207,6 +210,8 @@ object_states:
 supervisor:
   restart_start_sec: 1        # a background job that crashed starts again after this long...
   restart_max_sec: 60         # ...doubling each time it crashes again, up to this
+  restart_jitter: 0.2         # each of those waits is cut by up to this share of it, by chance (0 = never), so
+                              # jobs that crashed together (say, the network went) don't all start again at once
   scheduler_longest_wait_sec: 60  # the timed jobs (compacting the event log, saving habits) are checked
                               # at least this often
   stop_wait_sec: 5            # when Desk Talk stops, how long to wait for each background job to finish
@@ -361,6 +366,8 @@ llm:
   ollama_timeout_sec: 90      # Ollama runs on your own computer and can be slow to load a model (the Pi's is shorter)
   retry_start_sec: 2          # a failed AI call is tried again after this long...
   retry_max_sec: 30           # ...doubling each time, up to this (max_retries tries in all)
+  retry_jitter: 0.2           # each wait before trying again (vision_retry_sec's too) is cut by up to this share
+                              # of it, by chance (0 = never), so calls that failed together don't all go again at once
   breaker_failures: 3         # this many failed calls in a row = the AI is down: stop calling it...
   breaker_open_sec: 60        # ...for this long, then try one call to see if it's back
   rate_limit_retry_sec: 5     # you're waiting on a reply and a per-minute limit was hit: one more try after this long
@@ -522,6 +529,8 @@ cloud:
   timeout_sec: 10             # give up on a send that takes longer than this
   retry_start_sec: 30         # after a failed send wait this long, then twice that, and so on...
   retry_max_sec: 1800         # ...up to this
+  retry_jitter: 0.2           # each of those waits is cut by up to this share of it, by chance (0 = never), so
+                              # computers that lost the server together don't all send again at the same moment
   totals_every_min: 15        # a day's numbers (desk time, water ...) go when they changed, at most this often
   goals_every_hours: 24       # your goals and wake and bed times go again this often, and whenever they change
   error_text_chars: 200       # most letters kept of a reason the server gives when it says no

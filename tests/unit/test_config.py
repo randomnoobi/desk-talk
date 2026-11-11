@@ -243,6 +243,19 @@ def test_a_bad_value_in_a_new_section_is_caught_too(project):
     assert str(err.value) == 'config/settings.local.yaml: pi.detector.format must be one of: ncnn, pt (got "onnx")'
 
 
+def test_each_retry_has_a_jitter_share_from_0_to_1(project):
+    cfg = load_config(root=project, environ={})
+    for share in (cfg.pi.upload_retry_jitter, cfg.pi.detector.pause_jitter, cfg.supervisor.restart_jitter,
+                  cfg.llm.retry_jitter, cfg.cloud.retry_jitter):
+        assert 0 <= share <= 1
+
+
+def test_a_jitter_over_1_is_refused(project):
+    write_local(project, 'cloud:\n  retry_jitter: 1.5\n')
+    with pytest.raises(ConfigError, match='cloud.retry_jitter'):
+        load_config(root=project, environ={})
+
+
 def test_a_wait_that_starts_longer_than_its_limit_is_refused(project):
     write_local(project, 'supervisor:\n  restart_start_sec: 120\n')
     with pytest.raises(ConfigError) as err:
