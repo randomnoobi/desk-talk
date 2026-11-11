@@ -35,10 +35,11 @@ anyone who can join your Wi-Fi can open the page, and only the Wi-Fi's password 
 > rebuilt and made again with a new commit), all three containers coming back by themselves after `sudo reboot`, the
 > three containers together with the real camera, pictures flowing into events, the speak command with a stand-in for
 > the speaker (so nobody has heard it), and that no picture leaves the Pi. `DESKTALK_PI=pi uv run pytest -m pi` gave 7
-> passed and 5 skipped; the skipped ones need a person.
+> passed and 5 skipped; the skipped ones need a person. A pulled plug was tried too (2026-11-10): all three came back
+> by themselves, the files stayed readable, and saved states started over until the Pi's clock had synced.
 > **Not tried yet:** `install.sh` on a blank card (this card already had Docker, the lines in the boot files for the
 > memory limits and the camera, and the new name, put in by hand, so it skipped those), a real USB speaker, a real
-> object on the desk, a power cut, a start with no Wi-Fi, no network at all, a real phone, a real cloud link, and
+> object on the desk, a start with no Wi-Fi, no network at all, a real phone, a real cloud link, and
 > closing the laptop an AI runs on. They are the steps in [docs/PI_CHECKS.md](../docs/PI_CHECKS.md).
 
 More detail: the camera's [README](camera/README.md) and the detector's [README](detector_service/README.md).

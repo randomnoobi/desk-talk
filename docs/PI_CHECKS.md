@@ -40,11 +40,11 @@ It passes when the event shows up. A cup put down in the 5 minutes before the te
 
 ## A power cut
 
-Shows the Pi starts everything by itself, and that pulling the plug leaves the event log and SQLite readable.
+Shows the Pi starts everything by itself, and that pulling the plug leaves the event log and SQLite readable. Done on a real Pi on 2026-11-10: it passed, with the clock 10 hours behind until it synced.
 
 1. Put a cup on the desk and wait 2 minutes, so its state gets saved.
 2. Pull the Pi's power plug. Don't shut it down first.
-3. Plug it back in within about 3 minutes. Saved states older than `object_states.restore_max_age_sec` (5 minutes) start over on purpose, and the boot takes some of that.
+3. Plug it back in within about 3 minutes. If the clock syncs before the app starts, saved states older than `object_states.restore_max_age_sec` (5 minutes) start over on purpose, and the boot takes some of that.
 4. Touch nothing on the Pi. Wait 3 minutes.
 5. **On your Mac**, within 30 minutes of plugging it in:
 
@@ -52,7 +52,7 @@ Shows the Pi starts everything by itself, and that pulling the plug leaves the e
    DESKTALK_PI=pi DESKTALK_PI_JUST_POWER_CUT=1 uv run pytest -m pi -v -rs -k test_starts_after_power_cut
    ```
 
-It checks that the Pi has only just booted, that all three are healthy and started by themselves soon after the boot, that pictures are coming in, that the event log and SQLite can be read, and that the app picked up the saved states at this start. It skips the last part if nothing was saved just before the cut, and says so.
+It checks that the Pi has only just booted, that all three are healthy and started by themselves soon after the boot, that pictures are coming in, that the event log and SQLite can be read, and that the app picked up the right saved states at this start: none while the clock hadn't synced. If the clock had synced first, it skips that part when nothing was saved just before the cut, and says so.
 
 It also checks the power really was cut, so a `sudo reboot` fails on purpose. The Pi's journal is kept in memory, so the boot before this one is normally gone (Raspberry Pi OS sets `Storage=volatile`). The proof is then the app's log: a clean shut-down lets the app write `Shutting down` before it stops, and a pulled plug doesn't. Stopping the containers yourself first also fails it, for the same reason.
 
