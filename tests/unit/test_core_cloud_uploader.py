@@ -189,7 +189,8 @@ def test_jitter_cuts_each_wait_by_up_to_its_share_and_the_most_still_holds(tmp_p
     rig = Rig(tmp_path, SETTINGS.model_copy(update={'retry_jitter': 0.5}), rng=FixedChance(0, 1, 0.5, 0, 1))
     rig.linked()
     rig.habit(START + 1, id='h1')
-    rig.link.script = [CloudUnavailable('off')] * 5
+    off: list[Exception | IngestReply] = [CloudUnavailable('off')] * 5
+    rig.link.script = off
     waits = [rig.tick(after=10), rig.tick(), rig.tick(), rig.tick(), rig.tick()]
     assert waits == [30, 30, 90, 240, 120]                       # 30, 60, 120, 240, 240 cut by 0, 1/2, 1/4, 0, 1/2
 

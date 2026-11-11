@@ -204,12 +204,13 @@ def test_jitter_cuts_each_wait_before_trying_again_by_up_to_its_share():
     s.send(events=[sip('s1', at(28, 9))], at_ts=DUE + 300)
     s.go_to(DUE + 600)
     s.tick()
-    first = s.report()
-    assert first.next_try_at == DUE + 600 + SETTINGS.retry_first_wait_min * 60 * 0.5          # cut by half
-    s.go_to(first.next_try_at)
+    first = s.report().next_try_at
+    assert first is not None
+    assert first == DUE + 600 + SETTINGS.retry_first_wait_min * 60 * 0.5                      # cut by half
+    s.go_to(first)
     s.tick()
     wait = SETTINGS.retry_first_wait_min * 60 * SETTINGS.retry_growth
-    assert s.report().next_try_at == first.next_try_at + wait * 0.75                            # cut by a quarter
+    assert s.report().next_try_at == first + wait * 0.75                                       # cut by a quarter
 
 
 def test_failure_retries_then_failed():
