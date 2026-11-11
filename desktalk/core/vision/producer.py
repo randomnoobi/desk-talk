@@ -128,6 +128,12 @@ class DetectionProducer:
         return self._detect_ms
 
     @property
+    def found_at(self) -> float | None:
+        """clock.monotonic() when a picture last went through detection, here or on the Pi (found something or not;
+        not a busy or failed one). None before the first. The health checks ask (DetectionTimes)."""
+        return self._found_at
+
+    @property
     def problem(self) -> str | None:
         """Why detection isn't working (the Pi's didn't answer and the app has none, or its own failed), in plain
         words (None = it works)."""

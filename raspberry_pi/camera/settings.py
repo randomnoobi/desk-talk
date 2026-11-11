@@ -57,6 +57,7 @@ class CameraSettings:
     pause_after_error_sec: float
     status_every_sec: float
     health_every_sec: float
+    heartbeat_every_sec: float
     settings_check_every_sec: float
     restart_after_missed_pictures: int
     camera: str
@@ -89,7 +90,8 @@ FIELDS = {
     'upload_timeout_sec': POSITIVE, 'upload_retry_start_sec': POSITIVE, 'upload_retry_max_sec': POSITIVE,
     'upload_retry_jitter': SHARE,
     'hot_warning_c': POSITIVE, 'camera_warmup_sec': ZERO_OR_MORE, 'pause_after_error_sec': ZERO_OR_MORE,
-    'status_every_sec': POSITIVE, 'health_every_sec': POSITIVE, 'settings_check_every_sec': POSITIVE,
+    'status_every_sec': POSITIVE, 'health_every_sec': POSITIVE, 'heartbeat_every_sec': POSITIVE,
+    'settings_check_every_sec': POSITIVE,
     'restart_after_missed_pictures': WHOLE, 'camera': TEXT, 'error_text_chars': WHOLE,
 }
 DETECTOR_FIELDS = {
@@ -99,7 +101,7 @@ DETECTOR_FIELDS = {
 MODEL_FIELDS = ('model', 'format', 'image_size', 'confidence', 'half')
 # Settings newer than some Pis' config/settings.yaml: when the Pi's copy is older and the app can't be asked
 # (or --offline), these are used, the same as pi: in config/settings.yaml and what the program used before them.
-IF_OLDER = {'camera': 'auto', 'error_text_chars': 200}
+IF_OLDER = {'camera': 'auto', 'error_text_chars': 200, 'heartbeat_every_sec': 30}
 IN_ORDER = (('upload_retry_start_sec', 'upload_retry_max_sec'),)        # (smaller, larger)
 DETECTOR_IN_ORDER = (('pause_start_sec', 'pause_max_sec'),)
 

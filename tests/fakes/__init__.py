@@ -17,6 +17,7 @@ from tests.fakes.dev import (
     FakeTracePhotos,
     smoothing_step,
 )
+from tests.fakes.health import FakeDetectionTimes, FakeDiskSpace, FakeHealthCheck
 from tests.fakes.parts import (
     FakeChatModel,
     FakeDesktopNotifications,
@@ -56,5 +57,5 @@ __all__ = [
     'InMemoryKeyValueStore', 'InMemoryStateStore', 'RecordingNotifier', 'StaticRoster', 'SyncEventBus',
     'plain_desk_rules', 'FakeChatJoins', 'FakeDesktopNotifications', 'FakeTodoList', 'FakeTracePhotos',
     'RecordingCameraWarnings', 'RecordingFirer', 'RecordingHabitLog', 'RecordingReminders', 'RecordingCloudLink',
-    'a_server_that_is_off', 'FixedChance',
+    'a_server_that_is_off', 'FixedChance', 'FakeDetectionTimes', 'FakeDiskSpace', 'FakeHealthCheck',
 ]

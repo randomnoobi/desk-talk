@@ -1,6 +1,6 @@
 """
 The parts of the camera program that run in threads of their own (the detector worker, the uploader, the
-settings watcher, the watchdog and the cleaner), and build_program, which connects them to the loop in
+settings watcher, the watchdog, the cleaner and the heartbeat), and build_program, which connects them to the loop in
 main.py. Each thread is a desktalk_shared WorkerThread: one that crashes is logged and goes on after
 pi.pause_after_error_sec.
 """
@@ -19,6 +19,7 @@ from raspberry_pi.camera.cleaner import Cleaner
 from raspberry_pi.camera.clock import Clock
 from raspberry_pi.camera.detector_client import DetectorClient, DetectorWorker, NoDetector
 from raspberry_pi.camera.health import HealthReader
+from raspberry_pi.camera.heartbeat import Heartbeat
 from raspberry_pi.camera.main import NO_DETECTOR, OFFLINE, CameraProgram
 from raspberry_pi.camera.photo_store import PhotoStore
 from raspberry_pi.camera.settings import CameraSettings, SettingsWatcher
@@ -35,6 +36,7 @@ class Workers:
     settings: SettingsWatcher | None
     watchdog: Watchdog
     cleaner: Cleaner
+    heartbeat: Heartbeat | None = None
 
     def threads(self, pause_after_error_sec: float) -> list[WorkerThread]:
         """One thread per part. After a crash each waits pause_after_error_sec (the same every time)."""
@@ -50,6 +52,8 @@ class Workers:
             threads.append(thread('uploader', self.uploader.tick, self.uploader.wake))
         if self.settings:
             threads.append(thread('settings', self.settings.tick))
+        if self.heartbeat:
+            threads.append(thread('heartbeat', self.heartbeat.tick))
         return threads
 
 
@@ -64,8 +68,14 @@ def build_program(settings: CameraSettings, camera: Any, *, server: str | None, 
                             retry_start_sec=settings.upload_retry_start_sec,
                             retry_max_sec=settings.upload_retry_max_sec, retry_jitter=settings.upload_retry_jitter,
                             error_text_chars=settings.error_text_chars, clock=clock)
-    program = CameraProgram(camera=camera, store=store, health=HealthReader(sys_root), uploader=uploader,
-                            settings=settings, clock=clock)
+    reader = HealthReader(sys_root)
+    program = CameraProgram(camera=camera, store=store, health=reader, uploader=uploader, settings=settings,
+                            clock=clock)
+    heartbeat = None
+    if not offline:     # read afresh in its own thread, so it keeps going when the camera is stuck
+        heartbeat = Heartbeat(server or '', key or '', lambda: reader.read(camera.name, store),
+                              every_sec=settings.heartbeat_every_sec, timeout_sec=settings.upload_timeout_sec,
+                              error_text_chars=settings.error_text_chars)
     worker = client = None
     if offline:
         program.detector = NoDetector(OFFLINE)
@@ -79,4 +89,4 @@ def build_program(settings: CameraSettings, camera: Any, *, server: str | None, 
         watcher = SettingsWatcher(reload, settings, client, every_sec=settings.settings_check_every_sec, clock=clock)
     program.watchdog = Watchdog(settings.restart_after_missed_pictures / settings.fps, clock)
     program.cleaner = Cleaner(store, settings.delete_every_min, clock)
-    return program, Workers(worker, uploader, watcher, program.watchdog, program.cleaner)
+    return program, Workers(worker, uploader, watcher, program.watchdog, program.cleaner, heartbeat)

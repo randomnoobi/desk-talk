@@ -128,8 +128,16 @@ def test_offline_only_takes_and_saves_pictures(tmp_path, container, computer):
     program, workers = make_program(tmp_path, container, computer, FakeClock(), offline=True)
     program.step()
     assert program.store.count() == 1
-    assert (workers.uploader, workers.detector, workers.settings) == (None, None, None)
+    assert (workers.uploader, workers.detector, workers.settings, workers.heartbeat) == (None, None, None, None)
     assert computer.requests == [] and container.requests == []
+
+
+def test_the_heartbeat_sends_the_pis_own_numbers_on_its_own_timer(tmp_path, container, computer):
+    program, workers = make_program(tmp_path, container, computer, FakeClock(), heartbeat_every_sec=20)
+    assert workers.heartbeat.tick() == 20
+    [health] = computer.heartbeats
+    assert (health.camera, health.cpu_temp_c, health.throttled, health.photos_stored) == ('fake', 50.0, '0x0', 0)
+    assert computer.uploads == []                                       # no picture was taken
 
 
 def test_disk_nearly_full_deletes_the_oldest_pictures_in_the_cleanup_thread(tmp_path, container, computer):
@@ -367,6 +375,6 @@ def test_writes_a_status_line_now_and_then(tmp_path, container, computer, caplog
 def test_each_thread_waits_the_pause_after_error_after_a_crash(tmp_path, container, computer):
     program, workers = make_program(tmp_path, container, computer, FakeClock())
     threads = workers.threads(0.25)
-    assert [t.name for t in threads] == ['watchdog', 'cleanup', 'detector', 'uploader']
+    assert [t.name for t in threads] == ['watchdog', 'cleanup', 'detector', 'uploader', 'heartbeat']
     assert all((t.backoff.first, t.backoff.most) == (0.25, 0.25) for t in threads)
     assert threads[1].wake is workers.cleaner.wake and threads[3].wake is workers.uploader.wake

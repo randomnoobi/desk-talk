@@ -512,3 +512,51 @@ def test_bumped_without_degrees_says_the_setting():
 
 def test_slow_says_the_pictures_a_second():
     assert health()._problem_text('slow', {'fps': 1.234}) == WORDS.problems.slow.format(fps=1.234)
+
+
+# ── no picture at all since the app started (a Pi camera with its cable out never connects) ──
+def never_connected(h, seconds, start=1000):
+    return [m for t in range(start, start + seconds) for m in h.check(t, connected=False)]
+
+
+def test_no_picture_at_all_since_the_start_is_said_once_it_has_lasted():
+    wait = int(LENS.wait_before_saying_sec.no_pictures)
+    h = health('pi')
+    assert never_connected(h, wait) == []
+    [said] = never_connected(h, 2, start=1000 + wait)
+    assert (said['key'], said['kind'], said['text']) == ('no_pictures', 'problem', WORDS.no_pictures.pi)
+    assert 'cable' in said['text']
+    assert h.issues() == [{'key': 'no_pictures', 'title': WORDS.titles.no_pictures.title,
+                           'fix': WORDS.lost_fix.pi}]
+
+
+@pytest.mark.parametrize('source', ['pi', 'phone', 'webcam'])
+def test_no_picture_words_fit_the_camera(source):
+    h = health(source, lens=lens_with(no_pictures=5))
+    said = never_connected(h, 10)
+    assert said[0]['text'] == getattr(WORDS.no_pictures, source)
+
+
+def test_how_long_to_wait_for_a_first_picture_comes_from_the_settings():
+    h = health('pi', lens=lens_with(no_pictures=30))
+    assert never_connected(h, 30) == []
+    assert [m['key'] for m in never_connected(h, 1, start=1030)] == ['no_pictures']
+
+
+def test_the_first_picture_after_none_gets_a_thank_you_and_never_counts_as_lost():
+    h = health('pi', lens=lens_with(no_pictures=5))
+    never_connected(h, 10)
+    said = run(h, 20, bright(), start=1010)
+    assert said == ['no_pictures:fixed'] and h.issues() == []
+
+
+def test_a_camera_that_was_connected_is_lost_not_never_there():
+    h = health('pi', lens=lens_with(no_pictures=5))
+    run(h, 2, bright())
+    said = [m['key'] for m in never_connected(h, 40, start=1002)]
+    assert said == ['lost']
+
+
+def test_no_first_picture_complaint_when_the_video_was_stopped_on_purpose():
+    h = health('phone', lens=lens_with(no_pictures=5))
+    assert [m for t in range(1000, 1020) for m in h.check(t, connected=False, stopped=True)] == []

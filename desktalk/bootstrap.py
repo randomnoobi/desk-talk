@@ -44,6 +44,7 @@ from desktalk.adapters.llm import OpenAICompatibleChatModel, ResilientChatModel,
 from desktalk.adapters.notify import QueuedNotifications, make_notifications
 from desktalk.adapters.picture import DeskPainter, OpenCvPictureTools
 from desktalk.adapters.storage import EventLog, JsonFileStore, SqliteStateStore
+from desktalk.adapters.storage.disk_space import FolderDiskSpace
 from desktalk.adapters.storage.json_files import SUFFIX as JSON_SUFFIX
 from desktalk.adapters.storage.trace_photo_files import TracePhotoFiles
 from desktalk.config import AppConfig, ConfigError, Protocols
@@ -68,6 +69,7 @@ from desktalk.core.habits.reminders import HabitReminders
 from desktalk.core.habits.rule_runner import RuleRunner
 from desktalk.core.habits.todos import TodoFile
 from desktalk.core.habits.tracker import HabitTracker
+from desktalk.core.health import HealthChecks
 from desktalk.core.object_states import ObjectStateTracker
 from desktalk.core.object_states.trace_photos import TracePhotoTaker
 from desktalk.core.vision import desk_edges
@@ -100,6 +102,7 @@ from desktalk.ports import (
     EventStore,
     FrameSource,
     HabitTracking,
+    HealthCheck,
     Jobs,
     KeyValueStore,
     LivePictures,
@@ -110,6 +113,7 @@ from desktalk.ports import (
     PhotoAlbum,
     PhotoTaker,
     PictureInbox,
+    PiHeartbeats,
     PiStatus,
     Preferences,
     Profiles,
@@ -153,6 +157,7 @@ class DeskTalk:
     source            the camera: kind, connected, fps
     pi_inbox, pi      the Pi when it is the camera (None otherwise): push() for /api/pi/frame, status() and
                       pi_info() for /api/health and /api/live
+    pi_heartbeats     the same Pi: heartbeat() for /api/pi/heartbeat (None when it isn't the camera)
     phone_inbox,      the phone when it is the camera (None otherwise): push() for /api/phone/frame, set_motion()
     phone             and mark_stopped(), and its tilt when the desk corners are marked
     pair_key          what the Pi and the phone must send in X-Desk-Key (and show in the Pi command and phone link)
@@ -161,6 +166,8 @@ class DeskTalk:
     photos            proof photos: save() (a photo of the desk on request)
     detector          object detection on this computer: label (/api/live)
     producer          camera pictures → events: pictures_analysed, last_detect_ms (yolo_ms), problem (/api/health)
+    health_checks     each measure on its own (camera, new detections, the Pi's temperature, the card, the Pi's
+                      heartbeat): measures() for /api/health (Lens says the ones in trouble)
     object_states     present / absent for each object on the desk: snapshot() and changes() (the person is the
                       switch), save_snapshot() (the scheduler and stop()), and each object's last pictures of
                       smoothing: traced_labels() and trace() (/api/dev/smoothing)
@@ -219,6 +226,7 @@ class DeskTalk:
     source: FrameSource
     pi_inbox: PictureInbox | None
     pi: PiStatus | None
+    pi_heartbeats: PiHeartbeats | None
     phone_inbox: PictureInbox | None
     phone: PhoneControls | None
     pair_key: str
@@ -227,6 +235,7 @@ class DeskTalk:
     photos: PhotoTaker
     detector: Detector
     producer: DetectionStats
+    health_checks: HealthCheck
     object_states: TracedObjectStates
     state_store: ObjectStateStore
     roster: RosterList
@@ -458,6 +467,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                                  new_session_after_sec=config.protocols.breaks.break_min * MINUTE, pictures=pictures,
                                  same_thing_overlap=config.agents.same_thing_overlap,
                                  ignore_labels=config.agents_file.ignore, known_labels=config.agents_file.own_words)
+    health_checks = HealthChecks(source, producer, FolderDiskSpace(data_path(config.storage.folder)),
+                                 config.health_checks, config.pi, clock=clock, pi=camera.pi)
     state_store = SqliteStateStore(data_path(config.object_states.database))
     boot_file = config.object_states.boot_id_file
     object_states = ObjectStateTracker(config.object_states, bus, state_store, device_id=source.kind,
@@ -527,8 +538,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     reminders = HabitReminders(habits, rule_runner, desk_status, roster, profiles, generator, feed, bus,
                                config.reminders)
     lens = Lens(camera_health, source, safety_rules, preferences, feed, bus, photos, config.lens, config.pi,
-                clock=clock, prompts=config.prompts.lens, preview_chars=config.logging.preview_chars,
-                phone=camera.phone, pi_uploads=camera.pi)
+                clock=clock, checks=health_checks, prompts=config.prompts.lens,
+                preview_chars=config.logging.preview_chars, phone=camera.phone, pi_uploads=camera.pi)
     idle_chat = IdleChat(model, hub, desk_status, roster, profiles, character_memory,
                          lambda: generator.live_context()['summary'], config.idle_chat, config.llm.replies,
                          memory_kept=config.llm.memory_per_agent, memory_chars=config.chat.memory_reply_chars,
@@ -587,10 +598,10 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         config=config, clock=clock, live_pictures=live_pictures, scene=scene, safety_board=safety_board,
         character_memory=character_memory, photo_album=photo_album, bus=bus, event_log=event_log, store=store,
         config_store=config_store, profiles=profiles, preferences=preferences, source=source,
-        pi_inbox=camera.pi, pi=camera.pi, phone_inbox=camera.phone, phone=camera.phone, pair_key=pair_key,
-        safety_rules=safety_rules, camera_health=camera_health, photos=photos, detector=detector,
-        producer=producer, object_states=object_states, state_store=state_store, roster=roster,
-        desk_status=desk_status, habits=habits, ai=ai, model=asked_model, hub=hub, generator=generator,
+        pi_inbox=camera.pi, pi=camera.pi, pi_heartbeats=camera.pi, phone_inbox=camera.phone, phone=camera.phone,
+        pair_key=pair_key, safety_rules=safety_rules, camera_health=camera_health, photos=photos, detector=detector,
+        producer=producer, health_checks=health_checks, object_states=object_states, state_store=state_store,
+        roster=roster, desk_status=desk_status, habits=habits, ai=ai, model=asked_model, hub=hub, generator=generator,
         rule_runner=rule_runner, reminders=reminders, lens=lens, idle_chat=idle_chat,
         lost_items=lost_items, daily_summary=daily_summary, cloud=cloud, scheduler=scheduler,
         supervisor=supervisor, started_at=clock.now(), keepalive=ai.keepalive_worker(), log_file=log_file,

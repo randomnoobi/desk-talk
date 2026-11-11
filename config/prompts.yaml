@@ -656,12 +656,24 @@ lens:
   pi_clock_behind: behind
   pi_clock_ahead: ahead of
   pi_detector: The Raspberry Pi isn't finding the objects right now. Until it does, I can't see what is on the desk, but the live view still works. On the Pi, check that the detector is running (docker compose ps).
+  pi_very_hot: The Raspberry Pi is far too hot ({temp:.0f}°C) and is slowing itself down to cool off. Give it air or a fan now, or turn it off for a while.
+  # the health checks (settings → health_checks): the disk the data is saved on (the Pi's SD card)...
+  card_low: The SD card is getting full, only {free_mb:.0f} MB left. Please free some space soon, or I can't save what I see.
+  card_full: The SD card is almost full, only {free_mb:.0f} MB left. Soon nothing new can be saved. Please free some space now.
+  # ...pictures arriving, but none going through object detection...
+  no_detections: The camera is on, but no picture has been through object detection for {minutes} minutes, so I can't tell what is on the desk. On the Pi, check that the detector is running (docker compose ps).
+  no_detections_long: Still no object detection after {minutes} minutes. On the Pi, try starting the detector again (docker compose restart detector).
+  # ...and the Pi's heartbeat stopping while its pictures still come
+  pi_heartbeat: The Raspberry Pi's camera program stopped checking in {seconds} seconds ago, though its pictures still come. On the Pi, starting the camera again fixes it (docker compose restart camera).
   # when a Pi problem is gone
   pi_fixed:
     pi_hot: The Raspberry Pi has cooled down and is running normally again. Thanks!
     pi_power: The Raspberry Pi has enough power again. Thanks!
     pi_clock: The Raspberry Pi's clock matches the app's again.
     pi_detector: The Raspberry Pi is finding the objects again.
+    detections: Object detection is working again. I can see what's on the desk.
+    card: There's enough space on the SD card again. Thanks!
+    pi_heartbeat: The Raspberry Pi's camera program is checking in again.
 
 # ── Lens's camera checks: what it says, and the app's camera panel ───
 camera:
@@ -680,9 +692,15 @@ camera:
     pi: I lost the pictures from the Raspberry Pi camera. Is the Pi still on? On the Pi, check that the camera container is running (docker compose ps), and start it with docker compose up -d if it is not.
     phone: I lost the video from the phone. Is its screen still on? Phones stop the camera when they lock, so keep the Desk Talk page open on it.
     webcam: I lost the webcam picture. Is it still plugged in, or is another app using it?
+  # no picture at all since the app started (settings → lens.wait_before_saying_sec.no_pictures)
+  no_pictures:
+    pi: I haven't had a single picture from the Raspberry Pi camera since I started. Is the camera's ribbon cable pushed in firmly at both ends? On the Pi, check the camera container (docker compose ps, and docker compose logs camera).
+    phone: I haven't had any video from the phone yet. Open the Desk Talk camera page on it and keep the screen on.
+    webcam: I haven't had a single picture from the webcam since I started. Is it plugged in, or is another app using it?
   # when a problem is gone
   fixed:
     lost: Video's back! I can see the desk again.
+    no_pictures: There are the first pictures. I can see the desk now.
     covered: There we go, I can see again.
     dark: Much better, thanks for the light!
     glare: Glare is gone. Thanks!
@@ -702,6 +720,9 @@ camera:
     lost:
       title: No video from the phone
       fix: Keep the phone unlocked with the Desk Talk page open.
+    no_pictures:
+      title: No pictures yet
+      fix: Check that the camera is connected and turned on.
     covered:
       title: Camera is blocked
       fix: Move whatever is in front of the lens, and point the camera at the desk.
