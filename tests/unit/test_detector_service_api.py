@@ -42,7 +42,7 @@ def folder(tmp_path, yolo):
 
 @pytest.fixture
 def manager(folder):
-    return ModelManager(folder, retry_first_sec=5, retry_max_sec=40, clock=StepClock())
+    return ModelManager(folder, retry_first_sec=5, retry_max_sec=40, retry_jitter=0, clock=StepClock())
 
 
 @pytest.fixture

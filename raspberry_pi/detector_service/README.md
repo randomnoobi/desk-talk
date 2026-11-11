@@ -86,6 +86,7 @@ The container's settings are in `raspberry_pi/.env`, next to `raspberry_pi/compo
 | `DETECTOR_MAX_PICTURE_MB` | 10 | biggest picture `/detect` accepts (1 MB = 1024 × 1024 bytes) |
 | `DETECTOR_RETRY_FIRST_SEC` | 5 | wait before trying a model that failed to load again; doubles each time ... |
 | `DETECTOR_RETRY_MAX_SEC` | 300 | ... up to this |
+| `DETECTOR_RETRY_JITTER` | 0.2 | each of those waits is cut by up to this share of it, by chance |
 | `DETECTOR_HEALTH_INTERVAL` | 30s | how often Docker asks `/health` ... |
 | `DETECTOR_HEALTH_TIMEOUT` | 5s | ... how long one answer may take ... |
 | `DETECTOR_HEALTH_START_PERIOD` | 60s | ... how long after a start failed answers don't count yet (loading PyTorch is slow) ... |

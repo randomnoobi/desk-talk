@@ -15,13 +15,14 @@ ENV = {
     'DETECTOR_MAX_PICTURE_MB': '2.5',
     'DETECTOR_RETRY_FIRST_SEC': '5',
     'DETECTOR_RETRY_MAX_SEC': '300',
+    'DETECTOR_RETRY_JITTER': '0.2',
 }
 
 
 def test_reads_every_setting_from_the_environment():
     assert ServiceSettings.from_env(ENV) == ServiceSettings(
         host='0.0.0.0', port=8765, models_dir=Path('/models'), max_picture_bytes=int(2.5 * 1024 * 1024),
-        retry_first_sec=5.0, retry_max_sec=300.0)
+        retry_first_sec=5.0, retry_max_sec=300.0, retry_jitter=0.2)
 
 
 def test_a_megabyte_is_1024_times_1024_bytes():
@@ -42,10 +43,18 @@ def test_a_missing_setting_is_named(name):
     ('DETECTOR_MAX_PICTURE_MB', '-1'),
     ('DETECTOR_RETRY_FIRST_SEC', 'soon'),
     ('DETECTOR_RETRY_MAX_SEC', '0'),
+    ('DETECTOR_RETRY_JITTER', 'some'),
+    ('DETECTOR_RETRY_JITTER', '1.5'),
+    ('DETECTOR_RETRY_JITTER', '-0.1'),
+    ('DETECTOR_RETRY_JITTER', 'nan'),
 ])
 def test_a_bad_number_is_named(name, value):
     with pytest.raises(SettingsError, match=name):
         ServiceSettings.from_env({**ENV, name: value})
+
+
+def test_no_jitter_is_allowed():
+    assert ServiceSettings.from_env({**ENV, 'DETECTOR_RETRY_JITTER': '0'}).retry_jitter == 0
 
 
 def test_the_longest_wait_cannot_be_shorter_than_the_first():
