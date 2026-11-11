@@ -95,15 +95,16 @@ def check_data(data: Path) -> dict[str, Any]:
     database = data / 'object_states.sqlite'
     if database.exists():
         with contextlib.closing(sqlite3.connect(f'file:{database}?mode=ro', uri=True, timeout=10)) as db:
-            # A file from before rows kept their boot has no boot_id column until the app opens it
+            # A file from before rows kept their boot (or whether the clock was synced) has no such column until the
+            # app opens it
             columns = {row[1] for row in db.execute('PRAGMA table_info(events)')}
-            boot = 'boot_id' if 'boot_id' in columns else 'NULL'
-            rows = db.execute(f'SELECT object, new_state, ts, type, {boot} FROM events WHERE type != ? ORDER BY ts, id',
-                              ('moved',)).fetchall()
+            boot, synced = (name if name in columns else 'NULL' for name in ('boot_id', 'clock_synced'))
+            rows = db.execute(f'SELECT object, new_state, ts, type, {boot}, {synced} FROM events WHERE type != ? '
+                              'ORDER BY ts, id', ('moved',)).fetchall()
             states = {'readable': True,
                       'integrity': db.execute('PRAGMA integrity_check').fetchone()[0],
-                      'rows': [{'object': r[0], 'state': r[1], 'ts': r[2], 'type': r[3], 'boot_id': r[4]}
-                               for r in rows]}
+                      'rows': [{'object': r[0], 'state': r[1], 'ts': r[2], 'type': r[3], 'boot_id': r[4],
+                                'clock_synced': None if r[5] is None else bool(r[5])} for r in rows]}
     return {'event_files': files, 'states': states}
 
 

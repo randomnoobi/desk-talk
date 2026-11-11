@@ -92,5 +92,15 @@ class StateStoreContract:
         store.append([a_record(99.0, boot_id='boot-a')])
         assert store.latest_states(100.0, boot_id='boot-a') == {}
 
+    def test_records_keep_whether_the_clock_was_synced(self, store):
+        """Each row says whether the clock had been set from the internet when it was written (None: can't say),
+        so a row written by a clock that was off can be told apart later."""
+        synced = a_record(100.0, clock_synced=True)
+        not_synced = a_record(101.0, label='cup', clock_synced=False)
+        unknown = a_record(102.0, label='pen')
+        store.append([synced, not_synced, unknown])
+        assert [r.clock_synced for r in store.changes(0.0)] == [True, False, None]
+        assert store.latest_states(0.0)['cup'].clock_synced is False
+
     def test_closing_is_safe(self, store):
         store.close()
