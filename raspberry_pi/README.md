@@ -296,8 +296,10 @@ bash ~/desk-talk/raspberry_pi/update.sh
 ```
 
 It runs `git pull`, fills in the camera's device numbers again, since a kernel update can change them, rebuilds, and
-clears old images. Docker's saved build steps are cleared only when the card runs low, since a whole new build takes 12 to
-21 minutes. It takes `--dry-run` too. Your data, the pairing key, the models, `.env` and your own settings (`raspberry_pi/mine/settings.mine.yaml`) stay. If `git pull` couldn't run
+clears old images. Then it cuts Docker's saved build steps down to `INSTALL_KEEP_BUILD_STEPS_MB` in `.env` (20 GB), the
+ones not used for longest first, so they can't take over the card over many updates. A whole build's steps take about
+13 GB and are kept, since a whole new build takes 12 to 21 minutes; if the card runs low they are all cleared. It takes
+`--dry-run` too. Your data, the pairing key, the models, `.env` and your own settings (`raspberry_pi/mine/settings.mine.yaml`) stay. If `git pull` couldn't run
 (no internet, or a file you changed by hand), it says so and rebuilds with the code that's there.
 
 All three containers are rebuilt together, so they are always the same version.
