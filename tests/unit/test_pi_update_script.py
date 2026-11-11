@@ -17,7 +17,23 @@ SETTING = 'INSTALL_KEEP_BUILD_STEPS_MB'
 
 
 def prunes(calls: list[str]) -> list[str]:
-    return [line for line in calls if 'builder prune' in line and '--max-used-space' in line]
+    return [line for line in calls if 'builder prune' in line
+            and ('--max-used-space' in line or '--keep-storage' in line)]
+
+
+def docker_that(pi: FakePi, case: str) -> None:
+    """A docker in front of the made-up Pi's own, doing what `case` (a bash case branch) says first."""
+    front = pi.fake / 'front'
+    front.mkdir()
+    docker = front / 'docker'
+    docker.write_text(f'#!/bin/bash\ncase "$*" in {case} esac\nexec "$FAKE/bin/docker" "$@"\n', encoding='utf-8')
+    docker.chmod(docker.stat().st_mode | stat.S_IEXEC)
+    pi.env_vars['PATH'] = f'{front}:{pi.env_vars["PATH"]}'
+
+
+# What Docker before 28 says to a flag it doesn't know.
+OLD_DOCKER = ('*"--max-used-space"*) printf \'%s\\n\' "docker $*" >> "$FAKE/calls"; '
+              'echo "unknown flag: --max-used-space" >&2; exit 125 ;;')
 
 
 def test_the_size_to_keep_is_in_the_example_with_a_comment():
@@ -62,17 +78,24 @@ def test_a_dry_run_only_says_it_would(pi: FakePi):
     assert 'Would keep' in result.out
 
 
-def test_a_cut_that_fails_doesnt_fail_the_update(pi: FakePi):
-    """The new containers are already running by then, so a Docker that won't prune is only said."""
-    failing = pi.fake / 'failing'
-    failing.mkdir()
-    docker = failing / 'docker'
-    docker.write_text('#!/bin/bash\ncase "$*" in *"builder prune"*) exit 1 ;; esac\n'
-                      'exec "$FAKE/bin/docker" "$@"\n', encoding='utf-8')
-    docker.chmod(docker.stat().st_mode | stat.S_IEXEC)
-    pi.env_vars['PATH'] = f'{failing}:{pi.env_vars["PATH"]}'
+def test_an_older_docker_gets_the_flag_it_knows(pi: FakePi):
+    """--max-used-space is new in Docker 28; before that, the same thing was --keep-storage."""
+    docker_that(pi, OLD_DOCKER)
     result = pi.run(script='update.sh')
-    assert result.code == 0 and "safe to go on" in result.out
+    assert result.code == 0
+    assert prunes(result.calls)[-1] == 'docker builder prune -af --keep-storage 20000mb'
+    assert "weren't cut down" not in result.out
+
+
+def test_a_cut_that_fails_doesnt_fail_the_update_but_says_how_much_they_take(pi: FakePi):
+    """The new containers are already running by then, so a Docker that won't prune is only said, plainly."""
+    docker_that(pi, '*"builder prune"*) echo "permission denied" >&2; exit 1 ;;')
+    pi.state('docker_holds', 'Images=5.1GB\nBuild Cache=14.2GB\n')
+    result = pi.run(script='update.sh')
+    assert result.code == 0
+    assert "weren't cut down" in result.out and '14.2GB' in result.out
+    assert 'docker system df' in result.out and 'permission denied' in result.out
+    assert "It's safe to go on" not in result.out
 
 
 def test_it_never_removes_what_the_containers_use(pi: FakePi):

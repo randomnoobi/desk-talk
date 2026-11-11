@@ -65,6 +65,7 @@ case "$name" in
     esac ;;
   python3) printf '%s\n' "${DESKTALK_LINK_CODE:-}" > "$FAKE/linker_got"; exec "$FAKE_PYTHON" -S "$@" ;;
   sudo)
+    [ -e "$FAKE/sudo_fails" ] && { echo 'sudo: a password is required' >&2; exit 1; }
     cmd=$1; shift
     case "$cmd" in
       docker) FAKE_SUDO=1 exec "$FAKE/bin/docker" "$@" ;;
@@ -1173,13 +1174,63 @@ def test_a_dry_run_says_it_would_set_up_starting_on_boot_and_the_journal(pi):
     assert not pi.service_file.exists() and not pi.journald_file.exists()
 
 
-def test_update_needs_no_sudo_and_says_when_starting_on_boot_isnt_set_up(pi):
+def sudo_calls(result: Result) -> list[str]:
+    return [line for line in result.calls if line.startswith('sudo')]
+
+
+def test_update_on_a_pi_not_set_up_yet_sets_it_up_asking_for_sudo_once_and_says_why(pi):
+    """Without the journal file, the containers' logs would be in memory only and lost at a power cut: an update must
+    not leave the logs worse than before, so it sets that up, and starting on boot with it."""
     result = pi.run(script='update.sh')
-    assert result.code == 0
-    assert not any(line.startswith('sudo') for line in result.calls)
-    assert 'install.sh' in result.out and 'boot' in result.out
+    assert result.code == 0, result.out
+    assert result.calls.count('sudo -v') == 1
+    assert result.calls.index('sudo -v') < result.calls.index('sudo systemctl daemon-reload')
+    assert unit_lines(pi.journald_file)['Storage'] == 'persistent'
+    assert unit_lines(pi.service_file)['User'] == 'sam'
+    assert 'sudo systemctl restart systemd-journald' in result.calls
+    assert 'sudo systemctl enable docker.service containerd.service desktalk.service' in result.calls
+    assert 'sudo systemctl start desktalk.service' in result.calls
+    assert 'once' in result.out and 'SD card' in result.out and 'boot' in result.out
+    assert 'IMPORTANT' not in result.out and 'the way this version wants' not in result.out
+
+
+def test_update_with_only_the_journal_file_missing_installs_only_that(pi):
     pi.run()
-    assert "isn't set up" not in pi.run(script='update.sh').out
+    pi.journald_file.unlink()
+    result = pi.run(script='update.sh')
+    assert result.code == 0, result.out
+    assert result.calls.count('sudo -v') == 1
+    assert unit_lines(pi.journald_file)['Storage'] == 'persistent'
+    assert 'sudo systemctl restart systemd-journald' in result.calls
+    assert 'sudo systemctl daemon-reload' not in result.calls
+    assert 'sudo systemctl start desktalk.service' not in result.calls
+    assert 'SD card' in result.out and 'when it boots' not in result.out
+
+
+def test_update_on_a_pi_already_set_up_needs_no_sudo(pi):
+    pi.run()
+    result = pi.run(script='update.sh')
+    assert result.code == 0 and sudo_calls(result) == []
+    assert 'IMPORTANT' not in result.out and 'the way this version wants' not in result.out
+    assert 'sudo' not in result.out
+
+
+def test_update_says_loudly_what_to_run_when_sudo_doesnt_work(pi):
+    pi.state('sudo_fails')
+    result = pi.run(script='update.sh')
+    assert result.code == 0, result.out          # the new containers run all the same
+    assert sudo_calls(result) == ['sudo -v']
+    assert not pi.journald_file.exists() and not pi.service_file.exists()
+    assert 'docker compose up -d --build' in result.calls
+    assert 'in memory' in result.out and 'power cut' in result.out and 'install.sh' in result.out
+    assert 'when the Pi boots' in result.out
+
+
+def test_update_dry_run_says_it_would_set_up_the_journal_and_uses_no_sudo(pi):
+    result = pi.run('--dry-run', script='update.sh')
+    assert result.code == 0 and sudo_calls(result) == []
+    assert 'Would' in result.out and 'sudo' in result.out and 'SD card' in result.out
+    assert not pi.journald_file.exists() and not pi.service_file.exists()
 
 
 def test_update_says_when_the_service_in_git_is_newer_than_the_one_installed(pi):

@@ -18,7 +18,9 @@
 #   --keep-hostname    keep the Pi's name even if it's still the stock one, and remember that
 #   --reboot           restart the Pi at the end, if it needs that (it says so either way)
 #   --dry-run          do the same checks, say what it would do, and change nothing
-#   --update           what update.sh uses: skip the parts that need sudo, and Docker's install
+#   --update           what update.sh uses: skip Docker's install and the parts that need sudo. Only on a Pi that
+#                      doesn't keep its journal on the card or start Desk Talk on boot yet does it ask for sudo, once,
+#                      to set those up: the containers log to the journal, so without it their logs would be lost.
 #
 # Its numbers are in the "install script" part of .env.example.
 # It exits with 1 if the install failed, and with 3 if the install worked but the link to the cloud server didn't.
@@ -55,6 +57,7 @@ NEW_NAMES=" "                               # the names .env didn't have when th
 LINK_FAILED=0
 TEMP_FOLDER=""
 SERVICE_CHANGED=0                           # desktalk.service was installed or changed in this run
+SETUP_SUDO=0                                # an update run may use sudo, to set up what an older install didn't
 START_FAILED=0
 
 say() { printf '%s\n' "$*"; }
@@ -566,8 +569,12 @@ put_system_file() {
 set_up_start_on_boot() {
     local text=$1 file unit off=""
     file=$(setting INSTALL_SERVICE_FILE)
-    if [ "$UPDATE" = 1 ]; then
+    if [ "$UPDATE" = 1 ] && [ -f "$file" ]; then
         in_place "$text" "$file" || later "Starting by itself on boot isn't set up the way this version wants ($file). To set it up, run once: bash $(quoted "$PI_DIR/install.sh")"
+        return
+    fi
+    if [ "$UPDATE" = 1 ] && [ "$SETUP_SUDO" = 0 ]; then
+        later "IMPORTANT: Desk Talk isn't set up to start by itself when the Pi boots, because sudo didn't work. After a power cut the containers come back only if Docker brings them back by itself. To set it up, run once: bash $(quoted "$PI_DIR/install.sh")"
         return
     fi
     for unit in docker.service containerd.service "$(basename "$file")"; do
@@ -600,7 +607,8 @@ set_up_start_on_boot() {
 # sudo, as it must at boot.
 try_start_on_boot() {
     local unit how=start
-    [ "$UPDATE" = 0 ] && [ "$DRY_RUN" = 0 ] || return 0
+    [ "$DRY_RUN" = 0 ] || return 0
+    [ "$UPDATE" = 0 ] || [ "$SERVICE_CHANGED" = 1 ] || return 0       # an update tries it only when it installed it
     unit=$(basename "$(setting INSTALL_SERVICE_FILE)")
     if systemctl is-active --quiet "$unit" 2> /dev/null; then
         [ "$SERVICE_CHANGED" = 1 ] || return 0
@@ -620,8 +628,12 @@ keep_the_journal() {
     local text=$1 file
     file=$(setting INSTALL_JOURNALD_FILE)
     in_place "$text" "$file" && return
-    if [ "$UPDATE" = 1 ]; then
+    if [ "$UPDATE" = 1 ] && [ -f "$file" ]; then
         later "The journal isn't kept on the SD card the way this version wants ($file). To set it up, run once: bash $(quoted "$PI_DIR/install.sh")"
+        return
+    fi
+    if [ "$UPDATE" = 1 ] && [ "$SETUP_SUDO" = 0 ]; then
+        later "IMPORTANT: the logs aren't kept on the SD card, because sudo didn't work. Raspberry Pi OS keeps them in memory only, so the containers' logs from before a restart or a power cut are lost. To keep them, run once: bash $(quoted "$PI_DIR/install.sh")"
         return
     fi
     if [ "$DRY_RUN" = 1 ]; then
@@ -637,11 +649,33 @@ keep_the_journal() {
     say "Installed $file: the journal, the containers' logs too, stays on the SD card, at most $(setting JOURNAL_MAX_USE), for $(setting JOURNAL_KEEP)."
 }
 
+# A Pi set up by an older install.sh may have neither file. An update sets them up then, as install.sh would, so it
+# can't leave the logs worse than before: compose.yaml sends the containers' logs to the journal, and without the
+# journal file Raspberry Pi OS keeps that in memory only. That needs sudo, so it is asked for once, and only then.
+sudo_to_set_up() {
+    local what=""
+    [ -f "$(setting INSTALL_SERVICE_FILE)" ] || what="start Desk Talk by itself when it boots"
+    [ -f "$(setting INSTALL_JOURNALD_FILE)" ] || what="${what:+$what, and to }keep its logs on the SD card (Raspberry Pi OS keeps them in memory only, so they'd be lost at a restart or a power cut)"
+    [ -n "$what" ] || return 0
+    if [ "$DRY_RUN" = 1 ]; then
+        would "ask for sudo once, to set this Pi up to $what."
+        SETUP_SUDO=1
+        return
+    fi
+    say "This Pi isn't set up yet to $what. That needs sudo, this once, so it may ask for your password. Later updates need none."
+    if sudo -v; then
+        SETUP_SUDO=1
+    fi
+}
+
 # Both files are filled in first, so a value systemd couldn't read stops this before either is installed.
 set_up_systemd() {
     local service journal
     service=$(service_text)
     journal=$(journal_text)
+    if [ "$UPDATE" = 1 ]; then
+        sudo_to_set_up
+    fi
     set_up_start_on_boot "$service"
     keep_the_journal "$journal"
 }

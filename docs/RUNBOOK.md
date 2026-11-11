@@ -197,7 +197,8 @@ Docker's saved build steps (`Build Cache` in `docker system df`) are usually the
    ```
 
    `update.sh` also cuts them down after each rebuild, to `INSTALL_KEEP_BUILD_STEPS_MB` in `raspberry_pi/.env`
-   (20 GB), and clears them all if the card runs low.
+   (20 GB), and clears them all if the card runs low. If it said they "weren't cut down", this Docker refused both ways
+   of asking (`--max-used-space`, `--keep-storage`): `docker system df` shows how much they take.
 3. The journal keeps itself under 200 MB, the event log keeps `event_log.keep_days` (30) days, and the object-state
    database `object_states.keep_days` (30) days. If the data folder is still big, look at what `du` showed before
    deleting anything, and ask first.
