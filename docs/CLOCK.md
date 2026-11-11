@@ -12,7 +12,8 @@ unless a battery is plugged into its battery connector (marked BAT, J5). Ours ha
 - **After a power cut** the Pi starts at the last time it saved (Raspberry Pi OS saves it now and then
   and at shutdown), which may be hours or days behind. It puts the clock right once it reaches the
   internet (`systemd-timesyncd`). With no Wi-Fi, it stays behind.
-- **By hand**, someone can set the clock to anything, say 1 January 1990 (the meeting's hand test).
+- **By hand**, someone can set the clock to anything, say 1 January 1990 (the meeting's hand test), or next
+  year.
 - Rarely, a bad time server could set it far ahead.
 
 ## What Desk Talk does about it
@@ -39,9 +40,27 @@ can trust the times:
 - otherwise (a power cut with no internet yet): every object starts over.
 
 **Nothing is deleted for being old while the clock is wrong.** The event log deletes days older than
-`event_log.keep_days` (30). While the clock is before the earliest believable date it deletes none. And
-it always keeps the newest 30 days that have a log, whatever the clock says, so a clock years ahead can't
-delete them all at once.
+`event_log.keep_days` (30), and the object states delete rows older than `object_states.keep_days` (30), once an
+hour. Neither deletes anything while the clock can't be right:
+
+- **Too early.** A clock before the earliest believable date (1990).
+- **Jumped far ahead.** A clock set to next year would make both delete everything older than next year minus
+  30 days: the whole history, at once, for good. So the app watches for the clock jumping. The wall clock minus
+  the monotonic clock (below) stays the same while time goes on, and changes only when someone or something
+  sets the clock. If it moves more than `clock.largest_jump_ahead_min` (60) ahead of what it was, nothing is
+  deleted by date, and the app's log says so once ("The clock jumped ... hours ahead ..."). What it is compared
+  with is taken when the app starts, and again each time the time server sets the clock: systemd-timesyncd
+  touches its flag file (`object_states.clock_synced_file`) every time it does. So the jump that puts the Pi right
+  after a power cut, which can be days ahead, is fine: the flag file comes with it. Deleting starts again when the
+  time server next sets the clock (back, or to the same time, which then counts as right), when someone sets it
+  back by hand, or when the app restarts. A jump back is never a problem: it deletes less, not more. A Mac (no
+  flag file) isn't watched: it keeps its own clock right, and its monotonic clock stops while it sleeps, so
+  waking up would look like a jump.
+
+What this can't see: a clock set ahead while the app wasn't running (set by hand, then the app restarted
+before the time server put it right). The app takes that clock as it finds it. For that, the event log always
+keeps the newest 30 days that have a log, whatever the clock says, so it can't lose them all at once; the object
+states have no such floor.
 
 **Timers use a clock that only goes forward.** How often jobs run (compacting the event log, saving the
 object states, deleting old log days) and how often the Pi deletes its stored pictures go by the
@@ -72,6 +91,13 @@ What to expect, with `sudo date -s '1990-01-01 12:00'` **on the Pi** while Desk 
   the log says the clock looks right again.
 
 `docs/PI_CHECKS.md` has the steps for running it.
+
+## The clock set a year ahead
+
+With `sudo date -s '+1 year'` **on the Pi** while Desk Talk runs: the app log warns once that the clock jumped
+ahead, and no event-log day and no object state is deleted. If the Pi has internet, the time server puts the
+clock back when it next syncs and the log says the clock looks right again. With no internet, set it back by
+hand (`sudo date -s '-1 year'`) and the same happens.
 
 ## The clock battery
 

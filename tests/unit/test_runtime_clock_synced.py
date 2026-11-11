@@ -5,6 +5,7 @@ app asks of its clock while it runs, and is the clock believable at all (not, sa
 from __future__ import annotations
 
 import logging
+import os
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -22,6 +23,17 @@ EARLIEST = date(2025, 1, 1)
 EARLIEST_TS = datetime(2025, 1, 1, tzinfo=UTC).timestamp()
 IN_1990 = datetime(1990, 1, 1, 12, tzinfo=UTC).timestamp()     # the meeting's hand test
 NOW = FakeClock().now()
+LARGEST_JUMP_SEC = 3600
+DAY = 24 * 3600
+A_YEAR_AHEAD = NOW + 365 * DAY          # someone sets the Pi's date a year ahead by hand
+
+
+def make(flag: Path | None = None, clock: FakeClock | None = None) -> ClockCheck:
+    return ClockCheck(flag, EARLIEST, clock=clock or FakeClock(NOW), largest_jump_ahead_sec=LARGEST_JUMP_SEC)
+
+
+def warnings_in(caplog) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
 
 
 def test_with_no_flag_file_the_clock_is_trusted():
@@ -87,7 +99,7 @@ def test_a_settings_file_without_the_earliest_believable_date_does_not_load():
 
 
 def test_a_clock_before_the_earliest_believable_date_is_not_believable():
-    check = ClockCheck(None, EARLIEST)
+    check = make()
     assert check.believable(NOW) is True
     assert check.believable(EARLIEST_TS) is True
     assert check.believable(EARLIEST_TS - 1) is False
@@ -95,7 +107,7 @@ def test_a_clock_before_the_earliest_believable_date_is_not_believable():
 
 
 def test_an_unbelievable_clock_is_warned_about_once_until_it_is_right_again(caplog):
-    check = ClockCheck(None, EARLIEST)
+    check = make()
     with caplog.at_level(logging.INFO, logger='desktalk.runtime.clock'):
         for _ in range(3):
             check.believable(IN_1990)
@@ -111,14 +123,14 @@ def test_an_unbelievable_clock_is_warned_about_once_until_it_is_right_again(capl
 
 # ── synced: set from the internet, and believable ──
 def test_with_no_flag_file_a_believable_clock_is_synced():
-    check = ClockCheck(None, EARLIEST)
+    check = make()
     assert check.synced(NOW) is True
     assert check.synced(IN_1990) is False          # set to 1990 by hand: not to be trusted, flag or no flag
 
 
 def test_synced_looks_at_the_flag_file_again_until_it_is_there(tmp_path):
     flag = tmp_path / 'synchronized'
-    check = ClockCheck(flag, EARLIEST)
+    check = make(flag)
     assert check.synced(NOW) is False
     flag.touch()
     assert check.synced(NOW) is True
@@ -129,7 +141,106 @@ def test_once_the_flag_file_was_seen_it_is_not_looked_at_again(tmp_path):
     """It stays there until the next boot; once seen, asking costs nothing."""
     flag = tmp_path / 'synchronized'
     flag.touch()
-    check = ClockCheck(flag, EARLIEST)
+    check = make(flag)
     assert check.synced(NOW) is True
     flag.unlink()
     assert check.synced(NOW) is True
+
+
+# ── a clock that jumps far ahead while the app runs ──
+def test_the_largest_jump_ahead_is_in_the_settings():
+    data = yaml.safe_load((ROOT / 'config' / 'settings.yaml').read_text())
+    assert ClockSettings.model_validate(data['clock']).largest_jump_ahead_min > 0
+    without = {k: v for k, v in data['clock'].items() if k != 'largest_jump_ahead_min'}
+    with pytest.raises(ValidationError):
+        ClockSettings.model_validate(without)
+
+
+def test_a_clock_set_far_ahead_by_hand_is_not_believable(tmp_path, caplog):
+    """Set to a year ahead by hand after it synced: deleting by date would take the whole history, so it doesn't
+    count as believable (or synced), and a warning says so once."""
+    flag = tmp_path / 'synchronized'
+    flag.touch()
+    clock = FakeClock(NOW)
+    check = make(flag, clock)
+    assert check.believable(clock.now()) is True
+    clock.advance(600)
+    clock.set_wall_clock(A_YEAR_AHEAD)
+    with caplog.at_level(logging.INFO, logger='desktalk.runtime.clock'):
+        assert check.believable(clock.now()) is False
+        assert check.synced(clock.now()) is False
+        clock.advance(3 * 3600)                          # time going on as usual changes nothing
+        assert check.believable(clock.now()) is False
+    [warning] = warnings_in(caplog)
+    assert 'clock.largest_jump_ahead_min' in warning and 'nothing is deleted by date' in warning
+
+
+def test_a_clock_set_far_ahead_before_it_synced_is_not_believable(tmp_path):
+    clock = FakeClock(NOW)
+    check = make(tmp_path / 'synchronized', clock)
+    clock.set_wall_clock(A_YEAR_AHEAD)
+    assert check.believable(clock.now()) is False
+
+
+def test_the_sync_after_a_power_cut_moves_the_clock_days_ahead_and_is_believed(tmp_path, caplog):
+    """After a power cut the Pi starts at its last saved time, days behind; the time server then sets it right and
+    makes the flag file. That jump is the clock being put right, not a wrong one."""
+    flag = tmp_path / 'synchronized'
+    clock = FakeClock(NOW - 5 * DAY)
+    check = make(flag, clock)
+    assert check.believable(clock.now()) is True
+    clock.advance(600)
+    clock.set_wall_clock(NOW)
+    flag.touch()
+    with caplog.at_level(logging.WARNING, logger='desktalk.runtime.clock'):
+        assert check.believable(clock.now()) is True
+        assert check.synced(clock.now()) is True
+    assert warnings_in(caplog) == []
+
+
+def test_a_jump_ahead_is_believed_once_the_time_server_sets_the_clock_again(tmp_path, caplog):
+    """The time server touches the flag file each time it sets the clock: whatever it says then is the time."""
+    flag = tmp_path / 'synchronized'
+    flag.touch()
+    os.utime(flag, ns=(1, 1))
+    clock = FakeClock(NOW)
+    check = make(flag, clock)
+    clock.set_wall_clock(A_YEAR_AHEAD)
+    assert check.believable(clock.now()) is False
+    os.utime(flag, ns=(2, 2))
+    with caplog.at_level(logging.INFO, logger='desktalk.runtime.clock'):
+        assert check.believable(clock.now()) is True
+    assert 'looks right again' in caplog.text
+
+
+def test_a_clock_put_back_right_by_hand_is_believed_again(tmp_path):
+    flag = tmp_path / 'synchronized'
+    flag.touch()
+    clock = FakeClock(NOW)
+    check = make(flag, clock)
+    clock.set_wall_clock(A_YEAR_AHEAD)
+    assert check.believable(clock.now()) is False
+    clock.set_wall_clock(NOW + 60)
+    assert check.believable(clock.now()) is True
+
+
+def test_a_small_jump_ahead_or_a_jump_back_is_believed(tmp_path):
+    flag = tmp_path / 'synchronized'
+    flag.touch()
+    clock = FakeClock(NOW)
+    check = make(flag, clock)
+    clock.set_wall_clock(NOW + LARGEST_JUMP_SEC)
+    assert check.believable(clock.now()) is True
+    clock.set_wall_clock(NOW + LARGEST_JUMP_SEC + 1)
+    assert check.believable(clock.now()) is False
+    clock.set_wall_clock(NOW - 3 * DAY)                  # behind deletes less, never more
+    assert check.believable(clock.now()) is True
+
+
+def test_with_no_flag_file_a_jump_ahead_is_believed():
+    """A Mac keeps its own clock right, and its monotonic clock stops while it sleeps, so waking up looks like a
+    jump ahead."""
+    clock = FakeClock(NOW)
+    check = make(None, clock)
+    clock.set_wall_clock(A_YEAR_AHEAD)
+    assert check.believable(clock.now()) is True

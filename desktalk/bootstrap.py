@@ -419,7 +419,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     clock = clock or SystemClock()
     synced_file = config.object_states.clock_synced_file
     clock_check = ClockCheck(config.resolve(synced_file) if synced_file else None,
-                             config.clock.earliest_believable_date)
+                             config.clock.earliest_believable_date, clock=clock,
+                             largest_jump_ahead_sec=config.clock.largest_jump_ahead_min * MINUTE)
 
     def data_path(path: Path) -> Path:
         path = Path(path).expanduser()
@@ -564,7 +565,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                     'save object states')
     def prune_object_states() -> None:
         now = clock.now()
-        if clock_check.believable(now):                 # a clock that can't be right deletes nothing by date
+        if clock_check.believable(now):     # a clock that can't be right (1990, or jumped ahead) deletes nothing
             state_store.prune(now - config.object_states.keep_days * DAY)
 
     scheduler.every(config.object_states.prune_every_min * MINUTE, prune_object_states, 'delete old object states')

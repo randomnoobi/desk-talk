@@ -180,3 +180,36 @@ def test_no_object_states_are_deleted_while_the_clock_cant_be_right(tmp_path):
     assert saved
     rig.tick(rig.app.scheduler, after=2 * 24 * 3600)
     assert rig.app.state_store.changes(0) == saved
+
+
+def test_a_clock_set_a_year_ahead_by_hand_deletes_nothing(tmp_path):
+    """Someone sets the Pi's date a year ahead while the app runs: the hourly jobs would delete every object state
+    and every event-log day older than a year from now minus keep_days, all the history. The clock jumped ahead
+    without the time server setting it, so nothing is deleted by date."""
+    flag = tmp_path / 'synchronized'
+    flag.touch()
+    config = changed(desk_config(tmp_path), 'object_states', keep_days=1, clock_synced_file=flag)
+    config = changed(config, 'event_log', keep_days=1)
+    rig = DeskRig(tmp_path, config=config)
+    rig.watch(settle_sec(rig), CUP_FAR)
+    saved, days = rig.app.state_store.changes(0), rig.app.event_log.days()
+    assert saved and days
+    rig.clock.set_wall_clock(rig.clock.now() + 365 * 24 * 3600)
+    rig.watch(settle_sec(rig), CUP_FAR)                              # a day folder for the new date too
+    rig.tick(rig.app.scheduler, after=2 * 3600)
+    assert rig.app.state_store.changes(0)[:len(saved)] == saved
+    assert set(days) < set(rig.app.event_log.days())
+
+
+def test_old_object_states_are_deleted_after_the_clock_syncs_from_a_power_cut(tmp_path):
+    """After a power cut the Pi's clock starts days behind; the time server then moves it days ahead and makes the
+    flag file. That is the clock being put right, so old rows are deleted as usual."""
+    flag = tmp_path / 'synchronized'
+    config = changed(desk_config(tmp_path), 'object_states', keep_days=1, clock_synced_file=flag)
+    rig = DeskRig(tmp_path, config=config)
+    rig.watch(settle_sec(rig), CUP_FAR)
+    assert rig.app.state_store.changes(0)
+    rig.clock.set_wall_clock(rig.clock.now() + 5 * 24 * 3600)
+    flag.touch()
+    rig.tick(rig.app.scheduler, after=2 * 3600)
+    assert rig.app.state_store.changes(0) == []

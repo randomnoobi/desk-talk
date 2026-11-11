@@ -221,6 +221,7 @@ class ObjectStatesSettings(_Section):
 
 class ClockSettings(_Section):
     earliest_believable_date: date
+    largest_jump_ahead_min: PositiveNumber
 
 
 class SupervisorSettings(_Section):

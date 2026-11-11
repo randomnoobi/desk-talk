@@ -220,8 +220,14 @@ object_states:
 clock:
   # A clock before this day is plainly wrong (say, set to 1990 by hand, or a Pi that lost its saved time). Until it
   # is right again, saved object states aren't picked up after a restart and nothing is deleted for being old
-  # (the event log's old days). Any day before this version of Desk Talk came out will do.
+  # (old object states, the event log's old days). Any day before this version of Desk Talk came out will do.
   earliest_believable_date: 2025-01-01
+  # A clock that jumps more than this many minutes ahead while the app runs, without the time server setting it,
+  # may be wrong too (say, set to next year by hand): deleting by it would delete the whole history at once. So
+  # nothing is deleted for being old until the time server sets the clock again, or the app restarts. The time
+  # server putting a Pi right after a power cut, days ahead, is fine. Only looked at with
+  # object_states.clock_synced_file (the Pi).
+  largest_jump_ahead_min: 60
 
 # ── Keeping background jobs running ────────────────────────────────
 supervisor:

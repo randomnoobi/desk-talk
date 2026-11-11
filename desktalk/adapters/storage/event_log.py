@@ -7,9 +7,10 @@ The event log, kept on this computer in data/events/<day>/ (the same files as al
 
 Every 10 minutes (settings → event_log.compact_every_min) the scheduler calls compact(): the per-picture
 lines are merged into intervals (desktalk/adapters/storage/intervals.py) and deleted, so the log stays
-small. Days older than event_log.keep_days are deleted by prune(), but never while the clock is plainly wrong
-(before clock.earliest_believable_date), and never the newest keep_days days that have a log, so a clock far ahead
-can't delete them all at once. Lines are JSON, one event per line, newest at the bottom.
+small. Days older than event_log.keep_days are deleted by prune(), but never while the clock can't be right
+(before clock.earliest_believable_date, or jumped far ahead while the app ran: ClockCheck), and never the newest
+keep_days days that have a log, so even a clock set far ahead while the app was stopped can't delete them all at
+once. Lines are JSON, one event per line, newest at the bottom.
 
 When something goes wrong with the files:
 - a line cut off by a crash (or otherwise broken) is skipped and logged, never fatal, and the next event
