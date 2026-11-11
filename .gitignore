@@ -16,6 +16,9 @@ certs/
 # Your own data: event log, habit days, preferences (stays on this computer)
 data/
 
+# Logs saved by raspberry_pi/get_logs.sh on the Pi, and copied to your Mac by scripts/pi_logs.sh
+/pi_logs/
+
 # Personal settings overrides
 config/settings.local.yaml
 # The same on a Pi: the folder compose.yaml mounts as config/mine (install.sh makes it from settings.mine.example.yaml)

@@ -93,8 +93,7 @@ The container's settings are in `raspberry_pi/.env`, next to `raspberry_pi/compo
 | `DETECTOR_HEALTH_FAILS_BEFORE_RESTART` | 10 | Docker leaves an unhealthy container hung, so after this many failed answers in a row the check starts it again (`raspberry_pi/health_check.py`) ... |
 | `DETECTOR_HEALTH_GRACE_SEC` | 300 | ... not counting this long after a start ... |
 | `DETECTOR_HEALTH_ANSWER_WAIT_SEC` | 4 | ... and giving one answer this long, less than `DETECTOR_HEALTH_TIMEOUT` |
-| `LOG_FILE_SIZE` | 10m | start a new log file at this size (m = MB, 1024 × 1024 bytes) ... |
-| `LOG_FILES` | 3 | ... and keep this many, so logs can't fill the SD card |
+| `JOURNAL_MAX_USE` | 200M | its logs go to the Pi's journal, with the other two's, which takes at most this much of the SD card |
 
 Which model it runs comes from the camera (`PUT /model`), not from here.
 

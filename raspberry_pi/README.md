@@ -112,8 +112,53 @@ panel shows the live picture. To see what each one is doing (Ctrl-C stops watchi
 docker compose logs -f camera
 ```
 
-Use `app` or `detector` in place of `camera` for the others. Docker keeps only a few small log files per container
-(`LOG_FILE_SIZE` and `LOG_FILES` in `.env`), so they can't fill the card. The app also writes `data/logs/desktalk.log`.
+Use `app` or `detector` in place of `camera` for the others. The app also writes `data/logs/desktalk.log`.
+
+### Starting by itself
+
+The install sets up `desktalk.service` (from `raspberry_pi/systemd/desktalk.service`), which starts the three
+containers each time the Pi boots, after a power cut too, with or without Wi-Fi. It runs as your own user, who is in the
+docker group, so it needs no root, and it never builds: it only starts what the install or the update built. Docker's own
+rule (`restart: unless-stopped`) brings them back as well, so either one is enough. To check it, **on the Pi**:
+
+```bash
+systemctl status desktalk          # "active (exited)" means it started them; it has nothing more to do until the next boot
+journalctl -u desktalk -b          # what it said at this boot
+```
+
+Stopping `desktalk.service` leaves the containers running. To stop them, use `docker compose stop` in
+`~/desk-talk/raspberry_pi`. They start again at the next boot.
+
+### Where the logs are
+
+All three log to the Pi's journal, with the Pi's own messages. Raspberry Pi OS keeps the journal in memory only, so it
+would be gone after each restart; the install changes that (`raspberry_pi/systemd/journald-desktalk.conf`), so it stays
+on the SD card through a power cut, uses at most 200 MB (`JOURNAL_MAX_USE` in `.env`) and keeps 30 days
+(`JOURNAL_KEEP`). **On the Pi**:
+
+```bash
+docker compose logs -f camera                      # in ~/desk-talk/raspberry_pi, as before
+journalctl -t desktalk-camera --since "2 hours ago" # the same, from the journal, with containers a rebuild replaced too
+journalctl -b -1                                   # everything from the boot before this one, such as before a power cut
+journalctl --list-boots                            # the boots it has
+journalctl --disk-usage                            # how much room it takes
+```
+
+### Getting the logs onto your Mac
+
+**On the Pi**, `bash ~/desk-talk/raspberry_pi/get_logs.sh 6` saves the last 6 hours (24 when no number is given) of each
+container's log, the list of boots, `docker compose ps`, the disk and the temperature, all in one dated `.tar.gz` in
+`~/desk-talk/pi_logs/`, and prints its path. It keeps the newest 10 there.
+
+**On your Mac**, in the `desk-talk` folder, this does the same over ssh and copies the file into `pi_logs/` here:
+
+```bash
+bash scripts/pi_logs.sh                       # the Pi you reach with `ssh pi`, the last 24 hours
+bash scripts/pi_logs.sh --host desktalk.local --hours 6
+tar -xzf pi_logs/desktalk-logs-*.tar.gz -C pi_logs     # to read it
+```
+
+Each number is in the logs part of `raspberry_pi/.env.example`.
 
 The detector has no open port, so `curl http://127.0.0.1:8100` on the Pi doesn't answer; that is on purpose. Ask it from
 inside its own container instead:

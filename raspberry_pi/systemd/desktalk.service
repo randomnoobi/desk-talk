@@ -1,0 +1,32 @@
+# Starts Desk Talk's three containers when the Pi boots, after a power cut too. install.sh fills in the blanks (from
+# raspberry_pi/.env), puts this in /etc/systemd/system and switches it on; change this file, not the copy there, and run
+# install.sh again.
+#
+# Docker's own rule (restart: unless-stopped in compose.yaml) starts them at boot as well. This makes sure even of
+# containers someone stopped by hand, and it shows in `systemctl status desktalk` and `journalctl -u desktalk`.
+# It doesn't wait for the network: the Pi has to start with no Wi-Fi.
+#
+# Stopping this service leaves the containers running: Docker stops them cleanly when the Pi shuts down, and its
+# restart rule then still brings them back. To stop them yourself, in raspberry_pi: docker compose stop
+
+[Unit]
+Description=Desk Talk (the camera, the detector and the app, in Docker)
+Requires=docker.service
+After=docker.service containerd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# The Pi's own user, who is in the docker group, so this needs no root. compose.yaml and .env are in this folder.
+User=@PI_USER@
+WorkingDirectory=@COMPOSE_FOLDER@
+# Never a build here: that takes many minutes and the internet. install.sh and update.sh build.
+ExecStart=@DOCKER@ compose up -d --no-build
+# The camera waits for the app's health check, so a start can take a minute or two.
+TimeoutStartSec=@SERVICE_START_WAIT_SEC@
+# If Docker wasn't quite ready, try again.
+Restart=on-failure
+RestartSec=@SERVICE_RETRY_SEC@
+
+[Install]
+WantedBy=multi-user.target
