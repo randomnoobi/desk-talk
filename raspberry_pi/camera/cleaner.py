@@ -4,7 +4,9 @@ Deletes the pictures stored on the Pi, in a thread of its own, so taking picture
 
 It deletes them every pi.delete_every_min (0 = never), and right away, oldest first, when the camera
 loop says the disk is nearly full (pi.min_free_mb). A cleanup that fails is logged once, until it works
-again, and tried again at the next turn.
+again, and tried again at the next turn. The time between cleanups goes by the monotonic clock, so a wall
+clock set back (by hand, or put right after a power cut) doesn't stop them; which pictures are old enough to
+delete still goes by the wall clock, the time each picture was taken.
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ class Cleaner:
         self.delete_every_min = delete_every_min
         self.clock = clock
         self.wake = threading.Event()        # set when the disk is nearly full: the thread stops waiting
-        self._last_try = clock.now()
+        self._last_try = clock.monotonic()
         self._space_needed = False
         self._problem = ''
 
@@ -46,15 +48,17 @@ class Cleaner:
         every = self.delete_every_min * 60
         if every <= 0:
             return None
-        return min(every, max(0.0, self._last_try + every - self.clock.now()))
+        return min(every, max(0.0, self._last_try + every - self.clock.monotonic()))
 
     def maybe_cleanup(self, now: float) -> int | None:
-        """Delete the stored pictures every pi.delete_every_min (0 = never). Returns how many, or None if it's
-        not time yet. A cleanup that fails waits for the next turn too."""
+        """Delete the stored pictures every pi.delete_every_min (0 = never), the ones taken pi.keep_last_min before
+        `now` (the wall clock). Returns how many, or None if it's not time yet. A cleanup that fails waits for the
+        next turn too."""
         every = self.delete_every_min * 60
-        if every <= 0 or now - self._last_try < every:
+        mono = self.clock.monotonic()
+        if every <= 0 or mono - self._last_try < every:
             return None
-        self._last_try = now
+        self._last_try = mono
         removed = self.store.cleanup(now)
         log.info('Cleanup: deleted %d pictures (every %g min). %d MB free.', removed, self.delete_every_min,
                  self.store.free_mb())
