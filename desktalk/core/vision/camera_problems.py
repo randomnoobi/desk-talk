@@ -21,9 +21,10 @@ from desktalk.domain import Box
 
 # Most important first. While one of these is happening, the problems it hides can't be trusted
 # (a covered lens also looks dark and blurry), so they are neither said nor counted as fixed.
-PRIORITY = ('lost', 'covered', 'dark', 'glare', 'blurry', 'bumped', 'empty', 'cutoff', 'slow')
+PRIORITY = ('lost', 'no_pictures', 'covered', 'dark', 'glare', 'blurry', 'bumped', 'empty', 'cutoff', 'slow')
 HIDES = {
     'lost': {'covered', 'dark', 'glare', 'blurry', 'empty', 'cutoff', 'slow', 'bumped'},
+    'no_pictures': {'covered', 'dark', 'glare', 'blurry', 'empty', 'cutoff', 'slow', 'bumped'},
     'covered': {'dark', 'glare', 'blurry', 'empty', 'cutoff'},
     'dark': {'blurry', 'empty', 'cutoff'},
     'glare': {'blurry', 'empty'},
@@ -143,6 +144,8 @@ class CameraProblems:
                 self._clear_since.clear()
             elif self._ever_connected:
                 raw['lost'] = {}
+            else:
+                raw['no_pictures'] = {}     # none at all since the start (said after wait_before_saying_sec)
         if connected and seen.reading:
             self._picture_problems(now, seen.reading, seen, raw)
         if connected and fps is not None and 0 < fps < self._lens.slow_fps_below:

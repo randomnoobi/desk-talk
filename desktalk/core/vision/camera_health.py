@@ -117,8 +117,9 @@ class CameraHealth:
 
     def _problem_text(self, key: str, d: Detail) -> str:
         words = self._words
-        if key == 'lost':
-            return words.lost.model_dump().get(self._source_kind, words.lost.phone)
+        if key in ('lost', 'no_pictures'):
+            by_camera = getattr(words, key)
+            return by_camera.model_dump().get(self._source_kind, by_camera.phone)
         problems = words.problems
         if key == 'bumped':
             return problems.bumped.format(degrees=d.get('degrees', self._lens.bump_degrees))
@@ -139,8 +140,8 @@ class CameraHealth:
         out = []
         for key, d in active.items():
             title, fix = getattr(words.titles, key).title, getattr(words.titles, key).fix
-            if key == 'lost':
-                title = words.lost_title
+            if key in ('lost', 'no_pictures'):
+                title = words.lost_title if key == 'lost' else title
                 fix = words.lost_fix.model_dump().get(self._source_kind, fix)
             if key == 'cutoff' and d.get('object'):
                 title = words.cutoff_title.format(object=d['object'].capitalize(), side=d.get('side'))

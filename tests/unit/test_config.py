@@ -279,7 +279,8 @@ def test_numbers_moved_out_of_the_old_code_keep_their_values(project):
     lens, safety = cfg.lens, cfg.safety
     assert (lens.measure_width, lens.edge_touch_px, lens.fixed_after_sec, lens.edge_tip_after_sec) == (240, 3, 5, 120)
     assert lens.wait_before_saying_sec.model_dump() == {
-        'lost': 15, 'covered': 4, 'dark': 8, 'glare': 8, 'blurry': 12, 'bumped': 5, 'empty': 180, 'cutoff': 45,
+        'lost': 15, 'no_pictures': 120, 'covered': 4, 'dark': 8, 'glare': 8, 'blurry': 12, 'bumped': 5, 'empty': 180,
+        'cutoff': 45,
         'slow': 30, 'pi': 10, 'pi_detector': 60}
     assert cfg.camera.moved_within_sec == 1.5
     assert safety.temporal.history_length == 30

@@ -629,6 +629,7 @@ class ByCamera(_Section):
 
 class CameraFixed(_Section):
     lost: str
+    no_pictures: str
     covered: str
     dark: str
     glare: str
@@ -651,6 +652,7 @@ class Title(_Section):
 
 class CameraTitles(_Section):
     lost: Title
+    no_pictures: Title
     covered: Title
     dark: Title
     glare: Title
@@ -664,6 +666,7 @@ class CameraTitles(_Section):
 class CameraPrompts(_Section):
     problems: CameraProblems
     lost: ByCamera
+    no_pictures: ByCamera
     fixed: CameraFixed
     side_hints: SideHints
     other_side_hint: str

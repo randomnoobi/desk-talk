@@ -493,6 +493,8 @@ lens:
   cutoff_repeat_times: 1.5    # the same cut-off object is mentioned again only after repeat_after_min times this
   wait_before_saying_sec:     # how long each problem must last before Lens says something
     lost: 15                  # no pictures
+    no_pictures: 120          # no picture at all since the app started (a camera that never came up, like a Pi
+                              # camera whose cable is out)
     covered: 4
     dark: 8
     glare: 8

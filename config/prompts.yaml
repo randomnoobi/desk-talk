@@ -692,9 +692,15 @@ camera:
     pi: I lost the pictures from the Raspberry Pi camera. Is the Pi still on? On the Pi, check that the camera container is running (docker compose ps), and start it with docker compose up -d if it is not.
     phone: I lost the video from the phone. Is its screen still on? Phones stop the camera when they lock, so keep the Desk Talk page open on it.
     webcam: I lost the webcam picture. Is it still plugged in, or is another app using it?
+  # no picture at all since the app started (settings → lens.wait_before_saying_sec.no_pictures)
+  no_pictures:
+    pi: I haven't had a single picture from the Raspberry Pi camera since I started. Is the camera's ribbon cable pushed in firmly at both ends? On the Pi, check the camera container (docker compose ps, and docker compose logs camera).
+    phone: I haven't had any video from the phone yet. Open the Desk Talk camera page on it and keep the screen on.
+    webcam: I haven't had a single picture from the webcam since I started. Is it plugged in, or is another app using it?
   # when a problem is gone
   fixed:
     lost: Video's back! I can see the desk again.
+    no_pictures: There are the first pictures. I can see the desk now.
     covered: There we go, I can see again.
     dark: Much better, thanks for the light!
     glare: Glare is gone. Thanks!
@@ -714,6 +720,9 @@ camera:
     lost:
       title: No video from the phone
       fix: Keep the phone unlocked with the Desk Talk page open.
+    no_pictures:
+      title: No pictures yet
+      fix: Check that the camera is connected and turned on.
     covered:
       title: Camera is blocked
       fix: Move whatever is in front of the lens, and point the camera at the desk.

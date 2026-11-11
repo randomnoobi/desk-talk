@@ -482,6 +482,7 @@ class LensWaits(_Section):
     """How long each camera problem must last before Lens says something."""
 
     lost: ZeroOrMore
+    no_pictures: ZeroOrMore
     covered: ZeroOrMore
     dark: ZeroOrMore
     glare: ZeroOrMore
