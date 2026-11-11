@@ -70,5 +70,27 @@ class StateStoreContract:
         store.append([a_record(99.0)])
         assert store.latest_states(100.0) == {}
 
+    def test_records_keep_the_boot_they_were_saved_in(self, store):
+        row = a_record(100.0, boot_id='boot-a')
+        store.append([row])
+        assert store.changes(0.0)[0].boot_id == 'boot-a'
+        assert store.latest_states(0.0)['bottle'].boot_id == 'boot-a'
+
+    def test_latest_states_of_one_boot_leave_out_the_others(self, store):
+        """After a power cut the Pi's clock may be behind, so a row from the boot before can look newer than this
+        boot's: asked for one boot, each object's newest row is its newest row from that boot."""
+        this_boot = a_record(100.0, boot_id='boot-b')
+        earlier_boot = a_record(110.0, type='snapshot', prev_state=Phase.PRESENT, new_state=Phase.PRESENT,
+                                boot_id='boot-a')
+        no_boot = a_record(105.0, label='cup')
+        store.append([this_boot, earlier_boot, no_boot])
+        assert store.latest_states(0.0, boot_id='boot-b') == {'bottle': this_boot}
+        assert store.latest_states(0.0, boot_id='boot-c') == {}
+        assert store.latest_states(0.0) == {'bottle': earlier_boot, 'cup': no_boot}
+
+    def test_latest_states_of_one_boot_still_leave_out_old_rows(self, store):
+        store.append([a_record(99.0, boot_id='boot-a')])
+        assert store.latest_states(100.0, boot_id='boot-a') == {}
+
     def test_closing_is_safe(self, store):
         store.close()

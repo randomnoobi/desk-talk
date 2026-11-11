@@ -68,12 +68,45 @@ def test_a_restart_keeps_the_states(tmp_path):
     rig2.app.stop(timeout=1)
 
 
-def test_a_restart_before_the_clock_has_synced_starts_over(tmp_path):
-    """The Pi's clock may be days behind until it reaches the internet, so nothing saved is trusted before then."""
+def test_a_restart_before_the_clock_has_synced_starts_over_with_no_boot_id(tmp_path):
+    """The Pi's clock may be days behind until it reaches the internet. A computer that can't say which boot it is
+    in can't tell a restart from a power cut, so nothing saved is trusted before then."""
     rig = DeskRig(tmp_path)
     rig.watch(settle_sec(rig), CUP_FAR)
     rig.app.stop(timeout=1)
     config = changed(rig.config, 'object_states', clock_synced_file=tmp_path / 'not-synced-yet')
+    rig2 = DeskRig(tmp_path, config=config, start=rig.clock.now() + 10)
+    assert 'cup' not in rig2.app.object_states.snapshot().objects
+    rig2.app.stop(timeout=1)
+
+
+def boot(tmp_path, name):
+    """A boot id file saying the computer is in boot `name`."""
+    file = tmp_path / 'boot_id'
+    file.write_text(f'{name}\n')
+    return file
+
+
+def test_a_restart_in_the_same_boot_keeps_the_states_before_the_clock_has_synced(tmp_path):
+    """A Pi with no internet: only the app restarted, so its clock ran on and what it saved is still good."""
+    config = changed(desk_config(tmp_path), 'object_states', clock_synced_file=tmp_path / 'not-synced-yet',
+                     boot_id_file=boot(tmp_path, 'boot-a'))
+    rig = DeskRig(tmp_path, config=config)
+    rig.watch(settle_sec(rig), CUP_FAR)
+    rig.app.stop(timeout=1)
+    rig2 = DeskRig(tmp_path, config=config, start=rig.clock.now() + 10)
+    assert rig2.app.object_states.snapshot().objects['cup'].state == 'PRESENT'
+    rig2.app.stop(timeout=1)
+
+
+def test_a_new_boot_starts_over_before_the_clock_has_synced(tmp_path):
+    """A power cut: the clock may be days behind, so what the boot before saved isn't trusted."""
+    config = changed(desk_config(tmp_path), 'object_states', clock_synced_file=tmp_path / 'not-synced-yet',
+                     boot_id_file=boot(tmp_path, 'boot-a'))
+    rig = DeskRig(tmp_path, config=config)
+    rig.watch(settle_sec(rig), CUP_FAR)
+    rig.app.stop(timeout=1)
+    boot(tmp_path, 'boot-b')
     rig2 = DeskRig(tmp_path, config=config, start=rig.clock.now() + 10)
     assert 'cup' not in rig2.app.object_states.snapshot().objects
     rig2.app.stop(timeout=1)

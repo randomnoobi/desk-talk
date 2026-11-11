@@ -21,7 +21,9 @@ and `changes(since)` reads the store (plus any changes not saved yet), so change
 there.
 It also keeps each object's last pictures of smoothing for the developer page (SmoothingTraceView):
 `traced_labels()` and `trace(label)`, up to `trace_pictures` per object.
-`save_snapshot(now)` and `restore(now, clock_synced=...)` let a restart pick up where the last run left off.
+`save_snapshot(now)` and `restore(now, clock_synced=...)` let a restart pick up where the last run left off. Every row
+keeps the boot it was saved in (`boot_id`), so before the clock has been set from the internet, a restart of only
+the app still picks up what this boot saved, while a power cut starts over.
 """
 
 from __future__ import annotations
@@ -84,9 +86,10 @@ class ObjectStateTracker:
 
     def __init__(self, settings: ObjectStatesSettings, bus: EventBus, store: ObjectStateStore, *,
                  device_id: str, new_session_after_sec: float, clock: Clock, agents: AgentsSettings,
-                 prefs: Preferences, profiles: Profiles):
+                 prefs: Preferences, profiles: Profiles, boot_id: str | None = None):
         """`clock`: only for the desk's UTC offset written with each row. `agents` and `prefs`: the sensitivity
-        slider's steps and the one picked; `profiles`: which words are new things."""
+        slider's steps and the one picked; `profiles`: which words are new things. `boot_id`: which boot of the
+        computer this is, written with each row (None: it can't say)."""
         self._bus = bus
         self._settings = settings
         self._slider = Slider(agents, prefs)
@@ -95,6 +98,7 @@ class ObjectStateTracker:
         self._clock = clock
         self._store = store
         self._device_id = device_id
+        self._boot_id = boot_id
         self._new_session_after_sec = new_session_after_sec    # a gap this long starts a new run of watching
         self._on_conf = settings.on_confidence
         self._off_conf = settings.off_confidence
@@ -180,7 +184,7 @@ class ObjectStateTracker:
     def _record(self, t: Transition) -> StateRecord:
         return StateRecord(ts=t.ts, timezone=self._zone(t.ts), device_id=self._device_id, type=t.type,
                            label=t.label, prev_state=t.prev_state, new_state=t.new_state, conf_avg=t.conf_avg,
-                           bbox=t.bbox, dwell_sec=t.dwell_sec)
+                           bbox=t.bbox, dwell_sec=t.dwell_sec, boot_id=self._boot_id)
 
     def _event(self, t: Transition) -> ObjectStateChanged:
         return ObjectStateChanged(ts=t.ts, change=t.type, label=t.label, prev_state=t.prev_state.value,
@@ -290,7 +294,7 @@ class ObjectStateTracker:
             records = [
                 StateRecord(ts=now, timezone=self._zone(now), device_id=self._device_id, type='snapshot',
                             label=label, prev_state=s.phase, new_state=s.phase,
-                            dwell_sec=now - s.since if s.since is not None else None)
+                            dwell_sec=now - s.since if s.since is not None else None, boot_id=self._boot_id)
                 for label, s in self._states.items() if s.phase == Phase.PRESENT
             ]
         if records:
@@ -301,17 +305,24 @@ class ObjectStateTracker:
         """Start each object in its newest saved state, if that's recent enough. Returns how many.
 
         `clock_synced`: has the clock been set from the internet since this computer started? A Pi with no clock
-        battery starts at the time it last saved, which may be days ago, so until then nothing saved is trusted."""
+        battery starts at the time it last saved, which may be days ago, so until then only rows saved in this same
+        boot are trusted: the clock has run on without a break since they were written (only the app restarted).
+        With no boot id, nothing is."""
+        boot = None                                     # whose rows count: None is every boot's
+        latest: dict[str, StateRecord] = {}
+        later: list[float] = []
         if not clock_synced:
-            log.warning("The clock hasn't been set from the internet since this computer started, "
-                        "so every object starts over")
-            log.info('Picked up 0 object states from before the restart')
-            return 0
-        latest = self._store.latest_states(now - self._restore_max_age_sec)
+            log.warning("The clock hasn't been set from the internet since this computer started, so %s",
+                        'only states saved since it started are picked up' if self._boot_id is not None
+                        else 'every object starts over')
+            boot = self._boot_id
+        if clock_synced or boot is not None:
+            latest = self._store.latest_states(now - self._restore_max_age_sec, boot_id=boot)
+            # The recent-states query skips `moved` rows, so look at the change rows after `now` too. Rows from
+            # another boot don't count when only this boot's are picked up: their clock may have been off.
+            later = [row.ts for row in self._store.changes(now) if boot is None or row.boot_id == boot]
         restored = 0
-        # The recent-states query skips `moved` rows, so look at the change rows after `now` too.
-        newest = max([row.ts for row in latest.values()] + [row.ts for row in self._store.changes(now)],
-                     default=None)
+        newest = max([row.ts for row in latest.values()] + later, default=None)
         if newest is not None and newest > now:
             # This app writes rows with its own clock, so a newer row means the clock went back (a Pi with no
             # clock battery boots slow). Which rows are recent can't be told, so every object starts over.

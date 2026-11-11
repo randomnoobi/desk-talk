@@ -33,3 +33,4 @@ class StateRecord:
     conf_avg: float | None = None                           # average confidence while it was seen
     bbox: tuple[float, float, float, float] | None = None   # where it was last seen
     dwell_sec: float | None = None                          # how long it stayed in the old state
+    boot_id: str | None = None                              # which run of the computer saved it (None: can't say)

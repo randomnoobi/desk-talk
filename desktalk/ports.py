@@ -290,9 +290,10 @@ class ObjectStateStore(Protocol):
     def append(self, records: Sequence[StateRecord]) -> None:
         ...
 
-    def latest_states(self, since: float) -> dict[str, StateRecord]:
+    def latest_states(self, since: float, *, boot_id: str | None = None) -> dict[str, StateRecord]:
         """Per object, its newest `appeared`, `removed` or `snapshot` row with `ts >= since`.
-        `moved` rows are skipped: they don't change the state, and their `dwell_sec` isn't the time in the state."""
+        `moved` rows are skipped: they don't change the state, and their `dwell_sec` isn't the time in the state.
+        With `boot_id`, only rows saved in that boot count."""
         ...
 
     def changes(self, since: float, *, label: str | None = None) -> list[StateRecord]:

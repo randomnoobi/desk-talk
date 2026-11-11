@@ -44,6 +44,8 @@ HOUR_THERE = 17
 QUICK_HEALTH = '3s'              # so the test doesn't wait for the Pi's slower health checks
 LOCAL_HOUR = ('from desktalk.runtime import SystemClock; '
               f'print(SystemClock().local_hour({TEST_MOMENT}))')
+APP_BOOT_ID = ('from desktalk.config import load_config; from desktalk.runtime import boot_id; c = load_config(); '
+               'print(boot_id(c.resolve(c.object_states.boot_id_file)))')
 ANALYTICS = ('from ultralytics.utils import ONLINE, SETTINGS; from ultralytics.utils.events import events; '
              "print(ONLINE, SETTINGS['sync'], events.enabled)")
 HANG = ('import os, signal; [os.kill(int(p), signal.SIGSTOP) for p in os.listdir("/proc") if p.isdigit() '
@@ -155,6 +157,15 @@ def test_the_camera_got_the_detector_address_and_its_folder_from_the_pi_settings
 def test_app_uses_the_users_time_zone(stack):
     done = stack.compose('exec', '-T', 'app', 'python', '-c', LOCAL_HOUR)
     assert int(done.stdout.strip()) == HOUR_THERE
+
+
+def test_the_app_reads_the_same_boot_id_as_the_other_containers(stack):
+    """Each saved state keeps the boot id, so a restart of only the app can be told from a power cut. Every container
+    shares the computer's kernel, so the app's settings must lead to the same id the camera's container sees."""
+    app = stack.compose('exec', '-T', 'app', 'python', '-c', APP_BOOT_ID).stdout.strip()
+    camera = stack.compose('exec', '-T', 'camera', 'cat', '/proc/sys/kernel/random/boot_id').stdout.strip()
+    assert app not in ('', 'None')
+    assert app == camera
 
 
 def test_detector_port_is_not_open_outside(stack):

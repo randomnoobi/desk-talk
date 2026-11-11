@@ -95,11 +95,15 @@ def check_data(data: Path) -> dict[str, Any]:
     database = data / 'object_states.sqlite'
     if database.exists():
         with contextlib.closing(sqlite3.connect(f'file:{database}?mode=ro', uri=True, timeout=10)) as db:
-            rows = db.execute('SELECT object, new_state, ts, type FROM events WHERE type != ? ORDER BY ts, id',
+            # A file from before rows kept their boot has no boot_id column until the app opens it
+            columns = {row[1] for row in db.execute('PRAGMA table_info(events)')}
+            boot = 'boot_id' if 'boot_id' in columns else 'NULL'
+            rows = db.execute(f'SELECT object, new_state, ts, type, {boot} FROM events WHERE type != ? ORDER BY ts, id',
                               ('moved',)).fetchall()
             states = {'readable': True,
                       'integrity': db.execute('PRAGMA integrity_check').fetchone()[0],
-                      'rows': [{'object': r[0], 'state': r[1], 'ts': r[2], 'type': r[3]} for r in rows]}
+                      'rows': [{'object': r[0], 'state': r[1], 'ts': r[2], 'type': r[3], 'boot_id': r[4]}
+                               for r in rows]}
     return {'event_files': files, 'states': states}
 
 
@@ -403,7 +407,8 @@ def clock_behind_warning_sec(log: str) -> int | None:
 
 
 def clock_not_synced_at_this_start(log: str) -> bool:
-    """Did the app say at this start that its clock hadn't been set from the internet yet (so it picked up nothing)?"""
+    """Did the app say at this start that its clock hadn't been set from the internet yet? Then it picked up only what
+    this boot saved, which after a power cut is nothing."""
     return CLOCK_NOT_SYNCED_LINE in _before_this_restore(log)
 
 
@@ -430,36 +435,47 @@ def real_start_time(probe: str, started_after_boot_sec: float) -> float:
 
 
 class ExpectedRestore(NamedTuple):
-    case: str                   # 'normal', 'nothing saved', 'clock not synced', 'clock behind' or
-                                # 'clock behind, not noticed'
+    case: str                   # 'normal', 'nothing saved', 'clock not synced' (only this boot's rows count),
+                                # 'clock behind' or 'clock behind, not noticed'
     must_be: set[str]           # objects the app surely picked up
     could_be: set[str]          # objects it may have picked up
 
 
 def expected_restore(rows: Iterable[Mapping[str, Any]], *, restored_at: float, warned_behind_sec: float | None,
-                     not_synced: bool, lag_sec: float, restore_max_age_sec: float,
-                     slack_sec: float) -> ExpectedRestore:
+                     not_synced: bool, lag_sec: float, restore_max_age_sec: float, slack_sec: float,
+                     this_boot: str | None) -> ExpectedRestore:
     """What the app should say it picked up, all by the app's own clock, which also wrote the rows' `ts`.
 
-    `rows` are the saved states ({'object', 'ts'}). `restored_at` is the time on this run's "Picked up" line, in whole
-    seconds, so the restore was somewhere in the second after it. `warned_behind_sec` is what the app's clock-behind
-    warning said, or None. `not_synced`: did the app say its clock hadn't been set from the internet yet? `lag_sec` is
-    how far behind the app's clock really was when it restored.
+    `rows` are the saved states ({'object', 'ts', 'boot_id'}). `restored_at` is the time on this run's "Picked up" line,
+    in whole seconds, so the restore was somewhere in the second after it. `warned_behind_sec` is what the app's
+    clock-behind warning said, or None. `not_synced`: did the app say its clock hadn't been set from the internet
+    yet? `lag_sec` is how far behind the app's clock really was when it restored. `this_boot` is the Pi's boot id now
+    (None: it has none).
 
-    If the app said either, it must have picked up nothing. If it didn't but its clock was behind by more than the
-    slack, it missed it. Otherwise this run wrote only after its restore, so rows from before it are the run
-    before's."""
-    if not_synced:
-        return ExpectedRestore('clock not synced', set(), set())
+    If the app said its clock was behind the saved rows, it must have picked up nothing. If the clock hadn't synced,
+    only rows saved in this same boot may come back: the clock ran on without a break since they were written,
+    however far behind it is. After a power cut that is normally none. If neither, but its clock was behind by more
+    than the slack, it missed it. Otherwise this run wrote only after its restore, so rows from before it are the
+    run before's."""
+    saved = list(rows)
     if warned_behind_sec is not None:
         return ExpectedRestore('clock behind', set(), set())
+    if not_synced:
+        same_boot = [r for r in saved if this_boot is not None and r.get('boot_id') == this_boot]
+        return ExpectedRestore('clock not synced', *_in_window(same_boot, restored_at, restore_max_age_sec, slack_sec))
     if lag_sec > slack_sec:
         return ExpectedRestore('clock behind, not noticed', set(), set())
+    must_be, could_be = _in_window(saved, restored_at, restore_max_age_sec, slack_sec)
+    return ExpectedRestore('normal' if could_be else 'nothing saved', must_be, could_be)
+
+
+def _in_window(saved: list[Mapping[str, Any]], restored_at: float, restore_max_age_sec: float,
+               slack_sec: float) -> tuple[set[str], set[str]]:
+    """The objects surely picked up, and those that may have been, from rows young enough at the restore."""
     oldest = restored_at - restore_max_age_sec
-    saved = list(rows)
     could_be = {r['object'] for r in saved if oldest - slack_sec <= r['ts'] <= restored_at + LOG_TIME_STEP_SEC}
     must_be = {r['object'] for r in saved if oldest + LOG_TIME_STEP_SEC + slack_sec <= r['ts'] < restored_at}
-    return ExpectedRestore('normal' if could_be else 'nothing saved', must_be, could_be)
+    return must_be, could_be
 
 
 def speak_result(results: Mapping[str, Any]) -> str:

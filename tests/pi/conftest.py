@@ -137,6 +137,8 @@ class Pi:
         return self.in_app('import json; from desktalk.config import load_config; c = load_config(); '
                            'print(json.dumps({"pi": c.pi.model_dump(mode="json"), '
                            '"restore_max_age_sec": c.object_states.restore_max_age_sec, '
+                           '"clock_synced_file": None if c.object_states.clock_synced_file is None '
+                           'else str(c.resolve(c.object_states.clock_synced_file)), '
                            '"pi_detector_wait": c.lens.wait_before_saying_sec.pi_detector}))')
 
     def data_folder(self) -> str:
@@ -168,6 +170,19 @@ class Pi:
         text = self.run(f'cat /proc/{pid}/stat')
         ticks = int(re.sub(r'^.*\) ', '', text.strip()).split()[19])
         return ticks / int(self.run('getconf CLK_TCK'))
+
+    def app_boot_id(self) -> str | None:
+        """The boot id the app writes with each saved state, read by the app's own code in its container (settings →
+        object_states.boot_id_file). None if it has none."""
+        return self.in_app('import json; from desktalk.config import load_config; '
+                           'from desktalk.runtime import boot_id; c = load_config(); f = c.object_states.boot_id_file; '
+                           'print(json.dumps(boot_id(c.resolve(f)) if f else None))')
+
+    def app_sees_file(self, path: str) -> bool:
+        """Is `path` there, as the app's container sees it?"""
+        check = f'test -e {shlex.quote(path)} && echo yes || echo no'
+        answer = self.run(f'docker exec {self.container("app")} sh -c {shlex.quote(check)}')
+        return answer.strip() == 'yes'
 
     def app_log(self) -> str:
         return self.run(f'cat {shlex.quote(self.data_folder())}/logs/desktalk.log 2>/dev/null || true')

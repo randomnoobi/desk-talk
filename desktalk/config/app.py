@@ -201,6 +201,7 @@ class ObjectStatesSettings(_Section):
     snapshot_every_sec: PositiveNumber
     restore_max_age_sec: PositiveNumber
     clock_synced_file: Path | None
+    boot_id_file: Path | None
     database: Path
     trace_pictures: PositiveInt
 

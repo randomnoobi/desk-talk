@@ -2,11 +2,14 @@
 The object state history, kept on this computer in one SQLite file (data/object_states.sqlite).
 
 One table, `events`: a row each time an object appears, goes away or moves, plus a `snapshot` row for every
-object now and then. Rows are only ever added: two triggers make the database refuse any UPDATE or DELETE,
-so the history can't be rewritten by mistake. WAL mode is on, so reading and writing don't block each other.
+object now and then. Each row says which boot of the computer saved it (`boot_id`); a file from before rows kept
+it gets the column when it opens, and its old rows have none. Rows are only ever added: two triggers make the
+database refuse any UPDATE or DELETE, so the history can't be rewritten by mistake. WAL mode is on, so reading
+and writing don't block each other.
 
 Two questions are asked of it:
-- latest_states(since): each object's newest appeared / removed / snapshot row, for picking up after a restart;
+- latest_states(since, boot_id=...): each object's newest appeared / removed / snapshot row (only that boot's,
+  when given), for picking up after a restart;
 - changes(since): the appeared / removed / moved rows after a time, oldest first, for the rule engine.
 """
 
@@ -26,7 +29,8 @@ log = logging.getLogger(__name__)
 _TYPES = (*CHANGE_TYPES, 'snapshot')
 _TYPE_LIST = ', '.join(f"'{t}'" for t in _TYPES)
 _CHANGE_LIST = ', '.join(f"'{t}'" for t in CHANGE_TYPES)
-_COLUMNS = 'ts, timezone, device_id, type, object, prev_state, new_state, conf_avg, bbox, dwell_sec'
+_COLUMNS = 'ts, timezone, device_id, type, object, prev_state, new_state, conf_avg, bbox, dwell_sec, boot_id'
+_BLANKS = ', '.join(['?'] * len(_COLUMNS.split(', ')))
 
 _SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS events (
@@ -40,7 +44,8 @@ CREATE TABLE IF NOT EXISTS events (
     new_state  TEXT NOT NULL,
     conf_avg   REAL,
     bbox       TEXT,
-    dwell_sec  REAL
+    dwell_sec  REAL,
+    boot_id    TEXT
 );
 CREATE INDEX IF NOT EXISTS events_object_ts ON events (object, ts);
 CREATE INDEX IF NOT EXISTS events_ts ON events (ts);
@@ -54,14 +59,14 @@ BEGIN SELECT RAISE(ABORT, 'events is append-only'); END;
 def _row_of(record: StateRecord) -> tuple:
     return (record.ts, record.timezone, record.device_id, record.type, record.label,
             str(record.prev_state), str(record.new_state), record.conf_avg,
-            None if record.bbox is None else json.dumps(list(record.bbox)), record.dwell_sec)
+            None if record.bbox is None else json.dumps(list(record.bbox)), record.dwell_sec, record.boot_id)
 
 
 def _record_of(row: tuple) -> StateRecord:
-    ts, timezone, device_id, type_, label, prev_state, new_state, conf_avg, bbox, dwell_sec = row
+    ts, timezone, device_id, type_, label, prev_state, new_state, conf_avg, bbox, dwell_sec, boot_id = row
     return StateRecord(ts=ts, timezone=timezone, device_id=device_id, type=type_, label=label,
                        prev_state=Phase(prev_state), new_state=Phase(new_state), conf_avg=conf_avg,
-                       bbox=None if bbox is None else _box(json.loads(bbox)), dwell_sec=dwell_sec)
+                       bbox=None if bbox is None else _box(json.loads(bbox)), dwell_sec=dwell_sec, boot_id=boot_id)
 
 
 def _box(values: list) -> tuple[float, float, float, float]:
@@ -83,6 +88,13 @@ class SqliteStateStore:
         with self._lock:
             self._db.execute('PRAGMA journal_mode=WAL')
             self._db.executescript(_SCHEMA)
+            columns = {row[1] for row in self._db.execute('PRAGMA table_info(events)')}
+            if 'boot_id' not in columns:        # a file from before rows kept their boot
+                try:
+                    self._db.execute('ALTER TABLE events ADD COLUMN boot_id TEXT')
+                except sqlite3.OperationalError as exc:
+                    if 'duplicate column' not in str(exc):      # another program opening it just added it
+                        raise
         log.info('Object states are kept in %s', self.path)
 
     def append(self, records: Sequence[StateRecord]) -> None:
@@ -91,14 +103,16 @@ class SqliteStateStore:
             return
         rows = [_row_of(r) for r in records]
         with self._lock, self._db:          # the `with self._db` commits, or rolls everything back on an error
-            self._db.executemany(f'INSERT INTO events ({_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', rows)
+            self._db.executemany(f'INSERT INTO events ({_COLUMNS}) VALUES ({_BLANKS})', rows)
 
-    def latest_states(self, since: float) -> dict[str, StateRecord]:
-        """Per object, its newest appeared / removed / snapshot row at or after `since`."""
+    def latest_states(self, since: float, *, boot_id: str | None = None) -> dict[str, StateRecord]:
+        """Per object, its newest appeared / removed / snapshot row at or after `since`. With `boot_id`, only that
+        boot's."""
+        one = ' AND boot_id = ?' if boot_id is not None else ''
         with self._lock:
             rows = self._db.execute(
-                f'SELECT {_COLUMNS} FROM events WHERE type != ? AND ts >= ? ORDER BY ts, id',
-                ('moved', since)).fetchall()
+                f'SELECT {_COLUMNS} FROM events WHERE type != ? AND ts >= ?{one} ORDER BY ts, id',
+                ('moved', since, boot_id) if boot_id is not None else ('moved', since)).fetchall()
         return {record.label: record for record in map(_record_of, rows)}      # later rows replace earlier ones
 
     def changes(self, since: float, *, label: str | None = None) -> list[StateRecord]:

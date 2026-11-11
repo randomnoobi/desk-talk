@@ -9,6 +9,29 @@ import pytest
 from desktalk.adapters.storage import SqliteStateStore
 from tests.contracts.state_store_contract import StateStoreContract, a_record
 
+# The table as it was before rows kept the boot they were saved in
+OLD_SCHEMA = """
+CREATE TABLE events (
+    id         INTEGER PRIMARY KEY,
+    ts         REAL NOT NULL,
+    timezone   TEXT NOT NULL,
+    device_id  TEXT NOT NULL,
+    type       TEXT NOT NULL CHECK (type IN ('appeared', 'removed', 'moved', 'snapshot')),
+    object     TEXT NOT NULL,
+    prev_state TEXT NOT NULL,
+    new_state  TEXT NOT NULL,
+    conf_avg   REAL,
+    bbox       TEXT,
+    dwell_sec  REAL
+);
+CREATE INDEX events_object_ts ON events (object, ts);
+CREATE INDEX events_ts ON events (ts);
+CREATE TRIGGER events_no_update BEFORE UPDATE ON events
+BEGIN SELECT RAISE(ABORT, 'events is append-only'); END;
+CREATE TRIGGER events_no_delete BEFORE DELETE ON events
+BEGIN SELECT RAISE(ABORT, 'events is append-only'); END;
+"""
+
 
 class TestSqliteStateStore(StateStoreContract):
     @pytest.fixture
@@ -48,6 +71,28 @@ class TestSqliteStateStore(StateStoreContract):
             assert second.changes(0.0) == rows
         finally:
             second.close()
+
+    def test_a_database_from_before_boot_ids_still_opens(self, tmp_path):
+        """A Pi updated from an older version keeps its file: its rows come back with no boot, and new rows get one."""
+        path = tmp_path / 'states.sqlite'
+        raw = sqlite3.connect(path)
+        raw.executescript(OLD_SCHEMA)
+        raw.execute("INSERT INTO events (ts, timezone, device_id, type, object, prev_state, new_state) "
+                    "VALUES (100.0, '+08:00', 'pi-1', 'appeared', 'bottle', 'ABSENT', 'PRESENT')")
+        raw.commit()
+        raw.close()
+        store = SqliteStateStore(path)
+        try:
+            [old] = store.changes(0.0)
+            assert old.boot_id is None
+            new = a_record(101.0, label='cup', boot_id='boot-a')
+            store.append([new])
+            assert store.changes(0.0) == [old, new]
+            assert store.latest_states(0.0, boot_id='boot-a') == {'cup': new}
+        finally:
+            store.close()
+        # Opening it again doesn't try to add the column twice
+        SqliteStateStore(path).close()
 
     def test_wal_mode_is_on(self, store, tmp_path):
         raw = sqlite3.connect(tmp_path / 'states.sqlite')
