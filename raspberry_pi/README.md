@@ -341,8 +341,10 @@ bash ~/desk-talk/raspberry_pi/update.sh
 ```
 
 It runs `git pull`, fills in the camera's device numbers again, since a kernel update can change them, rebuilds, and
-clears old images. Docker's saved build steps are cleared only when the card runs low, since a whole new build takes 12 to
-21 minutes. It takes `--dry-run` too. Your data, the pairing key, the models, `.env` and your own settings (`raspberry_pi/mine/settings.mine.yaml`) stay. If `git pull` couldn't run
+clears old images. Then it cuts Docker's saved build steps down to `INSTALL_KEEP_BUILD_STEPS_MB` in `.env` (20 GB), the
+ones not used for longest first, so they can't take over the card over many updates. A whole build's steps take about
+13 GB and are kept, since a whole new build takes 12 to 21 minutes; if the card runs low they are all cleared. It takes
+`--dry-run` too. Your data, the pairing key, the models, `.env` and your own settings (`raspberry_pi/mine/settings.mine.yaml`) stay. If `git pull` couldn't run
 (no internet, or a file you changed by hand), it says so and rebuilds with the code that's there.
 
 All three containers are rebuilt together, so they are always the same version.
@@ -356,6 +358,57 @@ ran `server.py` is no longer needed.
 
 If that computer wrote its pairing key into `data/logs/` (older versions did), see
 [README.md](../README.md#on-a-computer-for-working-on-it) for the command that clears those lines and makes a new key.
+
+## Backups
+
+A backup copies the Pi's data folder (the event log, habits, to-dos, desk rules, story pictures and the object state
+database) and its own settings (`raspberry_pi/.env` and `raspberry_pi/mine/`) to your Mac. It stays on your Mac. The
+logs aren't copied unless you add `--with-logs`.
+
+**Back up now**, **on your Mac**, from the repo folder (the app must be running on the Pi):
+
+```bash
+bash scripts/backup_pi.sh
+```
+
+It reaches the Pi with `ssh pi` (a key login, never a password), saves into `~/DeskTalkBackups/<day>-<time>/`, keeps the
+newest 8 backups and says what it saved. `--host`, `--to` and `--keep` change those; the top of the script lists them all.
+The database is copied with SQLite's own backup inside the app container, so the copy is whole even while the app writes.
+
+**Every week**, **on your Mac**:
+
+```bash
+bash scripts/install_weekly_backup.sh                                # every Sunday at 10:00
+bash scripts/install_weekly_backup.sh --day wednesday --time 21:30
+bash scripts/install_weekly_backup.sh --uninstall                    # stop it
+```
+
+It runs while you're logged in; a Mac that was asleep then runs it when it wakes. What each run printed goes to
+`~/DeskTalkBackups/backup.log`. To try it at once: `launchctl kickstart gui/$(id -u)/local.desktalk.weekly-backup`.
+
+**Restore** a backup (on a new card, run the install command first):
+
+1. **On the Pi**, stop the containers and remove the database's side files, which belong to the database being replaced:
+
+   ```bash
+   cd ~/desk-talk/raspberry_pi && docker compose stop
+   rm -f ../data/object_states.sqlite-wal ../data/object_states.sqlite-shm
+   ```
+
+2. **On your Mac**, copy the backup back over (pick the folder you want):
+
+   ```bash
+   rsync -a ~/DeskTalkBackups/2026-11-10-100000/ pi:desk-talk/
+   ```
+
+3. **On the Pi**, start them again: `cd ~/desk-talk/raspberry_pi && docker compose up -d`.
+
+### What keeps the SD card from filling up
+
+The camera's pictures are kept in memory, not on the card. The app's log files have a size limit (`logging` in
+`config/settings.yaml`), the event log keeps 30 days (`event_log.keep_days`), the story pictures a set number per
+object (`object_story`), and the object state database 30 days (`object_states.keep_days`). Docker's saved build
+steps are cut down after each update (see [Updating](#updating)).
 
 ## Choosing the model
 

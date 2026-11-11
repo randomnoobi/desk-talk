@@ -153,3 +153,30 @@ def test_object_states_are_saved_every_minute(tmp_path):
     rig = DeskRig(tmp_path)
     [job] = [j for j in rig.app.scheduler.status() if j['name'] == 'save object states']
     assert job['every_sec'] == rig.config.object_states.snapshot_every_sec
+
+
+def test_object_states_older_than_keep_days_are_deleted_on_a_timer(tmp_path):
+    config = changed(desk_config(tmp_path), 'object_states', keep_days=1)
+    rig = DeskRig(tmp_path, config=config)
+    rig.watch(settle_sec(rig), CUP_FAR)
+    assert [row.type for row in rig.app.state_store.changes(0) if row.label == 'cup'] == ['appeared']
+    [job] = [j for j in rig.app.scheduler.status() if j['name'] == 'delete old object states']
+    assert job['every_sec'] == config.object_states.prune_every_min * 60
+    saved = rig.app.state_store.changes(0)
+    rig.tick(rig.app.scheduler, after=0.5 * 24 * 3600)              # half a day: still kept
+    assert rig.app.state_store.changes(0) == saved
+    rig.tick(rig.app.scheduler, after=0.6 * 24 * 3600)              # more than a day: deleted
+    assert rig.app.state_store.changes(0) == []
+
+
+def test_no_object_states_are_deleted_while_the_clock_cant_be_right(tmp_path):
+    """A clock before clock.earliest_believable_date is plainly wrong, so the timer deletes nothing by date until
+    it is right, as for the event log's days."""
+    config = changed(desk_config(tmp_path), 'object_states', keep_days=1)
+    config = changed(config, 'clock', earliest_believable_date=date(2100, 1, 1))
+    rig = DeskRig(tmp_path, config=config)
+    rig.watch(settle_sec(rig), CUP_FAR)
+    saved = rig.app.state_store.changes(0)
+    assert saved
+    rig.tick(rig.app.scheduler, after=2 * 24 * 3600)
+    assert rig.app.state_store.changes(0) == saved

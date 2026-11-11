@@ -206,6 +206,9 @@ class ObjectStatesSettings(_Section):
     clock_synced_file: Path | None
     boot_id_file: Path | None
     database: Path
+    keep_days: PositiveInt
+    prune_every_min: PositiveNumber
+    unsaved_most: PositiveInt
     trace_pictures: PositiveInt
 
     def steady_rules(self, steady: float) -> tuple[float, float, float]:

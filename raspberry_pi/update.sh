@@ -4,7 +4,10 @@
 #     bash raspberry_pi/update.sh            get the new code, fill in what a new kernel may have changed, and rebuild
 #     bash raspberry_pi/update.sh --dry-run  say what it would do, and change nothing
 #
-# It needs no sudo once Docker works without it. Everything but the `git pull` is install.sh --update.
+# It needs no sudo once Docker works without it. Everything but the `git pull` and the last step is install.sh --update.
+# The last step, after a good build only: Docker's saved build steps are cut down to INSTALL_KEEP_BUILD_STEPS_MB (in
+# .env, or .env.example), the ones not used for longest first, so they can't take over the SD card over many updates.
+# It never touches the images or volumes the containers use.
 set -euo pipefail
 
 # All inside a function: git pull may change this very file, and bash reads a script as it goes.
@@ -24,7 +27,34 @@ main() {
     elif ! git -C "$root" pull --ff-only; then
         echo "git pull didn't work (no internet, or files changed by hand), so this uses the code that's here."
     fi
-    exec bash "$here/install.sh" --update "$@"
+    bash "$here/install.sh" --update "$@"         # stops here if the build failed (set -e)
+    keep_build_steps_under "$here" "$dry_run"
 }
 
-main "$@"
+# A value from .env, or from .env.example when .env doesn't have it.
+setting() {
+    local file
+    for file in "$1/.env" "$1/.env.example"; do
+        if [ -f "$file" ] && grep -q "^$2=" "$file"; then
+            awk -v name="$2" 'index($0, name "=") == 1 { print substr($0, length(name) + 2); exit }' "$file"
+            return
+        fi
+    done
+    echo "$2 is missing from $1/.env.example." >&2
+    return 1
+}
+
+keep_build_steps_under() {
+    local most
+    most=$(setting "$1" INSTALL_KEEP_BUILD_STEPS_MB)
+    if [ "$2" = 1 ]; then
+        echo "Would keep Docker's saved build steps under $most MB: docker builder prune -af --max-used-space ${most}mb"
+        return
+    fi
+    echo "Keeping Docker's saved build steps under $most MB ..."
+    if ! docker builder prune -af --max-used-space "${most}mb" > /dev/null 2>&1; then
+        echo "They couldn't be cut down. It's safe to go on: the new containers are running."
+    fi
+}
+
+{ main "$@"; exit; }       # one line, read whole before it runs, so a git pull that changed this file can't matter
