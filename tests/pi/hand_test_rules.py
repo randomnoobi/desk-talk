@@ -20,9 +20,8 @@ from tests.pi.on_the_pi import (
 DOCKER_TIME = re.compile(r'^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d+))?Z\s')
 PICTURES_TAKEN = re.compile(r'Pictures taken (\d+),')
 NO_JOURNAL_ACCESS = ('insufficient permissions', 'not seeing messages')
-# What the app writes when it won't believe its clock: before clock.earliest_believable_date, say. The two lines
-# on_the_pi.py knows are checked too, so either way counts.
-UNBELIEVABLE_CLOCK_WORDS = ('earliest_believable_date', "The clock can't be right")    # check: task D
+# What the app writes when its clock is before clock.earliest_believable_date (ClockCheck, desktalk/runtime/clock.py)
+UNBELIEVABLE_CLOCK_WORDS = 'before clock.earliest_believable_date'
 
 
 class StatusLine(NamedTuple):
@@ -106,10 +105,10 @@ def wifi_dropped(journal: str, device: str) -> bool | None:
 
 
 def card_level(free_mb: float, *, warning_mb: float, serious_mb: float) -> str:
-    """'fine', 'warning' or 'serious': which alert free space on the SD card should give."""
+    """'ok', 'warning' or 'serious': the level the app's card check (/api/health → checks → card) should give."""
     if free_mb < serious_mb:
         return 'serious'
-    return 'warning' if free_mb < warning_mb else 'fine'
+    return 'warning' if free_mb < warning_mb else 'ok'
 
 
 def warned_since(events: Iterable[Mapping[str, Any]], keys: set[str], *, since: float) -> Mapping[str, Any] | None:
@@ -121,8 +120,13 @@ def warned_since(events: Iterable[Mapping[str, Any]], keys: set[str], *, since: 
 def clock_distrusted(log: str) -> bool:
     """Did the app say, at this start, that it doesn't believe its clock: behind its own saved states, not set from the
     internet, or plainly wrong? Then it must have picked up nothing from before."""
-    return (clock_behind_warning_sec(log) is not None or clock_not_synced_at_this_start(log)
-            or any(words in _before_this_restore(log) for words in UNBELIEVABLE_CLOCK_WORDS))
+    return clock_behind_warning_sec(log) is not None or clock_not_synced_at_this_start(log) or (
+        said_clock_unbelievable(log))
+
+
+def said_clock_unbelievable(log: str) -> bool:
+    """Did the app say, at this start, that its clock is before clock.earliest_believable_date?"""
+    return UNBELIEVABLE_CLOCK_WORDS in _before_this_restore(log)
 
 
 def stuck_jobs(health: Mapping[str, Any] | None, *, slack_sec: float) -> list[str]:

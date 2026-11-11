@@ -207,7 +207,8 @@ minutes, touch nothing, wait 3 minutes.
 become healthy by themselves; the event log and the object-state database can be read; saved states don't come back
 until the clock has synced; nothing is deleted. The journal now keeps the boot before: **on the Pi**,
 `journalctl -b -1 -n 30 --no-pager` shows the last lines before the cut, with no shut-down in them.
-<!-- check: task A (desktalk.service, persistent journal, and its own -m pi check that the unit is enabled) -->
+`tests/pi/test_real_pi_start_on_boot.py` checks the service and the journal settings on their own, at any time:
+`DESKTALK_PI=pi uv run pytest -m pi -v -rs tests/pi/test_real_pi_start_on_boot.py`.
 
 **Afterwards**, **on your Mac**, within 30 minutes of plugging it in:
 
@@ -238,7 +239,7 @@ Result: _date, passed / failed, notes_
 
 **What should happen**: nothing restarts; the camera keeps taking pictures all the way through and the event log keeps
 filling; Lens speaks on the speaker with no network; a cloud server, if linked, gets the events later, its tries waiting
-longer each time, with a random part. <!-- check: task B (jittered retries and the breaker in the uploaders) -->
+longer each time, with a random part (`cloud.retry_jitter`).
 
 **Afterwards**, **on your Mac**:
 
@@ -271,8 +272,9 @@ start with no camera, then a start with it back.
 
 **What should happen**: with the cable out, the app and the detector start and are healthy; the camera container keeps
 starting and stopping, its log saying "Camera problem: the Pi camera module could not start ... Check the ribbon
-cable"; Lens says the camera isn't sending pictures, on the speaker and on the page.
-<!-- check: task C (a warning for no pictures when none came since the start: today's "lost" warning only comes after pictures had arrived) -->
+cable"; `/api/health` → `checks` → `camera` says `serious`; after 2 minutes (`lens.wait_before_saying_sec.no_pictures`)
+Lens says "I haven't had a single picture from the Raspberry Pi camera since I started", on the speaker and on the
+page.
 With the cable back, everything starts by itself and pictures come. Nothing is deleted.
 
 **Afterwards**, **on your Mac**, with the cable out (step 4):
@@ -301,18 +303,19 @@ your home folder, never in the data folder.
 
 **Steps**:
 
-1. **On the Pi**, fill the card until 1500 MB are free (under the 2000 MB warning level):
-   <!-- check: task C (the SD card levels, 2000 MB and 500 MB) -->
+1. **On the Pi**, fill the card until 1500 MB are free (under the 2000 MB warning level,
+   `health_checks.card_warning_below_mb`; the serious one is `card_serious_below_mb`, 500 MB):
 
    ```bash
    free=$(df -m --output=avail ~ | tail -n 1); want=1500; fallocate -l $(( free - want ))M ~/desktalk-fill && df -h ~
    ```
 
    `df` should show about 1.5 GB free.
-2. Wait 5 minutes and listen: Lens should say the card is nearly full. <!-- check: task C (how often the card is measured, and the words) -->
+2. Wait a minute and listen: Lens looks at the card every 2 seconds (`lens.check_every_sec`) and should say "The SD
+   card is getting full, only ... MB left."
 3. **On your Mac**, the check below.
-4. To try the serious level too, **on the Pi**, make the file again for 400 MB free (under 500 MB), wait 5 minutes and
-   run the check again:
+4. To try the serious level too, **on the Pi**, make the file again for 400 MB free (under 500 MB), wait a minute
+   ("The SD card is almost full") and run the check again:
 
    ```bash
    rm ~/desktalk-fill; free=$(df -m --output=avail ~ | tail -n 1); want=400; fallocate -l $(( free - want ))M ~/desktalk-fill && df -h ~
@@ -322,8 +325,11 @@ your home folder, never in the data folder.
    Then **on your Mac**, `DESKTALK_PI=pi uv run pytest -m pi -v -rs -k ready_for_a_hand_test`.
 
 **What should happen**: a spoken warning (and a more serious one under 500 MB); nothing restarts; pictures keep coming
-and the event log keeps filling; nothing of yours is deleted to make room: the caps on the data folder go by their own
-size and age, not by the card's free space. <!-- check: task E (the data-folder and object-state caps) -->
+and the event log keeps filling; nothing of yours is deleted to make room: the caps on the data folder go by age and
+count, not by the card's free space (`event_log.keep_days` and `object_states.keep_days`, 30 days; the story pictures,
+a set number per object). If the card fills right up, the object states that can't be saved wait in memory, at most
+`object_states.unsaved_most` (5000). The check also reads `/api/health` → `checks` → `card`, which should say
+`warning` (or `serious`) by the app's own levels.
 
 **Afterwards**, **on your Mac**, after step 2 (and step 4):
 
@@ -337,7 +343,8 @@ Result: _date, passed / failed, notes_
 
 The Pi's flag that says its clock was set from the internet (`/run/systemd/timesync/synchronized`) stays there when
 network time is turned off, so this shows the app catching a clock that is plainly wrong by itself: before
-`clock.earliest_believable_date`. <!-- check: task D (the setting's name and that it's treated like a clock that hasn't synced) -->
+`clock.earliest_believable_date` (2025-01-01). A clock before it counts as one that hasn't synced, and deletes
+nothing by date.
 
 **Setup**: the note, then a cup on the desk for 2 minutes, so there are fresh saved states that mustn't come back.
 
@@ -364,11 +371,12 @@ network time is turned off, so this shows the app catching a clock that is plain
    Then wait until `timedatectl` says `System clock synchronized: yes` (a minute or so).
 5. **On your Mac**, the second check below.
 
-**What should happen**: with the clock in 1990, the app says its clock can't be right and picks up no saved states;
-nothing is deleted by date; the camera and the detector don't restart; pictures keep coming; the timed jobs (saving
-states, compacting the event log) keep running, as they go by the time since boot. What happens in 1990 is saved as
-1990, marked with `clock_synced` false, so the event log gets a `1990-01-01` day.
-<!-- check: task D (the app's words for a clock it doesn't believe, clock_synced per row, monotonic scheduler, the event log's day while the clock is wrong) -->
+**What should happen**: with the clock in 1990, the app's log says "The clock says 1990-01-01, before
+clock.earliest_believable_date (2025-01-01), so it must be wrong" and it picks up no saved states; nothing is deleted
+by date (the event log's old days and old object states stay); the camera and the detector don't restart; pictures
+keep coming; the timed jobs (saving states, compacting the event log) keep running, as they go by the time since boot.
+What happens in 1990 is saved as 1990: each object state saved then is marked with `clock_synced` false, and the
+event log gets a `1990-01-01` day.
 After the undo, everything carries on with nothing restarted. The `1990-01-01` day can stay, or **on the Pi**,
 `rm -r ~/desk-talk/data/events/1990-01-01` takes it away.
 

@@ -15,6 +15,7 @@ from tests.pi.hand_test_rules import (
     note_problem,
     parse_status_lines,
     restarted_since,
+    said_clock_unbelievable,
     stuck_jobs,
     warned_since,
     wifi_dropped,
@@ -127,7 +128,7 @@ def test_a_journal_the_user_cannot_read_cannot_say():
 
 
 # ── SD card levels ──
-@pytest.mark.parametrize(('free_mb', 'level'), [(5000, 'fine'), (2000, 'fine'), (1999, 'warning'), (500, 'warning'),
+@pytest.mark.parametrize(('free_mb', 'level'), [(5000, 'ok'), (2000, 'ok'), (1999, 'warning'), (500, 'warning'),
                                                  (499, 'serious')])
 def test_free_space_falls_into_a_level(free_mb, level):
     assert card_level(free_mb, warning_mb=2000, serious_mb=500) == level
@@ -168,6 +169,32 @@ def test_a_warning_from_an_earlier_start_does_not_count():
                      'about 30 seconds',
                      PICKED_UP.format(s='00', n=0), PICKED_UP.format(s='30', n=2)])
     assert clock_distrusted(log) is False
+
+
+# The words of ClockCheck in desktalk/runtime/clock.py
+UNBELIEVABLE = ('1990-01-01 12:00:01 WARNING desktalk.runtime.clock: The clock says 1990-01-01, before '
+                'clock.earliest_believable_date (2025-01-01), so it must be wrong: nothing is deleted by date, and '
+                'saved object states are not picked up, until it is right')
+
+
+def test_a_clock_before_the_earliest_believable_date_is_not_believed():
+    log = '\n'.join([PICKED_UP.format(s='00', n=2), UNBELIEVABLE,
+                     PICKED_UP.format(s='02', n=0).replace('2026-11-10 21:00', '1990-01-01 12:00')])
+    assert clock_distrusted(log) is True
+    assert said_clock_unbelievable(log) is True
+
+
+def test_a_clock_only_behind_the_saved_states_was_not_called_unbelievable():
+    log = '\n'.join([PICKED_UP.format(s='00', n=2),
+                     '1990-01-01 12:00:01 WARNING desktalk.app: The clock is behind the newest saved object state by '
+                     'about 1130000000 seconds',
+                     PICKED_UP.format(s='02', n=0).replace('2026-11-10 21:00', '1990-01-01 12:00')])
+    assert said_clock_unbelievable(log) is False
+
+
+def test_an_unbelievable_clock_at_an_earlier_start_does_not_count():
+    log = '\n'.join([UNBELIEVABLE, PICKED_UP.format(s='00', n=0), PICKED_UP.format(s='30', n=2)])
+    assert said_clock_unbelievable(log) is False
 
 
 # ── timed jobs ──

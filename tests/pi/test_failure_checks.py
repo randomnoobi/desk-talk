@@ -29,6 +29,7 @@ from tests.pi.hand_test_rules import (
     note_problem,
     parse_status_lines,
     restarted_since,
+    said_clock_unbelievable,
     stuck_jobs,
     warned_since,
     wifi_dropped,
@@ -65,12 +66,13 @@ WARNING_WAIT_SEC = 600              # how long Lens has to say a warning, from w
 SCHEDULER_SLACK_SEC = 60            # a job's next run may be this much past its interval
 BELIEVABLE_YEAR = 2000              # the Pi's clock is "set back" before this year
 CAMERA_COULD_NOT_START = 'the Pi camera module could not start'      # raspberry_pi/camera/cameras.py
-# Lens's warning keys (the `key` of a camera event in /api/log/events?types=camera)
-CAMERA_WARNING_KEYS = {'lost', 'pi_camera', 'camera'}                # check: task C (the camera-pictures measure)
-CARD_WARNING_KEYS = {'pi_card', 'pi_disk', 'sd_card', 'disk'}       # check: task C (the SD card measure)
-# The meeting's starting numbers for the SD card. They should come from the settings once task C names them.
-CARD_WARNING_FREE_MB = 2000                                         # check: task C
-CARD_SERIOUS_FREE_MB = 500                                          # check: task C
+# Lens's warning keys (the `key` of a camera event in /api/log/events?types=camera): desktalk/core/vision/
+# camera_problems.py says `lost` once pictures stop, `no_pictures` when none came since the app started
+CAMERA_WARNING_KEYS = {'lost', 'no_pictures'}
+CARD_WARNING_KEYS = {'card'}                    # Lens's watch on the health check of the same name
+# The SD card's levels, as the app on the Pi has them (settings → health_checks)
+CARD_LEVELS = ('import json; from desktalk.config import load_config; h = load_config().health_checks; '
+               'print(json.dumps([h.card_warning_below_mb, h.card_serious_below_mb]))')
 
 
 def _just_did(name: str, what: str) -> None:
@@ -117,6 +119,16 @@ def _lens_warning(pi: Pi, keys: set[str], *, since: float) -> dict[str, Any] | N
         answer = pi.get('/api/log/events?types=camera&limit=50') or {'events': []}
         return warned_since(answer['events'], keys, since=since)
     return wait_for(f'Lens saying one of {sorted(keys)}', said, timeout=WARNING_WAIT_SEC, every=10)
+
+
+def _health_checks(pi: Pi) -> dict[str, dict[str, Any]]:
+    """/api/health → checks: {key: {level, value, unit}}, one per health check (desktalk/core/health/checks.py).
+    Skips when the app on the Pi is older than the health checks."""
+    checks = (pi.get('/api/health') or {}).get('checks')
+    if not checks:
+        pytest.skip("The app on the Pi has no health checks in /api/health yet. Update it first, on the Pi: "
+                    'bash ~/desk-talk/raspberry_pi/update.sh')
+    return checks
 
 
 def _wait_until_healthy(pi: Pi, services: tuple[str, ...]) -> None:
@@ -227,6 +239,8 @@ def test_with_the_camera_cable_out(pi: Pi):
         "the camera's log doesn't say it couldn't start the camera module"
     assert pi.health()['camera'] != 'healthy', 'the camera container says it is healthy with no camera'
     assert (pi.get('/api/health') or {'camera': {}})['camera'].get('connected') is False
+    camera = _health_checks(pi)['camera']
+    assert camera['level'] == 'serious', f"/api/health → checks → camera says {camera['level']} with no camera"
     booted_at = _pi_now(pi) - pi.uptime_sec()
     if _lens_warning(pi, CAMERA_WARNING_KEYS, since=booted_at) is None:
         pytest.skip('All good except the warning: it is quiet hours on the Pi, so Lens says nothing. Do it by day.')
@@ -244,8 +258,14 @@ def test_with_the_card_filled(pi: Pi, request: pytest.FixtureRequest):
     _just_did(CARD_FILLED, 'fill the SD card with a big file')
     note = _note(pi, request)
     free_mb = int(pi.run(f'df -m --output=avail {shlex.quote(pi.data_folder())} | tail -n 1'))
-    level = card_level(free_mb, warning_mb=CARD_WARNING_FREE_MB, serious_mb=CARD_SERIOUS_FREE_MB)
-    assert level != 'fine', f'The card has {free_mb} MB free, above the warning level: the big file is not there'
+    checks = _health_checks(pi)
+    warning_mb, serious_mb = pi.in_app(CARD_LEVELS)
+    level = card_level(free_mb, warning_mb=warning_mb, serious_mb=serious_mb)
+    assert level != 'ok', (f'The card has {free_mb} MB free, above the warning level ({warning_mb} MB): the big file '
+                           'is not there')
+    card = checks['card']
+    assert card['level'] == level, (f"/api/health → checks → card says {card['level']} ({card['value']} MB free), "
+                                    f'but with {free_mb} MB free it should say {level}')
     pi.wait_until_healthy()
     restarted = restarted_since(note['containers'], _containers(pi))
     assert restarted == [], f'started again with the card nearly full: {restarted}'
@@ -275,13 +295,15 @@ def test_with_the_clock_set_to_1990(pi: Pi, request: pytest.FixtureRequest):
     if int(restored_at[:4]) >= BELIEVABLE_YEAR:
         pytest.skip(f'The app last started at {restored_at}, before the clock went back. Restart it ({STEPS}).')
     assert clock_distrusted(log), "The app started with the clock in 1990 and didn't say its clock is wrong"
+    assert said_clock_unbelievable(log), ("The app didn't say its clock is before clock.earliest_believable_date. "
+                                          'Is it older than that check? Update it first (update.sh)')
     assert restored_at_this_start(log) == 0, 'The app picked up saved states with its clock in 1990'
     others = {service: state for service, state in note['containers'].items() if service != 'app'}
     restarted = restarted_since(others, _containers(pi))
     assert restarted == [], f'started again when the clock went back: {restarted}'
     pictures_arriving(pi, timeout=60)
     # Jobs timed by the wall clock would wait 36 years for their next run
-    stuck = stuck_jobs(pi.get('/api/health'), slack_sec=SCHEDULER_SLACK_SEC)       # check: task D (monotonic)
+    stuck = stuck_jobs(pi.get('/api/health'), slack_sec=SCHEDULER_SLACK_SEC)
     assert stuck == [], f'these jobs will not run until the clock is right: {stuck}'
 
 

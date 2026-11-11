@@ -20,11 +20,11 @@ To try each of these on purpose and see that the Pi does the right thing, see "F
    bash scripts/pi_logs.sh
    ```
 
-   <!-- check: task A (script name, its options, and where it saves the file) -->
-
-   It saves the last hours of each container's log, the list of boots and the health of each container. **On the
-   Pi**, `bash ~/desk-talk/raspberry_pi/get_logs.sh` does the same and leaves the file on the Pi.
-   <!-- check: task A (get_logs.sh name and what it saves) -->
+   It reaches the Pi with `ssh pi` (`--host` for another name, `--hours` for more than the last 24) and saves one
+   `.tar.gz` into `pi_logs/` in the project folder: each container's log, the list of boots, `docker compose ps`, the
+   disk and the temperature. **On the Pi**, `bash ~/desk-talk/raspberry_pi/get_logs.sh` (or `get_logs.sh 6` for 6
+   hours) does the same and leaves the file in `~/desk-talk/pi_logs/`. See "Where the logs are" in
+   [raspberry_pi/README.md](../raspberry_pi/README.md).
 
 2. **On the Pi**, see what's running:
 
@@ -34,29 +34,33 @@ To try each of these on purpose and see that the Pi does the right thing, see "F
 
    All three (`app`, `camera`, `detector`) should say `healthy`. `Restarting` means it starts, fails and starts again.
 
-3. **On the Pi**, the health of each measure, as the app sees it (the camera, new detections, the detector, the
-   temperature, the SD card and the Pi's heartbeat):
+3. **On the Pi**, how the app sees each part:
 
    ```bash
    curl -s http://127.0.0.1:5000/api/health | python3 -m json.tool | less
    ```
 
-   <!-- check: task C (the names of the measures in /api/health) -->
+   Its `checks` part has each health check with a level (`ok`, `warning`, `serious`, or `unknown` when it can't
+   tell): `camera` (pictures arriving), `detections` (seconds since a picture last went through object detection),
+   `pi_temperature` (°C), `card` (MB free on the SD card) and `pi_heartbeat` (seconds since the camera program last
+   checked in). Its `pi` part has what the camera said lately, the detector's state and why.
 
-The logs live in the Pi's journal, which keeps at most 200 MB and nothing older than 30 days, and survives a restart.
-**On the Pi**, `journalctl -b -1` shows the boot before this one: the lines just before a power cut or a crash.
-<!-- check: task A (journal kept on the card, 200 MB, 30 days; containers log to the journal) -->
+The logs live in the Pi's journal, on the SD card, which keeps at most 200 MB and nothing older than 30 days, and
+survives a restart. The containers log there too, as `desktalk-app`, `desktalk-detector` and `desktalk-camera`. **On
+the Pi**, `journalctl -b -1` shows the boot before this one: the lines just before a power cut or a crash, and
+`journalctl -t desktalk-camera --since "2 hours ago"` the camera's lines, from containers a rebuild replaced too.
 
-Desk Talk itself starts with the Pi: `desktalk.service` runs `docker compose up -d` once Docker is up. **On the Pi**,
-`systemctl status desktalk.service` shows whether it ran. <!-- check: task A (unit name) -->
+Desk Talk itself starts with the Pi: `desktalk.service` runs `docker compose up -d` once Docker is up, with or without
+the network. **On the Pi**, `systemctl status desktalk` shows whether it ran ("active (exited)" means it started them),
+and `journalctl -u desktalk -b` what it said.
 
 ## The camera isn't seen, or keeps restarting
 
 **What you notice**
 
 - Lens says: "I lost the pictures from the Raspberry Pi camera." The live view on the page stops.
-- Or, after the Pi starts, there are no pictures at all, and Lens says the camera isn't sending any.
-  <!-- check: task C (the warning for no pictures from the camera, also when none came since the start) -->
+- Or, after the Pi starts, there are no pictures at all, and 2 minutes on (`lens.wait_before_saying_sec.no_pictures`)
+  Lens says: "I haven't had a single picture from the Raspberry Pi camera since I started."
 - `docker compose ps` shows `camera` as `Restarting` or `unhealthy`.
 
 **Check**
@@ -112,8 +116,9 @@ Desk Talk itself starts with the Pi: `desktalk.service` runs `docker compose up 
 **What you notice**
 
 - Lens says: "The Raspberry Pi isn't finding the objects right now." The live view still works.
-- Or Lens says nothing new has been found for a while, though the camera is sending pictures: the detector is so busy
-  it never answers. <!-- check: task C (the "no new detections" warning, after 300 s, and its words) -->
+- Or Lens says: "The camera is on, but no picture has been through object detection for 5 minutes": the camera is
+  sending pictures, but the detector is so busy it never answers (or stuck). After 15 minutes it says it again, more
+  firmly (`health_checks.no_detections_warning_sec` and `no_detections_serious_sec`).
 - Objects you put on the desk don't show up under "On the desk".
 
 **Check**
@@ -138,13 +143,13 @@ Desk Talk itself starts with the Pi: `desktalk.service` runs `docker compose up 
 **Fix**
 
 - **Off**: **on the Pi**, `cd ~/desk-talk/raspberry_pi && docker compose up -d`. The camera goes back to it by
-  itself once it's ready. "The detector has no model yet" or `/health` saying `error`: see "The detector container is
+  itself once it's ready: after 3 failures in a row (`pi.detector.failures_before_pause`) it stops asking for a while,
+  5 seconds at first and longer each time up to a minute, with a random part, and asks the detector's `/health` every
+  10 seconds meanwhile. "The detector has no model yet" or `/health` saying `error`: see "The detector container is
   down" in [raspberry_pi/README.md](../raspberry_pi/README.md).
 - **Busy all the time**: give it less to do. **On the Pi**, in `raspberry_pi/mine/settings.mine.yaml`, a smaller
   picture size (`pi.detector.image_size`) or fewer pictures a second (`pi.fps`), then
-  `cd ~/desk-talk/raspberry_pi && docker compose restart app camera`. After many failures in a row the camera stops
-  asking for a while, then tries again, waiting a little longer each time (with a random part, so it doesn't try
-  at the same moment as the app). <!-- check: task B (jittered waits and the breaker in the camera's detector client) -->
+  `cd ~/desk-talk/raspberry_pi && docker compose restart app camera`.
 
 **When to replace hardware**
 
@@ -154,8 +159,9 @@ Never for this alone. If it only happens when the Pi is hot, fix the cooling.
 
 **What you notice**
 
-- Lens says the SD card is nearly full: a warning under 2000 MB free, and a more serious one under 500 MB.
-  <!-- check: task C (the SD card measure, its levels and its words) -->
+- Lens says "The SD card is getting full, only ... MB left" under 2000 MB free, and "The SD card is almost full"
+  under 500 MB (`health_checks.card_warning_below_mb` and `card_serious_below_mb`). `/api/health` → `checks` →
+  `card` has the number.
 - Later, if nothing is done: saving fails, and the container logs say "No space left on device".
 
 **Check**
@@ -182,7 +188,7 @@ Docker's saved build steps (`Build Cache` in `docker system df`) are usually the
 
 **Fix**
 
-1. **On your Mac**, make a backup first: `bash scripts/backup_pi.sh`. <!-- check: task E (script name) -->
+1. **On your Mac**, make a backup first: `bash scripts/backup_pi.sh` (the app must be running on the Pi).
 2. **On the Pi**, clear Docker's saved build steps and old images. Nothing of yours is in them; the next rebuild just
    takes longer (12 to 21 minutes):
 
@@ -190,10 +196,11 @@ Docker's saved build steps (`Build Cache` in `docker system df`) are usually the
    docker builder prune -f && docker image prune -f
    ```
 
-   `update.sh` does this after each rebuild, keeping a set amount. <!-- check: task E (update.sh prunes the build cache, and the setting for how much it keeps) -->
+   `update.sh` also cuts them down after each rebuild, to `INSTALL_KEEP_BUILD_STEPS_MB` in `raspberry_pi/.env`
+   (20 GB), and clears them all if the card runs low.
 3. The journal keeps itself under 200 MB, the event log keeps `event_log.keep_days` (30) days, and the object-state
-   database keeps a set number of days. <!-- check: task E (the object-state database cap and its setting) -->
-   If the data folder is still big, look at what `du` showed before deleting anything, and ask first.
+   database `object_states.keep_days` (30) days. If the data folder is still big, look at what `du` showed before
+   deleting anything, and ask first.
 4. Something else on the Pi using the room (a big download, a file you copied there): delete it.
 
 The pictures themselves are kept in the Pi's memory, not on the card, so they never fill it.
@@ -235,8 +242,8 @@ card is wearing out.
 
 **Fix**
 
-1. **Back up now, while it still reads.** **On your Mac**: `bash scripts/backup_pi.sh`.
-   <!-- check: task E (script name; that it copies the database through SQLite's backup) -->
+1. **Back up now, while it still reads.** **On your Mac**: `bash scripts/backup_pi.sh`. It copies the database with
+   SQLite's own backup inside the app container, so the app must still be running.
 2. The Pi repairs small problems by itself at boot (`fsck.repair=yes` in its boot settings). **On the Pi**,
    `sudo reboot`, and check again.
 3. Still read-only, or the Pi won't start: repair the card on another computer. A Mac can't repair the Pi's kind of
@@ -259,7 +266,6 @@ one sold for "high endurance".
 You need a new card (32 GB or more), a card reader for your Mac, and the latest backup.
 
 1. **On your Mac**, the latest backup, if the old card still reads: `bash scripts/backup_pi.sh`.
-   <!-- check: task E (script name) -->
 2. **On your Mac**, write Raspberry Pi OS to the new card with Raspberry Pi Imager: Raspberry Pi 5, Raspberry Pi OS
    (64-bit; Lite is enough). In its settings:
    - the same name as before (the `HostName` for `pi` in your Mac's `~/.ssh/config`, without `.local`),
@@ -281,38 +287,42 @@ You need a new card (32 GB or more), a card reader for your Mac, and the latest 
    sudo apt install -y git && git clone https://github.com/randomnoobi/desk-talk ~/desk-talk && bash ~/desk-talk/raspberry_pi/install.sh
    ```
 
-   It installs Docker, the start-on-boot service and the journal settings, fetches the model and starts the three
-   containers. If it says the Pi needs a restart, **on the Pi**, `sudo reboot`.
-   <!-- check: task A (install.sh installs and enables desktalk.service and the journald file) -->
+   It installs Docker, switches on `desktalk.service` (start on boot) and keeps the journal on the card
+   (`/etc/systemd/journald.conf.d/60-desktalk.conf`), fetches the model and starts the three containers. If it says
+   the Pi needs a restart, **on the Pi**, `sudo reboot`.
 6. Restore the backup: the next part.
 7. **On your Mac**, check it: `DESKTALK_PI=pi uv run pytest -m pi -v -rs -k ready_for_a_hand_test`.
-8. **On your Mac**, the weekly backup keeps working with no change, as long as the name stays the same.
-   <!-- check: task E (the launchd job uses `ssh pi`) -->
+8. **On your Mac**, the weekly backup keeps working with no change, as long as `ssh pi` reaches the new card (step 4
+   took its new key).
 
 ## Restoring from a backup
 
-A backup is a dated folder on your Mac with the Pi's data folder (`data/`: the event log, the object states, habits,
-to-dos) and your own settings (`settings.mine.yaml`). `scripts/backup_pi.sh` makes one every week, and keeps the last
-few. <!-- check: task E (where the backups are kept, the folder names inside one, and how many are kept) -->
+A backup is a folder on your Mac, `~/DeskTalkBackups/<day>-<time>/` (like `2026-11-10-100000`), laid out like the
+repo on the Pi: `data/` (the event log, the object states, habits, to-dos, desk rules, story pictures),
+`raspberry_pi/.env` and `raspberry_pi/mine/` (your own settings). `bash scripts/backup_pi.sh` makes one and keeps the
+newest 8; `bash scripts/install_weekly_backup.sh` runs it every Sunday at 10:00. The steps are the same as in
+"Backups" in [raspberry_pi/README.md](../raspberry_pi/README.md).
 
 The pairing key and the models aren't in it: `install.sh` makes a new key and fetches the model.
 
 1. **On your Mac**, pick the backup, the newest unless you want an older one:
 
    ```bash
-   ls <the backups folder>
+   ls ~/DeskTalkBackups
    ```
 
-2. **On the Pi**, stop the containers, and put the current data folder aside (nothing is deleted):
+2. **On the Pi**, stop the containers and remove the database's side files, which belong to the database being
+   replaced:
 
    ```bash
-   cd ~/desk-talk/raspberry_pi && docker compose stop && mv ~/desk-talk/data ~/desk-talk/data.before-restore-$(date +%F)
+   cd ~/desk-talk/raspberry_pi && docker compose stop
+   rm -f ../data/object_states.sqlite-wal ../data/object_states.sqlite-shm
    ```
 
-3. **On your Mac**, copy the backup to the Pi (put the backup's folder in place of `<backup>`):
+3. **On your Mac**, copy the backup back over (put the folder you picked in place of `2026-11-10-100000`):
 
    ```bash
-   rsync -a "<backup>/data/" pi:desk-talk/data/ && scp "<backup>/settings.mine.yaml" pi:desk-talk/raspberry_pi/mine/settings.mine.yaml
+   rsync -a ~/DeskTalkBackups/2026-11-10-100000/ pi:desk-talk/
    ```
 
 4. **On the Pi**, start again:
@@ -324,8 +334,8 @@ The pairing key and the models aren't in it: `install.sh` makes a new key and fe
 5. **On your Mac**, check: `DESKTALK_PI=pi uv run pytest -m pi -v -rs -k ready_for_a_hand_test`. Open the page and
    see your to-dos and habits.
 
-Objects on the desk start over after a restore (the saved states are from another boot), which is expected. Once it
-all works, the folder put aside can go: **on the Pi**, `rm -r ~/desk-talk/data.before-restore-*`.
+Objects on the desk start over after a restore onto a new card (the saved states are from another boot, and its clock
+may not have synced yet), which is expected.
 
 ## The clock is wrong after a power cut
 
@@ -338,14 +348,15 @@ all works, the folder put aside can go: **on the Pi**, `rm -r ~/desk-talk/data.b
 **Why**
 
 The Pi 5 has a clock chip, but without its battery it forgets the time when the power goes. Until it reaches the
-internet, it starts from about the time it last shut down. See [CLOCK.md](CLOCK.md) for the battery.
-<!-- check: task D (docs/CLOCK.md exists and says what to buy) -->
+internet, it starts from about the time it last shut down. See [CLOCK.md](CLOCK.md) for the battery and which one
+to buy.
 
-While the clock hasn't been set from the internet, or is plainly wrong (before `clock.earliest_believable_date`), the
-app picks up only what this boot saved, marks each saved row with `clock_synced` false, and deletes nothing by date.
-Timed jobs go by the time since boot, so a clock jump doesn't hold them up. Once the clock is right everything carries
-on; nothing needs a restart.
-<!-- check: task D (clock.earliest_believable_date, clock_synced per row, no prune while wrong, monotonic scheduler) -->
+While the clock hasn't been set from the internet, or is plainly wrong (before `clock.earliest_believable_date`,
+2025-01-01), the app picks up only the object states this boot saved, and marks each object state it saves with
+`clock_synced` false. A plainly wrong clock also deletes nothing by date (no old event-log days, no old object
+states), and the app's log says "The clock says 1990-01-01, before clock.earliest_believable_date ...". Timed jobs go
+by the time since boot, so a clock jump doesn't hold them up. Once the clock is right everything carries on; nothing
+needs a restart.
 
 **Check**
 
@@ -367,14 +378,15 @@ timedatectl
 **When to replace hardware**
 
 If power cuts are common where the Pi lives, or it often starts with no internet, fit the clock battery (the J5
-connector), as [CLOCK.md](CLOCK.md) says. <!-- check: task D -->
+connector), as [CLOCK.md](CLOCK.md) says.
 
 ## The Pi is too hot
 
 **What you notice**
 
-- Lens says "The Raspberry Pi is running hot (75°C), so it may slow down." at 75 °C, and a more serious warning at
-  80 °C. <!-- check: task C (the serious level at 80 °C and its words) -->
+- Lens says "The Raspberry Pi is running hot (75°C), so it may slow down." at 75 °C, and "The Raspberry Pi is far too
+  hot (80°C) and is slowing itself down to cool off." at 80 °C (`pi.hot_warning_c` and `pi.hot_serious_c`). The
+  camera program sends the temperature every 30 seconds (`pi.heartbeat_every_sec`), even when no pictures go out.
 - Or "The Raspberry Pi is slowing itself down because it's too hot."
 - Detection gets slower: more `busy` in the camera's status line.
 
