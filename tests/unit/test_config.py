@@ -664,3 +664,9 @@ def test_the_trace_settings_that_moved_to_object_story_keep_your_own_values(proj
 def test_a_moved_setting_set_in_both_places_keeps_the_new_one(project):
     write_local(project, 'dev:\n  trace_photos_kept: 9\nobject_story:\n  timed_photos_kept: 4\n')
     assert load_config(root=project, environ={}).object_story.timed_photos_kept == 4
+
+
+def test_a_room_serious_level_above_its_warning_level_is_refused(project):
+    write_local(project, 'health_checks:\n  room_serious_below_mb: 400\n')
+    with pytest.raises(ConfigError, match='room_serious_below_mb'):
+        load_config(root=project, environ={})
