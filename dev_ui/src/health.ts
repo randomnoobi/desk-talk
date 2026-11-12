@@ -60,7 +60,8 @@ const LEVELS: Record<CheckLevel, Level> = { ok: 'ok', warning: 'warn', serious: 
 /** The health checks, in order, with their names on the tab. */
 const CHECK_NAMES: [keyof Health['checks'], string][] = [
   ['camera', 'camera pictures'], ['detections', 'new detections'], ['pi_temperature', 'Pi temperature'],
-  ['card', 'free space on the card'], ['pi_heartbeat', 'Pi heartbeat'],
+  ['card', 'free space where history is saved'], ['card_rest', 'free space on the rest of the card'],
+  ['saving', 'saving history'], ['pi_heartbeat', 'Pi heartbeat'],
 ]
 
 function checkValue(c: HealthCheck): string {

@@ -31,6 +31,13 @@ services:
       # How others reach the app: the Pi's real name and the port opened below. The app can't see them from in here.
       PUBLIC_ADDRESS: ${PUBLIC_NAME:-desktalk.local}:${APP_HOST_PORT:-5000}
       OUTSIDE_PORT: ${APP_HOST_PORT:-5000}
+      # Is the data folder Desk Talk's own room on the SD card (raspberry_pi/data_room.sh)? install.sh writes yes or no.
+      # With yes, start.sh looks for this file in it. If it's missing the room isn't mounted, and the data folder is just
+      # an empty folder on the card: the app then saves nothing there, writes to the folder in memory below instead,
+      # and says so.
+      DATA_ROOM: ${DATA_ROOM_ON:-no}
+      DATA_ROOM_MARKER: ${DATA_ROOM_MARKER:-.desktalk-data-room}
+      MEMORY_DATA_FOLDER: /memory-data
     ports:
       - "${APP_HOST_PORT:-5000}:${APP_PORT:-5000}"                  # the one door: phones and computers on your Wi-Fi come in here
     volumes:
@@ -49,6 +56,8 @@ services:
       - ${CLOCK_SYNC_FOLDER:-/run/systemd/timesync}:/run/timesync:ro
     device_cgroup_rules:
       - c ${SOUND_DEVICE_MAJOR:-116}:* rw               # read and write sound devices, but not make new ones
+    tmpfs:                                              # only used when the room is missing; gone with a restart
+      - /memory-data:size=${APP_MEMORY_DATA_SIZE:-200m},uid=${PI_USER_ID:-1000},gid=${PI_GROUP_ID:-1000},mode=0700
     mem_limit: ${APP_MEMORY_LIMIT:-1g}                      # over this, Docker stops it and starts it again ...
     memswap_limit: ${APP_MEMORY_LIMIT:-1g}                  # ... instead of it swapping and slowing the whole Pi down
     init: true                                          # so a hung program can be ended (raspberry_pi/health_check.py)

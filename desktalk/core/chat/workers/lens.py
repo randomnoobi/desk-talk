@@ -26,7 +26,16 @@ from typing import Any
 from desktalk.config import LensSettings, PiSettings
 from desktalk.config.prompts import ByCamera, LensPrompts
 from desktalk.core.habits.preferences import quiet_hours_now
-from desktalk.domain import LENS, CameraNotice, CheckLevel, DetectorState, HealthMeasure, PiHealth, UploadInfo
+from desktalk.domain import (
+    LENS,
+    CameraNotice,
+    CheckLevel,
+    DetectorState,
+    HealthMeasure,
+    PiHealth,
+    Saving,
+    UploadInfo,
+)
 from desktalk.ports import (
     CameraHealthView,
     Clock,
@@ -111,13 +120,15 @@ class Lens:
     def __init__(self, health: CameraHealthView, source: FrameSource, layout: DeskLayout, prefs: Preferences,
                  notifier: Notifier, bus: EventBus, photos: PhotoTaker, settings: LensSettings,
                  pi_settings: PiSettings, *, clock: Clock, checks: HealthCheck, prompts: LensPrompts,
-                 preview_chars: int, phone: PhoneCamera | None = None, pi_uploads: PiUploads | None = None):
+                 preview_chars: int, phone: PhoneCamera | None = None, pi_uploads: PiUploads | None = None,
+                 saving: Saving = Saving.PLAIN):
         """How long the Pi must be hot (or its clock off) before Lens says so: lens.wait_before_saying_sec.pi;
         how long its own detection must be off: lens.wait_before_saying_sec.pi_detector. The other health checks
         are said as soon as `checks` finds them (their settings already say how long or how little). `prompts`:
         config/prompts.yaml → lens (what Lens says about the Pi, and its photos' label). `preview_chars`:
         settings → logging.preview_chars, the longest line quoted in the log. `clock` gives the local hour, for
-        quiet hours."""
+        quiet hours. `saving`: where the data is kept (Saving: Desk Talk's own
+        space on the Pi's card changes what the card check says, and no space at all is said too)."""
         self._health = health
         self._source = source
         self._layout = layout
@@ -131,6 +142,7 @@ class Lens:
         self._checks = checks
         self._words = prompts
         self._preview_chars = preview_chars
+        self._saving = saving
         self._phone = phone
         self._pi = pi_uploads
         self._detector_reason_logged: str | None = None
@@ -143,7 +155,10 @@ class Lens:
                             _PiWatch('pi_clock', fixed.pi_clock, wait=waits.pi, **timing),
                             _PiWatch('pi_detector', fixed.pi_detector, wait=waits.pi_detector, **timing),
                             _PiWatch('detections', fixed.detections, wait=0, **timing),
-                            _PiWatch('card', self._for_camera(fixed.card), wait=0, **timing),
+                            _PiWatch('card', fixed.room if saving is Saving.ROOM else self._for_camera(fixed.card),
+                                     wait=0, **timing),
+                            _PiWatch('card_rest', fixed.card_rest, wait=0, **timing),
+                            _PiWatch('saving', fixed.saving, wait=0, **timing),
                             _PiWatch('pi_heartbeat', fixed.pi_heartbeat, wait=0, **timing)]
 
     def tick(self, now: float) -> float:
@@ -176,6 +191,8 @@ class Lens:
             'pi_detector': (self._detector_text(info), 1) if info else None,
             'detections': self._detections_text(measures.get('detections')),
             'card': self._card_text(measures.get('card')),
+            'card_rest': self._card_rest_text(measures.get('card_rest')),
+            'saving': self._saving_text(measures.get('saving')),
             'pi_heartbeat': self._heartbeat_text(measures.get('pi_heartbeat')) if connected else None,
         }
         off_on_purpose = info is not None and info.detector is DetectorState.OFF and (
@@ -217,8 +234,28 @@ class Lens:
             return None
         if m.level not in RANK or m.value is None:
             return '', 0
-        words = self._card_full if m.level is CheckLevel.SERIOUS else self._card_low
+        if self._saving is Saving.ROOM:
+            words = self._words.room_full if m.level is CheckLevel.SERIOUS else self._words.room_low
+        else:
+            words = self._card_full if m.level is CheckLevel.SERIOUS else self._card_low
         return words.format(free_mb=m.value), RANK[m.level]
+
+    def _card_rest_text(self, m: HealthMeasure | None) -> tuple[str, int] | None:
+        """The rest of the SD card (only with Desk Talk's own space): saving goes on, but updates and logs need room."""
+        if m is None or m.level is CheckLevel.UNKNOWN:
+            return None
+        if m.level not in RANK or m.value is None:
+            return '', 0
+        words = self._words.card_rest_full if m.level is CheckLevel.SERIOUS else self._words.card_rest_low
+        return words.format(free_mb=m.value), RANK[m.level]
+
+    def _saving_text(self, m: HealthMeasure | None) -> tuple[str, int] | None:
+        """Desk Talk's own space is missing, so nothing is being kept."""
+        if m is None or m.level is CheckLevel.UNKNOWN:
+            return None
+        if m.level is CheckLevel.SERIOUS:
+            return self._words.saving_off, RANK[m.level]
+        return '', 0
 
     def _for_camera(self, words: ByCamera) -> str:
         """The card's wording for this camera: the app runs on the Pi when the Pi is the camera (its SD card), and

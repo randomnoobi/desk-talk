@@ -409,10 +409,81 @@ It runs while you're logged in; a Mac that was asleep then runs it when it wakes
 
 ### What keeps the SD card from filling up
 
-The camera's pictures are kept in memory, not on the card. The app's log files have a size limit (`logging` in
+Desk Talk's own space has a fixed size (see below), so it can't fill the card. The camera's pictures are kept in memory, not on the card. The app's log files have a size limit (`logging` in
 `config/settings.yaml`), the event log keeps 30 days (`event_log.keep_days`), the story pictures a set number per
 object (`object_story`), and the object state database 30 days (`object_states.keep_days`). Docker's saved build
 steps are cut down after each update (see [Updating](#updating)).
+
+### Desk Talk's own space on the SD card
+
+`install.sh` gives Desk Talk a space of its own on the SD card: one big file, `~/desk-talk/data.img`, that the Pi
+mounts as the `data/` folder. Everything Desk Talk saves goes in it (the event log, habits, to-dos, desk rules, story
+pictures and the object state database). Because the space has a fixed size, nothing else on the card can take it
+away: if the rest of the card fills up, Desk Talk keeps saving. The card's own system, the updates and the Pi's logs
+stay outside it, so they keep their own room.
+
+- **How big:** `DATA_ROOM_SIZE_MB` in `raspberry_pi/.env`, 8192 (8 GB) to begin with. If the card is too small for
+  that, `install.sh` makes it smaller, but never under `DATA_ROOM_SMALLEST_MB` (1024). Under that it stops, changes
+  nothing, and says how much room to free.
+- **Making it bigger:** raise `DATA_ROOM_SIZE_MB` and run `install.sh` again. The space grows and your history stays.
+  It can't shrink: if you lower the number, `install.sh` says so and leaves it as it is.
+- **The old folder:** the first time, `install.sh` copies your `data/` folder into the space, checks the copy, and keeps
+  the old one next to it as `data.before-room-<date-time>` (for example `data.before-room-2026-11-11-103015`). Nothing is
+  deleted. When you're happy the history is all there, **on the Pi**, delete it to get its room back:
+
+  ```bash
+  rm -r ~/desk-talk/data.before-room-2026-11-11-103015
+  ```
+
+- **Three checks:** in `/api/health` → `checks`. Lens speaks up only when one of them is in trouble:
+  - `card` is the free space in Desk Talk's own space (levels `room_warning_below_mb` and `room_serious_below_mb` in
+    `health_checks`).
+  - `card_rest` is the free space on the rest of the SD card (`card_rest_warning_below_mb` and
+    `card_rest_serious_below_mb`). When it runs low, Lens says Desk Talk is still saving, but updates and the Pi's
+    logs need room.
+  - `saving` says whether history is being saved. It's `ok` normally and `serious` when the space is missing and
+    nothing is saved (see below).
+- **Updates:** `update.sh` leaves the space alone. On a Pi that doesn't have one yet, it asks for sudo once to make it.
+  Making it bigger needs sudo, so `update.sh` doesn't: it says to run `install.sh` for that.
+- **Trims:** Raspberry Pi OS trims its disks once a week (`fstrim`), which would give part of the space back to the
+  card. Trims are switched off for the space each time it's mounted; if that doesn't work, `install.sh` says so.
+- **A move cut short:** if the power goes while `install.sh` moves your history into the space, nothing is lost: the
+  history is in the old folder and in a checked copy, `data.img.new`. Until the move is finished Desk Talk saves
+  nothing; run `install.sh` again **on the Pi** and it finishes the move. Don't delete `data.img.new` by hand unless
+  `install.sh` says to.
+
+### If Desk Talk's space is missing
+
+If the space isn't mounted at start-up, Desk Talk doesn't write to the SD card's bare `data/` folder. It runs with
+nothing saved, keeping a little in memory, and Lens says so. Pictures and warnings still work. History from before is
+safe in `data.img`. To bring the space back:
+
+1. **On the Pi**, see why it didn't mount:
+
+   ```bash
+   systemctl status desktalk-data-room
+   ```
+
+2. **On the Pi**, if the status mentions a problem with the file, check it (this fixes small errors, and asks before
+   anything bigger):
+
+   ```bash
+   sudo e2fsck -f ~/desk-talk/data.img
+   ```
+
+3. **On the Pi**, mount it:
+
+   ```bash
+   sudo systemctl start desktalk-data-room
+   ```
+
+4. **On the Pi**, restart the app so it saves into the space again:
+
+   ```bash
+   cd ~/desk-talk/raspberry_pi && docker compose restart app
+   ```
+
+Never delete `data.img` to "start fresh": it holds the history. `install.sh` won't make a new one over it.
 
 ## Choosing the model
 

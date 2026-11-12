@@ -100,7 +100,7 @@ def test_settings_give_the_page_its_numbers(rig):
     assert settings['health'] == config.dev.health.model_dump()
     assert settings['trace_pictures'] == config.object_states.trace_pictures
     assert settings['sql_max_rows'] == config.dev.sql_max_rows
-    assert settings['data_folder'] == str(config.resolve(config.storage.folder))
+    assert settings['data_folder'] == str(rig.app.data_folder) == str(rig.tmp_path / 'run' / config.storage.folder)
     assert settings['object_states']['window_pictures'] == config.object_states.window_pictures
     assert set(settings['object_states']) == {'on_confidence', 'off_confidence', 'appear_sec', 'gone_sec',
                                               'window_pictures', 'vote_share'}

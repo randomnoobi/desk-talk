@@ -3,10 +3,17 @@
 #
 #     bash raspberry_pi/install.sh [--tz Europe/Paris] [--server <address>]
 #
-# Safe to run again: it only changes what needs it, and never touches the data folder, the pairing key, the models or
-# your own settings (raspberry_pi/mine/settings.mine.yaml). It also sets the Pi up to start Desk Talk by itself when it
-# boots (raspberry_pi/systemd/desktalk.service), and to keep its journal, the containers' logs too, on the SD card
-# (raspberry_pi/systemd/journald-desktalk.conf).
+# Safe to run again: it only changes what needs it, and never touches the pairing key, the models or your own settings
+# (raspberry_pi/mine/settings.mine.yaml). It also sets the Pi up to start Desk Talk by itself when it boots
+# (raspberry_pi/systemd/desktalk.service), and to keep its journal, the containers' logs too, on the SD card
+# (raspberry_pi/systemd/journald-desktalk.conf). And it gives Desk Talk its own room on the SD card, a file of a fixed
+# size mounted at the data folder, so other files filling the card can't stop the history being saved
+# (raspberry_pi/data_room.sh, raspberry_pi/systemd/desktalk-data-room.service). The first time, it stops the app and
+# the camera, and data_room.sh copies the data folder into the room, checks the copy and keeps the old folder, renamed.
+# After that the data folder is left as it is. While the move runs, DATA_ROOM_ON in .env already says yes, so if a power
+# cut stops it part-way, the app starts at the next boot saving nothing, never a new history on the empty folder the room
+# mounts at. Such a move cut short (data_room.sh status: leftover) is finished before anything else: until it is, the
+# app saves nothing, the Pi isn't linked to a cloud server, and no folder is made where the room mounts.
 #
 #   --tz <zone>        your time zone (normally taken from the Pi)
 #   --server <address> link this Pi to your cloud server, using the code from its website. The Pi needs no cloud.
@@ -19,8 +26,9 @@
 #   --reboot           restart the Pi at the end, if it needs that (it says so either way)
 #   --dry-run          do the same checks, say what it would do, and change nothing
 #   --update           what update.sh uses: skip Docker's install and the parts that need sudo. Only on a Pi that
-#                      doesn't keep its journal on the card or start Desk Talk on boot yet does it ask for sudo, once,
-#                      to set those up: the containers log to the journal, so without it their logs would be lost.
+#                      doesn't keep its journal on the card, start Desk Talk on boot or give it its own room yet does it
+#                      ask for sudo, once, to set those up: the containers log to the journal, so without it their logs
+#                      would be lost.
 #
 # Its numbers are in the "install script" part of .env.example.
 # It exits with 1 if the install failed, and with 3 if the install worked but the link to the cloud server didn't.
@@ -39,6 +47,7 @@ MEMORY_FLAGS="cgroup_enable=memory cgroup_memory=1"
 OLD_PROJECT=desktalk-detector               # the detector's own compose project, from before all three ran together
 OLD_CAMERA_SERVICE=desk-talk-camera         # the camera program outside Docker, from before that
 IMAGES="desktalk-app:local desktalk-camera:local desktalk-detector:local"     # the ones compose.yaml builds
+WRITERS="app camera"                        # the app, and the camera that depends on it: stopped while the room is made
 LINK_FAILED_EXIT=3
 
 TZ_FLAG=""
@@ -59,13 +68,39 @@ TEMP_FOLDER=""
 SERVICE_CHANGED=0                           # desktalk.service was installed or changed in this run
 SETUP_SUDO=0                                # an update run may use sudo, to set up what an older install didn't
 START_FAILED=0
+ROOM=""                                     # what data_room.sh status said: room, elsewhere, unmounted, leftover or none
+ROOM_STOPPED=""                             # why data_room.sh make stopped, in its own words
+ROOM_FAILED=0                               # the room wasn't made or mounted: it stops at the end, with ROOM_STOPPED
+ROOM_ON=""                                  # the DATA_ROOM_ON this run wrote (or in a dry run would have)
+ROOM_ON_CHANGED=0                           # DATA_ROOM_ON in .env changed in this call of put_room_on
+WRITERS_STOPPED=0                           # the app and the camera are stopped: if this stops, they start again
 
 say() { printf '%s\n' "$*"; }
 would() { say "Would $*"; }
 later() { LATER="$LATER$*"$'\n'; }
 stop() { say "Stopping: $*" >&2; exit 1; }
-leave() { if [ -n "$TEMP_FOLDER" ]; then rm -rf "$TEMP_FOLDER"; fi; }
+# On the way out, however it ends: Ctrl-C, the SSH line dropping, or a stop. Desk Talk is never left stopped.
+leave() {
+    if [ "$WRITERS_STOPPED" = 1 ]; then
+        WRITERS_STOPPED=0
+        trap '' HUP INT TERM                # nothing cuts this short
+        say "This stopped while the app and the camera were stopped, so they are being started again, as they were ..." || true
+        # DATA_ROOM_ON said yes for the move: the app gets what's there now (a move that didn't happen means no).
+        put_room_on "$(room_on_for "$(data_room_ status 2> /dev/null || printf '%s' "$ROOM")")" 2> /dev/null || true
+        if compose_ up -d --no-build; then
+            say "The containers are started again." || true
+        else
+            say "The containers couldn't be started again. Start them with: cd $(quoted "$PI_DIR") && docker compose up -d --no-build" || true
+        fi
+    fi
+    if [ -n "$TEMP_FOLDER" ]; then
+        rm -rf "$TEMP_FOLDER"
+    fi
+}
 trap leave EXIT
+trap 'exit 129' HUP                         # each by way of leave
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 usage() {
     say "Usage: [DESKTALK_LINK_CODE=<code>] install.sh [--tz <zone>] [--server <address>] [--keep-hostname] [--reboot] [--dry-run]"
@@ -301,12 +336,13 @@ this_pis_zone() {
     fi
 }
 
+# Each step is checked, as set -e doesn't stop a function called inside an if or an && list: a failed write leaves .env
+# as it was and fails.
 set_env() {
     local new
-    new=$(mktemp "$ENV_FILE.XXXXXX")
-    NEW_VALUE=$2 awk -v name="$1" -F= '$1 == name { print name "=" ENVIRON["NEW_VALUE"]; next } { print }' "$ENV_FILE" > "$new"
-    chmod 644 "$new"
-    mv "$new" "$ENV_FILE"
+    new=$(mktemp "$ENV_FILE.XXXXXX") || return 1
+    NEW_VALUE=$2 awk -v name="$1" -F= '$1 == name { print name "=" ENVIRON["NEW_VALUE"]; next } { print }' "$ENV_FILE" \
+        > "$new" && chmod 644 "$new" && mv "$new" "$ENV_FILE" || { rm -f -- "$new"; return 1; }
 }
 
 # Copy .env.example's names that .env lacks, each with the comment above it. What's already in .env stays.
@@ -656,6 +692,10 @@ sudo_to_set_up() {
     local what=""
     [ -f "$(setting INSTALL_SERVICE_FILE)" ] || what="start Desk Talk by itself when it boots"
     [ -f "$(setting INSTALL_JOURNALD_FILE)" ] || what="${what:+$what, and to }keep its logs on the SD card (Raspberry Pi OS keeps them in memory only, so they'd be lost at a restart or a power cut)"
+    case "$ROOM" in
+        none|unmounted) what="${what:+$what, and to }give Desk Talk its own room on the SD card (so other files filling the card can't stop its history being saved)" ;;
+        leftover) what="${what:+$what, and to }finish moving Desk Talk's history into its own room on the SD card (a move that was cut short)" ;;
+    esac
     [ -n "$what" ] || return 0
     if [ "$DRY_RUN" = 1 ]; then
         would "ask for sudo once, to set this Pi up to $what."
@@ -894,6 +934,12 @@ place_model() {
 data_folder() {
     local wanted
     wanted=$(setting DESKTALK_DATA)
+    # The mount point of a room that isn't mounted (or of a move cut short) is data_room.sh's (and its unit's) to make,
+    # as root's, so the app can't write a second history on the card there.
+    if [ "$ROOM" = unmounted ] || [ "$ROOM" = leftover ]; then
+        (cd "$PI_DIR" && if [ -d "$wanted" ]; then cd -- "$wanted" && pwd; else printf '%s\n' "$wanted"; fi)
+        return
+    fi
     (cd "$PI_DIR" && mkdir -p -- "$wanted" && cd -- "$wanted" && pwd) \
         || stop "the data folder $wanted (DESKTALK_DATA in raspberry_pi/.env, from raspberry_pi) can't be made."
 }
@@ -908,6 +954,14 @@ link_to_cloud() {
         return
     fi
     local said data status=0
+    # The link is saved in the data folder: with the room not mounted that's the bare mount point, and a file there
+    # would stop the room being mounted at all (it's never mounted over files).
+    if [ "$ROOM" = unmounted ] || [ "$ROOM" = leftover ]; then
+        LINK_FAILED=1
+        say "This Pi is NOT linked to $SERVER yet: Desk Talk's own room on the SD card isn't mounted, and the link is saved in it. The rest still installs, and tries to mount it."
+        later "This Pi is NOT linked to $SERVER, because Desk Talk's own room on the SD card wasn't mounted (see above). Once it is, get a new code from the website and run: DESKTALK_LINK_CODE=<the code> bash $(quoted "$PI_DIR/install.sh") --server $(quoted "$SERVER")"
+        return
+    fi
     data=$(data_folder)
     say "Linking this Pi to $SERVER ..."
     said=$(DESKTALK_LINK_CODE=$CODE python3 "$PI_DIR/link_pi.py" --data "$data" --server "$SERVER" --name "$PI_NAME" 2>&1) || status=$?
@@ -944,6 +998,181 @@ start_containers() {
     clear_old_builds
 }
 
+# ── Desk Talk's own room on the SD card ──
+
+data_room_() {
+    bash "$PI_DIR/data_room.sh" "$@"
+}
+
+# What the app is told (DATA_ROOM_ON in .env, which start.sh reads): yes while the room's file is there, mounted or not,
+# or a move into it was cut short. A room that isn't mounted may hold the only history, so the app then saves nothing,
+# and says so, rather than start a second history beside it.
+room_on_for() {
+    case "$1" in
+        room|unmounted|leftover) printf yes ;;
+        *) printf no ;;
+    esac
+}
+
+# Writes DATA_ROOM_ON, or in a dry run says it would, unless it's already that. ROOM_ON_CHANGED says if it did.
+put_room_on() {
+    ROOM_ON_CHANGED=0
+    [ "${ROOM_ON:-$(setting DATA_ROOM_ON)}" != "$1" ] || return 0
+    if [ "$DRY_RUN" = 1 ]; then
+        would "write DATA_ROOM_ON=$1 in .env."
+    else
+        if ! set_env DATA_ROOM_ON "$1"; then
+            ROOM_STOPPED="DATA_ROOM_ON=$1 couldn't be written in .env (is the SD card full?), so Desk Talk's own room wasn't set up."
+            say "$ROOM_STOPPED" >&2
+            return 1
+        fi
+        say "Wrote DATA_ROOM_ON=$1 in .env, for the app."
+    fi
+    ROOM_ON=$1                              # only once it's written, so a failed write is tried again
+    ROOM_ON_CHANGED=1
+}
+
+# Runs data_room.sh make (with --dry-run in a dry run, and any flags given), showing what it says as it goes. Its
+# IMPORTANT lines, what it left for lack of sudo, and where it kept the old data folder go in the closing notes too. If
+# it stops, its reason goes in ROOM_STOPPED.
+data_room_make() {
+    local said line code=0
+    make_temp_folder
+    said=$TEMP_FOLDER/data_room.txt
+    if [ "$DRY_RUN" = 1 ]; then
+        data_room_ make --dry-run "$@" 2>&1 | tee "$said" || code=$?
+    else
+        data_room_ make "$@" 2>&1 | tee "$said" || code=$?
+    fi
+    while IFS= read -r line; do
+        case "$line" in
+            "IMPORTANT: "*|"The old data folder is kept at "*|"Desk Talk's room needs sudo to "*) later "$line" ;;
+        esac
+    done < "$said"
+    [ "$code" = 0 ] && return 0
+    ROOM_STOPPED=$(sed -n 's/^Stopping: //p' "$said" | tail -n 1)
+    ROOM_STOPPED=${ROOM_STOPPED:-"data_room.sh didn't finish: its messages are above."}
+    return 1
+}
+
+# The containers that write in the data folder are stopped while the room is made or mounted, so nothing is written to
+# the old folder half-way. Answers 1 if they couldn't be.
+stop_the_writers() {
+    if [ "$DRY_RUN" = 1 ]; then
+        would "stop the app and the camera while the room is set up: docker compose stop $WRITERS"
+        return 0
+    fi
+    say "Stopping the app and the camera while Desk Talk's own room is set up ..."
+    WRITERS_STOPPED=1                       # from here, leave starts them again if this stops
+    # shellcheck disable=SC2086    # one name each
+    compose_ stop $WRITERS && return 0
+    ROOM_STOPPED="the app and the camera couldn't be stopped, so Desk Talk's own room wasn't set up."
+    return 1
+}
+
+# data_room.sh puts its service file in place when it makes or mounts the room. Once the room is there, a newer one from
+# git is put in place here, the way set_up_start_on_boot does it for desktalk.service.
+check_room_service() {
+    local text file unit on=1
+    file=$(setting INSTALL_DATA_ROOM_SERVICE_FILE)
+    unit=$(basename "$file")
+    text=$(data_room_ unit-text) || exit 1          # data_room.sh has said why
+    systemctl is-enabled --quiet "$unit" 2> /dev/null || on=0
+    if in_place "$text" "$file" && [ "$on" = 1 ]; then
+        return
+    fi
+    if [ "$UPDATE" = 1 ]; then
+        if [ -f "$file" ] && [ "$on" = 1 ]; then
+            later "Mounting Desk Talk's own room on boot isn't set up the way this version wants ($file). To set it up, run once: bash $(quoted "$PI_DIR/install.sh")"
+        else
+            later "IMPORTANT: Desk Talk's own room isn't set up to be mounted when the Pi boots ($unit), so after a restart the app would save nothing. To set it up, run once: bash $(quoted "$PI_DIR/install.sh")"
+        fi
+        return
+    fi
+    if [ "$DRY_RUN" = 1 ]; then
+        in_place "$text" "$file" || would "install the new $file, which mounts Desk Talk's own room when the Pi boots."
+        [ "$on" = 1 ] || would "switch on $unit, so the room is mounted when the Pi boots."
+        return
+    fi
+    if ! in_place "$text" "$file"; then
+        put_system_file "$text" "$file"
+        sudo systemctl daemon-reload
+        say "Installed the new $file, which mounts Desk Talk's own room when the Pi boots."
+    fi
+    if [ "$on" = 0 ]; then
+        if sudo systemctl enable "$unit"; then
+            say "Switched on $unit, so the room is mounted when the Pi boots."
+        else
+            later "IMPORTANT: systemd couldn't switch on $unit, so after a restart the app would save nothing. Try: sudo systemctl enable $unit"
+        fi
+    fi
+}
+
+# After the build: data_room.sh sizes the room so that a rebuild still has its room on the card. Once the room is there
+# this only checks it (and grows it if DATA_ROOM_SIZE_MB went up), with nothing stopped. An update that didn't ask for
+# sudo leaves what needs it (a grow) to install.sh, and says so.
+set_up_data_room() {
+    local after=$ROOM stopped=0 failed=0 flag=""
+    case "$ROOM" in
+        room)
+            if [ "$UPDATE" = 1 ] && [ "$SETUP_SUDO" = 0 ]; then
+                flag=--no-sudo
+            fi
+            if ! data_room_make ${flag:+"$flag"}; then
+                later "IMPORTANT: Desk Talk's own room couldn't be checked or grown: $ROOM_STOPPED It still works at the size it has."
+            fi
+            check_room_service ;;
+        elsewhere)
+            say "The data folder is on another disk than the SD card, so it gets no room of its own and is left as it is." ;;
+        none|unmounted|leftover)
+            if [ "$UPDATE" = 1 ] && [ "$SETUP_SUDO" = 0 ]; then
+                if [ "$ROOM" = none ]; then
+                    later "IMPORTANT: Desk Talk doesn't have its own room on the SD card yet, because sudo didn't work, so other files filling the card could stop its history being saved. To give it one, run once: bash $(quoted "$PI_DIR/install.sh")"
+                elif [ "$ROOM" = leftover ]; then
+                    later "IMPORTANT: a move of Desk Talk's history into its own room on the SD card was cut short, and finishing it needs sudo, which didn't work, so the app saves nothing. Your history is safe. To finish the move, run once: bash $(quoted "$PI_DIR/install.sh")"
+                else
+                    later "IMPORTANT: Desk Talk's own room on the SD card isn't mounted, because sudo didn't work, so the app saves nothing. To mount it, run once: bash $(quoted "$PI_DIR/install.sh")"
+                fi
+            elif [ "$DRY_RUN" = 0 ] && ! sudo -v; then
+                # Asked here, while Desk Talk still runs, so a password prompt can't keep it stopped.
+                later "IMPORTANT: Desk Talk doesn't have its own room on the SD card set up, because sudo didn't work, so the app and the camera weren't stopped for it. To set it up, run once: bash $(quoted "$PI_DIR/install.sh")"
+            else
+                stopped=1
+                # yes while it moves: if a power cut stops the move, the app starts saving nothing at the next boot,
+                # never a new history on the empty folder the room mounts at. Put right just below if it didn't happen.
+                if stop_the_writers && put_room_on yes && data_room_make; then
+                    after=room
+                else
+                    failed=1
+                fi
+                if [ "$DRY_RUN" = 0 ]; then
+                    after=$(data_room_ status 2> /dev/null) || after=$ROOM
+                fi
+            fi ;;
+    esac
+    # The containers get a DATA_ROOM_ON that changed, and those that were stopped start again, as they were.
+    put_room_on "$(room_on_for "$after")"
+    if [ "$ROOM_ON_CHANGED" = 1 ] || [ "$stopped" = 1 ]; then
+        if [ "$DRY_RUN" = 1 ]; then
+            would "start the containers again with it: docker compose up -d --no-build"
+        else
+            compose_ up -d --no-build || stop "the containers didn't start again. See why with: cd $(quoted "$PI_DIR") && docker compose logs"
+            WRITERS_STOPPED=0
+        fi
+    fi
+    # The rest of the install still runs (the model, starting on boot): it stops at the very end, in finish.
+    ROOM_FAILED=$failed
+}
+
+# After the closing notes, so what data_room.sh said is there to read.
+stop_if_the_room_failed() {
+    [ "$ROOM_FAILED" = 1 ] || return 0
+    if [ "$DRY_RUN" = 1 ]; then
+        stop "$ROOM_STOPPED"
+    fi
+    stop "$ROOM_STOPPED The containers are running again, as they were."
+}
+
 # After a good build only, so the card can't fill up over many updates. Old images always go. Docker's build steps stay
 # until the card runs low: measured on a Pi, clearing them after every build, even only the unused ones or down to a set
 # size, means each update takes 12 to 21 minutes, downloads PyTorch again and restarts the containers, even with no new
@@ -967,10 +1196,12 @@ finish() {
             say "The Pi would need a restart for its boot settings."
         fi
         say "This was a dry run: nothing was changed."
+        stop_if_the_room_failed
         return
     fi
     compose_ ps
     say "Open $(the_address "$PI_NAME") on a phone or computer on the same Wi-Fi."
+    stop_if_the_room_failed
     if [ "$REBOOT_NEEDED" = 1 ]; then
         if [ "$REBOOT_FLAG" = 1 ]; then
             say "Restarting the Pi now for its new boot settings. The containers start again by themselves."
@@ -1000,6 +1231,7 @@ main() {
     check_old_camera_program
     write_env
     make_my_settings
+    ROOM=$(data_room_ status) || exit 1     # a bad setting: data_room.sh has said why
     PI_NAME=$(short_hostname)
     if [ "$UPDATE" = 0 ]; then
         set_hostname
@@ -1013,7 +1245,9 @@ main() {
     find_docker
     set_up_systemd
     bring_down_old_setup
+    put_room_on "$(room_on_for "$ROOM")"     # before the build starts the app, so it never starts on the wrong one
     start_containers
+    set_up_data_room
     carry_old_models
     place_model
     try_start_on_boot

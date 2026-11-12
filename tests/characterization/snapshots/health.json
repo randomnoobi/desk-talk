@@ -24,6 +24,11 @@
         "unit": "str",
         "value": "number"
       },
+      "card_rest": {
+        "level": "str",
+        "unit": "str",
+        "value": "null"
+      },
       "detections": {
         "level": "str",
         "unit": "str",
@@ -35,6 +40,11 @@
         "value": "null"
       },
       "pi_temperature": {
+        "level": "str",
+        "unit": "str",
+        "value": "null"
+      },
+      "saving": {
         "level": "str",
         "unit": "str",
         "value": "null"

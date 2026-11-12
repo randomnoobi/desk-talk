@@ -667,6 +667,14 @@ lens:
     pi: The Raspberry Pi's SD card is almost full, only {free_mb:.0f} MB left. Soon nothing new can be saved. Please free some space now.
     phone: This computer's disk is almost full, only {free_mb:.0f} MB left. Soon nothing new can be saved. Please free some space now.
     webcam: This computer's disk is almost full, only {free_mb:.0f} MB left. Soon nothing new can be saved. Please free some space now.
+  # ...on the Pi, Desk Talk has its own fixed space on the SD card (these replace card_low and card_full for it)...
+  room_low:  Desk Talk's own space on the SD card is getting full, only {free_mb:.0f} MB left. Please free some space in it soon, or I can't save what I see.
+  room_full: Desk Talk's own space on the SD card is almost full, only {free_mb:.0f} MB left. Soon nothing new can be saved. Please free some space in it now.
+  # ...the rest of the SD card running low doesn't stop the saving, but updates and the Pi's own logs need room...
+  card_rest_low: The rest of the Raspberry Pi's SD card is getting full, only {free_mb:.0f} MB left. I'm still saving everything in Desk Talk's own space, but updates and the Pi's own logs need room too. Please free some space soon.
+  card_rest_full: The rest of the Raspberry Pi's SD card is almost full, only {free_mb:.0f} MB left. I'm still saving everything in Desk Talk's own space, but updates and the Pi's own logs can't get the room they need. Please free some space now.
+  # ...Desk Talk's space is missing, so nothing is kept...
+  saving_off: "Nothing is being saved right now, because Desk Talk's own space on the SD card is missing. What I see is lost when the Pi restarts. On the Pi, see \"If Desk Talk's space is missing\" in raspberry_pi/README.md."
   # ...pictures arriving, but none going through object detection...
   no_detections: The camera is on, but no picture has been through object detection for {minutes} minutes, so I can't tell what is on the desk. On the Pi, check that the detector is running (docker compose ps).
   no_detections_long: Still no object detection after {minutes} minutes. On the Pi, try starting the detector again (docker compose restart detector).
@@ -683,6 +691,9 @@ lens:
       pi: There's enough space on the Raspberry Pi's SD card again. Thanks!
       phone: There's enough space on this computer's disk again. Thanks!
       webcam: There's enough space on this computer's disk again. Thanks!
+    room: There's enough space in Desk Talk's own space again. Thanks!
+    card_rest: There's enough room on the rest of the SD card again. Thanks!
+    saving: Desk Talk's own space is back, and I'm saving again.
     pi_heartbeat: The Raspberry Pi's camera program is checking in again.
 
 # ── Lens's camera checks: what it says, and the app's camera panel ───
