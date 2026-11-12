@@ -224,6 +224,7 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'dev.too_many_waiting': ('count',),
     'dev.unknown_waiting': ('scenario_id',),
     'dev.cannot_fire': ('name', 'thing', 'where'),
+    'dev.pi_stats_unreachable': ('address', 'problem'),
     'dev.scenarios.drink_evidence': ('minutes',),
     'dev.scenarios.drink_text': ('minutes',),
 }
@@ -754,6 +755,7 @@ class DevWords(_Section):
     query_refused: str
     query_failed: str
     query_timed_out: str
+    pi_stats_unreachable: str
     not_built: str
     unknown_scenario: str
     countdown_out_of_range: str

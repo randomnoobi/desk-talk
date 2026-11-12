@@ -12,7 +12,7 @@ The desk right now is five small interfaces near the end of this file: LivePictu
 CharacterMemory and PhotoAlbum (desktalk/core/desk/ has one class for each). The last sections are what the
 web layer asks of the running app (desktalk/bootstrap.py → DeskTalk types its fields with these), and the
 developer page's tools (tests, smoothing, each object's trace, the database, the data folder, and the Demo tab's
-pretend warnings).
+pretend warnings). Then the system numbers (the Pi tab) and the cloud server.
 """
 
 from __future__ import annotations
@@ -39,6 +39,7 @@ from desktalk.domain import (
     Photo,
     Picture,
     QueryResult,
+    RawReading,
     RunStatus,
     SafetyNow,
     Scenario,
@@ -1197,6 +1198,39 @@ class ReminderSender(Protocol):
 class DemoCountdowns(DemoScenarios, PeriodicWorker, Protocol):
     """The Demo tab's pretend warnings as the app keeps them: what the web routes ask, and the background job that
     fires each one once its countdown is over (DeskTalk.demo)."""
+
+
+# ── The system numbers of the machine the app runs on (the developer page's Pi tab) ──
+@runtime_checkable
+class SystemStatsReader(Protocol):
+    """Reads Linux's own files (/proc, /sys) for the processor, memory, disks, network, sensors and programs
+    (desktalk/adapters/system/)."""
+
+    def read(self, now: float) -> RawReading:
+        """What the files say right now, with at=now. A file that's missing or can't be read leaves its numbers
+        empty (on a Mac: nearly everything): it never raises for that."""
+        ...
+
+
+@runtime_checkable
+class SystemStats(PeriodicWorker, Protocol):
+    """The background job that reads the numbers every system_stats.every_sec and keeps the last
+    system_stats.keep_min minutes of samples (desktalk/core/system/)."""
+
+    def history(self, since: float | None) -> dict[str, Any]:
+        """{collecting, every_sec, keep_min, info, samples}: the samples newer than `since` (all of them for
+        None), oldest first, each StatsSample.to_dict(). collecting is false when system_stats.enabled is off."""
+        ...
+
+
+@runtime_checkable
+class PiStatsLink(Protocol):
+    """The computer's line to the Pi's numbers, for the developer page on the computer (desktalk/adapters/dev/)."""
+
+    def fetch(self, since: float | None) -> dict[str, Any]:
+        """The Pi's GET /api/system/stats reply (SystemStats.history's shape). Raises StatsUnavailable, saying what
+        went wrong, when the Pi doesn't answer or doesn't send that shape."""
+        ...
 
 
 # ── The cloud server (optional) ────────────────────────────────────────

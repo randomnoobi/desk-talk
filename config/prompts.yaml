@@ -894,6 +894,8 @@ dev:
   # what SQLite said
   query_failed: "SQLite couldn't run that query: {reason}"
   query_timed_out: 'The query took longer than {seconds:g} seconds (dev.sql_timeout_sec), so it was stopped.'
+  # the Pi tab couldn't get the Pi's numbers: {address} is dev.pi_address, {problem} what went wrong
+  pi_stats_unreachable: "Couldn't get the Pi's numbers from {address}: {problem}. Is the Pi on, and on your Wi-Fi? If it goes by another name, set dev.pi_address."
   # /dev/ before `npm run build` has made the page
   not_built: "The developer page isn't built yet. In dev_ui/, run: npm install && npm run build"
   # the Demo tab (settings → dev.scenarios): a pretend warning that isn't in the list, or a countdown out of range
