@@ -801,6 +801,26 @@ def test_the_unit_repairs_only_safely_and_mounts_before_docker():
     assert not re.search(r'(?<!\$)\$(?!\$)', start.replace('$$', ''))                # systemd would fill in a lone $
 
 
+@pytest.mark.parametrize('folder', ['desk talk', 'my 100% "desk" $HOME\\talk'])
+def test_unit_text_is_the_unit_it_installs_and_changes_nothing(tmp_path, folder):
+    """install.sh compares it with the installed unit, to put a newer one from git in place once the room is there."""
+    pi = make_pi(tmp_path, folder)
+    before = pi.run('unit-text')
+    assert before.code == 0, before.out
+    changed_nothing(pi, before)
+    assert not sudo_calls(before) and not pi.unit_file.exists()
+    assert pi.run('make').code == 0
+    assert pi.run('unit-text').out == before.out == pi.unit_file.read_text(encoding='utf-8')
+
+
+def test_where_the_old_folder_went_starts_the_way_install_sh_looks_for(pi):
+    """install.sh keeps this line, and any line starting IMPORTANT:, for its closing notes."""
+    result = pi.run('make')
+    [old] = pi.old_folders()
+    [line] = [line for line in result.out.splitlines() if line.startswith('The old data folder is kept at ')]
+    assert str(old) in line and 'rm -rf' in line
+
+
 def test_the_settings_are_in_the_env_example_with_a_comment():
     lines = (PI / '.env.example').read_text(encoding='utf-8').splitlines()
     wanted = {'DATA_ROOM_SIZE_MB': '8192', 'DATA_ROOM_SMALLEST_MB': '1024', 'DATA_ROOM_FILE': '../data.img',

@@ -5,7 +5,8 @@
 #     bash raspberry_pi/update.sh --dry-run  say what it would do, and change nothing
 #
 # It needs no sudo on a Pi install.sh set up. On one an older install.sh set up, it asks for sudo once, to keep the logs
-# on the SD card and start Desk Talk on boot. Everything but the `git pull` and the last step is install.sh --update.
+# on the SD card, start Desk Talk on boot and give it its own room on the card (raspberry_pi/data_room.sh). Everything
+# but the `git pull` and the last step is install.sh --update.
 # The last step, after a good build only: Docker's saved build steps are cut down to INSTALL_KEEP_BUILD_STEPS_MB (in
 # .env, or .env.example), the ones not used for longest first, so they can't take over the SD card over many updates.
 # Docker 28 and newer call that --max-used-space, older ones --keep-storage. It never touches the images or volumes the

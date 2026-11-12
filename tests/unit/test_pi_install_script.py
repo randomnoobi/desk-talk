@@ -87,11 +87,42 @@ case "$name" in
       "volume ls -q "*"project=desktalk-detector"*) cat "$FAKE/old_volume" 2>/dev/null; exit 0 ;;
       compose\ *--volumes*|compose\ *down*" -v"*) rm -f "$FAKE/pairing-key" "$FAKE/models/"*; exit 0 ;;
       "compose up -d --build") [ -e "$FAKE/up_fails" ] && exit 1; exit 0 ;;
+      "compose up -d --no-build") printf 'compose saw %s\n' "$(grep '^DATA_ROOM_ON=' .env)" >> "$FAKE/calls" ;;
       "compose exec -T detector test -s "*) [ -s "$FAKE/models/$(basename "$7")" ] ;;
       "compose cp "*) cp "$3" "$FAKE/models/$(basename "${4#*:}")" ;;
       "compose exec -T detector mv "*) mv "$FAKE/models/$(basename "$6")" "$FAKE/models/$(basename "$7")" ;;
       *) exit 0 ;;
     esac ;;
+esac
+'''  # noqa: E501
+
+# data_room.sh has its own tests (test_pi_data_room_script.py), with a whole made-up machine of mounts and loop devices.
+# Here it is a stand-in, so these tests stay on what install.sh does with its answers: `room` in the state folder says
+# what `status` answers, and a `make` turns none or unmounted into room, installing the unit as the real one does. Only
+# `unit-text` runs the real script (copied next to it), so install.sh compares the installed unit with the real text.
+DATA_ROOM_STAND_IN = r'''#!/bin/bash
+printf '%s\n' "data_room.sh $*" >> "$FAKE/calls"
+real="$(dirname "$0")/data_room.real.sh"
+unit="$FAKE/etc/systemd/system/desktalk-data-room.service"
+case "$*" in
+  unit-text) exec bash "$real" unit-text ;;
+  status)
+    [ -e "$FAKE/room_setting_bad" ] && { echo 'Stopping: DATA_ROOM_FILE in raspberry_pi/.env is empty.' >&2; exit 1; }
+    cat "$FAKE/room" ;;
+  "make --dry-run") echo "Would make Desk Talk's own room on the SD card." ;;
+  make)
+    cat "$FAKE/room_make_says" 2>/dev/null
+    [ -e "$FAKE/room_make_fails" ] && { echo "Stopping: the data folder isn't empty, so nothing was changed." >&2; exit 1; }
+    case "$(cat "$FAKE/room")" in
+      none|unmounted)
+        mkdir -p "$(dirname "$unit")"
+        bash "$real" unit-text > "$unit"
+        touch "$FAKE/enabled_desktalk-data-room.service"
+        echo room > "$FAKE/room"
+        echo "Desk Talk's own room is ready."
+        echo "The old data folder is kept at /the/old/data. Once Desk Talk works, delete it with: rm -rf /the/old/data" ;;
+    esac ;;
+  *) exit 2 ;;
 esac
 '''  # noqa: E501
 
@@ -134,6 +165,10 @@ class FakePi:
     def journald_file(self) -> Path:
         return self.fake / 'etc' / 'systemd' / 'journald.conf.d' / '60-desktalk.conf'
 
+    @property
+    def room_unit_file(self) -> Path:
+        return self.fake / 'etc' / 'systemd' / 'system' / 'desktalk-data-room.service'
+
     def state(self, name: str, value: str = '') -> None:
         (self.fake / name).write_text(value, encoding='utf-8')
 
@@ -163,6 +198,8 @@ def pi(tmp_path) -> FakePi:
         if (PI / name).exists():
             shutil.copy(PI / name, root / 'raspberry_pi' / name)
     shutil.copytree(PI / 'systemd', root / 'raspberry_pi' / 'systemd')
+    shutil.copy(PI / 'data_room.sh', root / 'raspberry_pi' / 'data_room.real.sh')
+    (root / 'raspberry_pi' / 'data_room.sh').write_text(DATA_ROOM_STAND_IN, encoding='utf-8')
     shutil.copy(ROOT / 'config' / 'settings.yaml', root / 'config' / 'settings.yaml')
     (root / 'config' / 'prompts.yaml').symlink_to(ROOT / 'config' / 'prompts.yaml')
     for name in ('desktalk', 'shared', 'scripts'):       # what the real linker runs from
@@ -198,6 +235,7 @@ def pi(tmp_path) -> FakePi:
     made.state('docker_group_active')
     made.state('pairing-key', 'the key')
     made.state('model_bytes', 'the model')
+    made.state('room', 'none\n')
     made.cmdline.write_text(f'{BOOT_LINE} {FLAGS}\n', encoding='utf-8')
     made.config_txt.write_text('camera_auto_detect=1\n', encoding='utf-8')
     made.change_example('SOUND_DEVICES', str(fake / 'snd'))
@@ -206,6 +244,7 @@ def pi(tmp_path) -> FakePi:
     made.change_example('INSTALL_BOOT_CONFIG', str(made.config_txt))
     made.change_example('INSTALL_SERVICE_FILE', str(made.service_file))
     made.change_example('INSTALL_JOURNALD_FILE', str(made.journald_file))
+    made.change_example('INSTALL_DATA_ROOM_SERVICE_FILE', str(made.room_unit_file))
     made.env_vars = {'PATH': f'{fake / "bin"}:/usr/bin:/bin', 'FAKE': str(fake), 'FAKE_PYTHON': sys.executable,
                      'DESKTALK_PROC': str(proc), 'HOME': str(tmp_path), 'TMPDIR': str(tmp_path)}
     return made
@@ -1247,3 +1286,166 @@ def test_a_number_systemd_cant_read_stops_before_anything_is_installed(pi, name)
     result = pi.run()
     assert result.code == 1 and name in result.out
     assert not pi.service_file.exists() and not pi.journald_file.exists()
+
+
+# ── Desk Talk's own room on the SD card ──
+
+def set_up_by_an_older_install(pi: FakePi) -> None:
+    """A Pi an older install.sh set up: it starts on boot and keeps its journal, but has no room yet."""
+    pi.state('room', 'elsewhere\n')
+    assert pi.run().code == 0
+    pi.state('room', 'none\n')
+
+
+def test_a_first_install_makes_the_room_and_restarts_the_app_on_it(pi):
+    result = pi.run()
+    assert result.code == 0, result.out
+    calls = result.calls
+    assert calls.index('docker compose up -d --build') < calls.index('docker compose stop app camera') \
+        < calls.index('data_room.sh make') < calls.index('docker compose up -d --no-build')
+    assert calls[calls.index('docker compose up -d --no-build') + 1] == 'compose saw DATA_ROOM_ON=yes'
+    assert pi.values()['DATA_ROOM_ON'] == 'yes'
+    assert result.out.count('The old data folder is kept at /the/old/data') == 2      # in the closing notes too
+
+
+def test_an_update_with_the_room_in_place_changes_nothing(pi):
+    pi.run()
+    result = pi.run(script='update.sh')
+    assert result.code == 0, result.out
+    assert sudo_calls(result) == [] and 'docker compose stop app camera' not in result.calls
+    assert 'data_room.sh make' in result.calls                 # only grows, or does nothing
+    assert 'docker compose up -d --no-build' not in result.calls
+    assert pi.values()['DATA_ROOM_ON'] == 'yes'
+    assert 'IMPORTANT' not in result.out and 'the way this version wants' not in result.out
+
+
+def test_an_update_without_the_room_asks_for_sudo_once(pi):
+    set_up_by_an_older_install(pi)
+    result = pi.run(script='update.sh')
+    assert result.code == 0, result.out
+    calls = result.calls
+    assert calls.count('sudo -v') == 1
+    assert calls.index('sudo -v') < calls.index('docker compose stop app camera') < calls.index('data_room.sh make') \
+        < calls.index('docker compose up -d --no-build')
+    assert pi.values()['DATA_ROOM_ON'] == 'yes'
+    assert 'once' in result.out and 'own room' in result.out
+    assert 'IMPORTANT' not in result.out
+
+
+def test_without_sudo_it_says_what_to_run_later(pi):
+    set_up_by_an_older_install(pi)
+    pi.state('sudo_fails')
+    result = pi.run(script='update.sh')
+    assert result.code == 0, result.out          # the new containers run all the same
+    assert sudo_calls(result) == ['sudo -v']
+    assert not any(line.startswith(('data_room.sh make', 'docker compose stop')) for line in result.calls)
+    assert pi.values()['DATA_ROOM_ON'] == 'no'
+    assert 'IMPORTANT' in result.out and 'own room' in result.out and 'install.sh' in result.out
+
+
+def test_a_data_folder_elsewhere_sets_data_room_on_no(pi):
+    pi.run()
+    pi.state('room', 'elsewhere\n')
+    result = pi.run()
+    assert result.code == 0, result.out
+    assert not any(line.startswith(('data_room.sh make', 'docker compose stop')) for line in result.calls)
+    assert pi.values()['DATA_ROOM_ON'] == 'no'
+    assert calls_after_the_build(result)[-1] == 'compose saw DATA_ROOM_ON=no'      # the app gets the change
+    assert 'another disk' in result.out
+
+
+def calls_after_the_build(result: Result) -> list[str]:
+    return [line for line in result.calls[result.calls.index('docker compose up -d --build'):]
+            if line.startswith(('docker compose up', 'docker compose stop', 'compose saw'))]
+
+
+def test_a_dry_run_says_it_would_make_the_room(pi):
+    result = pi.run('--dry-run')
+    assert result.code == 0, result.out
+    assert 'data_room.sh make --dry-run' in result.calls and 'data_room.sh make' not in result.calls
+    assert not any(line.startswith(('docker compose stop', 'docker compose up')) for line in result.calls)
+    assert "Would make Desk Talk's own room" in result.out
+    assert 'docker compose stop app camera' in result.out and 'DATA_ROOM_ON=yes' in result.out
+    assert not pi.env_path.exists() and not pi.room_unit_file.exists()
+
+
+def test_a_room_that_cant_be_made_starts_the_containers_again_and_stops_with_its_reason(pi):
+    pi.state('room_make_fails')
+    result = pi.run()
+    assert result.code == 1
+    assert calls_after_the_build(result) == ['docker compose up -d --build', 'docker compose stop app camera',
+                                             'docker compose up -d --no-build', 'compose saw DATA_ROOM_ON=no']
+    assert pi.values()['DATA_ROOM_ON'] == 'no'
+    assert result.out.rstrip().splitlines()[-1].startswith("Stopping: the data folder isn't empty")
+    assert 'running again' in result.out.rstrip().splitlines()[-1]
+
+
+def test_a_room_there_but_not_mounted_keeps_data_room_on_yes_when_it_cant_be_mounted(pi):
+    """The room may hold the only history: the app saves nothing then, and says so, rather than start a second one."""
+    pi.run()
+    pi.state('room', 'unmounted\n')
+    pi.state('room_make_fails')
+    result = pi.run()
+    assert result.code == 1
+    assert pi.values()['DATA_ROOM_ON'] == 'yes'
+    assert calls_after_the_build(result)[-2:] == ['docker compose up -d --no-build', 'compose saw DATA_ROOM_ON=yes']
+
+
+def test_a_bad_room_setting_stops_before_the_build_with_its_message(pi):
+    pi.state('room_setting_bad')
+    result = pi.run()
+    assert result.code == 1 and 'DATA_ROOM_FILE' in result.out
+    assert 'docker compose up -d --build' not in result.calls and sudo_calls(result) == []
+
+
+def test_what_the_room_says_is_important_is_kept_for_the_end(pi):
+    pi.run()
+    line = "IMPORTANT: Desk Talk's room can't grow now."
+    pi.state('room_make_says', line + '\n')
+    result = pi.run(script='update.sh')
+    assert result.code == 0, result.out
+    assert result.out.count(line) == 2                         # as it goes, and again in the closing notes
+
+
+def test_a_room_unit_from_git_that_changed_is_put_in_place(pi):
+    pi.run()
+    installed = pi.room_unit_file.read_text(encoding='utf-8')
+    assert '@' not in installed and 'Before=docker.service' in installed
+    pi.room_unit_file.write_text('[Unit]\nDescription=an older one\n', encoding='utf-8')
+    result = pi.run()
+    assert result.code == 0, result.out
+    assert pi.room_unit_file.read_text(encoding='utf-8') == installed
+    assert 'sudo systemctl daemon-reload' in result.calls and 'docker compose stop app camera' not in result.calls
+
+
+def test_a_room_unit_switched_off_by_hand_is_switched_on_again(pi):
+    pi.run()
+    (pi.fake / 'enabled_desktalk-data-room.service').unlink()
+    assert 'sudo systemctl enable desktalk-data-room.service' in pi.run().calls
+
+
+def test_an_update_says_when_the_room_unit_in_git_is_newer(pi):
+    pi.run()
+    pi.room_unit_file.write_text('[Unit]\nDescription=an older one\n', encoding='utf-8')
+    result = pi.run(script='update.sh')
+    assert result.code == 0 and sudo_calls(result) == []
+    assert 'the way this version wants' in result.out and 'install.sh' in result.out
+    assert pi.room_unit_file.read_text(encoding='utf-8') == '[Unit]\nDescription=an older one\n'
+
+
+def test_an_update_says_loudly_when_the_room_wont_be_mounted_at_boot(pi):
+    pi.run()
+    (pi.fake / 'enabled_desktalk-data-room.service').unlink()
+    result = pi.run(script='update.sh')
+    assert result.code == 0 and sudo_calls(result) == []
+    assert 'IMPORTANT' in result.out and 'boot' in result.out and 'install.sh' in result.out
+
+
+def test_a_lost_data_room_on_is_written_again_and_the_app_gets_it(pi):
+    pi.run()
+    text = pi.env_path.read_text(encoding='utf-8')
+    pi.env_path.write_text(re.sub(r'^DATA_ROOM_ON=.*\n', '', text, flags=re.M), encoding='utf-8')
+    result = pi.run()
+    assert result.code == 0, result.out
+    assert pi.values()['DATA_ROOM_ON'] == 'yes'
+    assert calls_after_the_build(result)[-1] == 'compose saw DATA_ROOM_ON=yes'
