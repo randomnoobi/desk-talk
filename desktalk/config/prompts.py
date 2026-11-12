@@ -208,6 +208,10 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'lens.card_full.pi': ('free_mb',),
     'lens.card_full.phone': ('free_mb',),
     'lens.card_full.webcam': ('free_mb',),
+    'lens.room_low': ('free_mb',),
+    'lens.room_full': ('free_mb',),
+    'lens.card_rest_low': ('free_mb',),
+    'lens.card_rest_full': ('free_mb',),
     'lens.no_detections': ('minutes',),
     'lens.no_detections_long': ('minutes',),
     'lens.pi_heartbeat': ('seconds',),
@@ -598,6 +602,9 @@ class PiFixed(_Section):
     pi_detector: str
     detections: str
     card: ByCamera
+    room: str
+    card_rest: str
+    saving: str
     pi_heartbeat: str
 
 
@@ -614,6 +621,11 @@ class LensPrompts(_Section):
     pi_very_hot: str
     card_low: ByCamera                # the disk the data is saved on: the Pi's SD card, or this computer's disk
     card_full: ByCamera
+    room_low: str                     # Desk Talk's own space on the Pi's SD card
+    room_full: str
+    card_rest_low: str                # the rest of the SD card
+    card_rest_full: str
+    saving_off: str
     no_detections: str
     no_detections_long: str
     pi_heartbeat: str
