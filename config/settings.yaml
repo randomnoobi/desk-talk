@@ -789,3 +789,42 @@ dev:
     pi_cpu_bad_c: 80            # ...and this hot turns red
     pi_disk_warn_mb: 1000       # less free space than this on the Pi's card turns amber
     detect_warn_ms: 500         # finding things in one picture here (the app's own YOLO) taking longer turns amber
+  # The Pi log tab: the Pi's log, as if you typed `ssh pi docker compose logs -f` yourself. This computer runs ssh
+  # only while the tab is open, so the Pi does nothing extra the rest of the time. When the connection drops (the Pi
+  # reboots, the Wi-Fi goes), it connects again by itself and picks up after the last line it got.
+  pi_log:
+    # How to reach the Pi. `ssh pi` must log in with a key and no password (BatchMode=yes: it never asks for one).
+    # ServerAliveInterval × ServerAliveCountMax = how long a dead connection takes to notice (5 × 3 = 15 s).
+    ssh: [ssh, -o, BatchMode=yes, -o, ConnectTimeout=10, -o, ServerAliveInterval=5, -o, ServerAliveCountMax=3, pi]
+    sources:                    # the logs the tab can show. Each runs in the Pi's shell. start: when the tab opens,
+                                # with the last {first_lines} lines from before; resume: after a lost connection,
+                                # from {since}, the time on the last line it got
+      - name: all
+        label: Every container
+        start: cd ~/desk-talk/raspberry_pi && docker compose logs --follow --timestamps --no-color --tail {first_lines}
+        resume: cd ~/desk-talk/raspberry_pi && docker compose logs --follow --timestamps --no-color --since {since}
+      - name: camera
+        label: Camera
+        start: cd ~/desk-talk/raspberry_pi && docker compose logs --follow --timestamps --no-color --tail {first_lines} camera
+        resume: cd ~/desk-talk/raspberry_pi && docker compose logs --follow --timestamps --no-color --since {since} camera
+      - name: detector
+        label: Detector
+        start: cd ~/desk-talk/raspberry_pi && docker compose logs --follow --timestamps --no-color --tail {first_lines} detector
+        resume: cd ~/desk-talk/raspberry_pi && docker compose logs --follow --timestamps --no-color --since {since} detector
+      - name: app
+        label: App
+        start: cd ~/desk-talk/raspberry_pi && docker compose logs --follow --timestamps --no-color --tail {first_lines} app
+        resume: cd ~/desk-talk/raspberry_pi && docker compose logs --follow --timestamps --no-color --since {since} app
+      - name: old_camera_service   # the camera program outside Docker, from before (install.sh turns it off)
+        label: Old camera service (desk-talk-camera)
+        start: journalctl -u desk-talk-camera --follow --output short-iso-precise --lines {first_lines}
+        resume: journalctl -u desk-talk-camera --follow --output short-iso-precise --since {since}
+    first_lines: 200            # lines from before that the tab starts with
+    keep_lines: 5000            # how many lines the tab can scroll back through (the oldest go first)
+    line_max_chars: 4000        # a longer line is cut here
+    # Finds the Pi's own time in a line (docker's --timestamps, journalctl's short-iso-precise), for {since}
+    time_pattern: '\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:?\d\d)'
+    stop_after_idle_sec: 30     # the tab hasn't asked for this long (it's closed): stop reading, and close ssh
+    retry_start_sec: 2          # the connection dropped: try again after this...
+    retry_max_sec: 30           # ...twice as long after each miss, up to this
+    check_every_sec: 1          # how often the reader looks at those two
