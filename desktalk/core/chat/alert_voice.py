@@ -5,8 +5,10 @@ An alert that carries its own text (a pet, clutter, a lost item ...) is sent as 
 alert is put into words by the AI, grounded in the detector's own words for both objects; when the AI
 can't help (or its line is cut off, dramatic or for another agent), its fixed line is used: the agent's own
 too_close, or the desk edge's (config/prompts.yaml → alert). A follow-up of the same alert replies to what was
-said before. When nothing in the chat can say it, Lens does, without the AI: "Heads up: scissors next to the cell
-phone". With chat.ai_writes_warnings off (the Pi) the AI is never asked, so a warning can't wait for one.
+said before (a warning about a different desk edge is a new one). When nothing in the chat can say it, Lens does,
+without the AI: "Heads up: scissors next to the cell phone". With chat.ai_writes_warnings off (the Pi) the AI is never
+asked, so a warning can't wait for one. A speaker that isn't in the chat (a Demo tab warning) sends its card along,
+so the page can draw it.
 """
 
 from __future__ import annotations
@@ -20,17 +22,20 @@ from desktalk.core.chat import prompts
 from desktalk.core.chat.agent_ai import AgentAI
 from desktalk.core.chat.replies import looks_cut_off, response_violates_evidence
 from desktalk.domain import LENS, AgentProfile, Alert, SeenObject
-from desktalk.ports import DeskScene, Profiles
+from desktalk.ports import DeskScene, Profiles, RosterView
 
 
 class AlertVoice:
-    """`live_context()`: the desk right now for the AI (to check the AI's line against). `drink_labels`: the
-    detector words that count as drinks when no agent speaks for hydration (settings → safety.liquids)."""
+    """`roster`: who is in the chat (anyone else gets a card with their warning). `live_context()`: the desk right
+    now for the AI (to check the AI's line against). `drink_labels`: the detector words that count as drinks when no
+    agent speaks for hydration (settings → safety.liquids)."""
 
-    def __init__(self, ai: AgentAI, profiles: Profiles, scene: DeskScene, live_context: Callable[[], Mapping[str, Any]],
-                 words: AlertPrompts, chat: ChatSettings, drink_labels: Iterable[str]):
+    def __init__(self, ai: AgentAI, profiles: Profiles, roster: RosterView, scene: DeskScene,
+                 live_context: Callable[[], Mapping[str, Any]], words: AlertPrompts, chat: ChatSettings,
+                 drink_labels: Iterable[str]):
         self._ai = ai
         self._profiles = profiles
+        self._roster = roster
         self._scene = scene
         self._live_context = live_context
         self._words = words
@@ -39,8 +44,15 @@ class AlertVoice:
         self._said_about: dict[str, dict[str, str]] = {}    # alert key → last thing said about it (follow-ups)
 
     def message_for_alert(self, ev: Alert) -> dict[str, Any] | None:
-        """The chat message for an alert, or None when there is nothing to say."""
-        d = ev.to_dict()
+        """The chat message for an alert, or None when there is nothing to say. A speaker that isn't in the chat
+        sends its card along, so the page can draw someone it hasn't met."""
+        msg = self._message(ev.to_dict())
+        if msg is None or msg['character'] == LENS or msg['character'] in self._roster.member_ids():
+            return msg
+        profile = self._profiles.get(msg['character'])
+        return {**msg, 'card': profile.public()} if profile else msg
+
+    def _message(self, d: Mapping[str, Any]) -> dict[str, Any] | None:
         pid = d.get('agent') or LENS
         snapshot = d.get('snapshot')
         if d.get('kind') != 'proximity' or d.get('text'):
@@ -58,13 +70,11 @@ class AlertVoice:
         if not a:
             return None
         follow_up = int(d.get('follow_up') or 0)
-        near = d.get('near') or ''
-        key = f'proximity_{pid}_{near}'
+        key = f'proximity_{pid}_{d.get("near") or ""}' + (f'_{d["edge"]}' if d.get('edge') else '')
         prev = self._said_about.get(key) if follow_up > 0 else None
         text = self._ai_alert(a, d, prev, follow_up) if self._chat.ai_writes_warnings else None
         text = text or self._fixed_line(a, d, follow_up)
-        # The card lets the page draw a speaker it hasn't met (a Demo tab warning from something not in the chat).
-        msg = {'type': 'group_message', 'character': pid, 'text': text, 'alert': 'proximity', 'card': a.public()}
+        msg = {'type': 'group_message', 'character': pid, 'text': text, 'alert': 'proximity'}
         if snapshot:
             msg['snapshot'] = snapshot
         if prev:

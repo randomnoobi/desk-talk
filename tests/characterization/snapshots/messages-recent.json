@@ -34,26 +34,6 @@
       },
       {
         "alert": "str",
-        "card": {
-          "about": "str",
-          "art": "str",
-          "auto": "bool",
-          "color": "str",
-          "fragile": "bool",
-          "habits": [
-            "str"
-          ],
-          "icon": "str",
-          "id": "str",
-          "labels": [
-            "str"
-          ],
-          "learned": "bool",
-          "name": "str",
-          "nickname": "str",
-          "object": "str",
-          "tracker": "str"
-        },
         "character": "str",
         "id": "str",
         "snapshot": "str",

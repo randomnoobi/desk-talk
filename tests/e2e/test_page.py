@@ -146,6 +146,26 @@ def test_sending_a_message_gets_a_reply(page, tmp_path, pictures):
                                                                                     timeout=REPLY_WITHIN_MS)
 
 
+WARNING_FROM_A_STRANGER = {'type': 'group_message', 'id': 'stranger-warning', 'character': 'stapler',
+                           'text': 'Could you slide me back from the front a little?', 'alert': 'proximity',
+                           'card': {'id': 'stapler', 'name': 'Staples', 'color': 'sage', 'icon': 'S', 'about': ''}}
+
+
+def test_a_saved_warning_from_someone_not_in_the_chat_keeps_its_speaker_after_a_refresh(page, tmp_path, pictures):
+    """A warning from something not in the chat (a Demo tab one) brings its speaker's card. The card is saved with
+    the chat, so after a refresh the saved warning still shows who said it."""
+    with running_app(tmp_path, pictures=pictures) as url:
+        open_app(page, url)
+        page.evaluate('(d) => handleServerMessage({...d, ts: Date.now() / 1000})', WARNING_FROM_A_STRANGER)
+        speaker = page.locator('#messages .msg-name', has_text=WARNING_FROM_A_STRANGER['card']['name'])
+        expect(speaker).to_be_visible()
+        page.wait_for_function('(text) => (localStorage.getItem("desktalk_chats_v2") || "").includes(text)',
+                               arg=WARNING_FROM_A_STRANGER['text'])
+        page.reload()
+        expect(page.locator('#conn')).to_have_attribute('data-state', LIVE)
+        expect(speaker).to_be_visible()
+
+
 def test_habit_log_click_updates_today(page, tmp_path, pictures):
     with running_app(tmp_path, pictures=pictures) as url:
         open_app(page, url)

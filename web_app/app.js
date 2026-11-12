@@ -188,13 +188,14 @@ function saveHistory() {
     for (const [id, list] of Object.entries(state.messages)) chats[id] = list.filter((m) => !m.note).slice(-ui.web.chat_saved);
     const agents = {};
     for (const [id, a] of Object.entries(state.agents)) agents[id] = { ...a, on_desk: false };
-    storage.save(HISTORY_KEY, { saved: Date.now(), chats, agents });
+    storage.save(HISTORY_KEY, { saved: Date.now(), chats, agents, cards: state.cards });   // cards: see state.cards
   }, 400);
 }
 function loadHistory() {
   const d = storage.load(HISTORY_KEY, null);
   if (!d?.chats) return;
   for (const [id, a] of Object.entries(d.agents || {})) if (a && a.name) state.agents[id] = { ...a, on_desk: false };
+  for (const [id, c] of Object.entries(d.cards || {})) if (c && c.name) state.cards[id] = c;
   for (const [id, list] of Object.entries(d.chats)) {
     if (!Array.isArray(list)) continue;
     ensureChat(id);

@@ -90,7 +90,7 @@ class HabitLog:
 
 class Rig:
     """A MessageGenerator built from fakes. `reply` / `fail` script the AI, which words warnings and reminders here
-    unless `chat` says otherwise (the fixed lines' own tests pass CONFIG.chat)."""
+    unless `chat` says otherwise (the fixed lines' own tests pass FIXED_LINES)."""
 
     def __init__(self, reply='Hey! All good over here on the desk.', fail='', members=('computer', 'cup'),
                  profiles=None, local_model=False, llm=None, chat=None, agents=None, camera_on=True, prompts=None,
@@ -334,9 +334,9 @@ def proximity(follow_up=0, near='cup', rule_label='Cup in the laptop spill zone'
                  extra={'near': near, 'rule_label': rule_label, 'follow_up': follow_up, 'snapshot': 'snap9'})
 
 
-def edge_alert(follow_up=0, agent='cup'):
+def edge_alert(follow_up=0, agent='cup', edge='front'):
     return Alert(ts=1.0, kind='proximity', agent=agent,
-                 extra={'edge': 'front', 'rule_label': 'Near front edge (12px)', 'follow_up': follow_up})
+                 extra={'edge': edge, 'rule_label': f'Near {edge} edge (12px)', 'follow_up': follow_up})
 
 
 def test_a_warning_uses_its_fixed_line_and_never_asks_the_ai():
@@ -361,17 +361,38 @@ def test_a_warning_that_goes_on_uses_its_second_line_and_replies_to_the_first():
     assert r.ai.calls == []
 
 
-def test_a_warning_carries_its_speakers_card_so_the_page_can_draw_someone_not_in_the_chat():
-    r = Rig(members=())
+def test_a_warning_about_another_edge_does_not_reply_to_the_first_edge():
+    r = Rig(reply=['Could you pull me back from the front a little, please?',
+                   'Could you slide me in from the left side a little, please?',
+                   'Still hanging out at the front here, please move me back.'])
     r.gen.on_alert(edge_alert())
+    r.gen.on_alert(edge_alert(edge='left'))
+    r.gen.on_alert(edge_alert(follow_up=1))
+    assert r.notifier.sent[2]['reply_to']['text'] == r.notifier.sent[0]['text']
+
+
+@pytest.mark.parametrize('alert', [edge_alert(), Alert(ts=1.0, kind='scenario', agent='cup', feature='pet_risk',
+                                                       text='Cat detected near the desk!')])
+def test_a_warning_carries_its_speakers_card_so_the_page_can_draw_someone_not_in_the_chat(alert):
+    r = Rig(members=(), chat=FIXED_LINES)
+    r.gen.on_alert(alert)
     card = r.notifier.sent[0]['card']
     assert (card['id'], card['name']) == ('cup', 'Cup') and 'personality' not in card
+
+
+@pytest.mark.parametrize('alert', [edge_alert(), Alert(ts=1.0, kind='scenario', agent='cup', feature='pet_risk',
+                                                       text='Cat detected near the desk!')])
+def test_a_warning_from_someone_in_the_chat_carries_no_card(alert):
+    r = Rig(chat=FIXED_LINES)
+    r.gen.on_alert(alert)
+    assert 'card' not in r.notifier.sent[0]
 
 
 def test_a_nudge_uses_its_own_words_and_never_asks_the_ai():
     r = Rig(reply='Hey, 35 minutes of sitting! Walk five minutes, leave your phone.', chat=FIXED_LINES)
     assert r.gen.phrase_nudge('computer', nudge()) == '35 minutes of sitting. Time for a 5-minute walk?'
     assert r.ai.calls == []
+    assert '[You replied] 35 minutes of sitting. Time for a 5-minute walk?' in r.desk.recent('computer')[0]
 
 
 def test_a_proximity_alert_is_put_in_words_by_the_ai():

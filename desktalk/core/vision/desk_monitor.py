@@ -136,12 +136,15 @@ class DeskMonitor:
         """An alert from `speaker`, unless the same one went out lately. The wait starts at alerts.cooldown_sec
         and doubles with each repeat (up to alerts.cooldown_max_times that); a quiet spell of
         alerts.reset_after_sec starts it over. Lens's alerts also name the thing they are about (`intruder` or
-        `object`), so two things by the same target are two alerts, each with its own wait. Lens's next warning
+        `object`), so two things by the same target are two alerts, each with its own wait; so is each desk edge
+        (`edge`), so the left edge after the front one is a first warning, not a repeat. Lens's next warning
         of the same kind (danger zone or desk edge) about anything waits alerts.lens_gap_sec, so a few things
         that aren't in the chat don't make a burst of messages and pop-ups."""
         s = self._settings
         about = details.get('intruder') or details.get('object') or ''
-        key = f'proximity_{speaker}_{details.get("near", "")}' + (f'_{about}' if about else '')
+        edge = details.get('edge') or ''
+        key = f'proximity_{speaker}_{details.get("near", "")}' + (f'_{edge}' if edge else '') + \
+            (f'_{about}' if about else '')
         last = self._last_alert.get(key, 0)
         in_a_row = self._alerts_in_a_row.get(key, 0)
         if now - last > s.reset_after_sec:
