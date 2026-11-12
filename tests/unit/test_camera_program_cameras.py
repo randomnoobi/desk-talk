@@ -1,5 +1,6 @@
 """raspberry_pi/camera/cameras.py: the Pi camera module, a USB webcam, a folder of pictures or a video."""
 
+import errno
 import os
 import sys
 import types
@@ -150,13 +151,14 @@ def test_a_camera_that_cannot_start_also_points_at_the_containers_devices(monkey
         open_kind('picamera2')
 
 
-def block_opening(monkeypatch, *blocked):
-    """os.open raises PermissionError for these paths, as when the container's device rules leave them out."""
+def block_opening(monkeypatch, *blocked, code=errno.EPERM):
+    """os.open fails for these paths: EPERM, as when the container's device rules leave them out, or EACCES, as
+    when the file's group or mode doesn't let this user open it."""
     real_open = os.open
 
     def fake_open(path, flags, *args, **kwargs):
         if str(path) in {str(p) for p in blocked}:
-            raise PermissionError(1, 'Operation not permitted', str(path))
+            raise PermissionError(code, os.strerror(code), str(path))
         return real_open(path, flags, *args, **kwargs)
 
     monkeypatch.setattr(os, 'open', fake_open)
@@ -197,7 +199,9 @@ def test_a_pi_camera_with_blocked_devices_says_the_device_numbers_changed(tmp_pa
     message = str(caught.value)
     assert f'may not open {tmp_path / "media0"}' in message
     assert 'list index out of range' in message
-    assert 'sudo systemctl restart desktalk' in message and 'device_numbers.sh' in message
+    assert 'On the Pi, run: cd ~/desk-talk/raspberry_pi && bash device_numbers.sh && docker compose up -d.' in message
+    assert 'desktalk.service does this at each boot' in message
+    assert 'sudo systemctl restart' not in message
     assert 'ribbon cable' not in message
 
 
@@ -206,3 +210,55 @@ def test_a_pi_camera_with_nothing_blocked_keeps_the_ribbon_cable_advice(tmp_path
     (tmp_path / 'media0').write_bytes(b'')
     with pytest.raises(CameraError, match=r'list index out of range.*ribbon cable'):
         start_pi_camera(tmp_path)
+
+
+def test_blocked_devices_counts_only_operation_not_permitted(tmp_path, monkeypatch):
+    """A wrong group or file mode (EACCES) isn't about the device numbers, so the usual advice still shows."""
+    (tmp_path / 'media0').write_bytes(b'')
+    block_opening(monkeypatch, tmp_path / 'media0', code=errno.EACCES)
+    assert blocked_devices(tmp_path) == []
+
+
+def test_a_pi_camera_whose_devices_are_only_not_readable_keeps_the_usual_advice(tmp_path, monkeypatch):
+    monkeypatch.setitem(sys.modules, 'picamera2', types.SimpleNamespace(Picamera2=NoCameraAttached))
+    (tmp_path / 'media0').write_bytes(b'')
+    block_opening(monkeypatch, tmp_path / 'media0', code=errno.EACCES)
+    with pytest.raises(CameraError, match=r'list index out of range.*ribbon cable.*/dev/dma_heap'):
+        start_pi_camera(tmp_path)
+
+
+def make_dma_heap(folder):
+    heaps = folder / 'dma_heap'
+    heaps.mkdir()
+    for name in ('linux,cma', 'system'):
+        (heaps / name).write_bytes(b'')
+    (heaps / 'vidbuf_cached').symlink_to('linux,cma')
+    return heaps
+
+
+def test_blocked_devices_names_the_dma_heap_devices_too(tmp_path, monkeypatch):
+    """Only the dma_heap number may have changed, and then Picamera2 fails just the same."""
+    (tmp_path / 'media0').write_bytes(b'')
+    heaps = make_dma_heap(tmp_path)
+    block_opening(monkeypatch, heaps / 'linux,cma', heaps / 'system', heaps / 'vidbuf_cached')
+    # vidbuf_cached is a link to linux,cma, so it isn't listed twice
+    assert blocked_devices(tmp_path) == [str(heaps / 'linux,cma'), str(heaps / 'system')]
+
+
+def test_blocked_devices_skips_a_dma_heap_link_and_a_broken_one(tmp_path, monkeypatch):
+    heaps = make_dma_heap(tmp_path)
+    (heaps / 'gone').symlink_to('nothing here')
+    block_opening(monkeypatch, heaps / 'system')
+    assert blocked_devices(tmp_path) == [str(heaps / 'system')]
+
+
+def test_a_pi_camera_with_only_a_blocked_dma_heap_says_the_device_numbers_changed(tmp_path, monkeypatch):
+    monkeypatch.setitem(sys.modules, 'picamera2', types.SimpleNamespace(Picamera2=NoCameraAttached))
+    (tmp_path / 'media0').write_bytes(b'')
+    heaps = make_dma_heap(tmp_path)
+    block_opening(monkeypatch, heaps / 'linux,cma', heaps / 'system')
+    with pytest.raises(CameraError) as caught:
+        start_pi_camera(tmp_path)
+    message = str(caught.value)
+    assert f'may not open {heaps / "linux,cma"}, {heaps / "system"}' in message
+    assert 'device_numbers.sh' in message and 'ribbon cable' not in message

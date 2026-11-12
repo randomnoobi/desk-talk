@@ -1259,12 +1259,51 @@ def test_update_dry_run_says_it_would_set_up_the_journal_and_uses_no_sudo(pi):
     assert not pi.journald_file.exists() and not pi.service_file.exists()
 
 
-def test_update_says_when_the_service_in_git_is_newer_than_the_one_installed(pi):
-    pi.run()
-    pi.service_file.write_text('[Unit]\nDescription=an older one\n', encoding='utf-8')
+OLD_SERVICE = '[Unit]\nDescription=an older one, with no device numbers\n'
+
+
+def old_service_installed(pi: FakePi) -> None:
+    """A Pi an older install.sh set up: its desktalk.service doesn't write the device numbers at boot."""
+    assert pi.run().code == 0
+    pi.service_file.write_text(OLD_SERVICE, encoding='utf-8')
+
+
+def test_update_puts_in_a_service_that_changed_asking_for_sudo_once_and_restarts_it(pi):
+    """update.sh is how new code reaches the Pi, so it must bring the new service too: without it, a boot that numbers
+    the camera's devices differently leaves the camera container unable to open the camera."""
+    old_service_installed(pi)
     result = pi.run(script='update.sh')
-    assert result.code == 0 and 'install.sh' in result.out
-    assert not any(line.startswith('sudo') for line in result.calls)
+    assert result.code == 0, result.out
+    assert result.calls.count('sudo -v') == 1
+    bash = shutil.which('bash', path=pi.env_vars['PATH'])
+    assert unit_lines(pi.service_file)['ExecStartPre'] == f'-{bash} device_numbers.sh'
+    calls = result.calls
+    assert calls.index('sudo -v') < calls.index('sudo systemctl daemon-reload')
+    assert calls.index('docker compose up -d --build') < calls.index('sudo systemctl restart desktalk.service')
+    assert 'sudo systemctl restart systemd-journald' not in calls        # the journal file was fine
+    assert 'once' in result.out and 'device numbers' in result.out
+    assert 'IMPORTANT' not in result.out and 'the way this version wants' not in result.out
+
+
+def test_update_with_a_service_that_changed_and_no_sudo_leaves_it_and_says_what_that_costs(pi):
+    old_service_installed(pi)
+    pi.state('sudo_fails')
+    result = pi.run(script='update.sh')
+    assert result.code == 0, result.out          # the new containers run all the same
+    assert sudo_calls(result) == ['sudo -v']
+    assert pi.service_file.read_text(encoding='utf-8') == OLD_SERVICE
+    assert 'docker compose up -d --build' in result.calls
+    assert 'IMPORTANT' in result.out and 'power cut' in result.out and 'open the camera' in result.out
+    assert 'install.sh' in result.out
+
+
+def test_update_dry_run_with_a_service_that_changed_says_so_and_changes_nothing(pi):
+    old_service_installed(pi)
+    result = pi.run('--dry-run', script='update.sh')
+    assert result.code == 0 and sudo_calls(result) == []
+    assert pi.service_file.read_text(encoding='utf-8') == OLD_SERVICE
+    assert 'Would ask for sudo once' in result.out and f'Would install {pi.service_file}' in result.out
+    assert 'IMPORTANT' not in result.out
 
 
 @pytest.mark.parametrize('name', ['JOURNAL_MAX_USE', 'SERVICE_RETRY_SEC'])

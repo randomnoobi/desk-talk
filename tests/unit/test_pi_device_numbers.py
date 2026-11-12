@@ -38,6 +38,7 @@ class FakePi:
     folder: Path
     proc: Path
     elsewhere: Path
+    fake_bin: Path
 
     @property
     def env_path(self) -> Path:
@@ -53,8 +54,15 @@ class FakePi:
         new.write_text(text, encoding='utf-8')
         new.replace(self.proc / 'devices')
 
+    def fake_command(self, name: str, body: str) -> None:
+        """A command of this name, found before the real one."""
+        command = self.fake_bin / name
+        command.write_text(f'#!/bin/bash\n{body}\n', encoding='utf-8')
+        command.chmod(0o755)
+
     def environment(self) -> dict[str, str]:
-        return {'PATH': '/usr/bin:/bin', 'DESKTALK_PROC': str(self.proc), 'HOME': str(self.elsewhere)}
+        return {'PATH': f'{self.fake_bin}:/usr/bin:/bin', 'DESKTALK_PROC': str(self.proc),
+                'HOME': str(self.elsewhere)}
 
     def start(self) -> subprocess.Popen[str]:
         return subprocess.Popen(['/bin/bash', str(self.folder / SCRIPT)], cwd=self.elsewhere, env=self.environment(),
@@ -72,13 +80,14 @@ class FakePi:
 @pytest.fixture
 def pi(tmp_path) -> FakePi:
     folder, proc, elsewhere = tmp_path / 'desk talk' / 'raspberry_pi', tmp_path / 'proc', tmp_path / 'home'  # a space
-    for made in (folder, proc, elsewhere):
+    fake_bin = tmp_path / 'bin'
+    for made in (folder, proc, elsewhere, fake_bin):
         made.mkdir(parents=True)
     shutil.copy(PI / SCRIPT, folder / SCRIPT)
     shutil.copy(PI / '.env.example', folder / '.env.example')
     shutil.copy(PI / '.env.example', folder / '.env')
     (folder / '.env').chmod(0o644)
-    made_pi = FakePi(folder, proc, elsewhere)
+    made_pi = FakePi(folder, proc, elsewhere, fake_bin)
     made_pi.set_env('CAMERA_MEDIA_MAJOR', '510')
     made_pi.set_env('CAMERA_DMA_HEAP_MAJOR', '253')
     made_pi.set_env('DEVICE_NUMBERS_WAIT_SEC', '0.2')          # the tests can't wait half a minute
@@ -157,6 +166,45 @@ def test_a_name_missing_from_env_is_added(pi):
     values = pi.values()
     assert values['CAMERA_DMA_HEAP_MAJOR'] == '253' and values['CAMERA_MEDIA_MAJOR'] == '237'
     assert pi.env_path.read_text(encoding='utf-8').count('CAMERA_DMA_HEAP_MAJOR=') == 1
+    assert 'CAMERA_DMA_HEAP_MAJOR: 253 (added to .env)' in result.out
+
+
+def test_a_name_in_env_with_no_number_is_filled_in_not_added(pi):
+    pi.set_env('CAMERA_MEDIA_MAJOR', '')
+    result = pi.run()
+    assert result.code == 0, result.out
+    assert pi.values()['CAMERA_MEDIA_MAJOR'] == '237'
+    assert 'CAMERA_MEDIA_MAJOR: 237 (filled in' in result.out
+    assert 'added' not in result.out
+    assert pi.env_path.read_text(encoding='utf-8').count('CAMERA_MEDIA_MAJOR=') == 1
+
+
+def test_a_name_in_env_with_no_number_that_is_not_listed_says_it_is_empty(pi):
+    pi.set_env('CAMERA_MEDIA_MAJOR', '')
+    pi.devices(devices_text(media=None))
+    result = pi.run()
+    assert result.code == 0, result.out
+    assert 'CAMERA_MEDIA_MAJOR: kept (empty in .env)' in result.out and 'not in .env' not in result.out
+
+
+def test_a_stop_part_way_leaves_env_as_it_was_and_no_temporary_file(pi):
+    """mv stands in for anything that fails between making the new .env and swapping it in."""
+    before = pi.env_path.read_text(encoding='utf-8')
+    pi.fake_command('mv', 'exit 1')
+    result = pi.run()
+    assert result.code != 0, result.out
+    assert pi.env_path.read_text(encoding='utf-8') == before
+    assert {path.name for path in pi.folder.iterdir()} == {SCRIPT, '.env', '.env.example'}
+
+
+def test_the_folder_is_synced_after_the_new_env_takes_its_place(pi):
+    """So the rename itself is on the card before a power cut."""
+    log = pi.elsewhere / 'synced'
+    written = f'$(grep -c "^CAMERA_MEDIA_MAJOR=237$" "{pi.env_path}")'     # 1 once the new .env is in place
+    pi.fake_command('sync', f'printf "%s %s\\n" "$1" "{written}" >> "{log}"')
+    result = pi.run()
+    assert result.code == 0, result.out
+    assert log.read_text(encoding='utf-8').splitlines()[-1] == f'{pi.folder} 1'
 
 
 def test_no_env_says_so_and_exits_0(pi):

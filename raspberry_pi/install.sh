@@ -572,13 +572,16 @@ put_system_file() {
 set_up_start_on_boot() {
     local text=$1 file unit off=""
     file=$(setting INSTALL_SERVICE_FILE)
-    if [ "$UPDATE" = 1 ] && [ -f "$file" ]; then
-        in_place "$text" "$file" || later "Starting by itself on boot isn't set up the way this version wants ($file). To set it up, run once: bash $(quoted "$PI_DIR/install.sh")"
-        return
-    fi
-    if [ "$UPDATE" = 1 ] && [ "$SETUP_SUDO" = 0 ]; then
-        later "IMPORTANT: Desk Talk isn't set up to start by itself when the Pi boots, because sudo didn't work. After a power cut the containers come back only if Docker brings them back by itself. To set it up, run once: bash $(quoted "$PI_DIR/install.sh")"
-        return
+    if [ "$UPDATE" = 1 ]; then
+        in_place "$text" "$file" && return             # already as this version wants: an update needs no sudo for it
+        if [ "$SETUP_SUDO" = 0 ] && [ -f "$file" ]; then
+            later "IMPORTANT: starting by itself on boot ($file) wasn't brought up to date, because sudo didn't work. The new one writes this boot's numbers for the camera's devices first. Without it, after a power cut or any restart the camera container may not be able to open the camera, since the kernel can number those devices differently at each boot. To bring it up to date, run once: bash $(quoted "$PI_DIR/install.sh")"
+            return
+        fi
+        if [ "$SETUP_SUDO" = 0 ]; then
+            later "IMPORTANT: Desk Talk isn't set up to start by itself when the Pi boots, because sudo didn't work. After a power cut the containers come back only if Docker brings them back by itself. To set it up, run once: bash $(quoted "$PI_DIR/install.sh")"
+            return
+        fi
     fi
     for unit in docker.service containerd.service "$(basename "$file")"; do
         systemctl is-enabled --quiet "$unit" 2> /dev/null || off="$off $unit"
@@ -652,20 +655,40 @@ keep_the_journal() {
     say "Installed $file: the journal, the containers' logs too, stays on the SD card, at most $(setting JOURNAL_MAX_USE), for $(setting JOURNAL_KEEP)."
 }
 
-# A Pi set up by an older install.sh may have neither file. An update sets them up then, as install.sh would, so it
-# can't leave the logs worse than before: compose.yaml sends the containers' logs to the journal, and without the
-# journal file Raspberry Pi OS keeps that in memory only. That needs sudo, so it is asked for once, and only then.
+# A Pi set up by an older install.sh may have neither file, or a desktalk.service that isn't the one this version
+# wants. An update sets them up then, as install.sh would, so it can't leave the logs worse than before: compose.yaml
+# sends the containers' logs to the journal, and without the journal file Raspberry Pi OS keeps that in memory only.
+# And update.sh is how new code reaches the Pi, so a changed service has to come with it. That needs sudo, so it is
+# asked for once, and only then. $1 is the service's new text.
 sudo_to_set_up() {
-    local what=""
-    [ -f "$(setting INSTALL_SERVICE_FILE)" ] || what="start Desk Talk by itself when it boots"
+    local what="" service changed=0
+    service=$(setting INSTALL_SERVICE_FILE)
+    if [ ! -f "$service" ]; then
+        what="start Desk Talk by itself when it boots"
+    elif ! in_place "$1" "$service"; then
+        changed=1
+    fi
     [ -f "$(setting INSTALL_JOURNALD_FILE)" ] || what="${what:+$what, and to }keep its logs on the SD card (Raspberry Pi OS keeps them in memory only, so they'd be lost at a restart or a power cut)"
-    [ -n "$what" ] || return 0
+    [ -n "$what" ] || [ "$changed" = 1 ] || return 0
     if [ "$DRY_RUN" = 1 ]; then
-        would "ask for sudo once, to set this Pi up to $what."
+        if [ -n "$what" ]; then
+            would "ask for sudo once, to set this Pi up to $what."
+        fi
+        if [ "$changed" = 1 ] && [ -n "$what" ]; then
+            would "also put in the new $(basename "$service") then, which writes this boot's device numbers for the camera before it starts the containers."
+        elif [ "$changed" = 1 ]; then
+            would "ask for sudo once, to put in the new $(basename "$service"), which writes this boot's device numbers for the camera before it starts the containers."
+        fi
         SETUP_SUDO=1
         return
     fi
-    say "This Pi isn't set up yet to $what. That needs sudo, this once, so it may ask for your password. Later updates need none."
+    if [ -n "$what" ]; then
+        say "This Pi isn't set up yet to $what."
+    fi
+    if [ "$changed" = 1 ]; then
+        say "Starting by itself on boot has changed in this version: it now writes this boot's device numbers for the camera first, so a power cut can't leave the camera container unable to open the camera."
+    fi
+    say "That needs sudo, this once, so it may ask for your password. Later updates need none, unless a new version changes this again."
     if sudo -v; then
         SETUP_SUDO=1
     fi
@@ -677,7 +700,7 @@ set_up_systemd() {
     service=$(service_text)
     journal=$(journal_text)
     if [ "$UPDATE" = 1 ]; then
-        sudo_to_set_up
+        sudo_to_set_up "$service"
     fi
     set_up_start_on_boot "$service"
     keep_the_journal "$journal"

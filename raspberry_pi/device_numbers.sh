@@ -32,6 +32,16 @@ kind_of() {
 say() { printf '%s\n' "$*"; }
 stop() { say "Stopping: $*" >&2; exit 1; }
 
+# The new .env while set_env makes it. If the script stops before it takes .env's place, it is removed.
+NEW_ENV=""
+remove_new_env() {
+    if [ -n "$NEW_ENV" ]; then
+        rm -f "$NEW_ENV"
+    fi
+}
+trap remove_new_env EXIT
+trap 'exit 1' HUP INT TERM                  # so a stop by signal removes it too
+
 env_has() {
     [ -f "$1" ] && grep -q "^$2=" "$1"
 }
@@ -85,39 +95,46 @@ wait_for_drivers() {
 
 # Swaps a whole new .env in, so a power cut can't leave it half written.
 set_env() {
-    local new
-    new=$(mktemp "$ENV_FILE.XXXXXX")
+    NEW_ENV=$(mktemp "$ENV_FILE.XXXXXX")
     if env_has "$ENV_FILE" "$1"; then
         NEW_VALUE=$2 awk -v name="$1" -F= '$1 == name { print name "=" ENVIRON["NEW_VALUE"]; next } { print }' \
-            "$ENV_FILE" > "$new"
+            "$ENV_FILE" > "$NEW_ENV"
     else
-        cat "$ENV_FILE" > "$new"
-        if [ -s "$new" ] && [ -n "$(tail -c 1 "$new")" ]; then
-            printf '\n' >> "$new"
+        cat "$ENV_FILE" > "$NEW_ENV"
+        if [ -s "$NEW_ENV" ] && [ -n "$(tail -c 1 "$NEW_ENV")" ]; then
+            printf '\n' >> "$NEW_ENV"
         fi
-        printf '%s=%s\n' "$1" "$2" >> "$new"
+        printf '%s=%s\n' "$1" "$2" >> "$NEW_ENV"
     fi
-    chmod 644 "$new"
-    sync "$new" 2> /dev/null || true        # on the card before it takes .env's place
-    mv "$new" "$ENV_FILE"
+    chmod 644 "$NEW_ENV"
+    sync "$NEW_ENV" 2> /dev/null || true    # on the card before it takes .env's place
+    mv "$NEW_ENV" "$ENV_FILE"
+    NEW_ENV=""
+    sync "$PI_DIR" 2> /dev/null || true     # and the swap itself, so it lasts through a power cut
 }
 
 check() {
-    local name=$1 kind major current waited
+    local name=$1 kind major current="" in_env=false waited
     kind=$(kind_of "$name")
     major=$(device_major "$kind")
-    current=""
     if env_has "$ENV_FILE" "$name"; then
+        in_env=true
         current=$(setting "$name")
     fi
     if [ -z "$major" ]; then
         waited=$(setting DEVICE_NUMBERS_WAIT_SEC)
-        say "$name: kept ${current:-(not in .env)}: $PROC/devices listed no $kind devices in $waited seconds."
+        if [ -z "$current" ]; then
+            if $in_env; then current="(empty in .env)"; else current="(not in .env)"; fi
+        fi
+        say "$name: kept $current: $PROC/devices listed no $kind devices in $waited seconds."
     elif [ "$major" = "$current" ]; then
         say "$name: $major, unchanged."
-    elif [ -z "$current" ]; then
+    elif ! $in_env; then
         set_env "$name" "$major"
         say "$name: $major (added to .env)"
+    elif [ -z "$current" ]; then
+        set_env "$name" "$major"
+        say "$name: $major (filled in: .env had no number for it)"
     else
         set_env "$name" "$major"
         say "$name: $current → $major (this boot numbered the camera's devices differently)"
