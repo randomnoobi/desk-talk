@@ -130,12 +130,35 @@ def test_off_mode_uses_the_memory_folder(desk):
     assert 'mode=off folder=/dev/shm/desktalk\n' in done.stdout
 
 
-def test_off_mode_without_a_memory_folder_still_starts(desk):
+def mktemp_that(desk: Path, *, memory_works: bool) -> Path:
+    """A mktemp that writes down how it was called, and makes its folder under the test's own folder. The one in
+    memory (/dev/shm) fails unless `memory_works`."""
+    log = desk / 'mktemp.log'
+    made = desk / 'made'
+    fail = '' if memory_works else 'case "$*" in *"/dev/shm/"*) exit 1 ;; esac'
+    stand_in(desk / 'tools', 'mktemp', f'echo "$@" >> "{log}"\n{fail}\nmkdir -p "{made}"\necho "{made}"')
+    return log
+
+
+def test_off_mode_without_a_memory_folder_makes_one_in_memory(desk):
+    """Never in the container's /tmp: that's Docker's layer on the SD card, and off mode writes nothing there."""
+    log = mktemp_that(desk, memory_works=True)
     done = start_showing_mode(desk, **ROOM)
     assert done.returncode == 0
-    line = next(x for x in done.stdout.splitlines() if x.startswith('mode=off folder='))
-    assert line.split('folder=')[1].strip() != ''
+    assert log.read_text().split() == ['-d', '/dev/shm/desktalk-XXXXXX']
+    assert f'mode=off folder={desk / "made"}' in done.stdout
+    assert 'in memory' in done.stdout
     assert only_rules_in(desk) == []
+
+
+def test_off_mode_still_starts_when_no_folder_can_be_made_in_memory_and_says_where_it_writes(desk):
+    log = mktemp_that(desk, memory_works=False)
+    done = start_showing_mode(desk, **ROOM)
+    assert done.returncode == 0
+    assert log.read_text().splitlines() == ['-d /dev/shm/desktalk-XXXXXX', '-d']
+    line = next(x for x in done.stdout.splitlines() if x.startswith('mode=off folder='))
+    assert line.split('folder=')[1].strip() == str(desk / 'made')
+    assert any(str(desk / 'made') in x and 'SD card' in x for x in done.stdout.splitlines())
 
 
 def test_an_empty_marker_name_counts_as_missing(desk):

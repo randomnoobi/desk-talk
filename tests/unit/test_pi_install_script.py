@@ -102,8 +102,9 @@ esac
 
 # data_room.sh has its own tests (test_pi_data_room_script.py), with a whole made-up machine of mounts and loop devices.
 # Here it is a stand-in, so these tests stay on what install.sh does with its answers: `room` in the state folder says
-# what `status` answers, and a `make` turns none or unmounted into room, installing the unit as the real one does. Only
-# `unit-text` runs the real script (copied next to it), so install.sh compares the installed unit with the real text.
+# what `status` answers, and a `make` turns none, unmounted or leftover into room, installing the unit as the real one
+# does (a `make --no-sudo` changes nothing). Each make writes down the DATA_ROOM_ON it saw in .env. Only `unit-text` runs
+# the real script (copied next to it), so install.sh compares the installed unit with the real text.
 DATA_ROOM_STAND_IN = r'''#!/bin/bash
 printf '%s\n' "data_room.sh $*" >> "$FAKE/calls"
 real="$(dirname "$0")/data_room.real.sh"
@@ -113,11 +114,15 @@ case "$*" in
   status)
     [ -e "$FAKE/room_setting_bad" ] && { echo 'Stopping: DATA_ROOM_FILE in raspberry_pi/.env is empty.' >&2; exit 1; }
     cat "$FAKE/room" ;;
-  "make --dry-run")
+  "make --dry-run"*)
     [ -e "$FAKE/room_make_fails" ] && { echo "Stopping: the data folder isn't empty, so nothing was changed." >&2; exit 1; }
     echo "Would make Desk Talk's own room on the SD card." ;;
+  "make --no-sudo")
+    cat "$FAKE/room_make_says" 2>/dev/null || true ;;
   make)
+    printf 'make saw %s\n' "$(grep '^DATA_ROOM_ON=' "$(dirname "$0")/.env")" >> "$FAKE/calls"
     cat "$FAKE/room_make_says" 2>/dev/null
+    [ -e "$FAKE/room_make_locks_env" ] && chmod a-w "$(dirname "$0")"      # so writing .env fails after it
     [ -e "$FAKE/room_make_fails" ] && { echo "Stopping: the data folder isn't empty, so nothing was changed." >&2; exit 1; }
     if [ -e "$FAKE/room_make_dies" ]; then      # Ctrl-C, or the SSH line dropping: install.sh and this both get it
       p=$PPID; top=""                         # install.sh, above its own subshells, and nothing above it
@@ -128,9 +133,8 @@ case "$*" in
       [ -n "$top" ] && kill -TERM "$top"
       kill -TERM $$
     fi
-    [ -e "$FAKE/room_make_locks_env" ] && chmod a-w "$(dirname "$0")"      # so writing .env fails after it
     case "$(cat "$FAKE/room")" in
-      none|unmounted)
+      none|unmounted|leftover)
         mkdir -p "$(dirname "$unit")"
         bash "$real" unit-text > "$unit"
         touch "$FAKE/enabled_desktalk-data-room.service"
@@ -1015,6 +1019,20 @@ def test_a_data_folder_that_cant_be_made_says_why(unlinked, cloud):
     assert result.code == 1 and 'events.jsonl/inside' in result.out and cloud.claims == []
 
 
+@pytest.mark.parametrize('room', ['unmounted', 'leftover'])
+def test_no_link_while_the_room_isnt_mounted_so_the_link_cant_land_on_the_bare_mount_point(unlinked, cloud, room):
+    """The link file would make the data folder not empty, and the room is never mounted over files."""
+    unlinked.state('room', f'{room}\n')
+    shutil.rmtree(unlinked.root / 'data')
+    unlinked.env_vars['DESKTALK_LINK_CODE'] = CODE
+    result = unlinked.run('--server', cloud.url)
+    assert result.code == 3, result.out
+    assert not any(line.startswith('python3 ') for line in result.calls) and cloud.claims == []
+    assert not (unlinked.root / 'data').exists()
+    [line] = [line for line in result.out.splitlines() if 'NOT linked' in line and 'DESKTALK_LINK_CODE=' in line]
+    assert 'own room' in line
+
+
 def test_no_flags_means_no_link(pi):
     assert not any(line.startswith('python3 ') for line in pi.run().calls)
 
@@ -1335,7 +1353,7 @@ def test_an_update_with_the_room_in_place_changes_nothing(pi):
     result = pi.run(script='update.sh')
     assert result.code == 0, result.out
     assert sudo_calls(result) == [] and 'docker compose stop app camera' not in result.calls
-    assert 'data_room.sh make' in result.calls                 # only grows, or does nothing
+    assert 'data_room.sh make --no-sudo' in result.calls       # only checks, with no sudo
     assert 'docker compose up -d --no-build' not in result.calls
     assert pi.values()['DATA_ROOM_ON'] == 'yes'
     assert 'IMPORTANT' not in result.out and 'the way this version wants' not in result.out
@@ -1506,17 +1524,21 @@ def test_a_dry_run_of_a_lost_data_room_on_says_it_once_and_writes_nothing(pi):
 
 
 def test_install_dying_while_the_app_is_stopped_starts_it_again(pi):
-    """Ctrl-C or a dropped SSH line during the copy: Desk Talk must not be left stopped."""
+    """Ctrl-C or a dropped SSH line during the copy: Desk Talk must not be left stopped. The move didn't happen, so the
+    app starts again saving to its data folder, as before, and not saving nothing."""
     pi.state('room_make_dies')
     result = pi.run()
     assert result.code != 0
     calls = result.calls
     assert calls.index('docker compose stop app camera') < calls.index('docker compose up -d --no-build')
+    assert calls[calls.index('docker compose up -d --no-build') + 1] == 'compose saw DATA_ROOM_ON=no'
     assert 'started again' in result.out
 
 
 def test_a_failed_env_write_while_the_app_is_stopped_starts_it_again(pi):
+    """The move failed, so DATA_ROOM_ON goes back to no, and writing that fails."""
     pi.state('room_make_locks_env')
+    pi.state('room_make_fails')
     try:
         result = pi.run()
     finally:
@@ -1546,6 +1568,79 @@ def test_a_dry_run_whose_room_would_fail_says_so_and_that_nothing_changed(pi):
     assert "the data folder isn't empty" in result.out and 'running again' not in result.out
     assert not any(line.startswith(('docker compose stop', 'docker compose up')) for line in result.calls)
     assert not pi.env_path.exists()
+
+
+# ── a move into the room cut short (data_room.sh status: leftover) ──
+
+def test_a_move_into_the_room_saves_nothing_until_it_is_done(pi):
+    """A power cut part-way through: at the next boot the app must not start a new history on the bare mount point."""
+    result = pi.run()
+    assert result.code == 0, result.out
+    assert 'make saw DATA_ROOM_ON=yes' in result.calls
+
+
+def test_a_move_cut_short_is_finished_before_the_app_could_save_on_the_bare_mount_point(pi):
+    """The review's case: the old folder is set aside and the checked copy is data.img.new. The app starts saving
+    nothing (never plain on the empty mount point), and data_room.sh finishes the move with the app stopped."""
+    pi.run()
+    pi.state('room', 'leftover\n')
+    text = pi.env_path.read_text(encoding='utf-8')
+    pi.env_path.write_text(text.replace('DATA_ROOM_ON=yes', 'DATA_ROOM_ON=no'), encoding='utf-8')
+    shutil.rmtree(pi.root / 'data')
+    result = pi.run()
+    assert result.code == 0, result.out
+    calls = result.calls
+    assert calls[calls.index('docker compose up -d --build') + 1] == 'compose saw DATA_ROOM_ON=yes'
+    assert calls.index('docker compose up -d --build') < calls.index('docker compose stop app camera') \
+        < calls.index('data_room.sh make') < calls.index('docker compose up -d --no-build')
+    assert 'make saw DATA_ROOM_ON=yes' in calls
+    assert not (pi.root / 'data').exists()            # the stand-in mounts nothing: install.sh made no folder there
+    assert pi.values()['DATA_ROOM_ON'] == 'yes'
+
+
+def test_a_move_cut_short_that_cant_be_finished_keeps_saving_nothing_and_stops_with_why(pi):
+    pi.run()
+    pi.state('room', 'leftover\n')
+    pi.state('room_make_fails')
+    result = pi.run()
+    assert result.code == 1
+    assert pi.values()['DATA_ROOM_ON'] == 'yes'
+    assert all(line == 'compose saw DATA_ROOM_ON=yes' for line in result.calls if line.startswith('compose saw'))
+    assert result.out.rstrip().splitlines()[-1].startswith('Stopping: ')
+
+
+def test_an_update_without_sudo_for_a_move_cut_short_saves_nothing_and_says_what_to_run(pi):
+    pi.run()
+    pi.state('room', 'leftover\n')
+    pi.state('sudo_fails')
+    result = pi.run(script='update.sh')
+    assert result.code == 0, result.out
+    assert not any(line.startswith(('data_room.sh make', 'docker compose stop')) for line in result.calls)
+    assert pi.values()['DATA_ROOM_ON'] == 'yes'
+    [line] = [line for line in result.out.splitlines() if line.startswith('IMPORTANT: ') and 'cut short' in line]
+    assert 'install.sh' in line and 'saves nothing' in line
+
+
+# ── an update with no sudo ──
+
+def test_an_update_leaves_a_grow_to_install_sh_and_says_so_at_the_end(pi):
+    pi.run()
+    line = "Desk Talk's room needs sudo to grow from 8192 to the 10000 MB in DATA_ROOM_SIZE_MB, so it stays at 8192 MB for now. To grow it, run once: bash install.sh"
+    pi.state('room_make_says', line + '\n')
+    result = pi.run(script='update.sh')
+    assert result.code == 0, result.out
+    assert 'data_room.sh make --no-sudo' in result.calls and sudo_calls(result) == []
+    assert result.out.count(line) == 2                         # as it goes, and again in the closing notes
+
+
+def test_an_update_that_set_up_sudo_may_grow_the_room(pi):
+    """sudo was asked for once anyway (the journal file was missing), so the room's make may use it."""
+    pi.run()
+    pi.journald_file.unlink()
+    pi.state('room', 'room\n')
+    result = pi.run(script='update.sh')
+    assert result.code == 0, result.out
+    assert 'data_room.sh make' in result.calls and 'data_room.sh make --no-sudo' not in result.calls
 
 
 def test_a_missing_mount_point_of_a_room_not_mounted_isnt_made_as_the_pis_user(pi):

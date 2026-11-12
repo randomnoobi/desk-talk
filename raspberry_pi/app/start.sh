@@ -20,9 +20,16 @@ export DESKTALK_SAVING="$mode"
 
 if [ "$mode" = "off" ]; then
     echo "Desk Talk's own space on the SD card isn't mounted, so nothing is saved until it is. See raspberry_pi/README.md, \"If Desk Talk's space is missing\"."
+    # compose.yaml gives a folder in memory. Without one (a plain `docker run`), one is made in /dev/shm, which every
+    # container has in memory, never in /tmp: that's Docker's layer on the SD card. If even that fails, the app still
+    # starts, and this says where it writes.
     if [ -z "$MEMORY_DATA_FOLDER" ]; then
-        MEMORY_DATA_FOLDER=$(mktemp -d)
-        echo "No memory folder was given, so $MEMORY_DATA_FOLDER is used"
+        if MEMORY_DATA_FOLDER=$(mktemp -d /dev/shm/desktalk-XXXXXX); then
+            echo "No memory folder was given, so $MEMORY_DATA_FOLDER is used (in memory)"
+        else
+            MEMORY_DATA_FOLDER=$(mktemp -d) || MEMORY_DATA_FOLDER=""      # empty: the app makes one itself
+            echo "No memory folder was given and none could be made in memory (/dev/shm), so ${MEMORY_DATA_FOLDER:-a folder the app makes} is used: that may be on the SD card"
+        fi
     fi
     export DESKTALK_DATA_FOLDER="$MEMORY_DATA_FOLDER"
     chown "$PI_USER_ID:$PI_GROUP_ID" /pairing "$DESKTALK_DATA_FOLDER" || echo "Could not give /pairing and the memory folder to user $PI_USER_ID"

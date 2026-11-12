@@ -10,7 +10,10 @@
 # size mounted at the data folder, so other files filling the card can't stop the history being saved
 # (raspberry_pi/data_room.sh, raspberry_pi/systemd/desktalk-data-room.service). The first time, it stops the app and
 # the camera, and data_room.sh copies the data folder into the room, checks the copy and keeps the old folder, renamed.
-# After that the data folder is left as it is.
+# After that the data folder is left as it is. While the move runs, DATA_ROOM_ON in .env already says yes, so if a power
+# cut stops it part-way, the app starts at the next boot saving nothing, never a new history on the empty folder the room
+# mounts at. Such a move cut short (data_room.sh status: leftover) is finished before anything else: until it is, the
+# app saves nothing, the Pi isn't linked to a cloud server, and no folder is made where the room mounts.
 #
 #   --tz <zone>        your time zone (normally taken from the Pi)
 #   --server <address> link this Pi to your cloud server, using the code from its website. The Pi needs no cloud.
@@ -65,7 +68,7 @@ TEMP_FOLDER=""
 SERVICE_CHANGED=0                           # desktalk.service was installed or changed in this run
 SETUP_SUDO=0                                # an update run may use sudo, to set up what an older install didn't
 START_FAILED=0
-ROOM=""                                     # what data_room.sh status said: room, elsewhere, unmounted or none
+ROOM=""                                     # what data_room.sh status said: room, elsewhere, unmounted, leftover or none
 ROOM_STOPPED=""                             # why data_room.sh make stopped, in its own words
 ROOM_FAILED=0                               # the room wasn't made or mounted: it stops at the end, with ROOM_STOPPED
 ROOM_ON=""                                  # the DATA_ROOM_ON this run wrote (or in a dry run would have)
@@ -82,6 +85,8 @@ leave() {
         WRITERS_STOPPED=0
         trap '' HUP INT TERM                # nothing cuts this short
         say "This stopped while the app and the camera were stopped, so they are being started again, as they were ..." || true
+        # DATA_ROOM_ON said yes for the move: the app gets what's there now (a move that didn't happen means no).
+        put_room_on "$(room_on_for "$(data_room_ status 2> /dev/null || printf '%s' "$ROOM")")" 2> /dev/null || true
         if compose_ up -d --no-build; then
             say "The containers are started again." || true
         else
@@ -688,6 +693,7 @@ sudo_to_set_up() {
     [ -f "$(setting INSTALL_JOURNALD_FILE)" ] || what="${what:+$what, and to }keep its logs on the SD card (Raspberry Pi OS keeps them in memory only, so they'd be lost at a restart or a power cut)"
     case "$ROOM" in
         none|unmounted) what="${what:+$what, and to }give Desk Talk its own room on the SD card (so other files filling the card can't stop its history being saved)" ;;
+        leftover) what="${what:+$what, and to }finish moving Desk Talk's history into its own room on the SD card (a move that was cut short)" ;;
     esac
     [ -n "$what" ] || return 0
     if [ "$DRY_RUN" = 1 ]; then
@@ -927,9 +933,9 @@ place_model() {
 data_folder() {
     local wanted
     wanted=$(setting DESKTALK_DATA)
-    # The mount point of a room that isn't mounted is data_room.sh's (and its unit's) to make, as root's, so the app
-    # can't write a second history on the card there.
-    if [ "$ROOM" = unmounted ]; then
+    # The mount point of a room that isn't mounted (or of a move cut short) is data_room.sh's (and its unit's) to make,
+    # as root's, so the app can't write a second history on the card there.
+    if [ "$ROOM" = unmounted ] || [ "$ROOM" = leftover ]; then
         (cd "$PI_DIR" && if [ -d "$wanted" ]; then cd -- "$wanted" && pwd; else printf '%s\n' "$wanted"; fi)
         return
     fi
@@ -947,6 +953,14 @@ link_to_cloud() {
         return
     fi
     local said data status=0
+    # The link is saved in the data folder: with the room not mounted that's the bare mount point, and a file there
+    # would stop the room being mounted at all (it's never mounted over files).
+    if [ "$ROOM" = unmounted ] || [ "$ROOM" = leftover ]; then
+        LINK_FAILED=1
+        say "This Pi is NOT linked to $SERVER yet: Desk Talk's own room on the SD card isn't mounted, and the link is saved in it. The rest still installs, and tries to mount it."
+        later "This Pi is NOT linked to $SERVER, because Desk Talk's own room on the SD card wasn't mounted (see above). Once it is, get a new code from the website and run: DESKTALK_LINK_CODE=<the code> bash $(quoted "$PI_DIR/install.sh") --server $(quoted "$SERVER")"
+        return
+    fi
     data=$(data_folder)
     say "Linking this Pi to $SERVER ..."
     said=$(DESKTALK_LINK_CODE=$CODE python3 "$PI_DIR/link_pi.py" --data "$data" --server "$SERVER" --name "$PI_NAME" 2>&1) || status=$?
@@ -989,12 +1003,12 @@ data_room_() {
     bash "$PI_DIR/data_room.sh" "$@"
 }
 
-# What the app is told (DATA_ROOM_ON in .env, which start.sh reads): yes while the room's file is there, mounted or not.
-# A room that isn't mounted may hold the only history, so the app then saves nothing, and says so, rather than start a
-# second history beside it.
+# What the app is told (DATA_ROOM_ON in .env, which start.sh reads): yes while the room's file is there, mounted or not,
+# or a move into it was cut short. A room that isn't mounted may hold the only history, so the app then saves nothing,
+# and says so, rather than start a second history beside it.
 room_on_for() {
     case "$1" in
-        room|unmounted) printf yes ;;
+        room|unmounted|leftover) printf yes ;;
         *) printf no ;;
     esac
 }
@@ -1013,20 +1027,21 @@ put_room_on() {
     fi
 }
 
-# Runs data_room.sh make (with --dry-run in a dry run), showing what it says as it goes. Its IMPORTANT lines, and where
-# it kept the old data folder, go in the closing notes too. If it stops, its reason goes in ROOM_STOPPED.
+# Runs data_room.sh make (with --dry-run in a dry run, and any flags given), showing what it says as it goes. Its
+# IMPORTANT lines, what it left for lack of sudo, and where it kept the old data folder go in the closing notes too. If
+# it stops, its reason goes in ROOM_STOPPED.
 data_room_make() {
     local said line code=0
     make_temp_folder
     said=$TEMP_FOLDER/data_room.txt
     if [ "$DRY_RUN" = 1 ]; then
-        data_room_ make --dry-run 2>&1 | tee "$said" || code=$?
+        data_room_ make --dry-run "$@" 2>&1 | tee "$said" || code=$?
     else
-        data_room_ make 2>&1 | tee "$said" || code=$?
+        data_room_ make "$@" 2>&1 | tee "$said" || code=$?
     fi
     while IFS= read -r line; do
         case "$line" in
-            "IMPORTANT: "*|"The old data folder is kept at "*) later "$line" ;;
+            "IMPORTANT: "*|"The old data folder is kept at "*|"Desk Talk's room needs sudo to "*) later "$line" ;;
         esac
     done < "$said"
     [ "$code" = 0 ] && return 0
@@ -1089,21 +1104,27 @@ check_room_service() {
 }
 
 # After the build: data_room.sh sizes the room so that a rebuild still has its room on the card. Once the room is there
-# this only checks it (and grows it if DATA_ROOM_SIZE_MB went up), with nothing stopped, and needs no sudo.
+# this only checks it (and grows it if DATA_ROOM_SIZE_MB went up), with nothing stopped. An update that didn't ask for
+# sudo leaves what needs it (a grow) to install.sh, and says so.
 set_up_data_room() {
-    local after=$ROOM stopped=0 failed=0
+    local after=$ROOM stopped=0 failed=0 flag=""
     case "$ROOM" in
         room)
-            if ! data_room_make; then
+            if [ "$UPDATE" = 1 ] && [ "$SETUP_SUDO" = 0 ]; then
+                flag=--no-sudo
+            fi
+            if ! data_room_make ${flag:+"$flag"}; then
                 later "IMPORTANT: Desk Talk's own room couldn't be checked or grown: $ROOM_STOPPED It still works at the size it has."
             fi
             check_room_service ;;
         elsewhere)
             say "The data folder is on another disk than the SD card, so it gets no room of its own and is left as it is." ;;
-        none|unmounted)
+        none|unmounted|leftover)
             if [ "$UPDATE" = 1 ] && [ "$SETUP_SUDO" = 0 ]; then
                 if [ "$ROOM" = none ]; then
                     later "IMPORTANT: Desk Talk doesn't have its own room on the SD card yet, because sudo didn't work, so other files filling the card could stop its history being saved. To give it one, run once: bash $(quoted "$PI_DIR/install.sh")"
+                elif [ "$ROOM" = leftover ]; then
+                    later "IMPORTANT: a move of Desk Talk's history into its own room on the SD card was cut short, and finishing it needs sudo, which didn't work, so the app saves nothing. Your history is safe. To finish the move, run once: bash $(quoted "$PI_DIR/install.sh")"
                 else
                     later "IMPORTANT: Desk Talk's own room on the SD card isn't mounted, because sudo didn't work, so the app saves nothing. To mount it, run once: bash $(quoted "$PI_DIR/install.sh")"
                 fi
@@ -1112,7 +1133,9 @@ set_up_data_room() {
                 later "IMPORTANT: Desk Talk doesn't have its own room on the SD card set up, because sudo didn't work, so the app and the camera weren't stopped for it. To set it up, run once: bash $(quoted "$PI_DIR/install.sh")"
             else
                 stopped=1
-                if stop_the_writers && data_room_make; then
+                # yes while it moves: if a power cut stops the move, the app starts saving nothing at the next boot,
+                # never a new history on the empty folder the room mounts at. Put right just below if it didn't happen.
+                if stop_the_writers && put_room_on yes && data_room_make; then
                     after=room
                 else
                     failed=1
