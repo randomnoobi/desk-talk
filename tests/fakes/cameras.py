@@ -5,20 +5,39 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
-from desktalk.domain import Gravity, UploadInfo
+from desktalk.domain import Gravity, PiHealth, UploadInfo
+from tests.fakes.clock import FakeClock
 
 
 class FakePi:
-    """Implements PiStatus and PiUploads. A test hands it uploads with receive(info, arrived_at)."""
+    """Implements PiStatus, PiUploads and PiHeartbeats. A test hands it uploads with receive(info, arrived_at), and
+    heartbeats with heartbeat(health) (when they come in: `clock`'s monotonic time)."""
 
-    def __init__(self):
+    def __init__(self, clock: FakeClock | None = None):
+        self._clock = clock or FakeClock()
         self._info: UploadInfo | None = None
         self._arrived_at = 0.0
         self._reported: dict[str, Any] = {}
+        self._health: tuple[PiHealth, float] | None = None
+        self._heartbeat_at: float | None = None
 
     def receive(self, info: UploadInfo, arrived_at: float) -> None:
         self._info, self._arrived_at = info, arrived_at
-        self._reported.update({k: v for k, v in asdict(info.health).items() if v not in (None, '')})
+        self._note(info.health)
+
+    def _note(self, health: PiHealth) -> None:
+        self._health = (health, self._clock.monotonic())
+        self._reported.update({k: v for k, v in asdict(health).items() if v not in (None, '')})
+
+    def heartbeat(self, health: PiHealth) -> None:
+        self._heartbeat_at = self._clock.monotonic()
+        self._note(health)
+
+    def last_heartbeat_at(self) -> float | None:
+        return self._heartbeat_at
+
+    def latest_health(self) -> tuple[PiHealth, float] | None:
+        return self._health
 
     def latest_upload(self) -> tuple[UploadInfo, float] | None:
         return (self._info, self._arrived_at) if self._info is not None else None

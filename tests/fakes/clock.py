@@ -31,6 +31,11 @@ class FakeClock:
         self._now += seconds
         self._monotonic += seconds
 
+    def set_wall_clock(self, now: float) -> None:
+        """The wall clock jumps to `now` (seconds since 1970), as when it is set by hand or from the internet. The
+        monotonic clock doesn't move."""
+        self._now = float(now)
+
     def local_hour(self, now: float) -> int:
         return time.gmtime(now + self._offset_sec).tm_hour
 

@@ -63,6 +63,9 @@ PI_USB_HEADERS = {**{k: v for k, v in PI_HEADERS.items() if k != 'X-Lux'},
 PHONE_HEADERS = {'Content-Type': 'image/jpeg', 'X-Desk-Key': PAIR_KEY, 'X-Desk-Rotation': '90',
                  'X-Desk-Gravity': '0.12,-9.71,0.85'}
 KEY = {'X-Desk-Key': PAIR_KEY}
+# What the Pi's camera program sends with each heartbeat (raspberry_pi/camera/heartbeat.py).
+HEARTBEAT = {'health': {'camera': 'picamera2', 'photos_stored': 42, 'disk_free_mb': 1234, 'last_cleanup_ts': 1792569000,
+                        'cpu_temp_c': 61.5, 'throttled': '0x0'}}
 WRONG_KEY = {'X-Desk-Key': 'not-the-key'}
 
 TODO_LIST = {'type': 'todo', 'items': [{'text': 'Send the report', 'done': False},
@@ -144,6 +147,18 @@ CASES = [
     Case('live-after-pi-frame', 'GET', '/api/live', 200, desk='fresh',
          before=(Step('POST', '/api/pi/frame', data=PICTURE, headers=PI_HEADERS),),
          values={'camera': True, 'camera_source': 'pi'}),
+    # The Pi's heartbeat: how it is doing, on a timer of its own, so its temperature keeps coming without pictures.
+    Case('pi-heartbeat', 'POST', '/api/pi/heartbeat', 200, desk='fresh', json=HEARTBEAT, headers=KEY),
+    Case('pi-heartbeat-wrong-key', 'POST', '/api/pi/heartbeat', 403, desk='fresh', json=HEARTBEAT,
+         headers=WRONG_KEY),
+    Case('pi-heartbeat-bad-health', 'POST', '/api/pi/heartbeat', 400, desk='fresh', json={'health': 'hot'},
+         headers=KEY),
+    Case('pi-heartbeat-camera-is-phone', 'POST', '/api/pi/heartbeat', 409, desk='phone', json=HEARTBEAT,
+         headers=KEY),
+    Case('health-after-pi-heartbeat', 'GET', '/api/health', 200, desk='fresh',
+         before=(Step('POST', '/api/pi/heartbeat', HEARTBEAT, headers=KEY),),
+         values={'checks.pi_heartbeat.level': 'ok', 'checks.pi_temperature.level': 'ok',
+                 'checks.pi_temperature.value': 61.5, 'pi.cpu_temp_c': 61.5}),
     # What the Pi last said about itself is on the Log status now (the developer page reads it).
     Case('log-status-after-pi-frame', 'GET', '/api/log/status', 200, desk='fresh',
          before=(Step('POST', '/api/pi/frame', data=PICTURE, headers=PI_HEADERS),),

@@ -13,6 +13,33 @@
       "pictures_received": "number",
       "source": "str"
     },
+    "checks": {
+      "camera": {
+        "level": "str",
+        "unit": "str",
+        "value": "null"
+      },
+      "card": {
+        "level": "str",
+        "unit": "str",
+        "value": "number"
+      },
+      "detections": {
+        "level": "str",
+        "unit": "str",
+        "value": "number"
+      },
+      "pi_heartbeat": {
+        "level": "str",
+        "unit": "str",
+        "value": "null"
+      },
+      "pi_temperature": {
+        "level": "str",
+        "unit": "str",
+        "value": "null"
+      }
+    },
     "detection": {
       "detect_ms": "null",
       "model": "str",

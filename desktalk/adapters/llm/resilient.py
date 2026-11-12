@@ -8,7 +8,7 @@ What it adds (numbers: config/settings.yaml → llm):
 - Calls are spaced at least min_interval_sec apart (protects free limits).
 - A failed call is tried again after retry_start_sec, doubling up to retry_max_sec, max_retries tries in all.
   A refusal (bad key, unknown model) is not tried again. A failed picture question waits
-  vision_retry_sec × the try number instead.
+  vision_retry_sec × the try number instead. Each of those waits is cut by up to retry_jitter of it, by chance.
 - Time limit: no new try starts once a call has been going for chat_time_limit(), asked for each call, since the
   AI behind it can change while the app runs (linking to the cloud server). Picture questions have
   their own limit: ollama_timeout_sec when they go to Ollama on this computer, else timeout_sec. (Each
@@ -16,9 +16,9 @@ What it adds (numbers: config/settings.yaml → llm):
 - Rate limits: when you're waiting on a reply, one more try after rate_limit_retry_sec. Background calls
   never try again, and for pause_on_limit_sec after a rate limit they aren't sent at all, so the quota
   is saved for replying to you. (Picture questions on Ollama, on this computer, carry on.)
-- Circuit breaker: after breaker_failures failed calls in a row the AI is left alone for breaker_open_sec;
-  then one call checks whether it's back. Chat and pictures have a breaker each, because pictures often
-  go to a different AI (Ollama).
+- Circuit breaker (desktalk_shared.breaker): after breaker_failures failed calls in a row the AI is left alone for
+  breaker_open_sec; then one call checks whether it's back. Chat and pictures have a breaker each, because pictures
+  often go to a different AI (Ollama).
 
 All timing uses the Clock, so tests move time by hand.
 """
@@ -26,6 +26,7 @@ All timing uses the Clock, so tests move time by hand.
 from __future__ import annotations
 
 import logging
+import random
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
@@ -35,6 +36,8 @@ from desktalk.config import LlmSettings
 from desktalk.config.prompts import AiErrors, Replies
 from desktalk.domain import AIUnavailable
 from desktalk.ports import ChatModel, Clock
+from desktalk_shared.backoff import Backoff, Chance, jittered
+from desktalk_shared.breaker import Breaker
 
 log = logging.getLogger(__name__)
 
@@ -53,51 +56,15 @@ def _plain_errors(ask: Callable[[], str], max_chars: int, words: AiErrors) -> st
         raise AIUnavailable(words.other.format(error=str(exc)[:max_chars])) from exc
 
 
-class _Breaker:
-    """Counts failed calls in a row; when there are too many, says no for a while, then lets one call check."""
-
-    def __init__(self, failures_to_open: int, open_sec: float):
-        self.failures_to_open = failures_to_open
-        self.open_sec = open_sec
-        self.failures = 0
-        self.open_until: float | None = None
-        self.checking = False
-
-    def is_open(self, now: float) -> bool:
-        return self.open_until is not None and (now < self.open_until or self.checking)
-
-    def let_in(self, now: float) -> bool:
-        """True if a call may go ahead now; the first call after the pause becomes the check."""
-        if self.open_until is None:
-            return True
-        if now < self.open_until or self.checking:
-            return False
-        self.checking = True
-        return True
-
-    def worked(self) -> None:
-        self.failures, self.open_until, self.checking = 0, None, False
-
-    def failed(self, now: float) -> bool:
-        """Count a failed call. True if the breaker just opened."""
-        self.failures += 1
-        was_checking, self.checking = self.checking, False
-        if was_checking or self.failures >= self.failures_to_open:
-            self.open_until = now + self.open_sec
-            return True
-        return False
-
-    def seconds_left(self, now: float) -> int:
-        return max(1, round((self.open_until or now) - now))
-
-
 class ResilientChatModel:
     """A ChatModel (desktalk/ports.py) around another ChatModel. `replies`: config/prompts.yaml → replies (what it
-    says when the AI keeps failing or is resting after a rate limit)."""
+    says when the AI keeps failing or is resting after a rate limit). `rng`: where the jitter's chance comes from
+    (tests pass one that gives set numbers)."""
 
     def __init__(self, inner: ChatModel, clock: Clock, settings: LlmSettings, *, replies: Replies,
-                 chat_time_limit: Callable[[], float] | None = None):
+                 chat_time_limit: Callable[[], float] | None = None, rng: Chance | None = None):
         self._inner = inner
+        self._rng = rng or random.Random()
         self._words = replies.ai_errors
         self._clock = clock
         self._s = settings
@@ -107,7 +74,9 @@ class ResilientChatModel:
             VISION: lambda: vision_limit,
         }
         self._lock = threading.Lock()
-        self._breakers = {kind: _Breaker(settings.breaker_failures, settings.breaker_open_sec)
+        # The same pause every time it opens (first == most) and no jitter: there's one AI, so nothing to spread out.
+        self._breakers = {kind: Breaker(settings.breaker_failures,
+                                        Backoff(settings.breaker_open_sec, settings.breaker_open_sec))
                           for kind in (CHAT, VISION)}
         self._problem: str | None = None
         self._resting_until: float | None = None     # background calls rest until then (after a rate limit)
@@ -214,15 +183,15 @@ class ResilientChatModel:
                 return None
             return s.rate_limit_retry_sec
         if kind == VISION:
-            return s.vision_retry_sec * (attempt + 1)
-        return min(s.retry_start_sec * 2 ** attempt, s.retry_max_sec)
+            return jittered(s.vision_retry_sec * (attempt + 1), s.retry_jitter, self._rng)
+        return jittered(min(s.retry_start_sec * 2 ** attempt, s.retry_max_sec), s.retry_jitter, self._rng)
 
     def _failed(self, kind: str, err: AIUnavailable) -> None:
         with self._lock:
             now = self._clock.monotonic()
             if self._breakers[kind].failed(now):
                 log.warning('AI %s failed %d times in a row; leaving it alone for %g s', kind,
-                            self._breakers[kind].failures, self._s.breaker_open_sec)
+                            self._breakers[kind].failures, self._breakers[kind].pause)
             if err.rate_limited and (kind == CHAT or not self.local_vision):
                 self._resting_until = now + self._s.pause_on_limit_sec
                 log.warning('Rate limit hit: background AI calls rest for %g min', self._s.pause_on_limit_sec / 60)

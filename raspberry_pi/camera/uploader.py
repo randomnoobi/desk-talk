@@ -4,8 +4,8 @@ Sends pictures to the app: one POST to /api/pi/frame per picture, in upload form
 
 Only the newest picture waits to be sent, so a slow Wi-Fi skips pictures instead of falling behind.
 When the app is away it waits a little longer after each miss (pi.upload_retry_start_sec,
-doubling up to pi.upload_retry_max_sec), and then sends only the newest picture: no catching up
-on old ones, which would make the characters react minutes late.
+doubling up to pi.upload_retry_max_sec, each wait cut by up to pi.upload_retry_jitter of it by chance), and then
+sends only the newest picture: no catching up on old ones, which would make the characters react minutes late.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import threading
 
-from desktalk_shared.backoff import Backoff
+from desktalk_shared.backoff import Backoff, Chance
 from desktalk_shared.wire import DetectorState, UploadInfo, encode_upload
 from raspberry_pi.camera import net
 from raspberry_pi.camera.clock import Clock
@@ -25,7 +25,7 @@ class Uploader:
     """The camera's and the detector's threads call offer(); a thread of its own calls tick() over and over."""
 
     def __init__(self, server: str, key: str, *, timeout_sec: float, retry_start_sec: float, retry_max_sec: float,
-                 error_text_chars: int, clock: Clock):
+                 retry_jitter: float, error_text_chars: int, clock: Clock, rng: Chance | None = None):
         self.server = server.rstrip('/')
         self.url = self.server + '/api/pi/frame'
         self.key = key
@@ -40,7 +40,7 @@ class Uploader:
         self._lock = threading.Lock()
         self._waiting: tuple[bytes, UploadInfo] | None = None
         self._retry_at = 0.0
-        self._backoff = Backoff(retry_start_sec, retry_max_sec)     # the wait after each miss in a row
+        self._backoff = Backoff(retry_start_sec, retry_max_sec, jitter=retry_jitter, rng=rng)   # after misses in a row
         self._said = ''                      # the last thing logged, so a problem is logged once, not every picture
 
     def offer(self, jpeg: bytes, info: UploadInfo) -> None:

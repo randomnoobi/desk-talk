@@ -29,6 +29,7 @@ PositiveInt = Annotated[int, Field(gt=0)]
 PositiveNumber = Annotated[float, Field(gt=0)]
 Hour = Annotated[int, Field(ge=0, le=23)]
 Port = Annotated[int, Field(ge=1, le=65535)]
+Share = Annotated[float, Field(ge=0, le=1)]
 
 
 class ConfigError(Exception):
@@ -90,6 +91,7 @@ class ReportSettings(_Section):
     max_tries: PositiveInt
     retry_first_wait_min: PositiveNumber
     retry_growth: Annotated[float, Field(ge=1)]
+    retry_jitter: Share
     provider: Literal['anthropic', 'openai_compatible']
     model: str
     url: str

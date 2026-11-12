@@ -89,7 +89,8 @@ def test_a_server_that_is_off_does_not_stop_events_reaching_the_log(tmp_path):
     rig.watch(4, LAPTOP, CUP_FAR)
     rig.app.habits.log('hydration', 'sip')
     wait = rig.tick(rig.app.cloud, after=10)
-    assert wait == rig.config.cloud.retry_start_sec
+    cloud = rig.config.cloud
+    assert cloud.retry_start_sec * (1 - cloud.retry_jitter) <= wait <= cloud.retry_start_sec     # with its jitter
     day = rig.clock.local_day(rig.clock.now())
     assert [e['action'] for e in rig.app.event_log.events(day, {'habit'}, None)] == ['sip']
     assert rig.app.cloud.status()['waiting'] >= 1           # the sip, and what the camera saw appear

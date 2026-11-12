@@ -12,13 +12,13 @@ from desktalk_cloud.report_data import load_report_words
 from desktalk_cloud.report_errors import ReportWillNotWork
 from desktalk_cloud.report_job import ReportJob
 from desktalk_cloud.store_memory import MemoryStore
-from tests.fakes import FakeClock
+from tests.fakes import FakeClock, FixedChance
 from tests.fakes.cloud import FakeReportWriter, cloud_config, link_device, make_parts
 
 DAY = 86400
 DUE = datetime(2026, 11, 1, 20, tzinfo=UTC).timestamp()          # Sunday 1 Nov, 20:00 UTC
 WEEK = '2026-10-26'                                              # the Monday that week's days start on
-CONFIG = cloud_config()
+CONFIG = cloud_config(reports={'retry_jitter': 0})                   # no jitter, so each wait can be checked
 WORDS = load_report_words(CONFIG.prompts, CONFIG.messages)
 SETTINGS = CONFIG.reports
 
@@ -30,12 +30,12 @@ def at(day: int, hour: int, month: int = 10) -> float:
 class Setup:
     """A server whose clock starts on Tuesday 20 Oct 12:00, with a job, a fake writer and one linked Pi (ann)."""
 
-    def __init__(self, store: MemoryStore | None = None, writer: Any = None):
+    def __init__(self, store: MemoryStore | None = None, writer: Any = None, settings=SETTINGS, rng=None):
         self.clock = FakeClock(start=at(20, 12))
         self.parts = make_parts(clock=self.clock, store=store)
         self.store = self.parts.store
         self.writer = writer or FakeReportWriter('# The week')
-        self.job = ReportJob(self.store, self.writer, self.clock, SETTINGS, WORDS)
+        self.job = ReportJob(self.store, self.writer, self.clock, settings, WORDS, rng=rng)
         self.ann = link_device(self.parts, 'ann').device
 
     def go_to(self, ts: float | None) -> None:
@@ -198,6 +198,21 @@ def test_each_pi_is_due_in_its_own_time_zone():
 
 
 # ── when it goes wrong ───────────────────────────────────────────────────────────────────────────────────────────
+def test_jitter_cuts_each_wait_before_trying_again_by_up_to_its_share():
+    s = Setup(settings=SETTINGS.model_copy(update={'retry_jitter': 0.5}), rng=FixedChance(1, 0.5))
+    s.writer.fail_with = 'The AI company is busy.'
+    s.send(events=[sip('s1', at(28, 9))], at_ts=DUE + 300)
+    s.go_to(DUE + 600)
+    s.tick()
+    first = s.report().next_try_at
+    assert first is not None
+    assert first == DUE + 600 + SETTINGS.retry_first_wait_min * 60 * 0.5                      # cut by half
+    s.go_to(first)
+    s.tick()
+    wait = SETTINGS.retry_first_wait_min * 60 * SETTINGS.retry_growth
+    assert s.report().next_try_at == first + wait * 0.75                                       # cut by a quarter
+
+
 def test_failure_retries_then_failed():
     s = Setup()
     s.writer.fail_with = 'The AI company is busy.'

@@ -17,6 +17,7 @@ from desktalk.adapters.picture import OpenCvPictureTools
 from desktalk.config import CameraSettings, load_config
 from desktalk.core.vision.producer import DetectionProducer
 from desktalk.domain import BBox, Detection, DetectionEvent, DetectorState, Light, SeenObject, Size, UploadInfo
+from desktalk.ports import DetectionTimes
 from tests.fakes import (
     FakeClock,
     FakeDetector,
@@ -582,3 +583,25 @@ def test_a_picture_that_cannot_be_made_into_a_jpeg_is_not_shown():
     rig = Rig(kind='webcam', tools=NoJpegs())
     rig.picture()
     assert len(rig.events()) == 1 and rig.desk.plain(0) is None and rig.desk.camera_numbers() == []
+
+
+# ── when detection last gave a result (the health checks) ──
+def test_found_at_is_when_a_picture_last_went_through_detection_here_or_on_the_pi():
+    rig = Rig()
+    assert isinstance(rig.producer, DetectionTimes) and rig.producer.found_at is None
+    rig.clock.advance(4)
+    rig.picture(info=from_pi(DetectorState.OK))                          # the Pi found nothing: still a result
+    assert rig.producer.found_at == rig.clock.monotonic()
+    rig.clock.advance(4)
+    rig.picture(info=from_pi(DetectorState.OFF, frame_id='pi-000008'))   # detected here
+    assert rig.producer.found_at == rig.clock.monotonic()
+
+
+def test_busy_and_failed_pictures_are_not_a_result():
+    rig = Rig(detector=NoDetector(WORDS))
+    rig.picture(info=from_pi(DetectorState.OK))
+    found = rig.producer.found_at
+    rig.clock.advance(4)
+    rig.picture(info=from_pi(DetectorState.BUSY, frame_id='pi-000008'))
+    rig.picture(info=from_pi(DetectorState.OFF, frame_id='pi-000009'))
+    assert rig.producer.found_at == found

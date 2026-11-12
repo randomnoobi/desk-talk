@@ -10,7 +10,7 @@ from desktalk.adapters.llm.resilient import ResilientChatModel
 from desktalk.config import load_config
 from desktalk.domain import AIUnavailable
 from tests.contracts.chat_model_contract import ChatModelContract
-from tests.fakes import FakeChatModel, FakeClock
+from tests.fakes import FakeChatModel, FakeClock, FixedChance
 
 HELLO = [{'role': 'user', 'content': 'Say hello.'}]
 DOWN = AIUnavailable('Could not reach the AI service.')
@@ -36,7 +36,7 @@ def llm(base_llm):
     return base_llm.model_copy(update={
         'min_interval_sec': 0, 'max_retries': 3, 'retry_start_sec': 2, 'retry_max_sec': 30, 'timeout_sec': 30,
         'rate_limit_retry_sec': 5, 'pause_on_limit_sec': 600, 'breaker_failures': 3, 'breaker_open_sec': 60,
-        'vision_retry_sec': 1})
+        'vision_retry_sec': 1, 'retry_jitter': 0})
 
 
 class Scripted:
@@ -111,6 +111,15 @@ def test_a_failed_call_is_tried_again_after_growing_waits(llm):
     model = resilient(inner, clock, llm)
     assert chat(model) == 'Back!'
     assert clock.slept == [2, 4] and model.problem() is None
+
+
+def test_jitter_cuts_each_wait_by_up_to_its_share(llm):
+    clock = FakeClock()
+    model = resilient(Scripted(clock, DOWN), clock, llm.model_copy(update={'max_retries': 5, 'retry_max_sec': 5,
+                                                                        'retry_jitter': 0.5}),
+                      rng=FixedChance(0, 1, 0.5, 1))
+    fails(model)
+    assert clock.slept == [2, 2, 3.75, 2.5]                      # 2, 4, 5, 5 cut by none, half, a quarter, half
 
 
 def test_the_waits_stop_growing_at_the_longest_wait(llm):
@@ -299,6 +308,14 @@ def test_a_failed_picture_question_is_tried_again_after_longer_waits(llm):
     model = resilient(Scripted(clock, DOWN, DOWN, 'A cup.'), clock, llm)
     assert look(model) == 'A cup.'
     assert clock.slept == [1, 2]
+
+
+def test_picture_questions_get_the_jitter_too(llm):
+    clock = FakeClock()
+    model = resilient(Scripted(clock, DOWN, DOWN, 'A cup.'), clock, llm.model_copy(update={'retry_jitter': 0.5}),
+                      rng=FixedChance(1))
+    assert look(model) == 'A cup.'
+    assert clock.slept == [0.5, 1]
 
 
 def test_a_picture_question_never_tries_again_after_a_rate_limit(llm):

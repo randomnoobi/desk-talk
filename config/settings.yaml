@@ -73,12 +73,17 @@ pi:
   upload_timeout_sec: 5
   upload_retry_start_sec: 1   # the app didn't take a picture: wait this long before sending again...
   upload_retry_max_sec: 10    # ...a little longer after each miss, up to this
+  upload_retry_jitter: 0.2    # each of those waits is cut by up to this share of it, by chance (0 = never, 1 = up
+                              # to all of it), so pictures held up together don't all go again at the same moment
   hot_warning_c: 75           # Lens mentions it when the Pi's processor is this hot (°C); it slows down at about 80
+  hot_serious_c: 80           # ...and says it's serious at this (°C): the Pi is slowing itself down to cool off
   clock_off_warning_sec: 5    # Lens mentions it when the camera's clock is this far from the app's
   camera_warmup_sec: 1        # the Pi camera gets this long to settle its exposure when it starts
   pause_after_error_sec: 0.5  # a picture (or a background job on the Pi) failed: wait this long before trying again
   status_every_sec: 30        # how often the camera program writes a status line
   health_every_sec: 3         # how often the Pi checks its disk, temperature and stored pictures
+  heartbeat_every_sec: 30     # how often the camera program tells the app how the Pi is doing, even when no
+                              # pictures go out (POST /api/pi/heartbeat), so its temperature keeps being checked
   settings_check_every_sec: 60  # how often the camera asks the app for new settings (new detector settings go
                               # to the container right away; others need the camera program restarted)
   restart_after_missed_pictures: 30  # no new picture for this many picture times (30 at 3 a second = 10 s): the
@@ -98,6 +103,7 @@ pi:
     failures_before_pause: 3  # this many failures in a row: stop asking the container for a while...
     pause_start_sec: 5        # ...this long at first...
     pause_max_sec: 60         # ...doubling each time, up to this
+    pause_jitter: 0.2         # each pause is cut by up to this share of it, by chance (0 = never)
     health_check_every_sec: 10  # while paused, ask the container's /health this often
 
 # ── Object detection (YOLO in the app itself) ──────────────────────
@@ -201,12 +207,34 @@ object_states:
   # never needs one): nothing saved is brought back until the clock has synced.
   boot_id_file: null
   database: data/object_states.sqlite     # where the states are saved
+  # So the database can't fill the SD card: rows older than this many days are deleted. The habit rules look back
+  # hours at most, so 30 days is plenty (the same as event_log.keep_days).
+  keep_days: 30
+  prune_every_min: 60         # how often rows older than keep_days are deleted
+  # When the database can't save (a full card), changes wait in memory to be saved with the next ones. At most this
+  # many wait (a few MB); past it the oldest are dropped, so memory can't fill up too.
+  unsaved_most: 5000
   trace_pictures: 90          # the developer page shows each object's last this many pictures of smoothing
+
+# ── The clock (docs/CLOCK.md) ──────────────────────────────────────
+clock:
+  # A clock before this day is plainly wrong (say, set to 1990 by hand, or a Pi that lost its saved time). Until it
+  # is right again, saved object states aren't picked up after a restart and nothing is deleted for being old
+  # (old object states, the event log's old days). Any day before this version of Desk Talk came out will do.
+  earliest_believable_date: 2025-01-01
+  # A clock that jumps more than this many minutes ahead while the app runs, without the time server setting it,
+  # may be wrong too (say, set to next year by hand): deleting by it would delete the whole history at once. So
+  # nothing is deleted for being old until the time server sets the clock again, or the app restarts. The time
+  # server putting a Pi right after a power cut, days ahead, is fine. Only looked at with
+  # object_states.clock_synced_file (the Pi).
+  largest_jump_ahead_min: 60
 
 # ── Keeping background jobs running ────────────────────────────────
 supervisor:
   restart_start_sec: 1        # a background job that crashed starts again after this long...
   restart_max_sec: 60         # ...doubling each time it crashes again, up to this
+  restart_jitter: 0.2         # each of those waits is cut by up to this share of it, by chance (0 = never), so
+                              # jobs that crashed together (say, the network went) don't all start again at once
   scheduler_longest_wait_sec: 60  # the timed jobs (compacting the event log, saving habits) are checked
                               # at least this often
   stop_wait_sec: 5            # when Desk Talk stops, how long to wait for each background job to finish
@@ -361,6 +389,8 @@ llm:
   ollama_timeout_sec: 90      # Ollama runs on your own computer and can be slow to load a model (the Pi's is shorter)
   retry_start_sec: 2          # a failed AI call is tried again after this long...
   retry_max_sec: 30           # ...doubling each time, up to this (max_retries tries in all)
+  retry_jitter: 0.2           # each wait before trying again (vision_retry_sec's too) is cut by up to this share
+                              # of it, by chance (0 = never), so calls that failed together don't all go again at once
   breaker_failures: 3         # this many failed calls in a row = the AI is down: stop calling it...
   breaker_open_sec: 60        # ...for this long, then try one call to see if it's back
   rate_limit_retry_sec: 5     # you're waiting on a reply and a per-minute limit was hit: one more try after this long
@@ -490,6 +520,8 @@ lens:
   cutoff_repeat_times: 1.5    # the same cut-off object is mentioned again only after repeat_after_min times this
   wait_before_saying_sec:     # how long each problem must last before Lens says something
     lost: 15                  # no pictures
+    no_pictures: 120          # no picture at all since the app started (a camera that never came up, like a Pi
+                              # camera whose cable is out)
     covered: 4
     dark: 8
     glare: 8
@@ -500,6 +532,18 @@ lens:
     slow: 30
     pi: 10                    # the Pi is too hot, its power supply is weak, or its clock is off
     pi_detector: 60           # the Pi's own object detection is off (no objects are found until it's back)
+
+# ── Health checks (desktalk/core/health/): each measure on its own, on /api/health, and Lens says the ones in
+# trouble. The Pi's temperature uses pi.hot_warning_c and pi.hot_serious_c above. ──
+health_checks:
+  card_warning_below_mb: 2000   # less free space than this on the disk the data folder is on (on the Pi, its SD
+                                # card): Lens warns...
+  card_serious_below_mb: 500    # ...and less than this is serious: soon nothing new can be saved
+  no_detections_warning_sec: 300  # the camera is connected, but no picture has been through object detection for
+                                # this long (the detector is stuck busy, failing or off): Lens warns...
+  no_detections_serious_sec: 900  # ...and this long is serious
+  pi_heartbeat_late_sec: 90     # no heartbeat from the Pi for this long (it sends one every pi.heartbeat_every_sec):
+                                # Lens says so, and the Pi's temperature is too old to go by
 
 # ── Daily recap ─────────────────────────────────────────────────────
 daily_summary:
@@ -522,6 +566,8 @@ cloud:
   timeout_sec: 10             # give up on a send that takes longer than this
   retry_start_sec: 30         # after a failed send wait this long, then twice that, and so on...
   retry_max_sec: 1800         # ...up to this
+  retry_jitter: 0.2           # each of those waits is cut by up to this share of it, by chance (0 = never), so
+                              # computers that lost the server together don't all send again at the same moment
   totals_every_min: 15        # a day's numbers (desk time, water ...) go when they changed, at most this often
   goals_every_hours: 24       # your goals and wake and bed times go again this often, and whenever they change
   error_text_chars: 200       # most letters kept of a reason the server gives when it says no
@@ -806,8 +852,8 @@ dev:
         fires: lost_object
         object: keys            # an item in lost_items.items
         minutes: 20             # "hasn't been seen for this many minutes"
-  health:                       # when the system tab turns a number amber or red
-    pi_cpu_warn_c: 70           # the Pi's CPU this hot (°C) turns amber...
-    pi_cpu_bad_c: 80            # ...and this hot turns red
-    pi_disk_warn_mb: 1000       # less free space than this on the Pi's card turns amber
+  health:                       # when the system tab turns a number amber or red (the Pi's temperature goes by
+                                # pi.hot_warning_c and pi.hot_serious_c, as the health checks say on /api/health)
+    pi_disk_warn_mb: 1000       # less free space than this in the Pi's picture folder (pi.photo_dir, kept in
+                                # memory, not the SD card) turns amber
     detect_warn_ms: 500         # finding things in one picture here (the app's own YOLO) taking longer turns amber

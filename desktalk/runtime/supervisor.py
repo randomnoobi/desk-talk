@@ -1,7 +1,7 @@
 """
 Keeps the background workers (reminders, Lens, idle chat, the scheduler ...) running.
 
-    supervisor = Supervisor(SystemClock(), first_retry_sec=1, max_retry_sec=300)
+    supervisor = Supervisor(SystemClock(), first_retry_sec=1, max_retry_sec=300, jitter=0.2)
     supervisor.add(reminders, start_after=30)     # any PeriodicWorker (desktalk/ports.py)
     supervisor.start()                            # one thread per worker
     supervisor.status()                           # for /api/health
@@ -9,7 +9,8 @@ Keeps the background workers (reminders, Lens, idle chat, the scheduler ...) run
 
 Each worker's tick() runs over and over in its own thread, with the wait it asks for in between.
 When a round fails, the error is logged with the worker's name and the round is tried again after
-first_retry_sec, then twice that, and so on up to max_retry_sec. One good round starts the count over.
+first_retry_sec, then twice that, and so on up to max_retry_sec, each wait cut by up to `jitter` of it by chance
+(so jobs that failed together don't all start again at once). One good round starts the count over.
 It never gives up, so one bad AI reply can't switch a feature off until the app restarts.
 
 GuardedWorker is the part that decides what happens after each round; it has no thread, so tests
@@ -23,7 +24,7 @@ import threading
 
 from desktalk.ports import Clock, PeriodicWorker
 from desktalk.runtime.errors import plain_error
-from desktalk_shared.backoff import Backoff
+from desktalk_shared.backoff import Backoff, Chance
 
 log = logging.getLogger(__name__)
 
@@ -36,12 +37,13 @@ STOPPED = 'stopped'
 class GuardedWorker:
     """One worker, one round at a time: runs tick(), catches errors, works out the next wait, keeps count."""
 
-    def __init__(self, worker: PeriodicWorker, clock: Clock, *, first_retry_sec: float, max_retry_sec: float):
+    def __init__(self, worker: PeriodicWorker, clock: Clock, *, first_retry_sec: float, max_retry_sec: float,
+                 jitter: float, rng: Chance | None = None):
         self.worker = worker
         self.name = worker.name
         self._clock = clock
         self._lock = threading.Lock()          # status() is read from the web server's thread
-        self._backoff = Backoff(first_retry_sec, max_retry_sec)
+        self._backoff = Backoff(first_retry_sec, max_retry_sec, jitter=jitter, rng=rng)
         self._failures_in_row = 0
         self._total_failures = 0
         self._last_error: str | None = None
@@ -93,10 +95,13 @@ class _Slot:
 class Supervisor:
     """Runs each background worker in its own thread and keeps it going when a round fails."""
 
-    def __init__(self, clock: Clock, *, first_retry_sec: float, max_retry_sec: float):
+    def __init__(self, clock: Clock, *, first_retry_sec: float, max_retry_sec: float, jitter: float,
+                 rng: Chance | None = None):
         self._clock = clock
         self._first_retry = first_retry_sec
         self._max_retry = max_retry_sec
+        self._jitter = jitter
+        self._rng = rng
         self._slots: list[_Slot] = []
         self._started = False
 
@@ -107,7 +112,7 @@ class Supervisor:
         if any(slot.guarded.name == worker.name for slot in self._slots):
             raise ValueError(f'there is already a worker called "{worker.name}"')
         guarded = GuardedWorker(worker, self._clock, first_retry_sec=self._first_retry,
-                                max_retry_sec=self._max_retry)
+                                max_retry_sec=self._max_retry, jitter=self._jitter, rng=self._rng)
         self._slots.append(_Slot(guarded, start_after))
 
     def start(self) -> None:

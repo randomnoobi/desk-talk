@@ -5,6 +5,7 @@ tests/contracts/) but needs no network, camera, Pi, AI key or real time.
 """
 
 from tests.fakes.cameras import FakePhone, FakePi
+from tests.fakes.chance import FixedChance
 from tests.fakes.clock import FakeClock
 from tests.fakes.demo import RecordingCameraWarnings, RecordingFirer, RecordingHabitLog, RecordingReminders
 from tests.fakes.desk import FakeCharacterMemory, FakeDeskScene, FakeLivePictures, FakePhotoAlbum, FakeSafetyBoard
@@ -16,6 +17,7 @@ from tests.fakes.dev import (
     FakeTracePhotos,
     smoothing_step,
 )
+from tests.fakes.health import FakeDetectionTimes, FakeDiskSpace, FakeHealthCheck
 from tests.fakes.parts import (
     FakeChatModel,
     FakeDesktopNotifications,
@@ -56,5 +58,6 @@ __all__ = [
     'InMemoryKeyValueStore', 'InMemoryStateStore', 'RecordingNotifier', 'StaticRoster', 'SyncEventBus',
     'plain_desk_rules', 'FakeChatJoins', 'FakeDesktopNotifications', 'FakeTodoList', 'FakeTracePhotos',
     'RecordingCameraWarnings', 'RecordingFirer', 'RecordingHabitLog', 'RecordingReminders', 'RecordingCloudLink',
-    'a_server_that_is_off', 'FakePiStatsLink', 'FakeStats', 'FakeStatsReader',
+    'a_server_that_is_off', 'FixedChance', 'FakeDetectionTimes', 'FakeDiskSpace', 'FakeHealthCheck',
+    'FakePiStatsLink', 'FakeStats', 'FakeStatsReader',
 ]

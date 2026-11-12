@@ -69,7 +69,7 @@ def test_the_real_desk_never_makes_real_mac_pop_ups(tmp_path):
 
 
 def uploader(url: str, key: str = PAIR_KEY) -> Uploader:
-    return Uploader(url, key, timeout_sec=5, retry_start_sec=1, retry_max_sec=10, error_text_chars=200,
+    return Uploader(url, key, timeout_sec=5, retry_start_sec=1, retry_max_sec=10, retry_jitter=0, error_text_chars=200,
                     clock=PiClock())
 
 

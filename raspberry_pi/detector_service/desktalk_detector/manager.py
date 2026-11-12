@@ -3,7 +3,8 @@ The model manager: keeps the model that answers /detect, and loads new ones.
 
 - PUT /model calls want(); a background thread loads the model (converting it to ncnn the first time)
   while the last good model keeps answering.
-- A model that fails to load is tried again after 5 s, 10 s, 20 s ... (settings), and /health says why.
+- A model that fails to load is tried again after 5 s, 10 s, 20 s ... (settings), each wait cut by up to
+  DETECTOR_RETRY_JITTER of it by chance, and /health says why.
 - One detection at a time: Ultralytics breaks when two threads use a model at once. A picture sent while
   another is being detected is turned away at once (DetectorBusy, 429): the camera program has already
   given up on it, and keeping it waiting would only keep the Pi busy and hot.
@@ -22,6 +23,7 @@ from typing import Any
 import numpy as np
 
 from desktalk_detector.model_folder import DEVICE, ModelFolder
+from desktalk_shared.backoff import Backoff, Chance
 from desktalk_shared.detection import DetectorUnavailable
 from desktalk_shared.detector_api import DetectorHealth, DetectReply, ModelSettings, ServiceState
 from desktalk_shared.ultralytics_results import detections_from_results
@@ -55,17 +57,16 @@ class _Loaded:
 
 
 class ModelManager:
-    def __init__(self, folder: ModelFolder, *, retry_first_sec: float, retry_max_sec: float,
-                 clock: Callable[[], float] = time.perf_counter):
+    def __init__(self, folder: ModelFolder, *, retry_first_sec: float, retry_max_sec: float, retry_jitter: float,
+                 clock: Callable[[], float] = time.perf_counter, rng: Chance | None = None):
         self._folder = folder
         self._clock = clock
-        self._retry_first, self._retry_max = retry_first_sec, retry_max_sec
         self._one_at_a_time = threading.Lock()  # Ultralytics breaks when two threads predict at once
         self._lock = threading.Lock()           # guards the fields below
         self._current: _Loaded | None = None    # the model answering /detect
         self._wanted: ModelSettings | None = None   # the model to load next
         self._problem: str | None = None        # why the wanted model didn't load
-        self._wait = retry_first_sec            # before the next try, if this one fails
+        self._waits = Backoff(retry_first_sec, retry_max_sec, jitter=retry_jitter, rng=rng)   # after failed loads
         self._detections_done = 0
         self._last_detect_ms: float | None = None
         self._detect_problem: str | None = None     # why the last picture failed, until one works
@@ -106,7 +107,8 @@ class ModelManager:
         with self._lock:
             running = self._current is not None and self._current.settings == settings
             if settings != self._wanted:
-                self._wanted, self._problem, self._wait = None if running else settings, None, self._retry_first
+                self._wanted, self._problem = None if running else settings, None
+                self._waits.reset()
         self._wake.set()
         return self.health()
 
@@ -150,9 +152,9 @@ class ModelManager:
             with self._lock:
                 if self._wanted != wanted:
                     return 0                    # asked for another model meanwhile: try that one now
-                wait = self._wait
-                self._wait = min(wait * 2, self._retry_max)
-                self._problem = problem = f'Could not load {describe(wanted)}: {exc}. Trying again in {wait:g} s.'
+                wait = self._waits.next()
+                self._problem = problem = (f'Could not load {describe(wanted)}: {exc}. '
+                                           f'Trying again in {round(wait, 1):g} s.')
             log.warning('%s', problem, exc_info=True)
             return wait
         with self._lock:
