@@ -98,6 +98,19 @@ export interface DevSettings {
   trace_step_photos_kept: number   // settings → object_story.step_photos_kept: ...and this many step pictures
   object_states: SmoothingSettings
   scenarios: DemoLimits
+  pi_log: PiLogSettings
+}
+
+/** One log on the Pi the Pi log tab can show. */
+export interface PiLogSource {
+  name: string                     // what the page asks for (?source=)
+  label: string                    // its name in words, for the picker
+}
+
+/** The Pi log tab's settings. */
+export interface PiLogSettings {
+  sources: PiLogSource[]           // the first one is shown until you pick another
+  keep_lines: number               // the page keeps at most this many lines
 }
 
 /** settings → dev.scenarios: the Demo tab's countdowns. */
@@ -260,6 +273,28 @@ export interface DataFile {
   is_folder: boolean
 }
 
+/** How the server's ssh to the Pi is doing: 'waiting' is after a lost connection, until retry_at. */
+export type PiLogState = 'connecting' | 'connected' | 'waiting' | 'stopped'
+
+/** One line of a Pi log. 'problem' is something ssh said went wrong, 'note' a line of the server's own. */
+export interface PiLogLine {
+  number: number                   // counts up from 1; ask with after= to get the lines past one
+  text: string
+  kind: 'line' | 'problem' | 'note'
+  at: number                       // seconds since 1970
+}
+
+/** GET /api/dev/pi_log?source=&after= */
+export interface PiLog {
+  source: string
+  state: PiLogState
+  problem: string                  // the latest thing that went wrong, or ''
+  retry_at: number | null          // when it tries again (state 'waiting'), seconds since 1970
+  lines: PiLogLine[]               // the lines numbered after `after`, oldest first
+  end: number                      // the last line's number: ask with after=end next time
+  dropped: boolean                 // some lines after `after` were let go before this ask
+}
+
 // GET /api/health (desktalk/web/routers/health.py)
 export interface JobStatus {
   name: string
@@ -405,6 +440,11 @@ export const startScenario = (name: string, afterSec: number) =>
 export const cancelScenario = async (id: string): Promise<void> => {
   await deleteJSON<{ ok: boolean }>(`/api/dev/scenarios/${q(id)}`)
 }
+
+/** The lines of one Pi log after line `after` (0 the first time). 404 for a source not in the settings.
+ *  Asking keeps the server's ssh to the Pi going; it stops by itself a while after the asking stops. */
+export const getPiLog = (source: string, after: number) =>
+  getJSON<PiLog>(`/api/dev/pi_log?source=${q(source)}&after=${q(String(after))}`)
 
 export const getHealth = () => getJSON<Health>('/api/health')
 

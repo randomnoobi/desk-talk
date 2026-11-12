@@ -1,5 +1,12 @@
 // Small pieces every tab can use, so the tabs look alike. The matching CSS is in style.css.
 import type { ReactNode } from 'react'
+import type { DevSettings } from './api'
+
+/** What App gives every tab. `shown` is false while another tab is open (the tab stays on the page, hidden). */
+export interface TabProps {
+  settings: DevSettings
+  shown: boolean
+}
 
 /** How a number is doing: green, amber, red, or grey for "not in use". */
 export type Level = 'ok' | 'warn' | 'bad' | 'off'

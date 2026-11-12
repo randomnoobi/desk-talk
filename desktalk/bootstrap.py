@@ -39,7 +39,7 @@ from typing import Any
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource, make_pair_key
 from desktalk.adapters.cloud import HttpCloudLink
 from desktalk.adapters.detector import NoDetector, UltralyticsDetector
-from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser
+from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser, SshPiLog
 from desktalk.adapters.llm import OpenAICompatibleChatModel, ResilientChatModel, UnpromptedChatModel
 from desktalk.adapters.notify import QueuedNotifications, make_notifications
 from desktalk.adapters.picture import DeskPainter, OpenCvPictureTools
@@ -110,6 +110,7 @@ from desktalk.ports import (
     PhotoAlbum,
     PhotoTaker,
     PictureInbox,
+    PiLogReader,
     PiStatus,
     Preferences,
     Profiles,
@@ -197,6 +198,9 @@ class DeskTalk:
     demo              the Demo tab's pretend warnings: scenarios(), start(), cancel(), waiting()
                       (/api/dev/scenarios...), and the background job that fires them once their countdown is over
                       (None when settings → dev.enabled is false)
+    pi_log            the Pi log tab's reader: sources(), read() (/api/dev/pi_log), and the background job that
+                      stops reading once the tab stops asking and connects again after a lost connection; close()
+                      at stop() (None when settings → dev.enabled is false)
     todos             the to-do list the server keeps: items(), replace(), has_list() (/api/todos, /api/chat_todos)
     desktop           the Mac's pop-ups or the Pi's speaker (warnings, reminders, sips): nothing on the web uses it;
                       stop() lets its thread finish
@@ -253,6 +257,7 @@ class DeskTalk:
     chat_joins: ChatJoins | None = None
     trace_photos: TracePhotos | None = None
     demo: DemoCountdowns | None = None
+    pi_log: PiLogReader | None = None
     todos: TodoList | None = None
     desktop: DesktopNotifications | None = None
 
@@ -279,6 +284,8 @@ class DeskTalk:
             jobs.append((self.keepalive, c.llm.ollama_keepalive_start_sec))
         if self.demo is not None:
             jobs.append((self.demo, 0.0))
+        if self.pi_log is not None:
+            jobs.append((self.pi_log, 0.0))
         return jobs
 
     def start(self) -> None:
@@ -289,10 +296,10 @@ class DeskTalk:
         log.info('Desk Talk started: %s', ', '.join(job.name for job, _ in self.background_jobs()))
 
     def stop(self, timeout: float | None = None) -> list[str]:
-        """Stop everything, in this order: the background jobs and a developer page test run still going; the
-        events still waiting are handled; the object states are saved; today's habits are saved; the event log
-        is compacted; the Mac pop-ups still waiting are shown; the event stream is closed (and a webcam let go);
-        the object states database is closed.
+        """Stop everything, in this order: the background jobs, a developer page test run still going and the Pi
+        log's ssh; the events still waiting are handled; the object states are saved; today's habits are saved;
+        the event log is compacted; the Mac pop-ups still waiting are shown; the event stream is closed (and a
+        webcam let go); the object states database is closed.
         A step that fails is logged and the rest still happen. `timeout`: how long to wait for each job
         (settings → supervisor.stop_wait_sec when not given). Returns the names of jobs and event consumers
         still busy after their wait (their threads don't keep the app from closing)."""
@@ -300,6 +307,8 @@ class DeskTalk:
         still_running = self.supervisor.stop(wait)
         if self.test_runner is not None:
             self._shutdown_step('stop the test run', self.test_runner.close)
+        if self.pi_log is not None:
+            self._shutdown_step('stop reading the Pi log', self.pi_log.close)
         if not self.bus.wait_idle(wait):
             log.warning('Some events were still waiting when Desk Talk stopped')
         self._shutdown_step('save the object states', lambda: self.object_states.save_snapshot(self.clock.now()))
@@ -383,7 +392,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
           client_factory: Callable[..., Any] | None = None, source: FrameSource | None = None,
           data_folder: Path | None = None, config_store: KeyValueStore | None = None, pair_key: str | None = None,
           synchronous_events: bool = False, set_up_logging: bool = True,
-          test_runner: TestRunner | None = None, desktop: DesktopNotifications | None = None,
+          test_runner: TestRunner | None = None, pi_log: PiLogReader | None = None,
+          desktop: DesktopNotifications | None = None,
           cloud_link_factory: Callable[[str, str], CloudLink] | None = None) -> DeskTalk:
     """Every part of Desk Talk, connected. Nothing runs until start().
 
@@ -403,6 +413,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         set_up_logging      log to the terminal and to the log folder (settings → logging)
         test_runner         the developer page's test runner (PytestRunner on this project), when settings →
                             dev.enabled is on
+        pi_log              the developer page's Pi log tab (SshPiLog: ssh to the Pi, settings → dev.pi_log), when
+                            settings → dev.enabled is on
         desktop             pop-ups on a Mac or the Pi's speaker, as settings → notifications.output says
         cloud_link_factory  makes the line to the cloud server from its address and token (HttpCloudLink); only
                             called once the computer is linked"""
@@ -568,8 +580,11 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         firer = DemoFirer(dev.scenarios, bus, habits, lens, reminders, profiles, prompts=config.prompts,
                           lost_item_names={item_id: item.name for item_id, item in config.lost_items.items.items()})
         demo = ScenarioRunner(dev.scenarios, firer, clock, words=config.prompts.dev)
+        if pi_log is None:
+            pi_log = SshPiLog(dev.pi_log, config.prompts.dev.pi_log, clock,
+                              stop_wait_sec=config.supervisor.stop_wait_sec)
     else:
-        test_runner = None
+        test_runner = pi_log = None
 
     return DeskTalk(
         config=config, clock=clock, live_pictures=live_pictures, scene=scene, safety_board=safety_board,
@@ -583,4 +598,4 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         lost_items=lost_items, daily_summary=daily_summary, cloud=cloud, scheduler=scheduler,
         supervisor=supervisor, started_at=clock.now(), keepalive=ai.keepalive_worker(), log_file=log_file,
         test_runner=test_runner, databases=databases, data_files=data_files, chat_joins=roster,
-        trace_photos=trace_photos, demo=demo, todos=todos, desktop=desktop)
+        trace_photos=trace_photos, demo=demo, pi_log=pi_log, todos=todos, desktop=desktop)

@@ -17,6 +17,14 @@ def test_settings_give_the_page_its_trimming_and_counting_numbers(tmp_path):
     assert settings['table_counts_every_sec'] == dev.table_counts_every_sec
 
 
+def test_settings_give_the_pi_log_tab_its_logs_and_how_many_lines_to_keep(tmp_path):
+    rig = DeskRig(tmp_path, test_runner=FakeTestRunner([]))
+    settings = web_client(rig.app).get('/api/dev/settings').json()
+    pi_log = rig.config.dev.pi_log
+    assert settings['pi_log'] == {'sources': [{'name': s.name, 'label': s.label} for s in pi_log.sources],
+                                  'keep_lines': pi_log.keep_lines}
+
+
 def test_a_test_list_that_cant_be_made_says_why(tmp_path):
     """A missing `uv` or a mistyped dev.test_command gives the reason, not a bare server error."""
     broken = FakeTestRunner([], collect_error=RuntimeError("Couldn't list the tests: no such program"))

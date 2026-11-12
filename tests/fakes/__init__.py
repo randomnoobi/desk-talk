@@ -11,6 +11,7 @@ from tests.fakes.desk import FakeCharacterMemory, FakeDeskScene, FakeLivePicture
 from tests.fakes.dev import (
     FakeDatabaseBrowser,
     FakeDataFiles,
+    FakePiLog,
     FakeSmoothingTrace,
     FakeTestRunner,
     FakeTracePhotos,
@@ -55,5 +56,5 @@ __all__ = [
     'InMemoryKeyValueStore', 'InMemoryStateStore', 'RecordingNotifier', 'StaticRoster', 'SyncEventBus',
     'plain_desk_rules', 'FakeChatJoins', 'FakeDesktopNotifications', 'FakeTodoList', 'FakeTracePhotos',
     'RecordingCameraWarnings', 'RecordingFirer', 'RecordingHabitLog', 'RecordingReminders', 'RecordingCloudLink',
-    'a_server_that_is_off',
+    'a_server_that_is_off', 'FakePiLog',
 ]

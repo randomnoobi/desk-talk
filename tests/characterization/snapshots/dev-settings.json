@@ -24,6 +24,15 @@
       "window_pictures": "number"
     },
     "output_keep_kb": "number",
+    "pi_log": {
+      "keep_lines": "number",
+      "sources": [
+        {
+          "label": "str",
+          "name": "str"
+        }
+      ]
+    },
     "poll_sec": "number",
     "scenarios": {
       "countdown_default_sec": "number",

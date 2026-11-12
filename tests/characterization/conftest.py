@@ -6,8 +6,8 @@ Fixtures for the characterization tests: ready-made desks, each with its two web
     desk.phone              # WebClient for the phone camera's own server
 
 Each desk is the whole app built by bootstrap.build(), in temp folders, with a fake detector, a fake AI, a fake
-test runner for the developer page (DEV_TESTS) and a FakeClock; nothing touches data/, .env, a camera, the
-network or a Pi, and no test runs. The settings come only from the config
+test runner for the developer page (DEV_TESTS), a fake Pi log reader (PI_LOG_PRINTS) and a FakeClock; nothing
+touches data/, .env, a camera, the network or a Pi, and no test runs. The settings come only from the config
 files in git (not your settings.local.yaml), the danger-zone rules from the copy next to this file, and the
 clock reads 10:00 on 21 Oct 2026 (local time) when the requests are sent, so "today" is the same on every run.
 
@@ -25,10 +25,10 @@ from typing import Any
 import pytest
 
 from desktalk.bootstrap import DeskTalk, build
-from desktalk.domain import BBox, Detection, TestItem
+from desktalk.domain import BBox, Detection, PiLogSource, TestItem
 from desktalk.web.pairing import Links
 from tests.conftest import FakeAI
-from tests.fakes import FakeClock, FakeDesktopNotifications, FakeDetector, FakeTestRunner
+from tests.fakes import FakeClock, FakeDesktopNotifications, FakeDetector, FakePiLog, FakeTestRunner
 from tests.integration.app_kit import changed, desk_config, inbox
 
 from .cases import DEV_TEST_ID, PAIR_KEY, PHONE_HEADERS, PHONE_URL, PI_HEADERS, PICTURE
@@ -53,6 +53,8 @@ PERSON = det('person', 400, 0, 640, 300, conf=0.95)
 # The tests the developer page's (fake) test runner finds.
 DEV_TESTS = [TestItem(DEV_TEST_ID, DEV_TEST_ID.split('::')[0], ()),
              TestItem('tests/unit/test_example.py::test_slow', 'tests/unit/test_example.py', ('slow',))]
+# What the Pi log tab's (fake) reader gets from the Pi: its logs are the ones in settings → dev.pi_log.
+PI_LOG_PRINTS = {'all': ['camera  | 2026-10-21T09:59:58Z Sent picture 42', 'detector  | 2026-10-21T09:59:58Z cup 0.91']}
 # What the fake vision AI says about the picture (the lost-items scan asks it).
 SCENE = '{"visible": ["keys"]}'
 
@@ -115,6 +117,8 @@ def desks(tmp_path):
         app = build(config, clock=clock, detector=detector, data_folder=tmp_path / 'run', pair_key=PAIR_KEY,
                     synchronous_events=True, set_up_logging=False,
                     test_runner=FakeTestRunner(DEV_TESTS, clock=clock), desktop=FakeDesktopNotifications(),
+                    pi_log=FakePiLog([PiLogSource(log.name, log.label) for log in config.dev.pi_log.sources],
+                                     PI_LOG_PRINTS, clock=clock),
                     client_factory=None if reply is None else lambda **kw: FakeAI(reply=reply, **kw))
         phone_port = config.camera.phone_port if name == 'phone' else None    # its server runs only then
         links = Links(COMPUTER_ADDRESS, config.web.port, app.pair_key, phone_port=phone_port)

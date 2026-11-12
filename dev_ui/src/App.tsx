@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ComponentType } from 'react'
 import { getDevSettings, NO_ANSWER, type DevSettings } from './api'
 import Checks from './tabs/Checks'
 import Database from './tabs/Database'
 import Demo from './tabs/Demo'
 import Live from './tabs/Live'
+import PiLog from './tabs/PiLog'
 import Storage from './tabs/Storage'
 import System from './tabs/System'
+import type { TabProps } from './ui'
 import { usePoll } from './usePoll'
 
 // How often to ask again while the first settings haven't arrived. Once they have, the page asks
@@ -15,15 +17,17 @@ import { usePoll } from './usePoll'
 // then keep an old copy that goes wrong as soon as someone changes the setting without building again.
 export const FIRST_TRY_AGAIN_MS = 2000
 
-/** The tabs, in order. Link to one with its id: <a href="#database">. */
+/** The tabs, in order. Link to one with its id: <a href="#database">. Every tab is given TabProps; one that
+ *  doesn't need `shown` just leaves it out of its own props. */
 export const TABS = [
   { id: 'checks', name: 'Checks', Tab: Checks },
   { id: 'live', name: 'Live', Tab: Live },
   { id: 'system', name: 'System', Tab: System },
+  { id: 'pi-log', name: 'Pi log', Tab: PiLog },
   { id: 'database', name: 'Database', Tab: Database },
   { id: 'storage', name: 'Storage', Tab: Storage },
   { id: 'demo', name: 'Demo', Tab: Demo },
-] as const
+] as const satisfies readonly { id: string, name: string, Tab: ComponentType<TabProps> }[]
 
 type TabId = (typeof TABS)[number]['id']
 
@@ -92,7 +96,7 @@ export default function App(): JSX.Element {
         {settings
           ? TABS.filter(t => opened.has(t.id)).map(({ id, name, Tab }) => (
               <section key={id} id={`panel-${id}`} role="tabpanel" aria-label={name} hidden={id !== tab}>
-                <Tab settings={settings} />
+                <Tab settings={settings} shown={id === tab} />
               </section>
             ))
           : !server.error && <p className="muted">Asking Desk Talk for its settings…</p>}
