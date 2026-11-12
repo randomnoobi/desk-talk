@@ -165,7 +165,7 @@ status() {
     # history, so it's never made again.
     if [ -e "$IMAGE" ]; then
         say unmounted
-    elif [ -e "$IMAGE.new" ] && [ -n "$(newest_old_folder)" ] && has_marker "$IMAGE.new"; then
+    elif [ -e "$IMAGE.new" ] && [ -n "$(newest_old_folder)" ] && { empty_folder "$DATA" || has_marker "$IMAGE.new"; }; then
         say leftover
     else
         say none
@@ -395,7 +395,9 @@ put_back() {
 # ── Making, mounting and growing ──
 
 # With no room yet, a <file>.new left by an earlier try. One with the marker in it is a checked copy of the history: it's
-# never deleted (with an old folder set aside too, status says leftover and finish_move runs instead). With no marker, a
+# never deleted. With an old folder set aside too, status says leftover and finish_move runs instead; so it does when the
+# data folder is still the bare mount point, whatever debugfs says, since the old folder is set aside only after the
+# copy is checked. With no marker, a
 # move cut short leaves an empty data folder and the old folder with the history: that's left for you. Any other
 # <file>.new is from a try that stopped before the data folder was touched, and goes.
 check_leftover() {

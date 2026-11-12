@@ -221,6 +221,9 @@ def main(name, args):
     if name == 'resize2fs':
         return 1 if has('resize2fs_fails') else 0
     if name == 'debugfs':                                   # debugfs -R "stat /<name>" <file>
+        if has('debugfs_misreads'):                         # a debugfs whose output the script doesn't know
+            print('something else')
+            return 0
         disk = disk_of(args[-1])
         found = disk / args[1].split(' ', 1)[1].lstrip('/')
         if not disk.is_dir():
@@ -430,6 +433,18 @@ def a_checked_copy_left_by_a_cut_short_move(pi: RoomPi, *, set_aside: bool = Tru
 def test_status_says_leftover_for_a_move_cut_short_after_the_old_folder_was_set_aside(pi):
     a_checked_copy_left_by_a_cut_short_move(pi)
     assert pi.status() == 'leftover\n'
+
+
+def test_a_move_cut_short_is_leftover_even_when_debugfs_cant_be_read(pi):
+    """The old folder is only set aside after the copy is checked, so it alone says the copy is a checked one: a debugfs
+    the script can't read must never turn it into a half-made file that gets deleted."""
+    old = a_checked_copy_left_by_a_cut_short_move(pi)
+    pi.state('debugfs_misreads')
+    assert pi.status() == 'leftover\n'
+    result = pi.run('make')
+    assert result.code == 0, result.out
+    assert pi.status() == 'room\n' and files_in(pi.data) == HISTORY
+    assert old is not None and files_in(old) == HISTORY
 
 
 def test_a_checked_copy_without_an_old_folder_set_aside_is_still_none(pi):
@@ -787,16 +802,17 @@ def test_works_with_a_space_in_the_folder_name(tmp_path, folder):
 
 
 def test_a_move_cut_short_by_a_power_cut_is_not_started_again(pi):
-    """Cut between putting the old folder aside and naming the new file: the old folder holds the history."""
+    """Cut between putting the old folder aside and naming the new file, with a copy debugfs can't read: the move is
+    finished, not started again, and when the copy won't mount, it stops with the history safe in the old folder."""
     old = pi.root / 'data.before-room-2026-11-11-120000'
     pi.data.rename(old)
     pi.data.mkdir()
     pi.new_image.write_text(str(8192 * MB))
     result = pi.run('make')
     assert result.code == 1
-    assert str(old) in result.out
-    assert files_in(old) == HISTORY and pi.new_image.exists()
-    assert not calls_to(result, 'fallocate', 'mkfs.ext4', 'sudo')
+    assert str(old) in result.out and 'Nothing was deleted' in result.out
+    assert files_in(old) == HISTORY and (pi.new_image.exists() or pi.image.exists())
+    assert not calls_to(result, 'mkfs.ext4')                # never made again (the unit only re-holds its space)
 
 
 def test_a_leftover_new_file_from_a_stopped_try_is_made_again(pi):
