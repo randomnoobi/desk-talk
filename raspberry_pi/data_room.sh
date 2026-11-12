@@ -14,10 +14,12 @@
 #   unmounted  the room's file is there, but it isn't mounted
 #   none       there's no room yet
 # make:
-#   room       grows the room if DATA_ROOM_SIZE_MB is now bigger. It can't be made smaller.
+#   room       makes sure all its space is still set aside, finishes a grow that stopped part-way, and grows the room
+#              if DATA_ROOM_SIZE_MB is now bigger. It can't be made smaller.
 #   elsewhere  does nothing
-#   unmounted  starts the service once to mount it. If that doesn't work it stops, and never makes a new room over the
-#              old one: that may hold the only history.
+#   unmounted  starts the service once to mount it, but only onto an empty data folder: mounting over files would hide
+#              them. If that doesn't work it stops, and never makes a new room over the old one: that may hold the only
+#              history.
 #   none       makes the room, copies the data folder into it and checks the copy, then swaps it in. The old folder is
 #              kept, renamed, until you delete it. If anything goes wrong, the old folder is left (or put back) as it was.
 #   --dry-run  does the same checks, says what it would do, and changes nothing
@@ -29,8 +31,9 @@ PI_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ENV_FILE=$PI_DIR/.env
 EXAMPLE=$PI_DIR/.env.example
 TEMPLATE=$PI_DIR/systemd/desktalk-data-room.service
+SYS=${DESKTALK_SYS:-/sys}                       # only tests change this
 MB=$((1024 * 1024))                             # df -m, fallocate's M and the settings all count MB this way
-# mkfs.ext4 and losetup live in sbin, which isn't on a normal user's PATH on Raspberry Pi OS.
+# mkfs.ext4, losetup and resize2fs live in sbin, which isn't on a normal user's PATH on Raspberry Pi OS.
 PATH=$PATH:/usr/local/sbin:/usr/sbin:/sbin
 
 DRY_RUN=0
@@ -80,7 +83,15 @@ number() {
     printf '%s' "$value"
 }
 
-# A path from .env, which starts from raspberry_pi/, as a full path with no links in it (as findmnt and losetup give
+# A setting that may not be empty.
+filled_in() {
+    local value
+    value=$(setting "$1")
+    [ -n "$value" ] || stop "$1 in raspberry_pi/.env is empty."
+    printf '%s' "$value"
+}
+
+# A path from .env, which starts from raspberry_pi/, as a full path with no links in it (as findmnt and the kernel give
 # them). It may not be there yet.
 full_path() {
     local path=$1 parent
@@ -102,19 +113,19 @@ full_path() {
 
 # ── What's there ──
 
-# The loop device, when the data folder is the room's file mounted: findmnt says what's mounted there, and losetup
-# which loop devices that file backs.
+# The loop device, when the data folder is the room's file mounted: findmnt says what's mounted there, and the kernel
+# which file backs that loop device. Both can be read without sudo.
 room_device() {
-    local source loop
-    [ -e "$IMAGE" ] || return 1
+    local source backing
+    [ -f "$IMAGE" ] || return 1
     source=$(findmnt -n -o SOURCE --mountpoint "$DATA" 2> /dev/null) || return 1
-    while IFS= read -r loop; do
-        if [ -n "$loop" ] && [ "$loop" = "$source" ]; then
-            printf '%s' "$loop"
-            return 0
-        fi
-    done < <(losetup -l -n -O NAME -j "$IMAGE" 2> /dev/null || true)
-    return 1
+    case "$source" in
+        /dev/loop[0-9]*) ;;
+        *) return 1 ;;
+    esac
+    backing=$(cat "$SYS/block/${source#/dev/}/loop/backing_file" 2> /dev/null) || return 1
+    [ "$backing" = "$IMAGE" ] || return 1
+    printf '%s' "$source"
 }
 
 # The disk a folder is on. One that isn't made yet will be on the disk of the nearest folder above it.
@@ -127,7 +138,7 @@ disk_of() {
 }
 
 # "elsewhere" is a data folder on another disk than / that isn't the room mounted (a USB drive, say): stat's device
-# numbers differ, and findmnt and losetup don't show the room's file mounted there.
+# numbers differ, and findmnt and the kernel don't show the room's file mounted there.
 status() {
     if room_device > /dev/null; then
         if [ -e "$DATA/$MARKER" ]; then
@@ -148,7 +159,11 @@ status() {
 }
 
 free_mb() {
-    df -Pm "$(dirname -- "$IMAGE")" | awk 'NR == 2 { print $4 }'
+    local said free
+    said=$(df -Pm "$(dirname -- "$IMAGE")") || stop "df couldn't say how much space is free on the SD card, so nothing was changed."
+    free=$(awk 'NR == 2 { print $4 }' <<< "$said")
+    [[ "$free" =~ ^[0-9]+$ ]] || stop "df's answer didn't say how much space is free on the SD card, so nothing was changed."
+    printf '%s' "$free"
 }
 
 used_mb() {
@@ -159,12 +174,23 @@ used_mb() {
     fi
 }
 
-# Does the file have all its space set aside on the card, and not only as it's written (a sparse file)?
-all_set_aside() {
+file_bytes() {
+    stat -c %s "$1"
+}
+
+# How many bytes of the file have their space set aside on the card. A sparse file has fewer than its size.
+held_bytes() {
     local blocks block_size
     read -r blocks block_size < <(stat -c '%b %B' "$1") || return 1
     [[ "$blocks$block_size" =~ ^[0-9]+$ ]] || return 1
-    [ "$((blocks * block_size))" -ge "$(($2 * MB))" ]
+    printf '%s' "$((blocks * block_size))"
+}
+
+# Does the file have all its $2 MB set aside on the card, and not only as it's written (a sparse file)?
+all_set_aside() {
+    local held
+    held=$(held_bytes "$1") || return 1
+    [ "$held" -ge "$(($2 * MB))" ]
 }
 
 empty_folder() {
@@ -180,6 +206,15 @@ newest_old_folder() {
         fi
     done
     printf '%s' "$newest"
+}
+
+# $1 to $2: never into $2 if it's a folder, and never over anything that's there.
+rename() {
+    if [ -e "$2" ] || [ -L "$2" ]; then
+        say "$2 is there already, so $1 isn't renamed to it." >&2
+        return 1
+    fi
+    mv -T -- "$1" "$2"
 }
 
 # ── The service ──
@@ -257,7 +292,7 @@ leave() {
     fi
     case "$STAGE" in
         new) rm -f -- "$IMAGE.new" ;;
-        swapped) put_back ;;
+        swapped) put_back || true ;;
     esac
     if [ -n "$TEMP_FOLDER" ]; then
         rm -rf -- "$TEMP_FOLDER"
@@ -265,24 +300,34 @@ leave() {
 }
 trap leave EXIT
 
-# The room couldn't be swapped in: the old folder goes back, as it was, and the new room goes. Only an empty folder is
-# ever removed (rmdir), so if the room is still mounted there, nothing is lost: it says what to do by hand.
+# What to run by hand when the old folder couldn't be put back by itself.
+by_hand() {
+    say "The old data folder couldn't be put back by itself. Your history is safe in $OLD, and nothing was removed. Put it back by hand with: sudo umount $(quoted "$DATA"); sudo rmdir $(quoted "$DATA"); mv $(quoted "$OLD") $(quoted "$DATA"); rm -f $(quoted "$IMAGE") $(quoted "$IMAGE.new")" >&2
+}
+
+# The room couldn't be swapped in: the old folder goes back, as it was, and the new room's file goes. It says so only
+# once that's all done, and returns 1 (saying what to run by hand) if it couldn't be. Only an empty folder is ever
+# removed (rmdir), and nothing at all while the room is still mounted at the data folder, so nothing is lost.
 put_back() {
     STAGE=""
     sudo systemctl stop "$UNIT" > /dev/null 2>&1 || true
     sudo systemctl disable "$UNIT" > /dev/null 2>&1 || true
-    if [ -n "$OLD" ] && [ -d "$OLD" ]; then
-        if [ -e "$DATA" ] && ! sudo rmdir -- "$DATA"; then
-            say "The old data folder couldn't be put back, because $DATA isn't an empty folder. Your history is safe in $OLD. Put it back by hand with: sudo umount $(quoted "$DATA"); sudo rmdir $(quoted "$DATA"); mv $(quoted "$OLD") $(quoted "$DATA")" >&2
-            return
-        fi
-        if ! mv -- "$OLD" "$DATA"; then
-            say "The old data folder couldn't be put back. Your history is safe in $OLD. Put it back by hand with: mv $(quoted "$OLD") $(quoted "$DATA")" >&2
-            return
-        fi
-        say "The old data folder is back at $DATA, as it was." >&2
+    [ -n "$OLD" ] && [ -d "$OLD" ] || { rm -f -- "$IMAGE.new"; return 0; }
+    if findmnt -n --mountpoint "$DATA" > /dev/null 2>&1; then
+        say "The new room is still mounted at $DATA." >&2
+        by_hand
+        return 1
+    fi
+    if [ -e "$DATA" ] && ! sudo rmdir -- "$DATA"; then
+        by_hand
+        return 1
+    fi
+    if ! rename "$OLD" "$DATA"; then
+        by_hand
+        return 1
     fi
     rm -f -- "$IMAGE" "$IMAGE.new"
+    say "The old data folder is back at $DATA, as it was, and the new room's file is removed." >&2
 }
 
 # ── Making, mounting and growing ──
@@ -333,12 +378,15 @@ make_room() {
     fi
     [ -d "$DATA" ] || mkdir -p -- "$DATA"
 
-    # 1 to 5: a new file, which is all that goes if anything fails.
+    # 1 to 5: a new file, which is all that goes if anything fails. Its space is checked three times: mkfs.ext4 would
+    # give it all back to the card (a "discard") without nodiscard, and anything could on the way.
+    local sparse="the SD card didn't keep all of the room's $size MB set aside (the file is sparse), so it isn't safe to use. The data folder is as it was."
     STAGE=new
     say "Making Desk Talk's own room on the SD card: $size MB at $IMAGE ..."
     fallocate -l "${size}M" "$new"
-    all_set_aside "$new" "$size" || stop "the SD card didn't set aside all of the room's $size MB (it made a sparse file), so it isn't safe to use. The data folder is as it was."
-    mkfs.ext4 -q -F -m 0 -E "root_owner=$(id -u):$(id -g)" "$new"
+    all_set_aside "$new" "$size" || stop "$sparse"
+    mkfs.ext4 -q -F -m 0 -E "nodiscard,root_owner=$(id -u):$(id -g)" "$new"
+    all_set_aside "$new" "$size" || stop "$sparse"
     MOUNT_FOLDER=$(mktemp -d)
     sudo mount -o loop "$new" "$MOUNT_FOLDER"
     MOUNTED=1
@@ -350,38 +398,49 @@ make_room() {
     MOUNTED=0
     rmdir -- "$MOUNT_FOLDER"
     MOUNT_FOLDER=""
+    all_set_aside "$new" "$size" || stop "$sparse"
 
     # 6 to 8: the swap. From here a failure puts the old folder back.
     OLD=$DATA.before-room-$(date +%Y-%m-%d-%H%M%S)
+    [ ! -e "$OLD" ] || stop "$OLD is there already. Run this again in a second."
     STAGE=swapped
-    mv -- "$DATA" "$OLD"
+    rename "$DATA" "$OLD"
     sudo mkdir -m 755 -- "$DATA"        # root's, so nothing is written to the card here if the room isn't mounted
-    mv -- "$new" "$IMAGE"
+    rename "$new" "$IMAGE"
     set_up_service
     sudo systemctl start "$UNIT" || true
     if [ "$(status)" != room ]; then
-        put_back
-        stop "the new room couldn't be mounted at $DATA, so it's removed and the old data folder is back where it was. See why with: journalctl -u ${UNIT%.service}"
+        if put_back; then
+            stop "the new room couldn't be mounted at $DATA, so it's removed and the old data folder is back where it was. See why with: journalctl -u ${UNIT%.service}"
+        fi
+        stop "the new room couldn't be mounted at $DATA, and the old data folder couldn't be put back by itself: see above. See why it wasn't mounted with: journalctl -u ${UNIT%.service}"
     fi
     STAGE=""
     say "Desk Talk's own room is ready: $size MB at $IMAGE, mounted at $DATA on every boot. The history was copied into it and checked."
     say "The old data folder is kept at $OLD. Once Desk Talk works, delete it with: rm -rf $(quoted "$OLD")"
 }
 
-# The copy is the same as the data folder, but for the new filesystem's own lost+found.
+# The copy is the same as the data folder, but for the new filesystem's own lost+found: diff found no differences, or
+# only that one (it answers 1 for differences, and 2 for trouble).
 copy_checks_out() {
-    local differences
-    differences=$(sudo diff -r -- "$DATA" "$MOUNT_FOLDER" 2>&1) || true
-    [ -z "$differences" ] || [ "$differences" = "Only in $MOUNT_FOLDER: lost+found" ]
+    local differences code=0
+    differences=$(sudo diff -r -- "$DATA" "$MOUNT_FOLDER" 2>&1) || code=$?
+    [ "$code" = 0 ] || { [ "$code" = 1 ] && [ "$differences" = "Only in $MOUNT_FOLDER: lost+found" ]; }
 }
 
 mount_room() {
     local old
+    if ! empty_folder "$DATA"; then
+        stop "Desk Talk's room ($IMAGE) isn't mounted, and the data folder $DATA isn't empty: it holds $(ls -A -- "$DATA" | head -n 5 | tr '\n' ' ')... Mounting the room there would hide those files, so nothing was changed. Move them somewhere else, then run this again (the room may hold the rest of the history)."
+    fi
     if [ "$DRY_RUN" = 1 ]; then
         would "mount Desk Talk's room ($IMAGE) at $DATA, by starting $UNIT."
         return
     fi
     say "Desk Talk's room ($IMAGE) isn't mounted. Mounting it at $DATA ..."
+    if [ ! -e "$DATA" ]; then
+        sudo mkdir -m 755 -- "$DATA"    # root's, as when the room was made
+    fi
     set_up_service
     sudo systemctl restart "$UNIT" || true
     if [ "$(status)" = room ]; then
@@ -392,10 +451,52 @@ mount_room() {
     stop "Desk Talk's room $IMAGE isn't mounted at $DATA (or its marker $MARKER isn't in it). It may hold the only history, so a new room isn't made over it. See why with: journalctl -u ${UNIT%.service}${old:+. An older data folder is kept at $old}"
 }
 
+# The room's whole file stays set aside on the card: set aside again whatever isn't (quick when it all is).
+hold_room() {
+    local size_mb=$(($(file_bytes "$IMAGE") / MB))
+    all_set_aside "$IMAGE" "$size_mb" && return 0
+    if [ "$DRY_RUN" = 1 ]; then
+        would "set aside again the part of Desk Talk's room ($IMAGE) the SD card isn't holding for it."
+        return 0
+    fi
+    if fallocate -l "$(file_bytes "$IMAGE")" "$IMAGE" && all_set_aside "$IMAGE" "$size_mb"; then
+        say "Set aside again the part of Desk Talk's room the SD card wasn't holding for it."
+        return 0
+    fi
+    say "IMPORTANT: part of Desk Talk's room ($IMAGE) isn't set aside on the SD card, and setting it aside again didn't work, so other files could take it. Free some space on the card and run this again."
+    return 1
+}
+
+# A grow that stopped part-way leaves the file bigger than the loop device or the filesystem on it: a note
+# (<file>.growing) says one was started, and the kernel says how big it thinks the loop device is. Then losetup -c and
+# resize2fs finish it. With nothing to finish, it needs no sudo.
+finish_growing() {
+    local device=$1 loop_size="" size_file
+    size_file=$SYS/block/${device#/dev/}/size
+    if [ -r "$size_file" ]; then
+        loop_size=$(($(cat "$size_file") * 512))
+    fi
+    if [ ! -e "$IMAGE.growing" ] && { [ -z "$loop_size" ] || [ "$loop_size" = "$(file_bytes "$IMAGE")" ]; }; then
+        return 0
+    fi
+    if [ "$DRY_RUN" = 1 ]; then
+        would "finish growing Desk Talk's room to its file's $(($(file_bytes "$IMAGE") / MB)) MB: sudo losetup -c $device && sudo resize2fs $device"
+        return 0
+    fi
+    if sudo losetup -c "$device" && sudo resize2fs "$device"; then
+        rm -f -- "$IMAGE.growing"
+        return 0
+    fi
+    stop "Desk Talk's room's file is $(($(file_bytes "$IMAGE") / MB)) MB, but its filesystem hasn't caught up. Run this again, or finish it by hand with: sudo losetup -c $device && sudo resize2fs $device && rm -f $(quoted "$IMAGE.growing")"
+}
+
 grow_room() {
-    local wanted current more free reserve device
+    local wanted current needed free reserve device
     wanted=$(number DATA_ROOM_SIZE_MB)
-    current=$(($(stat -c %s "$IMAGE") / MB))
+    device=$(room_device)
+    hold_room || return 0
+    finish_growing "$device"
+    current=$(($(file_bytes "$IMAGE") / MB))
     if [ "$wanted" -lt "$current" ]; then
         say "Desk Talk's room is $current MB, and DATA_ROOM_SIZE_MB is now $wanted. Making it smaller isn't supported, so it stays at $current MB."
         return
@@ -406,21 +507,19 @@ grow_room() {
     fi
     reserve=$(number INSTALL_MIN_DISK_BUILT_MB)
     free=$(free_mb)
-    more=$((wanted - current))
-    if [ "$((free - reserve))" -lt "$more" ]; then
-        say "Desk Talk's room can't grow from $current to $wanted MB now: there is $free MB free on the SD card, and $reserve MB must stay free for updates. Free $((more + reserve - free)) MB and run this again. It stays at $current MB."
+    needed=$(((wanted * MB - $(held_bytes "$IMAGE") + MB - 1) / MB))      # what fallocate takes from the card
+    if [ "$((free - reserve))" -lt "$needed" ]; then
+        say "Desk Talk's room can't grow from $current to $wanted MB now: that takes $needed MB, there is $free MB free on the SD card, and $reserve MB must stay free for updates. Free $((needed + reserve - free)) MB and run this again. It stays at $current MB."
         return
     fi
     if [ "$DRY_RUN" = 1 ]; then
         would "grow Desk Talk's room from $current to $wanted MB."
         return
     fi
-    device=$(room_device)
+    touch -- "$IMAGE.growing"
     fallocate -l "${wanted}M" "$IMAGE"
-    all_set_aside "$IMAGE" "$wanted" || stop "the SD card didn't set aside all of the room's new $wanted MB, so it stays at $current MB."
-    if ! { sudo losetup -c "$device" && sudo resize2fs "$device"; }; then
-        stop "the room's file grew to $wanted MB, but its filesystem didn't. Finish it by hand with: sudo losetup -c $device && sudo resize2fs $device"
-    fi
+    all_set_aside "$IMAGE" "$wanted" || stop "the SD card didn't set aside all of the room's new $wanted MB. Run this again once there's more free space; until then the room works at its old size."
+    finish_growing "$device"
     say "Desk Talk's room grew from $current to $wanted MB."
 }
 
@@ -429,7 +528,7 @@ check_not_root() {
 }
 
 main() {
-    local what=${1:-}
+    local what=${1:-} image data wanted smallest
     if [ $# -gt 0 ]; then
         shift
     fi
@@ -445,16 +544,24 @@ main() {
             done ;;
         *) usage ;;
     esac
-    IMAGE=$(full_path "$(setting DATA_ROOM_FILE)")
-    DATA=$(full_path "$(setting DESKTALK_DATA)")
-    MARKER=$(setting DATA_ROOM_MARKER)
-    UNIT_FILE=$(setting INSTALL_DATA_ROOM_SERVICE_FILE)
+    image=$(filled_in DATA_ROOM_FILE)
+    data=$(filled_in DESKTALK_DATA)
+    IMAGE=$(full_path "$image")
+    DATA=$(full_path "$data")
+    MARKER=$(filled_in DATA_ROOM_MARKER)
+    UNIT_FILE=$(filled_in INSTALL_DATA_ROOM_SERVICE_FILE)
     UNIT=$(basename -- "$UNIT_FILE")
+    if [ -e "$IMAGE" ] && [ ! -f "$IMAGE" ]; then
+        stop "the room's file $IMAGE (DATA_ROOM_FILE in raspberry_pi/.env) is there, but isn't a plain file."
+    fi
     if [ "$what" = status ]; then
         status
         return
     fi
     check_not_root
+    wanted=$(number DATA_ROOM_SIZE_MB)
+    smallest=$(number DATA_ROOM_SMALLEST_MB)
+    [ "$wanted" -ge "$smallest" ] || stop "DATA_ROOM_SIZE_MB ($wanted) in raspberry_pi/.env is smaller than DATA_ROOM_SMALLEST_MB ($smallest)."
     case "$(status)" in
         room) grow_room ;;
         elsewhere) say "The data folder $DATA is on another disk than the SD card, so it gets no room of its own and is left as it is." ;;

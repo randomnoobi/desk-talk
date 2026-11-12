@@ -2,10 +2,11 @@
 stand-ins on PATH for everything that would touch the machine (df, stat, mount, mkfs.ext4, sudo, systemctl ...). Each
 stand-in writes down how it was called in `calls`, so nothing here can change this computer's disks or needs root.
 
-The stand-ins keep a pretend machine in the state folder: what's mounted where (mounts.json), which loop device is
-backed by which file (loops.json), and what each image's filesystem holds (disks/<the image's inode>/). An image file
-holds only its own size, as text, so no test ever writes gigabytes. `systemctl start` runs the installed unit's real
-ExecStart line, unescaped the way systemd does it, so the unit itself is tested too."""
+The stand-ins keep a pretend machine in the state folder: what's mounted where (mounts.json), the kernel's view of each
+loop device (sys/block/loopN/: its backing file and size, which the script reads through DESKTALK_SYS), and what each
+image's filesystem holds (disks/<the image's inode>/). An image file holds only its own size, as text, so no test ever
+writes gigabytes. `systemctl start` runs the installed unit's real ExecStart line, unescaped the way systemd does it, so
+the unit itself is tested too."""
 
 from __future__ import annotations
 
@@ -32,13 +33,24 @@ STAND_IN = r'''#!/bin/bash
 printf '%s\n' "$(basename "$0") $*" >> "$FAKE/calls"
 name=$(basename "$0")
 case "$name" in
-  df) printf 'Filesystem 1M-blocks Used Available Capacity Mounted on\n/dev/mmcblk0p2 100000 1000 %s 1%% /\n' "$(cat "$FAKE/free_mb")" ;;
+  df) [ -e "$FAKE/df_fails" ] && exit 1
+      printf 'Filesystem 1M-blocks Used Available Capacity Mounted on\n/dev/mmcblk0p2 100000 1000 %s 1%% /\n' "$(cat "$FAKE/free_mb")" ;;
   id) case "$1" in -u) echo 1000 ;; -g) echo 1001 ;; *) exec /usr/bin/id "$@" ;; esac ;;
   e2fsck) exit "$(cat "$FAKE/e2fsck_code" 2>/dev/null || echo 0)" ;;
-  diff) [ -e "$FAKE/copy_differs" ] && { echo 'Files differ'; exit 1; }; exec /usr/bin/diff "$@" ;;
+  diff)
+    [ -e "$FAKE/copy_differs" ] && { echo 'Files differ'; exit 1; }
+    [ -e "$FAKE/diff_code" ] && { echo "Only in ${@: -1}: lost+found"; exit "$(cat "$FAKE/diff_code")"; }
+    exec /usr/bin/diff "$@" ;;
+  mv)  # GNU's mv -T: never into a folder that's there
+    [ "$1" = -T ] || exec /bin/mv "$@"
+    shift; [ "$1" = -- ] && shift
+    if [ -d "$2" ] && [ -n "$(ls -A "$2")" ]; then echo "mv: cannot overwrite '$2'" >&2; exit 1; fi
+    [ -d "$2" ] && rmdir "$2"
+    exec /bin/mv -- "$1" "$2" ;;
   sudo)
     [ -e "$FAKE/sudo_fails" ] && { echo 'sudo: a password is required' >&2; exit 1; }
     cmd=$1; shift
+    [ -e "$FAKE/sudo_fails_for_$cmd" ] && { echo "$cmd: it went wrong" >&2; exit 1; }
     if [ -x "$FAKE/bin/$cmd" ]; then exec "$FAKE/bin/$cmd" "$@"; fi
     exec "$cmd" "$@" ;;
   *) exec "$FAKE_PYTHON" -I -S "$FAKE/machine.py" "$name" "$@" ;;
@@ -50,16 +62,22 @@ import json, os, shlex, shutil, subprocess, sys
 from pathlib import Path
 
 FAKE = Path(os.environ['FAKE'])
+SYS = Path(os.environ['DESKTALK_SYS'])
 MB = 1024 * 1024
+MARKER = '.desktalk-data-room'
 
 
-def load(name):
-    path = FAKE / name
-    return json.loads(path.read_text()) if path.exists() else ([] if name == 'mounts.json' else {})
+def has(name):
+    return (FAKE / name).exists()
 
 
-def save(name, value):
-    (FAKE / name).write_text(json.dumps(value))
+def load():
+    path = FAKE / 'mounts.json'
+    return json.loads(path.read_text()) if path.exists() else []
+
+
+def save(mounts):
+    (FAKE / 'mounts.json').write_text(json.dumps(mounts))
 
 
 def real(path):
@@ -75,7 +93,7 @@ def size_of(image):
 
 
 def mount_at(target):
-    return next((m for m in load('mounts.json') if m['target'] == real(target)), None)
+    return next((m for m in load() if m['target'] == real(target)), None)
 
 
 def stat_(fmt, path):
@@ -86,7 +104,7 @@ def stat_(fmt, path):
         print(size_of(path))
     elif fmt == '%b %B':
         blocks = size_of(path) // 512
-        if (FAKE / 'short_blocks').exists():
+        if has('short_blocks') or has('lost_blocks'):
             blocks //= 2
         print(f'{blocks} 512')
     else:
@@ -98,28 +116,31 @@ def mount(args):
     options, source, target = args[1], args[2], args[3]
     if mount_at(target) is not None:
         return 32
-    mounts, loops = load('mounts.json'), load('loops.json')
     disk = disk_of(source)
     if 'loop' in options.split(','):
-        name = next(f'/dev/loop{n}' for n in range(100) if f'/dev/loop{n}' not in loops)
-        loops[name] = real(source)
-        source = name
+        name = next(f'loop{n}' for n in range(100) if not (SYS / 'block' / f'loop{n}').exists())
+        (SYS / 'block' / name / 'loop').mkdir(parents=True)
+        (SYS / 'block' / name / 'loop' / 'backing_file').write_text(real(source) + '\n')
+        (SYS / 'block' / name / 'size').write_text(f'{size_of(source) // 512}\n')
+        source = f'/dev/{name}'
     for child in sorted(disk.iterdir()):
         shutil.move(str(child), str(Path(target) / child.name))
-    mounts.append({'source': source, 'target': real(target), 'disk': str(disk), 'options': options})
-    save('mounts.json', mounts)
-    save('loops.json', loops)
+    if has('marker_vanishes') and 'noatime' in options:
+        (Path(target) / MARKER).unlink(missing_ok=True)
+    save(load() + [{'source': source, 'target': real(target), 'disk': str(disk), 'options': options}])
     return 0
 
 
 def umount(target):
     mount = mount_at(target)
-    if mount is None:
+    if mount is None or (has('umount_refuses') and 'noatime' in mount['options']):     # only the unit's mount
         return 32
     for child in sorted(Path(target).iterdir()):
         shutil.move(str(child), str(Path(mount['disk']) / child.name))
-    save('mounts.json', [m for m in load('mounts.json') if m != mount])
-    save('loops.json', {k: v for k, v in load('loops.json').items() if k != mount['source']})
+    save([m for m in load() if m != mount])
+    shutil.rmtree(SYS / 'block' / mount['source'].removeprefix('/dev/'), ignore_errors=True)
+    if has('short_after_umount'):
+        (FAKE / 'short_blocks').touch()
     return 0
 
 
@@ -134,7 +155,7 @@ def systemctl(args):
     active = FAKE / f'active_{unit}'
     if what in ('stop', 'restart') and active.exists():
         subprocess.run(unit_line(unit, 'ExecStop'), check=False)
-        active.unlink()
+        active.unlink()                                     # systemd counts it stopped even if ExecStop failed
     if what in ('start', 'restart') and not active.exists():
         if not (FAKE / 'etc' / 'systemd' / 'system' / unit).exists():
             return 5
@@ -146,39 +167,36 @@ def systemctl(args):
         (FAKE / f'enabled_{unit}').touch()
     if what == 'disable':
         (FAKE / f'enabled_{unit}').unlink(missing_ok=True)
-    if what == 'is-enabled':
-        return 0 if (FAKE / f'enabled_{unit}').exists() else 1
-    if what == 'is-active':
-        return 0 if active.exists() else 3
     return 0
 
 
 def main(name, args):
     if name == 'stat':
         return stat_(args[1], args[2])
-    if name == 'findmnt':                                   # findmnt -n -o SOURCE --mountpoint <folder>
+    if name == 'findmnt':                                   # findmnt -n [-o SOURCE] --mountpoint <folder>
         found = mount_at(args[-1])
         if found is None:
             return 1
         print(found['source'])
         return 0
-    if name == 'losetup':
-        if args[0] == '-c':
-            return 0
-        image = real(args[-1])                              # losetup -l -n -O NAME -j <file>
-        for loop, backing in load('loops.json').items():
-            if backing == image:
-                print(loop)
-        return 0
-    if name == 'fallocate':                                 # fallocate -l <size>M <file>
-        if (FAKE / 'fallocate_fails').exists():
+    if name == 'losetup':                                   # losetup -c <loop>: the kernel sees the file's new size
+        loop = SYS / 'block' / args[1].removeprefix('/dev/')
+        if not loop.exists():
             return 1
-        Path(args[-1]).write_text(str(int(args[1].removesuffix('M')) * MB))
+        (loop / 'size').write_text(f'{size_of((loop / "loop" / "backing_file").read_text().strip()) // 512}\n')
+        return 0
+    if name == 'fallocate':                                 # fallocate -l <bytes or MB>M <file>
+        size = args[1]
+        Path(args[-1]).write_text(str(int(size[:-1]) * MB if size.endswith('M') else int(size)))
+        if not has('stays_short'):
+            (FAKE / 'lost_blocks').unlink(missing_ok=True)
         return 0
     if name == 'mkfs.ext4':
         disk = disk_of(args[-1])
         shutil.rmtree(disk, ignore_errors=True)
         (disk / 'lost+found').mkdir(parents=True)
+        if has('short_after_mkfs'):
+            (FAKE / 'short_blocks').touch()
         return 0
     if name == 'mount':
         return mount(args)
@@ -186,14 +204,16 @@ def main(name, args):
         return umount(args[-1])
     if name == 'systemctl':
         return systemctl(args)
-    return 0                                                # resize2fs
+    if name == 'resize2fs':
+        return 1 if has('resize2fs_fails') else 0
+    return 0
 
 
 sys.exit(main(sys.argv[1], sys.argv[2:]))
 '''
 
 STAND_INS = ('df', 'id', 'stat', 'findmnt', 'losetup', 'fallocate', 'mkfs.ext4', 'e2fsck', 'mount', 'umount',
-             'resize2fs', 'sudo', 'systemctl', 'diff')
+             'resize2fs', 'sudo', 'systemctl', 'diff', 'mv')
 
 
 @dataclass
@@ -217,6 +237,10 @@ class RoomPi:
     @property
     def image(self) -> Path:
         return self.root / 'data.img'
+
+    @property
+    def new_image(self) -> Path:
+        return self.root / 'data.img.new'
 
     @property
     def example(self) -> Path:
@@ -252,6 +276,9 @@ class RoomPi:
     def mounts(self) -> list[dict[str, str]]:
         path = self.fake / 'mounts.json'
         return json.loads(path.read_text(encoding='utf-8')) if path.exists() else []
+
+    def loop(self, device: str) -> Path:
+        return self.fake / 'sys' / 'block' / device.removeprefix('/dev/')
 
     def old_folders(self) -> list[Path]:
         return sorted(self.root.glob('data.before-room-*'))
@@ -290,6 +317,7 @@ def make_pi(tmp_path: Path, folder: str) -> RoomPi:
         (root / 'data' / name).write_bytes(content)
     (fake / 'bin').mkdir(parents=True)
     (fake / 'disks').mkdir()
+    (fake / 'sys' / 'block').mkdir(parents=True)
     temp.mkdir()
     (fake / 'machine.py').write_text(MACHINE, encoding='utf-8')
     for name in STAND_INS:
@@ -301,7 +329,7 @@ def make_pi(tmp_path: Path, folder: str) -> RoomPi:
     if made.example.exists():
         made.change_example('INSTALL_DATA_ROOM_SERVICE_FILE', str(made.unit_file))
     made.env_vars = {'PATH': f'{fake / "bin"}:/usr/bin:/bin', 'FAKE': str(fake), 'FAKE_PYTHON': sys.executable,
-                     'HOME': str(tmp_path), 'TMPDIR': str(temp)}
+                     'DESKTALK_SYS': str(fake / 'sys'), 'HOME': str(tmp_path), 'TMPDIR': str(temp)}
     return made
 
 
@@ -314,17 +342,36 @@ def sudo_calls(result: Result) -> list[str]:
     return [call for call in result.calls if call.startswith('sudo ')]
 
 
+def calls_to(result: Result, *names: str) -> list[str]:
+    return [call for call in result.calls if call.split()[0] in names]
+
+
 def unmount_as_after_a_bad_boot(pi: RoomPi) -> None:
     assert pi.machine('umount', str(pi.data)) == 0
     pi.clear(f'active_{UNIT}')
 
 
+def a_usb_drive_at_the_data_folder(pi: RoomPi) -> None:
+    (pi.fake / 'mounts.json').write_text(json.dumps([{'source': '/dev/sda1', 'target': os.path.realpath(pi.data),
+                                                      'disk': str(pi.fake / 'usb')}]), encoding='utf-8')
+
+
 def changed_nothing(pi: RoomPi, result: Result) -> None:
     assert files_in(pi.data) == HISTORY
-    assert not pi.image.exists() and not Path(f'{pi.image}.new').exists()
+    assert not pi.image.exists() and not pi.new_image.exists()
     assert not pi.old_folders() and not pi.mounts() and not list(pi.temp.iterdir())
-    assert not [call for call in result.calls if call.split()[0] in ('fallocate', 'mkfs.ext4', 'mount')]
+    assert not calls_to(result, 'fallocate', 'mkfs.ext4', 'mount')
 
+
+def only_the_new_file_went(pi: RoomPi, result: Result, before: os.stat_result) -> None:
+    """A failure in steps 1 to 5: the data folder is the same folder, untouched, and nothing else is left."""
+    assert files_in(pi.data) == HISTORY and os.stat(pi.data).st_ino == before.st_ino
+    assert not pi.image.exists() and not pi.new_image.exists()
+    assert not pi.old_folders() and not pi.mounts() and not list(pi.temp.iterdir())
+    assert not pi.unit_file.exists()
+
+
+# ── status ──
 
 def test_status_says_none_room_elsewhere_or_unmounted(pi):
     assert pi.status() == 'none\n'
@@ -332,36 +379,45 @@ def test_status_says_none_room_elsewhere_or_unmounted(pi):
     assert pi.status() == 'room\n'
     unmount_as_after_a_bad_boot(pi)
     assert pi.status() == 'unmounted\n'
-    (pi.fake / 'mounts.json').write_text(json.dumps([{'source': '/dev/sda1', 'target': os.path.realpath(pi.data),
-                                                      'disk': str(pi.fake / 'usb')}]), encoding='utf-8')
+    a_usb_drive_at_the_data_folder(pi)
     assert pi.status() == 'elsewhere\n'
 
+
+def test_another_file_mounted_at_the_data_folder_is_not_the_room(pi):
+    assert pi.run('make').code == 0
+    [mount] = pi.mounts()
+    (pi.loop(mount['source']) / 'loop' / 'backing_file').write_text(f'{pi.root}/other.img\n')
+    assert pi.status() == 'elsewhere\n'                    # some other disk, so it's left alone
+
+
+# ── making it ──
 
 def test_makes_a_room_of_the_set_size_and_moves_the_data_in(pi):
     before = os.stat(pi.data)
     result = pi.run('make')
     assert result.code == 0, result.out
     assert pi.image.read_text() == str(8192 * MB)
-    assert f'fallocate -l 8192M {pi.image}.new' in result.calls
-    assert f'mkfs.ext4 -q -F -m 0 -E root_owner=1000:1001 {pi.image}.new' in result.calls
+    assert f'fallocate -l 8192M {pi.new_image}' in result.calls
+    assert f'mkfs.ext4 -q -F -m 0 -E nodiscard,root_owner=1000:1001 {pi.new_image}' in result.calls
     [mount] = pi.mounts()
     assert mount['target'] == os.path.realpath(pi.data) and mount['options'] == 'loop,noatime'
     assert files_in(pi.data) == HISTORY                     # in the room now, -wal and -shm too
     assert (pi.data / MARKER).exists()
     [old] = pi.old_folders()
     assert files_in(old) == HISTORY and os.stat(old).st_ino == before.st_ino      # the old folder itself, renamed
+    assert f'mv -T -- {pi.data} {old}' in result.calls and f'mv -T -- {pi.new_image} {pi.image}' in result.calls
     assert pi.unit_file.exists() and (pi.fake / f'enabled_{UNIT}').exists()
     assert f'sudo systemctl enable {UNIT}' in result.calls and f'sudo systemctl start {UNIT}' in result.calls
     assert f'sudo mkdir -m 755 -- {pi.data}' in result.calls
     assert str(old) in result.out and 'rm -rf' in result.out
-    assert not Path(f'{pi.image}.new').exists() and not list(pi.temp.iterdir())
+    assert not pi.new_image.exists() and not list(pi.temp.iterdir())
 
 
 def test_a_card_too_small_gets_a_smaller_room(pi):
     pi.state('free_mb', '5000')                             # 5000 - 2000 kept free for updates = 3000
     result = pi.run('make')
     assert result.code == 0, result.out
-    assert f'fallocate -l 3000M {pi.image}.new' in result.calls
+    assert f'fallocate -l 3000M {pi.new_image}' in result.calls
     assert pi.image.read_text() == str(3000 * MB)
     assert '3000 MB' in result.out
     assert pi.status() == 'room\n'
@@ -376,14 +432,33 @@ def test_below_the_smallest_room_it_stops_and_changes_nothing(pi):
     assert not sudo_calls(result)
 
 
+def test_when_df_fails_it_stops_and_changes_nothing(pi):
+    pi.state('df_fails')
+    result = pi.run('make')
+    assert result.code == 1
+    assert "df couldn't say how much space is free" in result.out
+    changed_nothing(pi, result)
+
+
 def test_a_sparse_or_short_image_is_refused(pi):
+    before = os.stat(pi.data)
     pi.state('short_blocks')
     result = pi.run('make')
     assert result.code == 1
     assert 'set aside' in result.out
-    assert not [call for call in result.calls if call.split()[0] in ('mkfs.ext4', 'mount', 'sudo')]
-    assert files_in(pi.data) == HISTORY and not pi.old_folders() and not list(pi.temp.iterdir())
-    assert not pi.image.exists() and not Path(f'{pi.image}.new').exists()      # only the new file goes
+    assert not calls_to(result, 'mkfs.ext4', 'mount', 'sudo')
+    only_the_new_file_went(pi, result, before)
+
+
+@pytest.mark.parametrize('when', ['short_after_mkfs', 'short_after_umount'])
+def test_space_given_back_after_the_first_check_is_caught_before_the_swap(pi, when):
+    """mkfs.ext4 hands a file's space back to the card unless it's told nodiscard; anything else could, too."""
+    before = os.stat(pi.data)
+    pi.state(when)
+    result = pi.run('make')
+    assert result.code == 1
+    assert 'set aside' in result.out
+    only_the_new_file_went(pi, result, before)
 
 
 def test_a_failed_copy_check_leaves_the_data_folder_as_it_was(pi):
@@ -391,11 +466,58 @@ def test_a_failed_copy_check_leaves_the_data_folder_as_it_was(pi):
     pi.state('copy_differs')
     result = pi.run('make')
     assert result.code == 1
-    assert files_in(pi.data) == HISTORY and os.stat(pi.data).st_ino == before.st_ino
-    assert not pi.image.exists() and not Path(f'{pi.image}.new').exists()
-    assert not pi.old_folders() and not pi.mounts() and not list(pi.temp.iterdir())
-    assert not pi.unit_file.exists()
+    only_the_new_file_went(pi, result, before)
 
+
+def test_a_copy_check_that_ran_into_trouble_is_not_trusted(pi):
+    """diff answers 2 for trouble: even if all it printed was the lost+found line, the copy isn't checked."""
+    before = os.stat(pi.data)
+    pi.state('diff_code', '2')
+    result = pi.run('make')
+    assert result.code == 1
+    only_the_new_file_went(pi, result, before)
+
+
+def test_a_failed_first_mount_puts_the_old_folder_back(pi):
+    before = os.stat(pi.data)
+    pi.state('e2fsck_code', '8')
+    result = pi.run('make')
+    assert result.code == 1
+    assert 'journalctl -u desktalk-data-room' in result.out and 'is back where it was' in result.out
+    assert files_in(pi.data) == HISTORY and os.stat(pi.data).st_ino == before.st_ino
+    assert not pi.old_folders() and not pi.mounts()
+    assert not pi.image.exists() and not pi.new_image.exists()
+    assert not (pi.fake / f'enabled_{UNIT}').exists() and not (pi.fake / f'active_{UNIT}').exists()
+    assert f'sudo systemctl disable {UNIT}' in result.calls
+
+
+@pytest.mark.parametrize('failing', ['mkdir', 'install'])
+def test_a_failure_part_way_through_the_swap_puts_the_old_folder_back(pi, failing):
+    """mkdir fails right after the old folder is set aside; install once the new file has its name."""
+    before = os.stat(pi.data)
+    pi.state(f'sudo_fails_for_{failing}')
+    result = pi.run('make')
+    assert result.code == 1
+    assert files_in(pi.data) == HISTORY and os.stat(pi.data).st_ino == before.st_ino
+    assert not pi.old_folders() and not pi.mounts()
+    assert not pi.image.exists() and not pi.new_image.exists()
+    assert 'is back at' in result.out
+
+
+def test_a_put_back_that_cant_unmount_removes_nothing_and_says_so(pi):
+    pi.state('marker_vanishes')                             # mounted, but it doesn't look like the room ...
+    pi.state('umount_refuses')                              # ... and it can't be unmounted again
+    result = pi.run('make')
+    assert result.code == 1
+    [old] = pi.old_folders()
+    assert files_in(old) == HISTORY and pi.image.exists() and pi.mounts()
+    assert "couldn't be put back by itself" in result.out and str(pi.image) in result.out
+    assert 'is back' not in result.out and "it's removed" not in result.out
+    assert result.out.strip().splitlines()[-1].startswith('Stopping:')
+    assert "couldn't be put back" in result.out.strip().splitlines()[-1]
+
+
+# ── a room that's there but not mounted ──
 
 def test_an_existing_image_is_never_made_again(pi):
     assert pi.run('make').code == 0
@@ -406,7 +528,7 @@ def test_an_existing_image_is_never_made_again(pi):
     result = pi.run('make')
     assert result.code == 1
     assert "isn't mounted" in result.out and 'journalctl -u desktalk-data-room' in result.out
-    assert not [call for call in result.calls if call.split()[0] in ('fallocate', 'mkfs.ext4')]
+    assert not calls_to(result, 'fallocate', 'mkfs.ext4')
     assert pi.image.read_text() == room and os.stat(pi.image).st_ino == inode
     assert not pi.mounts() and pi.status() == 'unmounted\n'
 
@@ -414,21 +536,35 @@ def test_an_existing_image_is_never_made_again(pi):
     result = pi.run('make')
     assert result.code == 0, result.out
     assert pi.status() == 'room\n' and files_in(pi.data) == HISTORY
-    assert not [call for call in result.calls if call.split()[0] in ('fallocate', 'mkfs.ext4')]
+    assert not calls_to(result, 'fallocate', 'mkfs.ext4')
 
 
-def test_a_failed_first_mount_puts_the_old_folder_back(pi):
-    before = os.stat(pi.data)
-    pi.state('e2fsck_code', '8')
-    result = pi.run('make')
-    assert result.code == 1
-    assert 'journalctl -u desktalk-data-room' in result.out
-    assert files_in(pi.data) == HISTORY and os.stat(pi.data).st_ino == before.st_ino
-    assert not pi.old_folders() and not pi.mounts()
-    assert not pi.image.exists() and not Path(f'{pi.image}.new').exists()
-    assert not (pi.fake / f'enabled_{UNIT}').exists() and not (pi.fake / f'active_{UNIT}').exists()
-    assert f'sudo systemctl disable {UNIT}' in result.calls
+def test_the_room_is_never_mounted_over_files_in_the_data_folder(pi):
+    assert pi.run('make').code == 0
+    unmount_as_after_a_bad_boot(pi)
+    (pi.data / 'events.jsonl').write_bytes(b'written while the room was missing\n')
+    for args in (('make',), ('make', '--dry-run')):
+        result = pi.run(*args)
+        assert result.code == 1
+        assert "isn't empty" in result.out and 'events.jsonl' in result.out and 'nothing was changed' in result.out
+        assert not pi.mounts() and not sudo_calls(result)
+        assert files_in(pi.data) == {'events.jsonl': b'written while the room was missing\n'}
+    assert pi.status() == 'unmounted\n'
 
+
+def test_the_unit_never_mounts_over_files_in_the_data_folder(pi):
+    """At boot too: the service checks for itself."""
+    assert pi.run('make').code == 0
+    unmount_as_after_a_bad_boot(pi)
+    (pi.data / 'events.jsonl').write_bytes(b'newer\n')
+    assert pi.machine('systemctl', 'start', UNIT) != 0
+    assert not pi.mounts() and files_in(pi.data) == {'events.jsonl': b'newer\n'}
+    (pi.data / 'events.jsonl').unlink()
+    assert pi.machine('systemctl', 'start', UNIT) == 0
+    assert pi.status() == 'room\n' and files_in(pi.data) == HISTORY
+
+
+# ── a room that's there ──
 
 def test_grows_when_the_size_goes_up_and_refuses_to_shrink(pi):
     assert pi.run('make').code == 0
@@ -447,29 +583,62 @@ def test_grows_when_the_size_goes_up_and_refuses_to_shrink(pi):
     assert result.code == 0
     assert "isn't supported" in result.out and '10000 MB' in result.out
     assert pi.image.read_text() == str(10000 * MB)
-    assert not sudo_calls(result) and not [call for call in result.calls if call.startswith('fallocate')]
+    assert not sudo_calls(result) and not calls_to(result, 'fallocate')
 
     pi.change_example('DATA_ROOM_SIZE_MB', '10000')
     result = pi.run('make')                                 # the same size: nothing to do
     assert result.code == 0
-    assert not sudo_calls(result) and not [call for call in result.calls if call.startswith('fallocate')]
+    assert not sudo_calls(result) and not calls_to(result, 'fallocate')
 
 
+@pytest.mark.parametrize(('free', 'grows'), [(3808, True), (3807, False)])
+def test_a_grow_needs_only_the_space_the_card_isnt_holding_yet(pi, free, grows):
+    """8192 MB held, 10000 wanted: 1808 MB more, with 2000 kept free for updates."""
+    assert pi.run('make').code == 0
+    pi.change_example('DATA_ROOM_SIZE_MB', '10000')
+    pi.state('free_mb', str(free))
+    result = pi.run('make')
+    assert result.code == 0, result.out
+    assert pi.image.read_text() == str((10000 if grows else 8192) * MB)
+    if not grows:
+        assert 'takes 1808 MB' in result.out and 'Free 1 MB' in result.out
 
-def test_a_grow_without_sudo_says_how_to_finish_it(pi):
+
+@pytest.mark.parametrize('failing', ['sudo_fails', 'resize2fs_fails'])
+def test_a_grow_that_stopped_part_way_is_finished_next_time(pi, failing):
     assert pi.run('make').code == 0
     [mount] = pi.mounts()
     pi.change_example('DATA_ROOM_SIZE_MB', '10000')
-    pi.state('sudo_fails')
+    pi.state(failing)
     result = pi.run('make')
     assert result.code == 1
     assert f'sudo losetup -c {mount["source"]} && sudo resize2fs {mount["source"]}' in result.out
-    assert pi.status() == 'room\n' and files_in(pi.data) == HISTORY
+    pi.clear(failing)
+    result = pi.run('make')
+    assert result.code == 0, result.out
+    assert f'sudo resize2fs {mount["source"]}' in result.calls and not calls_to(result, 'fallocate')
+    assert (pi.loop(mount['source']) / 'size').read_text().strip() == str(10000 * MB // 512)
+    result = pi.run('make')                                 # finished: nothing more to do, and no sudo
+    assert result.code == 0 and not sudo_calls(result)
+
+
+def test_a_room_whose_space_is_no_longer_all_held_gets_it_back(pi):
+    assert pi.run('make').code == 0
+    pi.state('lost_blocks')
+    result = pi.run('make')
+    assert result.code == 0, result.out
+    assert f'fallocate -l {8192 * MB} {pi.image}' in result.calls and 'Set aside again' in result.out
+    assert not (pi.fake / 'lost_blocks').exists() and not sudo_calls(result)
+
+    pi.state('lost_blocks')
+    pi.state('stays_short')                                 # the card is too full to give it back
+    result = pi.run('make')
+    assert result.code == 0
+    assert 'IMPORTANT' in result.out and 'Free some space' in result.out
 
 
 def test_a_data_folder_on_another_disk_is_left_alone(pi):
-    (pi.fake / 'mounts.json').write_text(json.dumps([{'source': '/dev/sda1', 'target': os.path.realpath(pi.data),
-                                                      'disk': str(pi.fake / 'usb')}]), encoding='utf-8')
+    a_usb_drive_at_the_data_folder(pi)
     assert pi.status() == 'elsewhere\n'
     result = pi.run('make')
     assert result.code == 0
@@ -490,6 +659,12 @@ def test_a_dry_run_changes_nothing(pi):
     assert result.code == 0 and 'Would grow' in result.out
     assert not sudo_calls(result) and pi.image.read_text() == str(8192 * MB)
 
+    pi.state('lost_blocks')
+    result = pi.run('make', '--dry-run')
+    assert result.code == 0 and 'Would set aside again' in result.out
+    assert not calls_to(result, 'fallocate') and (pi.fake / 'lost_blocks').exists()
+    pi.clear('lost_blocks')
+
     unmount_as_after_a_bad_boot(pi)
     result = pi.run('make', '--dry-run')
     assert result.code == 0 and 'Would mount' in result.out
@@ -503,7 +678,8 @@ def test_works_with_a_space_in_the_folder_name(tmp_path, folder):
     assert result.code == 0, result.out
     [mount] = pi.mounts()
     assert mount['target'] == os.path.realpath(pi.data)
-    assert json.loads((pi.fake / 'loops.json').read_text())[mount['source']] == os.path.realpath(pi.image)
+    backing = (pi.loop(mount['source']) / 'loop' / 'backing_file').read_text().strip()
+    assert backing == os.path.realpath(pi.image)
     assert files_in(pi.data) == HISTORY and pi.status() == 'room\n'
     [old] = pi.old_folders()
     assert files_in(old) == HISTORY
@@ -514,19 +690,48 @@ def test_a_move_cut_short_by_a_power_cut_is_not_started_again(pi):
     old = pi.root / 'data.before-room-2026-11-11-120000'
     pi.data.rename(old)
     pi.data.mkdir()
-    Path(f'{pi.image}.new').write_text(str(8192 * MB))
+    pi.new_image.write_text(str(8192 * MB))
     result = pi.run('make')
     assert result.code == 1
     assert str(old) in result.out
-    assert files_in(old) == HISTORY and Path(f'{pi.image}.new').exists()
-    assert not [call for call in result.calls if call.split()[0] in ('fallocate', 'mkfs.ext4', 'sudo')]
+    assert files_in(old) == HISTORY and pi.new_image.exists()
+    assert not calls_to(result, 'fallocate', 'mkfs.ext4', 'sudo')
 
 
 def test_a_leftover_new_file_from_a_stopped_try_is_made_again(pi):
-    Path(f'{pi.image}.new').write_text('half made')
+    pi.new_image.write_text('half made')
     result = pi.run('make')
     assert result.code == 0, result.out
     assert pi.status() == 'room\n' and files_in(pi.data) == HISTORY
+
+
+# ── the settings and the unit ──
+
+@pytest.mark.parametrize(('name', 'value', 'says'), [
+    ('DATA_ROOM_FILE', '', 'DATA_ROOM_FILE in raspberry_pi/.env is empty'),
+    ('DESKTALK_DATA', '', 'DESKTALK_DATA in raspberry_pi/.env is empty'),
+    ('DATA_ROOM_SIZE_MB', '512', 'smaller than DATA_ROOM_SMALLEST_MB'),
+    ('DATA_ROOM_SIZE_MB', 'lots', "isn't a whole number"),
+])
+def test_bad_settings_stop_it_with_a_plain_message(pi, name, value, says):
+    pi.change_example(name, value)
+    result = pi.run('make')
+    assert result.code == 1 and says in result.out
+    changed_nothing(pi, result)
+
+
+def test_a_missing_setting_stops_even_status(pi):
+    text = pi.example.read_text(encoding='utf-8')
+    pi.example.write_text(re.sub(r'^DATA_ROOM_FILE=.*\n', '', text, flags=re.M), encoding='utf-8')
+    result = pi.run('status')
+    assert result.code == 1 and 'DATA_ROOM_FILE is missing' in result.out
+
+
+def test_a_room_file_that_isnt_a_plain_file_is_refused(pi):
+    pi.image.mkdir()
+    result = pi.run('make')
+    assert result.code == 1 and "isn't a plain file" in result.out
+    assert files_in(pi.data) == HISTORY and not calls_to(result, 'fallocate', 'mkfs.ext4', 'sudo')
 
 
 def test_the_unit_repairs_only_safely_and_mounts_before_docker():
@@ -538,6 +743,7 @@ def test_the_unit_repairs_only_safely_and_mounts_before_docker():
     start = next(line for line in lines if line.startswith('ExecStart='))
     stop = next(line for line in lines if line.startswith('ExecStop='))
     assert 'e2fsck -p ' in start and ' -y' not in '\n'.join(lines) and '-ge 4' in start
+    assert 'ls -A "$$2"' in start.split('e2fsck')[0]                                   # empty folder, checked first
     assert 'mount -o loop,noatime ' in start and 'umount ' in stop
     assert start.endswith(' "@IMAGE@" "@DATA@"') and stop.endswith(' "@DATA@"')       # each path one word
     assert '@' not in start.removesuffix(' "@IMAGE@" "@DATA@"')                         # never inside the script
