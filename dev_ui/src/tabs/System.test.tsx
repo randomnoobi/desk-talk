@@ -32,6 +32,8 @@ const health: Health = {
     detections: { level: 'ok', value: 2, unit: 's' },
     pi_temperature: { level: 'serious', value: 82, unit: '°C' },
     card: { level: 'warning', value: 1500, unit: 'MB' },
+    card_rest: { level: 'unknown', value: null, unit: 'MB' },
+    saving: { level: 'ok', value: null, unit: '' },
     pi_heartbeat: { level: 'ok', value: 12, unit: 's' },
   },
 }
@@ -52,7 +54,9 @@ describe('System tab', () => {
     expect(screen.getByRole('heading', { name: 'Event stream' })).toBeInTheDocument()
     expect(screen.getByText('CPU °C').closest('tr')).toHaveClass('bad')
     expect(screen.getByRole('heading', { name: 'Health checks' })).toBeInTheDocument()
-    expect(screen.getByText('free space on the card').closest('tr')).toHaveClass('warn')
+    expect(screen.getByText('free space where history is saved').closest('tr')).toHaveClass('warn')
+    expect(screen.getByText('free space on the rest of the card').closest('tr')).toHaveClass('off')
+    expect(screen.getByText('saving history').closest('tr')).toHaveClass('ok')
     expect(screen.getByText('/data/log')).toBeInTheDocument()
   })
 
