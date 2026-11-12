@@ -24,6 +24,11 @@
         "unit": "str",
         "value": "number"
       },
+      "card_rest": {
+        "level": "str",
+        "unit": "str",
+        "value": "null"
+      },
       "detections": {
         "level": "str",
         "unit": "str",
@@ -38,6 +43,11 @@
         "level": "str",
         "unit": "str",
         "value": "number"
+      },
+      "saving": {
+        "level": "str",
+        "unit": "str",
+        "value": "null"
       }
     },
     "detection": {

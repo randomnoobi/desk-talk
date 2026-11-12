@@ -18,8 +18,9 @@ from desktalk.adapters.notify.mac import MAC_PLATFORM, MacNotifications, NoNotif
 from desktalk.adapters.storage import JsonFileStore
 from desktalk.adapters.storage.trace_photo_files import TracePhotoFiles
 from desktalk.bootstrap import DeskTalk, build
-from desktalk.domain import AgentJoined
+from desktalk.domain import AgentJoined, CheckLevel, Saving
 from desktalk.ports import SmoothingTraceView
+from desktalk.runtime import SystemClock
 from tests.fakes import FakeClock, FakeDesktopNotifications, FakeDetector, FakeFrameSource, FakeTestRunner
 from tests.integration.app_kit import (
     AFTERNOON,
@@ -116,6 +117,74 @@ def test_everything_the_app_writes_goes_in_the_data_folder(tmp_path):
     assert (data / 'habits' / '2026-10-21.json').is_file()
     assert (tmp_path / 'run' / rig.config.event_log.folder / '2026-10-21' / 'detections.jsonl').is_file()
     assert rig.app.store.load('preferences')['wake_time'] == '06:45'
+
+
+def files_under(folder):
+    return sorted(p.relative_to(folder) for p in folder.rglob('*')) if folder.exists() else []
+
+
+def test_off_mode_writes_only_to_the_given_folder(tmp_path):
+    """Desk Talk's own space is missing: the event log, the store, the danger zones and the log files all go in
+    the in-memory folder start.sh gives, and nothing in the project's data/ or the rules folder."""
+    config = desk_config(tmp_path)
+    rules_before = files_under(config.resolve(config.storage.rules_folder))
+    memory = tmp_path / 'a'
+    level = logging.getLogger().level
+    try:
+        app = build(config, clock=SystemClock(), detector=FakeDetector(), data_folder=memory, pair_key=PAIR_KEY,
+                    desktop=FakeDesktopNotifications(), saving=Saving.OFF)
+        app.start()
+        try:
+            app.bus.publish(AgentJoined(ts=app.clock.now(), agent='cup', name='Cup', label='cup', conf=0.9))
+            app.safety_rules.save({'desk_outline': [[0, 0], [1, 0], [1, 0.8], [0, 0.8]]})
+            assert app.bus.wait_idle(timeout=5)
+        finally:
+            app.stop(timeout=5)
+    finally:
+        restore_logging(level)
+    assert files_under(config.root / 'data') == []
+    assert files_under(config.resolve(config.storage.rules_folder)) == rules_before
+    day = app.event_log.days()[0]
+    assert [e['agent'] for e in app.event_log.events(day, {'agent_joined'}, 10)] == ['cup']
+    assert (memory / config.event_log.folder / day).is_dir()
+    assert (memory / config.logging.folder / config.logging.file_name).is_file()
+    assert (memory / config.storage.rules_folder / 'safety_rules.json').is_file()
+
+
+def test_off_mode_with_no_folder_uses_a_new_temporary_one(tmp_path, monkeypatch):
+    made = tmp_path / 'made'
+    made.mkdir()
+    monkeypatch.setattr('tempfile.mkdtemp', lambda *a, **k: str(made))
+    config = desk_config(tmp_path)
+    app = build(config, clock=FakeClock(AFTERNOON), detector=FakeDetector(), pair_key=PAIR_KEY, set_up_logging=False,
+                synchronous_events=True, desktop=FakeDesktopNotifications(), saving=Saving.OFF)
+    app.bus.publish(AgentJoined(ts=app.clock.now(), agent='cup', name='Cup', label='cup', conf=0.9))
+    app.stop(timeout=1)
+    assert files_under(config.root / 'data') == []
+    assert (made / config.event_log.folder / '2026-10-21').is_dir()
+
+
+def test_off_mode_says_nothing_is_saved_in_health_and_lens(tmp_path):
+    app = build_quietly(desk_config(tmp_path), tmp_path, saving=Saving.OFF)
+    measures = {m.key: m for m in app.health_checks.measures()}
+    assert measures['saving'].level is CheckLevel.SERIOUS
+    app.lens.tick(app.clock.now())
+    day = app.event_log.days()[0]
+    said = app.event_log.events(day, {'camera'}, 10)
+    assert [e['text'] for e in said if e['key'] == 'saving'] == [app.config.prompts.lens.saving_off]
+
+
+def test_room_mode_adds_the_rest_of_the_card_check(tmp_path):
+    app = build_quietly(desk_config(tmp_path), tmp_path, saving=Saving.ROOM)
+    measures = {m.key: m for m in app.health_checks.measures()}
+    assert measures['card_rest'].value is not None and measures['card_rest'].level is not CheckLevel.UNKNOWN
+    assert measures['saving'].level is CheckLevel.OK
+
+
+def test_plain_mode_has_no_rest_of_the_card_check(tmp_path):
+    app = build_quietly(desk_config(tmp_path), tmp_path)
+    measures = {m.key: m for m in app.health_checks.measures()}
+    assert measures['card_rest'].value is None and measures['card_rest'].level is CheckLevel.UNKNOWN
 
 
 def test_preferences_and_habits_saved_before_are_read_back(tmp_path):

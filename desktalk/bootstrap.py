@@ -79,6 +79,7 @@ from desktalk.core.vision.desk_monitor import DeskMonitor
 from desktalk.core.vision.producer import DetectionProducer
 from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.core.vision.rules import SafetyRules
+from desktalk.domain import Saving
 from desktalk.ports import (
     CameraTips,
     CharacterMemory,
@@ -126,6 +127,7 @@ from desktalk.ports import (
     TracePhotos,
 )
 from desktalk.runtime import ClockCheck, Scheduler, Supervisor, SystemClock, boot_id, plain_error, setup_logging
+from desktalk.runtime.saving import folder_for
 
 log = logging.getLogger(__name__)
 
@@ -389,12 +391,25 @@ def make_detector(config: AppConfig) -> Detector:
     return detector
 
 
+# The rest of the SD card, outside Desk Talk's own space: the app container's own root, which Docker keeps on the
+# card (the data folder is mounted over it, so it's measured apart).
+CARD_ROOT = Path('/')
+
+
+def in_data_folder(config: AppConfig, data_folder: Path | None, path: Path) -> Path:
+    """Where a folder from the settings is: under `data_folder` when there is one (unless the setting is a full
+    path), else in the project folder."""
+    path = Path(path).expanduser()
+    return config.resolve(path) if data_folder is None or path.is_absolute() else Path(data_folder) / path
+
+
 def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector | None = None,
           client_factory: Callable[..., Any] | None = None, source: FrameSource | None = None,
           data_folder: Path | None = None, config_store: KeyValueStore | None = None, pair_key: str | None = None,
           synchronous_events: bool = False, set_up_logging: bool = True,
           test_runner: TestRunner | None = None, desktop: DesktopNotifications | None = None,
-          cloud_link_factory: Callable[[str, str], CloudLink] | None = None) -> DeskTalk:
+          cloud_link_factory: Callable[[str, str], CloudLink] | None = None,
+          saving: Saving = Saving.PLAIN) -> DeskTalk:
     """Every part of Desk Talk, connected. Nothing runs until start().
 
     The keyword arguments are for tests; left out, the real things are made from `config`:
@@ -415,16 +430,21 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                             dev.enabled is on
         desktop             pop-ups on a Mac or the Pi's speaker, as settings → notifications.output says
         cloud_link_factory  makes the line to the cloud server from its address and token (HttpCloudLink); only
-                            called once the computer is linked"""
+                            called once the computer is linked
+    And for every run: `saving`, the saving mode start.sh gives (desktalk/runtime/saving.py). With Saving.OFF
+    nothing is written to the project: the danger zones (settings → storage.rules_folder) go under `data_folder`
+    too, and with no `data_folder` a new temporary one is made. With Desk Talk's own space (ROOM) or none (OFF),
+    the health checks also measure the rest of the SD card."""
     clock = clock or SystemClock()
     synced_file = config.object_states.clock_synced_file
     clock_check = ClockCheck(config.resolve(synced_file) if synced_file else None,
                              config.clock.earliest_believable_date, clock=clock,
                              largest_jump_ahead_sec=config.clock.largest_jump_ahead_min * MINUTE)
 
+    data_folder = folder_for(saving, data_folder)
+
     def data_path(path: Path) -> Path:
-        path = Path(path).expanduser()
-        return config.resolve(path) if data_folder is None or path.is_absolute() else Path(data_folder) / path
+        return in_data_folder(config, data_folder, path)
 
     log_file = None
     if set_up_logging:
@@ -434,8 +454,9 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
 
     # ── storage and the desk right now ──
     store = JsonFileStore(data_path(config.storage.folder))
-    config_store = (config_store if config_store is not None
-                    else JsonFileStore(config.resolve(config.storage.rules_folder)))
+    rules = config.storage.rules_folder
+    rules_path = data_path(rules) if saving is Saving.OFF else config.resolve(rules)    # off: nothing in the project
+    config_store = config_store if config_store is not None else JsonFileStore(rules_path)
     live_pictures, scene, safety_board = LiveView(), Scene(), DangerBoard()
     character_memory, photo_album = Memories(), Album(keep=config.snapshots.max_kept)
     # For the parts that still ask for several desk interfaces in one object; it passes each call on.
@@ -469,7 +490,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                                  same_thing_overlap=config.agents.same_thing_overlap,
                                  ignore_labels=config.agents_file.ignore, known_labels=config.agents_file.own_words)
     health_checks = HealthChecks(source, producer, FolderDiskSpace(data_path(config.storage.folder)),
-                                 config.health_checks, config.pi, clock=clock, pi=camera.pi)
+                                 config.health_checks, config.pi, clock=clock, pi=camera.pi, saving=saving,
+                                 card=None if saving is Saving.PLAIN else FolderDiskSpace(CARD_ROOT))
     state_store = SqliteStateStore(data_path(config.object_states.database))
     boot_file = config.object_states.boot_id_file
     object_states = ObjectStateTracker(config.object_states, bus, state_store, device_id=source.kind,
@@ -540,7 +562,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                                config.reminders)
     lens = Lens(camera_health, source, safety_rules, preferences, feed, bus, photos, config.lens, config.pi,
                 clock=clock, checks=health_checks, prompts=config.prompts.lens,
-                preview_chars=config.logging.preview_chars, phone=camera.phone, pi_uploads=camera.pi)
+                preview_chars=config.logging.preview_chars, phone=camera.phone, pi_uploads=camera.pi, saving=saving)
     idle_chat = IdleChat(model, hub, desk_status, roster, profiles, character_memory,
                          lambda: generator.live_context()['summary'], config.idle_chat, config.llm.replies,
                          memory_kept=config.llm.memory_per_agent, memory_chars=config.chat.memory_reply_chars,
