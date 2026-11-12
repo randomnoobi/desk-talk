@@ -110,6 +110,8 @@ def desks(tmp_path):
         shutil.copy(RULES_COPY, config.resolve(config.storage.rules_folder) / 'safety_rules.json')
         if name == 'phone':
             config = changed(config, 'camera', source='phone')
+        if name == 'ai_down':                             # so a warning asks the AI, and /api/live reports it failing
+            config = changed(config, 'chat', ai_writes_warnings=True)
         clock = FakeClock(pinned - WATCH_STARTS_AGO_SEC)
         detector = FakeDetector()
         app = build(config, clock=clock, detector=detector, data_folder=tmp_path / 'run', pair_key=PAIR_KEY,

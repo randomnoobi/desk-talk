@@ -435,6 +435,7 @@ class ChatSettings(_Section):
     panel_views_min: PositiveInt
     panel_action_max_chars: PositiveInt
     ai_writes_warnings: bool
+    ai_writes_reminders: bool
 
 
 class IdleChatSettings(_Section):

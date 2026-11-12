@@ -36,6 +36,8 @@ from tests.fakes import (
 )
 
 CONFIG = load_config(environ={}, dotenv=Path('/nonexistent'))
+AI_WRITES = CONFIG.chat.model_copy(update={'ai_writes_warnings': True, 'ai_writes_reminders': True})
+FIXED_LINES = CONFIG.chat.model_copy(update={'ai_writes_warnings': False, 'ai_writes_reminders': False})
 
 
 def computer():
@@ -87,7 +89,8 @@ class HabitLog:
 
 
 class Rig:
-    """A MessageGenerator built from fakes. `reply` / `fail` script the AI."""
+    """A MessageGenerator built from fakes. `reply` / `fail` script the AI, which words warnings and reminders here
+    unless `chat` says otherwise (the fixed lines' own tests pass CONFIG.chat)."""
 
     def __init__(self, reply='Hey! All good over here on the desk.', fail='', members=('computer', 'cup'),
                  profiles=None, local_model=False, llm=None, chat=None, agents=None, camera_on=True, prompts=None,
@@ -105,7 +108,7 @@ class Rig:
         self.gen = MessageGenerator(
             self.ai, self.notifier, self.roster, self.profiles, self.habits, self.desk, self.clock,
             status=self.status, habit_log=self.habit_log, todos=self.todos, llm=llm or CONFIG.llm,
-            chat=chat or CONFIG.chat,
+            chat=chat or AI_WRITES,
             agents=agents or CONFIG.agents, sunlight_default_min=10, reply_max_chars=500,
             prompts=prompts or CONFIG.prompts, drink_labels=CONFIG.safety.liquids,
             preview_chars=CONFIG.logging.preview_chars, local_model=local_model, rng=random.Random(4))
@@ -329,6 +332,46 @@ def test_an_alert_with_nothing_to_say_is_dropped():
 def proximity(follow_up=0, near='cup', rule_label='Cup in the laptop spill zone', agent='computer'):
     return Alert(ts=1.0, kind='proximity', agent=agent,
                  extra={'near': near, 'rule_label': rule_label, 'follow_up': follow_up, 'snapshot': 'snap9'})
+
+
+def edge_alert(follow_up=0, agent='cup'):
+    return Alert(ts=1.0, kind='proximity', agent=agent,
+                 extra={'edge': 'front', 'rule_label': 'Near front edge (12px)', 'follow_up': follow_up})
+
+
+def test_a_warning_uses_its_fixed_line_and_never_asks_the_ai():
+    r = Rig(reply='I am a bit wonky, sitting so close to the keyboard.', chat=FIXED_LINES)
+    r.gen.on_alert(proximity())
+    r.gen.on_alert(edge_alert())
+    assert [m['text'] for m in r.notifier.sent] == ['Cup is too close to my keyboard!',
+                                                    CONFIG.prompts.alert.edge]
+    assert r.ai.calls == []
+
+
+def test_a_warning_that_goes_on_uses_its_second_line_and_replies_to_the_first():
+    r = Rig(chat=FIXED_LINES)
+    r.gen.on_alert(edge_alert())
+    r.gen.on_alert(edge_alert(follow_up=1))
+    r.gen.on_alert(proximity())
+    r.gen.on_alert(proximity(follow_up=1))
+    edge_again, zone_again = r.notifier.sent[1], r.notifier.sent[3]
+    assert edge_again['text'] == CONFIG.prompts.alert.edge_again
+    assert edge_again['reply_to'] == {'character': 'cup', 'text': CONFIG.prompts.alert.edge}
+    assert zone_again['text'] == CONFIG.prompts.alert.still_too_close.format(other='Cup')
+    assert r.ai.calls == []
+
+
+def test_a_warning_carries_its_speakers_card_so_the_page_can_draw_someone_not_in_the_chat():
+    r = Rig(members=())
+    r.gen.on_alert(edge_alert())
+    card = r.notifier.sent[0]['card']
+    assert (card['id'], card['name']) == ('cup', 'Cup') and 'personality' not in card
+
+
+def test_a_nudge_uses_its_own_words_and_never_asks_the_ai():
+    r = Rig(reply='Hey, 35 minutes of sitting! Walk five minutes, leave your phone.', chat=FIXED_LINES)
+    assert r.gen.phrase_nudge('computer', nudge()) == '35 minutes of sitting. Time for a 5-minute walk?'
+    assert r.ai.calls == []
 
 
 def test_a_proximity_alert_is_put_in_words_by_the_ai():

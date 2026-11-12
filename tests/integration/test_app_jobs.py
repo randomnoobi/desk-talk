@@ -69,7 +69,8 @@ def test_no_reminders_while_warming_up_or_with_the_camera_off(tmp_path):
 
 def test_the_ai_puts_the_nudge_in_the_computers_words(tmp_path):
     words = 'Three minutes in that chair! Walk for five, and leave your phone here.'
-    rig = DeskRig(tmp_path, config=only_breaks(desk_config(tmp_path, ai=True)), ai_reply=words)
+    config = changed(only_breaks(desk_config(tmp_path, ai=True)), 'chat', ai_writes_reminders=True)
+    rig = DeskRig(tmp_path, config=config, ai_reply=words)
     rig.watch(4 * 60, LAPTOP, step=1.0)
     rig.messages()
     rig.tick(rig.app.reminders)

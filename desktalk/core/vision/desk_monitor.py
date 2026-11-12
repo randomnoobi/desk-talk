@@ -110,7 +110,7 @@ class DeskMonitor:
                 reason = self._words.edge_reason.format(edge=ev['edge'], distance=int(ev['distance_px']))
                 said_by_lens = {} if agent in chat else {'object': agent}
                 self._proximity_alert(agent if agent in chat else LENS, [things[agent].box], now, severity='medium',
-                                      rule_label=reason, **said_by_lens)
+                                      rule_label=reason, edge=ev['edge'], **said_by_lens)
                 dangers.append(Danger(pair=(ev['class'], 'desk_edge'),
                                       label=self._words.edge_danger.format(object=ev['class'], edge=ev['edge']),
                                       kind='edge_danger'))

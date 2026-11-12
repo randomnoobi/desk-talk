@@ -143,6 +143,7 @@ const state = {
   view: 'chat',
   chat: 'group',
   agents: {},           // agent id → profile + on_desk / joined_at / left_at
+  cards: {},            // agent id → how to draw a speaker who may not be in the chat (sent with its warning)
   messages: { group: [] },
   unread: { group: 0 },
   waiting: {},          // chat id → replies still on their way (the typing dots stay until they're in)
@@ -162,7 +163,7 @@ const agentIds = () => Object.keys(state.agents);
 function who(id) {
   if (id === 'group') return GROUP;
   if (id === 'lens') return lens();
-  return state.agents[id] || { id, name: id, color: 'plum', icon: '✨', about: '' };
+  return state.agents[id] || state.cards[id] || { id, name: id, color: 'plum', icon: '✨', about: '' };
 }
 function ensureChat(id) {
   if (!state.messages[id]) state.messages[id] = [];
@@ -1426,6 +1427,7 @@ function handleServerMessage(d, old = false) {
   if (d.type === 'habit_update') { refreshHabitsSoon(); return; }
   if (!d.text) return;
   if (d.type === 'group_message' && d.character) {
+    if (d.card) state.cards[d.character] = d.card;   // a speaker who may not be in the chat
     addMessage('group', {
       id: d.id, time: d.ts ? d.ts * MS : Date.now(), char: d.character, text: d.text, snapshot: d.snapshot,
       replyTo: d.reply_to, habit: d.habit,

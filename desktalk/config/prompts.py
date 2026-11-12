@@ -36,6 +36,7 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'alert.other_is_drink': ('other_label',),
     'alert.self_is_drink': ('self_label',),
     'alert.same_area': ('self_label', 'other_label'),
+    'alert.still_too_close': ('other',),
     'alert.heads_up': ('rule',),
     'alert.lens_zone': ('intruder', 'target', 'zone'),
     'alert.lens_edge': ('object',),
@@ -287,6 +288,9 @@ class AlertPrompts(_Section):
     same_area: str
     unknown_label: str
     unknown_other: str
+    edge: str
+    edge_again: str
+    still_too_close: str
     heads_up: str
     too_close: str
     lens_zone: str

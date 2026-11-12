@@ -111,7 +111,12 @@ alert:
   same_area: '{self_label} and {other_label} are in the same area.'
   unknown_label: unknown
   unknown_other: something
-  # said when the AI can't help and the other object is not an agent
+  # the fixed lines for a warning (settings → chat.ai_writes_warnings). An agent's first line about something too
+  # close is its own too_close in agents.yaml.
+  edge: I'm right at the edge of the desk. Could you move me back a bit?
+  edge_again: Still right at the edge here. Please move me back when you get a second.
+  still_too_close: '{other} is still too close to me. Could you move it away?'
+  # said when the other object is not an agent
   heads_up: 'Heads up: {rule}. Could you move me back a bit?'
   too_close: Something is getting too close. Could you check the desk?
   # said by Lens (no AI) when nothing in the chat can say it; {intruder}, {target} and {object} are the detector's

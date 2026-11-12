@@ -221,7 +221,7 @@ def test_something_at_the_desk_edge():
     [alert] = rig.look(T + 1000, {'cup': ('cup', (400, 480, 470, 570))}, size=(960, 720))
     assert alert.agent == 'cup'
     assert {k: v for k, v in alert.extra.items() if k != 'snapshot'} == {
-        'follow_up': 0, 'severity': 'medium', 'rule_label': 'Near front edge (6px)'}
+        'follow_up': 0, 'severity': 'medium', 'rule_label': 'Near front edge (6px)', 'edge': 'front'}
     assert rig.dangers() == [{'pair': ['cup', 'desk_edge'], 'label': 'cup near front edge',
                                         'type': 'edge_danger'}]
 

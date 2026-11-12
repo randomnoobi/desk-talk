@@ -37,9 +37,10 @@ class NudgeVoice:
         self._local = local
 
     def phrase_nudge(self, agent_id: str, nudge: Nudge) -> str | None:
-        """The agent's words for a habit reminder: the AI's, or the nudge's own text when the AI can't help."""
+        """The nudge's own text, or with settings → chat.ai_writes_reminders on, the agent's words from the AI (the
+        nudge's own text when the AI can't help)."""
         a = self._profiles.get(agent_id)
-        if a:
+        if a and self._chat.ai_writes_reminders:
             text = self._ai_nudge(a, nudge)
             if text:
                 self._memory.remember(agent_id, text, 'habit reminder')

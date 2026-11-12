@@ -3,10 +3,10 @@ Alerts in an agent's voice: "the cup is getting close to me!"
 
 An alert that carries its own text (a pet, clutter, a lost item ...) is sent as written. A proximity
 alert is put into words by the AI, grounded in the detector's own words for both objects; when the AI
-can't help (or its line is cut off, dramatic or for another agent), the agent's own too_close line is used.
-A follow-up of the same alert replies to what was said before. When nothing in the chat can say it, Lens does,
-without the AI: "Heads up: scissors next to the cell phone". With chat.ai_writes_warnings off (the Pi) the AI is never
-asked, so a warning can't wait for one.
+can't help (or its line is cut off, dramatic or for another agent), its fixed line is used: the agent's own
+too_close, or the desk edge's (config/prompts.yaml → alert). A follow-up of the same alert replies to what was
+said before. When nothing in the chat can say it, Lens does, without the AI: "Heads up: scissors next to the cell
+phone". With chat.ai_writes_warnings off (the Pi) the AI is never asked, so a warning can't wait for one.
 """
 
 from __future__ import annotations
@@ -62,21 +62,27 @@ class AlertVoice:
         key = f'proximity_{pid}_{near}'
         prev = self._said_about.get(key) if follow_up > 0 else None
         text = self._ai_alert(a, d, prev, follow_up) if self._chat.ai_writes_warnings else None
-        if not text:
-            other = self._profiles.get(near)
-            if other:
-                text = a.too_close_text(other.name)
-            elif d.get('rule_label'):
-                text = self._words.heads_up.format(rule=d['rule_label'].rstrip('.'))
-            else:
-                text = self._words.too_close
-        msg = {'type': 'group_message', 'character': pid, 'text': text, 'alert': 'proximity'}
+        text = text or self._fixed_line(a, d, follow_up)
+        # The card lets the page draw a speaker it hasn't met (a Demo tab warning from something not in the chat).
+        msg = {'type': 'group_message', 'character': pid, 'text': text, 'alert': 'proximity', 'card': a.public()}
         if snapshot:
             msg['snapshot'] = snapshot
         if prev:
             msg['reply_to'] = {'character': prev['character'], 'text': prev['text']}
         self._said_about[key] = {'character': pid, 'text': text}
         return msg
+
+    def _fixed_line(self, a: AgentProfile, d: Mapping[str, Any], follow_up: int) -> str:
+        """The warning's own words, with no AI. `follow_up`: how many times it was said already."""
+        w = self._words
+        if d.get('edge'):
+            return w.edge_again if follow_up else w.edge
+        other = self._profiles.get(d.get('near') or '')
+        if other:
+            return w.still_too_close.format(other=other.name) if follow_up else a.too_close_text(other.name)
+        if d.get('rule_label'):
+            return w.heads_up.format(rule=d['rule_label'].rstrip('.'))
+        return w.too_close
 
     def _lens_alert(self, d: Mapping[str, Any]) -> dict[str, Any]:
         """Lens's warning (it has no personality, so no AI): what is in which thing's zone, or at the desk edge."""
