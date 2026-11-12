@@ -2,7 +2,7 @@
 // finds, by folder and file, each with its own Run button. One run at a time; the page asks the
 // server how it's going every settings.poll_sec and adds the new printout on, keeping only the last
 // settings.output_keep_kb of it (counting a character as a byte), as the server does.
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import {
   ApiError, getRun, getTests, startCheck, startTests, stopRun,
   type DevSettings, type RunStatus, type StepStatus, type TestItem, type TestOutcome,
@@ -10,6 +10,7 @@ import {
 import { formatClock, formatSeconds, keepLast } from '../format'
 import { buildTree, filterTree, type TreeNode } from '../testTree'
 import { ErrorLine, Pill, type Level } from '../ui'
+import { useScrollToEnd } from '../useScrollToEnd'
 
 const wordsOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
@@ -221,12 +222,7 @@ export default function Checks(props: { settings: DevSettings }): JSX.Element {
   }
 
   // Keep the printout scrolled to the end, unless you've scrolled up to read something.
-  const printout = useRef<HTMLPreElement>(null)
-  const atEnd = useRef(true)
-  useEffect(() => {
-    const box = printout.current
-    if (box && atEnd.current) box.scrollTop = box.scrollHeight
-  }, [output])
+  const printout = useScrollToEnd<HTMLPreElement>([output])
 
   const stepState = (name: string) => checkSteps.find(s => s.name === name)?.state ?? 'waiting'
 
@@ -293,11 +289,7 @@ export default function Checks(props: { settings: DevSettings }): JSX.Element {
             </section>
           )}
 
-          <pre ref={printout} className="printout" aria-label="Printout"
-               onScroll={e => {
-                 const box = e.currentTarget
-                 atEnd.current = box.scrollHeight - box.scrollTop - box.clientHeight < box.clientHeight / 4
-               }}>
+          <pre ref={printout.ref} className="printout" aria-label="Printout" onScroll={printout.onScroll}>
             {output || (going ? 'Waiting for the first lines…' : '')}
           </pre>
         </div>

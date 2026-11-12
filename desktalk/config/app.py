@@ -867,6 +867,39 @@ class DemoSettings(_Section):
         return self
 
 
+class DevPiLogSource(_Section):
+    """One log the developer page's Pi log tab can show: what to run on the Pi to follow it."""
+
+    name: str
+    label: str
+    start: str                        # a shell command on the Pi; blank: {first_lines}
+    resume: str                       # the same after a lost connection; blank: {since} (the newest line's time)
+
+
+class DevPiLogSettings(_Section):
+    """The developer page's Pi log tab: the Pi's log, read over ssh while the tab is open."""
+
+    _in_order = (('retry_start_sec', 'retry_max_sec'), ('first_lines', 'keep_lines'))
+    ssh: Command
+    sources: Annotated[tuple[DevPiLogSource, ...], Field(min_length=1)]
+    first_lines: PositiveInt
+    keep_lines: PositiveInt
+    line_max_chars: PositiveInt
+    stop_after_idle_sec: PositiveNumber
+    retry_start_sec: PositiveNumber
+    retry_max_sec: PositiveNumber
+    connected_ok_sec: PositiveNumber  # a connection that lasted this long makes the next wait start small again
+    check_every_sec: PositiveNumber
+
+    @model_validator(mode='after')
+    def _names_differ(self):
+        names = [source.name for source in self.sources]
+        twice = sorted({name for name in names if names.count(name) > 1})
+        if twice:
+            raise ValueError(f'two Pi logs are called {", ".join(twice)}')
+        return self
+
+
 class ObjectStorySettings(_Section):
     """An object's story: its state changes, chat joins and pictures (the app page and the developer page)."""
 
@@ -900,6 +933,7 @@ class DevSettings(_Section):
     table_counts_every_sec: PositiveNumber
     scenarios: DemoSettings
     health: DevHealthLimits
+    pi_log: DevPiLogSettings
 
 
 # ════════════════════════════════════════════════════════════════════

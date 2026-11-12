@@ -40,6 +40,8 @@ from desktalk.domain import (
     Photo,
     Picture,
     PiHealth,
+    PiLogPage,
+    PiLogSource,
     QueryResult,
     RunStatus,
     SafetyNow,
@@ -1252,6 +1254,32 @@ class ReminderSender(Protocol):
 class DemoCountdowns(DemoScenarios, PeriodicWorker, Protocol):
     """The Demo tab's pretend warnings as the app keeps them: what the web routes ask, and the background job that
     fires each one once its countdown is over (DeskTalk.demo)."""
+
+
+@runtime_checkable
+class PiLog(Protocol):
+    """The Pi's log for the developer page's Pi log tab, read over ssh (settings → dev.pi_log) only while the tab
+    asks for it. A dropped connection is tried again by itself, picking up after the last line it got."""
+
+    def sources(self) -> list[PiLogSource]:
+        """Every log it can show, in the settings' order."""
+        ...
+
+    def read(self, source: str, after: int) -> PiLogPage:
+        """The lines of `source` numbered after `after` (0: all it kept), and how the connection is doing. Starts
+        reading `source` when it isn't already (another one being read stops, and what it kept is let go), and
+        keeps it going while it is asked for. Raises KeyError, with plain words, for a source it doesn't have."""
+        ...
+
+    def close(self) -> None:
+        """Stop reading (the server is stopping). Calling it twice is fine; a later read() starts again."""
+        ...
+
+
+@runtime_checkable
+class PiLogReader(PiLog, PeriodicWorker, Protocol):
+    """The Pi log as the app keeps it: what the web route asks, and the background job that stops reading once
+    the tab hasn't asked for a while and connects again after a lost connection (DeskTalk.pi_log)."""
 
 
 # ── The cloud server (optional) ────────────────────────────────────────

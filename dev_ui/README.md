@@ -1,13 +1,13 @@
 # The developer page
 
 A page for working on Desk Talk: run the tests, watch pictures turn into object states, see how the Pi
-and every part of the app are doing, look inside the database, and see what's stored. It only answers
-requests from this computer.
+and every part of the app are doing, read the Pi's log, look inside the database, and see what's stored.
+It only answers requests from this computer.
 
 It's a small Vite + React + TypeScript app. The app page itself (`web_app/`) stays plain JavaScript.
 You need Node 22 (it comes with npm).
 
-## The six tabs
+## The seven tabs
 
 - **Checks**: **Run everything** runs each step in `dev.checks` (the fast tests, the lint, the type check)
   one after the other. Below it, every test as folder → file → test, with a search box and a **Run** button
@@ -22,6 +22,12 @@ You need Node 22 (it comes with npm).
   slowed down, disk, clock) and every part on this computer (detection, the event stream, background jobs,
   timed jobs, the event log, the AI), from `/api/health` and `/api/log/status`. Numbers turn amber or red
   at the limits in `dev.health`.
+- **Pi log**: one of the Pi's logs, live, as if you typed `ssh pi docker compose logs -f` yourself (pick which
+  one; the list is `dev.pi_log.sources`, and the page remembers your pick). It says whether it's connected, and
+  what ssh said went wrong (say "Permission denied (publickey)"). Type in the filter box to see only the lines
+  with that text (big or small letters alike); **Clear** empties the log and carries on reading. The page keeps the last `dev.pi_log.keep_lines` lines. The
+  server runs ssh only while this tab is open: switch to another tab and it stops a little later
+  (`dev.pi_log.stop_after_idle_sec`); after a lost connection it connects again by itself.
 - **Database**: the databases and their tables with row counts (counted on open, every
   `dev.table_counts_every_sec` and on **Count again**). Click a table to see its newest rows and
   its `CREATE` line, or type a query (Ctrl/Cmd+Enter runs it) or pick a ready-made one. Only queries that
@@ -69,19 +75,22 @@ Open it at `localhost`, not `127.0.0.1`: the server only lets `http://localhost:
 The Storage tab only sees the app page's localStorage at http://localhost:5000/dev/, because a browser
 keeps one localStorage per address.
 
-The server's `/api/dev/...` routes are listed in [docs/API.md](../docs/API.md#developer-page-this-computer-only-15).
+The server's `/api/dev/...` routes are listed in [docs/API.md](../docs/API.md#developer-page-this-computer-only-21).
 
 ## How it's laid out
 
 - `src/api.ts`: every call to the server, one function per route, and the shape of each reply. A call
   that fails throws `ApiError` (`status` 0 when the server didn't answer).
 - `src/usePoll.ts`: asks the server again every few seconds and keeps the last good answer.
+- `src/useScrollToEnd.ts`: keeps a printout box (Checks, Pi log) scrolled to its end, unless you have scrolled up to read.
 - `src/App.tsx`: the tab bar. It loads `/api/dev/settings` once and gives it to every tab. The page keeps
   no numbers of its own: they all come from `config/settings.yaml` through that reply.
-- `src/tabs/`: one file per tab (Checks, Live, System, Database, Storage, Demo).
+- `src/tabs/`: one file per tab (Checks, Live, System, PiLog, Database, Storage, Demo). Each gets `TabProps`
+  (`src/ui.tsx`): the settings, and `shown`, false while another tab is open (opened tabs stay on the page,
+  hidden). The Pi log tab only asks the server while it's shown.
 - The sums behind the tabs: `src/testTree.ts` (Checks), `src/timeline.ts` and
   `src/SmoothingChart.tsx` (Live), `src/health.ts` (System), `src/queries.ts` (Database's ready-made
-  queries), `src/browserStorage.ts` (Storage).
+  queries), `src/browserStorage.ts` (Storage, and the choices this page remembers, like the Pi log tab's log).
 - `serverPorts.ts`: reads `web.port` and `dev.vite_port` for `vite.config.ts`.
 - Tests sit next to the file they test (`*.test.ts`, `*.test.tsx`) and fake the server's replies, so they
   never need the server.

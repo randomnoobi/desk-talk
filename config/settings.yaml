@@ -835,3 +835,47 @@ dev:
     pi_disk_warn_mb: 1000       # less free space than this in the Pi's picture folder (pi.photo_dir, kept in
                                 # memory, not the SD card) turns amber
     detect_warn_ms: 500         # finding things in one picture here (the app's own YOLO) taking longer turns amber
+  # The Pi log tab: the Pi's log, as if you typed `ssh pi docker compose logs -f` yourself. This computer runs ssh
+  # only while the tab is open, so the Pi does nothing extra the rest of the time. When the connection drops (the Pi
+  # reboots, the Wi-Fi goes), it connects again by itself and picks up after the last line it got.
+  pi_log:
+    # How to reach the Pi. `ssh pi` must log in with a key and no password (BatchMode=yes: it never asks for one).
+    # ServerAliveInterval × ServerAliveCountMax = how long a dead connection takes to notice (5 × 3 = 15 s).
+    # -tt: a terminal on the Pi, so the command there ends when the connection does (the Pi's errors then come
+    # with its lines). LogLevel=ERROR: ssh only says real errors (like "Permission denied"), not "Connection closed".
+    ssh: [ssh, -tt, -o, BatchMode=yes, -o, ConnectTimeout=10, -o, ServerAliveInterval=5, -o, ServerAliveCountMax=3,
+          -o, LogLevel=ERROR, pi]
+    sources:                    # the logs the tab can show. Each runs in the Pi's shell. start: when the tab opens,
+                                # with the last {first_lines} lines from before; resume: after a lost connection
+                                # (or when the tab comes back), from {since}: the Pi's time on the newest line it
+                                # got, as seconds since 1970 with its fraction (like 1762855200.123456789)
+      - name: all
+        label: Every container
+        start: cd ~/desk-talk/raspberry_pi && docker compose logs --follow --timestamps --no-color --tail {first_lines}
+        resume: cd ~/desk-talk/raspberry_pi && docker compose logs --follow --timestamps --no-color --since {since}
+      - name: camera
+        label: Camera
+        start: cd ~/desk-talk/raspberry_pi && docker compose logs --follow --timestamps --no-color --tail {first_lines} camera
+        resume: cd ~/desk-talk/raspberry_pi && docker compose logs --follow --timestamps --no-color --since {since} camera
+      - name: detector
+        label: Detector
+        start: cd ~/desk-talk/raspberry_pi && docker compose logs --follow --timestamps --no-color --tail {first_lines} detector
+        resume: cd ~/desk-talk/raspberry_pi && docker compose logs --follow --timestamps --no-color --since {since} detector
+      - name: app
+        label: App
+        start: cd ~/desk-talk/raspberry_pi && docker compose logs --follow --timestamps --no-color --tail {first_lines} app
+        resume: cd ~/desk-talk/raspberry_pi && docker compose logs --follow --timestamps --no-color --since {since} app
+      - name: old_camera_service   # the camera program outside Docker, from before (install.sh turns it off);
+                                   # SYSTEMD_COLORS=0: no colour codes, even with a terminal
+        label: Old camera service (desk-talk-camera)
+        start: SYSTEMD_COLORS=0 journalctl -u desk-talk-camera --follow --no-pager --output short-iso-precise --lines {first_lines}
+        resume: SYSTEMD_COLORS=0 journalctl -u desk-talk-camera --follow --no-pager --output short-iso-precise --since @{since}
+    first_lines: 200            # lines from before that the tab starts with
+    keep_lines: 5000            # how many lines the tab can scroll back through (the oldest go first)
+    line_max_chars: 4000        # a longer line is cut here
+    stop_after_idle_sec: 30     # the tab hasn't asked for this long (it's closed): stop reading, and close ssh
+    retry_start_sec: 2          # the connection dropped: try again after this...
+    retry_max_sec: 30           # ...twice as long after each miss, up to this
+    check_every_sec: 1          # how often the reader looks at those two
+    connected_ok_sec: 30        # a connection that lasted this long counted as working, so the next wait
+                                # starts small again (one that ends sooner keeps the waits growing)

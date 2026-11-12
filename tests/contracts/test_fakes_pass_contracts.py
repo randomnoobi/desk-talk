@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import pytest
 
-from desktalk.domain import BBox, Detection, QueryResult, TableInfo, TestItem
+from desktalk.domain import BBox, Detection, PiLogSource, QueryResult, TableInfo, TestItem
 from tests.contracts.character_memory_contract import CharacterMemoryContract
 from tests.contracts.chat_model_contract import ChatModelContract
 from tests.contracts.desk_rules_contract import DeskRulesContract
@@ -28,6 +28,7 @@ from tests.contracts.object_states_contract import ObjectStatesContract
 from tests.contracts.phone_camera_contract import PhoneCameraContract
 from tests.contracts.photo_album_contract import PhotoAlbumContract
 from tests.contracts.photo_taker_contract import PhotoTakerContract
+from tests.contracts.pi_log_contract import PiLogContract
 from tests.contracts.pi_status_contract import PiStatusContract
 from tests.contracts.picture_tools_contract import PictureToolsContract
 from tests.contracts.push_source_contract import PushSourceContract
@@ -50,6 +51,7 @@ from tests.fakes import (
     FakePhotoTaker,
     FakePi,
     FakePictureTools,
+    FakePiLog,
     FakeRuleNudges,
     FakeSafetyBoard,
     FakeSmoothingTrace,
@@ -143,7 +145,7 @@ class TestFakeChatModel(ChatModelContract):
     ('FakeSmoothingTrace', 'SmoothingTraceView'), ('FakeDesktopNotifications', 'DesktopNotifications'),
     ('FakeChatJoins', 'ChatJoins'), ('FakeTracePhotos', 'TracePhotos'), ('FakeTodoList', 'TodoList'),
     ('FakePi', 'PiHeartbeats'), ('FakeDiskSpace', 'DiskSpace'), ('FakeHealthCheck', 'HealthCheck'),
-    ('FakeDetectionTimes', 'DetectionTimes'),
+    ('FakeDetectionTimes', 'DetectionTimes'), ('FakePiLog', 'PiLogReader'),
 ])
 def test_every_fake_has_all_of_its_interface(fake, port):
     import desktalk.ports as ports
@@ -296,6 +298,21 @@ class TestFakeSmoothingTrace(SmoothingTraceContract):
     def view(self):
         return FakeSmoothingTrace({'cup': [smoothing_step(1.0), smoothing_step(2.0, conf=None)],
                                    'pen/pencil': [smoothing_step(1.0)]})
+
+
+class TestFakePiLog(PiLogContract):
+    @pytest.fixture
+    def pi_log(self):
+        return FakePiLog([PiLogSource('all', 'Every container'), PiLogSource('camera', 'Camera')],
+                         {'all': ['one', 'two', 'three'], 'camera': ['four']})
+
+
+def test_the_fake_pi_log_records_what_was_asked():
+    pi_log = FakePiLog([PiLogSource('all', 'Every container')], {'all': ['one']})
+    pi_log.read('all', 0)
+    pi_log.read('all', 1)
+    pi_log.close()
+    assert (pi_log.asked, pi_log.closed) == ([('all', 0), ('all', 1)], 1)
 
 
 def test_the_fake_runner_fails_a_run_with_a_failed_test():

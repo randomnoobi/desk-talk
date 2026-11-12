@@ -14,13 +14,21 @@ import pytest
 
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource
 from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser
+from desktalk.adapters.dev.pi_log import SshPiLog
 from desktalk.adapters.notify.mac import MAC_PLATFORM, MacNotifications, NoNotifications
 from desktalk.adapters.storage import JsonFileStore
 from desktalk.adapters.storage.trace_photo_files import TracePhotoFiles
 from desktalk.bootstrap import DeskTalk, build
 from desktalk.domain import AgentJoined
 from desktalk.ports import SmoothingTraceView
-from tests.fakes import FakeClock, FakeDesktopNotifications, FakeDetector, FakeFrameSource, FakeTestRunner
+from tests.fakes import (
+    FakeClock,
+    FakeDesktopNotifications,
+    FakeDetector,
+    FakeFrameSource,
+    FakePiLog,
+    FakeTestRunner,
+)
 from tests.integration.app_kit import (
     AFTERNOON,
     CUP_FAR,
@@ -205,6 +213,7 @@ def test_start_runs_every_background_job_after_its_first_wait(tmp_path):
         'daily recap': config.daily_summary.start_delay_sec,
         'cloud uploader': config.cloud.send_every_sec,
         'demo scenarios': 0,            # the developer page's Demo tab: a countdown can be 0 seconds
+        'pi log': 0,                    # the Pi log tab: it does nothing until the tab asks
     }
 
 
@@ -264,6 +273,7 @@ def test_the_developer_tools_are_built_when_the_developer_page_is_on(tmp_path):
     app = build_quietly(config, tmp_path)
     assert isinstance(app.test_runner, PytestRunner)
     assert isinstance(app.databases, SqliteBrowser) and isinstance(app.data_files, DataFolder)
+    assert isinstance(app.pi_log, SshPiLog)
     assert app.databases.databases() == ['object_states']
     assert app.databases.tables('object_states')            # the object states database in the data folder
     app.store.save('preferences', {'wake_time': '06:45'})
@@ -273,7 +283,7 @@ def test_the_developer_tools_are_built_when_the_developer_page_is_on(tmp_path):
 
 def test_with_the_developer_page_off_there_are_no_developer_tools(tmp_path):
     app = build_quietly(changed(desk_config(tmp_path), 'dev', enabled=False), tmp_path)
-    assert (app.test_runner, app.databases, app.data_files) == (None, None, None)
+    assert (app.test_runner, app.databases, app.data_files, app.pi_log) == (None, None, None, None)
     assert isinstance(app.trace_photos, TracePhotoFiles)      # each object's story is on the app page too
     assert app.stop(timeout=1) == []
 
@@ -284,3 +294,18 @@ def test_stop_stops_a_test_run_still_going(tmp_path):
     assert app.test_runner is runner
     app.stop(timeout=1)
     assert runner.closed
+
+
+def test_a_pi_log_passed_in_is_used_and_stop_stops_reading_it(tmp_path):
+    pi_log = FakePiLog()
+    app = build_quietly(desk_config(tmp_path), tmp_path, pi_log=pi_log)
+    assert app.pi_log is pi_log
+    assert pi_log in [job for job, _ in app.background_jobs()]
+    app.stop(timeout=1)
+    assert pi_log.closed == 1
+
+
+def test_with_the_developer_page_off_a_pi_log_passed_in_is_not_used(tmp_path):
+    app = build_quietly(changed(desk_config(tmp_path), 'dev', enabled=False), tmp_path, pi_log=FakePiLog())
+    assert app.pi_log is None
+    assert 'pi log' not in [job.name for job, _ in app.background_jobs()]

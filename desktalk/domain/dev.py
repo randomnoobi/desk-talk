@@ -8,6 +8,7 @@ the database's tables, and the files in the data folder.
     TableInfo, QueryResult   a database table, and what a query gave back
     DataFile                 a file or folder in the data folder
     Scenario, WaitingScenario  a pretend warning the Demo tab can fire, and one counting down
+    PiLogSource, PiLogLine, PiLogPage  a log the Pi log tab can show, one of its lines, and what the tab gets
     RunAlreadyGoing          a run was started while another was still going
     QueryRefused             a query that would change the database, isn't one statement, or took too long
 """
@@ -124,3 +125,35 @@ class WaitingScenario:
     label: str
     fires_at: float                     # seconds since 1970
     seconds_left: float                 # when it was asked (0 once it's due)
+
+
+@dataclass(frozen=True)
+class PiLogSource:
+    """A log the Pi log tab can show (settings → dev.pi_log.sources)."""
+
+    name: str
+    label: str                          # shown on the Pi log tab
+
+
+@dataclass(frozen=True)
+class PiLogLine:
+    """One line of the Pi log tab."""
+
+    number: int                         # counts up from 1 while the server runs; ask after the last one
+    text: str
+    kind: str                           # 'line' (the Pi printed it), 'problem' (ssh or the command's errors),
+                                        # or 'note' (this computer's own: connecting, lost, trying again)
+    at: float                           # when this computer got it (seconds since 1970)
+
+
+@dataclass(frozen=True)
+class PiLogPage:
+    """What the Pi log tab gets each time it asks."""
+
+    source: str                         # the log it is reading (a PiLogSource name)
+    state: str                          # 'connecting', 'connected', 'waiting' (to try again) or 'stopped'
+    problem: str                        # the last thing that went wrong, or '' once connected again
+    retry_at: float | None              # while 'waiting': when it tries again (seconds since 1970)
+    lines: tuple[PiLogLine, ...]        # the kept lines after the number asked for, oldest first
+    end: int                            # the number to ask after next time
+    dropped: bool                       # some lines after the number asked for were let go already

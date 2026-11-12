@@ -376,6 +376,12 @@ CASES = [
          before=(DEMO_START,), from_ip=LAN_DEVICE),
     Case('dev-scenario-cancel-other-web-page', 'DELETE', '/api/dev/scenarios/demo-1', 403, desk='fresh',
          before=(DEMO_START,), headers=OTHER_PAGE),
+    # the Pi log tab, with a fake reader that has the logs in settings → dev.pi_log (conftest.py: PI_LOG_PRINTS)
+    Case('dev-pi-log', 'GET', '/api/dev/pi_log?source=all&after=0', 200, desk='fresh',
+         values={'source': 'all', 'state': 'connected', 'end': 2, 'dropped': False}),
+    Case('dev-pi-log-unknown', 'GET', '/api/dev/pi_log?source=nope', 404, desk='fresh'),
+    Case('dev-pi-log-other-computer', 'GET', '/api/dev/pi_log?source=all', 403, desk='fresh', from_ip=LAN_DEVICE),
+    Case('dev-pi-log-other-web-page', 'GET', '/api/dev/pi_log?source=all', 403, desk='fresh', headers=OTHER_PAGE),
 
     # ── The phone camera's own server (phone_camera/) ──
     Case('phone-page', 'GET', '/', 200, desk='phone', server='phone', reply=FILE, starts_with=HTML_START),

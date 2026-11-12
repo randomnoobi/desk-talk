@@ -937,6 +937,18 @@ dev:
   cannot_fire: "{name} can't go off: it names {thing}, which isn't in {where}."
   # what the pretend warnings say where the real ones fill in what the camera saw (the other words are the real
   # ones: desk_alerts.edge_reason, camera.problems.covered, lost_items.alert_plain and the sip's own)
+  # the Pi log tab (dev.pi_log in settings.yaml)
+  pi_log:
+    unknown_source: "There's no Pi log called {name}."
+    # lines the tab shows between the Pi's own lines. {command} is the ssh command, {since} the time it picks up from
+    connecting: "Connecting to the Pi: {command}"
+    reconnecting: "Connecting to the Pi again, from {since}: {command}"
+    connected: Connected to the Pi.
+    # {reason} is what ended it, {seconds} how long until the next try
+    lost: "The connection to the Pi ended ({reason}). Trying again in {seconds} s."
+    exit_code: "ssh ended with {code}"
+    cannot_start: "Couldn't start ssh: {reason}"
+    stopped: "Stopped reading the Pi's log: the tab hadn't asked for {seconds} s."
   scenarios:
     # the danger zone named in the pretend "drink next to the laptop" warning
     zone: Spill / pressure zone
