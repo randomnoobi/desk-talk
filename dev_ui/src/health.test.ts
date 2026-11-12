@@ -22,7 +22,8 @@ function check(level: CheckLevel, value: number | null = null, unit = ''): Healt
 function checks(over: Partial<Health['checks']> = {}): Health['checks'] {
   return {
     camera: check('ok'), detections: check('ok', 2, 's'), pi_temperature: check('ok', 55, '°C'),
-    card: check('ok', 8000, 'MB'), pi_heartbeat: check('ok', 12, 's'), ...over,
+    card: check('ok', 8000, 'MB'), card_rest: check('ok', 9000, 'MB'), saving: check('ok'),
+    pi_heartbeat: check('ok', 12, 's'), ...over,
   }
 }
 
@@ -66,12 +67,15 @@ describe('healthRows', () => {
 
   it('lists each health check with its number and level', () => {
     const rows = healthRows(health({ checks: checks({
-      card: check('serious', 400, 'MB'), detections: check('warning', 320, 's'), camera: check('serious'),
+      card: check('serious', 400, 'MB'), card_rest: check('unknown'), saving: check('serious'), detections: check('warning', 320, 's'), camera: check('serious'),
       pi_heartbeat: check('unknown', null, 's'),
     }) }), log, limits, NOW)
     expect(rows.filter(r => r.group === 'Health checks').map(r => r.name)).toEqual(
-      ['camera pictures', 'new detections', 'Pi temperature', 'free space on the card', 'Pi heartbeat'])
-    expect(row(rows, 'Health checks', 'free space on the card')).toMatchObject({ value: '400 MB', level: 'bad' })
+      ['camera pictures', 'new detections', 'Pi temperature', 'free space where history is saved', 'free space on the rest of the card',
+       'saving history', 'Pi heartbeat'])
+    expect(row(rows, 'Health checks', 'free space where history is saved')).toMatchObject({ value: '400 MB', level: 'bad' })
+    expect(row(rows, 'Health checks', 'free space on the rest of the card')).toMatchObject({ value: 'not known', level: 'off' })
+    expect(row(rows, 'Health checks', 'saving history')).toMatchObject({ value: 'serious', level: 'bad' })
     expect(row(rows, 'Health checks', 'new detections')).toMatchObject({ value: '5 min 20 s ago', level: 'warn' })
     expect(row(rows, 'Health checks', 'Pi temperature')).toMatchObject({ value: '55 °C', level: 'ok' })
     expect(row(rows, 'Health checks', 'camera pictures')).toMatchObject({ value: 'serious', level: 'bad' })

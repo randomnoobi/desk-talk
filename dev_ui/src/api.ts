@@ -331,7 +331,7 @@ export interface Health {
   pi: PiStatus | null              // null when the camera isn't the Pi
   detection: { pictures_analysed: number, detect_ms: number | null, problem: string | null, model: string }
   ai: AiStatus
-  checks: Record<'camera' | 'detections' | 'pi_temperature' | 'card' | 'pi_heartbeat', HealthCheck>
+  checks: Record<'camera' | 'detections' | 'pi_temperature' | 'card' | 'card_rest' | 'saving' | 'pi_heartbeat', HealthCheck>
 }
 
 // GET /api/log/status (desktalk/web/routers/log.py)
