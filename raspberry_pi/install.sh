@@ -336,12 +336,13 @@ this_pis_zone() {
     fi
 }
 
+# Each step is checked, as set -e doesn't stop a function called inside an if or an && list: a failed write leaves .env
+# as it was and fails.
 set_env() {
     local new
-    new=$(mktemp "$ENV_FILE.XXXXXX")
-    NEW_VALUE=$2 awk -v name="$1" -F= '$1 == name { print name "=" ENVIRON["NEW_VALUE"]; next } { print }' "$ENV_FILE" > "$new"
-    chmod 644 "$new"
-    mv "$new" "$ENV_FILE"
+    new=$(mktemp "$ENV_FILE.XXXXXX") || return 1
+    NEW_VALUE=$2 awk -v name="$1" -F= '$1 == name { print name "=" ENVIRON["NEW_VALUE"]; next } { print }' "$ENV_FILE" \
+        > "$new" && chmod 644 "$new" && mv "$new" "$ENV_FILE" || { rm -f -- "$new"; return 1; }
 }
 
 # Copy .env.example's names that .env lacks, each with the comment above it. What's already in .env stays.
@@ -1017,14 +1018,18 @@ room_on_for() {
 put_room_on() {
     ROOM_ON_CHANGED=0
     [ "${ROOM_ON:-$(setting DATA_ROOM_ON)}" != "$1" ] || return 0
-    ROOM_ON=$1
-    ROOM_ON_CHANGED=1
     if [ "$DRY_RUN" = 1 ]; then
         would "write DATA_ROOM_ON=$1 in .env."
     else
-        set_env DATA_ROOM_ON "$1"
+        if ! set_env DATA_ROOM_ON "$1"; then
+            ROOM_STOPPED="DATA_ROOM_ON=$1 couldn't be written in .env (is the SD card full?), so Desk Talk's own room wasn't set up."
+            say "$ROOM_STOPPED" >&2
+            return 1
+        fi
         say "Wrote DATA_ROOM_ON=$1 in .env, for the app."
     fi
+    ROOM_ON=$1                              # only once it's written, so a failed write is tried again
+    ROOM_ON_CHANGED=1
 }
 
 # Runs data_room.sh make (with --dry-run in a dry run, and any flags given), showing what it says as it goes. Its

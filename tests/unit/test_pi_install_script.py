@@ -91,6 +91,7 @@ case "$name" in
       compose\ *--volumes*|compose\ *down*" -v"*) rm -f "$FAKE/pairing-key" "$FAKE/models/"*; exit 0 ;;
       "compose up -d --build") [ -e "$FAKE/up_fails" ] && exit 1
                                printf 'compose saw %s\n' "$(grep '^DATA_ROOM_ON=' .env)" >> "$FAKE/calls" ;;
+      "compose stop app camera") [ -e "$FAKE/stop_locks_env" ] && chmod a-w . ; exit 0 ;;   # so writing .env fails next
       "compose up -d --no-build") printf 'compose saw %s\n' "$(grep '^DATA_ROOM_ON=' .env)" >> "$FAKE/calls" ;;
       "compose exec -T detector test -s "*) [ -s "$FAKE/models/$(basename "$7")" ] ;;
       "compose cp "*) cp "$3" "$FAKE/models/$(basename "${4#*:}")" ;;
@@ -1547,6 +1548,26 @@ def test_a_failed_env_write_while_the_app_is_stopped_starts_it_again(pi):
     calls = result.calls
     assert calls.index('data_room.sh make') < calls.index('docker compose up -d --no-build')
     assert 'started again' in result.out
+
+
+def calls_after_stop(result: Result) -> list[str]:
+    return result.calls[result.calls.index('docker compose stop app camera'):]
+
+
+def test_a_failed_env_write_before_the_move_moves_nothing_and_says_no_wrote(pi):
+    """Writing DATA_ROOM_ON=yes before the move fails (a full card): nothing is moved, .env isn't emptied, and it
+    doesn't say it wrote what it didn't."""
+    pi.state('stop_locks_env')
+    try:
+        result = pi.run()
+    finally:
+        (pi.root / 'raspberry_pi').chmod(0o755)
+    assert result.code != 0
+    assert 'data_room.sh make' not in result.calls
+    assert 'Wrote DATA_ROOM_ON=yes' not in result.out
+    assert pi.values()['DATA_ROOM_ON'] == 'no'
+    assert "Stopping: DATA_ROOM_ON=yes couldn't be written in .env" in result.out
+    assert 'running again' in result.out and calls_after_stop(result).count('docker compose up -d --no-build') == 1
 
 
 def test_sudo_that_stops_working_before_the_stop_leaves_the_app_running(pi):

@@ -397,9 +397,8 @@ put_back() {
 # With no room yet, a <file>.new left by an earlier try. One with the marker in it is a checked copy of the history: it's
 # never deleted. With an old folder set aside too, status says leftover and finish_move runs instead; so it does when the
 # data folder is still the bare mount point, whatever debugfs says, since the old folder is set aside only after the
-# copy is checked. With no marker, a
-# move cut short leaves an empty data folder and the old folder with the history: that's left for you. Any other
-# <file>.new is from a try that stopped before the data folder was touched, and goes.
+# copy is checked. While any old folder is kept, a <file>.new is never deleted. Any other <file>.new is from a try that
+# stopped before the data folder was touched, and goes.
 check_leftover() {
     local old
     [ -e "$IMAGE.new" ] || return 0
@@ -407,12 +406,10 @@ check_leftover() {
         stop "$IMAGE.new is a checked copy of Desk Talk's history, left by a move into its own room that was cut short before the data folder was touched. Your history is in the data folder $DATA, as it was, and nothing was changed. Delete the copy with: rm -f $(quoted "$IMAGE.new")   and run this again."
     fi
     old=$(newest_old_folder)
-    if [ -n "$old" ] && empty_folder "$DATA"; then
-        local back=""
-        if [ -e "$DATA" ]; then
-            back="sudo rmdir $(quoted "$DATA"); "
-        fi
-        stop "an earlier move into Desk Talk's room was cut short, so the data folder $DATA is empty. Your history is safe in $old. Put it back with: ${back}mv $(quoted "$old") $(quoted "$DATA"); rm -f $(quoted "$IMAGE.new")   and run this again."
+    # With an old folder kept (and files in the data folder, or status would have said leftover), it can't tell which
+    # holds the history, so it never deletes the copy.
+    if [ -n "$old" ]; then
+        stop "$IMAGE.new was left by an earlier move into Desk Talk's own room, and an older data folder $old is kept beside it, so nothing was changed: one of them may hold history the data folder $DATA doesn't. Look at all three with: ls -A $(quoted "$DATA") $(quoted "$old")   If $DATA holds your history, delete the other two with: rm -f $(quoted "$IMAGE.new"); rm -rf $(quoted "$old")   and run this again."
     fi
     if [ "$DRY_RUN" = 1 ]; then
         would "remove $IMAGE.new, left by an earlier try that stopped part-way."

@@ -449,7 +449,8 @@ stay outside it, so they keep their own room.
   card. Trims are switched off for the space each time it's mounted; if that doesn't work, `install.sh` says so.
 - **A move cut short:** if the power goes while `install.sh` moves your history into the space, nothing is lost: the
   history is in the old folder and in a checked copy, `data.img.new`. Until the move is finished Desk Talk saves
-  nothing; run `install.sh` again **on the Pi** and it finishes the move. Never delete `data.img.new` by hand then.
+  nothing; run `install.sh` again **on the Pi** and it finishes the move. Don't delete `data.img.new` by hand unless
+  `install.sh` says to.
 
 ### If Desk Talk's space is missing
 

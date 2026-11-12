@@ -97,8 +97,8 @@ def main() -> int:
     start_logging(config, data_folder)
     settings_lines(config, data_folder)
     if saving is Saving.OFF:
-        say(f"  Saving       : nothing is being saved (Desk Talk's own space is missing; kept in memory in "
-            f"{data_folder} until a restart)")
+        say(f"  Saving       : nothing is being saved (Desk Talk's own space is missing; kept for "
+            f"this run only, in {data_folder})")
     if config.detector.enabled:
         say('  Loading YOLO model (the first run downloads it)...')
     desktalk = build(config, saving=saving, data_folder=data_folder)

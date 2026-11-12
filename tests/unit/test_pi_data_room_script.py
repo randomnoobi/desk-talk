@@ -447,6 +447,19 @@ def test_a_move_cut_short_is_leftover_even_when_debugfs_cant_be_read(pi):
     assert old is not None and files_in(old) == HISTORY
 
 
+def test_a_new_file_is_never_deleted_while_an_old_folder_is_kept_beside_it(pi):
+    """debugfs misreads the copy and files were written in the data folder since: it can't tell which holds the history,
+    so it changes nothing and says where each one is."""
+    old = a_checked_copy_left_by_a_cut_short_move(pi)
+    (pi.data / 'events.jsonl').write_bytes(b'written after the power cut\n')
+    pi.state('debugfs_misreads')
+    result = pi.run('make')
+    assert result.code == 1
+    assert pi.new_image.exists() and old is not None and files_in(old) == HISTORY
+    assert str(old) in result.out and str(pi.new_image) in result.out and 'nothing was changed' in result.out
+    assert not calls_to(result, 'fallocate', 'mkfs.ext4')
+
+
 def test_a_checked_copy_without_an_old_folder_set_aside_is_still_none(pi):
     """The data folder wasn't touched, so it holds the history and the app may go on saving there."""
     a_checked_copy_left_by_a_cut_short_move(pi, set_aside=False)
