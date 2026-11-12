@@ -448,6 +448,8 @@ chat:
   panel_views_min: 2          # ...at least this many times = the agent mentions it
   panel_action_max_chars: 40  # what the app says you did in a panel ("view", "close" ...) is cut to this many letters
   ai_writes_warnings: true    # false = danger warnings use their ready-made words and never wait for an AI
+  ai_writes_reminders: true   # false = habit reminders use their ready-made words and never ask an AI
+                              # (either way, the AI still answers what you type in the chat)
 
 # ── Small talk between agents ──────────────────────────────────────
 idle_chat:

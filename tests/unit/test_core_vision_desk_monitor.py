@@ -221,9 +221,19 @@ def test_something_at_the_desk_edge():
     [alert] = rig.look(T + 1000, {'cup': ('cup', (400, 480, 470, 570))}, size=(960, 720))
     assert alert.agent == 'cup'
     assert {k: v for k, v in alert.extra.items() if k != 'snapshot'} == {
-        'follow_up': 0, 'severity': 'medium', 'rule_label': 'Near front edge (6px)'}
+        'follow_up': 0, 'severity': 'medium', 'rule_label': 'Near front edge (6px)', 'edge': 'front'}
     assert rig.dangers() == [{'pair': ['cup', 'desk_edge'], 'label': 'cup near front edge',
                                         'type': 'edge_danger'}]
+
+
+def test_a_warning_about_another_edge_is_a_first_warning():
+    """The front edge, then the left edge a second later: two warnings, each its own first one (not "still at
+    the edge" for a different edge, and not held back by the first one's wait)."""
+    rig = Rig(saved={'desk_outline': [[0.1, 0], [1, 0], [1, 0.8], [0.1, 0.8]]})
+    [front] = rig.look(T + 1000, {'cup': ('cup', (400, 480, 470, 570))}, size=(960, 720))
+    [left] = rig.look(T + 1001, {'cup': ('cup', (100, 200, 160, 280))}, size=(960, 720))
+    assert (front.extra['edge'], front.extra['follow_up']) == ('front', 0)
+    assert (left.extra['edge'], left.extra['follow_up']) == ('left', 0)
 
 
 def test_something_not_in_the_chat_at_the_desk_edge_is_said_by_lens():

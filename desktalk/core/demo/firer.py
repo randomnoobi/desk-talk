@@ -81,7 +81,7 @@ class DemoFirer:
     def _edge_warning(self, item: DemoScenario, now: float) -> None:
         reason = self._words.desk_alerts.edge_reason.format(edge=item.edge, distance=_number(item.distance_px))
         self._bus.publish(Alert(ts=now, kind='proximity', agent=item.object,
-                                extra={'severity': 'medium', 'rule_label': reason, **PRETEND}))
+                                extra={'severity': 'medium', 'rule_label': reason, 'edge': item.edge, **PRETEND}))
 
     def _danger_zone(self, item: DemoScenario, now: float) -> None:
         target = self._profiles.get(item.near)

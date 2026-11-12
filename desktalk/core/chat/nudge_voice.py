@@ -1,7 +1,8 @@
 """
 Habit reminders in an agent's voice. The habit rules decide when a reminder is due (and give its reason
-and the book's tip); this asks the AI to say it as the agent, with the agent's tracker. When the AI can't
-help, or hasn't answered within llm.reminder_wait_sec, the reminder's own ready-made text is used.
+and the book's tip); with settings → chat.ai_writes_reminders on, this asks the AI to say it as the agent, with
+the agent's tracker. With it off, or when the AI can't help or hasn't answered within llm.reminder_wait_sec, the
+reminder's own ready-made text is used. Either way the agent remembers what it said.
 """
 
 from __future__ import annotations
@@ -37,14 +38,13 @@ class NudgeVoice:
         self._local = local
 
     def phrase_nudge(self, agent_id: str, nudge: Nudge) -> str | None:
-        """The agent's words for a habit reminder: the AI's, or the nudge's own text when the AI can't help."""
+        """The nudge's own text, or with settings → chat.ai_writes_reminders on, the agent's words from the AI (the
+        nudge's own text when the AI can't help)."""
         a = self._profiles.get(agent_id)
-        if a:
-            text = self._ai_nudge(a, nudge)
-            if text:
-                self._memory.remember(agent_id, text, 'habit reminder')
-                return text
-        return nudge.text or None
+        text = (self._ai_nudge(a, nudge) if a and self._chat.ai_writes_reminders else None) or nudge.text
+        if a and text:
+            self._memory.remember(agent_id, text, 'habit reminder')
+        return text or None
 
     def _ai_nudge(self, a: AgentProfile, nudge: Nudge) -> str | None:
         now = self._clock.now()

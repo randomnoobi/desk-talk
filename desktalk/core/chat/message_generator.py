@@ -89,7 +89,8 @@ class MessageGenerator:
         self._ai = AgentAI(unprompted_model or model, profiles, llm, reply_max_chars)
         memory = ChatMemory(desk, keep=llm.memory_per_agent, reply_chars=chat.memory_reply_chars,
                             user_chars=chat.memory_user_chars, words=prompts.memory)
-        self._alerts = AlertVoice(self._ai, profiles, desk, self.live_context, prompts.alert, chat, drink_labels)
+        self._alerts = AlertVoice(self._ai, profiles, roster, desk, self.live_context, prompts.alert, chat,
+                                  drink_labels)
         self._nudges = NudgeVoice(self._ai, profiles, habits, desk, memory, clock, prompts, chat, todos=todos,
                                   local=local_model)
         self._answers = ChatAnswers(AgentAI(model, profiles, llm, reply_max_chars), model, notifier, roster, profiles,
