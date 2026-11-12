@@ -56,6 +56,8 @@ Shows the Pi starts everything by itself, and that pulling the plug leaves the e
 
 It checks that the Pi has only just booted, that all three are healthy and started by themselves soon after the boot, that pictures are coming in, that the event log and SQLite can be read, and that the app picked up the right saved states at this start: none while the clock hadn't synced. If the clock had synced first, it skips that part when nothing was saved just before the cut, and says so.
 
+The kernel can number the camera's kinds of device (`media`, `dma_heap`) differently at any boot, so a camera container made with the old numbers can't open the camera. `desktalk.service` writes this boot's numbers into `.env` (`device_numbers.sh`) before it starts the containers, and makes the camera container again when one changed. `test_the_camera_container_may_open_the_devices_this_boot_numbered` and `test_the_service_writes_the_device_numbers_before_starting_the_containers` in `tests/pi/test_real_pi_start_on_boot.py` check that at any boot, power cut or not (the command is in "1. Power cut and power back" below). `test_starts_after_power_cut` catches it too, because it waits for pictures.
+
 It also checks the power really was cut, so a `sudo reboot` fails on purpose. The Pi's journal is kept in memory, so the boot before this one is normally gone (Raspberry Pi OS sets `Storage=volatile`). The proof is then the app's log: a clean shut-down lets the app write `Shutting down` before it stops, and a pulled plug doesn't. Stopping the containers yourself first also fails it, for the same reason.
 
 The Pi has no clock battery, so after a power cut its clock starts behind and jumps forward once it reaches the internet. So until the Pi says its clock has been set from the internet (the file `/run/systemd/timesync/synchronized`, which compose.yaml lets the app see), the app brings back only states saved since this boot: each saved state keeps the Pi's boot id (`/proc/sys/kernel/random/boot_id`), which is new after every boot. After a power cut the app almost always starts before the clock is set, so it says its clock hasn't synced, picks up nothing from before the cut, and the check expects exactly that. It reads the boot id the app sees, so if the app was restarted again since the boot, what that boot saved may come back, and the check allows for it. The check works out when the app really started from the Pi's uptime, not from Docker's start time, because Docker took that from the wrong clock. Everything else it reads by the app's own clock: the app's log tells which run is this one by the order of its lines, not their times, and the saved states are compared with the time on this run's `Picked up` line. If the app's clock was still behind when it restored and the app didn't say so, the check fails.
@@ -207,8 +209,10 @@ minutes, touch nothing, wait 3 minutes.
 become healthy by themselves; the event log and the object-state database can be read; saved states don't come back
 until the clock has synced; nothing is deleted. The journal now keeps the boot before: **on the Pi**,
 `journalctl -b -1 -n 30 --no-pager` shows the last lines before the cut, with no shut-down in them.
-`tests/pi/test_real_pi_start_on_boot.py` checks the service and the journal settings on their own, at any time:
-`DESKTALK_PI=pi uv run pytest -m pi -v -rs tests/pi/test_real_pi_start_on_boot.py`.
+The camera container may open the camera's devices by the numbers the kernel gave them at this boot, which can
+change at any boot: `desktalk.service` writes them into `.env` before it starts the containers.
+`tests/pi/test_real_pi_start_on_boot.py` checks the service, the journal settings and those numbers on their own, at
+any time: `DESKTALK_PI=pi uv run pytest -m pi -v -rs tests/pi/test_real_pi_start_on_boot.py`.
 
 **Afterwards**, **on your Mac**, within 30 minutes of plugging it in:
 

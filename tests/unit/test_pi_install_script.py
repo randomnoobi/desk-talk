@@ -158,8 +158,8 @@ def pi(tmp_path) -> FakePi:
     (root / 'raspberry_pi').mkdir(parents=True)
     (root / 'config').mkdir()
     (root / 'data').mkdir()
-    for name in ('install.sh', 'update.sh', 'link_pi.py', '.env.example', 'settings.pi.yaml', 'model_checksums.txt',
-                 'compose.yaml', 'settings.mine.example.yaml'):
+    for name in ('install.sh', 'update.sh', 'device_numbers.sh', 'link_pi.py', '.env.example', 'settings.pi.yaml',
+                 'model_checksums.txt', 'compose.yaml', 'settings.mine.example.yaml'):
         if (PI / name).exists():
             shutil.copy(PI / name, root / 'raspberry_pi' / name)
     shutil.copytree(PI / 'systemd', root / 'raspberry_pi' / 'systemd')
@@ -1138,6 +1138,32 @@ def test_a_service_turned_off_by_hand_is_switched_on_again(pi):
     pi.run()
     (pi.fake / 'enabled_docker.service').unlink()
     assert 'sudo systemctl enable docker.service' in pi.run().calls
+
+
+def test_the_service_writes_this_boots_device_numbers_before_it_starts_the_containers(pi):
+    """The kernel can number the camera's devices differently at any boot, and the camera container may open only the
+    numbers in .env. The leading - means a failure there never stops the containers starting."""
+    assert pi.run().code == 0
+    text = pi.service_file.read_text(encoding='utf-8')
+    unit = unit_lines(pi.service_file)
+    bash = shutil.which('bash', path=pi.env_vars['PATH'])
+    assert unit['ExecStartPre'] == f'-{bash} device_numbers.sh'
+    names = [line.split('=', 1)[0] for line in text.splitlines()]
+    assert names.index('ExecStartPre') < names.index('ExecStart')
+    assert not re.search(r'@[A-Z_]+@', text)
+
+
+def test_the_services_first_step_does_what_it_means_from_its_working_folder(pi):
+    """As systemd runs it: the words after the -, split as systemd splits them, in WorkingDirectory."""
+    assert pi.run().code == 0
+    assert pi.values()['CAMERA_MEDIA_MAJOR'] == '511'
+    (pi.proc / 'devices').write_text('Character devices:\n 81 video4linux\n253 dma_heap\n237 media\n', encoding='utf-8')
+    unit = unit_lines(pi.service_file)
+    command = shlex.split(unit['ExecStartPre'].removeprefix('-'))
+    done = subprocess.run(command, cwd=unit['WorkingDirectory'], env=pi.env_vars, capture_output=True, text=True,
+                          timeout=30, check=False)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert pi.values()['CAMERA_MEDIA_MAJOR'] == '237'
 
 
 def test_a_folder_with_a_percent_sign_is_written_the_way_systemd_reads_it(pi, tmp_path):

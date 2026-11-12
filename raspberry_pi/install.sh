@@ -357,7 +357,8 @@ put_if_new() {
     esac
 }
 
-# A kernel update can change these, so they are always filled in.
+# The kernel can number these differently at any boot, with the same kernel too, so they are always filled in.
+# desktalk.service writes them again at each boot (device_numbers.sh), before it starts the containers.
 put_major() {
     local major
     major=$(device_major "$2")
@@ -533,11 +534,13 @@ plain_setting() {
 # These run inside $(...), where bash doesn't stop on errors by itself: hence each `|| exit 1`, so a bad value stops the
 # install and isn't left out. systemd reads %h, %u ... in a unit as names to fill in, and %% as a plain %.
 service_text() {
-    local wait retry
+    local wait retry bash_path
+    bash_path=$(command -v bash || true)
     wait=$(plain_setting SERVICE_START_WAIT_SEC) || exit 1
     retry=$(plain_setting SERVICE_RETRY_SEC) || exit 1
     FILL_PI_USER=$(id -un) FILL_COMPOSE_FOLDER=${PI_DIR//\%/%%} FILL_DOCKER=$(command -v docker || true) \
-        FILL_SERVICE_START_WAIT_SEC=$wait FILL_SERVICE_RETRY_SEC=$retry fill_in "$PI_DIR/systemd/desktalk.service"
+        FILL_BASH=${bash_path//\%/%%} FILL_SERVICE_START_WAIT_SEC=$wait FILL_SERVICE_RETRY_SEC=$retry \
+        fill_in "$PI_DIR/systemd/desktalk.service"
 }
 
 journal_text() {

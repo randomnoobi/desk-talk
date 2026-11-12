@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Brings a Pi that already has Desk Talk up to date, keeping its data, pairing key, models and .env:
 #
-#     bash raspberry_pi/update.sh            get the new code, fill in what a new kernel may have changed, and rebuild
+#     bash raspberry_pi/update.sh            get the new code, fill in this boot's device numbers, and rebuild
 #     bash raspberry_pi/update.sh --dry-run  say what it would do, and change nothing
 #
 # It needs no sudo on a Pi install.sh set up. On one an older install.sh set up, it asks for sudo once, to keep the logs

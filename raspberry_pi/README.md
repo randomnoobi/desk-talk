@@ -119,7 +119,10 @@ Use `app` or `detector` in place of `camera` for the others. The app also writes
 The install sets up `desktalk.service` (from `raspberry_pi/systemd/desktalk.service`), which starts the three
 containers each time the Pi boots, after a power cut too, with or without Wi-Fi. It runs as your own user, who is in the
 docker group, so it needs no root, and it never builds: it only starts what the install or the update built. Docker's own
-rule (`restart: unless-stopped`) brings them back as well, so either one is enough. To check it, **on the Pi**:
+rule (`restart: unless-stopped`) brings them back as well. First, though, it writes this boot's numbers for the camera's
+devices into `.env` (`raspberry_pi/device_numbers.sh`): the kernel can number them differently at any boot, and the
+camera container may open only the numbers in `.env`, so after a boot that changed them only this brings the camera
+back. To check it, **on the Pi**:
 
 ```bash
 systemctl status desktalk          # "active (exited)" means it started them; it has nothing more to do until the next boot
@@ -316,9 +319,17 @@ cd ~/desk-talk/raspberry_pi && docker compose stop camera
 ```
 
 then `rpicam-hello` should show a picture (check the ribbon cable if not), and `docker compose up -d` starts the camera
-again. If `rpicam-hello` works but the camera container says it can't open the camera, the numbers for the camera's devices
-in `.env` (`CAMERA_MEDIA_MAJOR`, `CAMERA_DMA_HEAP_MAJOR`) may have changed with a kernel update: running
-`bash ~/desk-talk/raspberry_pi/update.sh` fills them in again. For a USB webcam set `pi.camera: usb` in `raspberry_pi/mine/settings.mine.yaml`.
+again. If `rpicam-hello` works but the camera container says it can't open the camera ("Operation not permitted" on
+`/dev/media*`), the numbers for the camera's devices in `.env` (`CAMERA_MEDIA_MAJOR`, `CAMERA_DMA_HEAP_MAJOR`) may not
+be this boot's. The kernel can number them differently at any boot, and `desktalk.service` writes them again each time
+before it starts the containers. To do it by hand, **on the Pi**:
+
+```bash
+cd ~/desk-talk/raspberry_pi && bash device_numbers.sh && docker compose up -d
+```
+
+`journalctl -u desktalk -b` shows what it found at this boot. For a USB webcam set `pi.camera: usb` in
+`raspberry_pi/mine/settings.mine.yaml`.
 
 "No picture from the camera ... it seems stuck": the camera stopped giving pictures for `pi.restart_after_missed_pictures`
 picture times, so the camera program stopped and Docker started the container again. If it keeps happening, check the
