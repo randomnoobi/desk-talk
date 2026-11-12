@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { getPiStats, type DevSettings, type PiSample, type PiStatsReply } from '../api'
 import { formatBytes, formatClock, formatSeconds } from '../format'
-import { formatRate, hottest, keepCount, lineNames, mergeSamples, series, tempLevel } from '../piStats'
+import { formatRate, hottest, keepCount, lineNames, mergeSamples, series, tempLevel, throttleWords } from '../piStats'
 import StatsChart, { type ChartLine, type LevelLine } from '../StatsChart'
 import { ErrorLine, Pill, Table, type Level } from '../ui'
 import { usePoll } from '../usePoll'
@@ -65,8 +65,12 @@ function Header(props: { reply: PiStatsReply | null, now: PiSample | null, setti
     const level = tempLevel(hot.c, settings.pi_hot)
     if (level !== 'ok') warnings.push([level, `The processor is hot: ${celsius(hot.c)}`])
   }
-  const flags = now?.throttled ? parseInt(now.throttled, 16) : NaN
-  if (now && !Number.isNaN(flags) && flags !== 0) warnings.push(['bad', `The Pi has slowed itself down (${now.throttled})`])
+  const slowed = throttleWords(now?.throttled ?? '')
+  for (const words of slowed.now) {
+    const sentence = `${words[0].toUpperCase()}${words.slice(1)} right now`
+    if (!warnings.some(([, w]) => w === sentence)) warnings.push(['bad', sentence])   // under_voltage said it already
+  }
+  if (slowed.earlier.length) warnings.push(['warn', `Earlier since the Pi started: ${slowed.earlier.join(', ')}`])
 
   return (
     <div className="card">
@@ -74,7 +78,7 @@ function Header(props: { reply: PiStatsReply | null, now: PiSample | null, setti
       {what && <p>{what}</p>}
       <p className="muted small">
         {now
-          ? `Up for ${formatSeconds(now.uptime_sec)}. Last sample at ${formatClock(now.at)}, asking again every ${askEverySec} s.`
+          ? `${now.uptime_sec === null ? '' : `Up for ${formatSeconds(now.uptime_sec)}. `}Last sample at ${formatClock(now.at)}, asking again every ${askEverySec} s.`
           : reply?.collecting
             ? `No samples yet: the Pi makes its first one a reading after it starts. Asking again every ${askEverySec} s.`
             : !reply && `Asking the Pi how it is doing…`}
@@ -109,7 +113,10 @@ function Tiles(props: { now: PiSample, cores: number | undefined, settings: DevS
   const wifi = now.wifi[0]
   return (
     <ul className="tiles" aria-label="The Pi now">
-      <Tile name="CPU" value={`${Math.round(cpu.busy_pct)}%`}>{cpu.running} running, {cpu.processes} processes</Tile>
+      <Tile name="CPU" value={`${Math.round(cpu.busy_pct)}%`}>
+        {[cpu.running !== null && `${cpu.running} running`, cpu.processes !== null && `${cpu.processes} processes`]
+          .filter(Boolean).join(', ')}
+      </Tile>
       <Tile name="Memory used" value={`${share(memory.used_bytes, memory.total_bytes)}%`}>
         {formatBytes(memory.used_bytes)} of {formatBytes(memory.total_bytes)}
       </Tile>
@@ -120,7 +127,7 @@ function Tiles(props: { now: PiSample, cores: number | undefined, settings: DevS
         ? <Tile name="Hottest" value={celsius(hot.c)} level={tempLevel(hot.c, settings.pi_hot)}>{hot.name}</Tile>
         : <Tile name="Hottest" value="–">no sensor</Tile>}
       {fan
-        ? <Tile name="Fan" value={rpm(fan.rpm)}>{fan.name}, {Math.round(fan.pwm_pct)}% power</Tile>
+        ? <Tile name="Fan" value={rpm(fan.rpm)}>{fan.name}{fan.pwm_pct !== null && `, ${Math.round(fan.pwm_pct)}% power`}</Tile>
         : <Tile name="Fan" value="–">no fan</Tile>}
       {wifi
         ? <Tile name="Wi-Fi signal" value={dbm(wifi.signal_dbm)}>{wifi.name}, quality {Math.round(wifi.quality)}</Tile>
@@ -151,7 +158,7 @@ function ChartCard(props: { title: string, note?: string, times: number[], lines
 
 /** A line per name in one of the samples' lists, e.g. a line per temperature sensor. */
 function perName<T extends { name: string }>(samples: PiSample[], list: (s: PiSample) => T[],
-                                             pick: (item: T) => number, label = (name: string) => name): ChartLine[] {
+                                             pick: (item: T) => number | null, label = (name: string) => name): ChartLine[] {
   return lineNames(samples, list).map(name => ({
     label: label(name),
     values: series(samples, s => {
@@ -184,7 +191,7 @@ function Charts(props: { samples: PiSample[], cores: number | undefined, setting
       ]} />
       <ChartCard title="Each core" times={times} format={pct} range={PERCENT} lines={perCore(samples, s => s.cpu.cores_pct)} />
       <ChartCard title="CPU speed" times={times} format={mhz} lines={perCore(samples, s => s.cpu.freq_mhz)}
-                 levels={now.cpu.max_freq_mhz > 0 ? [{ label: 'fastest', value: now.cpu.max_freq_mhz, level: 'off' }] : []} />
+                 levels={now.cpu.max_freq_mhz !== null && now.cpu.max_freq_mhz > 0 ? [{ label: 'fastest', value: now.cpu.max_freq_mhz, level: 'off' }] : []} />
       <ChartCard title="Load" times={times} format={load}
                  note="How many programs want the processor at once, on average. At the cores line, every core is busy."
                  lines={[line('1 min', s => s.cpu.load[0]), line('5 min', s => s.cpu.load[1]), line('15 min', s => s.cpu.load[2])]}

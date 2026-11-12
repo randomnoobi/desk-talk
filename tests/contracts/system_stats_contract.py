@@ -55,6 +55,15 @@ class SystemStatsContract:
         assert stats.history(newest)['samples'] == []
         assert [s['at'] for s in stats.history(newest - 0.001)['samples']] == [newest]
 
+    def test_a_since_newer_than_the_newest_kept_sample_gets_them_all(self, stats):
+        """After the clock steps back, the page's since is newer than every sample: it gets them all again."""
+        wait = stats.tick(100.0)
+        stats.tick(100.0 + wait)
+        stats.tick(100.0 + 2 * wait)
+        everything = stats.history(None)['samples']
+        assert everything, 'three readings make at least one sample'
+        assert stats.history(everything[-1]['at'] + 1000.0)['samples'] == everything
+
 
 class PiStatsLinkContract:
     """Subclass this and give `link` (its Pi answers with one sample) and `dead_link` (its Pi doesn't answer)."""

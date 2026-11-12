@@ -1274,7 +1274,9 @@ class SystemStats(PeriodicWorker, Protocol):
 
     def history(self, since: float | None) -> dict[str, Any]:
         """{collecting, every_sec, keep_min, info, samples}: the samples newer than `since` (all of them for
-        None), oldest first, each StatsSample.to_dict(). collecting is false when system_stats.enabled is off."""
+        None), oldest first, each StatsSample.to_dict(). When `since` is newer than the newest sample kept (the
+        clock went back), all of them, so the page replaces what it has; when it's that newest one, none.
+        collecting is false when system_stats.enabled is off."""
         ...
 
 

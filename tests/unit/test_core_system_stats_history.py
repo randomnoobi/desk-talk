@@ -277,6 +277,48 @@ def test_when_the_clock_steps_back_samples_from_the_future_are_dropped():
     assert [s['at'] for s in stats.history(None)['samples']] == [52.0]
 
 
+def test_after_the_clock_steps_back_a_page_asking_since_its_newest_gets_everything_again():
+    """The page asks with since = the newest sample it holds. After the clock steps back, every new sample is older
+    than that, so it gets all kept samples (and replaces what it has) instead of nothing for as long as the step."""
+    stats = StatsHistory(FakeStatsReader(), settings())
+    for at in (100.0, 102.0, 104.0, 106.0):
+        stats.tick(at)
+    page_since = stats.history(None)['samples'][-1]['at']
+    for at in (50.0, 52.0, 54.0):
+        stats.tick(at)
+    assert [s['at'] for s in stats.history(page_since)['samples']] == [52.0, 54.0]
+    assert [s['at'] for s in stats.history(52.0)['samples']] == [54.0]
+    assert stats.history(54.0)['samples'] == []
+
+
+def test_each_sample_is_turned_into_its_dict_only_once(monkeypatch):
+    """The first reply can hold system_stats.keep_min minutes of samples: the Pi turns each into a dict once, when
+    it's made, not again for every reply."""
+    made_dicts: list[float] = []
+    to_dict = StatsSample.to_dict
+
+    def counting(sample: StatsSample):
+        made_dicts.append(sample.at)
+        return to_dict(sample)
+
+    monkeypatch.setattr(StatsSample, 'to_dict', counting)
+    stats = StatsHistory(FakeStatsReader(), settings())
+    for n in range(4):
+        stats.tick(100.0 + 2 * n)
+    for _ in range(3):
+        stats.history(None)
+    stats.history(102.0)
+    assert made_dicts == [102.0, 104.0, 106.0]
+
+
+def test_changing_a_reply_list_does_not_change_what_is_kept():
+    stats = StatsHistory(FakeStatsReader(), settings())
+    for n in range(3):
+        stats.tick(100.0 + 2 * n)
+    stats.history(None)['samples'].clear()
+    assert [s['at'] for s in stats.history(None)['samples']] == [102.0, 104.0]
+
+
 def test_when_switched_off_it_reads_nothing_and_says_so():
     reader = FakeStatsReader([BEFORE, AFTER])
     stats = StatsHistory(reader, settings(enabled=False, every_sec=4.0))

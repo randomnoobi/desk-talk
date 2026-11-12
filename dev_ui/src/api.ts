@@ -370,10 +370,10 @@ export interface PiCpu {
   other_pct: number
   cores_pct: number[]
   freq_mhz: number[]               // each core's speed now
-  max_freq_mhz: number             // the fastest a core can go
+  max_freq_mhz: number | null      // the fastest a core can go; null = the Pi couldn't read it
   load: number[]                   // the 1, 5 and 15 minute load
-  running: number
-  processes: number
+  running: number | null           // programs running now; null = the Pi couldn't read it
+  processes: number | null         // all programs; null = the Pi couldn't read it
 }
 
 export interface PiMemory {
@@ -425,15 +425,15 @@ export interface PiProcess {
 /** One reading of the Pi, every system_stats.every_sec on the Pi. */
 export interface PiSample {
   at: number                       // seconds since 1970, by the Pi's clock
-  uptime_sec: number
+  uptime_sec: number | null        // null = the Pi couldn't read it
   cpu: PiCpu
   memory: PiMemory
   temps: { name: string, c: number }[]
-  fans: { name: string, rpm: number, pwm_pct: number }[]
+  fans: { name: string, rpm: number, pwm_pct: number | null }[]   // pwm_pct null = the Pi couldn't read the fan's power
   cooling: { name: string, state: number, max_state: number }[]
   voltages: { name: string, v: number }[]
   under_voltage: boolean | null    // the power supply is too weak right now; null = the Pi can't tell
-  throttled: string                // the Pi's slow-down flags in hex; '' = it couldn't read them
+  throttled: string                // the Pi's slow-down flags in hex (see throttleWords); '' = it couldn't read them
   disks: PiDiskSpace[]
   disk_io: PiDiskIo[]
   network: PiNetwork[]

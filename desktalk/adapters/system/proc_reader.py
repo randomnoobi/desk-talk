@@ -54,6 +54,8 @@ WIFI_QUALITY, WIFI_LEVEL = 1, 2
 # /proc/<pid>/stat after the name's last ")": field 3 (the state) is index 0, so field N is index N - 3
 PROC_UTIME, PROC_STIME, PROC_STARTED = 14 - 3, 15 - 3, 22 - 3
 STATM_RESIDENT = 1             # /proc/<pid>/statm: pages in memory are the second number
+# A script or module name with one of these in it is a web address, a password or a setting, not a name
+NOT_A_SCRIPT = frozenset(':@=')
 
 # Where the firmware's slow-down flags are on older kernels (the same as raspberry_pi/camera/health.py)
 THROTTLED_FILE = 'devices/platform/soc*/*firmware*/get_throttled'
@@ -93,8 +95,7 @@ class ProcReader:
         load, running, processes = self._load()
         freq_mhz, max_freq_mhz = self._freq()
         zone_temps = self._thermal_zones()
-        same_sensor = {t.value for t in zone_temps}
-        hwmon_temps = tuple(t for t in self._hwmon_temps() if t.value not in same_sensor)
+        hwmon_temps = tuple(self._hwmon_temps(skip={_zone_sensor_name(t.name) for t in zone_temps}))
         info = StatsInfo(model=self._model(),
                          kernel=_read(self.proc / 'sys/kernel/osrelease'), cores=len(cores))
         return RawReading(
@@ -215,10 +216,13 @@ class ProcReader:
         return [(_read(folder / 'name') or folder.name, folder)
                 for _, folder in _numbered(self.sys / 'class/hwmon', 'hwmon')]
 
-    def _hwmon_temps(self) -> list[Named]:
-        """Named after the sensor, or "<sensor> tempN" when the sensor has more than one."""
+    def _hwmon_temps(self, skip: set[str]) -> list[Named]:
+        """Named after the sensor, or "<sensor> tempN" when the sensor has more than one. Sensors named in `skip`
+        (a thermal zone's own, already read) are left out."""
         temps = []
         for name, folder in self._sensors():
+            if name in skip:
+                continue
             inputs = _numbered(folder, 'temp', '_input')
             for n, file in inputs:
                 value = _number(file)
@@ -318,7 +322,7 @@ class ProcReader:
             resident = int(_read(folder / 'statm').split()[STATM_RESIDENT])
         except (ValueError, IndexError):
             return None
-        command = _read_bytes(folder / 'cmdline').replace(b'\x00', b' ').decode(errors='replace').strip()
+        command = _short_command(_read_bytes(folder / 'cmdline'))
         return ProcessTicks(pid=pid, started=started, name=name, command=(command or f'[{name}]')[:self.command_chars],
                             ticks=ticks, memory_bytes=resident * self.page_bytes)
 
@@ -388,6 +392,37 @@ def _named_lines(path: Path) -> list[tuple[str, list[str]]]:
         if colon:
             lines.append((name.strip(), rest.split()))
     return lines
+
+
+def _zone_sensor_name(zone_type: str) -> str:
+    """The name the kernel gives a thermal zone's own hwmon sensor: its type with - turned into _ (cpu-thermal →
+    cpu_thermal)."""
+    return zone_type.replace('-', '_')
+
+
+def _short_command(cmdline: bytes) -> str:
+    """Only the program and what says which one it is, never the rest: anyone on the Wi-Fi may ask for these
+    (GET /api/system/stats needs no login) and a command line can carry a password or a token. That's the name of
+    the program, then `-m <module>` or the name of the script it runs. '' for a kernel thread (no command line).
+
+        python -m desktalk_detector                → python -m desktalk_detector
+        /usr/bin/dockerd -H fd:// --containerd=... → dockerd
+        python3 /home/sam/x/server.py --key=abc    → python3 server.py
+    """
+    args = [part.decode(errors='replace') for part in cmdline.split(b'\x00') if part]
+    words = args[0].split() if args else []
+    if not words:
+        return ''
+    # The first word only: a program that rewrote its command line into one string (sshd: sam@pts/0) has it all there
+    shown = [os.path.basename(words[0])]
+    if len(args) > 1 and args[1] == '-m':
+        shown.append('-m')
+        which = args[2] if len(args) > 2 else ''
+    else:
+        which = os.path.basename(args[1]) if len(args) > 1 and not args[1].startswith('-') else ''
+    if which and not set(which) & NOT_A_SCRIPT:
+        shown.append(which)
+    return ' '.join(shown)
 
 
 def _cpu_times(numbers: str) -> CpuTimes | None:

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PiSample, PiStatsReply } from './api'
-import { formatRate, hottest, keepCount, lineNames, mergeSamples, series, tempLevel } from './piStats'
+import { formatRate, hottest, keepCount, lineNames, mergeSamples, series, tempLevel, throttleWords } from './piStats'
 
 // Only the fields a test reads; the helpers never look at the rest.
 const at = (t: number, over: Partial<PiSample> = {}): PiSample => ({ at: t, ...over }) as PiSample
@@ -15,14 +15,18 @@ describe('mergeSamples', () => {
     expect(merged.map(s => s.at)).toEqual([1, 2, 3, 4])
   })
 
-  it('keeps one of each moment when a reply repeats a sample', () => {
-    const merged = mergeSamples([at(1), at(2)], [at(2), at(3)], 10)
-    expect(merged.map(s => s.at)).toEqual([1, 2, 3])
+  it('takes a reply that starts at or before its newest as the Pi sending everything again (its clock stepped back)', () => {
+    expect(mergeSamples([at(1), at(2)], [at(2), at(3)], 10).map(s => s.at)).toEqual([2, 3])
+    expect(mergeSamples([at(500), at(600)], [at(100), at(102)], 10).map(s => s.at)).toEqual([100, 102])
   })
 
-  it('puts samples that come out of order in order', () => {
-    const merged = mergeSamples([at(3)], [at(1), at(2)], 10)
-    expect(merged.map(s => s.at)).toEqual([1, 2, 3])
+  it('keeps only the newest `keep` of a full resend too', () => {
+    const fresh = Array.from({ length: 5 }, (_, i) => at(10 + i))
+    expect(mergeSamples([at(900)], fresh, 3).map(s => s.at)).toEqual([12, 13, 14])
+  })
+
+  it('keeps the old samples when the reply is empty', () => {
+    expect(mergeSamples([at(1), at(2)], [], 10).map(s => s.at)).toEqual([1, 2])
   })
 
   it('keeps only the newest `keep`, so a tab open for hours does not grow forever', () => {
@@ -92,5 +96,20 @@ describe('hottest and tempLevel', () => {
     expect(tempLevel(69.9, limits)).toBe('ok')
     expect(tempLevel(70, limits)).toBe('warn')
     expect(tempLevel(80, limits)).toBe('bad')
+  })
+})
+
+describe('throttleWords', () => {
+  it("says the Pi firmware's slow-down flags in words: bits 0-3 now, bits 16-19 since the Pi started", () => {
+    expect(throttleWords('0x50005')).toEqual({
+      now: ['the power supply is too weak', 'the processor is slowed down'],
+      earlier: ['the power supply was too weak', 'the processor was slowed down'],
+    })
+    expect(throttleWords('0xa')).toEqual({ now: ['the processor speed is capped', 'the processor is close to too hot'], earlier: [] })
+    expect(throttleWords('0x80000')).toEqual({ now: [], earlier: ['the processor was close to too hot'] })
+  })
+
+  it('is empty for 0x0, and when the Pi could not read them', () => {
+    for (const flags of ['0x0', '', 'nonsense']) expect(throttleWords(flags)).toEqual({ now: [], earlier: [] })
   })
 })

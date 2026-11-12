@@ -11,7 +11,7 @@ vi.mock('../api', async original => ({
 // uPlot needs a real canvas, which jsdom doesn't have: the chart here only says what it was given.
 vi.mock('../StatsChart', () => ({
   default: (props: { label: string, times: number[], lines: ChartLine[] }) => (
-    <div data-testid={`chart: ${props.label}`}>
+    <div data-testid={`chart: ${props.label}`} data-values={JSON.stringify(props.lines.map(l => l.values))}>
       {props.times.length} samples: {props.lines.map(l => l.label).join(', ')}
     </div>
   ),
@@ -116,6 +116,56 @@ describe('Pi tab', () => {
     vi.mocked(getPiStats).mockResolvedValue(reply([sample(1000, { under_voltage: true })]))
     render(<Pi settings={settings} />)
     expect(await screen.findByText('The power supply is too weak right now')).toBeInTheDocument()
+  })
+
+  it('leaves out what the Pi could not read instead of showing 0 (no fan power, no uptime, no process counts)', async () => {
+    const cpu = sample(0).cpu
+    vi.mocked(getPiStats).mockResolvedValue(reply([
+      sample(1000),
+      sample(1002, { uptime_sec: null, cpu: { ...cpu, running: null, processes: null, max_freq_mhz: null },
+                     fans: [{ name: 'pwmfan', rpm: 3000, pwm_pct: null }] }),
+    ]))
+    render(<Pi settings={settings} />)
+    await screen.findByText(/Raspberry Pi 5/)
+    const tiles = screen.getByRole('list', { name: 'The Pi now' })
+    const tile = (name: string) => within(tiles).getByText(name).closest('li') as HTMLElement
+    expect(tile('Fan')).toHaveTextContent('3000 RPM')
+    expect(tile('Fan')).toHaveTextContent('pwmfan')
+    expect(tile('Fan')).not.toHaveTextContent('power')
+    expect(tile('CPU')).toHaveTextContent('53%')
+    expect(tile('CPU')).not.toHaveTextContent('running')
+    expect(tile('CPU')).not.toHaveTextContent('processes')
+    expect(screen.getByText(/Last sample at/)).not.toHaveTextContent('Up for')
+    // The fan power chart has a gap where the Pi couldn't read it, not a 0.
+    expect(JSON.parse(chart('Fan power').dataset.values ?? '')).toEqual([[29.4, null]])
+  })
+
+  it('shows red pills for slowing down now and one amber pill for earlier since the Pi started', async () => {
+    vi.mocked(getPiStats).mockResolvedValue(reply([sample(1000, { under_voltage: true, throttled: '0x50005' })]))
+    render(<Pi settings={settings} />)
+    const power = await screen.findAllByText('The power supply is too weak right now')
+    expect(power).toHaveLength(1)
+    expect(screen.getByText('The processor is slowed down right now')).toHaveClass('bad')
+    expect(screen.getByText('Earlier since the Pi started: the power supply was too weak, the processor was slowed down'))
+      .toHaveClass('warn')
+    expect(screen.queryByText(/slowed itself down/)).not.toBeInTheDocument()
+  })
+
+  it('shows only the amber pill when the Pi slowed down earlier but is fine now', async () => {
+    vi.mocked(getPiStats).mockResolvedValue(reply([sample(1000, { throttled: '0x80000' })]))
+    render(<Pi settings={settings} />)
+    expect(await screen.findByText('Earlier since the Pi started: the processor was close to too hot')).toHaveClass('warn')
+    expect(screen.queryByText(/right now/)).not.toBeInTheDocument()
+  })
+
+  it('shows no slow-down pill for 0x0 or when the Pi could not read the flags', async () => {
+    for (const throttled of ['0x0', '']) {
+      vi.mocked(getPiStats).mockResolvedValue(reply([sample(1000, { throttled })]))
+      const { unmount } = render(<Pi settings={settings} />)
+      await screen.findByText(/Raspberry Pi 5/)
+      expect(screen.queryByText(/right now|Earlier|slowed/)).not.toBeInTheDocument()
+      unmount()
+    }
   })
 
   it('warns amber when the processor is hot and red when it is very hot', async () => {

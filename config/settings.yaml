@@ -781,7 +781,8 @@ system_stats:
     - label: data folder
       path: data
   top_processes: 8              # show this many of the busiest programs
-  command_chars: 80             # a program's command line is cut to this many letters
+  command_chars: 80             # each program is shown as its name and the script or module it runs (never the
+                                # rest of its command line, which can hold a password), cut to this many letters
   skip_networks: [lo, docker, br-, veth]   # leave out networks whose name starts with these (Docker's own)
   skip_disks: [loop, ram, zram]  # and disks like these (not real disks)
 

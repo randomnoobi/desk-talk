@@ -232,6 +232,18 @@ def test_temperatures_leave_out_the_same_sensor_twice(reading):
     assert reading.temps == (Named('cpu-thermal', 55.1), Named('rp1_adc', 49.03))
 
 
+def test_a_thermal_zones_own_sensor_is_left_out_by_name_even_when_read_a_moment_later(pi):
+    """The kernel names a thermal zone's own hwmon sensor after the zone's type, with - turned into _
+    (cpu-thermal → cpu_thermal). Read a moment apart they can differ: still one line."""
+    (pi / 'sys' / 'class' / 'hwmon' / 'hwmon0' / 'temp1_input').write_text('55250\n')
+    assert reader_for(pi).read(1.0).temps == (Named('cpu-thermal', 55.1), Named('rp1_adc', 49.03))
+
+
+def test_a_different_sensor_reading_the_same_as_a_thermal_zone_is_kept(pi):
+    (pi / 'sys' / 'class' / 'hwmon' / 'hwmon1' / 'temp1_input').write_text('55100\n')
+    assert reader_for(pi).read(1.0).temps == (Named('cpu-thermal', 55.1), Named('rp1_adc', 55.1))
+
+
 def test_a_sensor_with_two_temperatures_names_each(pi):
     sensor = pi / 'sys' / 'class' / 'hwmon' / 'hwmon4'
     _write(sensor / 'name', 'nvme\n')
@@ -315,6 +327,32 @@ def test_a_long_command_is_cut(pi):
     settings = SETTINGS.model_copy(update={'command_chars': 10})
     python = next(p for p in reader_for(pi, settings=settings).read(1.0).process_ticks if p.pid == 1234)
     assert python.command == 'python -m '
+
+
+@pytest.mark.parametrize(('cmdline', 'command'), [
+    (b'python\x00-m\x00desktalk_detector\x00', 'python -m desktalk_detector'),
+    (b'/usr/bin/python3\x00-m\x00uvicorn\x00app:api\x00--port=5000\x00', 'python3 -m uvicorn'),
+    (b'/usr/bin/dockerd\x00-H\x00fd://\x00--containerd=/run/x.sock\x00', 'dockerd'),
+    (b'python3\x00/home/sam/x/server.py\x00--key=abc\x00', 'python3 server.py'),
+    (b'/sbin/docker-init\x00--\x00python\x00-m\x00desktalk_detector\x00', 'docker-init'),
+    (b'curl\x00https://sam:secret@example.com\x00', 'curl'),                 # not a script: left out
+    (b'/usr/bin/tool\x00run\x00--token=abc\x00', 'tool run'),
+    (b'/usr/bin/python3\x00-m\x00', 'python3 -m'),
+    (b'worker --token=abc\x00', 'worker'),                                    # a program that rewrote its line
+    (b'sshd: sam@pts/0\x00\x00\x00', 'sshd:'),
+])
+def test_only_the_program_and_its_script_or_module_are_sent(pi, cmdline, command):
+    """GET /api/system/stats needs no login and a command line can carry a password: only the program's name and
+    the script or module that says which one it is go out."""
+    _process(pi / 'host' / 'proc', 4321, 'thing', 1, 2, 3, 4, cmdline)
+    thing = next(p for p in reader_for(pi).read(1.0).process_ticks if p.pid == 4321)
+    assert thing.command == command
+
+
+def test_a_command_with_nothing_in_it_is_the_name_in_brackets(pi):
+    _process(pi / 'host' / 'proc', 4321, 'thing', 1, 2, 3, 4, b'\x00\x00')
+    thing = next(p for p in reader_for(pi).read(1.0).process_ticks if p.pid == 4321)
+    assert thing.command == '[thing]'
 
 
 def test_a_program_that_ended_while_being_read_is_skipped(pi):

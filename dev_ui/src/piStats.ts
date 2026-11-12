@@ -5,14 +5,39 @@ import type { Level } from './ui'
 
 /**
  * The old samples and the new ones together, oldest first, one per moment (`at`), and only the newest `keep`.
- * A reply can repeat a sample the page already has (the Pi's clock stepped back), so it's matched by `at`.
+ * The page asks for samples newer than its newest, so a normal reply only has newer ones. When the Pi's clock
+ * steps back (it has no clock battery), its newest sample is older than the page's, and it sends all its samples
+ * again: a reply that starts at or before the page's newest is that full resend, so it replaces the old samples.
  */
 export function mergeSamples(old: PiSample[], fresh: PiSample[], keep: number): PiSample[] {
   if (keep <= 0) return []
+  const newestOld = old.length ? old[old.length - 1].at : -Infinity
+  const resent = fresh.length > 0 && fresh[0].at <= newestOld
   const byAt = new Map<number, PiSample>()
-  for (const s of [...old, ...fresh]) byAt.set(s.at, s)
+  for (const s of resent ? fresh : [...old, ...fresh]) byAt.set(s.at, s)
   const all = [...byAt.values()].sort((a, b) => a.at - b.at)
   return all.length > keep ? all.slice(all.length - keep) : all
+}
+
+// The Pi firmware's slow-down flags (vcgencmd get_throttled): bits 0-3 say what's happening now, bits 16-19 the
+// same things since the Pi started. The same list as THROTTLE_BITS in raspberry_pi/camera/health.py.
+const THROTTLE_BITS: [number, number, string, string][] = [
+  [0, 16, 'the power supply is too weak', 'the power supply was too weak'],
+  [1, 17, 'the processor speed is capped', 'the processor speed was capped'],
+  [2, 18, 'the processor is slowed down', 'the processor was slowed down'],
+  [3, 19, 'the processor is close to too hot', 'the processor was close to too hot'],
+]
+
+/** The slow-down flags (e.g. '0x50005') in plain words: what's happening now, and what happened earlier.
+ *  Both empty for '0x0', and for '' (the Pi couldn't read them). */
+export function throttleWords(flags: string): { now: string[], earlier: string[] } {
+  const value = parseInt(flags, 16)
+  if (Number.isNaN(value)) return { now: [], earlier: [] }
+  const on = (bit: number) => Math.floor(value / 2 ** bit) % 2 === 1
+  return {
+    now: THROTTLE_BITS.filter(([bit]) => on(bit)).map(([, , words]) => words),
+    earlier: THROTTLE_BITS.filter(([, bit]) => on(bit)).map(([, , , words]) => words),
+  }
 }
 
 /** How many samples the Pi itself keeps: keep_min minutes, one every every_sec. The page keeps no more. */

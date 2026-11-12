@@ -131,23 +131,52 @@ def test_the_problem_never_repeats_the_address():
         assert 'desktalk.local' not in problem(Opener(error=error))
 
 
-def test_the_usual_opener_uses_urlopen_with_the_timeout(monkeypatch):
-    opened: list[tuple[str, float]] = []
+class UrllibOpener:
+    """Stands in for what urllib.request.build_opener makes: answers open(url, timeout) with `answer`, or raises it."""
 
-    def fake_urlopen(url: str, timeout: float) -> io.BytesIO:
-        opened.append((url, timeout))
-        return io.BytesIO(json.dumps(GOOD).encode())
+    def __init__(self, answer: io.BytesIO | BaseException):
+        self.answer = answer
+        self.opened: list[tuple[str, float]] = []
 
-    monkeypatch.setattr(urllib.request, 'urlopen', fake_urlopen)
+    def open(self, url: str, timeout: float) -> io.BytesIO:
+        self.opened.append((url, timeout))
+        if isinstance(self.answer, BaseException):
+            raise self.answer
+        return self.answer
+
+
+def use_urllib(monkeypatch, answer: io.BytesIO | BaseException) -> tuple[UrllibOpener, list[tuple]]:
+    """Makes urllib.request.build_opener give a UrllibOpener (no network), and keeps the handlers it was given."""
+    opener, built = UrllibOpener(answer), []
+
+    def build_opener(*handlers):
+        built.append(handlers)
+        return opener
+
+    monkeypatch.setattr(urllib.request, 'build_opener', build_opener)
+    return opener, built
+
+
+def test_the_usual_opener_asks_with_the_timeout(monkeypatch):
+    opener, _ = use_urllib(monkeypatch, io.BytesIO(json.dumps(GOOD).encode()))
     assert HttpPiStatsLink('desktalk.local:5000', 2.5).fetch(None) == GOOD
-    assert opened == [('http://desktalk.local:5000/api/system/stats', 2.5)]
+    assert opener.opened == [('http://desktalk.local:5000/api/system/stats', 2.5)]
+
+
+def test_the_usual_opener_never_goes_through_a_proxy(monkeypatch):
+    """urllib would follow HTTP_PROXY from the environment: the Pi on the home Wi-Fi is asked straight."""
+    monkeypatch.setenv('HTTP_PROXY', 'http://proxy.example:3128')
+    monkeypatch.setenv('http_proxy', 'http://proxy.example:3128')
+    _, built = use_urllib(monkeypatch, io.BytesIO(json.dumps(GOOD).encode()))
+    HttpPiStatsLink('desktalk.local:5000', 2.5).fetch(None)
+    proxies = [h for handlers in built for h in handlers if isinstance(h, urllib.request.ProxyHandler)]
+    assert len(proxies) == 1
+    assert vars(proxies[0])['proxies'] == {}           # an empty list of proxies: none, whatever the environment
+    assert not hasattr(proxies[0], 'http_open')          # (each proxy it would use adds an <kind>_open)
 
 
 def test_the_usual_opener_turns_a_refusal_into_stats_unavailable(monkeypatch):
-    def refuse(url: str, timeout: float) -> io.BytesIO:
-        raise urllib.error.URLError(ConnectionRefusedError(61, 'Connection refused'))
-
-    monkeypatch.setattr(urllib.request, 'urlopen', refuse)
+    use_urllib(monkeypatch, urllib.error.URLError(ConnectionRefusedError(61, 'Connection refused')))
     with pytest.raises(StatsUnavailable):
         HttpPiStatsLink('desktalk.local:5000', 2.5).fetch(None)
 
@@ -155,11 +184,7 @@ def test_the_usual_opener_turns_a_refusal_into_stats_unavailable(monkeypatch):
 def test_the_usual_opener_lets_go_of_an_error_reply(monkeypatch):
     body = io.BytesIO(b'Internal Server Error')
     error = urllib.error.HTTPError('http://x/api/system/stats', 500, 'Server Error', http.client.HTTPMessage(), body)
-
-    def fail(url: str, timeout: float) -> io.BytesIO:
-        raise error
-
-    monkeypatch.setattr(urllib.request, 'urlopen', fail)
+    use_urllib(monkeypatch, error)
     with pytest.raises(StatsUnavailable, match='^it answered 500$'):
         HttpPiStatsLink('desktalk.local:5000', 2.5).fetch(None)
     assert body.closed

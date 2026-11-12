@@ -45,7 +45,8 @@ class FakeStats:
         return self.every_sec
 
     def history(self, since: float | None) -> dict[str, Any]:
-        kept = [s.to_dict() for s in self.samples if since is None or s.at > since]
+        newer_than_all = bool(self.samples) and since is not None and since > self.samples[-1].at
+        kept = [s.to_dict() for s in self.samples if since is None or newer_than_all or s.at > since]
         return {**EMPTY_REPLY, 'collecting': self.collecting, 'every_sec': self.every_sec, 'samples': kept}
 
 

@@ -14,7 +14,11 @@ Counters can still go down (the Pi restarted, a Wi-Fi adapter was reset): a rate
 program is known by its pid and when it started, so a pid used again by a new program counts as new, and a program
 with no reading before is left out of that sample. Two readings at the same moment, or the clock going back, make no
 sample; when the clock goes back, the samples that now look like they're from the future are dropped, so the
-history stays oldest first and the page's `since` keeps working.
+history stays oldest first. The page asks with `since` = the newest sample it holds, which after a step back is
+newer than every kept sample: then it gets all of them again, and replaces what it has.
+
+Each sample is turned into its dict once, when it's made, so a reply (up to keep_min minutes of samples) only
+picks and copies.
 """
 
 from __future__ import annotations
@@ -153,7 +157,9 @@ class StatsHistory:
         self._lock = threading.Lock()
         self._before: RawReading | None = None
         self._info: StatsInfo | None = None
-        self._samples: deque[StatsSample] = deque(maxlen=max(1, round(settings.keep_min * 60 / settings.every_sec)))
+        # Each sample as StatsSample.to_dict() (its 'at' is the sample's time), oldest first
+        self._samples: deque[dict[str, Any]] = deque(
+            maxlen=max(1, round(settings.keep_min * 60 / settings.every_sec)))
 
     def tick(self, now: float) -> float:
         if not self._settings.enabled:
@@ -164,11 +170,11 @@ class StatsHistory:
             if before is not None and reading.at < before.at:
                 log.info('The clock went back %.0f seconds: starting the system numbers over from now',
                          before.at - reading.at)
-                while self._samples and self._samples[-1].at >= reading.at:
+                while self._samples and self._samples[-1]['at'] >= reading.at:
                     self._samples.pop()
             sample = sample_between(before, reading, self._settings.top_processes) if before is not None else None
             if sample is not None:
-                self._samples.append(sample)
+                self._samples.append(sample.to_dict())
         return self._settings.every_sec
 
     def history(self, since: float | None) -> dict[str, Any]:
@@ -179,7 +185,11 @@ class StatsHistory:
             return reply
         with self._lock:
             info = self._info
-            kept = [sample for sample in self._samples if since is None or sample.at > since]
+            newest = self._samples[-1]['at'] if self._samples else None
+            if since is None or newest is None or since > newest:      # after the clock went back: all of them
+                kept = list(self._samples)
+            else:
+                kept = [sample for sample in self._samples if sample['at'] > since]
         reply['info'] = info.to_dict() if info is not None else {}
-        reply['samples'] = [sample.to_dict() for sample in kept]
+        reply['samples'] = kept
         return reply

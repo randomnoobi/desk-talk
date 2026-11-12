@@ -29,9 +29,11 @@ BAD_ADDRESS = "that address can't be used"
 
 
 def _open(url: str, timeout_sec: float) -> bytes:
-    """The body of the Pi's reply. Error statuses come as urllib.error.HTTPError."""
+    """The body of the Pi's reply. Error statuses come as urllib.error.HTTPError. The Pi is on the home Wi-Fi, so
+    it's asked straight, never through a proxy from HTTP_PROXY / HTTPS_PROXY (urlopen would follow those)."""
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
-        with urllib.request.urlopen(url, timeout=timeout_sec) as reply:
+        with opener.open(url, timeout=timeout_sec) as reply:
             return reply.read()
     except urllib.error.HTTPError as exc:
         exc.close()                    # let go of the connection: the status is all fetch() needs
