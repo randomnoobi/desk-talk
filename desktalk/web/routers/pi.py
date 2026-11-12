@@ -5,8 +5,10 @@ The Raspberry Pi's camera program (raspberry_pi/camera/):
     POST /api/pi/frame    one picture. Upload format 2 (multipart: the picture plus what the Pi's detector
                           found, desktalk_shared.wire.decode_upload), or format 1 from the old camera_node.py
                           (the picture as the body, X-... headers)
+    POST /api/pi/heartbeat  how the Pi is doing ({"health": PiHealth}), sent on a timer of its own
+                          (pi.heartbeat_every_sec), so its temperature keeps coming when the pictures stop
 
-Both need the pairing key in X-Desk-Key.
+All need the pairing key in X-Desk-Key.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
+from desktalk.domain import PiHealth
 from desktalk.web.deps import App, key_check, other_camera, read_upload
 from desktalk.web.schemas import PiFrameReply
 from desktalk_shared.wire import WireError, decode_upload, info_from_v1_headers
@@ -48,3 +51,16 @@ async def pi_frame(request: Request, app: App) -> PiFrameReply:
     if not await run_in_threadpool(inbox.push, jpeg, info):      # decodes the JPEG: not on the event loop
         raise HTTPException(400, NOT_A_PICTURE)
     return PiFrameReply(fps=app.source.fps, tip=app.camera_health.phone_tip())
+
+
+@router.post('/api/pi/heartbeat')
+def pi_heartbeat(body: dict[str, Any], app: App) -> dict[str, bool]:
+    beats = app.pi_heartbeats
+    if beats is None:
+        raise other_camera(app, 'pi')
+    try:
+        health = PiHealth.from_dict(body.get('health'))
+    except WireError as exc:
+        raise HTTPException(400, str(exc)) from None
+    beats.heartbeat(health)
+    return {'ok': True}

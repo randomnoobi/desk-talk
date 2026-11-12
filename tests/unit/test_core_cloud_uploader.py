@@ -24,13 +24,20 @@ from desktalk.domain import (
 )
 from desktalk.ports import CloudSending, PeriodicWorker
 from desktalk_shared.cloud_api import IngestReply, Refusal
-from tests.fakes import FakeClock, FakePreferences, InMemoryEventStore, InMemoryKeyValueStore, RecordingCloudLink
+from tests.fakes import (
+    FakeClock,
+    FakePreferences,
+    FixedChance,
+    InMemoryEventStore,
+    InMemoryKeyValueStore,
+    RecordingCloudLink,
+)
 
 WORDS = load_config(environ={}, dotenv=Path('/nonexistent')).prompts.cloud
 START = 1_760_000_000.0                      # 9 October 2025, 08:53 UTC
 DAY_SEC, HOUR, MIN = 86_400, 3_600, 60
 SETTINGS = CloudSettings(link_key='cloud', send_every_sec=30, idle_check_every_sec=60, idle_beat_min=15, batch_size=500,
-                         overlap_sec=120, timeout_sec=10, retry_start_sec=30, retry_max_sec=240,
+                         overlap_sec=120, timeout_sec=10, retry_start_sec=30, retry_max_sec=240, retry_jitter=0,
                          totals_every_min=15, goals_every_hours=24, error_text_chars=200)
 SERVER, TOKEN = 'http://cloud.test:8000', 'secret-token-abc'
 GOALS = {'water_ml': 2400, 'phone_free_min': 120}
@@ -40,7 +47,8 @@ class Rig:
     """The uploader on a real event log (in a temp folder), a stand-in for the cloud server and an in-memory
     store. Nothing is linked until link() is called."""
 
-    def __init__(self, tmp_path: Path, settings: CloudSettings = SETTINGS, keep_days: int = 30):
+    def __init__(self, tmp_path: Path, settings: CloudSettings = SETTINGS, keep_days: int = 30, rng=None):
+        self.rng = rng
         self.clock = FakeClock(START)
         self.log = EventLog(tmp_path / 'events', EventLogSettings(
             folder=tmp_path / 'events', compact_every_min=10, merge_gap_sec=3, keep_days=keep_days,
@@ -58,7 +66,7 @@ class Rig:
             self.made.append((server, token))
             return self.link
         return CloudUploader(factory, self.log, self.store, self.prefs, self.goals, self.settings, self.clock,
-                             WORDS)
+                             WORDS, rng=self.rng)
 
     def linked(self, **changes) -> dict:
         """Link now (place and start at this moment), as scripts/link_cloud.py does."""
@@ -175,6 +183,16 @@ def test_failure_keeps_place_and_waits_longer(rig):
     rig.link.script = [CloudUnavailable('off')]
     rig.habit(START + 2, id='h2')
     assert rig.tick() == SETTINGS.retry_start_sec               # the count started over
+
+
+def test_jitter_cuts_each_wait_by_up_to_its_share_and_the_most_still_holds(tmp_path):
+    rig = Rig(tmp_path, SETTINGS.model_copy(update={'retry_jitter': 0.5}), rng=FixedChance(0, 1, 0.5, 0, 1))
+    rig.linked()
+    rig.habit(START + 1, id='h1')
+    off: list[Exception | IngestReply] = [CloudUnavailable('off')] * 5
+    rig.link.script = off
+    waits = [rig.tick(after=10), rig.tick(), rig.tick(), rig.tick(), rig.tick()]
+    assert waits == [30, 30, 90, 240, 120]                       # 30, 60, 120, 240, 240 cut by 0, 1/2, 1/4, 0, 1/2
 
 
 def test_a_failure_is_logged_but_never_raised_and_never_shows_the_token(rig, caplog):

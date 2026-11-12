@@ -82,8 +82,7 @@ _developer_page = (
     # imported when first asked for, so loading the plugin above brings in nothing else.
     desktalk.adapters.dev.__getattr__,
     # Sent to the developer page whole (GET /api/dev/settings → health, with model_dump()), read by dev_ui/.
-    DevHealthLimits.pi_cpu_warn_c, DevHealthLimits.pi_cpu_bad_c, DevHealthLimits.pi_disk_warn_mb,
-    DevHealthLimits.detect_warn_ms,
+    DevHealthLimits.pi_disk_warn_mb, DevHealthLimits.detect_warn_ms,
     # Plain data the /api/dev routes send as JSON (dataclasses.asdict) and only dev_ui/ reads.
     RunStatus.output_end, SmoothingStep.votes_yes, SmoothingStep.votes_total, SmoothingStep.waiting_sec,
     QueryResult.truncated, QueryResult.took_ms, DataFile.modified,

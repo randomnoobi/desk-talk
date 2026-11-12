@@ -17,7 +17,7 @@ const cancelScenario = vi.mocked(api.cancelScenario)
 const SETTINGS: DevSettings = {
   poll_sec: 60,                    // long, so the countdowns below only move by the page's own clock
   checks: ['Fast tests', 'Lint', 'Types'],
-  health: { pi_cpu_warn_c: 70, pi_cpu_bad_c: 80, pi_disk_warn_mb: 1000, detect_warn_ms: 500 },
+  health: { pi_disk_warn_mb: 1000, detect_warn_ms: 500 },
   trace_pictures: 90,
   sql_max_rows: 500,
   data_folder: '/tmp/data',

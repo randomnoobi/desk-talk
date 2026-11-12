@@ -60,10 +60,9 @@ export function deleteJSON<T>(path: string): Promise<T> {
 
 // ── the replies ──
 
-/** settings → dev.health: when the System tab turns a number amber or red. */
+/** settings → dev.health: when the System tab turns a number amber or red (the Pi's temperature goes by its
+ *  health check instead). */
 export interface HealthLimits {
-  pi_cpu_warn_c: number
-  pi_cpu_bad_c: number
   pi_disk_warn_mb: number
   detect_warn_ms: number
 }
@@ -349,6 +348,15 @@ export interface AiStatus {
   problem: string | null
 }
 
+export type CheckLevel = 'ok' | 'warning' | 'serious' | 'unknown'
+
+/** One health check (desktalk/core/health/): its level, its number (null = none) and the number's unit. */
+export interface HealthCheck {
+  level: CheckLevel
+  value: number | null
+  unit: string                     // s, °C, MB or ''
+}
+
 export interface Health {
   uptime_sec: number
   jobs: JobStatus[]
@@ -358,6 +366,7 @@ export interface Health {
   pi: PiStatus | null              // null when the camera isn't the Pi
   detection: { pictures_analysed: number, detect_ms: number | null, problem: string | null, model: string }
   ai: AiStatus
+  checks: Record<'camera' | 'detections' | 'pi_temperature' | 'card' | 'pi_heartbeat', HealthCheck>
 }
 
 // GET /api/log/status (desktalk/web/routers/log.py)

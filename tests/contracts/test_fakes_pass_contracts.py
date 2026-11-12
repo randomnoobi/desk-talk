@@ -144,7 +144,8 @@ class TestFakeChatModel(ChatModelContract):
     ('FakeTestRunner', 'TestRunner'), ('FakeDatabaseBrowser', 'DatabaseBrowser'), ('FakeDataFiles', 'DataFiles'),
     ('FakeSmoothingTrace', 'SmoothingTraceView'), ('FakeDesktopNotifications', 'DesktopNotifications'),
     ('FakeChatJoins', 'ChatJoins'), ('FakeTracePhotos', 'TracePhotos'), ('FakeTodoList', 'TodoList'),
-    ('FakePiLog', 'PiLogReader'),
+    ('FakePi', 'PiHeartbeats'), ('FakeDiskSpace', 'DiskSpace'), ('FakeHealthCheck', 'HealthCheck'),
+    ('FakeDetectionTimes', 'DetectionTimes'), ('FakePiLog', 'PiLogReader'),
 ])
 def test_every_fake_has_all_of_its_interface(fake, port):
     import desktalk.ports as ports

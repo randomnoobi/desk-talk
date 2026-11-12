@@ -56,8 +56,8 @@ def test_tables_show_columns_and_row_counts(db_file):
     assert browser.databases() == ['object_states']
     [events] = browser.tables('object_states')
     assert events.name == 'events'
-    assert len(events.columns) == 12
-    assert events.columns[-1] == 'boot_id'
+    assert len(events.columns) == 13
+    assert events.columns[-2:] == ('boot_id', 'clock_synced')
     assert events.columns[:3] == ('id', 'ts', 'timezone')
     assert events.rows == 3
     assert events.sql.startswith('CREATE TABLE')

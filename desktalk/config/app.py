@@ -6,6 +6,7 @@ What each setting means is in the comments of config/settings.yaml.
 from __future__ import annotations
 
 import re
+from datetime import date
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -77,11 +78,12 @@ class PiDetector(_Section):
     failures_before_pause: PositiveInt
     pause_start_sec: PositiveNumber
     pause_max_sec: PositiveNumber
+    pause_jitter: Fraction
     health_check_every_sec: PositiveNumber
 
 
 class PiSettings(_Section):
-    _in_order = (('upload_retry_start_sec', 'upload_retry_max_sec'),)
+    _in_order = (('upload_retry_start_sec', 'upload_retry_max_sec'), ('hot_warning_c', 'hot_serious_c'))
     fps: PositiveNumber
     width: PositiveInt
     height: PositiveInt
@@ -93,12 +95,15 @@ class PiSettings(_Section):
     upload_timeout_sec: PositiveNumber
     upload_retry_start_sec: PositiveNumber
     upload_retry_max_sec: PositiveNumber
+    upload_retry_jitter: Fraction
     hot_warning_c: PositiveNumber
+    hot_serious_c: PositiveNumber
     clock_off_warning_sec: PositiveNumber
     camera_warmup_sec: ZeroOrMore
     pause_after_error_sec: ZeroOrMore
     status_every_sec: PositiveNumber
     health_every_sec: PositiveNumber
+    heartbeat_every_sec: PositiveNumber
     settings_check_every_sec: PositiveNumber
     restart_after_missed_pictures: PositiveInt
     camera: str                       # auto | picamera2 | usb[:index] | folder:<dir> | video:<file>, on the Pi
@@ -203,6 +208,9 @@ class ObjectStatesSettings(_Section):
     clock_synced_file: Path | None
     boot_id_file: Path | None
     database: Path
+    keep_days: PositiveInt
+    prune_every_min: PositiveNumber
+    unsaved_most: PositiveInt
     trace_pictures: PositiveInt
 
     def steady_rules(self, steady: float) -> tuple[float, float, float]:
@@ -211,10 +219,16 @@ class ObjectStatesSettings(_Section):
         return self.appear_sec * steady, self.gone_sec * steady, self.move_fraction * steady
 
 
+class ClockSettings(_Section):
+    earliest_believable_date: date
+    largest_jump_ahead_min: PositiveNumber
+
+
 class SupervisorSettings(_Section):
     _in_order = (('restart_start_sec', 'restart_max_sec'),)
     restart_start_sec: PositiveNumber
     restart_max_sec: PositiveNumber
+    restart_jitter: Fraction
     scheduler_longest_wait_sec: PositiveNumber
     stop_wait_sec: PositiveNumber
 
@@ -364,6 +378,7 @@ class LlmSettings(_Section):
     ollama_timeout_sec: PositiveNumber
     retry_start_sec: PositiveNumber
     retry_max_sec: PositiveNumber
+    retry_jitter: Fraction
     breaker_failures: PositiveInt
     breaker_open_sec: PositiveNumber
     rate_limit_retry_sec: ZeroOrMore
@@ -480,6 +495,7 @@ class LensWaits(_Section):
     """How long each camera problem must last before Lens says something."""
 
     lost: ZeroOrMore
+    no_pictures: ZeroOrMore
     covered: ZeroOrMore
     dark: ZeroOrMore
     glare: ZeroOrMore
@@ -519,6 +535,18 @@ class LensSettings(_Section):
     wait_before_saying_sec: LensWaits
 
 
+class HealthChecksSettings(_Section):
+    """When each health check (desktalk/core/health/) says warning or serious."""
+
+    _in_order = (('card_serious_below_mb', 'card_warning_below_mb'),
+                 ('no_detections_warning_sec', 'no_detections_serious_sec'))
+    card_warning_below_mb: ZeroOrMore
+    card_serious_below_mb: ZeroOrMore
+    no_detections_warning_sec: PositiveNumber
+    no_detections_serious_sec: PositiveNumber
+    pi_heartbeat_late_sec: PositiveNumber
+
+
 class DailySummarySettings(_Section):
     hour: Hour
     start_delay_sec: ZeroOrMore
@@ -539,6 +567,7 @@ class CloudSettings(_Section):
     timeout_sec: PositiveNumber
     retry_start_sec: PositiveNumber
     retry_max_sec: PositiveNumber
+    retry_jitter: Fraction
     totals_every_min: PositiveNumber
     goals_every_hours: PositiveNumber
     error_text_chars: PositiveInt
@@ -785,9 +814,6 @@ class DevCheck(_Section):
 class DevHealthLimits(_Section):
     """When the developer page's system tab turns a number amber or red."""
 
-    _in_order = (('pi_cpu_warn_c', 'pi_cpu_bad_c'),)
-    pi_cpu_warn_c: PositiveNumber
-    pi_cpu_bad_c: PositiveNumber
     pi_disk_warn_mb: ZeroOrMore
     detect_warn_ms: PositiveNumber
 
@@ -937,6 +963,7 @@ class AppConfig(_Section):
     agents: AgentsSettings
     presence: PresenceSettings
     object_states: ObjectStatesSettings
+    clock: ClockSettings
     supervisor: SupervisorSettings
     event_stream: EventStreamSettings
     event_log: EventLogSettings
@@ -949,6 +976,7 @@ class AppConfig(_Section):
     idle_chat: IdleChatSettings
     lost_items: LostItemsSettings
     lens: LensSettings
+    health_checks: HealthChecksSettings
     daily_summary: DailySummarySettings
     cloud: CloudSettings
     snapshots: SnapshotsSettings

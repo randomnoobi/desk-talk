@@ -34,10 +34,12 @@ from desktalk.domain import (
     Event,
     Frame,
     Gravity,
+    HealthMeasure,
     Light,
     Nudge,
     Photo,
     Picture,
+    PiHealth,
     PiLogPage,
     PiLogSource,
     QueryResult,
@@ -190,6 +192,25 @@ class PiStatus(Protocol):
 
 
 @runtime_checkable
+class PiHeartbeats(Protocol):
+    """The Pi as the camera: the heartbeat its camera program sends on a timer of its own (pi.heartbeat_every_sec),
+    so its health keeps coming when its pictures stop."""
+
+    def heartbeat(self, health: PiHealth) -> None:
+        """A heartbeat came in (POST /api/pi/heartbeat), with how the Pi is doing."""
+        ...
+
+    def last_heartbeat_at(self) -> float | None:
+        """clock.monotonic() when the newest heartbeat came in. None before the first."""
+        ...
+
+    def latest_health(self) -> tuple[PiHealth, float] | None:
+        """The newest health the Pi sent, with a heartbeat or a picture, and clock.monotonic() when it came in.
+        None before either."""
+        ...
+
+
+@runtime_checkable
 class PhoneCamera(Protocol):
     """The phone as the camera: what Lens asks about it."""
 
@@ -301,6 +322,11 @@ class ObjectStateStore(Protocol):
     def changes(self, since: float, *, label: str | None = None) -> list[StateRecord]:
         """The `appeared`, `removed` and `moved` rows with `ts > since`, oldest first
         (rows with the same `ts` in the order they were added). With `label`, only that object's rows."""
+        ...
+
+    def prune(self, before: float) -> int:
+        """Delete every row with `ts < before`, so the history keeps only its last days. Returns how many.
+        The only way a row ever leaves: nothing else may change or delete one."""
         ...
 
     def close(self) -> None:
@@ -550,6 +576,35 @@ class CameraHealthView(Protocol):
               has_outline: bool, stopped: bool, quiet: bool = False) -> list[dict[str, Any]]:
         """Things Lens should say: dicts with key, kind (problem / fixed / tip) and text.
         `quiet` = quiet hours: problems are still followed, but nothing is said or counted as said."""
+        ...
+
+
+@runtime_checkable
+class HealthCheck(Protocol):
+    """Each measure checked on its own (camera pictures, new detections, the Pi's temperature, the card's free space,
+    the Pi's heartbeat): Lens says the ones in trouble, /api/health shows them all."""
+
+    def measures(self) -> list[HealthMeasure]:
+        """Every measure, each with its level (ok, warning, serious, unknown) and its number."""
+        ...
+
+
+@runtime_checkable
+class DiskSpace(Protocol):
+    """Free space on the disk a folder is on (the data folder: on the Pi, its SD card)."""
+
+    def free_mb(self) -> float | None:
+        """Free megabytes, or None when it can't be read."""
+        ...
+
+
+@runtime_checkable
+class DetectionTimes(Protocol):
+    """When detection last gave a result (here or on the Pi), for the health checks."""
+
+    @property
+    def found_at(self) -> float | None:
+        """clock.monotonic() when a picture last went through detection (found something or not). None before."""
         ...
 
 

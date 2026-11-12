@@ -5,7 +5,8 @@ It listens to DetectionEvents (about 3 a second). For each kind of object it pic
 smooths the answer (Hysteresis, then MajorityWindow) and runs `step()`. When something really changes
 (`appeared`, `removed`, `moved`) it publishes an ObjectStateChanged on the event bus first, then writes the
 change to the ObjectStateStore, so a database problem can't hide the event from the app. Changes the store
-couldn't take are kept in memory and saved with the next ones, so the rule engine still sees them.
+couldn't take are kept in memory and saved with the next ones, so the rule engine still sees them; at most
+`unsaved_most` of them, the oldest dropped first, so a card that stays full can't fill the memory too.
 
 The Settings page's sensitivity slider (Preferences 'sensitivity', read with every picture so a change works at
 once) stretches the waits: an object's appear_sec, gone_sec and move_fraction are multiplied by the step's
@@ -23,7 +24,8 @@ It also keeps each object's last pictures of smoothing for the developer page (S
 `traced_labels()` and `trace(label)`, up to `trace_pictures` per object.
 `save_snapshot(now)` and `restore(now, clock_synced=...)` let a restart pick up where the last run left off. Every row
 keeps the boot it was saved in (`boot_id`), so before the clock has been set from the internet, a restart of only
-the app still picks up what this boot saved, while a power cut starts over.
+the app still picks up what this boot saved, while a power cut starts over. Every row also says whether the clock
+had been set from the internet when it was written (`clock_synced`), asked again for each row.
 """
 
 from __future__ import annotations
@@ -32,6 +34,7 @@ import logging
 import math
 import threading
 from collections import deque
+from collections.abc import Callable
 
 from desktalk.config import AgentsSettings, ObjectStatesSettings, SensitivityStep
 from desktalk.core.agents.sensitivity import Slider
@@ -86,10 +89,12 @@ class ObjectStateTracker:
 
     def __init__(self, settings: ObjectStatesSettings, bus: EventBus, store: ObjectStateStore, *,
                  device_id: str, new_session_after_sec: float, clock: Clock, agents: AgentsSettings,
-                 prefs: Preferences, profiles: Profiles, boot_id: str | None = None):
+                 prefs: Preferences, profiles: Profiles, boot_id: str | None = None,
+                 clock_synced: Callable[[float], bool] | None = None):
         """`clock`: only for the desk's UTC offset written with each row. `agents` and `prefs`: the sensitivity
         slider's steps and the one picked; `profiles`: which words are new things. `boot_id`: which boot of the
-        computer this is, written with each row (None: it can't say)."""
+        computer this is, written with each row (None: it can't say). `clock_synced(ts)`: had the clock been set
+        from the internet at `ts`, and is it believable? Written with each row (None: the rows can't say)."""
         self._bus = bus
         self._settings = settings
         self._slider = Slider(agents, prefs)
@@ -99,6 +104,7 @@ class ObjectStateTracker:
         self._store = store
         self._device_id = device_id
         self._boot_id = boot_id
+        self._clock_synced = clock_synced
         self._new_session_after_sec = new_session_after_sec    # a gap this long starts a new run of watching
         self._on_conf = settings.on_confidence
         self._off_conf = settings.off_confidence
@@ -125,6 +131,8 @@ class ObjectStateTracker:
         self._last_picture: float | None = None
         self._store_errors_in_row = 0
         self._unsaved: list[StateRecord] = []           # changes the store couldn't take yet, oldest first
+        self._unsaved_most = settings.unsaved_most
+        self._dropping = False                          # dropping the oldest unsaved changes (said once)
         bus.subscribe('object-states', self._on_event, types={DetectionEvent})
 
     # ── helpers ──
@@ -181,10 +189,13 @@ class ObjectStateTracker:
     def _zone(self, ts: float) -> str:
         return _timezone(self._clock.utc_offset_sec(ts))
 
+    def _synced(self, ts: float) -> bool | None:
+        return None if self._clock_synced is None else self._clock_synced(ts)
+
     def _record(self, t: Transition) -> StateRecord:
         return StateRecord(ts=t.ts, timezone=self._zone(t.ts), device_id=self._device_id, type=t.type,
                            label=t.label, prev_state=t.prev_state, new_state=t.new_state, conf_avg=t.conf_avg,
-                           bbox=t.bbox, dwell_sec=t.dwell_sec, boot_id=self._boot_id)
+                           bbox=t.bbox, dwell_sec=t.dwell_sec, boot_id=self._boot_id, clock_synced=self._synced(t.ts))
 
     def _event(self, t: Transition) -> ObjectStateChanged:
         return ObjectStateChanged(ts=t.ts, change=t.type, label=t.label, prev_state=t.prev_state.value,
@@ -245,7 +256,14 @@ class ObjectStateTracker:
         # Changes the store couldn't take before go first, so the rows stay oldest first.
         with self._lock:
             self._unsaved.extend(self._record(t) for t in transitions)
+            extra = len(self._unsaved) - self._unsaved_most
+            if extra > 0:
+                del self._unsaved[:extra]
             records = list(self._unsaved)
+        if extra > 0 and not self._dropping:
+            log.warning('More than %d object state changes are waiting to be saved, so the oldest are being dropped',
+                        self._unsaved_most)
+        self._dropping = extra > 0 or self._dropping
         try:
             self._store.append(records)
         except Exception as exc:  # a full disk or a locked file must never stop the tracker
@@ -255,6 +273,7 @@ class ObjectStateTracker:
                       exc_info=self._store_errors_in_row == 1)
         else:
             self._store_errors_in_row = 0
+            self._dropping = False
             with self._lock:
                 del self._unsaved[:len(records)]
 
@@ -290,11 +309,13 @@ class ObjectStateTracker:
 
         ABSENT objects are left out: their `removed` row already says so, and writing them every minute would
         only grow the table with every label ever seen."""
+        synced = self._synced(now)
         with self._lock:
             records = [
                 StateRecord(ts=now, timezone=self._zone(now), device_id=self._device_id, type='snapshot',
                             label=label, prev_state=s.phase, new_state=s.phase,
-                            dwell_sec=now - s.since if s.since is not None else None, boot_id=self._boot_id)
+                            dwell_sec=now - s.since if s.since is not None else None, boot_id=self._boot_id,
+                            clock_synced=synced)
                 for label, s in self._states.items() if s.phase == Phase.PRESENT
             ]
         if records:

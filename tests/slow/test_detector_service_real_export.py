@@ -29,7 +29,7 @@ MODEL = ModelSettings(model='yolo11n.pt', format='ncnn', image_size=320, confide
 
 
 def new_manager(models_dir: Path) -> ModelManager:
-    return ModelManager(ModelFolder(models_dir), retry_first_sec=5, retry_max_sec=40)
+    return ModelManager(ModelFolder(models_dir), retry_first_sec=5, retry_max_sec=40, retry_jitter=0)
 
 
 @pytest.fixture(scope='module')

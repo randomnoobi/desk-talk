@@ -15,5 +15,5 @@ from desktalk_detector.settings import ServiceSettings
 
 def build_app(settings: ServiceSettings, yolo: Callable[..., Any] = ultralytics_yolo) -> FastAPI:
     manager = ModelManager(ModelFolder(settings.models_dir, yolo), retry_first_sec=settings.retry_first_sec,
-                           retry_max_sec=settings.retry_max_sec)
+                           retry_max_sec=settings.retry_max_sec, retry_jitter=settings.retry_jitter)
     return create_app(manager, max_picture_bytes=settings.max_picture_bytes)

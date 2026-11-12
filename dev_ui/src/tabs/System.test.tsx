@@ -10,7 +10,7 @@ vi.mock('../api', async original => ({
 }))
 
 const settings: DevSettings = {
-  poll_sec: 2, checks: [], health: { pi_cpu_warn_c: 70, pi_cpu_bad_c: 80, pi_disk_warn_mb: 1000, detect_warn_ms: 500 },
+  poll_sec: 2, checks: [], health: { pi_disk_warn_mb: 1000, detect_warn_ms: 500 },
   trace_pictures: 30, sql_max_rows: 500, data_folder: '/data',
   disconnect_after_sec: 3, web_port: 5000, flicker_flips_per_min: 4,
   output_keep_kb: 2000, flips_window_min: 10, table_counts_every_sec: 30, trace_events_kept: 50,
@@ -28,6 +28,13 @@ const health: Health = {
         model: 'yolo11n', clock_off_sec: 0.2 },
   detection: { pictures_analysed: 10, detect_ms: 90, problem: null, model: 'yolo11n' },
   ai: { ready: true, label: 'Claude', problem: null },
+  checks: {
+    camera: { level: 'ok', value: null, unit: '' },
+    detections: { level: 'ok', value: 2, unit: 's' },
+    pi_temperature: { level: 'serious', value: 82, unit: '°C' },
+    card: { level: 'warning', value: 1500, unit: 'MB' },
+    pi_heartbeat: { level: 'ok', value: 12, unit: 's' },
+  },
 }
 
 const log: LogStatus = {
@@ -45,6 +52,8 @@ describe('System tab', () => {
     expect(await screen.findByRole('heading', { name: 'Pi' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Event stream' })).toBeInTheDocument()
     expect(screen.getByText('CPU °C').closest('tr')).toHaveClass('bad')
+    expect(screen.getByRole('heading', { name: 'Health checks' })).toBeInTheDocument()
+    expect(screen.getByText('free space on the card').closest('tr')).toHaveClass('warn')
     expect(screen.getByText('/data/log')).toBeInTheDocument()
   })
 

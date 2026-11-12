@@ -51,7 +51,7 @@ def test_dev_settings_load(project):
     assert dev.ui_folder == Path('dev_ui/dist')
     assert (dev.vite_port, dev.poll_sec, dev.run_timeout_min, dev.sql_timeout_sec) == (5173, 1, 15, 5)
     assert isinstance(dev.health, DevHealthLimits)
-    assert dev.health.pi_cpu_bad_c == 80
+    assert dev.health.pi_disk_warn_mb == 1000
     assert config.object_states.trace_pictures == 90
     assert (dev.flicker_flips_per_min, dev.sql_check_every_steps) == (4, 1000)
     assert (dev.collect_timeout_sec, dev.flips_window_min, dev.table_counts_every_sec) == (120, 10, 30)
@@ -82,10 +82,12 @@ def test_run_timeout_must_be_positive(project, setting):
         load_config(root=project, environ={})
 
 
-def test_the_warm_line_is_below_the_hot_line(project):
-    change_dev(project, health={'pi_cpu_warn_c': 90, 'pi_cpu_bad_c': 80, 'pi_disk_warn_mb': 1000,
-                                'detect_warn_ms': 500})
-    with pytest.raises(ConfigError, match='pi_cpu_warn_c .* must not be more than pi_cpu_bad_c'):
+def test_the_pis_warm_line_is_below_its_hot_line(project):
+    path = project / 'config' / 'settings.yaml'
+    data = yaml.safe_load(path.read_text())
+    data['pi'].update(hot_warning_c=90, hot_serious_c=80)
+    path.write_text(yaml.safe_dump(data))
+    with pytest.raises(ConfigError, match='hot_warning_c .* must not be more than hot_serious_c'):
         load_config(root=project, environ={})
 
 
