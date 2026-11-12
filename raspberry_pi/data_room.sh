@@ -5,26 +5,36 @@
 # card can't take the room the history needs. install.sh runs this, with the app and the camera stopped when it makes or
 # mounts the room; run it as your normal user, it asks for sudo itself:
 #
-#     bash raspberry_pi/data_room.sh status          says one word: room, elsewhere, unmounted or none
-#     bash raspberry_pi/data_room.sh make [--dry-run]
+#     bash raspberry_pi/data_room.sh status          says one word: room, elsewhere, unmounted, leftover or none
+#     bash raspberry_pi/data_room.sh make [--dry-run] [--no-sudo]
 #     bash raspberry_pi/data_room.sh unit-text       says the service file as it would install it, changing nothing
 #
 # status:
 #   room       the data folder is the mounted room, with the marker (DATA_ROOM_MARKER) in it
 #   elsewhere  the data folder is on another disk than the SD card (a USB drive), so it's left alone
 #   unmounted  the room's file is there, but it isn't mounted
+#   leftover   a move into the room was cut short (by a power cut, say) after the old folder was set aside and before
+#              the new file got its name: there's no room's file, but <file>.new holds the checked copy of the history
+#              (the marker is in it), and the old folder holds the history too. The data folder is then only the bare
+#              mount point, so install.sh starts the app saving nothing (DATA_ROOM_ON=yes) until the move is finished,
+#              never on that folder as if it were the history.
 #   none       there's no room yet
 # make:
-#   room       makes sure all its space is still set aside, finishes a grow that stopped part-way, and grows the room
-#              if DATA_ROOM_SIZE_MB is now bigger. It can't be made smaller.
+#   room       makes sure all its space is still set aside and trims are off (see the service file), finishes a grow
+#              that stopped part-way, and grows the room if DATA_ROOM_SIZE_MB is now bigger. It can't be made smaller.
 #   elsewhere  does nothing
 #   unmounted  starts the service once to mount it, but only onto an empty data folder: mounting over files would hide
 #              them. If that doesn't work it stops, and never makes a new room over the old one: that may hold the only
 #              history.
+#   leftover   finishes the move: names <file>.new as the room's file and mounts it, but only onto an empty data folder.
+#              If files were written there since, it stops and changes nothing, saying where the history is.
 #   none       makes the room, copies the data folder into it and checks the copy, then swaps it in. The old folder is
 #              kept, renamed, until you delete it. If anything goes wrong, the old folder is left (or put back) as it was.
 #   --dry-run  does the same checks, says what it would do, and changes nothing
+#   --no-sudo  what update.sh uses: only the room's checks that need no sudo. A grow, finishing one, or switching trims
+#              off is left, with a line saying to run install.sh for it. Any other state stops: it needs sudo.
 #
+# A checked copy of the history left behind by an earlier run (<file>.new with the marker in it) is never deleted.
 # Paths in .env start from raspberry_pi/, as in install.sh and compose.yaml.
 set -euo pipefail
 
@@ -38,6 +48,7 @@ MB=$((1024 * 1024))                             # df -m, fallocate's M and the s
 PATH=$PATH:/usr/local/sbin:/usr/sbin:/sbin
 
 DRY_RUN=0
+NO_SUDO=0                                       # --no-sudo: what needs sudo is left for install.sh, and says so
 TEMP_FOLDER=""                                  # for the service file on its way to /etc/systemd/system
 MOUNT_FOLDER=""                                 # where the new room is mounted while the history is copied in
 MOUNTED=0
@@ -49,7 +60,7 @@ would() { say "Would $*"; }
 stop() { say "Stopping: $*" >&2; exit 1; }
 
 usage() {
-    say "Usage: data_room.sh status | make [--dry-run] | unit-text"
+    say "Usage: data_room.sh status | make [--dry-run] [--no-sudo] | unit-text"
     exit 2
 }
 
@@ -154,9 +165,49 @@ status() {
     # history, so it's never made again.
     if [ -e "$IMAGE" ]; then
         say unmounted
+    elif [ -e "$IMAGE.new" ] && [ -n "$(newest_old_folder)" ] && has_marker "$IMAGE.new"; then
+        say leftover
     else
         say none
     fi
+}
+
+# Is the file $1 a filesystem with the room's marker in it, so a checked copy of the history? debugfs reads it without
+# mounting it, and without sudo (the file is this user's). Without debugfs it can't tell, so it says yes: a checked
+# copy must never be taken for a half-made file and deleted.
+has_marker() {
+    command -v debugfs > /dev/null || return 0
+    debugfs -R "stat /$MARKER" "$1" 2> /dev/null | grep -q 'Type: regular'
+}
+
+# The kernel's setting for how much a trim may give back through the loop device $1 (0: nothing). Raspberry Pi OS trims
+# every mounted disk once a week (fstrim.timer), and through a loop device each trim punches a hole in the room's file,
+# which gives that space back to the card.
+trims_file() {
+    printf '%s' "$SYS/block/${1#/dev/}/queue/discard_max_bytes"
+}
+
+# Switches trims off for the room's loop device $1, if they're on (the service file does this at every mount; this
+# catches a mount that couldn't, or one by an older service file). It needs no sudo when they're off already. A failure
+# doesn't stop anything: it says so, in an IMPORTANT line.
+no_trims() {
+    local file
+    file=$(trims_file "$1")
+    [ -r "$file" ] || return 0                  # this kernel lets no trims through to it
+    [ "$(cat "$file")" != 0 ] || return 0
+    if [ "$DRY_RUN" = 1 ]; then
+        would "switch off trims for Desk Talk's room ($1), so they can't give its space back to the SD card."
+        return 0
+    fi
+    if [ "$NO_SUDO" = 1 ]; then
+        say "IMPORTANT: trims aren't switched off for Desk Talk's room ($1), so a trim can give part of its space back to the SD card (it's set aside again on every boot). Switching them off needs sudo. To do it, run once: bash $(quoted "$PI_DIR/install.sh")"
+        return 0
+    fi
+    if printf '0\n' | sudo tee -- "$file" > /dev/null && [ "$(cat "$file")" = 0 ]; then
+        say "Switched off trims for Desk Talk's room, so they can't give its space back to the SD card."
+        return 0
+    fi
+    say "IMPORTANT: trims couldn't be switched off for Desk Talk's room ($1), so a trim can give part of its space back to the SD card. It's set aside again on every boot and every run of install.sh. To try by hand: echo 0 | sudo tee $(quoted "$file")"
 }
 
 free_mb() {
@@ -167,12 +218,22 @@ free_mb() {
     printf '%s' "$free"
 }
 
+# How many MB the data folder holds. With sudo, so files of root's in it (folders Docker made) count too; a dry run
+# asks for no sudo, so it counts only what this user can read.
 used_mb() {
-    if [ -d "$DATA" ]; then
-        { du -sm -- "$DATA" 2> /dev/null || true; } | awk 'NR == 1 { print $1 }'
-    else
+    local said="" used
+    if [ ! -d "$DATA" ]; then
         echo 0
+        return
     fi
+    if [ "$DRY_RUN" = 1 ]; then
+        said=$(du -sm -- "$DATA" 2> /dev/null) || true
+    else
+        said=$(sudo du -sm -- "$DATA") || said=""
+    fi
+    used=$(awk 'NR == 1 { print $1 }' <<< "$said")
+    [[ "$used" =~ ^[0-9]+$ ]] || stop "couldn't tell how much the data folder $DATA holds (du gave no number), so nothing was changed."
+    printf '%s' "$used"
 }
 
 file_bytes() {
@@ -255,7 +316,7 @@ fill_in() {
 }
 
 unit_text() {
-    FILL_IMAGE=$(unit_word "$IMAGE") FILL_DATA=$(unit_word "$DATA") fill_in "$TEMPLATE"
+    FILL_IMAGE=$(unit_word "$IMAGE") FILL_DATA=$(unit_word "$DATA") FILL_SYS=$(unit_word "$SYS") fill_in "$TEMPLATE"
 }
 
 # Is $2 there already, with the text $1?
@@ -333,12 +394,16 @@ put_back() {
 
 # ── Making, mounting and growing ──
 
-# A move cut short (by a power cut, say) between setting the old folder aside and naming the new file leaves
-# <file>.new, an empty data folder and the old folder with the history. That's left for you. Any other <file>.new is from
-# a try that stopped before the data folder was touched, and goes.
+# With no room yet, a <file>.new left by an earlier try. One with the marker in it is a checked copy of the history: it's
+# never deleted (with an old folder set aside too, status says leftover and finish_move runs instead). With no marker, a
+# move cut short leaves an empty data folder and the old folder with the history: that's left for you. Any other
+# <file>.new is from a try that stopped before the data folder was touched, and goes.
 check_leftover() {
     local old
     [ -e "$IMAGE.new" ] || return 0
+    if has_marker "$IMAGE.new"; then
+        stop "$IMAGE.new is a checked copy of Desk Talk's history, left by a move into its own room that was cut short before the data folder was touched. Your history is in the data folder $DATA, as it was, and nothing was changed. Delete the copy with: rm -f $(quoted "$IMAGE.new")   and run this again."
+    fi
     old=$(newest_old_folder)
     if [ -n "$old" ] && empty_folder "$DATA"; then
         local back=""
@@ -391,6 +456,8 @@ make_room() {
     MOUNT_FOLDER=$(mktemp -d)
     sudo mount -o loop "$new" "$MOUNT_FOLDER"
     MOUNTED=1
+    # No trims while the history is copied in either. Quiet, and a failure is fine: the space is checked again below.
+    printf '0\n' | sudo tee -- "$(trims_file "$(findmnt -n -o SOURCE --mountpoint "$MOUNT_FOLDER")")" > /dev/null 2>&1 || true
     say "Copying the data folder ($used MB) into it ..."
     sudo cp -a -- "$DATA/." "$MOUNT_FOLDER/"
     copy_checks_out || stop "the copy in the new room isn't the same as the data folder, so it isn't used. The data folder is as it was."
@@ -417,8 +484,38 @@ make_room() {
         stop "the new room couldn't be mounted at $DATA, and the old data folder couldn't be put back by itself: see above. See why it wasn't mounted with: journalctl -u ${UNIT%.service}"
     fi
     STAGE=""
+    no_trims "$(room_device)"
     say "Desk Talk's own room is ready: $size MB at $IMAGE, mounted at $DATA on every boot. The history was copied into it and checked."
     say "The old data folder is kept at $OLD. Once Desk Talk works, delete it with: rm -rf $(quoted "$OLD")"
+}
+
+# status leftover: the move was cut short after the old folder was set aside, so the history is safe in it and in
+# <file>.new, the checked copy. Finishing it is what the move had left to do: name the file and mount it, onto an
+# empty data folder only (anything there now was written after the power cut). Nothing is deleted.
+finish_move() {
+    local old
+    old=$(newest_old_folder)
+    if ! empty_folder "$DATA"; then
+        stop "an earlier move into Desk Talk's own room was cut short. Your history is safe in $old, and in $IMAGE.new (the checked copy of it). But the data folder $DATA isn't empty: it holds $(ls -A -- "$DATA" | head -n 5 | tr '\n' ' ')... written after the move was cut short, so nothing was changed. Look at them with: ls -A $(quoted "$DATA")   Move them somewhere else, then run this again to finish the move."
+    fi
+    if [ "$DRY_RUN" = 1 ]; then
+        would "finish an earlier move into Desk Talk's own room that was cut short: name $IMAGE.new $IMAGE and mount it at $DATA, by starting $UNIT. The old data folder $old would be kept."
+        return
+    fi
+    say "An earlier move into Desk Talk's own room was cut short. Finishing it: mounting the checked copy of the history ($IMAGE.new) at $DATA ..."
+    if [ ! -e "$DATA" ]; then
+        sudo mkdir -m 755 -- "$DATA"    # root's, as when the room was made
+    fi
+    rename "$IMAGE.new" "$IMAGE"
+    set_up_service
+    sudo systemctl restart "$UNIT" || true
+    if [ "$(status)" = room ]; then
+        no_trims "$(room_device)"
+        say "Desk Talk's own room is ready: $(($(file_bytes "$IMAGE") / MB)) MB at $IMAGE, mounted at $DATA on every boot."
+        say "The old data folder is kept at $old. Once Desk Talk works, delete it with: rm -rf $(quoted "$old")"
+        return
+    fi
+    stop "Desk Talk's room ($IMAGE) couldn't be mounted at $DATA. Your history is safe in it, and in $old. Nothing was deleted. See why with: journalctl -u ${UNIT%.service}"
 }
 
 # The copy is the same as the data folder, but for the new filesystem's own lost+found: diff found no differences, or
@@ -450,6 +547,7 @@ mount_room() {
     set_up_service
     sudo systemctl restart "$UNIT" || true
     if [ "$(status)" = room ]; then
+        no_trims "$(room_device)"
         say "Mounted Desk Talk's room at $DATA."
         return
     fi
@@ -475,7 +573,7 @@ hold_room() {
 
 # A grow that stopped part-way leaves the file bigger than the loop device or the filesystem on it: a note
 # (<file>.growing) says one was started, and the kernel says how big it thinks the loop device is. Then losetup -c and
-# resize2fs finish it. With nothing to finish, it needs no sudo.
+# resize2fs finish it. With nothing to finish, it needs no sudo. With --no-sudo it says what's left and answers 1.
 finish_growing() {
     local device=$1 loop_size="" size_file
     size_file=$SYS/block/${device#/dev/}/size
@@ -484,6 +582,10 @@ finish_growing() {
     fi
     if [ ! -e "$IMAGE.growing" ] && { [ -z "$loop_size" ] || [ "$loop_size" = "$(file_bytes "$IMAGE")" ]; }; then
         return 0
+    fi
+    if [ "$NO_SUDO" = 1 ]; then
+        say "Desk Talk's room needs sudo to finish growing to its file's $(($(file_bytes "$IMAGE") / MB)) MB: its filesystem hasn't caught up yet, so it works at its old size until then. To finish it, run once: bash $(quoted "$PI_DIR/install.sh")"
+        return 1
     fi
     if [ "$DRY_RUN" = 1 ]; then
         would "finish growing Desk Talk's room to its file's $(($(file_bytes "$IMAGE") / MB)) MB: sudo losetup -c $device && sudo resize2fs $device"
@@ -500,8 +602,9 @@ grow_room() {
     local wanted current needed held free reserve device
     wanted=$(number DATA_ROOM_SIZE_MB)
     device=$(room_device)
+    no_trims "$device"
     hold_room || return 0
-    finish_growing "$device"
+    finish_growing "$device" || return 0
     current=$(($(file_bytes "$IMAGE") / MB))
     if [ "$wanted" -lt "$current" ]; then
         say "Desk Talk's room is $current MB, and DATA_ROOM_SIZE_MB is now $wanted. Making it smaller isn't supported, so it stays at $current MB."
@@ -517,6 +620,10 @@ grow_room() {
     needed=$(((wanted * MB - held + MB - 1) / MB))      # what fallocate takes from the card
     if [ "$((free - reserve))" -lt "$needed" ]; then
         say "Desk Talk's room can't grow from $current to $wanted MB now: that takes $needed MB, there is $free MB free on the SD card, and $reserve MB must stay free for updates. Free $((needed + reserve - free)) MB and run this again. It stays at $current MB."
+        return
+    fi
+    if [ "$NO_SUDO" = 1 ]; then
+        say "Desk Talk's room needs sudo to grow from $current to the $wanted MB in DATA_ROOM_SIZE_MB, so it stays at $current MB for now. To grow it, run once: bash $(quoted "$PI_DIR/install.sh")"
         return
     fi
     if [ "$DRY_RUN" = 1 ]; then
@@ -545,6 +652,7 @@ main() {
             while [ $# -gt 0 ]; do
                 case "$1" in
                     --dry-run) DRY_RUN=1 ;;
+                    --no-sudo) NO_SUDO=1 ;;
                     *) usage ;;
                 esac
                 shift
@@ -574,10 +682,16 @@ main() {
     wanted=$(number DATA_ROOM_SIZE_MB)
     smallest=$(number DATA_ROOM_SMALLEST_MB)
     [ "$wanted" -ge "$smallest" ] || stop "DATA_ROOM_SIZE_MB ($wanted) in raspberry_pi/.env is smaller than DATA_ROOM_SMALLEST_MB ($smallest)."
-    case "$(status)" in
+    local now
+    now=$(status)
+    if [ "$NO_SUDO" = 1 ] && [ "$now" != room ] && [ "$now" != elsewhere ]; then
+        stop "Desk Talk's room is $now (see raspberry_pi/data_room.sh), and setting it up needs sudo, so nothing was changed. Run this without --no-sudo."
+    fi
+    case "$now" in
         room) grow_room ;;
         elsewhere) say "The data folder $DATA is on another disk than the SD card, so it gets no room of its own and is left as it is." ;;
         unmounted) mount_room ;;
+        leftover) finish_move ;;
         none) make_room ;;
     esac
 }

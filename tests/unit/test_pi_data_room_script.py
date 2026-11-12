@@ -41,6 +41,8 @@ case "$name" in
     [ -e "$FAKE/copy_differs" ] && { echo 'Files differ'; exit 1; }
     [ -e "$FAKE/diff_code" ] && { echo "Only in ${@: -1}: lost+found"; exit "$(cat "$FAKE/diff_code")"; }
     exec /usr/bin/diff "$@" ;;
+  du) [ -e "$FAKE/du_says_nothing" ] && exit 1
+      exec /usr/bin/du "$@" ;;
   mv)  # GNU's mv -T: never into a folder that's there
     [ "$1" = -T ] || exec /bin/mv "$@"
     shift; [ "$1" = -- ] && shift
@@ -65,6 +67,7 @@ FAKE = Path(os.environ['FAKE'])
 SYS = Path(os.environ['DESKTALK_SYS'])
 MB = 1024 * 1024
 MARKER = '.desktalk-data-room'
+TRIMS_ON = 4294966784
 
 
 def has(name):
@@ -128,6 +131,11 @@ def mount(args):
         (SYS / 'block' / name / 'loop').mkdir(parents=True)
         (SYS / 'block' / name / 'loop' / 'backing_file').write_text(real(source) + '\n')
         (SYS / 'block' / name / 'size').write_text(f'{size_of(source) // 512}\n')
+        (SYS / 'block' / name / 'queue').mkdir()
+        discard = SYS / 'block' / name / 'queue' / 'discard_max_bytes'
+        discard.write_text(f'{TRIMS_ON}\n')                # the kernel lets trims through to the file
+        if has('discard_stuck'):
+            discard.chmod(0o444)
         source = f'/dev/{name}'
     for child in sorted(disk.iterdir()):
         shutil.move(str(child), str(Path(target) / child.name))
@@ -212,6 +220,16 @@ def main(name, args):
         return systemctl(args)
     if name == 'resize2fs':
         return 1 if has('resize2fs_fails') else 0
+    if name == 'debugfs':                                   # debugfs -R "stat /<name>" <file>
+        disk = disk_of(args[-1])
+        found = disk / args[1].split(' ', 1)[1].lstrip('/')
+        if not disk.is_dir():
+            print('Bad magic number in super-block while trying to open', args[-1], file=sys.stderr)
+        elif found.is_file():
+            print('Inode: 12   Type: regular    Mode:  0644   Flags: 0x80000')
+        else:
+            print(found.name + ': File not found by ext2_lookup', file=sys.stderr)
+        return 0
     return 0
 
 
@@ -219,7 +237,7 @@ sys.exit(main(sys.argv[1], sys.argv[2:]))
 '''
 
 STAND_INS = ('df', 'id', 'stat', 'findmnt', 'losetup', 'fallocate', 'mkfs.ext4', 'e2fsck', 'mount', 'umount',
-             'resize2fs', 'sudo', 'systemctl', 'diff', 'mv')
+             'resize2fs', 'sudo', 'systemctl', 'diff', 'mv', 'du', 'debugfs')
 
 
 @dataclass
@@ -383,7 +401,42 @@ def only_the_new_file_went(pi: RoomPi, result: Result, before: os.stat_result) -
     assert not pi.unit_file.exists()
 
 
+def trims_setting(pi: RoomPi) -> str:
+    """What the kernel lets through to the room's file when something on the Pi trims (0: nothing)."""
+    [mount] = pi.mounts()
+    return (pi.loop(mount['source']) / 'queue' / 'discard_max_bytes').read_text().strip()
+
+
+def a_checked_copy_left_by_a_cut_short_move(pi: RoomPi, *, set_aside: bool = True) -> Path | None:
+    """A power cut part-way through a move: <file>.new is made and holds the checked copy with the marker. With
+    `set_aside` the old folder was set aside too, and the data folder is the bare mount point, root's, empty."""
+    pi.new_image.write_text(str(8192 * MB))
+    disk = pi.fake / 'disks' / str(os.stat(pi.new_image).st_ino)
+    (disk / 'lost+found').mkdir(parents=True)
+    for name, content in HISTORY.items():
+        (disk / name).parent.mkdir(parents=True, exist_ok=True)
+        (disk / name).write_bytes(content)
+    (disk / MARKER).touch()
+    if not set_aside:
+        return None
+    old = pi.root / 'data.before-room-2026-11-11-120000'
+    pi.data.rename(old)
+    pi.data.mkdir()
+    return old
+
+
 # ── status ──
+
+def test_status_says_leftover_for_a_move_cut_short_after_the_old_folder_was_set_aside(pi):
+    a_checked_copy_left_by_a_cut_short_move(pi)
+    assert pi.status() == 'leftover\n'
+
+
+def test_a_checked_copy_without_an_old_folder_set_aside_is_still_none(pi):
+    """The data folder wasn't touched, so it holds the history and the app may go on saving there."""
+    a_checked_copy_left_by_a_cut_short_move(pi, set_aside=False)
+    assert pi.status() == 'none\n'
+
 
 def test_status_says_none_room_elsewhere_or_unmounted(pi):
     assert pi.status() == 'none\n'
@@ -458,7 +511,7 @@ def test_a_sparse_or_short_image_is_refused(pi):
     result = pi.run('make')
     assert result.code == 1
     assert 'set aside' in result.out
-    assert not calls_to(result, 'mkfs.ext4', 'mount', 'sudo')
+    assert not calls_to(result, 'mkfs.ext4', 'mount') and sudo_calls(result) == [f'sudo du -sm -- {pi.data}']
     only_the_new_file_went(pi, result, before)
 
 
@@ -753,6 +806,154 @@ def test_a_leftover_new_file_from_a_stopped_try_is_made_again(pi):
     assert pi.status() == 'room\n' and files_in(pi.data) == HISTORY
 
 
+# ── trims ──
+
+def test_the_unit_switches_trims_off_for_the_room_so_they_cant_punch_holes_in_it(pi):
+    result = pi.run('make')
+    assert result.code == 0, result.out
+    assert trims_setting(pi) == '0'
+    unmount_as_after_a_bad_boot(pi)
+    assert pi.machine('systemctl', 'start', UNIT) == 0         # at boot too
+    assert trims_setting(pi) == '0' and pi.status() == 'room\n'
+
+
+def test_trims_that_cant_be_switched_off_still_mount_the_room_and_say_so(pi):
+    pi.state('discard_stuck')
+    result = pi.run('make')
+    assert result.code == 0, result.out
+    assert pi.status() == 'room\n' and files_in(pi.data) == HISTORY
+    # The unit's own line goes to the journal; this one is data_room.sh's, which install.sh keeps for its notes.
+    [line] = [line for line in result.out.splitlines() if line.startswith('IMPORTANT: ') and 'by hand' in line]
+    assert 'trims' in line and 'set aside again' in line
+
+
+def test_a_room_mounted_with_trims_on_gets_them_switched_off(pi):
+    """Mounted by an older unit, which left trims on."""
+    assert pi.run('make').code == 0
+    [mount] = pi.mounts()
+    (pi.loop(mount['source']) / 'queue' / 'discard_max_bytes').write_text('4294966784\n')
+    result = pi.run('make')
+    assert result.code == 0, result.out
+    assert trims_setting(pi) == '0' and any(call.startswith('sudo tee ') for call in result.calls)
+    result = pi.run('make')                                 # off now: no sudo
+    assert result.code == 0 and not sudo_calls(result)
+
+
+def test_the_new_file_has_trims_off_while_the_history_is_copied_in(pi):
+    result = pi.run('make')
+    assert result.code == 0, result.out
+    tees = [call for call in result.calls if call.startswith('sudo tee ')]
+    assert len(tees) == 1 and tees[0].endswith('/queue/discard_max_bytes')
+    assert result.calls.index(tees[0]) < next(i for i, call in enumerate(result.calls) if call.startswith('sudo cp '))
+
+
+# ── without sudo (update.sh) ──
+
+def test_without_sudo_a_grow_is_left_for_later_and_says_how(pi):
+    assert pi.run('make').code == 0
+    pi.change_example('DATA_ROOM_SIZE_MB', '10000')
+    result = pi.run('make', '--no-sudo')
+    assert result.code == 0, result.out
+    assert not sudo_calls(result) and not calls_to(result, 'fallocate')
+    assert pi.image.read_text() == str(8192 * MB)
+    [line] = [line for line in result.out.splitlines() if line.startswith("Desk Talk's room needs sudo to ")]
+    assert 'grow' in line and '10000' in line and 'install.sh' in line
+
+
+def test_without_sudo_a_grow_that_stopped_part_way_is_left_for_later(pi):
+    assert pi.run('make').code == 0
+    pi.change_example('DATA_ROOM_SIZE_MB', '10000')
+    pi.state('resize2fs_fails')
+    assert pi.run('make').code == 1
+    pi.clear('resize2fs_fails')
+    result = pi.run('make', '--no-sudo')
+    assert result.code == 0, result.out
+    assert not sudo_calls(result)
+    [line] = [line for line in result.out.splitlines() if line.startswith("Desk Talk's room needs sudo to ")]
+    assert 'finish growing' in line and 'install.sh' in line
+
+
+def test_without_sudo_trims_left_on_say_so(pi):
+    assert pi.run('make').code == 0
+    [mount] = pi.mounts()
+    (pi.loop(mount['source']) / 'queue' / 'discard_max_bytes').write_text('4294966784\n')
+    result = pi.run('make', '--no-sudo')
+    assert result.code == 0 and not sudo_calls(result)
+    assert any(line.startswith('IMPORTANT: ') and 'trim' in line and 'install.sh' in line
+               for line in result.out.splitlines())
+
+
+def test_without_sudo_a_room_still_to_make_stops_and_changes_nothing(pi):
+    result = pi.run('make', '--no-sudo')
+    assert result.code == 1 and 'sudo' in result.out
+    changed_nothing(pi, result)
+    assert not sudo_calls(result)
+
+
+# ── how much the data folder holds ──
+
+def test_the_data_folder_is_measured_with_sudo_so_roots_files_count(pi):
+    result = pi.run('make')
+    assert result.code == 0, result.out
+    assert f'sudo du -sm -- {pi.data}' in result.calls
+
+
+def test_a_measure_with_no_number_stops_plainly_and_changes_nothing(pi):
+    pi.state('du_says_nothing')
+    result = pi.run('make')
+    assert result.code == 1
+    assert "couldn't tell how much the data folder" in result.out and 'integer' not in result.out
+    changed_nothing(pi, result)
+
+
+# ── a move cut short ──
+
+def test_a_move_cut_short_after_the_old_folder_was_set_aside_is_finished(pi):
+    old = a_checked_copy_left_by_a_cut_short_move(pi)
+    result = pi.run('make')
+    assert result.code == 0, result.out
+    assert pi.status() == 'room\n' and files_in(pi.data) == HISTORY
+    assert old is not None and files_in(old) == HISTORY and pi.old_folders() == [old]
+    assert not pi.new_image.exists() and not made_a_new_file(pi, result)
+    assert str(old) in result.out and trims_setting(pi) == '0'
+
+
+def test_a_move_cut_short_never_deletes_the_checked_copy_when_files_were_written_since(pi):
+    """The review's case: the app wrote a new history into the bare mount point after the power cut."""
+    old = a_checked_copy_left_by_a_cut_short_move(pi)
+    (pi.data / 'events.jsonl').write_bytes(b'written after the power cut\n')
+    inode = os.stat(pi.new_image).st_ino
+    for args in (('make',), ('make', '--dry-run')):
+        result = pi.run(*args)
+        assert result.code == 1
+        assert str(old) in result.out and str(pi.new_image) in result.out and 'events.jsonl' in result.out
+        assert 'nothing was changed' in result.out
+        assert pi.new_image.exists() and os.stat(pi.new_image).st_ino == inode
+        assert files_in(pi.fake / 'disks' / str(inode)) == HISTORY
+        assert old is not None and files_in(old) == HISTORY
+        assert files_in(pi.data) == {'events.jsonl': b'written after the power cut\n'}
+        assert not sudo_calls(result) and not made_a_new_file(pi, result) and not pi.image.exists()
+
+
+def test_a_checked_copy_from_before_the_old_folder_was_set_aside_is_never_deleted(pi):
+    a_checked_copy_left_by_a_cut_short_move(pi, set_aside=False)
+    inode = os.stat(pi.new_image).st_ino
+    result = pi.run('make')
+    assert result.code == 1
+    assert str(pi.new_image) in result.out and 'rm -f' in result.out and 'nothing was changed' in result.out
+    assert pi.new_image.exists() and os.stat(pi.new_image).st_ino == inode
+    assert files_in(pi.data) == HISTORY and not pi.old_folders()
+    assert not sudo_calls(result) and not made_a_new_file(pi, result)
+
+
+def test_a_dry_run_of_a_move_cut_short_says_it_would_finish_it(pi):
+    a_checked_copy_left_by_a_cut_short_move(pi)
+    result = pi.run('make', '--dry-run')
+    assert result.code == 0, result.out
+    assert 'Would finish' in result.out
+    assert not sudo_calls(result) and pi.status() == 'leftover\n'
+
+
 # ── the settings and the unit ──
 
 @pytest.mark.parametrize(('name', 'value', 'says'), [
@@ -793,11 +994,12 @@ def test_the_unit_repairs_only_safely_and_mounts_before_docker():
     assert 'e2fsck -p ' in start and ' -y' not in '\n'.join(lines) and '-ge 4' in start
     assert 'ls -A "$$2"' in start.split('e2fsck')[0]                                   # empty folder, checked first
     hold = 'fallocate -l "$$(stat -c %%s "$$1")" "$$1"'
-    assert hold in start and start.index(hold) < start.index('e2fsck -p') < start.index('exec mount')
+    assert hold in start and start.index(hold) < start.index('e2fsck -p') < start.index('mount -o loop')
     assert '%' not in start.replace('%%', '')                                          # systemd would fill in a lone %
     assert 'mount -o loop,noatime ' in start and 'umount ' in stop
-    assert start.endswith(' "@IMAGE@" "@DATA@"') and stop.endswith(' "@DATA@"')       # each path one word
-    assert '@' not in start.removesuffix(' "@IMAGE@" "@DATA@"')                         # never inside the script
+    assert start.index('mount -o loop') < start.index('discard_max_bytes')             # trims off, once it's mounted
+    assert start.endswith(' "@IMAGE@" "@DATA@" "@SYS@"') and stop.endswith(' "@DATA@"')   # each path one word
+    assert '@' not in start.removesuffix(' "@IMAGE@" "@DATA@" "@SYS@"')                 # never inside the script
     assert not re.search(r'(?<!\$)\$(?!\$)', start.replace('$$', ''))                # systemd would fill in a lone $
 
 

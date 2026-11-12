@@ -19,9 +19,12 @@ RemainAfterExit=yes
 # card again, in case a trim gave some back since the last boot (it only fills gaps, and a failure is fine). Then the
 # safe automatic repair (-p), as the Pi does for its own disks at boot. An answer of 4 or more means damage it can't fix
 # safely: that's left for you, and the room isn't mounted. Never -y, which fixes everything by guessing.
-# The file and the folder go in as $1 and $2 (systemd turns $$ into $, and %% into %), apart from the script, so a
-# space in either can't split it.
-ExecStart=/bin/sh -c 'if [ -n "$$(ls -A "$$2")" ]; then echo "The data folder is not empty, so the room is not mounted over it: that would hide what is in it." >&2; exit 1; fi; fallocate -l "$$(stat -c %%s "$$1")" "$$1" || true; e2fsck -p "$$1"; code=$$?; if [ "$$code" -ge 4 ]; then echo "e2fsck found damage in the room that it cannot fix safely (answer $$code), so it is not mounted." >&2; exit "$$code"; fi; exec mount -o loop,noatime "$$1" "$$2"' desktalk-data-room "@IMAGE@" "@DATA@"
+# Once it's mounted, trims are switched off for its loop device (discard_max_bytes 0): Raspberry Pi OS trims every
+# mounted disk once a week (fstrim.timer), and through a loop device each trim punches a hole in the room's file, which
+# gives that space back to the card. If that can't be switched off, the room is mounted all the same, and says so.
+# The file, the folder and the kernel's folder of devices (/sys) go in as $1, $2 and $3 (systemd turns $$ into $, and
+# %% into %), apart from the script, so a space in any of them can't split it.
+ExecStart=/bin/sh -c 'if [ -n "$$(ls -A "$$2")" ]; then echo "The data folder is not empty, so the room is not mounted over it: that would hide what is in it." >&2; exit 1; fi; fallocate -l "$$(stat -c %%s "$$1")" "$$1" || true; e2fsck -p "$$1"; code=$$?; if [ "$$code" -ge 4 ]; then echo "e2fsck found damage in the room that it cannot fix safely (answer $$code), so it is not mounted." >&2; exit "$$code"; fi; mount -o loop,noatime "$$1" "$$2" || exit $$?; loop=$$(findmnt -n -o SOURCE --mountpoint "$$2"); if ! echo 0 > "$$3/block/$${loop#/dev/}/queue/discard_max_bytes"; then echo "IMPORTANT: trims could not be switched off for the room ($$loop), so a trim can give part of its space back to the SD card. It is set aside again at every boot and every run of install.sh." >&2; fi' desktalk-data-room "@IMAGE@" "@DATA@" "@SYS@"
 ExecStop=/bin/sh -c 'exec umount "$$1"' desktalk-data-room "@DATA@"
 
 [Install]
