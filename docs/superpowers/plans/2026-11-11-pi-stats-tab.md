@@ -25,7 +25,7 @@ Raspberry Pi 5 Model B Rev 1.1, kernel 6.18.50+rpt-rpi-2712, 4 cores, `CLK_TCK` 
 - `desktalk/core/` and `desktalk/domain/` import no OS-reading, web or AI code: the file reading is an adapter (`desktalk/adapters/system/`).
 - Tests never touch the real `/proc`, `/sys` or the network: a folder made to look like them (`tmp_path`), and the fakes.
 - A reading that is missing (no fan, no Wi-Fi, a Mac) is left out or `None`, never an error. A file that can't be read or parsed makes that one number missing, not the whole reading.
-- The developer page keeps no numbers of its own: how often to ask comes from the reply's `every_sec`, the hot line from `GET /api/dev/settings` (`pi_hot_c` = `pi.hot_warning_c`).
+- The developer page keeps no numbers of its own: how often to ask comes from the reply's `every_sec`, the hot lines from `GET /api/dev/settings` (`health.pi_cpu_warn_c` and `health.pi_cpu_bad_c`, already there for the System tab).
 - Command lines shown are cut to `system_stats.command_chars`.
 
 ## The reply (the one shape every task uses)
@@ -91,10 +91,10 @@ Raspberry Pi 5 Model B Rev 1.1, kernel 6.18.50+rpt-rpi-2712, 4 cores, `CLK_TCK` 
 - Fakes: `FakeStatsReader(readings: list[RawReading])` gives them one by one, then repeats the last; `FakeStats(reply: dict)`; `FakePiStatsLink(reply: dict | None = None, problem: str = '')` that raises `StatsUnavailable(problem)` when `problem` is set and records each `since` in `.asked`.
 - Contract suites: `SystemStatsReaderContract` (read() gives a `RawReading` with `at == now`), `SystemStatsContract` (history before any tick is the reply shape with `samples == []`; `since` keeps only newer samples), `PiStatsLinkContract` (fetch gives a dict with `samples`, or raises `StatsUnavailable`). The fakes each get a test class.
 
-- [ ] Write `tests/unit/test_domain_system_stats.py`: `StatsSample().to_dict()` has every key of the JSON above; `CpuTimes(user=40, system=10, iowait=1, idle=47, other=2).busy == 52` and `.total == 100`. Run, watch it fail, write the types, run again.
-- [ ] Write the fakes' contract test classes, watch them fail, write `ports.py`, the fakes and the contracts.
-- [ ] Add the settings and words; `uv run pytest tests/unit/test_config*.py tests/unit/test_prompts*.py -q` passes.
-- [ ] Commit: "Add the shapes, settings and fakes for the Pi's system numbers".
+- [x] Write `tests/unit/test_domain_system_stats.py`: `StatsSample().to_dict()` has every key of the JSON above; `CpuTimes(user=40, system=10, iowait=1, idle=47, other=2).busy == 52` and `.total == 100`. Run, watch it fail, write the types, run again.
+- [x] Write the fakes' contract test classes, watch them fail, write `ports.py`, the fakes and the contracts.
+- [x] Add the settings and words; `uv run pytest tests/unit/test_config*.py tests/unit/test_prompts*.py -q` passes.
+- [x] Commit: "Add the shapes, settings and fakes for the Pi's system numbers".
 
 ### Task 2: Reading `/proc` and `/sys` (subagent A)
 
@@ -149,14 +149,14 @@ Load the `dataviz` skill before writing chart code.
 
 **Files:**
 - Create: `dev_ui/src/tabs/Pi.tsx`, `dev_ui/src/tabs/Pi.test.tsx`, `dev_ui/src/StatsChart.tsx` (one uPlot time chart: several lines, a unit, an optional dashed level line, loaded with `import('uplot')` like `SmoothingChart.tsx`), `dev_ui/src/piStats.ts` + `dev_ui/src/piStats.test.ts` (pure helpers)
-- Modify: `dev_ui/src/api.ts` (types for the reply above, `getPiStats(since?: number)` → `/api/dev/pi_stats`, `DevSettings.pi_hot_c: number`), `dev_ui/src/App.tsx` (tab `{ id: 'pi', name: 'Pi', Tab: Pi }` after `system`), `dev_ui/src/App.test.tsx` if it lists the tabs, `dev_ui/README.md`
+- Modify: `dev_ui/src/api.ts` (types for the reply above, `getPiStats(since?: number)` → `/api/dev/pi_stats`), `dev_ui/src/App.tsx` (tab `{ id: 'pi', name: 'Pi', Tab: Pi }` after `system`), `dev_ui/src/App.test.tsx` if it lists the tabs, `dev_ui/README.md`
 
-**Interfaces:** Consumes the reply above (with `address`) and `DevSettings.pi_hot_c`. `piStats.ts` produces `mergeSamples(old: PiSample[], fresh: PiSample[], keep: number): PiSample[]` (by `at`, no duplicates, newest `keep`), `keepCount(reply): number` (= `Math.round(keep_min * 60 / every_sec)`), `series(samples, pick): (number | null)[]` for lines that come and go (a fan that appears later), `formatBytes`, `formatRate`.
+**Interfaces:** Consumes the reply above (with `address`) and `DevSettings.health.pi_cpu_warn_c` / `pi_cpu_bad_c`. `piStats.ts` produces `mergeSamples(old: PiSample[], fresh: PiSample[], keep: number): PiSample[]` (by `at`, no duplicates, newest `keep`), `keepCount(reply): number` (= `Math.round(keep_min * 60 / every_sec)`), `series(samples, pick): (number | null)[]` for lines that come and go (a fan that appears later), `formatBytes`, `formatRate`.
 
 The tab, top to bottom:
-1. A header card: the model, kernel, cores, how long the Pi has been up, when the last sample came, "asking again every N s", and warnings in plain words: "The power supply is too weak right now" (`under_voltage`), "The processor is hot: 82 °C" (at or over `pi_hot_c`), the Pi can't be reached (the 502 words), "The Pi isn't collecting its numbers (system_stats.enabled is off there)".
+1. A header card: the model, kernel, cores, how long the Pi has been up, when the last sample came, "asking again every N s", and warnings in plain words: "The power supply is too weak right now" (`under_voltage`), "The processor is hot: 82 °C" (amber at `pi_cpu_warn_c`, red at `pi_cpu_bad_c`), the Pi can't be reached (the 502 words), "The Pi isn't collecting its numbers (system_stats.enabled is off there)".
 2. A row of big numbers (stat tiles): CPU %, memory used %, data folder used %, hottest temperature, fan RPM, Wi-Fi signal dBm, load (1 min).
-3. Charts: CPU (busy, user, system, I/O wait); each core; CPU speed per core (MHz, max as a level line); load 1/5/15 min; temperatures (all sensors; `pi_hot_c` as a level line); fan RPM and fan power %; memory (used, cached, available) and swap used; disk read and write (bytes/s) and disk busy %; network received and sent (bytes/s) per interface; Wi-Fi signal (dBm); voltages.
+3. Charts: CPU (busy, user, system, I/O wait); each core; CPU speed per core (MHz, max as a level line); load 1/5/15 min; temperatures (all sensors; `pi_cpu_warn_c` and `pi_cpu_bad_c` as level lines); fan RPM and fan power %; memory (used, cached, available) and swap used; disk read and write (bytes/s) and disk busy %; network received and sent (bytes/s) per interface; Wi-Fi signal (dBm); voltages.
 4. Tables: disk space per disk with a bar; the top processes (name, command, CPU %, memory) from the newest sample; cooling states; network errors and drops.
 Poll with `usePoll`, every `every_sec` from the last reply (`settings.poll_sec` until the first one), asking `since` = the newest `at` it has.
 
@@ -169,7 +169,7 @@ Poll with `usePoll`, every `every_sec` from the last reply (`settings.poll_sec` 
 **Files:**
 - Modify: `desktalk/bootstrap.py` (`build(..., stats_reader: SystemStatsReader | None = None, pi_stats_link: PiStatsLink | None = None)`; `ProcReader` from `config.system_stats` with `disk_paths=[(d.label, config.resolve(d.path)) for d in disks]`; `StatsHistory`; a `DeskTalk.system_stats: SystemStats` field; the job in `background_jobs()` only when `system_stats.enabled`; `HttpPiStatsLink(dev.pi_address, dev.pi_stats_timeout_sec)` as `DeskTalk.pi_stats_link: PiStatsLink | None` when `dev.enabled`)
 - Create: `desktalk/web/routers/system.py` (`GET /api/system/stats`, `since: float | None = None`); include it in `desktalk/web/app.py` with the main routers (not the phone's)
-- Modify: `desktalk/web/routers/dev.py` (`GET /api/dev/pi_stats`, run in the thread pool; 502 with the words on `StatsUnavailable`; add `'pi_hot_c': config.pi.hot_warning_c` to `dev_settings`)
+- Modify: `desktalk/web/routers/dev.py` (`GET /api/dev/pi_stats`, run in the thread pool; 502 with the words on `StatsUnavailable`)
 - Modify: `tests/characterization/cases.py` (`system-stats` 200; `dev-pi-stats` 200, `dev-pi-stats-unreachable` 502, `dev-pi-stats-other-computer` 403), `tests/characterization/conftest.py` (pass `FakePiStatsLink` and `FakeStatsReader`), new snapshots
 - Modify: `raspberry_pi/compose.yaml` (app: `- /proc:/host/proc:ro` with a comment saying why), `tests/pi/` (a test that the Pi's `/api/system/stats` has `wlan0` in `network`, a temperature, and a process from each container)
 - Modify: `docs/ARCHITECTURE.md`, `docs/API.md`, `raspberry_pi/README.md` (one line), `tests/vulture_allow.py` if needed

@@ -343,6 +343,97 @@ export interface LogStatus {
   }
 }
 
+// GET /api/dev/pi_stats (desktalk/web/routers/dev.py): the Pi's GET /api/system/stats, passed on by this
+// computer, plus the Pi's address. A number the Pi can't read (no fan, no Wi-Fi, a Mac) is left out of its list.
+
+export interface PiCpu {
+  busy_pct: number
+  user_pct: number
+  system_pct: number
+  iowait_pct: number
+  other_pct: number
+  cores_pct: number[]
+  freq_mhz: number[]               // each core's speed now
+  max_freq_mhz: number             // the fastest a core can go
+  load: number[]                   // the 1, 5 and 15 minute load
+  running: number
+  processes: number
+}
+
+export interface PiMemory {
+  total_bytes: number
+  used_bytes: number
+  available_bytes: number
+  cached_bytes: number
+  buffers_bytes: number
+  free_bytes: number
+  swap_total_bytes: number
+  swap_used_bytes: number
+}
+
+export interface PiDiskSpace {
+  label: string                    // settings → system_stats.disks, e.g. "data folder"
+  path: string
+  total_bytes: number
+  used_bytes: number
+  free_bytes: number
+}
+
+export interface PiDiskIo {
+  name: string                     // e.g. mmcblk0
+  read_bps: number                 // bytes a second
+  write_bps: number
+  reads_per_sec: number
+  writes_per_sec: number
+  busy_pct: number
+}
+
+export interface PiNetwork {
+  name: string                     // e.g. wlan0
+  rx_bps: number                   // received, bytes a second
+  tx_bps: number                   // sent
+  rx_errors: number                // these four are counted since the Pi started
+  tx_errors: number
+  rx_drops: number
+  tx_drops: number
+}
+
+export interface PiProcess {
+  pid: number
+  name: string
+  command: string
+  cpu_pct: number                  // of one core, like top (so up to 100 × cores)
+  memory_bytes: number
+}
+
+/** One reading of the Pi, every system_stats.every_sec on the Pi. */
+export interface PiSample {
+  at: number                       // seconds since 1970, by the Pi's clock
+  uptime_sec: number
+  cpu: PiCpu
+  memory: PiMemory
+  temps: { name: string, c: number }[]
+  fans: { name: string, rpm: number, pwm_pct: number }[]
+  cooling: { name: string, state: number, max_state: number }[]
+  voltages: { name: string, v: number }[]
+  under_voltage: boolean | null    // the power supply is too weak right now; null = the Pi can't tell
+  throttled: string                // the Pi's slow-down flags in hex; '' = it couldn't read them
+  disks: PiDiskSpace[]
+  disk_io: PiDiskIo[]
+  network: PiNetwork[]
+  wifi: { name: string, quality: number, signal_dbm: number }[]
+  top_processes: PiProcess[]
+}
+
+export interface PiStatsReply {
+  collecting: boolean              // the Pi's system_stats.enabled
+  every_sec: number                // how often the Pi takes a sample
+  keep_min: number                 // how many minutes of samples it keeps
+  info: { model?: string, kernel?: string, cores?: number }   // empty when it isn't collecting
+  samples: PiSample[]              // oldest first
+  address: string                  // settings → dev.pi_address
+}
+
 // ── one function per route ──
 
 const q = encodeURIComponent
@@ -409,3 +500,8 @@ export const cancelScenario = async (id: string): Promise<void> => {
 export const getHealth = () => getJSON<Health>('/api/health')
 
 export const getLogStatus = () => getJSON<LogStatus>('/api/log/status')
+
+/** The Pi's system numbers. `since` (the newest sample's `at` you have) asks only for newer samples. A 502 ApiError
+ *  says in plain words why the Pi couldn't be reached. */
+export const getPiStats = (since?: number) =>
+  getJSON<PiStatsReply>(since === undefined ? '/api/dev/pi_stats' : `/api/dev/pi_stats?since=${q(String(since))}`)

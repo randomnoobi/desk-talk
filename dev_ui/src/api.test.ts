@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ApiError, cancelScenario, getJSON, getTrace, postJSON, startScenario, startTests } from './api'
+import { ApiError, cancelScenario, getJSON, getPiStats, getTrace, postJSON, startScenario, startTests } from './api'
 
 function reply(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -81,5 +81,21 @@ describe('the Demo tab', () => {
     const [path, init] = fetch.mock.calls[0]
     expect(path).toBe('/api/dev/scenarios/demo%2F1')
     expect(init?.method).toBe('DELETE')
+  })
+})
+
+describe('the Pi tab', () => {
+  it('getPiStats asks for all samples the first time, then only the ones after `since`', async () => {
+    const body = { collecting: true, every_sec: 2, keep_min: 30, info: {}, samples: [], address: 'pi' }
+    const fetch = fakeFetch(reply(200, body), reply(200, body))
+    await expect(getPiStats()).resolves.toEqual(body)
+    await getPiStats(1762900000.5)
+    expect(fetch.mock.calls[0][0]).toBe('/api/dev/pi_stats')
+    expect(fetch.mock.calls[1][0]).toBe('/api/dev/pi_stats?since=1762900000.5')
+  })
+
+  it('getPiStats throws the 502 words when the Pi does not answer', async () => {
+    fakeFetch(reply(502, { error: "Can't reach the Pi at pi: timed out" }))
+    await expect(getPiStats()).rejects.toMatchObject({ status: 502, message: "Can't reach the Pi at pi: timed out" })
   })
 })

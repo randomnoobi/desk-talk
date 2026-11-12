@@ -49,6 +49,7 @@ EVERY_ROUTE: list[tuple[str, str, Any]] = [
     ('GET', '/api/dev/scenarios', None),
     ('POST', '/api/dev/scenarios', {'name': 'sip', 'after_sec': 0}),
     ('DELETE', '/api/dev/scenarios/demo-1', None),
+    ('GET', '/api/dev/pi_stats?since=0', None),
 ]
 
 

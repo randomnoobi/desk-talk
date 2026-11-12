@@ -30,6 +30,17 @@ from desktalk.core.habits.sun_times import SunTimes
 from desktalk.core.habits.tracker import DayTimes
 from desktalk.domain.dev import DataFile, QueryResult, RunStatus, SmoothingStep, TestOutcome
 from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent, NudgeSent
+from desktalk.domain.system_stats import (
+    Cooling,
+    CpuNow,
+    DiskRate,
+    DiskSpace,
+    Fan,
+    MemoryNow,
+    NetRate,
+    StatsInfo,
+    WifiNow,
+)
 from desktalk.web.schemas import PhoneSettings, PreferenceChanges, UiPage, UiSettings
 from desktalk_cloud.store_memory import MemoryStore, _Token
 from desktalk_shared.wire import PiHealth
@@ -66,6 +77,15 @@ _ = (
     PhoneSettings.max_side, PhoneSettings.tilt_max, PhoneSettings.capture_width, PhoneSettings.capture_height,
     UiPage.log_shown, UiPage.photos_shown,
     UiSettings.lens_card, UiSettings.chat_reply_timeout_ms,
+    # The system numbers' fields: StatsSample.to_dict() and StatsInfo.to_dict() write them with asdict() into GET
+    # /api/system/stats, and the developer page's Pi tab (dev_ui/src/tabs/Pi.tsx) reads them from the JSON.
+    MemoryNow.total_bytes, MemoryNow.used_bytes, MemoryNow.available_bytes, MemoryNow.cached_bytes,
+    MemoryNow.buffers_bytes, MemoryNow.free_bytes, MemoryNow.swap_total_bytes, MemoryNow.swap_used_bytes,
+    Fan.pwm_pct, Cooling.max_state, DiskSpace.total_bytes, DiskSpace.used_bytes, DiskSpace.free_bytes,
+    WifiNow.signal_dbm, StatsInfo.kernel,
+    CpuNow.busy_pct, CpuNow.user_pct, CpuNow.system_pct, CpuNow.iowait_pct, CpuNow.other_pct, CpuNow.cores_pct,
+    DiskRate.read_bps, DiskRate.write_bps, DiskRate.reads_per_sec, DiskRate.writes_per_sec, DiskRate.busy_pct,
+    NetRate.rx_bps, NetRate.tx_bps,
     # tzinfo methods the datetime module calls on the rules' "local" time zone (desktalk/config/habits.py).
     _ComputerZone.dst, _ComputerZone.fromutc,
     # Pydantic's own settings attribute, and the flag uvicorn's thread reads to stop.

@@ -186,6 +186,9 @@ CASES = [
     Case('status', 'GET', '/api/status', 200),
     Case('status-nothing-seen', 'GET', '/api/status', 200, desk='fresh'),
     Case('health', 'GET', '/api/health', 200),
+    # the system numbers (off on a computer: system_stats.enabled is only on in the Pi's settings)
+    Case('system-stats', 'GET', '/api/system/stats?since=0', 200, desk='fresh',
+         values={'collecting': False, 'samples': []}),
     Case('health-phone-camera', 'GET', '/api/health', 200, desk='phone', values={'pi': None}),
 
     # ── Agents and chat ──
@@ -298,6 +301,10 @@ CASES = [
          values={'label': 'pen/pencil', 'timeline': [], 'photos': []}),
     Case('dev-object-photo-gone', 'GET', '/api/dev/objects/photo/nope', 404, reply=STATUS),
     Case('dev-tests', 'GET', '/api/dev/tests', 200, desk='fresh'),
+    # the Pi tab: the Pi's numbers, fetched from dev.pi_address (a FakePiStatsLink here, with one sample)
+    Case('dev-pi-stats', 'GET', '/api/dev/pi_stats?since=0', 200, desk='fresh',
+         values={'address': 'desktalk.local:5000', 'collecting': True}),
+    Case('dev-pi-stats-other-computer', 'GET', '/api/dev/pi_stats', 403, desk='fresh', from_ip=LAN_DEVICE),
     Case('dev-run-check', 'POST', '/api/dev/runs', 200, desk='fresh', json={'check': True},
          values={'run_id': 'run-1'}),
     Case('dev-run-check-from-vite', 'POST', '/api/dev/runs', 200, desk='fresh', json={'check': True},

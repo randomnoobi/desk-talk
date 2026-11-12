@@ -132,6 +132,10 @@ curl http://localhost:5000/api/health
 
 Its `pi` part has what the camera said lately: the detector's state and why, how long detection takes and the model.
 
+How the Pi itself is doing (the processor, memory, disks, network, Wi-Fi, temperatures, the fan, voltages and the
+busiest programs, for the last half hour) is at `/api/system/stats`. The developer page's **Pi** tab on your computer
+draws it: it asks the Pi at `dev.pi_address` (`desktalk.local:5000`).
+
 ## Settings
 
 The Pi's own settings are in `raspberry_pi/settings.pi.yaml`, laid over `config/settings.yaml`. Both the app and the

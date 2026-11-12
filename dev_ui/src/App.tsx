@@ -4,6 +4,7 @@ import Checks from './tabs/Checks'
 import Database from './tabs/Database'
 import Demo from './tabs/Demo'
 import Live from './tabs/Live'
+import Pi from './tabs/Pi'
 import Storage from './tabs/Storage'
 import System from './tabs/System'
 import { usePoll } from './usePoll'
@@ -20,6 +21,7 @@ export const TABS = [
   { id: 'checks', name: 'Checks', Tab: Checks },
   { id: 'live', name: 'Live', Tab: Live },
   { id: 'system', name: 'System', Tab: System },
+  { id: 'pi', name: 'Pi', Tab: Pi },
   { id: 'database', name: 'Database', Tab: Database },
   { id: 'storage', name: 'Storage', Tab: Storage },
   { id: 'demo', name: 'Demo', Tab: Demo },

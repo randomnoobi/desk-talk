@@ -512,3 +512,32 @@ def test_no_picture_goes_off_the_pi(pi: Pi):
                     'that may be the live picture going to them. Close the page and run it again.')
     assert sent < MOST_WIFI_SENT_BYTES, (f"{sent} bytes went out over the Wi-Fi in {seen['seconds']:.0f} s (limit "
                                          f'{MOST_WIFI_SENT_BYTES}). Is anything else busy on the Pi?')
+
+
+# ── the developer page's Pi tab ──
+STATS_WAIT_SEC = 30         # system_stats.every_sec is 2, so a few samples are there well within this
+
+
+def test_the_pi_reports_its_own_system_numbers(pi: Pi):
+    """GET /api/system/stats has the Pi's Wi-Fi (not the container's network), a temperature, the fan, and the
+    camera's and the detector's programs (not only the app's own)."""
+    pi.wait_until_healthy()
+
+    def a_few_samples() -> dict[str, Any] | None:
+        reply = pi.get('/api/system/stats')
+        return reply if reply and len(reply.get('samples', [])) >= 3 else None
+
+    reply = wait_for('three samples of the system numbers', a_few_samples, timeout=STATS_WAIT_SEC, every=2)
+    assert reply['collecting'] is True
+    assert reply['info']['model'].startswith('Raspberry Pi')
+    newest = reply['samples'][-1]
+    print(json.dumps({key: newest[key] for key in ('cpu', 'temps', 'fans', 'under_voltage', 'network', 'wifi')}))
+    assert 0 < newest['cpu']['busy_pct'] <= 100
+    assert newest['memory']['total_bytes'] > newest['memory']['used_bytes'] > 0
+    assert any(t['name'] == 'cpu-thermal' for t in newest['temps'])
+    assert newest['fans'] and newest['under_voltage'] is not None
+    assert 'wlan0' in [n['name'] for n in newest['network']]
+    assert not any(n['name'].startswith('veth') for n in newest['network'])
+    assert newest['disks'] and newest['disk_io']
+    commands = ' '.join(p['command'] for s in reply['samples'] for p in s['top_processes'])
+    assert 'desktalk_detector' in commands and 'raspberry_pi.camera' in commands

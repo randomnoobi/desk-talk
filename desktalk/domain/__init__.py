@@ -112,6 +112,6 @@ __all__ = [
     'DataFile', 'QueryRefused', 'QueryResult', 'RunAlreadyGoing', 'RunStatus', 'SmoothingStep', 'StepStatus',
     'TableInfo', 'TestItem', 'TestOutcome', 'ChatJoin', 'Todo', 'TracePhoto', 'TIMED_PHOTO',
     'newest_trace_photos', 'Scenario', 'WaitingScenario',
-    'Cooling', 'CpuNow', 'CpuTimes', 'DiskCounters', 'DiskRate', 'DiskSpace', 'Fan', 'MemoryNow', 'Named', 'NetCounters',
-    'NetRate', 'ProcessTicks', 'RawReading', 'StatsInfo', 'StatsSample', 'StatsUnavailable', 'TopProcess', 'WifiNow',
+    'Cooling', 'CpuNow', 'CpuTimes', 'DiskCounters', 'DiskRate', 'DiskSpace', 'Fan', 'MemoryNow', 'Named',
+    'NetCounters', 'NetRate', 'ProcessTicks', 'RawReading', 'StatsInfo', 'StatsSample', 'StatsUnavailable', 'TopProcess', 'WifiNow',
 ]
