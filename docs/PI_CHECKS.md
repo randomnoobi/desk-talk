@@ -439,10 +439,16 @@ nothing of the history is touched.
 `/api/health` → `checks` → `saving` says `serious` while the space is away and `ok` after; nothing is written to the bare `data/` folder; the history in
 the space is all there after the undo, and `nothing_deleted` passes.
 
-**Afterwards**, **on your Mac**, after the undo (step 5):
+**Afterwards**, **on your Mac**, with the space still away (after step 3):
 
 ```bash
-DESKTALK_PI=pi uv run pytest -m pi -v -rs -k nothing_deleted
+DESKTALK_PI=pi DESKTALK_PI_SPACE_MISSING=1 uv run pytest -m pi -v -rs -k space_missing
+```
+
+and after the undo (step 5):
+
+```bash
+DESKTALK_PI=pi DESKTALK_PI_SPACE_BACK=1 uv run pytest -m pi -v -rs -k "space_back or nothing_deleted"
 ```
 
 Result: _date, passed / failed, notes_
