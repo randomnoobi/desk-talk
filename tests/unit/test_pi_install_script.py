@@ -66,6 +66,9 @@ case "$name" in
   python3) printf '%s\n' "${DESKTALK_LINK_CODE:-}" > "$FAKE/linker_got"; exec "$FAKE_PYTHON" -S "$@" ;;
   sudo)
     [ -e "$FAKE/sudo_fails" ] && { echo 'sudo: a password is required' >&2; exit 1; }
+    if [ "$1" = -v ] && [ -e "$FAKE/sudo_v_left" ]; then
+      left=$(cat "$FAKE/sudo_v_left"); [ "$left" -gt 0 ] || exit 1; echo $((left - 1)) > "$FAKE/sudo_v_left"
+    fi
     cmd=$1; shift
     case "$cmd" in
       docker) FAKE_SUDO=1 exec "$FAKE/bin/docker" "$@" ;;
@@ -86,7 +89,8 @@ case "$name" in
       "ps -aq --filter label=com.docker.compose.project=desktalk-detector") cat "$FAKE/old_containers" 2>/dev/null; exit 0 ;;
       "volume ls -q "*"project=desktalk-detector"*) cat "$FAKE/old_volume" 2>/dev/null; exit 0 ;;
       compose\ *--volumes*|compose\ *down*" -v"*) rm -f "$FAKE/pairing-key" "$FAKE/models/"*; exit 0 ;;
-      "compose up -d --build") [ -e "$FAKE/up_fails" ] && exit 1; exit 0 ;;
+      "compose up -d --build") [ -e "$FAKE/up_fails" ] && exit 1
+                               printf 'compose saw %s\n' "$(grep '^DATA_ROOM_ON=' .env)" >> "$FAKE/calls" ;;
       "compose up -d --no-build") printf 'compose saw %s\n' "$(grep '^DATA_ROOM_ON=' .env)" >> "$FAKE/calls" ;;
       "compose exec -T detector test -s "*) [ -s "$FAKE/models/$(basename "$7")" ] ;;
       "compose cp "*) cp "$3" "$FAKE/models/$(basename "${4#*:}")" ;;
@@ -109,10 +113,22 @@ case "$*" in
   status)
     [ -e "$FAKE/room_setting_bad" ] && { echo 'Stopping: DATA_ROOM_FILE in raspberry_pi/.env is empty.' >&2; exit 1; }
     cat "$FAKE/room" ;;
-  "make --dry-run") echo "Would make Desk Talk's own room on the SD card." ;;
+  "make --dry-run")
+    [ -e "$FAKE/room_make_fails" ] && { echo "Stopping: the data folder isn't empty, so nothing was changed." >&2; exit 1; }
+    echo "Would make Desk Talk's own room on the SD card." ;;
   make)
     cat "$FAKE/room_make_says" 2>/dev/null
     [ -e "$FAKE/room_make_fails" ] && { echo "Stopping: the data folder isn't empty, so nothing was changed." >&2; exit 1; }
+    if [ -e "$FAKE/room_make_dies" ]; then      # Ctrl-C, or the SSH line dropping: install.sh and this both get it
+      p=$PPID; top=""                         # install.sh, above its own subshells, and nothing above it
+      while [ "$p" -gt 1 ] && ps -o command= -p "$p" | grep -q '/raspberry_pi/install\.sh'; do
+        top=$p
+        p=$(ps -o ppid= -p "$p" | tr -d ' ')
+      done
+      [ -n "$top" ] && kill -TERM "$top"
+      kill -TERM $$
+    fi
+    [ -e "$FAKE/room_make_locks_env" ] && chmod a-w "$(dirname "$0")"      # so writing .env fails after it
     case "$(cat "$FAKE/room")" in
       none|unmounted)
         mkdir -p "$(dirname "$unit")"
@@ -1217,12 +1233,17 @@ def sudo_calls(result: Result) -> list[str]:
     return [line for line in result.calls if line.startswith('sudo')]
 
 
+def before_the_build(result: Result) -> list[str]:
+    """The calls before the build. sudo is asked for again before the app is stopped for the room, after it."""
+    return result.calls[:result.calls.index('docker compose up -d --build')]
+
+
 def test_update_on_a_pi_not_set_up_yet_sets_it_up_asking_for_sudo_once_and_says_why(pi):
     """Without the journal file, the containers' logs would be in memory only and lost at a power cut: an update must
     not leave the logs worse than before, so it sets that up, and starting on boot with it."""
     result = pi.run(script='update.sh')
     assert result.code == 0, result.out
-    assert result.calls.count('sudo -v') == 1
+    assert before_the_build(result).count('sudo -v') == 1
     assert result.calls.index('sudo -v') < result.calls.index('sudo systemctl daemon-reload')
     assert unit_lines(pi.journald_file)['Storage'] == 'persistent'
     assert unit_lines(pi.service_file)['User'] == 'sam'
@@ -1304,6 +1325,7 @@ def test_a_first_install_makes_the_room_and_restarts_the_app_on_it(pi):
     assert calls.index('docker compose up -d --build') < calls.index('docker compose stop app camera') \
         < calls.index('data_room.sh make') < calls.index('docker compose up -d --no-build')
     assert calls[calls.index('docker compose up -d --no-build') + 1] == 'compose saw DATA_ROOM_ON=yes'
+    assert calls[calls.index('docker compose stop app camera') - 1] == 'sudo -v'   # a password prompt comes first
     assert pi.values()['DATA_ROOM_ON'] == 'yes'
     assert result.out.count('The old data folder is kept at /the/old/data') == 2      # in the closing notes too
 
@@ -1324,9 +1346,10 @@ def test_an_update_without_the_room_asks_for_sudo_once(pi):
     result = pi.run(script='update.sh')
     assert result.code == 0, result.out
     calls = result.calls
-    assert calls.count('sudo -v') == 1
+    assert before_the_build(result).count('sudo -v') == 1 and result.out.count("isn't set up yet") == 1
     assert calls.index('sudo -v') < calls.index('docker compose stop app camera') < calls.index('data_room.sh make') \
         < calls.index('docker compose up -d --no-build')
+    assert calls[calls.index('docker compose stop app camera') - 1] == 'sudo -v'       # asked again, while it runs
     assert pi.values()['DATA_ROOM_ON'] == 'yes'
     assert 'once' in result.out and 'own room' in result.out
     assert 'IMPORTANT' not in result.out
@@ -1371,13 +1394,21 @@ def test_a_dry_run_says_it_would_make_the_room(pi):
 
 def test_a_room_that_cant_be_made_starts_the_containers_again_and_stops_with_its_reason(pi):
     pi.state('room_make_fails')
+    trust_this_model(pi)
+    line = 'IMPORTANT: something data_room.sh said before it stopped.'
+    pi.state('room_make_says', line + '\n')
     result = pi.run()
     assert result.code == 1
-    assert calls_after_the_build(result) == ['docker compose up -d --build', 'docker compose stop app camera',
-                                             'docker compose up -d --no-build', 'compose saw DATA_ROOM_ON=no']
+    assert calls_after_the_build(result) == ['docker compose up -d --build', 'compose saw DATA_ROOM_ON=no',
+                                             'docker compose stop app camera', 'docker compose up -d --no-build',
+                                             'compose saw DATA_ROOM_ON=no']
     assert pi.values()['DATA_ROOM_ON'] == 'no'
     assert result.out.rstrip().splitlines()[-1].startswith("Stopping: the data folder isn't empty")
     assert 'running again' in result.out.rstrip().splitlines()[-1]
+    # The rest of the install still happens first: the model, and starting on boot. The notes come too.
+    assert (pi.fake / 'models' / model_name()).exists()
+    assert 'sudo systemctl start desktalk.service' in result.calls
+    assert result.out.count(line) == 2 and 'Open http://' in result.out
 
 
 def test_a_room_there_but_not_mounted_keeps_data_room_on_yes_when_it_cant_be_mounted(pi):
@@ -1448,4 +1479,79 @@ def test_a_lost_data_room_on_is_written_again_and_the_app_gets_it(pi):
     result = pi.run()
     assert result.code == 0, result.out
     assert pi.values()['DATA_ROOM_ON'] == 'yes'
-    assert calls_after_the_build(result)[-1] == 'compose saw DATA_ROOM_ON=yes'
+    assert calls_after_the_build(result) == ['docker compose up -d --build', 'compose saw DATA_ROOM_ON=yes']
+
+
+def test_a_room_not_mounted_with_a_lost_data_room_on_never_starts_the_app_plain(pi):
+    """The build already starts the app: with no, it would start a second history on the bare mount point."""
+    pi.run()
+    pi.state('room', 'unmounted\n')
+    text = pi.env_path.read_text(encoding='utf-8')
+    pi.env_path.write_text(re.sub(r'^DATA_ROOM_ON=.*\n', '', text, flags=re.M), encoding='utf-8')
+    result = pi.run()
+    assert result.code == 0, result.out
+    calls = result.calls
+    assert calls[calls.index('docker compose up -d --build') + 1] == 'compose saw DATA_ROOM_ON=yes'
+    assert pi.values()['DATA_ROOM_ON'] == 'yes'
+
+
+def test_a_dry_run_of_a_lost_data_room_on_says_it_once_and_writes_nothing(pi):
+    pi.run()
+    text = re.sub(r'^DATA_ROOM_ON=.*\n', '', pi.env_path.read_text(encoding='utf-8'), flags=re.M)
+    pi.env_path.write_text(text, encoding='utf-8')
+    result = pi.run('--dry-run')
+    assert result.code == 0, result.out
+    assert result.out.count('Would write DATA_ROOM_ON=yes') == 1
+    assert pi.env_path.read_text(encoding='utf-8') == text
+
+
+def test_install_dying_while_the_app_is_stopped_starts_it_again(pi):
+    """Ctrl-C or a dropped SSH line during the copy: Desk Talk must not be left stopped."""
+    pi.state('room_make_dies')
+    result = pi.run()
+    assert result.code != 0
+    calls = result.calls
+    assert calls.index('docker compose stop app camera') < calls.index('docker compose up -d --no-build')
+    assert 'started again' in result.out
+
+
+def test_a_failed_env_write_while_the_app_is_stopped_starts_it_again(pi):
+    pi.state('room_make_locks_env')
+    try:
+        result = pi.run()
+    finally:
+        (pi.root / 'raspberry_pi').chmod(0o755)
+    assert result.code != 0
+    calls = result.calls
+    assert calls.index('data_room.sh make') < calls.index('docker compose up -d --no-build')
+    assert 'started again' in result.out
+
+
+def test_sudo_that_stops_working_before_the_stop_leaves_the_app_running(pi):
+    set_up_by_an_older_install(pi)
+    pi.state('sudo_v_left', '1')                           # works for the first ask, not the one before the stop
+    result = pi.run(script='update.sh')
+    assert result.code == 0, result.out
+    assert result.calls.count('sudo -v') == 2
+    assert not any(line.startswith(('data_room.sh make', 'docker compose stop')) for line in result.calls)
+    assert pi.values()['DATA_ROOM_ON'] == 'no'
+    assert 'IMPORTANT' in result.out and 'install.sh' in result.out
+
+
+def test_a_dry_run_whose_room_would_fail_says_so_and_that_nothing_changed(pi):
+    pi.state('room_make_fails')
+    result = pi.run('--dry-run')
+    assert result.code == 1
+    assert 'This was a dry run: nothing was changed.' in result.out
+    assert "the data folder isn't empty" in result.out and 'running again' not in result.out
+    assert not any(line.startswith(('docker compose stop', 'docker compose up')) for line in result.calls)
+    assert not pi.env_path.exists()
+
+
+def test_a_missing_mount_point_of_a_room_not_mounted_isnt_made_as_the_pis_user(pi):
+    """data_room.sh and its unit make it, as root's, so the app can't write on the card there."""
+    pi.state('room', 'unmounted\n')
+    shutil.rmtree(pi.root / 'data')
+    result = pi.run()
+    assert result.code == 0, result.out
+    assert not (pi.root / 'data').exists()

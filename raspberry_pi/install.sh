@@ -44,7 +44,7 @@ MEMORY_FLAGS="cgroup_enable=memory cgroup_memory=1"
 OLD_PROJECT=desktalk-detector               # the detector's own compose project, from before all three ran together
 OLD_CAMERA_SERVICE=desk-talk-camera         # the camera program outside Docker, from before that
 IMAGES="desktalk-app:local desktalk-camera:local desktalk-detector:local"     # the ones compose.yaml builds
-WRITERS="app camera"                        # the containers that write in the data folder
+WRITERS="app camera"                        # the app, and the camera that depends on it: stopped while the room is made
 LINK_FAILED_EXIT=3
 
 TZ_FLAG=""
@@ -67,14 +67,35 @@ SETUP_SUDO=0                                # an update run may use sudo, to set
 START_FAILED=0
 ROOM=""                                     # what data_room.sh status said: room, elsewhere, unmounted or none
 ROOM_STOPPED=""                             # why data_room.sh make stopped, in its own words
-ROOM_ON_CHANGED=0                           # DATA_ROOM_ON in .env changed in this run
+ROOM_FAILED=0                               # the room wasn't made or mounted: it stops at the end, with ROOM_STOPPED
+ROOM_ON=""                                  # the DATA_ROOM_ON this run wrote (or in a dry run would have)
+ROOM_ON_CHANGED=0                           # DATA_ROOM_ON in .env changed in this call of put_room_on
+WRITERS_STOPPED=0                           # the app and the camera are stopped: if this stops, they start again
 
 say() { printf '%s\n' "$*"; }
 would() { say "Would $*"; }
 later() { LATER="$LATER$*"$'\n'; }
 stop() { say "Stopping: $*" >&2; exit 1; }
-leave() { if [ -n "$TEMP_FOLDER" ]; then rm -rf "$TEMP_FOLDER"; fi; }
+# On the way out, however it ends: Ctrl-C, the SSH line dropping, or a stop. Desk Talk is never left stopped.
+leave() {
+    if [ "$WRITERS_STOPPED" = 1 ]; then
+        WRITERS_STOPPED=0
+        trap '' HUP INT TERM                # nothing cuts this short
+        say "This stopped while the app and the camera were stopped, so they are being started again, as they were ..." || true
+        if compose_ up -d --no-build; then
+            say "The containers are started again." || true
+        else
+            say "The containers couldn't be started again. Start them with: cd $(quoted "$PI_DIR") && docker compose up -d --no-build" || true
+        fi
+    fi
+    if [ -n "$TEMP_FOLDER" ]; then
+        rm -rf "$TEMP_FOLDER"
+    fi
+}
 trap leave EXIT
+trap 'exit 129' HUP                         # each by way of leave
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 usage() {
     say "Usage: [DESKTALK_LINK_CODE=<code>] install.sh [--tz <zone>] [--server <address>] [--keep-hostname] [--reboot] [--dry-run]"
@@ -906,6 +927,12 @@ place_model() {
 data_folder() {
     local wanted
     wanted=$(setting DESKTALK_DATA)
+    # The mount point of a room that isn't mounted is data_room.sh's (and its unit's) to make, as root's, so the app
+    # can't write a second history on the card there.
+    if [ "$ROOM" = unmounted ]; then
+        (cd "$PI_DIR" && if [ -d "$wanted" ]; then cd -- "$wanted" && pwd; else printf '%s\n' "$wanted"; fi)
+        return
+    fi
     (cd "$PI_DIR" && mkdir -p -- "$wanted" && cd -- "$wanted" && pwd) \
         || stop "the data folder $wanted (DESKTALK_DATA in raspberry_pi/.env, from raspberry_pi) can't be made."
 }
@@ -975,7 +1002,8 @@ room_on_for() {
 # Writes DATA_ROOM_ON, or in a dry run says it would, unless it's already that. ROOM_ON_CHANGED says if it did.
 put_room_on() {
     ROOM_ON_CHANGED=0
-    [ "$(setting DATA_ROOM_ON)" != "$1" ] || return 0
+    [ "${ROOM_ON:-$(setting DATA_ROOM_ON)}" != "$1" ] || return 0
+    ROOM_ON=$1
     ROOM_ON_CHANGED=1
     if [ "$DRY_RUN" = 1 ]; then
         would "write DATA_ROOM_ON=$1 in .env."
@@ -1015,6 +1043,7 @@ stop_the_writers() {
         return 0
     fi
     say "Stopping the app and the camera while Desk Talk's own room is set up ..."
+    WRITERS_STOPPED=1                       # from here, leave starts them again if this stops
     # shellcheck disable=SC2086    # one name each
     compose_ stop $WRITERS && return 0
     ROOM_STOPPED="the app and the camera couldn't be stopped, so Desk Talk's own room wasn't set up."
@@ -1078,6 +1107,9 @@ set_up_data_room() {
                 else
                     later "IMPORTANT: Desk Talk's own room on the SD card isn't mounted, because sudo didn't work, so the app saves nothing. To mount it, run once: bash $(quoted "$PI_DIR/install.sh")"
                 fi
+            elif [ "$DRY_RUN" = 0 ] && ! sudo -v; then
+                # Asked here, while Desk Talk still runs, so a password prompt can't keep it stopped.
+                later "IMPORTANT: Desk Talk doesn't have its own room on the SD card set up, because sudo didn't work, so the app and the camera weren't stopped for it. To set it up, run once: bash $(quoted "$PI_DIR/install.sh")"
             else
                 stopped=1
                 if stop_the_writers && data_room_make; then
@@ -1097,11 +1129,20 @@ set_up_data_room() {
             would "start the containers again with it: docker compose up -d --no-build"
         else
             compose_ up -d --no-build || stop "the containers didn't start again. See why with: cd $(quoted "$PI_DIR") && docker compose logs"
+            WRITERS_STOPPED=0
         fi
     fi
-    if [ "$failed" = 1 ]; then
-        stop "$ROOM_STOPPED The containers are running again, as they were."
+    # The rest of the install still runs (the model, starting on boot): it stops at the very end, in finish.
+    ROOM_FAILED=$failed
+}
+
+# After the closing notes, so what data_room.sh said is there to read.
+stop_if_the_room_failed() {
+    [ "$ROOM_FAILED" = 1 ] || return 0
+    if [ "$DRY_RUN" = 1 ]; then
+        stop "$ROOM_STOPPED"
     fi
+    stop "$ROOM_STOPPED The containers are running again, as they were."
 }
 
 # After a good build only, so the card can't fill up over many updates. Old images always go. Docker's build steps stay
@@ -1127,10 +1168,12 @@ finish() {
             say "The Pi would need a restart for its boot settings."
         fi
         say "This was a dry run: nothing was changed."
+        stop_if_the_room_failed
         return
     fi
     compose_ ps
     say "Open $(the_address "$PI_NAME") on a phone or computer on the same Wi-Fi."
+    stop_if_the_room_failed
     if [ "$REBOOT_NEEDED" = 1 ]; then
         if [ "$REBOOT_FLAG" = 1 ]; then
             say "Restarting the Pi now for its new boot settings. The containers start again by themselves."
@@ -1174,6 +1217,7 @@ main() {
     find_docker
     set_up_systemd
     bring_down_old_setup
+    put_room_on "$(room_on_for "$ROOM")"     # before the build starts the app, so it never starts on the wrong one
     start_containers
     set_up_data_room
     carry_old_models
