@@ -337,7 +337,7 @@ a set number per object). If the card fills right up, the object states that can
 DESKTALK_PI=pi DESKTALK_PI_CARD_FILLED=1 uv run pytest -m pi -v -rs -k "card_filled or nothing_deleted"
 ```
 
-Result: _date, passed / failed, notes_
+Result: 2026-11-11, passed. At 1500 MB free the card check said `warning`, and at 400 MB `serious`; Lens said each, and said "enough space ... again" after the undo. Nothing restarted. The first try failed only because the check let no line of the event log be broken, and a power cut on 2026-11-03 left one (zero bytes, in the middle of that day's file): it now allows one, as the other checks do.
 
 ### 5. The clock set back to 1990
 

@@ -50,7 +50,7 @@ OBJECT_WAIT_SEC = 180               # how long the cup has to be noticed, from w
 OBJECT_LOOKS_BACK_SEC = 300         # a cup put down this long before the test started counts too
 JUST_BOOTED_SEC = 1800              # "just cut the power": the Pi has been up less than this
 STARTED_AFTER_BOOT_SEC = 300        # each container's start, counted from the boot, if no one started it by hand
-BROKEN_LINES_ALLOWED = 1            # a power cut may cut off the last line of a file
+BROKEN_LINES_ALLOWED = 1            # a power cut may cut off a line, and the file goes on after it
 RESTORE_TIME_SLACK_SEC = 30         # how far from "start minus restore_max_age_sec" a saved state may be either way
 APP_START_WAIT_SEC = 120
 ALLOWED_POLLING_SEC = 10            # room for this test's own slowness: it looks every 2 s over SSH
@@ -346,7 +346,7 @@ def test_app_restart_before_the_clock_has_synced_keeps_this_boots_states(stack: 
     assert restored is not None and restored_at is not None, 'The app\'s log has no "Picked up" line'
     assert clock_not_synced_at_this_start(log), ("The app didn't say its clock hadn't synced, though the Pi's flag "
                                                  "isn't there")
-    data = assert_data_readable(pi)
+    data = assert_data_readable(pi, broken_allowed=BROKEN_LINES_ALLOWED)
     expected = expected_restore(data['states']['rows'], restored_at=_local_time_to_epoch(pi, restored_at),
                                 warned_behind_sec=clock_behind_warning_sec(log), not_synced=True, lag_sec=0.0,
                                 restore_max_age_sec=settings['restore_max_age_sec'], slack_sec=RESTORE_TIME_SLACK_SEC,

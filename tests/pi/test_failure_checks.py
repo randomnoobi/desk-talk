@@ -270,7 +270,7 @@ def test_with_the_card_filled(pi: Pi, request: pytest.FixtureRequest):
     restarted = restarted_since(note['containers'], _containers(pi))
     assert restarted == [], f'started again with the card nearly full: {restarted}'
     pictures_arriving(pi, timeout=60)
-    assert_data_readable(pi)
+    assert_data_readable(pi, broken_allowed=BROKEN_LINES_ALLOWED)
     said = _lens_warning(pi, CARD_WARNING_KEYS, since=note['pi_at'])
     if said is None:
         pytest.skip(f'{free_mb} MB free ({level}) and all good, but it is quiet hours on the Pi, so Lens says '
