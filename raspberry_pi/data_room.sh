@@ -2,11 +2,12 @@
 # Gives Desk Talk its own room on the SD card: a file of a fixed size (DATA_ROOM_SIZE_MB in raspberry_pi/.env), with
 # its own filesystem, mounted at the data folder (DESKTALK_DATA) on every boot by
 # raspberry_pi/systemd/desktalk-data-room.service. Its space is set aside when it's made, so other files filling the
-# card can't take the room the history needs. install.sh runs this, with the containers stopped; run it as your normal
-# user, it asks for sudo itself:
+# card can't take the room the history needs. install.sh runs this, with the app and the camera stopped when it makes or
+# mounts the room; run it as your normal user, it asks for sudo itself:
 #
 #     bash raspberry_pi/data_room.sh status          says one word: room, elsewhere, unmounted or none
 #     bash raspberry_pi/data_room.sh make [--dry-run]
+#     bash raspberry_pi/data_room.sh unit-text       says the service file as it would install it, changing nothing
 #
 # status:
 #   room       the data folder is the mounted room, with the marker (DATA_ROOM_MARKER) in it
@@ -48,7 +49,7 @@ would() { say "Would $*"; }
 stop() { say "Stopping: $*" >&2; exit 1; }
 
 usage() {
-    say "Usage: data_room.sh status | make [--dry-run]"
+    say "Usage: data_room.sh status | make [--dry-run] | unit-text"
     exit 2
 }
 
@@ -539,7 +540,7 @@ main() {
         shift
     fi
     case "$what" in
-        status) [ $# = 0 ] || usage ;;
+        status|unit-text) [ $# = 0 ] || usage ;;
         make)
             while [ $# -gt 0 ]; do
                 case "$1" in
@@ -562,6 +563,11 @@ main() {
     fi
     if [ "$what" = status ]; then
         status
+        return
+    fi
+    if [ "$what" = unit-text ]; then
+        unit_text
+        printf '\n'
         return
     fi
     check_not_root
