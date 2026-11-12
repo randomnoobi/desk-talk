@@ -428,14 +428,14 @@ stay outside it, so they keep their own room.
 - **Making it bigger:** raise `DATA_ROOM_SIZE_MB` and run `install.sh` again. The space grows and your history stays.
   It can't shrink: if you lower the number, `install.sh` says so and leaves it as it is.
 - **The old folder:** the first time, `install.sh` copies your `data/` folder into the space, checks the copy, and keeps
-  the old one next to it as `data.before-room-<date-time>` (for example `data.before-room-2026-11-11-1030`). Nothing is
+  the old one next to it as `data.before-room-<date-time>` (for example `data.before-room-2026-11-11-103015`). Nothing is
   deleted. When you're happy the history is all there, **on the Pi**, delete it to get its room back:
 
   ```bash
-  rm -r ~/desk-talk/data.before-room-2026-11-11-1030
+  rm -r ~/desk-talk/data.before-room-2026-11-11-103015
   ```
 
-- **Three checks:** in `/api/health` → `checks`, and spoken by Lens:
+- **Three checks:** in `/api/health` → `checks`. Lens speaks up only when one of them is in trouble:
   - `card` is the free space in Desk Talk's own space (levels `room_warning_below_mb` and `room_serious_below_mb` in
     `health_checks`).
   - `card_rest` is the free space on the rest of the SD card (`card_rest_warning_below_mb` and
@@ -444,6 +444,12 @@ stay outside it, so they keep their own room.
   - `saving` says whether history is being saved. It's `ok` normally and `serious` when the space is missing and
     nothing is saved (see below).
 - **Updates:** `update.sh` leaves the space alone. On a Pi that doesn't have one yet, it asks for sudo once to make it.
+  Making it bigger needs sudo, so `update.sh` doesn't: it says to run `install.sh` for that.
+- **Trims:** Raspberry Pi OS trims its disks once a week (`fstrim`), which would give part of the space back to the
+  card. Trims are switched off for the space each time it's mounted; if that doesn't work, `install.sh` says so.
+- **A move cut short:** if the power goes while `install.sh` moves your history into the space, nothing is lost: the
+  history is in the old folder and in a checked copy, `data.img.new`. Until the move is finished Desk Talk saves
+  nothing; run `install.sh` again **on the Pi** and it finishes the move. Never delete `data.img.new` by hand then.
 
 ### If Desk Talk's space is missing
 

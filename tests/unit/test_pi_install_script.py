@@ -103,8 +103,8 @@ esac
 # data_room.sh has its own tests (test_pi_data_room_script.py), with a whole made-up machine of mounts and loop devices.
 # Here it is a stand-in, so these tests stay on what install.sh does with its answers: `room` in the state folder says
 # what `status` answers, and a `make` turns none, unmounted or leftover into room, installing the unit as the real one
-# does (a `make --no-sudo` changes nothing). Each make writes down the DATA_ROOM_ON it saw in .env. Only `unit-text` runs
-# the real script (copied next to it), so install.sh compares the installed unit with the real text.
+# does (a `make --no-sudo` changes nothing). Each make writes down the DATA_ROOM_ON it saw in .env. Only `unit-text`
+# runs the real script (copied next to it), so install.sh compares the installed unit with the real text.
 DATA_ROOM_STAND_IN = r'''#!/bin/bash
 printf '%s\n' "data_room.sh $*" >> "$FAKE/calls"
 real="$(dirname "$0")/data_room.real.sh"
@@ -1625,7 +1625,8 @@ def test_an_update_without_sudo_for_a_move_cut_short_saves_nothing_and_says_what
 
 def test_an_update_leaves_a_grow_to_install_sh_and_says_so_at_the_end(pi):
     pi.run()
-    line = "Desk Talk's room needs sudo to grow from 8192 to the 10000 MB in DATA_ROOM_SIZE_MB, so it stays at 8192 MB for now. To grow it, run once: bash install.sh"
+    line = ("Desk Talk's room needs sudo to grow from 8192 to the 10000 MB in DATA_ROOM_SIZE_MB, so it stays at 8192 "
+            'MB for now. To grow it, run once: bash install.sh')
     pi.state('room_make_says', line + '\n')
     result = pi.run(script='update.sh')
     assert result.code == 0, result.out
