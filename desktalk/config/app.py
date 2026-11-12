@@ -539,9 +539,15 @@ class HealthChecksSettings(_Section):
     """When each health check (desktalk/core/health/) says warning or serious."""
 
     _in_order = (('card_serious_below_mb', 'card_warning_below_mb'),
+                 ('room_serious_below_mb', 'room_warning_below_mb'),
+                 ('card_rest_serious_below_mb', 'card_rest_warning_below_mb'),
                  ('no_detections_warning_sec', 'no_detections_serious_sec'))
     card_warning_below_mb: ZeroOrMore
     card_serious_below_mb: ZeroOrMore
+    room_warning_below_mb: ZeroOrMore
+    room_serious_below_mb: ZeroOrMore
+    card_rest_warning_below_mb: ZeroOrMore
+    card_rest_serious_below_mb: ZeroOrMore
     no_detections_warning_sec: PositiveNumber
     no_detections_serious_sec: PositiveNumber
     pi_heartbeat_late_sec: PositiveNumber

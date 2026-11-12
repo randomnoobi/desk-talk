@@ -25,7 +25,7 @@ from tests.fakes import (
 from tests.unit.test_camera_sources_push import camera_settings
 
 PICTURE = cv2.imencode('.jpg', np.full((120, 160, 3), 90, np.uint8))[1].tobytes()
-KEYS = {'camera', 'detections', 'pi_temperature', 'card', 'pi_heartbeat'}
+KEYS = {'camera', 'detections', 'pi_temperature', 'card', 'pi_heartbeat', 'card_rest', 'saving'}
 
 
 # ── DiskSpace ──
@@ -82,6 +82,9 @@ class TestHealthChecks(HealthCheckContract):
     def checks(self):
         clock = FakeClock()
         settings = HealthChecksSettings.model_construct(card_warning_below_mb=2000.0, card_serious_below_mb=500.0,
+                                                        room_warning_below_mb=300.0, room_serious_below_mb=100.0,
+                                                        card_rest_warning_below_mb=2000.0,
+                                                        card_rest_serious_below_mb=500.0,
                                                         no_detections_warning_sec=300.0,
                                                         no_detections_serious_sec=900.0, pi_heartbeat_late_sec=90.0)
         return HealthChecks(FakeFrameSource('pi', clock), FakeDetectionTimes(), FakeDiskSpace(), settings,
