@@ -1,0 +1,26 @@
+# Mounts Desk Talk's own room on the SD card at its data folder, every boot, before Docker starts the containers. The
+# room is a file of a fixed size with its own filesystem, made by raspberry_pi/data_room.sh, so other files filling the
+# card can't take the space the history needs. data_room.sh fills in the blanks (from raspberry_pi/.env), puts this in
+# /etc/systemd/system and switches it on; change this file, not the copy there, and run install.sh again.
+#
+# Docker doesn't need this to start. If the room can't be mounted (its file is missing, or a power cut damaged it more
+# than the safe repair below can fix), the containers still start, and the data folder is then the empty folder of
+# root's under it: the app can't write there, so it runs, saves nothing, and says so, instead of starting a second,
+# empty history on the card. See why with: journalctl -u desktalk-data-room
+
+[Unit]
+Description=Desk Talk's own room on the SD card, mounted at its data folder
+Before=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# First the safe automatic repair (-p), as the Pi does for its own disks at boot. An answer of 4 or more means damage
+# it can't fix safely: that's left for you, and the room isn't mounted. Never -y, which fixes everything by guessing.
+# The file and the folder go in as $1 and $2 (systemd turns $$ into $), apart from the script, so a space in either
+# can't split it.
+ExecStart=/bin/sh -c 'e2fsck -p "$$1"; code=$$?; if [ "$$code" -ge 4 ]; then echo "e2fsck found damage in the room that it cannot fix safely (answer $$code), so it is not mounted." >&2; exit "$$code"; fi; exec mount -o loop,noatime "$$1" "$$2"' desktalk-data-room "@IMAGE@" "@DATA@"
+ExecStop=/bin/sh -c 'exec umount "$$1"' desktalk-data-room "@DATA@"
+
+[Install]
+WantedBy=multi-user.target
