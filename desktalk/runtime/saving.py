@@ -20,14 +20,15 @@ from desktalk.domain import Saving
 
 SAVING_NAME = 'DESKTALK_SAVING'
 FOLDER_NAME = 'DESKTALK_DATA_FOLDER'
+FOLDER_PREFIX = 'desktalk-'                 # a folder folder_for makes is named this, then letters by chance
 
 log = logging.getLogger(__name__)
 
 
 def saving_from_environment(environ: Mapping[str, str]) -> tuple[Saving, Path | None]:
     """The saving mode and, with `off`, the in-memory folder. Nothing set, or a mode it doesn't know, is plain (a
-    mode it doesn't know is logged). `off` with no folder is logged too, and gives None: build() then makes a new
-    temporary folder."""
+    mode it doesn't know is logged). `off` with no folder is logged too, and gives None: folder_for() then makes
+    one."""
     value = environ.get(SAVING_NAME, '').strip()
     if not value:
         return Saving.PLAIN, None
@@ -41,14 +42,22 @@ def saving_from_environment(environ: Mapping[str, str]) -> tuple[Saving, Path | 
         return saving, None
     folder = environ.get(FOLDER_NAME, '').strip()
     if not folder:
-        log.warning('%s is off but %s is empty, so a new temporary folder is used', SAVING_NAME, FOLDER_NAME)
+        log.warning('%s is off but %s is empty, so a new folder in memory is used', SAVING_NAME, FOLDER_NAME)
         return Saving.OFF, None
     return Saving.OFF, Path(folder)
 
 
-def folder_for(saving: Saving, folder: Path | None) -> Path | None:
-    """The folder this run writes to: `folder`, or with `off` and no folder a new temporary one, so nothing is
-    written to the project's data folder."""
-    if saving is Saving.OFF and folder is None:
-        return Path(tempfile.mkdtemp())
-    return folder
+def folder_for(saving: Saving, folder: Path | None, memory_fallback: Path) -> Path | None:
+    """The folder this run writes to, worked out once (server.py) for the log file and build(): `folder`, or with
+    `off` and no folder a new one in `memory_fallback` (settings → storage.memory_fallback_folder, a folder in
+    memory), so nothing is written to the project's data folder or the card. If none can be made there, a new one in
+    the computer's own temporary folder, and the log says where it is."""
+    if saving is not Saving.OFF or folder is not None:
+        return folder
+    try:
+        return Path(tempfile.mkdtemp(prefix=FOLDER_PREFIX, dir=memory_fallback))
+    except OSError as exc:
+        made = Path(tempfile.mkdtemp(prefix=FOLDER_PREFIX))
+        log.warning('No folder could be made in memory in %s (%s), so %s is used: it may be on the disk',
+                    memory_fallback, exc, made)
+        return made

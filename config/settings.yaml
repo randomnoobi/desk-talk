@@ -545,6 +545,8 @@ health_checks:
   card_rest_warning_below_mb: 2000  # the rest of the SD card, outside Desk Talk's own space: less free than this,
                                 # Lens warns (updates and builds need room there)...
   card_rest_serious_below_mb: 500   # ...and less than this is serious
+  rest_of_card_folder: /        # the folder measured for the rest of the SD card: the app container's own root, which
+                                # Docker keeps on the card (the data folder is mounted over it, so it's measured apart)
   no_detections_warning_sec: 300  # the camera is connected, but no picture has been through object detection for
                                 # this long (the detector is stuck busy, failing or off): Lens warns...
   no_detections_serious_sec: 900  # ...and this long is serious
@@ -758,6 +760,8 @@ logging:
 storage:
   folder: data                # preferences.json, habits/<day>.json and learned_personalities.json live here
   rules_folder: config        # safety_rules.json (the desk's corners and danger zones) is read and saved here
+  memory_fallback_folder: /dev/shm  # when Desk Talk's own space on the Pi is missing and start.sh gave no folder in
+                              # memory, the app keeps what it must in a new folder in here (memory, never the card)
 
 # ── An object's story (click something under "On the desk", or an object on the developer page's live tab) ──
 # What happened to it, step by step, with a picture for each step and its box drawn on.

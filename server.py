@@ -92,7 +92,8 @@ def main() -> int:
         startup.error('Desk Talk could not start, a setting needs fixing:\n%s', exc)
         return 2
     saving, data_folder = saving_from_environment(os.environ)
-    data_folder = folder_for(saving, data_folder)       # the same folder for the log file and for build()
+    # Worked out once, here: the same folder for the log file and for build().
+    data_folder = folder_for(saving, data_folder, config.resolve(config.storage.memory_fallback_folder))
     start_logging(config, data_folder)
     settings_lines(config, data_folder)
     if saving is Saving.OFF:
@@ -103,8 +104,7 @@ def main() -> int:
     desktalk = build(config, saving=saving, data_folder=data_folder)
     say(f'  Detector     : {desktalk.detector.label}')
     say(f'  AI           : {desktalk.model.label}')
-    rules = config.storage.rules_folder / 'safety_rules.json'
-    say(f'  Danger zones : {rules if desktalk.safety_rules.loaded else "built-in"}')
+    say(f'  Danger zones : {desktalk.rules_file if desktalk.safety_rules.loaded else "built-in"}')
     address = lan_ip()
     phone_cert = None
     phone_port = None

@@ -11,8 +11,8 @@ The health checks: each measure on its own, with a level (ok, warning, serious, 
                     health_checks.card_warning_below_mb / card_serious_below_mb
     pi_heartbeat    seconds since the Pi's last heartbeat: a warning after health_checks.pi_heartbeat_late_sec.
                     Unknown before the first (an older camera program sends none)
-    card_rest       free space on the rest of the SD card, outside Desk Talk's own space (only when it has one, or
-                    saves nothing): health_checks.card_rest_warning_below_mb / card_rest_serious_below_mb
+    card_rest       free space on the rest of the SD card, outside Desk Talk's own space (in room or off mode):
+                    health_checks.card_rest_warning_below_mb / card_rest_serious_below_mb
     saving          whether Desk Talk is saving at all: serious when it saves nothing (Saving.OFF), ok otherwise
 
 With Saving.ROOM, `card` is the free space in Desk Talk's own space and uses health_checks.room_warning_below_mb /

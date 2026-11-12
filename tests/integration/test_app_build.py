@@ -142,8 +142,10 @@ def test_off_mode_writes_only_to_the_given_folder(tmp_path):
             app.stop(timeout=5)
     finally:
         restore_logging(level)
-    assert files_under(config.root / 'data') == []
+    assert not (config.root / 'data').exists()
     assert files_under(config.resolve(config.storage.rules_folder)) == rules_before
+    assert app.data_folder == memory / config.storage.folder
+    assert app.rules_file == memory / config.storage.rules_folder / 'safety_rules.json'
     day = app.event_log.days()[0]
     assert [e['agent'] for e in app.event_log.events(day, {'agent_joined'}, 10)] == ['cup']
     assert (memory / config.event_log.folder / day).is_dir()
@@ -151,17 +153,20 @@ def test_off_mode_writes_only_to_the_given_folder(tmp_path):
     assert (memory / config.storage.rules_folder / 'safety_rules.json').is_file()
 
 
-def test_off_mode_with_no_folder_uses_a_new_temporary_one(tmp_path, monkeypatch):
-    made = tmp_path / 'made'
-    made.mkdir()
-    monkeypatch.setattr('tempfile.mkdtemp', lambda *a, **k: str(made))
+def test_off_mode_needs_the_folder_it_writes_to(tmp_path):
+    """server.py works the folder out once (desktalk/runtime/saving.py folder_for) and gives it to build()."""
     config = desk_config(tmp_path)
-    app = build(config, clock=FakeClock(AFTERNOON), detector=FakeDetector(), pair_key=PAIR_KEY, set_up_logging=False,
-                synchronous_events=True, desktop=FakeDesktopNotifications(), saving=Saving.OFF)
-    app.bus.publish(AgentJoined(ts=app.clock.now(), agent='cup', name='Cup', label='cup', conf=0.9))
-    app.stop(timeout=1)
-    assert files_under(config.root / 'data') == []
-    assert (made / config.event_log.folder / '2026-10-21').is_dir()
+    with pytest.raises(ValueError, match='data_folder'):
+        build(config, clock=FakeClock(AFTERNOON), detector=FakeDetector(), pair_key=PAIR_KEY, set_up_logging=False,
+              synchronous_events=True, desktop=FakeDesktopNotifications(), saving=Saving.OFF)
+    assert not (config.root / 'data').exists()
+
+
+def test_plain_mode_names_the_project_folders(tmp_path):
+    config = desk_config(tmp_path)
+    app = build_quietly(config, tmp_path, data_folder=None)
+    assert app.data_folder == config.resolve(config.storage.folder)
+    assert app.rules_file == config.resolve(config.storage.rules_folder) / 'safety_rules.json'
 
 
 def test_off_mode_says_nothing_is_saved_in_health_and_lens(tmp_path):
@@ -179,6 +184,13 @@ def test_room_mode_adds_the_rest_of_the_card_check(tmp_path):
     measures = {m.key: m for m in app.health_checks.measures()}
     assert measures['card_rest'].value is not None and measures['card_rest'].level is not CheckLevel.UNKNOWN
     assert measures['saving'].level is CheckLevel.OK
+
+
+def test_the_rest_of_the_card_is_measured_where_the_settings_say(tmp_path):
+    config = changed(desk_config(tmp_path), 'health_checks', rest_of_card_folder=tmp_path / 'no such folder')
+    app = build_quietly(config, tmp_path, saving=Saving.ROOM)
+    measures = {m.key: m for m in app.health_checks.measures()}
+    assert measures['card_rest'].value is None
 
 
 def test_plain_mode_has_no_rest_of_the_card_check(tmp_path):

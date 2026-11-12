@@ -130,8 +130,10 @@ def test_off_mode_says_nothing_is_saved_at_start(tmp_path, monkeypatch, capsys):
     config = desk_config(tmp_path)
     memory = tmp_path / 'memory'
     built: dict = {}
+    rules_file = memory / 'config' / 'safety_rules.json'
     desktalk = SimpleNamespace(detector=SimpleNamespace(label='fake'), model=SimpleNamespace(label='fake'),
-                               safety_rules=SimpleNamespace(loaded=False), source_kind='webcam', pair_key=KEY)
+                               safety_rules=SimpleNamespace(loaded=True), rules_file=rules_file,
+                               source_kind='webcam', pair_key=KEY)
 
     def fake_build(cfg, **kw):
         built.update(kw)
@@ -147,7 +149,33 @@ def test_off_mode_says_nothing_is_saved_at_start(tmp_path, monkeypatch, capsys):
     shown = capsys.readouterr().err.splitlines()
     assert any('nothing is being saved' in line.lower() for line in shown)
     assert any(line.startswith('  Event log    : ') and str(memory) in line for line in shown)
+    assert f'  Danger zones : {rules_file}' in shown
     assert (memory / config.logging.folder / config.logging.file_name).is_file()
+    assert not (config.root / 'data').exists()
+
+
+def test_off_mode_with_no_folder_given_makes_one_in_the_memory_fallback_folder(tmp_path, monkeypatch, capsys):
+    shm = tmp_path / 'shm'
+    shm.mkdir()
+    config = changed(desk_config(tmp_path), 'storage', memory_fallback_folder=shm)
+    built: dict = {}
+    desktalk = SimpleNamespace(detector=SimpleNamespace(label='fake'), model=SimpleNamespace(label='fake'),
+                               safety_rules=SimpleNamespace(loaded=False), source_kind='webcam', pair_key=KEY)
+
+    def fake_build(cfg, **kw):
+        built.update(kw)
+        return desktalk
+    monkeypatch.setenv('DESKTALK_SAVING', 'off')
+    monkeypatch.delenv('DESKTALK_DATA_FOLDER', raising=False)
+    monkeypatch.setattr(server, 'load_config', lambda: config)
+    monkeypatch.setattr(server, 'build', fake_build)
+    monkeypatch.setattr(server, 'lan_ip', lambda: DOCKER_ADDRESS)
+    monkeypatch.setattr(server, 'run', lambda *a: None)
+    assert server.main() == 0
+    folder = built['data_folder']
+    assert folder.parent == shm and folder.is_dir()
+    shown = capsys.readouterr().err.splitlines()
+    assert any(line.startswith('  Saving       : ') and str(folder) in line for line in shown)
     assert not (config.root / 'data').exists()
 
 

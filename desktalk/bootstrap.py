@@ -127,12 +127,12 @@ from desktalk.ports import (
     TracePhotos,
 )
 from desktalk.runtime import ClockCheck, Scheduler, Supervisor, SystemClock, boot_id, plain_error, setup_logging
-from desktalk.runtime.saving import folder_for
 
 log = logging.getLogger(__name__)
 
 MINUTE = 60
 DAY = 24 * 60 * MINUTE
+RULES_FILE = 'safety_rules.json'            # the danger zones' file in storage.rules_folder (SafetyRules' store key)
 
 
 @dataclass(eq=False)
@@ -210,6 +210,10 @@ class DeskTalk:
     todos             the to-do list the server keeps: items(), replace(), has_list() (/api/todos, /api/chat_todos)
     desktop           the Mac's pop-ups or the Pi's speaker (warnings, reminders, sips): nothing on the web uses it;
                       stop() lets its thread finish
+    data_folder       the data folder this run really saves in (the folder in memory when nothing is saved):
+                      /api/dev/settings
+    rules_file        where safety_rules.json is really read and saved (under that folder in memory when nothing is
+                      saved): the start-up lines
     """
 
     config: AppConfig
@@ -257,6 +261,8 @@ class DeskTalk:
     scheduler: ScheduledJobs
     supervisor: Jobs
     started_at: float
+    data_folder: Path
+    rules_file: Path
     keepalive: PeriodicWorker | None = None
     log_file: Path | None = None
     test_runner: TestRunner | None = None
@@ -391,11 +397,6 @@ def make_detector(config: AppConfig) -> Detector:
     return detector
 
 
-# The rest of the SD card, outside Desk Talk's own space: the app container's own root, which Docker keeps on the
-# card (the data folder is mounted over it, so it's measured apart).
-CARD_ROOT = Path('/')
-
-
 def in_data_folder(config: AppConfig, data_folder: Path | None, path: Path) -> Path:
     """Where a folder from the settings is: under `data_folder` when there is one (unless the setting is a full
     path), else in the project folder."""
@@ -433,15 +434,17 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                             called once the computer is linked
     And for every run: `saving`, the saving mode start.sh gives (desktalk/runtime/saving.py). With Saving.OFF
     nothing is written to the project: the danger zones (settings → storage.rules_folder) go under `data_folder`
-    too, and with no `data_folder` a new temporary one is made. With Desk Talk's own space (ROOM) or none (OFF),
-    the health checks also measure the rest of the SD card."""
+    too, which must then be given (server.py works it out once, with desktalk/runtime/saving.py folder_for). With
+    Desk Talk's own space (ROOM) or none (OFF), the health checks also measure the rest of the SD card (settings →
+    health_checks.rest_of_card_folder)."""
+    if saving is Saving.OFF and data_folder is None:
+        raise ValueError('build() with Saving.OFF needs data_folder: the folder in memory it writes to instead of the '
+                         "project's (folder_for in desktalk/runtime/saving.py gives one)")
     clock = clock or SystemClock()
     synced_file = config.object_states.clock_synced_file
     clock_check = ClockCheck(config.resolve(synced_file) if synced_file else None,
                              config.clock.earliest_believable_date, clock=clock,
                              largest_jump_ahead_sec=config.clock.largest_jump_ahead_min * MINUTE)
-
-    data_folder = folder_for(saving, data_folder)
 
     def data_path(path: Path) -> Path:
         return in_data_folder(config, data_folder, path)
@@ -491,7 +494,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                                  ignore_labels=config.agents_file.ignore, known_labels=config.agents_file.own_words)
     health_checks = HealthChecks(source, producer, FolderDiskSpace(data_path(config.storage.folder)),
                                  config.health_checks, config.pi, clock=clock, pi=camera.pi, saving=saving,
-                                 card=None if saving is Saving.PLAIN else FolderDiskSpace(CARD_ROOT))
+                                 card=None if saving is Saving.PLAIN
+                                 else FolderDiskSpace(config.resolve(config.health_checks.rest_of_card_folder)))
     state_store = SqliteStateStore(data_path(config.object_states.database))
     boot_file = config.object_states.boot_id_file
     object_states = ObjectStateTracker(config.object_states, bus, state_store, device_id=source.kind,
@@ -629,4 +633,5 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         lost_items=lost_items, daily_summary=daily_summary, cloud=cloud, scheduler=scheduler,
         supervisor=supervisor, started_at=clock.now(), keepalive=ai.keepalive_worker(), log_file=log_file,
         test_runner=test_runner, databases=databases, data_files=data_files, chat_joins=roster,
-        trace_photos=trace_photos, demo=demo, todos=todos, desktop=desktop)
+        trace_photos=trace_photos, demo=demo, todos=todos, desktop=desktop,
+        data_folder=data_path(config.storage.folder), rules_file=rules_path / RULES_FILE)
