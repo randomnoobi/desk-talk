@@ -332,7 +332,7 @@ your home folder, never in the data folder.
 
 **What should happen**: a spoken warning about the rest of the card (and a more serious one under 500 MB) that says
 Desk Talk is still saving; nothing restarts; pictures keep coming and the event log keeps filling, since it is in
-Desk Talk's own space, which the full card can't touch (`/api/health` → `checks` → `saving` stays `room`); nothing of yours is deleted to make room: the caps on the data folder go by age and
+Desk Talk's own space, which the full card can't touch (`/api/health` → `checks` → `saving` stays `ok`); nothing of yours is deleted to make room: the caps on the data folder go by age and
 count, not by the card's free space (`event_log.keep_days` and `object_states.keep_days`, 30 days; the story pictures,
 a set number per object). If the card fills right up, the object states that can't be saved wait in memory, at most
 `object_states.unsaved_most` (5000). The check also reads `/api/health` → `checks` → `card_rest`, which should say
@@ -421,7 +421,7 @@ nothing of the history is touched.
    cd ~/desk-talk/raspberry_pi && docker compose restart app
    ```
 
-2. Wait a minute and listen: Lens should say that nothing is being saved right now.
+2. Wait a minute and listen: Lens should say that nothing is being saved right now, and `/api/health` → `checks` → `saving` should say `serious`.
 3. **On the Pi**, `ls ~/desk-talk/data` should show an empty folder, with no new files in it.
 4. **Undo**, **on the Pi**: mount the space again, then restart the app:
 
@@ -435,8 +435,14 @@ nothing of the history is touched.
 
 5. `ls ~/desk-talk/data` shows the history again, and Lens stops warning.
 
-**What should happen**: the app starts and the live view and warnings still work; `/api/health` → `checks` → `saving`
-says `serious` while the space is away and `ok` after; nothing is written to the bare `data/` folder; the history in
+**What should happen**: the app starts and the live view and warnings still work; Lens says nothing is being saved, and
+`/api/health` → `checks` → `saving` says `serious` while the space is away and `ok` after; nothing is written to the bare `data/` folder; the history in
 the space is all there after the undo, and `nothing_deleted` passes.
+
+**Afterwards**, **on your Mac**, after the undo (step 5):
+
+```bash
+DESKTALK_PI=pi uv run pytest -m pi -v -rs -k nothing_deleted
+```
 
 Result: _date, passed / failed, notes_

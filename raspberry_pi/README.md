@@ -409,7 +409,7 @@ It runs while you're logged in; a Mac that was asleep then runs it when it wakes
 
 ### What keeps the SD card from filling up
 
-Desk Talk's own space has a fixed size (see above), so it can't fill the card. The camera's pictures are kept in memory, not on the card. The app's log files have a size limit (`logging` in
+Desk Talk's own space has a fixed size (see below), so it can't fill the card. The camera's pictures are kept in memory, not on the card. The app's log files have a size limit (`logging` in
 `config/settings.yaml`), the event log keeps 30 days (`event_log.keep_days`), the story pictures a set number per
 object (`object_story`), and the object state database 30 days (`object_states.keep_days`). Docker's saved build
 steps are cut down after each update (see [Updating](#updating)).
@@ -435,10 +435,14 @@ stay outside it, so they keep their own room.
   rm -r ~/desk-talk/data.before-room-2026-11-11-1030
   ```
 
-- **Two checks:** Lens watches the space itself (`room_warning_below_mb`, `room_serious_below_mb` in
-  `health_checks`) and the rest of the card (`card_rest_warning_below_mb`, `card_rest_serious_below_mb`). When the
-  rest of the card runs low, Lens says Desk Talk is still saving, but updates and the Pi's logs need room. In
-  `/api/health` they are the `card_rest` and `saving` checks.
+- **Three checks:** in `/api/health` → `checks`, and spoken by Lens:
+  - `card` is the free space in Desk Talk's own space (levels `room_warning_below_mb` and `room_serious_below_mb` in
+    `health_checks`).
+  - `card_rest` is the free space on the rest of the SD card (`card_rest_warning_below_mb` and
+    `card_rest_serious_below_mb`). When it runs low, Lens says Desk Talk is still saving, but updates and the Pi's
+    logs need room.
+  - `saving` says whether history is being saved. It's `ok` normally and `serious` when the space is missing and
+    nothing is saved (see below).
 - **Updates:** `update.sh` leaves the space alone. On a Pi that doesn't have one yet, it asks for sudo once to make it.
 
 ### If Desk Talk's space is missing
