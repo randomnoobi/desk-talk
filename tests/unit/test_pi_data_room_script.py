@@ -103,6 +103,12 @@ def stat_(fmt, path):
     elif fmt == '%s':
         print(size_of(path))
     elif fmt == '%b %B':
+        answers = FAKE / 'blocks_answers'                   # this many good answers, then none
+        if answers.exists():
+            left = int(answers.read_text())
+            if left <= 0:
+                return 1
+            answers.write_text(str(left - 1))
         blocks = size_of(path) // 512
         if has('short_blocks') or has('lost_blocks'):
             blocks //= 2
@@ -356,6 +362,12 @@ def a_usb_drive_at_the_data_folder(pi: RoomPi) -> None:
                                                       'disk': str(pi.fake / 'usb')}]), encoding='utf-8')
 
 
+def made_a_new_file(pi: RoomPi, result: Result) -> list[str]:
+    """Any mkfs, and any fallocate but the one that sets the room's own file aside again at its own size."""
+    again = f'fallocate -l {pi.image.read_text()} {pi.image}' if pi.image.is_file() else None
+    return [call for call in calls_to(result, 'fallocate', 'mkfs.ext4') if call != again]
+
+
 def changed_nothing(pi: RoomPi, result: Result) -> None:
     assert files_in(pi.data) == HISTORY
     assert not pi.image.exists() and not pi.new_image.exists()
@@ -528,7 +540,7 @@ def test_an_existing_image_is_never_made_again(pi):
     result = pi.run('make')
     assert result.code == 1
     assert "isn't mounted" in result.out and 'journalctl -u desktalk-data-room' in result.out
-    assert not calls_to(result, 'fallocate', 'mkfs.ext4')
+    assert not made_a_new_file(pi, result)
     assert pi.image.read_text() == room and os.stat(pi.image).st_ino == inode
     assert not pi.mounts() and pi.status() == 'unmounted\n'
 
@@ -536,7 +548,33 @@ def test_an_existing_image_is_never_made_again(pi):
     result = pi.run('make')
     assert result.code == 0, result.out
     assert pi.status() == 'room\n' and files_in(pi.data) == HISTORY
-    assert not calls_to(result, 'fallocate', 'mkfs.ext4')
+    assert not made_a_new_file(pi, result)
+
+
+def test_a_mounted_room_missing_its_marker_is_not_moved_out_of(pi):
+    """The room's own files are in the data folder: telling the person to move them out would split the history."""
+    assert pi.run('make').code == 0
+    [mount] = pi.mounts()
+    (pi.data / MARKER).unlink()
+    assert pi.status() == 'unmounted\n'
+    for args in (('make',), ('make', '--dry-run')):
+        result = pi.run(*args)
+        assert result.code == 1
+        assert f'{MARKER} is missing' in result.out and 'touch ' in result.out
+        assert "Don't move" in result.out and 'ls -A' in result.out and 'Move them' not in result.out
+        assert pi.mounts() == [mount] and files_in(pi.data) == HISTORY
+        assert not sudo_calls(result) and not made_a_new_file(pi, result)
+
+
+def test_the_unit_sets_the_rooms_space_aside_again_before_it_mounts_it(pi):
+    assert pi.run('make').code == 0
+    unmount_as_after_a_bad_boot(pi)
+    pi.state('lost_blocks')                                 # a trim gave some back while it wasn't mounted
+    pi.state('calls', '')
+    assert pi.machine('systemctl', 'start', UNIT) == 0
+    calls = (pi.fake / 'calls').read_text(encoding='utf-8').splitlines()
+    assert calls.index(f'fallocate -l {8192 * MB} {pi.image}') < calls.index(f'e2fsck -p {pi.image}')
+    assert not (pi.fake / 'lost_blocks').exists() and pi.status() == 'room\n'
 
 
 def test_the_room_is_never_mounted_over_files_in_the_data_folder(pi):
@@ -620,6 +658,16 @@ def test_a_grow_that_stopped_part_way_is_finished_next_time(pi, failing):
     assert (pi.loop(mount['source']) / 'size').read_text().strip() == str(10000 * MB // 512)
     result = pi.run('make')                                 # finished: nothing more to do, and no sudo
     assert result.code == 0 and not sudo_calls(result)
+
+
+def test_a_grow_that_cant_read_how_much_is_held_stops_plainly(pi):
+    assert pi.run('make').code == 0
+    pi.change_example('DATA_ROOM_SIZE_MB', '10000')
+    pi.state('blocks_answers', '1')                         # the hold check gets its answer; the grow's doesn't
+    result = pi.run('make')
+    assert result.code == 1
+    assert "couldn't tell how much of Desk Talk's room" in result.out
+    assert pi.image.read_text() == str(8192 * MB) and not calls_to(result, 'fallocate')
 
 
 def test_a_room_whose_space_is_no_longer_all_held_gets_it_back(pi):
@@ -744,6 +792,9 @@ def test_the_unit_repairs_only_safely_and_mounts_before_docker():
     stop = next(line for line in lines if line.startswith('ExecStop='))
     assert 'e2fsck -p ' in start and ' -y' not in '\n'.join(lines) and '-ge 4' in start
     assert 'ls -A "$$2"' in start.split('e2fsck')[0]                                   # empty folder, checked first
+    hold = 'fallocate -l "$$(stat -c %%s "$$1")" "$$1"'
+    assert hold in start and start.index(hold) < start.index('e2fsck -p') < start.index('exec mount')
+    assert '%' not in start.replace('%%', '')                                          # systemd would fill in a lone %
     assert 'mount -o loop,noatime ' in start and 'umount ' in stop
     assert start.endswith(' "@IMAGE@" "@DATA@"') and stop.endswith(' "@DATA@"')       # each path one word
     assert '@' not in start.removesuffix(' "@IMAGE@" "@DATA@"')                         # never inside the script

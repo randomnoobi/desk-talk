@@ -430,6 +430,11 @@ copy_checks_out() {
 
 mount_room() {
     local old
+    # The room mounted without its marker: what's in the data folder is the room's own history. Moving it out would
+    # split it, so it says how to look, and how to put the marker back.
+    if room_device > /dev/null; then
+        stop "Desk Talk's room ($IMAGE) is mounted at $DATA, but its marker file $MARKER is missing, so the app won't trust it. Don't move anything out of the data folder: what's in it is the room's own. Look with: ls -A $(quoted "$DATA")   If Desk Talk's history is there, put the marker back with: touch $(quoted "$DATA/$MARKER")   and run this again."
+    fi
     if ! empty_folder "$DATA"; then
         stop "Desk Talk's room ($IMAGE) isn't mounted, and the data folder $DATA isn't empty: it holds $(ls -A -- "$DATA" | head -n 5 | tr '\n' ' ')... Mounting the room there would hide those files, so nothing was changed. Move them somewhere else, then run this again (the room may hold the rest of the history)."
     fi
@@ -491,7 +496,7 @@ finish_growing() {
 }
 
 grow_room() {
-    local wanted current needed free reserve device
+    local wanted current needed held free reserve device
     wanted=$(number DATA_ROOM_SIZE_MB)
     device=$(room_device)
     hold_room || return 0
@@ -507,7 +512,8 @@ grow_room() {
     fi
     reserve=$(number INSTALL_MIN_DISK_BUILT_MB)
     free=$(free_mb)
-    needed=$(((wanted * MB - $(held_bytes "$IMAGE") + MB - 1) / MB))      # what fallocate takes from the card
+    held=$(held_bytes "$IMAGE") || stop "couldn't tell how much of Desk Talk's room ($IMAGE) the SD card is holding for it, so it isn't grown. Nothing was changed."
+    needed=$(((wanted * MB - held + MB - 1) / MB))      # what fallocate takes from the card
     if [ "$((free - reserve))" -lt "$needed" ]; then
         say "Desk Talk's room can't grow from $current to $wanted MB now: that takes $needed MB, there is $free MB free on the SD card, and $reserve MB must stay free for updates. Free $((needed + reserve - free)) MB and run this again. It stays at $current MB."
         return

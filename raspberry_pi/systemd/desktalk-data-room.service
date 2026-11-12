@@ -15,12 +15,13 @@ Before=docker.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-# Only onto an empty data folder: mounting over files would hide them. Then the safe automatic repair (-p), as the Pi
-# does for its own disks at boot. An answer of 4 or more means damage it can't fix safely: that's left for you, and the
-# room isn't mounted. Never -y, which fixes everything by guessing.
-# The file and the folder go in as $1 and $2 (systemd turns $$ into $), apart from the script, so a space in either
-# can't split it.
-ExecStart=/bin/sh -c 'if [ -n "$$(ls -A "$$2")" ]; then echo "The data folder is not empty, so the room is not mounted over it: that would hide what is in it." >&2; exit 1; fi; e2fsck -p "$$1"; code=$$?; if [ "$$code" -ge 4 ]; then echo "e2fsck found damage in the room that it cannot fix safely (answer $$code), so it is not mounted." >&2; exit "$$code"; fi; exec mount -o loop,noatime "$$1" "$$2"' desktalk-data-room "@IMAGE@" "@DATA@"
+# Only onto an empty data folder: mounting over files would hide them. Then the room's whole file is set aside on the
+# card again, in case a trim gave some back since the last boot (it only fills gaps, and a failure is fine). Then the
+# safe automatic repair (-p), as the Pi does for its own disks at boot. An answer of 4 or more means damage it can't fix
+# safely: that's left for you, and the room isn't mounted. Never -y, which fixes everything by guessing.
+# The file and the folder go in as $1 and $2 (systemd turns $$ into $, and %% into %), apart from the script, so a
+# space in either can't split it.
+ExecStart=/bin/sh -c 'if [ -n "$$(ls -A "$$2")" ]; then echo "The data folder is not empty, so the room is not mounted over it: that would hide what is in it." >&2; exit 1; fi; fallocate -l "$$(stat -c %%s "$$1")" "$$1" || true; e2fsck -p "$$1"; code=$$?; if [ "$$code" -ge 4 ]; then echo "e2fsck found damage in the room that it cannot fix safely (answer $$code), so it is not mounted." >&2; exit "$$code"; fi; exec mount -o loop,noatime "$$1" "$$2"' desktalk-data-room "@IMAGE@" "@DATA@"
 ExecStop=/bin/sh -c 'exec umount "$$1"' desktalk-data-room "@DATA@"
 
 [Install]
