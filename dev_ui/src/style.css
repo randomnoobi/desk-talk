@@ -221,3 +221,40 @@ a { color: var(--cobalt); }
 .trace-thumb { display: block; width: 96px; padding: 0; border: 0; background: none; cursor: zoom-in; }
 .trace-thumb .trace-photo-frame { border-radius: 6px; }
 .trace-photo-big { max-width: 640px; margin-top: 12px; }
+
+/* ---------- the Pi tab: big numbers, charts, the disk bars ---------- */
+:root {
+  /* Chart line colours, in this order (StatsChart.tsx). Checked for colour-blind readers as a set. */
+  --series-1: #2a78d6;  --series-2: #eb6834;  --series-3: #1baf7a;  --series-4: #eda100;
+  --series-5: #e87ba4;  --series-6: #008300;  --series-7: #6250d6;  --series-8: #e34948;
+}
+.warnings { margin-top: 10px; }
+.tiles {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+.tile.ok, .tile.warn, .tile.bad { box-shadow: inset 3px 0 0 var(--level); }
+.tile-name { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.tile-value { font-size: 26px; font-variation-settings: 'opsz' 96; line-height: 1.15; }
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(440px, 100%), 1fr));
+  gap: 12px;
+}
+.chart-grid > .card + .card { margin-top: 0; }
+.chart-grid .card { min-width: 0; }
+.stats-chart { width: 100%; }
+.stats-chart .u-legend { font-size: 12px; color: var(--ink-2); }
+.used { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.bar { display: inline-block; width: 120px; height: 8px; border-radius: 4px; background: var(--mist); overflow: hidden; }
+.bar > span { display: block; height: 100%; border-radius: 4px; background: var(--cobalt); }

@@ -765,12 +765,35 @@ object_story:
   events_kept: 50               # state changes, and chat joins, leaves and refusals, remembered per kind of object
   photo_match_sec: 10           # a picture taken this close to a step of the story is shown next to that step
 
+# ── The system numbers (the developer page's Pi tab) ──
+# How busy the processor is, memory, disks, network, Wi-Fi, temperatures, the fan and the busiest programs, read
+# from Linux's own files. On the Pi the app keeps the last few minutes and answers GET /api/system/stats; the
+# developer page on your computer fetches them from there (dev.pi_address).
+system_stats:
+  enabled: false                # true on the Pi (raspberry_pi/settings.pi.yaml); on a Mac there's nothing to read
+  every_sec: 2                  # read everything this often
+  keep_min: 30                  # keep this many minutes of numbers, in memory (lost when the app restarts)
+  proc_folder: /proc            # where Linux keeps the processor, memory and disk numbers
+  sys_folder: /sys              # and the temperatures, the fan, voltages and the processor speed
+  host_proc_folder: /proc       # where the whole machine's programs and network are. Inside a container its own
+                                # /proc only shows that container's, so the Pi mounts the real one (compose.yaml)
+  disks:                        # how full each of these is (a path on that disk; a relative one is under the project)
+    - label: data folder
+      path: data
+  top_processes: 8              # show this many of the busiest programs
+  command_chars: 80             # each program is shown as its name and the script or module it runs (never the
+                                # rest of its command line, which can hold a password), cut to this many letters
+  skip_networks: [lo, docker, br-, veth]   # leave out networks whose name starts with these (Docker's own)
+  skip_disks: [loop, ram, zram]  # and disks like these (not real disks)
+
 # ── Developer page (http://localhost:5000/dev/, only from this computer) ──
 dev:
   enabled: true                 # false = no developer page and no /api/dev routes
   ui_folder: dev_ui/dist        # where `npm run build` in dev_ui/ puts the page
   vite_port: 5173               # `npm run dev` serves the page here while you work on it
   poll_sec: 1                   # how often the page asks for new numbers
+  pi_address: desktalk.local:5000   # where the Pi tab fetches the Pi's numbers from: its name and port
+  pi_stats_timeout_sec: 3       # how long the Pi may take to answer before the tab says it can't reach it
   checks:                       # the "Run everything" button: these run one after the other
     - name: Fast tests
       command: [uv, run, pytest, -m, "not slow and not docker and not e2e", -o, "addopts=", -q]

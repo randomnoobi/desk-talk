@@ -52,11 +52,12 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Main server
 
-### Health (1)
+### Health (2)
 
 | Method | Path | What it does | Called by | Access |
 |---|---|---|---|---|
 | GET | `/api/health` | How every part is doing in one reply: background jobs, timed jobs, event consumers, camera, what the Pi said lately, detection, the AI. | The developer page's System and Storage tabs (`dev_ui/src/api.ts`). People `curl` it ([raspberry_pi/README.md](../raspberry_pi/README.md)); `tests/e2e/test_full_stack.py` | anyone on the network |
+| GET | `/api/system/stats?since=` | The system numbers of the machine the app runs on, kept for `system_stats.keep_min` minutes: `{collecting, every_sec, keep_min, info, samples}`, the samples newer than `since`. Each sample has the processor (busy, per core, speed, load), memory and swap, temperatures, the fan, voltages, under-voltage, disk space and disk speed, network and Wi-Fi, and the busiest programs. `collecting` is false (and `samples` empty) where `system_stats.enabled` is off: everywhere but the Pi. In `desktalk/web/routers/system.py`. | `GET /api/dev/pi_stats` on a computer (the Pi tab); `tests/pi/test_real_pi.py` | anyone on the network |
 
 ### Chat (9)
 
@@ -186,7 +187,7 @@ The camera container (`raspberry_pi/camera/`) is the only caller. Both routes ne
 |---|---|---|---|---|
 | GET | `/api/cloud/status` | Whether this Pi (or computer) is linked to a cloud server: `{"linked", "stopped", "last_sent_ts", "waiting"}`. `stopped` means the server no longer knows it, so it needs linking again. `waiting` is how many events were still to go at its last try, so it doesn't count ones written since. | `web_app/app.js` (the line in Settings) | anyone on the network |
 
-### Developer page (this computer only) (20)
+### Developer page (this computer only) (21)
 
 The routes behind the developer page (`dev_ui/`, see [its README](../dev_ui/README.md)), in
 `desktalk/web/routers/dev.py`. They are only there when `dev.enabled` is on in `config/settings.yaml`;
@@ -218,12 +219,13 @@ has `"demo": true`), and a pretend sip counts in today's water.
 | GET | `/api/dev/scenarios` | The pretend warnings (`dev.scenarios.items`) and the ones counting down. | Demo tab | this computer and its own page only |
 | POST | `/api/dev/scenarios` | Start a pretend warning counting down; it goes out like the real one when the countdown is over. | Demo tab (**Start**) | this computer and its own page only |
 | DELETE | `/api/dev/scenarios/{id}` | Stop one counting down, so it never goes out. | Demo tab (**Cancel**) | this computer and its own page only |
+| GET | `/api/dev/pi_stats?since=` | The Pi's `GET /api/system/stats`, fetched from `dev.pi_address` (the page can't ask the Pi itself: `web.cors_origins` is empty), with `"address"` added. 502 with `dev.pi_stats_unreachable`'s words when the Pi doesn't answer within `dev.pi_stats_timeout_sec`. | Pi tab | this computer and its own page only |
 | GET | `/dev/` | The developer page (`dev_ui/dist/index.html`, from `dev.ui_folder`). Before `npm run build` has made it, a plain line saying how to build it (200). | Your browser | anyone on the network (only the page itself: what it shows comes from the routes above) |
 | GET | `/dev/{file}` | The page's other files (its script and style, the font). | Your browser | anyone on the network |
 
 - Every `/api/dev` route turns away other computers and other web pages with 403 and `{"error": ...}`
   (the wording is in `config/prompts.yaml` under `dev:`), before anything runs.
-- `GET /api/dev/settings`: `{"poll_sec", "checks": [names], "health": {...}, "trace_pictures",
+- `GET /api/dev/settings`: `{"poll_sec", "checks": [names], "health": {...}, "pi_hot": {"warning_c", "serious_c"}, "trace_pictures",
   "trace_events_kept", "trace_photos_kept", "trace_step_photos_kept", "sql_max_rows", "data_folder", "object_states": {"on_confidence", "off_confidence", "appear_sec",
   "gone_sec", "window_pictures", "vote_share"}, "scenarios": {"countdown_default_sec", "countdown_max_sec",
   "waiting_max"}}`.

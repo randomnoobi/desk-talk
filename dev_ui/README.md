@@ -7,7 +7,7 @@ requests from this computer.
 It's a small Vite + React + TypeScript app. The app page itself (`web_app/`) stays plain JavaScript.
 You need Node 22 (it comes with npm).
 
-## The six tabs
+## The seven tabs
 
 - **Checks**: **Run everything** runs each step in `dev.checks` (the fast tests, the lint, the type check)
   one after the other. Below it, every test as folder → file → test, with a search box and a **Run** button
@@ -22,6 +22,16 @@ You need Node 22 (it comes with npm).
   slowed down, disk, clock) and every part on this computer (detection, the event stream, background jobs,
   timed jobs, the event log, the AI), from `/api/health` and `/api/log/status`. Numbers turn amber or red
   at the limits in `dev.health`.
+- **Pi**: every system number the Pi gives, now and over its last `system_stats.keep_min` minutes (the
+  Pi's own setting): the model, how long it has been up, and warnings (the power supply too weak, too hot at
+  `pi.hot_warning_c` and `pi.hot_serious_c`, slowed down now (red) or earlier since it started (amber), the Pi
+  can't be reached); big numbers for CPU, memory, the
+  data folder, the hottest sensor, the fan, Wi-Fi and load; charts of CPU use, each core, CPU speed, load,
+  temperatures, fan speed and power, memory, disk reads and writes, disk busy, network sent and received,
+  Wi-Fi signal and voltages; and tables of disk space, the busiest programs, cooling and network errors.
+  It asks this computer's `/api/dev/pi_stats`, which asks the Pi at `dev.pi_address`, every
+  `system_stats.every_sec` (the Pi says how often), only for samples newer than the ones it has. A number the
+  Pi can't read (no fan, a Mac) says so instead of an empty chart.
 - **Database**: the databases and their tables with row counts (counted on open, every
   `dev.table_counts_every_sec` and on **Count again**). Click a table to see its newest rows and
   its `CREATE` line, or type a query (Ctrl/Cmd+Enter runs it) or pick a ready-made one. Only queries that
@@ -78,9 +88,10 @@ The server's `/api/dev/...` routes are listed in [docs/API.md](../docs/API.md#de
 - `src/usePoll.ts`: asks the server again every few seconds and keeps the last good answer.
 - `src/App.tsx`: the tab bar. It loads `/api/dev/settings` once and gives it to every tab. The page keeps
   no numbers of its own: they all come from `config/settings.yaml` through that reply.
-- `src/tabs/`: one file per tab (Checks, Live, System, Database, Storage, Demo).
+- `src/tabs/`: one file per tab (Checks, Live, System, Pi, Database, Storage, Demo).
 - The sums behind the tabs: `src/testTree.ts` (Checks), `src/timeline.ts` and
-  `src/SmoothingChart.tsx` (Live), `src/health.ts` (System), `src/queries.ts` (Database's ready-made
+  `src/SmoothingChart.tsx` (Live), `src/health.ts` (System),
+  `src/piStats.ts` and `src/StatsChart.tsx` (Pi), `src/queries.ts` (Database's ready-made
   queries), `src/browserStorage.ts` (Storage).
 - `serverPorts.ts`: reads `web.port` and `dev.vite_port` for `vite.config.ts`.
 - Tests sit next to the file they test (`*.test.ts`, `*.test.tsx`) and fake the server's replies, so they

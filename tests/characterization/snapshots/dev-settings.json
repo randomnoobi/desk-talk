@@ -22,6 +22,10 @@
       "window_pictures": "number"
     },
     "output_keep_kb": "number",
+    "pi_hot": {
+      "serious_c": "number",
+      "warning_c": "number"
+    },
     "poll_sec": "number",
     "scenarios": {
       "countdown_default_sec": "number",

@@ -49,6 +49,7 @@ EVERY_ROUTE: list[tuple[str, str, Any]] = [
     ('GET', '/api/dev/scenarios', None),
     ('POST', '/api/dev/scenarios', {'name': 'sip', 'after_sec': 0}),
     ('DELETE', '/api/dev/scenarios/demo-1', None),
+    ('GET', '/api/dev/pi_stats?since=0', None),
 ]
 
 
@@ -98,6 +99,7 @@ def test_settings_give_the_page_its_numbers(rig):
     assert settings['poll_sec'] == config.dev.poll_sec
     assert settings['checks'] == [check.name for check in config.dev.checks]
     assert settings['health'] == config.dev.health.model_dump()
+    assert settings['pi_hot'] == {'warning_c': config.pi.hot_warning_c, 'serious_c': config.pi.hot_serious_c}
     assert settings['trace_pictures'] == config.object_states.trace_pictures
     assert settings['sql_max_rows'] == config.dev.sql_max_rows
     assert settings['data_folder'] == str(config.resolve(config.storage.folder))

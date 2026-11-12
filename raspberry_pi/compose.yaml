@@ -47,6 +47,9 @@ services:
       # sets this folder up again each time the container starts, and the app reads the file only when it starts, so a
       # new folder (systemd-timesyncd restarted) changes nothing.
       - ${CLOCK_SYNC_FOLDER:-/run/systemd/timesync}:/run/timesync:ro
+      # The Pi's own /proc, read-only, for the developer page's Pi tab (system_stats.host_proc_folder): the app's own
+      # /proc shows only its own programs and network, not the camera's and the detector's, or the Pi's Wi-Fi.
+      - /proc:/host/proc:ro
     device_cgroup_rules:
       - c ${SOUND_DEVICE_MAJOR:-116}:* rw               # read and write sound devices, but not make new ones
     mem_limit: ${APP_MEMORY_LIMIT:-1g}                      # over this, Docker stops it and starts it again ...

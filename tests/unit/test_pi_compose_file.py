@@ -293,3 +293,17 @@ def test_only_the_pi_reads_a_boot_id():
 def test_the_pi_reads_the_kernels_boot_id(pi_settings):
     """/proc needs nothing in compose.yaml: every container shares the Pi's kernel, so it shows the Pi's own id."""
     assert pi_settings['object_states']['boot_id_file'] == '/proc/sys/kernel/random/boot_id'
+
+
+def test_the_app_sees_the_pis_own_programs_and_network_read_only(pi_settings, compose):
+    """For the developer page's Pi tab: the app container's own /proc shows only its own programs and network."""
+    line = next(str(v) for v in compose['services']['app']['volumes'] if str(v).startswith('/proc:'))
+    outside, inside, mode = line.split(':')
+    assert (outside, mode) == ('/proc', 'ro')
+    assert pi_settings['system_stats'] == {'enabled': True, 'host_proc_folder': inside}
+
+
+def test_a_computer_reads_no_system_numbers():
+    """Only the Pi reads them: on a Mac there's no /proc, and the developer page fetches the Pi's."""
+    settings = yaml.safe_load((ROOT / 'config' / 'settings.yaml').read_text(encoding='utf-8'))
+    assert settings['system_stats']['enabled'] is False

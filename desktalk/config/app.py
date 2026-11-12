@@ -878,6 +878,29 @@ class ObjectStorySettings(_Section):
     photo_match_sec: PositiveNumber
 
 
+class StatsDisk(_Section):
+    """A disk the Pi tab shows how full it is: a path on it, and what to call it."""
+
+    label: str
+    path: Path
+
+
+class SystemStatsSettings(_Section):
+    """The system numbers the Pi reads for the developer page's Pi tab (desktalk/core/system/)."""
+
+    enabled: bool
+    every_sec: PositiveNumber
+    keep_min: PositiveNumber
+    proc_folder: Path
+    sys_folder: Path
+    host_proc_folder: Path
+    disks: tuple[StatsDisk, ...]
+    top_processes: Count
+    command_chars: PositiveInt
+    skip_networks: tuple[str, ...]
+    skip_disks: tuple[str, ...]
+
+
 class DevSettings(_Section):
     """The developer page at /dev/ (only from this computer): running the tests, the database, the data folder."""
 
@@ -885,6 +908,8 @@ class DevSettings(_Section):
     ui_folder: Path
     vite_port: Port
     poll_sec: PositiveNumber
+    pi_address: str                   # the Pi's name and port, like desktalk.local:5000 (the Pi tab)
+    pi_stats_timeout_sec: PositiveNumber
     checks: Annotated[tuple[DevCheck, ...], Field(min_length=1)]
     test_command: Command
     collect_markers: str
@@ -949,6 +974,7 @@ class AppConfig(_Section):
     logging: LoggingSettings
     storage: StorageSettings
     object_story: ObjectStorySettings
+    system_stats: SystemStatsSettings
     dev: DevSettings
     protocols: Protocols
     agents_file: AgentsFile
