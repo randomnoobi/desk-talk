@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from desktalk.adapters.dev.pi_log import MARKER, SshPiLog, pi_time
+from desktalk.adapters.dev.pi_log import MARKER, SshPiLog, time_in, unix_seconds
 from desktalk.config import AppConfig, DevPiLogSettings, load_config
 from desktalk.domain import PiLogPage
 from tests.contracts.pi_log_contract import PiLogContract
@@ -153,6 +153,19 @@ def test_long_lines_are_cut(made):
     assert texts(page) == ['abcdefghij']
 
 
+# "ssh" whose lines end in \r\n, as they do through ssh -tt
+CRLF_SSH = ['sh', '-c', 'sh -c "$0" | awk \'{printf "%s\\r\\n", $0; fflush()}\'']
+
+
+def test_lines_ending_in_cr_lf_are_read_and_the_marker_still_works(made):
+    words = app_config().prompts.dev.pi_log
+    pi_log = made(ssh=CRLF_SSH)
+    page = wait_for(lambda: pi_log.read('first', 0), lambda p: 'three' in texts(p))
+    assert texts(page) == ['one', 'two', 'three']
+    assert words.connected in texts(page, 'note')
+    assert page.state == 'connected'
+
+
 def test_a_line_without_its_newline_still_comes_at_the_end(made):
     pi_log = made(sources={'first': ("printf 'last'", 'sleep 30'), 'second': ('true', 'true')})
     page = wait_for(lambda: pi_log.read('first', 0), lambda p: p.state == 'waiting')
@@ -191,9 +204,9 @@ def test_it_picks_up_after_the_last_time_without_repeating_lines(made):
     page = wait_for(lambda: pi_log.read('first', 0), lambda p: any('three' in text for text in texts(p)))
     assert texts(page) == ['camera-1  | 2026-11-11T10:00:00.123456789Z one',
                            'camera-1  | 2026-11-11T10:00:01.000000000Z two',
-                           'since=2026-11-11T10:00:01.000000000Z',
+                           'since=1794391201.000000000',
                            'camera-1  | 2026-11-11T10:00:02.5Z three']
-    resume = STAMPED_RESUME.replace('{since}', '2026-11-11T10:00:01.000000000Z')
+    resume = STAMPED_RESUME.replace('{since}', '1794391201.000000000')
     again = words.reconnecting.format(since='2026-11-11T10:00:01.000000000Z',
                                       command=f"sh -c {shlex.quote(resume)}")
     assert again in texts(page, 'note')
@@ -229,15 +242,37 @@ def test_the_wait_doubles_up_to_the_most(made):
     assert waits == [2, 4, 5, 5]
 
 
-def test_the_wait_starts_small_again_once_connected(made):
+def test_the_wait_keeps_growing_when_it_ends_right_after_connecting(made):
     clock = FakeClock()
-    pi_log = made(clock, retry_start_sec=2, retry_max_sec=30,
+    pi_log = made(clock, retry_start_sec=2, retry_max_sec=30, connected_ok_sec=10,
                   sources={'first': ("echo hi; exit 1", "echo hi; exit 1"), 'second': ('true', 'true')})
+    waits = []
     for _ in range(3):
         page = wait_for(lambda: pi_log.read('first', 0), lambda p: p.state == 'waiting')
-        assert page.retry_at == clock.now() + 2       # it got through each time, so no longer wait
-        clock.advance(2)
+        assert page.retry_at is not None
+        waits.append(page.retry_at - clock.now())
+        clock.advance(waits[-1])
         pi_log.tick(clock.now())
+    assert waits == [2, 4, 8]         # it got through each time, but the command ended at once (folder missing...)
+
+
+def test_the_wait_starts_small_again_after_a_connection_that_lasted(made, tmp_path):
+    clock = FakeClock()
+    gate = shlex.quote(str(tmp_path / 'end'))        # the command ends once this file is there
+    ends = f"echo hi; while [ ! -e {gate} ]; do sleep 0.01; done; rm {gate}; exit 1"
+    pi_log = made(clock, retry_start_sec=2, retry_max_sec=30, connected_ok_sec=10,
+                  sources={'first': (ends, ends), 'second': ('true', 'true')})
+    waits = []
+    for lasted in (0, 0, 10):
+        wait_for(lambda: pi_log.read('first', 0), lambda p: p.state == 'connected')
+        clock.advance(lasted)
+        (tmp_path / 'end').touch()
+        page = wait_for(lambda: pi_log.read('first', 0), lambda p: p.state == 'waiting')
+        assert page.retry_at is not None
+        waits.append(page.retry_at - clock.now())
+        clock.advance(waits[-1])
+        pi_log.tick(clock.now())
+    assert waits == [2, 4, 2]
 
 
 # ── stopping ─────────────────────────────────────────────────────────
@@ -265,16 +300,44 @@ def test_it_stops_once_the_tab_stops_asking(made):
     wait_until_gone(child_pid(page))
 
 
-def test_asking_again_after_stopping_starts_fresh(made):
+STAMPED_STAYS = STAMPED_START.replace('exit 3', 'sleep 30')
+STAMPED_TEXTS = ['camera-1  | 2026-11-11T10:00:00.123456789Z one', 'camera-1  | 2026-11-11T10:00:01.000000000Z two']
+
+
+def test_asking_again_after_stopping_picks_up_from_the_last_time(made):
     clock = FakeClock()
-    pi_log = made(clock)
-    page = wait_for(lambda: pi_log.read('first', 0), lambda p: 'three' in texts(p))
+    words = app_config().prompts.dev.pi_log
+    pi_log = made(clock, sources={'first': (STAMPED_STAYS, STAMPED_RESUME), 'second': ('true', 'true')})
+    page = wait_for(lambda: pi_log.read('first', 0), lambda p: texts(p) == STAMPED_TEXTS)
     clock.advance(make_settings().stop_after_idle_sec + 1)
     pi_log.tick(clock.now())
-    again = wait_for(lambda: pi_log.read('first', page.end), lambda p: 'three' in texts(p))
-    assert texts(again) == ['one', 'two', 'three']
-    assert all(line.number > page.end for line in pi_log.read('first', 0).lines)
+    again = wait_for(lambda: pi_log.read('first', page.end), lambda p: any('three' in t for t in texts(p)))
+    assert texts(again) == ['since=1794391201.000000000', 'camera-1  | 2026-11-11T10:00:02.5Z three']   # no repeats
+    stopped, reconnecting = texts(again, 'note')[:2]
+    assert stopped == words.stopped.format(seconds=f'{make_settings().stop_after_idle_sec:g}')
+    assert reconnecting.startswith(words.reconnecting.split('{')[0])
+    assert all(line.number > page.end for line in again.lines)
+    assert texts(pi_log.read('first', 0))[:2] == STAMPED_TEXTS     # what came before is still kept
     assert not again.dropped
+
+
+def test_asking_again_after_close_picks_up_too(made):
+    pi_log = made(sources={'first': (STAMPED_STAYS, STAMPED_RESUME), 'second': ('true', 'true')})
+    page = wait_for(lambda: pi_log.read('first', 0), lambda p: texts(p) == STAMPED_TEXTS)
+    pi_log.close()
+    again = wait_for(lambda: pi_log.read('first', page.end), lambda p: any('three' in t for t in texts(p)))
+    assert texts(again) == ['since=1794391201.000000000', 'camera-1  | 2026-11-11T10:00:02.5Z three']
+
+
+def test_another_source_after_stopping_starts_fresh(made):
+    clock = FakeClock()
+    pi_log = made(clock, sources={'first': (STAMPED_STAYS, STAMPED_RESUME),
+                                  'second': ("printf 'four\\n'; sleep 30", 'echo resumed; sleep 30')})
+    page = wait_for(lambda: pi_log.read('first', 0), lambda p: texts(p) == STAMPED_TEXTS)
+    clock.advance(make_settings().stop_after_idle_sec + 1)
+    pi_log.tick(clock.now())
+    wait_for(lambda: pi_log.read('second', page.end), lambda p: 'four' in texts(p))
+    assert texts(pi_log.read('second', 0)) == ['four']
 
 
 def test_close_ends_the_sleeping_child(made):
@@ -314,6 +377,15 @@ def test_only_the_newest_lines_are_kept(made):
     assert pi_log.read('first', page.lines[0].number - 2).dropped
 
 
+def test_only_the_newest_times_are_remembered_for_leaving_out_repeats(made):
+    lines = ''.join(f'2026-11-11T10:00:0{n}Z l{n}\\n' for n in range(1, 7))
+    pi_log = made(first_lines=3, keep_lines=3,
+                  sources={'first': (f"printf '{lines}'; sleep 30", 'sleep 30'), 'second': ('true', 'true')})
+    wait_for(lambda: pi_log.read('first', 0), lambda p: any('l6' in t for t in texts(p)))
+    assert [key[1] for key in pi_log._recent] == ['2026-11-11T10:00:04Z l4', '2026-11-11T10:00:05Z l5',
+                                                  '2026-11-11T10:00:06Z l6']
+
+
 def test_the_first_lines_go_into_the_start_command(made):
     pi_log = made(first_lines=7, sources={'first': ("echo tail={first_lines}; sleep 30", 'sleep 30'),
                                           'second': ('true', 'true')})
@@ -330,9 +402,28 @@ def test_the_first_lines_go_into_the_start_command(made):
     ('2026-11-11T05:30:00.000001-0430', (1_794_391_200, 1_000)),
 ])
 def test_the_pi_time_is_read_as_a_real_time(text, expected):
-    assert pi_time(text) == expected
+    assert time_in(text) == (expected, text)
+
+
+@pytest.mark.parametrize(('line', 'expected'), [
+    ('camera-1  | 2026-11-11T10:00:00.5Z hello', ((1_794_391_200, 500_000_000), '2026-11-11T10:00:00.5Z')),
+    ('2026-11-11T10:00:00.123456+0000 pi desk-talk-camera[42]: hello',
+     ((1_794_391_200, 123_456_000), '2026-11-11T10:00:00.123456+0000')),
+    ('no time here', None),
+])
+def test_the_pi_time_is_found_in_a_line(line, expected):
+    assert time_in(line) == expected
+
+
+@pytest.mark.parametrize(('when', 'expected'), [
+    ((1_794_391_201, 0), '1794391201.000000000'),
+    ((1_794_391_200, 123_456_789), '1794391200.123456789'),
+    ((1_794_391_200, 5), '1794391200.000000005'),
+])
+def test_since_is_seconds_since_1970_without_rounding(when, expected):
+    assert unix_seconds(when) == expected
 
 
 def test_a_time_that_makes_no_sense_is_none():
-    assert pi_time('2026-13-45T99:00:00Z') is None
-    assert pi_time('not a time') is None
+    assert time_in('2026-13-45T99:00:00Z') is None
+    assert time_in('not a time') is None

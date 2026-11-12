@@ -1,62 +1,65 @@
 """
 The developer page's Pi log tab (ports.PiLogReader): the Pi's log, read over ssh (settings → dev.pi_log).
 
-- read() starts `ssh ... 'echo MARKER; <the source's start command>'` the first time a source is asked for (or
-  again after reading stopped), as a child process in its own process group. Another source being asked for ends
-  the one before and lets its lines go; the line numbers keep counting up all the same.
+- read() starts `ssh ... 'echo MARKER; <the source's start command>'` the first time a source is asked for, as a
+  child process in its own process group. ssh gets a terminal on the Pi (-tt in settings → ssh), so the command
+  there ends when the connection does. Another source being asked for ends the one before and lets its lines go;
+  the line numbers keep counting up all the same.
 - Two plain threads read ssh's printout: each line it prints becomes a 'line' (cut to settings → line_max_chars),
-  each error line a 'problem'. The marker line itself isn't kept: it means ssh got through to the Pi.
+  each error line ssh itself prints a 'problem' (through the terminal the Pi's own errors come with its lines).
+  The marker line itself isn't kept: it means ssh got through to the Pi. Line ends (\\r\\n through the terminal)
+  are taken off.
 - When ssh ends by itself, the reader waits (settings → retry_start_sec, twice as long after each miss up to
-  retry_max_sec) and tick() connects again with the source's resume command, from the Pi's own time on the last
-  line it got (settings → time_pattern). The lines from exactly that time come again, so a line with the same
-  time and text as one of the newest kept lines is left out.
-- tick() also stops reading once the tab hasn't asked for settings → stop_after_idle_sec.
+  retry_max_sec) and tick() connects again with the source's resume command, from the Pi's own time on the newest
+  line it got: {since} is that time as seconds since 1970 with its fraction (1762855200.123456789). The lines from
+  exactly that time come again, so a line with the same time and text as one of the newest kept lines is left out.
+  The wait only starts small again after a connection that lasted settings → connected_ok_sec, so a command that
+  fails right after connecting (a missing folder, Docker stopped) doesn't try again every retry_start_sec forever.
+- tick() also stops reading once the tab hasn't asked for settings → stop_after_idle_sec. Asking for the same
+  source again (also after close()) picks up where it stopped, the same way: the kept lines stay, and the resume
+  command goes on from the newest time (the start command only when no time was ever seen).
 
 Only the newest settings → keep_lines lines are kept. No shell is used on this side: the commands only come from
-the settings, and the one thing filled in from outside them (the Pi's time) is quoted first.
+the settings, and the one thing filled in from outside them (the Pi's time) is quoted first. There is one reader
+for the whole app, so two pages showing different logs at once keep restarting each other's ssh.
 """
 
 from __future__ import annotations
 
 import calendar
-import codecs
-import contextlib
-import io
 import itertools
 import logging
-import os
 import re
 import shlex
-import signal
 import subprocess
 import threading
-from collections import deque
+from collections import OrderedDict, deque
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import IO
 
+from desktalk.adapters.dev.processes import end_process, text_of
 from desktalk.config.app import DevPiLogSettings, DevPiLogSource
 from desktalk.config.prompts import PiLogWords
 from desktalk.domain import PiLogLine, PiLogPage, PiLogSource
 from desktalk.ports import Clock
+from desktalk_shared.backoff import Backoff
 
 log = logging.getLogger(__name__)
 
 MARKER = 'desktalk-pi-log-got-through-7f3a9c'   # printed on the Pi before the command: ssh got through
-ENCODING = 'utf-8'
 NANOSECONDS = 9                                  # digits of a second the Pi's time can have
+# The Pi's own time in a line: docker's --timestamps (2026-11-11T10:00:00.123456789Z), journalctl's
+# short-iso-precise (2026-11-11T10:00:00.123456+0000)
 ISO_TIME = re.compile(r'(\d{4})-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:[.,](\d+))?(Z|[+-]\d\d:?\d\d)?')
 
 PiTime = tuple[int, int]                         # (seconds since 1970, nanoseconds)
 
 
-def pi_time(text: str) -> PiTime | None:
-    """The time in an ISO text like 2026-11-11T10:00:00.123456789Z or ...+02:00 / ...+0200 (no zone: UTC), as a
-    pair that compares like the real times do. None when it isn't such a time."""
-    found = ISO_TIME.fullmatch(text.strip())
-    if found is None:
-        return None
+def _time_of(found: re.Match[str]) -> PiTime | None:
+    """The time ISO_TIME found, like 2026-11-11T10:00:00.123456789Z or ...+02:00 / ...+0200 (no zone: UTC), as a
+    pair that compares like the real times do. None when it isn't a real time."""
     year, month, day, hour, minute, second = (int(part) for part in found.groups()[:6])
     fraction, zone = found.group(7) or '', found.group(8) or 'Z'
     try:
@@ -71,6 +74,22 @@ def pi_time(text: str) -> PiTime | None:
     return seconds, int(fraction[:NANOSECONDS].ljust(NANOSECONDS, '0'))
 
 
+def time_in(line: str) -> tuple[PiTime, str] | None:
+    """The first ISO time in a line of the Pi's log, and its text as printed. None when there is none."""
+    found = ISO_TIME.search(line)
+    if found is None:
+        return None
+    when = _time_of(found)
+    return (when, found.group()) if when is not None else None
+
+
+def unix_seconds(when: PiTime) -> str:
+    """A Pi time as seconds since 1970 with all its fraction (1762855200.123456789), for {since}: no float, so
+    nothing is rounded."""
+    seconds, nanoseconds = when
+    return f'{seconds}.{nanoseconds:0{NANOSECONDS}d}'
+
+
 def _seconds(value: float) -> str:
     return f'{value:g}'
 
@@ -82,6 +101,7 @@ class _Connection:
     number: int
     process: subprocess.Popen[bytes]
     last_error: str = ''                                 # the last line it printed on stderr
+    connected_at: float | None = None                    # clock.monotonic() when the marker came
     errors_read: threading.Event = field(default_factory=threading.Event)
 
 
@@ -96,19 +116,18 @@ class SshPiLog:
         self._words = words
         self._clock = clock
         self._stop_wait_sec = stop_wait_sec
-        self._time_pattern = re.compile(settings.time_pattern)
         self._sources = {source.name: source for source in settings.sources}
         self._lock = threading.Lock()
         self._source: DevPiLogSource | None = None      # the one being read (or last read)
         self._state = 'stopped'
         self._problem = ''
         self._retry_at: float | None = None
-        self._wait = settings.retry_start_sec           # how long the next retry waits
+        self._backoff = Backoff(settings.retry_start_sec, settings.retry_max_sec)   # the waits before trying again
         self._last_asked = 0.0                          # clock.monotonic() of the last read()
         self._lines: deque[PiLogLine] = deque()
         self._number = 0                                # the last line number handed out
         self._dropped_up_to = 0                         # the newest number let go because too many came
-        self._recent: dict[tuple[PiTime, str], None] = {}   # (time, text) of the newest kept Pi lines, oldest first
+        self._recent: OrderedDict[tuple[PiTime, str], None] = OrderedDict()   # (time, text) of the newest Pi lines
         self._newest: tuple[PiTime, str] | None = None  # the newest Pi time seen, and its text as printed
         self._connections = 0                           # how many ssh runs have started (each one's number)
         self._connection: _Connection | None = None
@@ -124,12 +143,15 @@ class SshPiLog:
         old = None
         with self._lock:
             self._last_asked = self._clock.monotonic()
-            if self._source is not wanted or self._state == 'stopped':
+            if self._source is not wanted:
                 old = self._let_go()
                 self._start_fresh(wanted)
+            elif self._state == 'stopped':              # back after the idle stop or close(): pick up again
+                self._backoff.reset()
+                self._connect(resume=True)
             page = self._page(after)
         if old is not None:
-            self._end_process(old.process)
+            end_process(old.process, self._stop_wait_sec)
         return page
 
     def close(self) -> None:
@@ -138,7 +160,7 @@ class SshPiLog:
             self._state = 'stopped'
             self._retry_at = None
         if old is not None:
-            self._end_process(old.process)
+            end_process(old.process, self._stop_wait_sec)
 
     # ── ports.PeriodicWorker ──────────────────────────────────────
     def tick(self, now: float) -> float:
@@ -155,7 +177,7 @@ class SshPiLog:
             elif self._state == 'waiting' and self._retry_at is not None and now >= self._retry_at:
                 self._connect(resume=True)
         if old is not None:
-            self._end_process(old.process)
+            end_process(old.process, self._stop_wait_sec)
         return self._settings.check_every_sec
 
     # ── connecting (lock held) ────────────────────────────────────
@@ -167,17 +189,17 @@ class SshPiLog:
         self._recent.clear()
         self._newest = None
         self._problem = ''
-        self._wait = self._settings.retry_start_sec
+        self._backoff.reset()
         self._connect(resume=False)
 
     def _connect(self, *, resume: bool) -> None:
         source = self._source
         assert source is not None
         if resume and self._newest is not None:
-            since = self._newest[1]
-            command = source.resume.replace('{since}', shlex.quote(since))
+            when, printed = self._newest
+            command = source.resume.replace('{since}', shlex.quote(unix_seconds(when)))
             shown = shlex.join([*self._settings.ssh, command])
-            self._add(self._words.reconnecting.format(since=since, command=shown), 'note')
+            self._add(self._words.reconnecting.format(since=printed, command=shown), 'note')
         else:
             command = source.start.replace('{first_lines}', str(self._settings.first_lines))
             shown = shlex.join([*self._settings.ssh, command])
@@ -193,7 +215,7 @@ class SshPiLog:
         except OSError as error:
             self._add(self._words.cannot_start.format(reason=error), 'note')
             log.warning("Pi log: couldn't start ssh: %s", error)
-            self._lost(str(error))
+            self._lost(str(error), None)
             return
         connection = _Connection(self._connections, process)
         self._connection = connection
@@ -202,14 +224,17 @@ class SshPiLog:
         threading.Thread(target=self._read_lines, args=(connection,), name=f'pi-log-{connection.number}',
                          daemon=True).start()
 
-    def _lost(self, reason: str) -> None:
-        """The connection ended by itself: wait, then try again (tick())."""
+    def _lost(self, reason: str, connected_at: float | None) -> None:
+        """The connection ended by itself: wait, then try again (tick()). Only one that had been connected for
+        settings → connected_ok_sec makes the wait start small again."""
         self._connection = None
         self._state = 'waiting'
         self._problem = reason
-        wait = self._wait
+        if connected_at is not None and \
+                self._clock.monotonic() - connected_at >= self._settings.connected_ok_sec:
+            self._backoff.reset()
+        wait = self._backoff.next()
         self._retry_at = self._clock.now() + wait
-        self._wait = min(wait * 2, self._settings.retry_max_sec)
         self._add(self._words.lost.format(reason=reason, seconds=_seconds(wait)), 'note')
         log.warning('Pi log: the connection to the Pi ended (%s), trying again in %s s', reason, _seconds(wait))
 
@@ -227,13 +252,14 @@ class SshPiLog:
             with self._lock:
                 if self._connection is not connection:
                     break
-                self._take_line(line)
+                self._take_line(connection, line)
         process.stdout.close()
         exit_code = process.wait()
         connection.errors_read.wait(self._stop_wait_sec)    # so the last error line is there to say why
         with self._lock:
             if self._connection is connection:
-                self._lost(connection.last_error or self._words.exit_code.format(code=exit_code))
+                self._lost(connection.last_error or self._words.exit_code.format(code=exit_code),
+                           connection.connected_at)
 
     def _read_errors(self, connection: _Connection) -> None:
         stderr = connection.process.stderr
@@ -253,40 +279,37 @@ class SshPiLog:
 
     @staticmethod
     def _lines_of(pipe: IO[bytes]) -> Iterator[str]:
-        """The lines coming out of a pipe, without their line ends, as soon as each is whole (the last one even
-        without its newline)."""
-        decoder = codecs.getincrementaldecoder(ENCODING)(errors='replace')
-        handle = pipe.fileno()
+        """The lines coming out of a pipe, without their line ends (\\n or \\r\\n), as soon as each is whole (the
+        last one even without its newline)."""
         waiting = ''
-        while chunk := os.read(handle, io.DEFAULT_BUFFER_SIZE):
-            *whole, waiting = (waiting + decoder.decode(chunk)).split('\n')
+        for text in text_of(pipe):
+            *whole, waiting = (waiting + text).split('\n')
             for line in whole:
                 yield line.rstrip('\r')
-        waiting += decoder.decode(b'', final=True)
         if waiting:
             yield waiting.rstrip('\r')
 
-    def _take_line(self, line: str) -> None:
+    def _take_line(self, connection: _Connection, line: str) -> None:
         """One line the Pi printed. (Lock held.)"""
         if line == MARKER and self._state == 'connecting':
             self._state = 'connected'
             self._problem = ''
-            self._wait = self._settings.retry_start_sec
+            connection.connected_at = self._clock.monotonic()
             self._add(self._words.connected, 'note')
             log.info('Pi log: connected to the Pi')
             return
         text = line[:self._settings.line_max_chars]
-        found = self._time_pattern.search(line)
-        when = pi_time(found.group()) if found else None
-        if found is not None and when is not None:
+        found = time_in(line)
+        if found is not None:
+            when = found[0]
             key = (when, text)
             if key in self._recent:             # --since gives the lines from that time again
                 return
             self._recent[key] = None
             if len(self._recent) > self._settings.keep_lines:
-                del self._recent[next(iter(self._recent))]
+                self._recent.popitem(last=False)
             if self._newest is None or when > self._newest[0]:
-                self._newest = (when, found.group())
+                self._newest = found
         self._add(text, 'line')
 
     # ── the kept lines (lock held) ────────────────────────────────
@@ -304,20 +327,3 @@ class SshPiLog:
         name = self._source.name if self._source is not None else ''
         return PiLogPage(name, self._state, self._problem, self._retry_at if self._state == 'waiting' else None,
                          newer, self._number, after < self._dropped_up_to)
-
-    # ── ending ssh ────────────────────────────────────────────────
-    def _end_process(self, process: subprocess.Popen[bytes]) -> None:
-        """Ask ssh and everything it started to end; after stop_wait_sec, make them."""
-        self._signal(process, signal.SIGTERM)
-        try:
-            process.wait(timeout=self._stop_wait_sec)
-        except subprocess.TimeoutExpired:
-            self._signal(process, signal.SIGKILL)
-            process.wait()
-
-    @staticmethod
-    def _signal(process: subprocess.Popen[bytes], which: signal.Signals) -> None:
-        if process.returncode is not None:
-            return
-        with contextlib.suppress(ProcessLookupError):     # it has just ended by itself
-            os.killpg(process.pid, which)       # its own process group (start_new_session), so its children too

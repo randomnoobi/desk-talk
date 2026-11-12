@@ -16,7 +16,7 @@ const getPiLog = vi.mocked(api.getPiLog)
 const SETTINGS: DevSettings = {
   poll_sec: 1,
   checks: [],
-  health: { pi_cpu_warn_c: 70, pi_cpu_bad_c: 80, pi_disk_warn_mb: 1000, detect_warn_ms: 500 },
+  health: { pi_disk_warn_mb: 1000, detect_warn_ms: 500 },
   trace_pictures: 90,
   sql_max_rows: 500,
   data_folder: '/tmp/data',
@@ -114,6 +114,24 @@ describe('Pi log: reading', () => {
     expect(getPiLog).toHaveBeenLastCalledWith('detector', 8)
     await wait(SETTINGS.poll_sec * 1000)
     expect(getPiLog).toHaveBeenLastCalledWith('detector', 0)
+  })
+
+  it('empties the box when the server has started its numbers over, so the old and new lines never mix', async () => {
+    getPiLog
+      .mockResolvedValueOnce(reply({ lines: [line(1, 'old one'), line(2, 'old two')], dropped: true }))
+      .mockResolvedValueOnce(reply({ lines: [], end: 1 }))
+      .mockResolvedValueOnce(reply({ lines: [line(1, 'new one'), line(2, 'new two')] }))
+    await show()
+    expect(shownLines()).toEqual(['old one', 'old two'])
+    expect(screen.getByText(/older lines were let go/)).toBeInTheDocument()
+
+    await wait(SETTINGS.poll_sec * 1000)
+    expect(shownLines()).toEqual([])
+    expect(screen.queryByText(/older lines were let go/)).toBeNull()
+
+    await wait(SETTINGS.poll_sec * 1000)
+    expect(getPiLog).toHaveBeenLastCalledWith('detector', 0)
+    expect(shownLines()).toEqual(['new one', 'new two'])
   })
 
   it('says when the server did not answer, and keeps asking', async () => {

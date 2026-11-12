@@ -82,6 +82,7 @@ The server's `/api/dev/...` routes are listed in [docs/API.md](../docs/API.md#de
 - `src/api.ts`: every call to the server, one function per route, and the shape of each reply. A call
   that fails throws `ApiError` (`status` 0 when the server didn't answer).
 - `src/usePoll.ts`: asks the server again every few seconds and keeps the last good answer.
+- `src/useScrollToEnd.ts`: keeps a printout box (Checks, Pi log) scrolled to its end, unless you have scrolled up to read.
 - `src/App.tsx`: the tab bar. It loads `/api/dev/settings` once and gives it to every tab. The page keeps
   no numbers of its own: they all come from `config/settings.yaml` through that reply.
 - `src/tabs/`: one file per tab (Checks, Live, System, PiLog, Database, Storage, Demo). Each gets `TabProps`

@@ -7,6 +7,7 @@ import { getPiLog, type PiLog as PiLogReply, type PiLogLine, type PiLogSource, t
 import { PI_LOG_SOURCE_KEY, readChoice, saveChoice } from '../browserStorage'
 import { formatClock } from '../format'
 import { ErrorLine, Pill, type Level, type TabProps } from '../ui'
+import { useScrollToEnd } from '../useScrollToEnd'
 
 const wordsOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
@@ -62,7 +63,11 @@ export default function PiLog(props: TabProps): JSX.Element {
         const now = await getPiLog(source, after.current)
         if (gone) return
         if (now.end < after.current) {
-          after.current = 0           // the server started its numbers over (it restarted): ask for all it has
+          // The server started its numbers over (it restarted): start the box again and ask for all it
+          // has, so the old lines never sit next to new ones with the same numbers.
+          after.current = 0
+          setLines([])
+          setDropped(false)
         } else {
           after.current = now.end
           if (now.lines.length) setLines(old => [...old, ...now.lines].slice(-keep))
@@ -102,12 +107,7 @@ export default function PiLog(props: TabProps): JSX.Element {
   const visible = needle ? lines.filter(l => l.text.toLowerCase().includes(needle)) : lines
 
   // Keep the box scrolled to the end, unless you've scrolled up to read something.
-  const box = useRef<HTMLDivElement>(null)
-  const atEnd = useRef(true)
-  useEffect(() => {
-    const el = box.current
-    if (el && atEnd.current) el.scrollTop = el.scrollHeight
-  }, [visible, shown])
+  const end = useScrollToEnd<HTMLDivElement>([visible, shown])
 
   if (sources.length === 0) {
     return <div className="card"><p className="muted">The settings list no Pi logs to read.</p></div>
@@ -132,11 +132,7 @@ export default function PiLog(props: TabProps): JSX.Element {
       <ErrorLine error={error} />
       {dropped && <p className="muted small" style={S.problem}>Some older lines were let go before this page read them.</p>}
 
-      <div ref={box} className="printout" role="log" aria-label="Pi log" style={S.box}
-           onScroll={e => {
-             const el = e.currentTarget
-             atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < el.clientHeight / 4
-           }}>
+      <div ref={end.ref} className="printout" role="log" aria-label="Pi log" style={S.box} onScroll={end.onScroll}>
         {visible.map(l => (
           <div key={l.number} data-number={l.number} className={lineClass(l)} title={formatClock(l.at)}>{l.text}</div>
         ))}

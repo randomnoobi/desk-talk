@@ -873,7 +873,7 @@ class DevPiLogSource(_Section):
     name: str
     label: str
     start: str                        # a shell command on the Pi; blank: {first_lines}
-    resume: str                       # the same after a lost connection; blank: {since} (the last line's time)
+    resume: str                       # the same after a lost connection; blank: {since} (the newest line's time)
 
 
 class DevPiLogSettings(_Section):
@@ -885,22 +885,18 @@ class DevPiLogSettings(_Section):
     first_lines: PositiveInt
     keep_lines: PositiveInt
     line_max_chars: PositiveInt
-    time_pattern: str                 # finds the Pi's own time in a line, for {since}
     stop_after_idle_sec: PositiveNumber
     retry_start_sec: PositiveNumber
     retry_max_sec: PositiveNumber
+    connected_ok_sec: PositiveNumber  # a connection that lasted this long makes the next wait start small again
     check_every_sec: PositiveNumber
 
     @model_validator(mode='after')
-    def _names_differ_and_pattern_works(self):
+    def _names_differ(self):
         names = [source.name for source in self.sources]
         twice = sorted({name for name in names if names.count(name) > 1})
         if twice:
             raise ValueError(f'two Pi logs are called {", ".join(twice)}')
-        try:
-            re.compile(self.time_pattern)
-        except re.error as error:
-            raise ValueError(f'time_pattern is not a pattern Python can read: {error}') from None
         return self
 
 

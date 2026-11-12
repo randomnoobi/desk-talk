@@ -275,11 +275,13 @@ has `"demo": true`), and a pretend sip counts in today's water.
 - `GET /api/dev/pi_log?source=all&after=0`: `{"source", "state", "problem", "retry_at", "lines": [{"number",
   "text", "kind", "at"}], "end", "dropped"}`. `state` is `connecting`, `connected`, `waiting` (to try again at
   `retry_at`, after a lost connection) or `stopped`; `problem` is the last thing that went wrong (`""` once
-  connected again). A line's `kind` is `line` (the Pi printed it), `problem` (ssh's or the command's errors) or
-  `note` (this computer's own: connecting, lost, trying again); `at` is when this computer got it. Ask again
-  with `?after=<end>` for only the new lines; `dropped` is true when some lines after the number asked for were
-  let go already (only the newest `dev.pi_log.keep_lines` are kept). Asking for another log stops the one being
-  read. 404 for a `source` not in `dev.pi_log.sources`; 400 without a `source` or with `after` below 0.
+  connected again). A line's `kind` is `line` (the Pi printed it, its errors too: ssh runs with a terminal),
+  `problem` (ssh's own errors) or `note` (this computer's own: connecting, lost, trying again); `at` is when
+  this computer got it. Ask again with `?after=<end>` for only the new lines; `dropped` is true when some lines
+  after the number asked for were let go already (only the newest `dev.pi_log.keep_lines` are kept). Asking for
+  another log stops the one being read; asking for the same one after it stopped picks up where it left off,
+  keeping the lines and their numbers. 404 for a `source` not in `dev.pi_log.sources`; 400 without a `source` or
+  with `after` below 0.
 
 ### Pages and files (2)
 
