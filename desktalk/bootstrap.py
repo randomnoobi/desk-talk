@@ -19,10 +19,10 @@ gets only the interfaces it asks for (desktalk/ports.py) and its own section of 
                                                    └─► MessageGenerator ──► DesktopAlerts ──► MessageHub ──►
                                                                             (Mac pop-ups)      open app pages
     Background jobs (Supervisor): the producer, the scheduler (compact and prune the event log, save the
-    habits and the object states), the rule engine (the habit rules in protocols.yaml → rules), habit reminders
-    and Lens (both through DesktopAlerts too), small talk, lost items, the daily recap, the Ollama keep-alive
-    when the chat runs on Ollama, and the developer page's Demo tab countdowns (pretend warnings, fired on purpose
-    through the same parts as the real ones).
+    habits and the object states, delete old object states), the rule engine (the habit rules in protocols.yaml →
+    rules), habit reminders and Lens (both through DesktopAlerts too), small talk, lost items, the daily recap, the
+    Ollama keep-alive when the chat runs on Ollama, and the developer page's Demo tab countdowns (pretend warnings,
+    fired on purpose through the same parts as the real ones).
 
 Tests build the same app with fakes through build()'s keyword arguments (see tests/integration/app_kit.py).
 """
@@ -44,6 +44,7 @@ from desktalk.adapters.llm import OpenAICompatibleChatModel, ResilientChatModel,
 from desktalk.adapters.notify import QueuedNotifications, make_notifications
 from desktalk.adapters.picture import DeskPainter, OpenCvPictureTools
 from desktalk.adapters.storage import EventLog, JsonFileStore, SqliteStateStore
+from desktalk.adapters.storage.disk_space import FolderDiskSpace
 from desktalk.adapters.storage.json_files import SUFFIX as JSON_SUFFIX
 from desktalk.adapters.storage.trace_photo_files import TracePhotoFiles
 from desktalk.config import AppConfig, ConfigError, Protocols
@@ -68,6 +69,7 @@ from desktalk.core.habits.reminders import HabitReminders
 from desktalk.core.habits.rule_runner import RuleRunner
 from desktalk.core.habits.todos import TodoFile
 from desktalk.core.habits.tracker import HabitTracker
+from desktalk.core.health import HealthChecks
 from desktalk.core.object_states import ObjectStateTracker
 from desktalk.core.object_states.trace_photos import TracePhotoTaker
 from desktalk.core.vision import desk_edges
@@ -100,6 +102,7 @@ from desktalk.ports import (
     EventStore,
     FrameSource,
     HabitTracking,
+    HealthCheck,
     Jobs,
     KeyValueStore,
     LivePictures,
@@ -110,6 +113,7 @@ from desktalk.ports import (
     PhotoAlbum,
     PhotoTaker,
     PictureInbox,
+    PiHeartbeats,
     PiStatus,
     Preferences,
     Profiles,
@@ -121,11 +125,12 @@ from desktalk.ports import (
     TracedObjectStates,
     TracePhotos,
 )
-from desktalk.runtime import Scheduler, Supervisor, SystemClock, boot_id, clock_synced, plain_error, setup_logging
+from desktalk.runtime import ClockCheck, Scheduler, Supervisor, SystemClock, boot_id, plain_error, setup_logging
 
 log = logging.getLogger(__name__)
 
 MINUTE = 60
+DAY = 24 * 60 * MINUTE
 
 
 @dataclass(eq=False)
@@ -152,6 +157,7 @@ class DeskTalk:
     source            the camera: kind, connected, fps
     pi_inbox, pi      the Pi when it is the camera (None otherwise): push() for /api/pi/frame, status() and
                       pi_info() for /api/health and /api/live
+    pi_heartbeats     the same Pi: heartbeat() for /api/pi/heartbeat (None when it isn't the camera)
     phone_inbox,      the phone when it is the camera (None otherwise): push() for /api/phone/frame, set_motion()
     phone             and mark_stopped(), and its tilt when the desk corners are marked
     pair_key          what the Pi and the phone must send in X-Desk-Key (and show in the Pi command and phone link)
@@ -160,6 +166,8 @@ class DeskTalk:
     photos            proof photos: save() (a photo of the desk on request)
     detector          object detection on this computer: label (/api/live)
     producer          camera pictures → events: pictures_analysed, last_detect_ms (yolo_ms), problem (/api/health)
+    health_checks     each measure on its own (camera, new detections, the Pi's temperature, the card, the Pi's
+                      heartbeat): measures() for /api/health (Lens says the ones in trouble)
     object_states     present / absent for each object on the desk: snapshot() and changes() (the person is the
                       switch), save_snapshot() (the scheduler and stop()), and each object's last pictures of
                       smoothing: traced_labels() and trace() (/api/dev/smoothing)
@@ -180,8 +188,8 @@ class DeskTalk:
     daily_summary     the end-of-day recap (a background job)
     cloud             sends filtered habit events to a linked cloud server, and does nothing until linked (a
                       background job): status() (/api/cloud/status)
-    scheduler         timed jobs (compacting and pruning the event log, saving habits and object states):
-                      status() (/api/health)
+    scheduler         timed jobs (compacting and pruning the event log, saving habits and object states, deleting
+                      old object states): status() (/api/health)
     supervisor        runs the background jobs: status() (/api/health)
     started_at        when the app was built (how long it has been running)
     keepalive         keeps Ollama's model loaded (None for a cloud AI)
@@ -218,6 +226,7 @@ class DeskTalk:
     source: FrameSource
     pi_inbox: PictureInbox | None
     pi: PiStatus | None
+    pi_heartbeats: PiHeartbeats | None
     phone_inbox: PictureInbox | None
     phone: PhoneControls | None
     pair_key: str
@@ -226,6 +235,7 @@ class DeskTalk:
     photos: PhotoTaker
     detector: Detector
     producer: DetectionStats
+    health_checks: HealthCheck
     object_states: TracedObjectStates
     state_store: ObjectStateStore
     roster: RosterList
@@ -407,6 +417,10 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         cloud_link_factory  makes the line to the cloud server from its address and token (HttpCloudLink); only
                             called once the computer is linked"""
     clock = clock or SystemClock()
+    synced_file = config.object_states.clock_synced_file
+    clock_check = ClockCheck(config.resolve(synced_file) if synced_file else None,
+                             config.clock.earliest_believable_date, clock=clock,
+                             largest_jump_ahead_sec=config.clock.largest_jump_ahead_min * MINUTE)
 
     def data_path(path: Path) -> Path:
         path = Path(path).expanduser()
@@ -427,7 +441,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     # For the parts that still ask for several desk interfaces in one object; it passes each call on.
     desk = WholeDesk(live_pictures, scene, safety_board, character_memory, photo_album)
     bus = EventStream(config.event_stream, synchronous=synchronous_events)
-    event_log = EventLog(data_path(config.event_log.folder), config.event_log, clock)
+    event_log = EventLog(data_path(config.event_log.folder), config.event_log, clock,
+                         believable=clock_check.believable)
     bus.subscribe('event-log', event_log.write)          # first, so it logs events in the order they happen
     profiles = ProfileBook(config.agents_file, store, personality_max_chars=config.agents.personality_max_chars)
     preferences = PreferencesFile(store, config.protocols.schedule, config.reminders.quiet_hours,
@@ -453,14 +468,17 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                                  new_session_after_sec=config.protocols.breaks.break_min * MINUTE, pictures=pictures,
                                  same_thing_overlap=config.agents.same_thing_overlap,
                                  ignore_labels=config.agents_file.ignore, known_labels=config.agents_file.own_words)
+    health_checks = HealthChecks(source, producer, FolderDiskSpace(data_path(config.storage.folder)),
+                                 config.health_checks, config.pi, clock=clock, pi=camera.pi)
     state_store = SqliteStateStore(data_path(config.object_states.database))
     boot_file = config.object_states.boot_id_file
     object_states = ObjectStateTracker(config.object_states, bus, state_store, device_id=source.kind,
                                        new_session_after_sec=config.protocols.breaks.break_min * MINUTE, clock=clock,
                                        agents=config.agents, prefs=preferences, profiles=profiles,
-                                       boot_id=boot_id(config.resolve(boot_file) if boot_file else None))
-    synced_file = config.object_states.clock_synced_file
-    object_states.restore(clock.now(), clock_synced=clock_synced(config.resolve(synced_file) if synced_file else None))
+                                       boot_id=boot_id(config.resolve(boot_file) if boot_file else None),
+                                       clock_synced=clock_check.synced)
+    restored_at = clock.now()
+    object_states.restore(restored_at, clock_synced=clock_check.synced(restored_at))
 
     # ── the consumers of detection events (each subscribes itself, in this order) ──
     def on_desk(x: float, y: float, width: int, height: int) -> bool | None:
@@ -521,8 +539,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     reminders = HabitReminders(habits, rule_runner, desk_status, roster, profiles, generator, feed, bus,
                                config.reminders)
     lens = Lens(camera_health, source, safety_rules, preferences, feed, bus, photos, config.lens, config.pi,
-                clock=clock, prompts=config.prompts.lens, preview_chars=config.logging.preview_chars,
-                phone=camera.phone, pi_uploads=camera.pi)
+                clock=clock, checks=health_checks, prompts=config.prompts.lens,
+                preview_chars=config.logging.preview_chars, phone=camera.phone, pi_uploads=camera.pi)
     idle_chat = IdleChat(model, hub, desk_status, roster, profiles, character_memory,
                          lambda: generator.live_context()['summary'], config.idle_chat, config.llm.replies,
                          memory_kept=config.llm.memory_per_agent, memory_chars=config.chat.memory_reply_chars,
@@ -545,8 +563,14 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     scheduler.every(config.habit_tracker.save_check_every_sec, habits.save, 'save habit day')
     scheduler.every(config.object_states.snapshot_every_sec, lambda: object_states.save_snapshot(clock.now()),
                     'save object states')
+    def prune_object_states() -> None:
+        now = clock.now()
+        if clock_check.believable(now):     # a clock that can't be right (1990, or jumped ahead) deletes nothing
+            state_store.prune(now - config.object_states.keep_days * DAY)
+
+    scheduler.every(config.object_states.prune_every_min * MINUTE, prune_object_states, 'delete old object states')
     supervisor = Supervisor(clock, first_retry_sec=config.supervisor.restart_start_sec,
-                            max_retry_sec=config.supervisor.restart_max_sec)
+                            max_retry_sec=config.supervisor.restart_max_sec, jitter=config.supervisor.restart_jitter)
 
     # ── each object's story pictures (the app page, and the developer page's trace) ──
     story = config.object_story
@@ -575,10 +599,10 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         config=config, clock=clock, live_pictures=live_pictures, scene=scene, safety_board=safety_board,
         character_memory=character_memory, photo_album=photo_album, bus=bus, event_log=event_log, store=store,
         config_store=config_store, profiles=profiles, preferences=preferences, source=source,
-        pi_inbox=camera.pi, pi=camera.pi, phone_inbox=camera.phone, phone=camera.phone, pair_key=pair_key,
-        safety_rules=safety_rules, camera_health=camera_health, photos=photos, detector=detector,
-        producer=producer, object_states=object_states, state_store=state_store, roster=roster,
-        desk_status=desk_status, habits=habits, ai=ai, model=asked_model, hub=hub, generator=generator,
+        pi_inbox=camera.pi, pi=camera.pi, pi_heartbeats=camera.pi, phone_inbox=camera.phone, phone=camera.phone,
+        pair_key=pair_key, safety_rules=safety_rules, camera_health=camera_health, photos=photos, detector=detector,
+        producer=producer, health_checks=health_checks, object_states=object_states, state_store=state_store,
+        roster=roster, desk_status=desk_status, habits=habits, ai=ai, model=asked_model, hub=hub, generator=generator,
         rule_runner=rule_runner, reminders=reminders, lens=lens, idle_chat=idle_chat,
         lost_items=lost_items, daily_summary=daily_summary, cloud=cloud, scheduler=scheduler,
         supervisor=supervisor, started_at=clock.now(), keepalive=ai.keepalive_worker(), log_file=log_file,

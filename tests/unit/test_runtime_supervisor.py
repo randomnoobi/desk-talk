@@ -13,7 +13,7 @@ import time
 import pytest
 
 from desktalk.runtime.supervisor import GuardedWorker, Supervisor
-from tests.fakes import FakeClock
+from tests.fakes import FakeClock, FixedChance
 
 
 class ScriptedWorker:
@@ -33,8 +33,9 @@ class ScriptedWorker:
         return step
 
 
-def guard(worker, clock=None, first_retry_sec=1.0, max_retry_sec=10.0):
-    return GuardedWorker(worker, clock or FakeClock(), first_retry_sec=first_retry_sec, max_retry_sec=max_retry_sec)
+def guard(worker, clock=None, first_retry_sec=1.0, max_retry_sec=10.0, jitter=0.0, rng=None):
+    return GuardedWorker(worker, clock or FakeClock(), first_retry_sec=first_retry_sec, max_retry_sec=max_retry_sec,
+                         jitter=jitter, rng=rng)
 
 
 # ── one round at a time (no threads) ─────────────────────────────────
@@ -53,6 +54,18 @@ def test_a_failed_round_waits_the_first_retry_time_not_the_workers_wait():
 def test_the_retry_wait_doubles_then_stops_at_the_max():
     g = guard(ScriptedWorker('lens', RuntimeError('no picture')), first_retry_sec=1.0, max_retry_sec=10.0)
     assert [g.step() for _ in range(6)] == [1.0, 2.0, 4.0, 8.0, 10.0, 10.0]
+
+
+def test_jitter_cuts_each_retry_wait_by_up_to_its_share_and_the_max_still_holds():
+    g = guard(ScriptedWorker('lens', RuntimeError('no picture')), first_retry_sec=1.0, max_retry_sec=10.0,
+              jitter=0.5, rng=FixedChance(0, 1, 0.5, 0, 1))
+    assert [g.step() for _ in range(5)] == [1.0, 1.0, 3.0, 8.0, 5.0]      # 1, 2, 4, 8, 10 cut by 0, 1/2, 1/4, 0, 1/2
+
+
+def test_the_supervisor_passes_its_jitter_to_each_worker():
+    sup = Supervisor(FakeClock(), first_retry_sec=4, max_retry_sec=4, jitter=0.5, rng=FixedChance(1))
+    sup.add(ScriptedWorker('lens', RuntimeError('no picture')))
+    assert sup._slots[0].guarded.step() == 2.0
 
 
 def test_one_good_round_resets_the_retry_wait():
@@ -164,7 +177,7 @@ class CountingWorker:
 
 @pytest.fixture
 def supervisor():
-    sup = Supervisor(FakeClock(), first_retry_sec=0.001, max_retry_sec=0.001)
+    sup = Supervisor(FakeClock(), first_retry_sec=0.001, max_retry_sec=0.001, jitter=0)
     yield sup
     sup.stop(timeout=WAIT_LIMIT)
 
@@ -241,7 +254,7 @@ def test_status_says_running_while_it_runs_and_stopped_before_and_after(supervis
 
 
 def test_status_says_waiting_after_error_while_a_failed_worker_waits_to_try_again():
-    supervisor = Supervisor(FakeClock(), first_retry_sec=3600, max_retry_sec=3600)
+    supervisor = Supervisor(FakeClock(), first_retry_sec=3600, max_retry_sec=3600, jitter=0)
     supervisor.add(ScriptedWorker('reminders', RuntimeError('no picture')))
     supervisor.add(CountingWorker('lens', wait=3600))
     supervisor.start()

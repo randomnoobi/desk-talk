@@ -47,6 +47,9 @@ SETTINGS = {
     'boot_id_file': None,
     'database': 'data/object_states.sqlite',
     'trace_pictures': 90,
+    'keep_days': 30,
+    'prune_every_min': 60,
+    'unsaved_most': 5000,
 }
 # The sensitivity slider's steps (settings → agents): `steady` stretches appear_sec, gone_sec and move_fraction.
 AGENTS = {
@@ -88,7 +91,8 @@ def o(label, conf, x=320, y=240):
     return Detection(label, conf, BBox(x - 20, y - 20, x + 20, y + 20))
 
 
-def make_tracker(store=None, utc_offset_hours=8, sensitivity=None, prefs=None, boot_id=None, **changes):
+def make_tracker(store=None, utc_offset_hours=8, sensitivity=None, prefs=None, boot_id=None, clock_synced=None,
+                 **changes):
     bus = SyncEventBus()
     store = InMemoryStateStore() if store is None else store
     settings = ObjectStatesSettings.model_validate({**SETTINGS, **changes})
@@ -96,7 +100,7 @@ def make_tracker(store=None, utc_offset_hours=8, sensitivity=None, prefs=None, b
     tracker = ObjectStateTracker(settings, bus, store, device_id='pi', new_session_after_sec=300,
                                  clock=FakeClock(utc_offset_hours=utc_offset_hours),
                                  agents=AgentsSettings.model_validate(AGENTS), prefs=prefs,
-                                 profiles=FakeProfiles([STAPLER]), boot_id=boot_id)
+                                 profiles=FakeProfiles([STAPLER]), boot_id=boot_id, clock_synced=clock_synced)
     return tracker, bus, store
 
 
@@ -317,6 +321,26 @@ def test_the_store_working_again_brings_back_the_traceback(caplog):
     assert [bool(r.exc_info) for r in errors] == [True, True]
 
 
+def test_changes_the_store_could_not_save_are_kept_only_up_to_a_limit(caplog):
+    """A full card can fail every save for days: past unsaved_most the oldest go, so memory can't fill up."""
+    store = BrokenStore()
+    tracker, bus, _ = make_tracker(store, unsaved_most=2)
+    with caplog.at_level(logging.WARNING):
+        t = feed(tracker, 1000, [[o('bottle', 0.6)]] * SETTLE)      # appeared
+        t = feed(tracker, t, [[]] * 16)                               # removed
+        t = feed(tracker, t, [[o('bottle', 0.6)]] * SETTLE)           # appeared again: the first one goes
+        feed(tracker, t, [[]] * 16)                                   # removed again: the second one goes
+    fired = bus.of_type(ObjectStateChanged)
+    assert [c.change for c in fired] == ['appeared', 'removed', 'appeared', 'removed']
+    assert tracker.changes(0) == [StateChange(e.ts, 'bottle', e.change) for e in fired[2:]]
+    dropped = [r for r in caplog.records if 'oldest' in r.getMessage()]
+    assert len(dropped) == 1                                          # said once, not every time
+    store.full = False
+    feed(tracker, 2000, [[o('bottle', 0.6)]] * SETTLE)               # appeared: the newest two are saved
+    assert [(r.type, r.ts) for r in store.records] == [('removed', fired[3].ts), ('appeared', store.records[1].ts)]
+    assert tracker.changes(fired[3].ts) == [StateChange(store.records[1].ts, 'bottle', 'appeared')]
+
+
 def test_changes_include_ones_the_store_could_not_save():
     store = FlakyStore(fails=1)
     tracker, bus, _ = make_tracker(store)
@@ -471,6 +495,25 @@ def test_every_saved_row_says_which_boot_saved_it():
     tracker.save_snapshot(t)
     assert [r.type for r in store.records] == ['appeared', 'snapshot']
     assert {r.boot_id for r in store.records} == {'boot-a'}
+
+
+def test_every_saved_row_says_whether_the_clock_was_synced_when_it_was_written():
+    """Asked again for each row, with the row's own time, so a clock that syncs (or goes wrong) while the app runs
+    shows in the rows written after."""
+    synced_from = 1004.0
+    tracker, _, store = make_tracker(clock_synced=lambda ts: ts >= synced_from)
+    t = feed(tracker, 1000, [[o('bottle', 0.6)]] * SETTLE)
+    tracker.save_snapshot(t)
+    [appeared, snapshot] = store.records
+    assert appeared.ts < synced_from <= snapshot.ts
+    assert (appeared.clock_synced, snapshot.clock_synced) == (False, True)
+
+
+def test_with_nothing_to_ask_rows_cannot_say_whether_the_clock_was_synced():
+    tracker, _, store = make_tracker()
+    t = feed(tracker, 1000, [[o('bottle', 0.6)]] * SETTLE)
+    tracker.save_snapshot(t)
+    assert {r.clock_synced for r in store.records} == {None}
 
 
 def test_before_the_clock_has_synced_rows_from_this_boot_still_come_back():

@@ -128,8 +128,16 @@ def test_offline_only_takes_and_saves_pictures(tmp_path, container, computer):
     program, workers = make_program(tmp_path, container, computer, FakeClock(), offline=True)
     program.step()
     assert program.store.count() == 1
-    assert (workers.uploader, workers.detector, workers.settings) == (None, None, None)
+    assert (workers.uploader, workers.detector, workers.settings, workers.heartbeat) == (None, None, None, None)
     assert computer.requests == [] and container.requests == []
+
+
+def test_the_heartbeat_sends_the_pis_own_numbers_on_its_own_timer(tmp_path, container, computer):
+    program, workers = make_program(tmp_path, container, computer, FakeClock(), heartbeat_every_sec=20)
+    assert workers.heartbeat.tick() == 20
+    [health] = computer.heartbeats
+    assert (health.camera, health.cpu_temp_c, health.throttled, health.photos_stored) == ('fake', 50.0, '0x0', 0)
+    assert computer.uploads == []                                       # no picture was taken
 
 
 def test_disk_nearly_full_deletes_the_oldest_pictures_in_the_cleanup_thread(tmp_path, container, computer):
@@ -189,13 +197,31 @@ def test_pictures_are_deleted_on_schedule(tmp_path, container, computer):
     program, workers = make_program(tmp_path, container, computer, clock, delete_every_min=10)
     for _ in range(6):
         program.step()
-    started = clock.now()
     cleaner = workers.cleaner
-    assert cleaner.maybe_cleanup(started + 60) is None                    # not yet
-    assert cleaner.maybe_cleanup(started + 601) == 6                      # 10 minutes later: all gone
+    clock.advance(60)
+    assert cleaner.maybe_cleanup(clock.now()) is None                     # not yet
+    clock.advance(541)
+    assert cleaner.maybe_cleanup(clock.now()) == 6                        # 10 minutes later: all gone
     assert program.store.count() == 0
-    assert cleaner.maybe_cleanup(started + 700) is None                   # the next one is 10 minutes after that
-    assert cleaner.maybe_cleanup(started + 1202) == 0
+    clock.advance(99)
+    assert cleaner.maybe_cleanup(clock.now()) is None                     # the next one is 10 minutes after that
+    clock.advance(502)
+    assert cleaner.maybe_cleanup(clock.now()) == 0
+
+
+def test_cleanups_stay_on_schedule_when_the_wall_clock_is_set_back(tmp_path, container, computer):
+    """The Pi's clock set back (to 1990 by hand, or put right by the internet after a power cut): the time between
+    cleanups goes by the monotonic clock, so they don't stop until the wall clock catches up."""
+    clock = FakeClock()
+    program, workers = make_program(tmp_path, container, computer, clock, delete_every_min=10)
+    program.step()
+    clock.advance(300)
+    clock.set_wall_clock(631_152_000.0)                                   # 1 January 1990
+    assert workers.cleaner.tick() == pytest.approx(300)
+    clock.advance(300)
+    assert workers.cleaner.tick() == pytest.approx(600)                   # a cleanup ran, on time
+    assert program.store.last_cleanup == clock.now()
+    assert workers.cleaner.maybe_cleanup(clock.now() + 10 ** 6) is None   # a wall clock far ahead doesn't rush it
 
 
 def test_the_cleanup_thread_waits_until_the_next_cleanup_is_due(tmp_path, container, computer):
@@ -349,6 +375,6 @@ def test_writes_a_status_line_now_and_then(tmp_path, container, computer, caplog
 def test_each_thread_waits_the_pause_after_error_after_a_crash(tmp_path, container, computer):
     program, workers = make_program(tmp_path, container, computer, FakeClock())
     threads = workers.threads(0.25)
-    assert [t.name for t in threads] == ['watchdog', 'cleanup', 'detector', 'uploader']
+    assert [t.name for t in threads] == ['watchdog', 'cleanup', 'detector', 'uploader', 'heartbeat']
     assert all((t.backoff.first, t.backoff.most) == (0.25, 0.25) for t in threads)
     assert threads[1].wake is workers.cleaner.wake and threads[3].wake is workers.uploader.wake

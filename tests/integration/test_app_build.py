@@ -221,7 +221,8 @@ def test_the_scheduler_compacts_the_log_and_saves_the_habits(tmp_path):
     assert every == {'compact event log': rig.config.event_log.compact_every_min * 60,
                      'delete old event-log days': rig.config.event_log.prune_every_min * 60,
                      'save habit day': rig.config.habit_tracker.save_check_every_sec,
-                     'save object states': rig.config.object_states.snapshot_every_sec}
+                     'save object states': rig.config.object_states.snapshot_every_sec,
+                     'delete old object states': rig.config.object_states.prune_every_min * 60}
     rig.tick(rig.app.scheduler, after=rig.config.event_log.compact_every_min * 60)
     day = rig.app.event_log.days()[0]
     assert event_log_file(rig.app).recent_detections(day, 10) == []

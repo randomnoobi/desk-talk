@@ -36,10 +36,10 @@ def picture(ts: float, *labels: str, conf: float = 0.8) -> DetectionEvent:
                           detections=tuple(Detection(lab, conf, BBox(90, 90, 110, 110)) for lab in labels))
 
 
-def make_log(folder: Path, clock: FakeClock = CLOCK, **changes) -> EventLog:
+def make_log(folder: Path, clock: FakeClock = CLOCK, believable=None, **changes) -> EventLog:
     values = {'folder': folder, 'compact_every_min': 10, 'merge_gap_sec': 3, 'keep_days': 30,
               'log_empty_frames': True, 'prune_every_min': 60} | changes
-    return EventLog(folder, EventLogSettings(**values), clock)
+    return EventLog(folder, EventLogSettings(**values), clock, believable=believable)
 
 
 class TestEventLog(EventStoreContract):
@@ -218,6 +218,32 @@ def test_prune_deletes_days_older_than_keep_days(tmp_path):
     assert log.prune(NOW) == [day_of(NOW - 5 * DAY_SEC), day_of(NOW - 2 * DAY_SEC)]
     assert log.days() == [day_of(NOW + DAY_SEC), TODAY, day_of(NOW - DAY_SEC)]
     assert (tmp_path / 'notes').is_dir()
+
+
+def test_prune_deletes_nothing_while_the_clock_is_not_believable(tmp_path):
+    """A clock set to 1990 (the meeting's hand test) is plainly wrong: no day is deleted for being old until it's
+    right again."""
+    asked = []
+    log = make_log(tmp_path, keep_days=2, believable=lambda now: asked.append(now) or False)
+    for days_ago in (0, 5):
+        log.write(Alert(ts=NOW - days_ago * DAY_SEC, kind='proximity'))
+    assert log.prune(NOW) == []
+    assert asked == [NOW]
+    assert log.days() == [TODAY, day_of(NOW - 5 * DAY_SEC)]
+
+
+def test_a_clock_far_ahead_still_leaves_the_newest_keep_days_days_with_a_log(tmp_path):
+    """A clock years ahead would make every real day look old: the newest keep_days days that have a log are
+    always kept, so at most one day goes for each day the log is written in."""
+    log = make_log(tmp_path, keep_days=2)
+    for days_ago in (0, 1, 2, 3):
+        log.write(Alert(ts=NOW - days_ago * DAY_SEC, kind='proximity'))
+    years_ahead = NOW + 10 * 365 * DAY_SEC
+    assert log.prune(years_ahead) == [day_of(NOW - 3 * DAY_SEC), day_of(NOW - 2 * DAY_SEC)]
+    assert log.days() == [TODAY, day_of(NOW - DAY_SEC)]
+    log.write(Alert(ts=years_ahead, kind='proximity'))       # the clock is still ahead: its day is the newest now
+    assert log.prune(years_ahead) == [day_of(NOW - DAY_SEC)]
+    assert log.days() == [day_of(years_ahead), TODAY]
 
 
 def test_a_day_that_is_not_a_date_reads_as_empty(tmp_path):

@@ -5,6 +5,8 @@ picks up where it left off after a restart, and the person's state switches remi
 
 from __future__ import annotations
 
+from datetime import date
+
 from tests.integration.app_kit import CUP_FAR, LAPTOP, DeskRig, changed, desk_config
 
 
@@ -124,7 +126,90 @@ def test_a_restart_after_the_clock_has_synced_keeps_the_states(tmp_path):
     rig2.app.stop(timeout=1)
 
 
+def test_saved_rows_say_the_clock_was_synced(tmp_path):
+    rig = DeskRig(tmp_path)
+    rig.watch(settle_sec(rig), CUP_FAR)
+    assert {row.clock_synced for row in rig.app.state_store.changes(0)} == {True}
+    rig.app.stop(timeout=1)
+
+
+def test_a_restart_with_a_clock_that_is_plainly_wrong_starts_over(tmp_path):
+    """The clock set to 1990 by hand: before clock.earliest_believable_date, it counts as not synced, flag file or no
+    flag file, and the rows written meanwhile say so."""
+    rig = DeskRig(tmp_path)
+    rig.watch(settle_sec(rig), CUP_FAR)
+    rig.app.stop(timeout=1)
+    start = rig.clock.now() + 10
+    after_start = date.fromtimestamp(start + 2 * 24 * 3600)
+    rig2 = DeskRig(tmp_path, config=changed(rig.config, 'clock', earliest_believable_date=after_start), start=start)
+    assert 'cup' not in rig2.app.object_states.snapshot().objects
+    rig2.watch(settle_sec(rig2), CUP_FAR)
+    newest = [row for row in rig2.app.state_store.changes(0) if row.label == 'cup'][-1]
+    assert newest.ts >= start and newest.clock_synced is False
+    rig2.app.stop(timeout=1)
+
+
 def test_object_states_are_saved_every_minute(tmp_path):
     rig = DeskRig(tmp_path)
     [job] = [j for j in rig.app.scheduler.status() if j['name'] == 'save object states']
     assert job['every_sec'] == rig.config.object_states.snapshot_every_sec
+
+
+def test_object_states_older_than_keep_days_are_deleted_on_a_timer(tmp_path):
+    config = changed(desk_config(tmp_path), 'object_states', keep_days=1)
+    rig = DeskRig(tmp_path, config=config)
+    rig.watch(settle_sec(rig), CUP_FAR)
+    assert [row.type for row in rig.app.state_store.changes(0) if row.label == 'cup'] == ['appeared']
+    [job] = [j for j in rig.app.scheduler.status() if j['name'] == 'delete old object states']
+    assert job['every_sec'] == config.object_states.prune_every_min * 60
+    saved = rig.app.state_store.changes(0)
+    rig.tick(rig.app.scheduler, after=0.5 * 24 * 3600)              # half a day: still kept
+    assert rig.app.state_store.changes(0) == saved
+    rig.tick(rig.app.scheduler, after=0.6 * 24 * 3600)              # more than a day: deleted
+    assert rig.app.state_store.changes(0) == []
+
+
+def test_no_object_states_are_deleted_while_the_clock_cant_be_right(tmp_path):
+    """A clock before clock.earliest_believable_date is plainly wrong, so the timer deletes nothing by date until
+    it is right, as for the event log's days."""
+    config = changed(desk_config(tmp_path), 'object_states', keep_days=1)
+    config = changed(config, 'clock', earliest_believable_date=date(2100, 1, 1))
+    rig = DeskRig(tmp_path, config=config)
+    rig.watch(settle_sec(rig), CUP_FAR)
+    saved = rig.app.state_store.changes(0)
+    assert saved
+    rig.tick(rig.app.scheduler, after=2 * 24 * 3600)
+    assert rig.app.state_store.changes(0) == saved
+
+
+def test_a_clock_set_a_year_ahead_by_hand_deletes_nothing(tmp_path):
+    """Someone sets the Pi's date a year ahead while the app runs: the hourly jobs would delete every object state
+    and every event-log day older than a year from now minus keep_days, all the history. The clock jumped ahead
+    without the time server setting it, so nothing is deleted by date."""
+    flag = tmp_path / 'synchronized'
+    flag.touch()
+    config = changed(desk_config(tmp_path), 'object_states', keep_days=1, clock_synced_file=flag)
+    config = changed(config, 'event_log', keep_days=1)
+    rig = DeskRig(tmp_path, config=config)
+    rig.watch(settle_sec(rig), CUP_FAR)
+    saved, days = rig.app.state_store.changes(0), rig.app.event_log.days()
+    assert saved and days
+    rig.clock.set_wall_clock(rig.clock.now() + 365 * 24 * 3600)
+    rig.watch(settle_sec(rig), CUP_FAR)                              # a day folder for the new date too
+    rig.tick(rig.app.scheduler, after=2 * 3600)
+    assert rig.app.state_store.changes(0)[:len(saved)] == saved
+    assert set(days) < set(rig.app.event_log.days())
+
+
+def test_old_object_states_are_deleted_after_the_clock_syncs_from_a_power_cut(tmp_path):
+    """After a power cut the Pi's clock starts days behind; the time server then moves it days ahead and makes the
+    flag file. That is the clock being put right, so old rows are deleted as usual."""
+    flag = tmp_path / 'synchronized'
+    config = changed(desk_config(tmp_path), 'object_states', keep_days=1, clock_synced_file=flag)
+    rig = DeskRig(tmp_path, config=config)
+    rig.watch(settle_sec(rig), CUP_FAR)
+    assert rig.app.state_store.changes(0)
+    rig.clock.set_wall_clock(rig.clock.now() + 5 * 24 * 3600)
+    flag.touch()
+    rig.tick(rig.app.scheduler, after=2 * 3600)
+    assert rig.app.state_store.changes(0) == []

@@ -1,7 +1,8 @@
 // The System tab's rows: how the Pi and every part of the app are doing, each with a level
 // (ok, warn, bad, or off when not in use). The limits come from settings → dev.health, plus
-// settings → camera.disconnect_after_sec for the last picture.
-import type { Health, HealthLimits, LogStatus, PiStatus } from './api'
+// settings → camera.disconnect_after_sec for the last picture; the health checks (and the Pi's temperature)
+// come with their levels from /api/health → checks.
+import type { CheckLevel, Health, HealthCheck, HealthLimits, LogStatus, PiStatus } from './api'
 import { formatAgo, formatBytes, formatSeconds } from './format'
 import type { Level } from './ui'
 
@@ -53,6 +54,29 @@ const rate = (n: number) => String(Number(n.toFixed(1)))
 const ms = (n: number) => `${Math.round(n)} ms`
 const notSent: [string, Level] = ['not sent yet', 'off']
 
+/** A health check's level as the tab colours it. */
+const LEVELS: Record<CheckLevel, Level> = { ok: 'ok', warning: 'warn', serious: 'bad', unknown: 'off' }
+
+/** The health checks, in order, with their names on the tab. */
+const CHECK_NAMES: [keyof Health['checks'], string][] = [
+  ['camera', 'camera pictures'], ['detections', 'new detections'], ['pi_temperature', 'Pi temperature'],
+  ['card', 'free space on the card'], ['pi_heartbeat', 'Pi heartbeat'],
+]
+
+function checkValue(c: HealthCheck): string {
+  if (c.value === null) return c.level === 'unknown' ? 'not known' : c.level === 'ok' ? 'fine' : c.level
+  if (c.unit === 's') return `${formatSeconds(c.value)} ago`
+  if (c.unit === 'MB') return formatBytes(c.value * MBYTE)
+  return `${Number(c.value.toFixed(1))} ${c.unit}`.trim()
+}
+
+function checkRows(health: Health): Row[] {
+  return CHECK_NAMES.map(([key, name]) => {
+    const c = health.checks[key]
+    return { group: 'Health checks', name, value: checkValue(c), level: LEVELS[c.level] }
+  })
+}
+
 function piRows(health: Health, pi: PiStatus | null, limits: RowLimits, now: number,
                 before: Seen | null): Row[] {
   const group = 'Pi'
@@ -83,8 +107,7 @@ function piRows(health: Health, pi: PiStatus | null, limits: RowLimits, now: num
     'detect ms': pi.detect_ms === null ? ['none yet', 'off'] : [ms(pi.detect_ms), 'ok'],
     model: pi.model ? [pi.model, 'ok'] : ['none', 'off'],
     'CPU °C': pi.cpu_temp_c === undefined ? notSent
-      : [String(Number(pi.cpu_temp_c.toFixed(1))),
-         pi.cpu_temp_c >= limits.pi_cpu_bad_c ? 'bad' : pi.cpu_temp_c >= limits.pi_cpu_warn_c ? 'warn' : 'ok'],
+      : [String(Number(pi.cpu_temp_c.toFixed(1))), LEVELS[health.checks.pi_temperature.level]],
     // The Pi's slow-down flags: anything but 0x0 means it was too hot or short of power. '' means the Pi
     // could not read them (it never claims 0x0 then), so nothing is known.
     'slowed down': pi.throttled === undefined ? notSent
@@ -172,6 +195,7 @@ function aiRows(health: Health): Row[] {
 export function healthRows(health: Health, logStatus: LogStatus, limits: RowLimits, now: number,
                            before: Seen | null = null): Row[] {
   return [
+    ...checkRows(health),
     ...piRows(health, health.pi, limits, now, before),
     ...detectionRows(health, limits),
     ...streamRows(health, now, before),
@@ -183,5 +207,5 @@ export function healthRows(health: Health, logStatus: LogStatus, limits: RowLimi
 }
 
 /** The group names in the order the tab shows them. */
-export const GROUPS = ['Pi', 'Detection in the app', 'Event stream', 'Background jobs', 'Timed jobs',
+export const GROUPS = ['Health checks', 'Pi', 'Detection in the app', 'Event stream', 'Background jobs', 'Timed jobs',
                        'Event log', 'AI'] as const

@@ -12,6 +12,7 @@ from desktalk_detector.manager import DetectorBusy, ModelManager
 from desktalk_detector.model_folder import ModelFolder
 from desktalk_shared.detection import DetectorUnavailable
 from desktalk_shared.detector_api import ModelSettings, ServiceState
+from tests.fakes import FixedChance
 from tests.unit.detector_service_fakes import FakeYolo
 
 MODEL = ModelSettings(model='yolo11n.pt', format='ncnn', image_size=480, confidence=0.5, half=False)
@@ -43,7 +44,7 @@ def folder(tmp_path, yolo):
 
 @pytest.fixture
 def manager(folder):
-    return ModelManager(folder, retry_first_sec=5, retry_max_sec=40, clock=StepClock())
+    return ModelManager(folder, retry_first_sec=5, retry_max_sec=40, retry_jitter=0, clock=StepClock())
 
 
 def picture(height=480, width=640):
@@ -154,6 +155,15 @@ def test_a_failed_load_is_tried_again_with_longer_and_longer_waits(manager, yolo
     yolo.fail_open = None
     assert manager.load_step() is None
     assert manager.health().state is ServiceState.READY
+
+
+def test_jitter_cuts_each_wait_by_up_to_its_share_and_says_the_wait_it_chose(folder, yolo):
+    manager = ModelManager(folder, retry_first_sec=5, retry_max_sec=40, retry_jitter=0.5,
+                           rng=FixedChance(0, 1, 0.5, 0.1234), clock=StepClock())
+    yolo.fail_open = 'the file is damaged'
+    manager.want(MODEL)
+    assert [manager.load_step() for _ in range(4)] == [5, 5, 15, 40 * (1 - 0.5 * 0.1234)]   # 5, 10, 20, 40 cut
+    assert 'Trying again in 37.5 s.' in (manager.health().message or '')
 
 
 def test_the_last_good_model_answers_while_a_new_one_loads(manager):
@@ -294,7 +304,7 @@ def loader_threads():
 
 def test_once_started_it_loads_in_the_background_beginning_with_the_remembered_model(folder):
     folder.remember(MODEL)
-    manager = ModelManager(folder, retry_first_sec=5, retry_max_sec=40)
+    manager = ModelManager(folder, retry_first_sec=5, retry_max_sec=40, retry_jitter=0)
     manager.start()
     try:
         assert wait_for(lambda: manager.health().state is ServiceState.READY)
@@ -307,7 +317,7 @@ def test_once_started_it_loads_in_the_background_beginning_with_the_remembered_m
 
 
 def test_starting_with_nothing_remembered_waits_to_be_asked(folder):
-    manager = ModelManager(folder, retry_first_sec=5, retry_max_sec=40)
+    manager = ModelManager(folder, retry_first_sec=5, retry_max_sec=40, retry_jitter=0)
     manager.start()
     try:
         assert manager.health().state is ServiceState.STARTING
@@ -318,7 +328,7 @@ def test_starting_with_nothing_remembered_waits_to_be_asked(folder):
 
 def test_a_models_folder_it_cannot_write_to_does_not_stop_a_model_loading(folder, tmp_path):
     """e.g. a Docker volume owned by another user: it can't remember the model, but can still run it."""
-    manager = ModelManager(folder, retry_first_sec=5, retry_max_sec=40)
+    manager = ModelManager(folder, retry_first_sec=5, retry_max_sec=40, retry_jitter=0)
     tmp_path.chmod(0o555)
     try:
         manager.want(OTHER)

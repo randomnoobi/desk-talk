@@ -23,10 +23,11 @@ Nothing before `start_ts` (the moment of linking) is ever sent, so old history d
 Each round looks `overlap_sec` back from the place, so an event written a little late still goes; `recent_ids` stops
 those looked-at-again events from going twice.
 
-A failure never raises: the place does not move and the next try waits longer (Backoff); a server that answers but
-says no to the upload is logged apart from one that is off. The server saying it doesn't know us (401) stops sending
-until the computer is linked again. The token is never logged. The place never goes past "now", so one event dated in
-the future (a clock that was ahead) can't make the sender skip what is written later.
+A failure never raises: the place does not move and the next try waits longer (Backoff, cut by up to cloud.retry_jitter
+by chance); a server that answers but says no to the upload is logged apart from one that is off. The server saying it
+doesn't know us (401) stops sending until the computer is linked again. The token is never logged. The place never
+goes past "now", so one event dated in the future (a clock that was ahead) can't make the sender skip what is written
+later.
 """
 
 from __future__ import annotations
@@ -46,7 +47,7 @@ from desktalk.config.prompts import CloudWords
 from desktalk.core.habits.habit_days import day_key
 from desktalk.domain import CloudNotLinked, CloudRefused, CloudUnavailable, is_day, plain_error
 from desktalk.ports import Clock, CloudLink, EventStore, KeyValueStore, Preferences
-from desktalk_shared.backoff import Backoff
+from desktalk_shared.backoff import Backoff, Chance
 from desktalk_shared.cloud_api import IngestReply, daily_totals_event, goals_event, to_cloud_event
 
 log = logging.getLogger(__name__)
@@ -132,12 +133,13 @@ class CloudUploader:
     link_factory: makes the line to a server from its address and the token.
     events: the event log. store: where the link is saved (settings → cloud.link_key) and the habit days are read.
     preferences: the wake and bed times. goals: the goal numbers (from config/protocols.yaml).
-    words: the log lines (prompts.yaml → cloud)."""
+    words: the log lines (prompts.yaml → cloud). rng: where the jitter's chance comes from (tests pass a fixed one)."""
 
     name = 'cloud uploader'
 
     def __init__(self, link_factory: LinkFactory, events: EventStore, store: KeyValueStore, preferences: Preferences,
-                 goals: Mapping[str, float], settings: CloudSettings, clock: Clock, words: CloudWords):
+                 goals: Mapping[str, float], settings: CloudSettings, clock: Clock, words: CloudWords, *,
+                 rng: Chance | None = None):
         self._factory = link_factory
         self._events = events
         self._store = store
@@ -146,7 +148,7 @@ class CloudUploader:
         self._s = settings
         self._clock = clock
         self._words = words
-        self._backoff = Backoff(settings.retry_start_sec, settings.retry_max_sec)
+        self._backoff = Backoff(settings.retry_start_sec, settings.retry_max_sec, jitter=settings.retry_jitter, rng=rng)
         self._line: tuple[tuple[str, str], CloudLink] | None = None     # the line made for the current link
         self._lock = threading.Lock()                                   # status() is read from the web server's thread
         self._waiting = 0

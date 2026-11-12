@@ -27,6 +27,7 @@ class ServiceSettings:
     max_picture_bytes: int     # bigger pictures get a 413 reply
     retry_first_sec: float     # first wait after a model fails to load; doubles each time ...
     retry_max_sec: float       # ... up to this
+    retry_jitter: float        # each wait is cut by up to this share of it, by chance (0 to 1)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> ServiceSettings:
@@ -47,6 +48,16 @@ class ServiceSettings:
                 raise SettingsError(f'{name} must be more than 0 (got {text!r})')
             return value
 
+        def share(name: str) -> float:
+            text = get(name)
+            try:
+                value = float(text)
+            except ValueError:
+                value = math.nan
+            if not 0 <= value <= 1:
+                raise SettingsError(f'{name} must be a number from 0 to 1 (got {text!r})')
+            return value
+
         first, longest = positive('DETECTOR_RETRY_FIRST_SEC', float), positive('DETECTOR_RETRY_MAX_SEC', float)
         if longest < first:
             raise SettingsError(f'DETECTOR_RETRY_MAX_SEC ({longest:g}) must be at least '
@@ -54,4 +65,4 @@ class ServiceSettings:
         return cls(host=get('DETECTOR_HOST'), port=int(positive('DETECTOR_PORT', int)),
                    models_dir=Path(get('DETECTOR_MODELS_DIR')),
                    max_picture_bytes=int(positive('DETECTOR_MAX_PICTURE_MB', float) * BYTES_PER_MB),
-                   retry_first_sec=first, retry_max_sec=longest)
+                   retry_first_sec=first, retry_max_sec=longest, retry_jitter=share('DETECTOR_RETRY_JITTER'))

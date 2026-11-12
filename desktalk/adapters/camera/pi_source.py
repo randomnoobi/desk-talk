@@ -7,6 +7,8 @@ Besides the pictures, this keeps what the Pi said lately, for the app:
     status()         that plus its detector and clock (/api/health)
     latest_upload()  what came with the newest picture, and when (Lens: a hot Pi, its detector)
     clock_off_sec()  how far the Pi's clock is off (Lens)
+    heartbeat()      the Pi's camera program says how it is doing on a timer of its own (/api/pi/heartbeat), so
+                     latest_health() keeps coming when the pictures stop (the health checks)
 
 Each picture arrives a little after it was taken (it may wait for the Pi's detector, then the Wi-Fi), so the
 Pi's clock is judged by the quickest of the last camera.pi_clock_pictures pictures, with the detection time
@@ -21,7 +23,7 @@ from typing import Any
 
 from desktalk.adapters.camera.push_source import PushFrameSource
 from desktalk.config import CameraSettings
-from desktalk.domain import Frame, UploadInfo
+from desktalk.domain import Frame, PiHealth, UploadInfo
 from desktalk.ports import Clock
 
 
@@ -37,6 +39,8 @@ class PiFrameSource(PushFrameSource):
         self._detect_ms: float | None = None    # the Pi's detector's last time
         self._model = ''
         self._clock_offs: deque[float] = deque(maxlen=camera.pi_clock_pictures)   # the Pi's clock minus ours
+        self._health: tuple[PiHealth, float] | None = None     # the newest health, and clock.monotonic() it came
+        self._heartbeat_at: float | None = None                 # clock.monotonic() of the newest heartbeat
 
     def _took(self, frame: Frame) -> None:
         info = frame.pi
@@ -44,7 +48,7 @@ class PiFrameSource(PushFrameSource):
             return
         self._info, self._info_at = info, frame.received_at
         self._last_frame_id = info.frame_id
-        self._reported.update({k: v for k, v in asdict(info.health).items() if v not in (None, '')})
+        self._note_health(info.health)
         if info.detect_ms is not None:
             self._detect_ms = info.detect_ms
         if info.model:
@@ -52,6 +56,26 @@ class PiFrameSource(PushFrameSource):
         if info.taken_at is not None:
             waited = (info.detect_ms or 0.0) / 1000          # it waited this long for the Pi's detector
             self._clock_offs.append(info.taken_at + waited - frame.received_at)
+
+    def _note_health(self, health: PiHealth) -> None:
+        """(with the lock held)"""
+        self._health = (health, self._clock.monotonic())
+        self._reported.update({k: v for k, v in asdict(health).items() if v not in (None, '')})
+
+    def heartbeat(self, health: PiHealth) -> None:
+        """A heartbeat came in, with how the Pi is doing."""
+        with self._cond:
+            self._note_health(health)
+            self._heartbeat_at = self._clock.monotonic()
+
+    def last_heartbeat_at(self) -> float | None:
+        with self._cond:
+            return self._heartbeat_at
+
+    def latest_health(self) -> tuple[PiHealth, float] | None:
+        """The newest health from a heartbeat or a picture, and clock.monotonic() when it came."""
+        with self._cond:
+            return self._health
 
     def pi_info(self) -> dict[str, Any]:
         """The newest picture's id and everything the Pi has said about itself (only what it sent)."""

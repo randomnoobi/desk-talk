@@ -51,11 +51,13 @@ class CameraSettings:
     upload_timeout_sec: float
     upload_retry_start_sec: float
     upload_retry_max_sec: float
+    upload_retry_jitter: float
     hot_warning_c: float
     camera_warmup_sec: float
     pause_after_error_sec: float
     status_every_sec: float
     health_every_sec: float
+    heartbeat_every_sec: float
     settings_check_every_sec: float
     restart_after_missed_pictures: int
     camera: str
@@ -80,23 +82,26 @@ ZERO_OR_MORE = _Kind('a number, 0 or more', lambda v: _number(v) and v >= 0)
 WHOLE = _Kind('a whole number above 0', lambda v: _number(v) and v == int(v) and v > 0, whole=True)
 QUALITY = _Kind('a whole number from 1 to 100', lambda v: _number(v) and v == int(v) and 1 <= v <= 100, whole=True)
 TEXT = _Kind('text', lambda v: isinstance(v, str) and v != '')
+SHARE = _Kind('a number from 0 to 1', lambda v: _number(v) and 0 <= v <= 1)
 
 FIELDS = {
     'fps': POSITIVE, 'width': WHOLE, 'height': WHOLE, 'jpeg_quality': QUALITY, 'photo_dir': TEXT,
     'delete_every_min': ZERO_OR_MORE, 'keep_last_min': ZERO_OR_MORE, 'min_free_mb': ZERO_OR_MORE,
     'upload_timeout_sec': POSITIVE, 'upload_retry_start_sec': POSITIVE, 'upload_retry_max_sec': POSITIVE,
+    'upload_retry_jitter': SHARE,
     'hot_warning_c': POSITIVE, 'camera_warmup_sec': ZERO_OR_MORE, 'pause_after_error_sec': ZERO_OR_MORE,
-    'status_every_sec': POSITIVE, 'health_every_sec': POSITIVE, 'settings_check_every_sec': POSITIVE,
+    'status_every_sec': POSITIVE, 'health_every_sec': POSITIVE, 'heartbeat_every_sec': POSITIVE,
+    'settings_check_every_sec': POSITIVE,
     'restart_after_missed_pictures': WHOLE, 'camera': TEXT, 'error_text_chars': WHOLE,
 }
 DETECTOR_FIELDS = {
     'url': TEXT, 'wait_per_picture_sec': POSITIVE, 'failures_before_pause': WHOLE, 'pause_start_sec': POSITIVE,
-    'pause_max_sec': POSITIVE, 'health_check_every_sec': POSITIVE,
+    'pause_max_sec': POSITIVE, 'pause_jitter': SHARE, 'health_check_every_sec': POSITIVE,
 }
 MODEL_FIELDS = ('model', 'format', 'image_size', 'confidence', 'half')
 # Settings newer than some Pis' config/settings.yaml: when the Pi's copy is older and the app can't be asked
 # (or --offline), these are used, the same as pi: in config/settings.yaml and what the program used before them.
-IF_OLDER = {'camera': 'auto', 'error_text_chars': 200}
+IF_OLDER = {'camera': 'auto', 'error_text_chars': 200, 'heartbeat_every_sec': 30}
 IN_ORDER = (('upload_retry_start_sec', 'upload_retry_max_sec'),)        # (smaller, larger)
 DETECTOR_IN_ORDER = (('pause_start_sec', 'pause_max_sec'),)
 

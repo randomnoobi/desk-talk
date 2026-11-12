@@ -17,7 +17,7 @@ from typing import Any, cast
 
 from desktalk_shared.detection import BBox, Detection
 from desktalk_shared.detector_api import API_VERSION, DetectorHealth, DetectReply, ModelSettings, ServiceState
-from desktalk_shared.wire import UploadInfo, WireError, decode_upload
+from desktalk_shared.wire import PiHealth, UploadInfo, WireError, decode_upload
 
 KEY_PROBLEM = ('Pairing key does not match. The app made a new key, so restart the camera to read it '
                '(on the Pi: docker compose restart camera).')
@@ -47,6 +47,10 @@ class FakeClock:
     def advance(self, seconds: float) -> None:
         self._now += seconds
         self._monotonic += seconds
+
+    def set_wall_clock(self, now: float) -> None:
+        """The wall clock jumps to `now` (set by hand, or from the internet); the monotonic clock doesn't move."""
+        self._now = float(now)
 
 
 class FakeCamera:
@@ -192,7 +196,8 @@ class Upload:
 
 
 class FakeComputer(FakeServer):
-    """This computer: /api/pi/config and /api/pi/frame (upload format 2, read with decode_upload)."""
+    """This computer: /api/pi/config, /api/pi/frame (upload format 2, read with decode_upload) and /api/pi/heartbeat
+    (each one's health in `heartbeats`)."""
 
     def __init__(self, pi: dict | None = None, key: str = KEY):
         super().__init__()
@@ -201,8 +206,10 @@ class FakeComputer(FakeServer):
         self.camera_source = 'pi'
         self.uploads: list[Upload] = []
         self.bad_uploads: list[str] = []
+        self.heartbeats: list[PiHealth] = []
         self.routes[('GET', '/api/pi/config')] = self._config
         self.routes[('POST', '/api/pi/frame')] = self._frame
+        self.routes[('POST', '/api/pi/heartbeat')] = self._heartbeat
 
     def _key_ok(self, req) -> bool:
         return req.headers.get('x-desk-key') == self.key
@@ -223,20 +230,31 @@ class FakeComputer(FakeServer):
         self.uploads.append(Upload(jpeg, info, req.headers['x-desk-key']))
         return 200, {'ok': True, 'fps': 3.0, 'tip': ''}
 
+    def _heartbeat(self, req):
+        if not self._key_ok(req):
+            return 403, {'error': KEY_PROBLEM}
+        if req.headers.get('content-type') != 'application/json':
+            return 422, {'detail': 'not JSON'}
+        self.heartbeats.append(PiHealth.from_dict(json.loads(req.body)['health']))
+        return 200, {'ok': True}
+
 
 # ── settings ──────────────────────────────────────────────────────────
 def pi_settings(**changes) -> dict:
-    """A complete `pi:` section, as config/settings.yaml has it (plus the camera program's new settings)."""
+    """A complete `pi:` section, as config/settings.yaml has it (plus the camera program's new settings), with no
+    jitter, so tests can check each wait."""
     pi = {
         'fps': 3, 'width': 1280, 'height': 720, 'jpeg_quality': 80, 'photo_dir': '~/desk-talk-photos',
         'delete_every_min': 10, 'keep_last_min': 0, 'min_free_mb': 300, 'upload_timeout_sec': 5,
-        'upload_retry_start_sec': 1, 'upload_retry_max_sec': 10, 'hot_warning_c': 75, 'clock_off_warning_sec': 5,
+        'upload_retry_start_sec': 1, 'upload_retry_max_sec': 10, 'upload_retry_jitter': 0, 'hot_warning_c': 75,
+        'clock_off_warning_sec': 5,
         'camera_warmup_sec': 1, 'pause_after_error_sec': 0.5, 'status_every_sec': 30, 'health_every_sec': 3,
+        'heartbeat_every_sec': 30, 'hot_serious_c': 80,
         'settings_check_every_sec': 60, 'restart_after_missed_pictures': 30, 'camera': 'auto', 'error_text_chars': 200,
         'detector': {
             'model': 'yolo11s.pt', 'format': 'ncnn', 'image_size': 480, 'confidence': 0.35, 'half': False,
             'url': 'http://127.0.0.1:8100', 'wait_per_picture_sec': 2, 'failures_before_pause': 3,
-            'pause_start_sec': 5, 'pause_max_sec': 60, 'health_check_every_sec': 10,
+            'pause_start_sec': 5, 'pause_max_sec': 60, 'pause_jitter': 0, 'health_check_every_sec': 10,
         },
     }
     detector = changes.pop('detector', {})

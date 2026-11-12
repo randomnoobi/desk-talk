@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import type { Health, LogStatus, PiStatus } from './api'
+import type { CheckLevel, Health, HealthCheck, LogStatus, PiStatus } from './api'
 import { healthRows, remember, type Row, type RowLimits } from './health'
 
 const limits: RowLimits = {
-  pi_cpu_warn_c: 70, pi_cpu_bad_c: 80, pi_disk_warn_mb: 1000, detect_warn_ms: 500, disconnect_after_sec: 3,
+  pi_disk_warn_mb: 1000, detect_warn_ms: 500, disconnect_after_sec: 3,
 }
 const NOW = 1_800_000_000
 
@@ -12,6 +12,17 @@ function pi(over: Partial<PiStatus> = {}): PiStatus {
     last_frame_id: 'f-12', camera: 'picamera2', photos_stored: 40, disk_free_mb: 5000, last_cleanup_ts: NOW - 120,
     cpu_temp_c: 55, throttled: '0x0', upload_format: 2, detector: 'ok', detector_reason: '', detect_ms: 180,
     model: 'yolo11n', clock_off_sec: -0.4, ...over,
+  }
+}
+
+function check(level: CheckLevel, value: number | null = null, unit = ''): HealthCheck {
+  return { level, value, unit }
+}
+
+function checks(over: Partial<Health['checks']> = {}): Health['checks'] {
+  return {
+    camera: check('ok'), detections: check('ok', 2, 's'), pi_temperature: check('ok', 55, '°C'),
+    card: check('ok', 8000, 'MB'), pi_heartbeat: check('ok', 12, 's'), ...over,
   }
 }
 
@@ -26,6 +37,7 @@ function health(over: Partial<Health> = {}): Health {
     pi: pi(),
     detection: { pictures_analysed: 300, detect_ms: 120, problem: null, model: 'yolo11n' },
     ai: { ready: true, label: 'Claude', problem: null },
+    checks: checks(),
     ...over,
   }
 }
@@ -46,10 +58,24 @@ function row(rows: Row[], group: string, name: string): Row {
 }
 
 describe('healthRows', () => {
-  it('turns a hot Pi red, and a warm one amber', () => {
-    expect(row(healthRows(health({ pi: pi({ cpu_temp_c: 82 }) }), log, limits, NOW), 'Pi', 'CPU °C').level).toBe('bad')
-    expect(row(healthRows(health({ pi: pi({ cpu_temp_c: 72 }) }), log, limits, NOW), 'Pi', 'CPU °C').level).toBe('warn')
-    expect(row(healthRows(health(), log, limits, NOW), 'Pi', 'CPU °C').level).toBe('ok')
+  it('colours the Pi\'s temperature by the health check\'s level (settings → pi.hot_warning_c, hot_serious_c)', () => {
+    const at = (level: CheckLevel) => row(healthRows(health({ checks: checks({ pi_temperature: check(level, 70, '°C') }) }),
+                                                     log, limits, NOW), 'Pi', 'CPU °C').level
+    expect([at('serious'), at('warning'), at('ok'), at('unknown')]).toEqual(['bad', 'warn', 'ok', 'off'])
+  })
+
+  it('lists each health check with its number and level', () => {
+    const rows = healthRows(health({ checks: checks({
+      card: check('serious', 400, 'MB'), detections: check('warning', 320, 's'), camera: check('serious'),
+      pi_heartbeat: check('unknown', null, 's'),
+    }) }), log, limits, NOW)
+    expect(rows.filter(r => r.group === 'Health checks').map(r => r.name)).toEqual(
+      ['camera pictures', 'new detections', 'Pi temperature', 'free space on the card', 'Pi heartbeat'])
+    expect(row(rows, 'Health checks', 'free space on the card')).toMatchObject({ value: '400 MB', level: 'bad' })
+    expect(row(rows, 'Health checks', 'new detections')).toMatchObject({ value: '5 min 20 s ago', level: 'warn' })
+    expect(row(rows, 'Health checks', 'Pi temperature')).toMatchObject({ value: '55 °C', level: 'ok' })
+    expect(row(rows, 'Health checks', 'camera pictures')).toMatchObject({ value: 'serious', level: 'bad' })
+    expect(row(rows, 'Health checks', 'Pi heartbeat')).toMatchObject({ value: 'not known', level: 'off' })
   })
 
   it('says the Pi slowed itself down when throttled is anything but 0x0', () => {

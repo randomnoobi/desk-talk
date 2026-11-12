@@ -1,7 +1,8 @@
 """
 The weekly report job. Every few minutes it looks at each linked Pi: when a week's report has come due (in the Pi's
 own time zone) it starts one, waits for a Pi that has not finished sending, and then has an AI write it from the Pi's
-data. A report that fails is tried again a few times, then marked failed (the admin page can run it again).
+data. A report that fails is tried again a few times, each wait cut by up to reports.retry_jitter of it by chance, then
+marked failed (the admin page can run it again).
 
 One Pi's trouble never stops another's report. A report is never written twice (the store keeps one row per Pi and
 week), and after a long sleep only the newest week is started. A row left pending by a run that stopped is finished by
@@ -13,6 +14,7 @@ cloud/prompts.yaml → report.
 from __future__ import annotations
 
 import logging
+import random
 from collections.abc import Callable, Mapping
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -23,6 +25,7 @@ from desktalk_cloud.ports import Clock, ReportFailed, ReportWriter, Store
 from desktalk_cloud.report_data import ReportWords, build_week
 from desktalk_cloud.report_errors import ReportWillNotWork
 from desktalk_cloud.report_times import DAYS_IN_WEEK, due_for_week, latest_due, week_of, zone_of
+from desktalk_shared.backoff import Chance, jittered
 
 __all__ = ['ReportJob']
 
@@ -52,8 +55,10 @@ class ReportJob:
     name = 'weekly report'
 
     def __init__(self, store: Store, writer: ReportWriter, clock: Clock, settings: ReportSettings,
-                 prompts: ReportWords, should_stop: Callable[[], bool] = lambda: False) -> None:
+                 prompts: ReportWords, should_stop: Callable[[], bool] = lambda: False, *,
+                 rng: Chance | None = None) -> None:
         self._store, self._writer, self._clock, self._settings, self._words = store, writer, clock, settings, prompts
+        self._rng = rng or random.Random()              # for the jitter (tests pass one that gives set numbers)
         self._should_stop = should_stop
         self._awake_since: float | None = None       # when this server last started or woke up (kept in memory only)
         self._last_round_end: float | None = None
@@ -172,5 +177,6 @@ class ReportJob:
         if attempt >= settings.max_tries:
             self._store.finish_report(report.id, FAILED, None, None, error, now)
         else:
-            wait = settings.retry_first_wait_min * SECONDS_IN_MINUTE * settings.retry_growth ** report.tries
+            wait = jittered(settings.retry_first_wait_min * SECONDS_IN_MINUTE * settings.retry_growth ** report.tries,
+                            settings.retry_jitter, self._rng)
             self._store.retry_report(report.id, error, now + wait)

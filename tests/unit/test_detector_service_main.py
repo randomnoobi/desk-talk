@@ -21,7 +21,7 @@ MODEL = ModelSettings(model='yolo11n.pt', format='pt', image_size=320, confidenc
 
 def service_settings(models_dir: Path, max_picture_bytes: int = 100_000) -> ServiceSettings:
     return ServiceSettings(host='127.0.0.1', port=8765, models_dir=models_dir, max_picture_bytes=max_picture_bytes,
-                           retry_first_sec=5, retry_max_sec=40)
+                           retry_first_sec=5, retry_max_sec=40, retry_jitter=0)
 
 
 def test_the_built_app_loads_models_from_the_models_folder_in_the_settings(tmp_path):
@@ -47,7 +47,8 @@ def test_main_runs_the_web_server_where_the_settings_say_without_a_line_per_requ
     ran = []
     monkeypatch.setattr(service_main.uvicorn, 'run', lambda app, **where: ran.append(where))
     env = {'DETECTOR_HOST': '127.0.0.1', 'DETECTOR_PORT': '8799', 'DETECTOR_MODELS_DIR': str(tmp_path),
-           'DETECTOR_MAX_PICTURE_MB': '10', 'DETECTOR_RETRY_FIRST_SEC': '5', 'DETECTOR_RETRY_MAX_SEC': '300'}
+           'DETECTOR_MAX_PICTURE_MB': '10', 'DETECTOR_RETRY_FIRST_SEC': '5', 'DETECTOR_RETRY_MAX_SEC': '300',
+           'DETECTOR_RETRY_JITTER': '0.2'}
     assert service_main.main(env) == 0
     assert ran == [{'host': '127.0.0.1', 'port': 8799, 'access_log': False}]
 

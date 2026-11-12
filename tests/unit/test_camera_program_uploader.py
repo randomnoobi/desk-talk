@@ -7,6 +7,7 @@ from test_camera_program_fakes import JPEG, KEY, FakeClock, FakeComputer, cup
 
 from desktalk_shared.wire import DetectorState, PiHealth, UploadInfo
 from raspberry_pi.camera.uploader import Uploader
+from tests.fakes import FixedChance
 
 RETRY_START = 1
 RETRY_MAX = 10
@@ -23,9 +24,9 @@ def clock():
     return FakeClock()
 
 
-def make_uploader(computer, clock, key=KEY):
+def make_uploader(computer, clock, key=KEY, jitter=0.0, rng=None):
     return Uploader(computer.url, key, timeout_sec=2, retry_start_sec=RETRY_START, retry_max_sec=RETRY_MAX,
-                    error_text_chars=200, clock=clock)
+                    retry_jitter=jitter, error_text_chars=200, clock=clock, rng=rng)
 
 
 @pytest.fixture
@@ -109,6 +110,17 @@ def test_the_wait_grows_while_the_computer_stays_away_and_resets_when_it_is_back
     computer.away = True
     uploader.offer(JPEG, info(8))
     assert uploader.tick() == RETRY_START
+
+
+def test_jitter_cuts_each_wait_by_up_to_its_share_and_the_most_still_holds(computer, clock):
+    uploader = make_uploader(computer, clock, jitter=0.5, rng=FixedChance(0, 1, 0.5, 0, 1))
+    computer.away = True
+    waits = []
+    for n in range(5):
+        uploader.offer(JPEG, info(n))
+        waits.append(uploader.tick())
+        clock.advance(waits[-1])
+    assert waits == [1, 1, 3, 8, 5]                      # 1, 2, 4, 8, 10 cut by 0, 1/2, 1/4, 0, 1/2
 
 
 def test_wrong_key_is_reported_once_in_plain_words(computer, clock, caplog):

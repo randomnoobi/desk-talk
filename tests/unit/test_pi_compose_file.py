@@ -54,14 +54,24 @@ def test_it_has_the_three_containers(services):
 
 
 @pytest.mark.parametrize('name', sorted(SERVICES))
-def test_each_container_restarts_has_a_memory_limit_small_logs_and_a_health_check(services, name):
+def test_each_container_restarts_has_a_memory_limit_logs_in_the_journal_and_a_health_check(services, name):
     service = services[name]
     assert service['restart'] == 'unless-stopped'
     assert service['mem_limit'].startswith('${') and service['memswap_limit'] == service['mem_limit']
-    assert service['logging']['options']['max-size'].startswith('${')
-    assert service['logging']['options']['max-file'].startswith('${')
     assert service['healthcheck']['test']
     assert no_fallbacks(service['environment']['TZ']) == '${TZ}'
+
+
+@pytest.mark.parametrize('name', sorted(SERVICES))
+def test_each_container_logs_to_the_journal_under_its_own_name(services, name):
+    """The journal keeps them with the Pi's own messages, through a power cut, within the size install.sh gives it
+    (JOURNAL_MAX_USE). raspberry_pi/get_logs.sh finds each one by this name: journalctl -t desktalk-<service>."""
+    assert services[name]['logging'] == {'driver': 'journald', 'options': {'tag': f'desktalk-{name}'}}
+
+
+def test_the_old_log_file_sizes_are_gone():
+    """The journald driver takes no file sizes: the journal's own limit is the one."""
+    assert not {'LOG_FILE_SIZE', 'LOG_FILES'} & set(env_file(PI / '.env.example'))
 
 
 def test_every_name_the_compose_file_uses_is_in_the_env_file():

@@ -15,16 +15,17 @@ from desktalk_shared.detector_api import API_VERSION, ModelSettings, ServiceStat
 from desktalk_shared.wire import DetectorState
 from raspberry_pi.camera.cameras import Picture
 from raspberry_pi.camera.detector_client import DetectorClient, DetectorConfig, DetectorWorker, NoDetector
+from tests.fakes import FixedChance
 
 PAUSE = 5             # pause_start_sec
 HEALTH_EVERY = 10     # health_check_every_sec
 
 
-def make_client(url, clock, **changes):
+def make_client(url, clock, rng=None, **changes):
     settings = dict(url=url, model=MODEL, wait_per_picture_sec=2.0, failures_before_pause=3,
-                    pause_start_sec=PAUSE, pause_max_sec=60, health_check_every_sec=HEALTH_EVERY)
+                    pause_start_sec=PAUSE, pause_max_sec=60, pause_jitter=0, health_check_every_sec=HEALTH_EVERY)
     settings.update(changes)
-    return DetectorClient(DetectorConfig(**settings), clock, error_text_chars=200)
+    return DetectorClient(DetectorConfig(**settings), clock, error_text_chars=200, rng=rng)
 
 
 @pytest.fixture
@@ -130,6 +131,18 @@ def test_the_pause_grows_no_longer_than_the_most(container, clock):
     container.routes[('POST', '/detect')] = lambda req: (500, {'detail': 'crashed'})
     fail(client, 3)
     for pause in (5, 10, 12, 12):
+        clock.advance(pause - 0.1)
+        assert client.off_now()
+        clock.advance(0.1)
+        assert client.off_now() == ''
+        fail(client, 1)
+
+
+def test_jitter_cuts_each_pause_by_up_to_its_share(container, clock):
+    client = make_client(container.url, clock, pause_max_sec=12, pause_jitter=0.5, rng=FixedChance(1, 0, 1))
+    container.routes[('POST', '/detect')] = lambda req: (500, {'detail': 'crashed'})
+    fail(client, 3)
+    for pause in (2.5, 10, 6):                          # 5, 10, 12 cut by half, none, half
         clock.advance(pause - 0.1)
         assert client.off_now()
         clock.advance(0.1)

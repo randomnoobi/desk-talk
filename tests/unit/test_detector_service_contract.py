@@ -19,7 +19,7 @@ MODEL = ModelSettings(model='yolo11n.pt', format='ncnn', image_size=320, confide
 def service(tmp_path, *, load: bool) -> InProcessServiceDetector:
     (tmp_path / 'yolo11n.pt').write_bytes(b'weights')
     manager = ModelManager(ModelFolder(tmp_path, FakeYolo([('cup', 0.9, (10, 20, 50, 60))])),
-                           retry_first_sec=5, retry_max_sec=40)
+                           retry_first_sec=5, retry_max_sec=40, retry_jitter=0)
     if load:
         manager.want(MODEL)
         manager.load_step()

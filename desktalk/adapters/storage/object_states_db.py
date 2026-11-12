@@ -2,10 +2,18 @@
 The object state history, kept on this computer in one SQLite file (data/object_states.sqlite).
 
 One table, `events`: a row each time an object appears, goes away or moves, plus a `snapshot` row for every
-object now and then. Each row says which boot of the computer saved it (`boot_id`); a file from before rows kept
-it gets the column when it opens, and its old rows have none. Rows are only ever added: two triggers make the
+object now and then. Each row says which boot of the computer saved it (`boot_id`) and whether the clock had been
+set from the internet when it did (`clock_synced`); a file from before rows kept them gets the columns when it
+opens, and its old rows have none. Rows are only ever added: two triggers make the
 database refuse any UPDATE or DELETE, so the history can't be rewritten by mistake. WAL mode is on, so reading
 and writing don't block each other.
+
+So the file doesn't fill the SD card, prune(before) deletes the rows older than a time (the scheduler asks for
+everything older than object_states.keep_days). It is the one way a row ever leaves: in one transaction it takes the
+DELETE trigger off, deletes, and puts the trigger back, so no other connection ever sees the table without it, and
+an error puts everything back as it was. The space the old rows took is reused by new rows, so the file stops growing
+at about keep_days of rows. (No VACUUM: it needs as much free space as the file itself, which is what's short when
+the card is full.)
 
 Two questions are asked of it:
 - latest_states(since, boot_id=...): each object's newest appeared / removed / snapshot row (only that boot's,
@@ -29,8 +37,12 @@ log = logging.getLogger(__name__)
 _TYPES = (*CHANGE_TYPES, 'snapshot')
 _TYPE_LIST = ', '.join(f"'{t}'" for t in _TYPES)
 _CHANGE_LIST = ', '.join(f"'{t}'" for t in CHANGE_TYPES)
-_COLUMNS = 'ts, timezone, device_id, type, object, prev_state, new_state, conf_avg, bbox, dwell_sec, boot_id'
+_COLUMNS = ('ts, timezone, device_id, type, object, prev_state, new_state, conf_avg, bbox, dwell_sec, boot_id, '
+            'clock_synced')
 _BLANKS = ', '.join(['?'] * len(_COLUMNS.split(', ')))
+
+_NO_DELETE = """CREATE TRIGGER IF NOT EXISTS events_no_delete BEFORE DELETE ON events
+BEGIN SELECT RAISE(ABORT, 'events is append-only'); END"""
 
 _SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS events (
@@ -45,28 +57,30 @@ CREATE TABLE IF NOT EXISTS events (
     conf_avg   REAL,
     bbox       TEXT,
     dwell_sec  REAL,
-    boot_id    TEXT
+    boot_id    TEXT,
+    clock_synced INTEGER
 );
 CREATE INDEX IF NOT EXISTS events_object_ts ON events (object, ts);
 CREATE INDEX IF NOT EXISTS events_ts ON events (ts);
 CREATE TRIGGER IF NOT EXISTS events_no_update BEFORE UPDATE ON events
 BEGIN SELECT RAISE(ABORT, 'events is append-only'); END;
-CREATE TRIGGER IF NOT EXISTS events_no_delete BEFORE DELETE ON events
-BEGIN SELECT RAISE(ABORT, 'events is append-only'); END;
+{_NO_DELETE};
 """
 
 
 def _row_of(record: StateRecord) -> tuple:
     return (record.ts, record.timezone, record.device_id, record.type, record.label,
             str(record.prev_state), str(record.new_state), record.conf_avg,
-            None if record.bbox is None else json.dumps(list(record.bbox)), record.dwell_sec, record.boot_id)
+            None if record.bbox is None else json.dumps(list(record.bbox)), record.dwell_sec, record.boot_id,
+            None if record.clock_synced is None else int(record.clock_synced))
 
 
 def _record_of(row: tuple) -> StateRecord:
-    ts, timezone, device_id, type_, label, prev_state, new_state, conf_avg, bbox, dwell_sec, boot_id = row
+    ts, timezone, device_id, type_, label, prev_state, new_state, conf_avg, bbox, dwell_sec, boot_id, synced = row
     return StateRecord(ts=ts, timezone=timezone, device_id=device_id, type=type_, label=label,
                        prev_state=Phase(prev_state), new_state=Phase(new_state), conf_avg=conf_avg,
-                       bbox=None if bbox is None else _box(json.loads(bbox)), dwell_sec=dwell_sec, boot_id=boot_id)
+                       bbox=None if bbox is None else _box(json.loads(bbox)), dwell_sec=dwell_sec, boot_id=boot_id,
+                       clock_synced=None if synced is None else bool(synced))
 
 
 def _box(values: list) -> tuple[float, float, float, float]:
@@ -89,12 +103,14 @@ class SqliteStateStore:
             self._db.execute('PRAGMA journal_mode=WAL')
             self._db.executescript(_SCHEMA)
             columns = {row[1] for row in self._db.execute('PRAGMA table_info(events)')}
-            if 'boot_id' not in columns:        # a file from before rows kept their boot
-                try:
-                    self._db.execute('ALTER TABLE events ADD COLUMN boot_id TEXT')
-                except sqlite3.OperationalError as exc:
-                    if 'duplicate column' not in str(exc):      # another program opening it just added it
-                        raise
+            # A file from before rows kept their boot, or whether the clock was synced
+            for name, kind in (('boot_id', 'TEXT'), ('clock_synced', 'INTEGER')):
+                if name not in columns:
+                    try:
+                        self._db.execute(f'ALTER TABLE events ADD COLUMN {name} {kind}')
+                    except sqlite3.OperationalError as exc:
+                        if 'duplicate column' not in str(exc):      # another program opening it just added it
+                            raise
         log.info('Object states are kept in %s', self.path)
 
     def append(self, records: Sequence[StateRecord]) -> None:
@@ -123,6 +139,27 @@ class SqliteStateStore:
                 f'SELECT {_COLUMNS} FROM events WHERE type IN ({_CHANGE_LIST}) AND ts > ?{one} ORDER BY ts, id',
                 (since, label) if label is not None else (since,)).fetchall()
         return [_record_of(row) for row in rows]
+
+    def prune(self, before: float) -> int:
+        """Delete the rows with `ts < before`. Returns how many. The DELETE trigger is off only inside this one
+        transaction (see the top of this file)."""
+        with self._lock:
+            self._db.execute('BEGIN IMMEDIATE')
+            try:
+                self._db.execute('DROP TRIGGER IF EXISTS events_no_delete')
+                deleted = self._db.execute('DELETE FROM events WHERE ts < ?', (before,)).rowcount
+                self._db.execute(_NO_DELETE)
+            except BaseException:
+                self._db.rollback()
+                raise
+            self._db.commit()
+            if deleted:
+                # Fold the deletes into the file and shrink the WAL file back, so a big first prune leaves no big
+                # WAL file behind.
+                self._db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+        if deleted:
+            log.info('Deleted %d object state rows from before %s', deleted, before)
+        return deleted
 
     def close(self) -> None:
         with self._lock:

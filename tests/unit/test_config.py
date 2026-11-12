@@ -243,6 +243,19 @@ def test_a_bad_value_in_a_new_section_is_caught_too(project):
     assert str(err.value) == 'config/settings.local.yaml: pi.detector.format must be one of: ncnn, pt (got "onnx")'
 
 
+def test_each_retry_has_a_jitter_share_from_0_to_1(project):
+    cfg = load_config(root=project, environ={})
+    for share in (cfg.pi.upload_retry_jitter, cfg.pi.detector.pause_jitter, cfg.supervisor.restart_jitter,
+                  cfg.llm.retry_jitter, cfg.cloud.retry_jitter):
+        assert 0 <= share <= 1
+
+
+def test_a_jitter_over_1_is_refused(project):
+    write_local(project, 'cloud:\n  retry_jitter: 1.5\n')
+    with pytest.raises(ConfigError, match='cloud.retry_jitter'):
+        load_config(root=project, environ={})
+
+
 def test_a_wait_that_starts_longer_than_its_limit_is_refused(project):
     write_local(project, 'supervisor:\n  restart_start_sec: 120\n')
     with pytest.raises(ConfigError) as err:
@@ -279,7 +292,8 @@ def test_numbers_moved_out_of_the_old_code_keep_their_values(project):
     lens, safety = cfg.lens, cfg.safety
     assert (lens.measure_width, lens.edge_touch_px, lens.fixed_after_sec, lens.edge_tip_after_sec) == (240, 3, 5, 120)
     assert lens.wait_before_saying_sec.model_dump() == {
-        'lost': 15, 'covered': 4, 'dark': 8, 'glare': 8, 'blurry': 12, 'bumped': 5, 'empty': 180, 'cutoff': 45,
+        'lost': 15, 'no_pictures': 120, 'covered': 4, 'dark': 8, 'glare': 8, 'blurry': 12, 'bumped': 5, 'empty': 180,
+        'cutoff': 45,
         'slow': 30, 'pi': 10, 'pi_detector': 60}
     assert cfg.camera.moved_within_sec == 1.5
     assert safety.temporal.history_length == 30
@@ -373,8 +387,7 @@ NEW_SETTINGS = {
         ('object_states', 'trace_pictures'), ('dev', 'enabled'), ('dev', 'ui_folder'), ('dev', 'vite_port'),
         ('dev', 'poll_sec'), ('dev', 'checks'), ('dev', 'test_command'), ('dev', 'collect_markers'),
         ('dev', 'run_timeout_min'), ('dev', 'output_keep_kb'), ('dev', 'sql_max_rows'), ('dev', 'sql_timeout_sec'),
-        ('dev', 'file_preview_kb'), ('dev', 'health', 'pi_cpu_warn_c'), ('dev', 'health', 'pi_cpu_bad_c'),
-        ('dev', 'health', 'pi_disk_warn_mb'), ('dev', 'health', 'detect_warn_ms'),
+        ('dev', 'file_preview_kb'), ('dev', 'health', 'pi_disk_warn_mb'), ('dev', 'health', 'detect_warn_ms'),
         ('dev', 'flicker_flips_per_min'), ('dev', 'sql_check_every_steps'), ('dev', 'collect_timeout_sec'),
         ('dev', 'flips_window_min'), ('dev', 'table_counts_every_sec'),
         # the sensitivity slider's bar for new things

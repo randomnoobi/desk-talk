@@ -201,6 +201,16 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'cloud.link_no_answer': ('server', 'error'),
     'lens.pi_hot': ('temp',),
     'lens.pi_clock': ('seconds', 'way'),
+    'lens.pi_very_hot': ('temp',),
+    'lens.card_low.pi': ('free_mb',),
+    'lens.card_low.phone': ('free_mb',),
+    'lens.card_low.webcam': ('free_mb',),
+    'lens.card_full.pi': ('free_mb',),
+    'lens.card_full.phone': ('free_mb',),
+    'lens.card_full.webcam': ('free_mb',),
+    'lens.no_detections': ('minutes',),
+    'lens.no_detections_long': ('minutes',),
+    'lens.pi_heartbeat': ('seconds',),
     'camera.problems.bumped': ('degrees',),
     'camera.problems.cutoff': ('object', 'side', 'hint'),
     'camera.problems.slow': ('fps',),
@@ -566,6 +576,14 @@ class PhotoWords(_Section):
     no_label: str
 
 
+class ByCamera(_Section):
+    """One text for each camera (settings → camera.source)."""
+
+    pi: str
+    phone: str
+    webcam: str
+
+
 class LensCard(_Section):
     name: str
     art: str
@@ -578,6 +596,9 @@ class PiFixed(_Section):
     pi_power: str
     pi_clock: str
     pi_detector: str
+    detections: str
+    card: ByCamera
+    pi_heartbeat: str
 
 
 class LensPrompts(_Section):
@@ -590,6 +611,12 @@ class LensPrompts(_Section):
     pi_clock_behind: str
     pi_clock_ahead: str
     pi_detector: str
+    pi_very_hot: str
+    card_low: ByCamera                # the disk the data is saved on: the Pi's SD card, or this computer's disk
+    card_full: ByCamera
+    no_detections: str
+    no_detections_long: str
+    pi_heartbeat: str
     pi_fixed: PiFixed
 
 
@@ -604,16 +631,9 @@ class CameraProblems(_Section):
     slow: str
 
 
-class ByCamera(_Section):
-    """One text for each camera (settings → camera.source)."""
-
-    pi: str
-    phone: str
-    webcam: str
-
-
 class CameraFixed(_Section):
     lost: str
+    no_pictures: str
     covered: str
     dark: str
     glare: str
@@ -636,6 +656,7 @@ class Title(_Section):
 
 class CameraTitles(_Section):
     lost: Title
+    no_pictures: Title
     covered: Title
     dark: Title
     glare: Title
@@ -649,6 +670,7 @@ class CameraTitles(_Section):
 class CameraPrompts(_Section):
     problems: CameraProblems
     lost: ByCamera
+    no_pictures: ByCamera
     fixed: CameraFixed
     side_hints: SideHints
     other_side_hint: str
