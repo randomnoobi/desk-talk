@@ -18,7 +18,7 @@ vi.mock('../StatsChart', () => ({
 }))
 
 const settings: DevSettings = {
-  poll_sec: 5, checks: [], health: { pi_cpu_warn_c: 70, pi_cpu_bad_c: 80, pi_disk_warn_mb: 1000, detect_warn_ms: 500 },
+  poll_sec: 5, checks: [], health: { pi_disk_warn_mb: 1000, detect_warn_ms: 500 }, pi_hot: { warning_c: 70, serious_c: 80 },
   trace_pictures: 30, sql_max_rows: 500, data_folder: '/data',
   disconnect_after_sec: 3, web_port: 5000, flicker_flips_per_min: 4,
   output_keep_kb: 2000, flips_window_min: 10, table_counts_every_sec: 30, trace_events_kept: 50,

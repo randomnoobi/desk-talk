@@ -6,7 +6,7 @@ import App, { FIRST_TRY_AGAIN_MS } from './App'
 const SETTINGS: DevSettings = {
   poll_sec: 1,
   checks: ['Fast tests', 'Lint', 'Types'],
-  health: { pi_disk_warn_mb: 1000, detect_warn_ms: 500 },
+  health: { pi_disk_warn_mb: 1000, detect_warn_ms: 500 }, pi_hot: { warning_c: 75, serious_c: 80 },
   trace_pictures: 90,
   sql_max_rows: 500,
   data_folder: '/tmp/data',

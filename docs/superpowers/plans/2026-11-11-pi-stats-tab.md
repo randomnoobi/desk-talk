@@ -25,7 +25,7 @@ Raspberry Pi 5 Model B Rev 1.1, kernel 6.18.50+rpt-rpi-2712, 4 cores, `CLK_TCK` 
 - `desktalk/core/` and `desktalk/domain/` import no OS-reading, web or AI code: the file reading is an adapter (`desktalk/adapters/system/`).
 - Tests never touch the real `/proc`, `/sys` or the network: a folder made to look like them (`tmp_path`), and the fakes.
 - A reading that is missing (no fan, no Wi-Fi, a Mac) is left out or `None`, never an error. A file that can't be read or parsed makes that one number missing, not the whole reading.
-- The developer page keeps no numbers of its own: how often to ask comes from the reply's `every_sec`, the hot lines from `GET /api/dev/settings` (`health.pi_cpu_warn_c` and `health.pi_cpu_bad_c`, already there for the System tab).
+- The developer page keeps no numbers of its own: how often to ask comes from the reply's `every_sec`, the hot lines from `GET /api/dev/settings` (`pi_hot: {warning_c, serious_c}` = `pi.hot_warning_c` and `pi.hot_serious_c`; main's #17 dropped `dev.health.pi_cpu_warn_c` and `pi_cpu_bad_c` while this was built).
 - Command lines shown are cut to `system_stats.command_chars`.
 
 ## The reply (the one shape every task uses)
@@ -151,12 +151,12 @@ Load the `dataviz` skill before writing chart code.
 - Create: `dev_ui/src/tabs/Pi.tsx`, `dev_ui/src/tabs/Pi.test.tsx`, `dev_ui/src/StatsChart.tsx` (one uPlot time chart: several lines, a unit, an optional dashed level line, loaded with `import('uplot')` like `SmoothingChart.tsx`), `dev_ui/src/piStats.ts` + `dev_ui/src/piStats.test.ts` (pure helpers)
 - Modify: `dev_ui/src/api.ts` (types for the reply above, `getPiStats(since?: number)` → `/api/dev/pi_stats`), `dev_ui/src/App.tsx` (tab `{ id: 'pi', name: 'Pi', Tab: Pi }` after `system`), `dev_ui/src/App.test.tsx` if it lists the tabs, `dev_ui/README.md`
 
-**Interfaces:** Consumes the reply above (with `address`) and `DevSettings.health.pi_cpu_warn_c` / `pi_cpu_bad_c`. `piStats.ts` produces `mergeSamples(old: PiSample[], fresh: PiSample[], keep: number): PiSample[]` (by `at`, no duplicates, newest `keep`), `keepCount(reply): number` (= `Math.round(keep_min * 60 / every_sec)`), `series(samples, pick): (number | null)[]` for lines that come and go (a fan that appears later), `formatBytes`, `formatRate`.
+**Interfaces:** Consumes the reply above (with `address`) and `DevSettings.pi_hot.warning_c` / `serious_c`. `piStats.ts` produces `mergeSamples(old: PiSample[], fresh: PiSample[], keep: number): PiSample[]` (by `at`, no duplicates, newest `keep`), `keepCount(reply): number` (= `Math.round(keep_min * 60 / every_sec)`), `series(samples, pick): (number | null)[]` for lines that come and go (a fan that appears later), `formatBytes`, `formatRate`.
 
 The tab, top to bottom:
-1. A header card: the model, kernel, cores, how long the Pi has been up, when the last sample came, "asking again every N s", and warnings in plain words: "The power supply is too weak right now" (`under_voltage`), "The processor is hot: 82 °C" (amber at `pi_cpu_warn_c`, red at `pi_cpu_bad_c`), the Pi can't be reached (the 502 words), "The Pi isn't collecting its numbers (system_stats.enabled is off there)".
+1. A header card: the model, kernel, cores, how long the Pi has been up, when the last sample came, "asking again every N s", and warnings in plain words: "The power supply is too weak right now" (`under_voltage`), "The processor is hot: 82 °C" (amber at `pi_hot.warning_c`, red at `pi_hot.serious_c`), the Pi can't be reached (the 502 words), "The Pi isn't collecting its numbers (system_stats.enabled is off there)".
 2. A row of big numbers (stat tiles): CPU %, memory used %, data folder used %, hottest temperature, fan RPM, Wi-Fi signal dBm, load (1 min).
-3. Charts: CPU (busy, user, system, I/O wait); each core; CPU speed per core (MHz, max as a level line); load 1/5/15 min; temperatures (all sensors; `pi_cpu_warn_c` and `pi_cpu_bad_c` as level lines); fan RPM and fan power %; memory (used, cached, available) and swap used; disk read and write (bytes/s) and disk busy %; network received and sent (bytes/s) per interface; Wi-Fi signal (dBm); voltages.
+3. Charts: CPU (busy, user, system, I/O wait); each core; CPU speed per core (MHz, max as a level line); load 1/5/15 min; temperatures (all sensors; `pi_hot.warning_c` and `serious_c` as level lines); fan RPM and fan power %; memory (used, cached, available) and swap used; disk read and write (bytes/s) and disk busy %; network received and sent (bytes/s) per interface; Wi-Fi signal (dBm); voltages.
 4. Tables: disk space per disk with a bar; the top processes (name, command, CPU %, memory) from the newest sample; cooling states; network errors and drops.
 Poll with `usePoll`, every `every_sec` from the last reply (`settings.poll_sec` until the first one), asking `since` = the newest `at` it has.
 

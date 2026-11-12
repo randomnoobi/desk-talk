@@ -111,6 +111,7 @@ def dev_settings(app: App) -> dict[str, Any]:
         'poll_sec': dev.poll_sec,
         'checks': [check.name for check in dev.checks],
         'health': dev.health.model_dump(mode='json'),
+        'pi_hot': {'warning_c': config.pi.hot_warning_c, 'serious_c': config.pi.hot_serious_c},   # the Pi tab
         'trace_pictures': states.trace_pictures,
         'sql_max_rows': dev.sql_max_rows,
         'data_folder': str(config.resolve(config.storage.folder)),

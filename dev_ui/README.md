@@ -24,7 +24,7 @@ You need Node 22 (it comes with npm).
   at the limits in `dev.health`.
 - **Pi**: every system number the Pi gives, now and over its last `system_stats.keep_min` minutes (the
   Pi's own setting): the model, how long it has been up, and warnings (the power supply too weak, too hot at
-  `dev.health.pi_cpu_warn_c` and `pi_cpu_bad_c`, the Pi can't be reached); big numbers for CPU, memory, the
+  `pi.hot_warning_c` and `pi.hot_serious_c`, the Pi can't be reached); big numbers for CPU, memory, the
   data folder, the hottest sensor, the fan, Wi-Fi and load; charts of CPU use, each core, CPU speed, load,
   temperatures, fan speed and power, memory, disk reads and writes, disk busy, network sent and received,
   Wi-Fi signal and voltages; and tables of disk space, the busiest programs, cooling and network errors.

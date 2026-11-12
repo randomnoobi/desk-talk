@@ -1,5 +1,5 @@
 // The sums behind the Pi tab: keeping the samples, pulling one line out of them, and numbers in words.
-import type { HealthLimits, PiSample, PiStatsReply } from './api'
+import type { PiHotLimits, PiSample, PiStatsReply } from './api'
 import { formatBytes } from './format'
 import type { Level } from './ui'
 
@@ -51,7 +51,7 @@ export function hottest(sample: PiSample): { name: string, c: number } | null {
   return top
 }
 
-/** Amber from settings → dev.health.pi_cpu_warn_c, red from pi_cpu_bad_c (the System tab's lines too). */
-export function tempLevel(c: number, limits: Pick<HealthLimits, 'pi_cpu_warn_c' | 'pi_cpu_bad_c'>): Level {
-  return c >= limits.pi_cpu_bad_c ? 'bad' : c >= limits.pi_cpu_warn_c ? 'warn' : 'ok'
+/** Amber from settings → pi.hot_warning_c, red from pi.hot_serious_c (the lines the health checks use too). */
+export function tempLevel(c: number, limits: PiHotLimits): Level {
+  return c >= limits.serious_c ? 'bad' : c >= limits.warning_c ? 'warn' : 'ok'
 }

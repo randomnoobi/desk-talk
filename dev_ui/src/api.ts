@@ -62,6 +62,12 @@ export function deleteJSON<T>(path: string): Promise<T> {
 
 /** settings → dev.health: when the System tab turns a number amber or red (the Pi's temperature goes by its
  *  health check instead). */
+/** When the Pi's processor counts as hot (°C): amber from warning_c, red from serious_c. */
+export interface PiHotLimits {
+  warning_c: number
+  serious_c: number
+}
+
 export interface HealthLimits {
   pi_disk_warn_mb: number
   detect_warn_ms: number
@@ -83,6 +89,7 @@ export interface DevSettings {
   poll_sec: number
   checks: string[]                 // the names of the "Run everything" steps, in order
   health: HealthLimits
+  pi_hot: PiHotLimits              // settings → pi.hot_warning_c and hot_serious_c: the Pi tab's hot lines
   trace_pictures: number
   sql_max_rows: number
   data_folder: string

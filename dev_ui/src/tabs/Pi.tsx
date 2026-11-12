@@ -62,7 +62,7 @@ function Header(props: { reply: PiStatsReply | null, now: PiSample | null, setti
   if (now?.under_voltage) warnings.push(['bad', 'The power supply is too weak right now'])
   const hot = now ? hottest(now) : null
   if (hot) {
-    const level = tempLevel(hot.c, settings.health)
+    const level = tempLevel(hot.c, settings.pi_hot)
     if (level !== 'ok') warnings.push([level, `The processor is hot: ${celsius(hot.c)}`])
   }
   const flags = now?.throttled ? parseInt(now.throttled, 16) : NaN
@@ -117,7 +117,7 @@ function Tiles(props: { now: PiSample, cores: number | undefined, settings: DevS
         ? <Tile name={`${disk.label} used`} value={`${share(disk.used_bytes, disk.total_bytes)}%`}>{formatBytes(disk.free_bytes)} free</Tile>
         : <Tile name="Disk used" value="–">not reported</Tile>}
       {hot
-        ? <Tile name="Hottest" value={celsius(hot.c)} level={tempLevel(hot.c, settings.health)}>{hot.name}</Tile>
+        ? <Tile name="Hottest" value={celsius(hot.c)} level={tempLevel(hot.c, settings.pi_hot)}>{hot.name}</Tile>
         : <Tile name="Hottest" value="–">no sensor</Tile>}
       {fan
         ? <Tile name="Fan" value={rpm(fan.rpm)}>{fan.name}, {Math.round(fan.pwm_pct)}% power</Tile>
@@ -173,7 +173,7 @@ function Charts(props: { samples: PiSample[], cores: number | undefined, setting
   const now = samples[samples.length - 1]
   const line = (label: string, pick: (s: PiSample) => number | null | undefined): ChartLine =>
     ({ label, values: series(samples, pick) })
-  const { pi_cpu_warn_c: warn, pi_cpu_bad_c: bad } = settings.health
+  const { warning_c: warn, serious_c: bad } = settings.pi_hot
   const hasSwap = samples.some(s => s.memory.swap_total_bytes > 0)
 
   return (

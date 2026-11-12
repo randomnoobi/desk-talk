@@ -81,14 +81,14 @@ describe('formatRate', () => {
 })
 
 describe('hottest and tempLevel', () => {
-  const limits = { pi_cpu_warn_c: 70, pi_cpu_bad_c: 80 }
+  const limits = { warning_c: 70, serious_c: 80 }
 
   it('finds the hottest sensor, or null with none', () => {
     expect(hottest(at(1, { temps: [{ name: 'a', c: 50 }, { name: 'b', c: 61.2 }] }))).toEqual({ name: 'b', c: 61.2 })
     expect(hottest(at(1, { temps: [] }))).toBeNull()
   })
 
-  it('is amber from pi_cpu_warn_c and red from pi_cpu_bad_c', () => {
+  it('is amber from warning_c and red from serious_c', () => {
     expect(tempLevel(69.9, limits)).toBe('ok')
     expect(tempLevel(70, limits)).toBe('warn')
     expect(tempLevel(80, limits)).toBe('bad')

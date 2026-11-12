@@ -225,7 +225,7 @@ has `"demo": true`), and a pretend sip counts in today's water.
 
 - Every `/api/dev` route turns away other computers and other web pages with 403 and `{"error": ...}`
   (the wording is in `config/prompts.yaml` under `dev:`), before anything runs.
-- `GET /api/dev/settings`: `{"poll_sec", "checks": [names], "health": {...}, "trace_pictures",
+- `GET /api/dev/settings`: `{"poll_sec", "checks": [names], "health": {...}, "pi_hot": {"warning_c", "serious_c"}, "trace_pictures",
   "trace_events_kept", "trace_photos_kept", "trace_step_photos_kept", "sql_max_rows", "data_folder", "object_states": {"on_confidence", "off_confidence", "appear_sec",
   "gone_sec", "window_pictures", "vote_share"}, "scenarios": {"countdown_default_sec", "countdown_max_sec",
   "waiting_max"}}`.
