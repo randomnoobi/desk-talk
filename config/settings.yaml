@@ -792,6 +792,8 @@ system_stats:
   disks:                        # how full each of these is (a path on that disk; a relative one is under the project)
     - label: data folder
       path: data
+    - label: rest of the SD card  # on the Pi the data folder is Desk Talk's own space, so the rest of the card is
+      path: /                     # measured apart, where health_checks.rest_of_card_folder measures it
   top_processes: 8              # show this many of the busiest programs
   command_chars: 80             # each program is shown as its name and the script or module it runs (never the
                                 # rest of its command line, which can hold a password), cut to this many letters

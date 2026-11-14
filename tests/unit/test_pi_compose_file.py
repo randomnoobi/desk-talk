@@ -324,3 +324,12 @@ def test_the_app_gets_the_room_settings_and_a_memory_folder(services):
     assert app['environment']['MEMORY_DATA_FOLDER'] == '/memory-data'
     assert app['tmpfs'] == [
         '/memory-data:size=${APP_MEMORY_DATA_SIZE:-200m},uid=${PI_USER_ID:-1000},gid=${PI_GROUP_ID:-1000},mode=0700']
+
+
+def test_the_pi_tab_shows_the_rest_of_the_sd_card_as_well_as_the_data_folder():
+    """With Desk Talk's own space on the card (raspberry_pi/data_room.sh), the data folder is only that space: the Pi
+    tab also shows the rest of the card, measured where the health checks measure it."""
+    settings = yaml.safe_load((ROOT / 'config' / 'settings.yaml').read_text(encoding='utf-8'))
+    paths = [disk['path'] for disk in settings['system_stats']['disks']]
+    assert paths[0] == settings['storage']['folder']
+    assert settings['health_checks']['rest_of_card_folder'] in paths
