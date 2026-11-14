@@ -12,7 +12,8 @@ The developer page's Pi log tab (ports.PiLogReader): the Pi's log, read over ssh
 - When ssh ends by itself, the reader waits (settings → retry_start_sec, twice as long after each miss up to
   retry_max_sec) and tick() connects again with the source's resume command, from the Pi's own time on the newest
   line it got: {since} is that time as seconds since 1970 with its fraction (1762855200.123456789). The lines from
-  exactly that time come again, so a line with the same time and text as one of the newest kept lines is left out.
+  exactly that time come again, so a line with the same time and text (runs of spaces counted as one, as docker
+  compose pads the names differently then) as one of the newest kept lines is left out.
   The wait only starts small again after a connection that lasted settings → connected_ok_sec, so a command that
   fails right after connecting (a missing folder, Docker stopped) doesn't try again every retry_start_sec forever.
 - tick() also stops reading once the tab hasn't asked for settings → stop_after_idle_sec. Asking for the same
@@ -302,8 +303,10 @@ class SshPiLog:
         found = time_in(line)
         if found is not None:
             when = found[0]
-            key = (when, text)
-            if key in self._recent:             # --since gives the lines from that time again
+            # --since gives the lines from that time again, and docker compose may pad the container's name
+            # differently then (to the longest name printing), so runs of spaces count as one
+            key = (when, ' '.join(text.split()))
+            if key in self._recent:
                 return
             self._recent[key] = None
             if len(self._recent) > self._settings.keep_lines:

@@ -300,6 +300,23 @@ def test_it_stops_once_the_tab_stops_asking(made):
     wait_until_gone(child_pid(page))
 
 
+
+def test_a_line_padded_differently_after_picking_up_is_not_repeated(made):
+    """`docker compose logs` pads each container's name to the longest one printing, so the same line can come
+    back from --since with fewer spaces before its `|` (seen on the real Pi with every container's log)."""
+    clock = FakeClock()
+    resume = ("printf 'camera-1  | 2026-11-11T10:00:01.000000000Z two\\n"
+              "camera-1  | 2026-11-11T10:00:02.5Z three\\n'; sleep 30")
+    start = STAMPED_START.replace('camera-1  |', 'camera-1    |')
+    pi_log = made(clock, sources={'first': (start, resume), 'second': ('true', 'true')})
+    wait_for(lambda: pi_log.read('first', 0), lambda p: p.state == 'waiting')
+    clock.advance(make_settings().retry_start_sec)
+    pi_log.tick(clock.now())
+    page = wait_for(lambda: pi_log.read('first', 0), lambda p: any('three' in text for text in texts(p)))
+    assert texts(page) == ['camera-1    | 2026-11-11T10:00:00.123456789Z one',
+                           'camera-1    | 2026-11-11T10:00:01.000000000Z two',
+                           'camera-1  | 2026-11-11T10:00:02.5Z three']
+
 STAMPED_STAYS = STAMPED_START.replace('exit 3', 'sleep 30')
 STAMPED_TEXTS = ['camera-1  | 2026-11-11T10:00:00.123456789Z one', 'camera-1  | 2026-11-11T10:00:01.000000000Z two']
 
