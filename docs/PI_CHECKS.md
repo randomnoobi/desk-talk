@@ -405,7 +405,7 @@ and after the undo (step 5):
 DESKTALK_PI=pi DESKTALK_PI_CLOCK_BACK=1 uv run pytest -m pi -v -rs -k "clock_back or nothing_deleted"
 ```
 
-Result: _date, passed / failed, notes_
+Result: 2026-11-11 to 2026-11-14, passed. In 1990 the app said its clock must be wrong, picked up 0 saved states, deleted nothing, and kept its timed jobs and pictures going; the event log got a `1990-01-01` day. The `clock_synced` false rows weren't seen: the desk was empty, so nothing was saved then. After the undo the clock synced and the clock-back check passed. Nothing was deleted (checked by hand, as `nothing_deleted` skipped once the note had run out). While the clock was in 1990, the camera's clean-up left the pictures taken before it (they looked newer than the clock), and the in-memory picture folder still had room (about 140 MB free, above `pi.min_free_mb`).
 
 ### 6. Desk Talk's own space missing
 
