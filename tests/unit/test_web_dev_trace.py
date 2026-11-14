@@ -37,6 +37,8 @@ def app_config() -> AppConfig:
         return load_config(root=root, environ={}, dotenv=root / '.env')
 
 
+DATA_FOLDER = Path('/memory-data/data')        # the folder build() worked out (DeskTalk.data_folder)
+
 def record(ts: float, change: str, label: str = 'cup', **more: Any) -> StateRecord:
     before, after = {'appeared': (Phase.ABSENT, Phase.PRESENT), 'removed': (Phase.PRESENT, Phase.ABSENT),
                      'moved': (Phase.PRESENT, Phase.PRESENT)}[change]
@@ -55,7 +57,8 @@ def client_for(records=(), joins=(), photos: FakeTracePhotos | None = None, *, n
     """`watched_since`: when the camera's current run of pictures began (None = no pictures since the app started)."""
     store = InMemoryStateStore()
     store.append(list(records))
-    desk = SimpleNamespace(config=app_config(), object_states=FakeObjectStates(watched_since=watched_since),
+    desk = SimpleNamespace(config=app_config(), data_folder=DATA_FOLDER,
+                           object_states=FakeObjectStates(watched_since=watched_since),
                            state_store=store, chat_joins=None if no_parts else FakeChatJoins(joins),
                            trace_photos=None if no_parts else (photos or FakeTracePhotos()),
                            preferences=FakePreferences())
@@ -141,6 +144,11 @@ def test_object_photo():
 def test_object_photo_404():
     assert client_for().get('/api/dev/objects/photo/gone').status_code == 404
     assert client_for(no_parts=True).get('/api/dev/objects/photo/p1').status_code == 404
+
+
+def test_the_settings_name_the_data_folder_the_app_really_uses():
+    """In off mode that's the folder in memory, not the project's data folder."""
+    assert client_for().get('/api/dev/settings').json()['data_folder'] == str(DATA_FOLDER)
 
 
 def test_the_settings_say_how_many_are_kept():

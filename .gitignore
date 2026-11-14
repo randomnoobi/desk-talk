@@ -15,6 +15,9 @@ certs/
 
 # Your own data: event log, habit days, preferences (stays on this computer)
 data/
+# On a Pi: Desk Talk's own room on the SD card (raspberry_pi/data_room.sh), and the data folder from before it
+/data.img*
+/data.before-room-*/
 
 # Logs saved by raspberry_pi/get_logs.sh on the Pi, and copied to your Mac by scripts/pi_logs.sh
 /pi_logs/

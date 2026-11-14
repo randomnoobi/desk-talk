@@ -176,8 +176,8 @@ Only for a Pi with `llm.ai_url` pointing at an AI on your laptop, and `llm.ai_on
 
 ## Failure hand tests
 
-Five things that go wrong in real life, done on purpose: the power cut and back, the network off, a pulled cable, a
-full SD card, and the clock set back to 1990. Each shows the Pi gets through by itself, or says what's wrong, and
+Six things that go wrong in real life, done on purpose: the power cut and back, the network off, a pulled cable, a
+full SD card, the clock set back to 1990, and Desk Talk's own space missing. Each shows the Pi gets through by itself, or says what's wrong, and
 loses nothing. When one fails, [RUNBOOK.md](RUNBOOK.md) says what to do about it for real. The checks afterwards are in
 `tests/pi/test_failure_checks.py`; none of them breaks or changes anything.
 
@@ -308,31 +308,38 @@ your home folder, never in the data folder.
 **Steps**:
 
 1. **On the Pi**, fill the card until 1500 MB are free (under the 2000 MB warning level,
-   `health_checks.card_warning_below_mb`; the serious one is `card_serious_below_mb`, 500 MB):
+   `health_checks.card_rest_warning_below_mb`; the serious one is `card_rest_serious_below_mb`, 500 MB). Desk Talk has
+   its own space (`data.img`), so this fills the rest of the card, not Desk Talk's space:
 
    ```bash
    free=$(df -m --output=avail ~ | tail -n 1); want=1500; fallocate -l $(( free - want ))M ~/desktalk-fill && df -h ~
    ```
 
    `df` should show about 1.5 GB free.
-2. Wait a minute and listen: Lens looks at the card every 2 seconds (`lens.check_every_sec`) and should say "The SD
-   card is getting full, only ... MB left."
+2. Wait a minute and listen: Lens looks at the card every 2 seconds (`lens.check_every_sec`) and should say the
+   rest of the SD card is getting full, with how many MB are left, and that Desk Talk is still saving.
 3. **On your Mac**, the check below.
 4. To try the serious level too, **on the Pi**, make the file again for 400 MB free (under 500 MB), wait a minute
-   ("The SD card is almost full") and run the check again:
+   (the serious version of that warning) and run the check again:
 
    ```bash
    rm ~/desktalk-fill; free=$(df -m --output=avail ~ | tail -n 1); want=400; fallocate -l $(( free - want ))M ~/desktalk-fill && df -h ~
    ```
 
-5. **Undo**, **on the Pi**: `rm ~/desktalk-fill`, and `df -h ~` shows the room back. Lens should say it's fine again.
-   Then **on your Mac**, `DESKTALK_PI=pi uv run pytest -m pi -v -rs -k ready_for_a_hand_test`.
+5. **Undo**, **on the Pi**: `rm ~/desktalk-fill`, and `df -h ~` shows the room back. Then check the file is gone:
 
-**What should happen**: a spoken warning (and a more serious one under 500 MB); nothing restarts; pictures keep coming
-and the event log keeps filling; nothing of yours is deleted to make room: the caps on the data folder go by age and
+   ```bash
+   ls ~/desktalk-fill
+   ```
+
+   It should say "No such file". Lens should say it's fine again. Then **on your Mac**, `DESKTALK_PI=pi uv run pytest -m pi -v -rs -k ready_for_a_hand_test`.
+
+**What should happen**: a spoken warning about the rest of the card (and a more serious one under 500 MB) that says
+Desk Talk is still saving; nothing restarts; pictures keep coming and the event log keeps filling, since it is in
+Desk Talk's own space, which the full card can't touch (`/api/health` → `checks` → `saving` stays `ok`); nothing of yours is deleted to make room: the caps on the data folder go by age and
 count, not by the card's free space (`event_log.keep_days` and `object_states.keep_days`, 30 days; the story pictures,
 a set number per object). If the card fills right up, the object states that can't be saved wait in memory, at most
-`object_states.unsaved_most` (5000). The check also reads `/api/health` → `checks` → `card`, which should say
+`object_states.unsaved_most` (5000). The check also reads `/api/health` → `checks` → `card_rest`, which should say
 `warning` (or `serious`) by the app's own levels.
 
 **Afterwards**, **on your Mac**, after step 2 (and step 4):
@@ -342,6 +349,8 @@ DESKTALK_PI=pi DESKTALK_PI_CARD_FILLED=1 uv run pytest -m pi -v -rs -k "card_fil
 ```
 
 Result: 2026-11-11, passed. At 1500 MB free the card check said `warning`, and at 400 MB `serious`; Lens said each, and said "enough space ... again" after the undo. Nothing restarted. The first try failed only because the check let no line of the event log be broken, and a power cut on 2026-11-03 left one (zero bytes, in the middle of that day's file): it now allows one, as the other checks do.
+
+Result: 2026-11-14, passed, with Desk Talk's own space (8192 MB). At 1500 MB free `card_rest` said `warning`, and at 400 MB `serious`; Lens said "the rest of the Raspberry Pi's SD card is getting full" (then "almost full"), and "I'm still saving everything in Desk Talk's own space"; `card` (the space) stayed `ok` at 7905 MB and `saving` stayed `ok`, the event log kept growing, and Lens said there's enough room again after the undo.
 
 ### 5. The clock set back to 1990
 
@@ -396,4 +405,56 @@ and after the undo (step 5):
 DESKTALK_PI=pi DESKTALK_PI_CLOCK_BACK=1 uv run pytest -m pi -v -rs -k "clock_back or nothing_deleted"
 ```
 
-Result: _date, passed / failed, notes_
+Result: 2026-11-11 to 2026-11-14, passed. In 1990 the app said its clock must be wrong, picked up 0 saved states, deleted nothing, and kept its timed jobs and pictures going; the event log got a `1990-01-01` day. The `clock_synced` false rows weren't seen: the desk was empty, so nothing was saved then. After the undo the clock synced and the clock-back check passed. Nothing was deleted (checked by hand, as `nothing_deleted` skipped once the note had run out). While the clock was in 1990, the camera's clean-up left the pictures taken before it (they looked newer than the clock), and the in-memory picture folder still had room (about 140 MB free, above `pi.min_free_mb`).
+
+### 6. Desk Talk's own space missing
+
+Desk Talk's space (`~/desk-talk/data.img`) is mounted on `data/` by `desktalk-data-room.service`. If it isn't mounted,
+the app must not write to the SD card's bare `data/` folder: it saves nothing on the card, says so out loud, and
+nothing of the history is touched.
+
+**Setup**: the note, then a cup on the desk for 2 minutes, so there is fresh history in the space.
+
+**Steps**:
+
+1. **On the Pi**, take the space away and restart the app so it starts without it:
+
+   ```bash
+   sudo systemctl stop desktalk-data-room
+   ```
+
+   ```bash
+   cd ~/desk-talk/raspberry_pi && docker compose restart app
+   ```
+
+2. Wait a minute and listen: Lens should say that nothing is being saved right now, and `/api/health` → `checks` → `saving` should say `serious`.
+3. **On the Pi**, `ls ~/desk-talk/data` should show an empty folder, with no new files in it.
+4. **Undo**, **on the Pi**: mount the space again, then restart the app:
+
+   ```bash
+   sudo systemctl start desktalk-data-room
+   ```
+
+   ```bash
+   cd ~/desk-talk/raspberry_pi && docker compose restart app
+   ```
+
+5. `ls ~/desk-talk/data` shows the history again, and Lens stops warning.
+
+**What should happen**: the app starts and the live view and warnings still work; Lens says nothing is being saved, and
+`/api/health` → `checks` → `saving` says `serious` while the space is away and `ok` after; nothing is written to the bare `data/` folder; the history in
+the space is all there after the undo, and `nothing_deleted` passes.
+
+**Afterwards**, **on your Mac**, with the space still away (after step 3):
+
+```bash
+DESKTALK_PI=pi DESKTALK_PI_SPACE_MISSING=1 uv run pytest -m pi -v -rs -k space_missing
+```
+
+and after the undo (step 5):
+
+```bash
+DESKTALK_PI=pi DESKTALK_PI_SPACE_BACK=1 uv run pytest -m pi -v -rs -k "space_back or nothing_deleted"
+```
+
+Result: 2026-11-14, passed. With the space away, `saving` said `serious`, `card` `unknown`; Lens said "Nothing is being saved right now, because Desk Talk's own space on the SD card is missing"; the app wrote to `/memory-data` only, and the bare `data/` folder (root's) stayed empty. After the undo, `saving` said `ok`, the history was all there and kept growing, and trims were off again for the space.

@@ -104,3 +104,17 @@ def test_it_never_removes_what_the_containers_use(pi: FakePi):
     assert 'image prune -a' not in text
     for line in pi.run(script='update.sh').calls:
         assert not line.startswith(('docker volume rm', 'docker volume prune', 'docker rmi', 'docker image rm'))
+
+
+def test_an_update_gives_desk_talk_its_own_room_after_the_build_and_before_the_cut(pi: FakePi):
+    result = pi.run(script='update.sh')
+    assert result.code == 0, result.out
+    calls = result.calls
+    assert calls.index('docker compose up -d --build') < calls.index('data_room.sh make') \
+        < calls.index('docker compose up -d --no-build') < calls.index(prunes(calls)[0])
+
+
+def test_a_dry_run_update_passes_the_dry_run_to_the_room(pi: FakePi):
+    result = pi.run('--dry-run', script='update.sh')
+    assert result.code == 0, result.out
+    assert 'data_room.sh make --dry-run' in result.calls and 'data_room.sh make' not in result.calls

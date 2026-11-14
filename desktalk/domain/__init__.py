@@ -11,6 +11,7 @@ Plain data, no I/O: what the parts of Desk Talk pass to each other.
                            CloudUnavailable and CloudNotLinked: the cloud server didn't answer, or doesn't know us)
     Picture, Size, Box     a picture, how big it is, a box on it (Point, Gravity too)
     HealthMeasure          how one measure is doing (CheckLevel: ok, warning, serious, unknown), for the health checks
+    Saving                 where Desk Talk saves: plain (the SD card), room (its own fixed space on it) or off
     TracePhoto             a picture kept of one kind of object for its story (newest_trace_photos: which stay)
     DeskRules, Zone        the danger rules in use
     SeenObject, Danger,    the desk right now: what the camera sees, the dangers, a proof photo
@@ -73,7 +74,7 @@ from desktalk.domain.events import (
     new_event_id,
 )
 from desktalk.domain.habits import Nudge, Todo
-from desktalk.domain.health import CheckLevel, HealthMeasure
+from desktalk.domain.health import CheckLevel, HealthMeasure, Saving
 from desktalk.domain.object_states import CHANGE_TYPES, Phase, StateRecord
 from desktalk.domain.pictures import TIMED_PHOTO, Box, Gravity, Picture, Point, Size, TracePhoto, newest_trace_photos
 from desktalk.domain.rules import DeskSnapshot, HabitDone, ObjectSnapshot, RuleHistory, StateChange
@@ -90,5 +91,5 @@ __all__ = [
     'SafetyNow', 'SeenObject', 'Size', 'StateChange', 'StateRecord', 'UnknownChat', 'UploadInfo', 'Zone',
     'DataFile', 'QueryRefused', 'QueryResult', 'RunAlreadyGoing', 'RunStatus', 'SmoothingStep', 'StepStatus',
     'TableInfo', 'TestItem', 'TestOutcome', 'ChatJoin', 'Todo', 'TracePhoto', 'TIMED_PHOTO',
-    'newest_trace_photos', 'Scenario', 'WaitingScenario', 'CheckLevel', 'HealthMeasure',
+    'newest_trace_photos', 'Scenario', 'WaitingScenario', 'CheckLevel', 'HealthMeasure', 'Saving',
 ]

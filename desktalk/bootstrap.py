@@ -79,6 +79,7 @@ from desktalk.core.vision.desk_monitor import DeskMonitor
 from desktalk.core.vision.producer import DetectionProducer
 from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.core.vision.rules import SafetyRules
+from desktalk.domain import Saving
 from desktalk.ports import (
     CameraTips,
     CharacterMemory,
@@ -131,6 +132,7 @@ log = logging.getLogger(__name__)
 
 MINUTE = 60
 DAY = 24 * 60 * MINUTE
+RULES_FILE = 'safety_rules.json'            # the danger zones' file in storage.rules_folder (SafetyRules' store key)
 
 
 @dataclass(eq=False)
@@ -208,6 +210,10 @@ class DeskTalk:
     todos             the to-do list the server keeps: items(), replace(), has_list() (/api/todos, /api/chat_todos)
     desktop           the Mac's pop-ups or the Pi's speaker (warnings, reminders, sips): nothing on the web uses it;
                       stop() lets its thread finish
+    data_folder       the data folder this run really saves in (the folder in memory when nothing is saved):
+                      /api/dev/settings
+    rules_file        where safety_rules.json is really read and saved (under that folder in memory when nothing is
+                      saved): the start-up lines
     """
 
     config: AppConfig
@@ -255,6 +261,8 @@ class DeskTalk:
     scheduler: ScheduledJobs
     supervisor: Jobs
     started_at: float
+    data_folder: Path
+    rules_file: Path
     keepalive: PeriodicWorker | None = None
     log_file: Path | None = None
     test_runner: TestRunner | None = None
@@ -389,12 +397,20 @@ def make_detector(config: AppConfig) -> Detector:
     return detector
 
 
+def in_data_folder(config: AppConfig, data_folder: Path | None, path: Path) -> Path:
+    """Where a folder from the settings is: under `data_folder` when there is one (unless the setting is a full
+    path), else in the project folder."""
+    path = Path(path).expanduser()
+    return config.resolve(path) if data_folder is None or path.is_absolute() else Path(data_folder) / path
+
+
 def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector | None = None,
           client_factory: Callable[..., Any] | None = None, source: FrameSource | None = None,
           data_folder: Path | None = None, config_store: KeyValueStore | None = None, pair_key: str | None = None,
           synchronous_events: bool = False, set_up_logging: bool = True,
           test_runner: TestRunner | None = None, desktop: DesktopNotifications | None = None,
-          cloud_link_factory: Callable[[str, str], CloudLink] | None = None) -> DeskTalk:
+          cloud_link_factory: Callable[[str, str], CloudLink] | None = None,
+          saving: Saving = Saving.PLAIN) -> DeskTalk:
     """Every part of Desk Talk, connected. Nothing runs until start().
 
     The keyword arguments are for tests; left out, the real things are made from `config`:
@@ -415,7 +431,15 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                             dev.enabled is on
         desktop             pop-ups on a Mac or the Pi's speaker, as settings → notifications.output says
         cloud_link_factory  makes the line to the cloud server from its address and token (HttpCloudLink); only
-                            called once the computer is linked"""
+                            called once the computer is linked
+    And for every run: `saving`, the saving mode start.sh gives (desktalk/runtime/saving.py). With Saving.OFF
+    nothing is written to the project: the danger zones (settings → storage.rules_folder) go under `data_folder`
+    too, which must then be given (server.py works it out once, with desktalk/runtime/saving.py folder_for). With
+    Desk Talk's own space (ROOM) or none (OFF), the health checks also measure the rest of the SD card (settings →
+    health_checks.rest_of_card_folder)."""
+    if saving is Saving.OFF and data_folder is None:
+        raise ValueError('build() with Saving.OFF needs data_folder: the folder in memory it writes to instead of the '
+                         "project's (folder_for in desktalk/runtime/saving.py gives one)")
     clock = clock or SystemClock()
     synced_file = config.object_states.clock_synced_file
     clock_check = ClockCheck(config.resolve(synced_file) if synced_file else None,
@@ -423,8 +447,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                              largest_jump_ahead_sec=config.clock.largest_jump_ahead_min * MINUTE)
 
     def data_path(path: Path) -> Path:
-        path = Path(path).expanduser()
-        return config.resolve(path) if data_folder is None or path.is_absolute() else Path(data_folder) / path
+        return in_data_folder(config, data_folder, path)
 
     log_file = None
     if set_up_logging:
@@ -434,8 +457,9 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
 
     # ── storage and the desk right now ──
     store = JsonFileStore(data_path(config.storage.folder))
-    config_store = (config_store if config_store is not None
-                    else JsonFileStore(config.resolve(config.storage.rules_folder)))
+    rules = config.storage.rules_folder
+    rules_path = data_path(rules) if saving is Saving.OFF else config.resolve(rules)    # off: nothing in the project
+    config_store = config_store if config_store is not None else JsonFileStore(rules_path)
     live_pictures, scene, safety_board = LiveView(), Scene(), DangerBoard()
     character_memory, photo_album = Memories(), Album(keep=config.snapshots.max_kept)
     # For the parts that still ask for several desk interfaces in one object; it passes each call on.
@@ -469,7 +493,9 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                                  same_thing_overlap=config.agents.same_thing_overlap,
                                  ignore_labels=config.agents_file.ignore, known_labels=config.agents_file.own_words)
     health_checks = HealthChecks(source, producer, FolderDiskSpace(data_path(config.storage.folder)),
-                                 config.health_checks, config.pi, clock=clock, pi=camera.pi)
+                                 config.health_checks, config.pi, clock=clock, pi=camera.pi, saving=saving,
+                                 card=None if saving is Saving.PLAIN
+                                 else FolderDiskSpace(config.resolve(config.health_checks.rest_of_card_folder)))
     state_store = SqliteStateStore(data_path(config.object_states.database))
     boot_file = config.object_states.boot_id_file
     object_states = ObjectStateTracker(config.object_states, bus, state_store, device_id=source.kind,
@@ -540,7 +566,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                                config.reminders)
     lens = Lens(camera_health, source, safety_rules, preferences, feed, bus, photos, config.lens, config.pi,
                 clock=clock, checks=health_checks, prompts=config.prompts.lens,
-                preview_chars=config.logging.preview_chars, phone=camera.phone, pi_uploads=camera.pi)
+                preview_chars=config.logging.preview_chars, phone=camera.phone, pi_uploads=camera.pi, saving=saving)
     idle_chat = IdleChat(model, hub, desk_status, roster, profiles, character_memory,
                          lambda: generator.live_context()['summary'], config.idle_chat, config.llm.replies,
                          memory_kept=config.llm.memory_per_agent, memory_chars=config.chat.memory_reply_chars,
@@ -607,4 +633,5 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         lost_items=lost_items, daily_summary=daily_summary, cloud=cloud, scheduler=scheduler,
         supervisor=supervisor, started_at=clock.now(), keepalive=ai.keepalive_worker(), log_file=log_file,
         test_runner=test_runner, databases=databases, data_files=data_files, chat_joins=roster,
-        trace_photos=trace_photos, demo=demo, todos=todos, desktop=desktop)
+        trace_photos=trace_photos, demo=demo, todos=todos, desktop=desktop,
+        data_folder=data_path(config.storage.folder), rules_file=rules_path / RULES_FILE)
