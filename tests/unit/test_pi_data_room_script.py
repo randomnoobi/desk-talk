@@ -447,6 +447,20 @@ def test_a_move_cut_short_is_leftover_even_when_debugfs_cant_be_read(pi):
     assert old is not None and files_in(old) == HISTORY
 
 
+def test_the_system_tools_folder_is_searched_as_on_a_real_pi(pi):
+    """On Raspberry Pi OS, mkfs.ext4 and debugfs are in /usr/sbin, which isn't on the Pi user's PATH, and the script
+    runs both without sudo. It must find them there."""
+    tools = pi.fake / 'sbin'
+    tools.mkdir()
+    for name in ('mkfs.ext4', 'debugfs', 'e2fsck', 'losetup', 'resize2fs'):
+        (pi.fake / 'bin' / name).rename(tools / name)
+    pi.env_vars['DESKTALK_SYSTEM_TOOLS'] = str(tools)
+    result = pi.run('make')
+    assert result.code == 0, result.out
+    assert pi.status() == 'room\n' and files_in(pi.data) == HISTORY
+    unmount_as_after_a_bad_boot(pi)
+
+
 def test_a_new_file_is_never_deleted_while_an_old_folder_is_kept_beside_it(pi):
     """debugfs misreads the copy and files were written in the data folder since: it can't tell which holds the history,
     so it changes nothing and says where each one is."""

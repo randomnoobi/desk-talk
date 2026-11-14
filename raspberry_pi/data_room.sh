@@ -43,6 +43,8 @@ ENV_FILE=$PI_DIR/.env
 EXAMPLE=$PI_DIR/.env.example
 TEMPLATE=$PI_DIR/systemd/desktalk-data-room.service
 SYS=${DESKTALK_SYS:-/sys}                       # only tests change this
+# mkfs.ext4 and debugfs run as this user, and Raspberry Pi OS keeps them in /usr/sbin, which isn't on its PATH.
+PATH="$PATH:${DESKTALK_SYSTEM_TOOLS:-/usr/sbin:/sbin}"   # only tests change this
 MB=$((1024 * 1024))                             # df -m, fallocate's M and the settings all count MB this way
 # mkfs.ext4, losetup and resize2fs live in sbin, which isn't on a normal user's PATH on Raspberry Pi OS.
 PATH=$PATH:/usr/local/sbin:/usr/sbin:/sbin
