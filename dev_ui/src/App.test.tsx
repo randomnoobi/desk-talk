@@ -6,7 +6,7 @@ import App, { FIRST_TRY_AGAIN_MS } from './App'
 const SETTINGS: DevSettings = {
   poll_sec: 1,
   checks: ['Fast tests', 'Lint', 'Types'],
-  health: { pi_disk_warn_mb: 1000, detect_warn_ms: 500 },
+  health: { pi_disk_warn_mb: 1000, detect_warn_ms: 500 }, pi_hot: { warning_c: 75, serious_c: 80 },
   trace_pictures: 90,
   sql_max_rows: 500,
   data_folder: '/tmp/data',
@@ -53,7 +53,7 @@ describe('App', () => {
     await wait(0)
 
     const names = screen.getAllByRole('tab').map(t => t.textContent)
-    expect(names).toEqual(['Checks', 'Live', 'System', 'Pi log', 'Database', 'Storage', 'Demo'])
+    expect(names).toEqual(['Checks', 'Live', 'System', 'Pi', 'Pi log', 'Database', 'Storage', 'Demo'])
     expect(screen.getByRole('tab', { name: 'Checks' })).toHaveAttribute('aria-selected', 'true')
 
     fireEvent.click(screen.getByRole('tab', { name: 'Database' }))
@@ -91,7 +91,7 @@ describe('App', () => {
     server.up = true
     await wait(FIRST_TRY_AGAIN_MS)
     expect(screen.queryByText(/Can't reach Desk Talk/)).not.toBeInTheDocument()
-    expect(screen.getAllByRole('tab')).toHaveLength(7)
+    expect(screen.getAllByRole('tab')).toHaveLength(8)
   })
 
   it('keeps the tabs and shows the bar when the server goes away later', async () => {
@@ -102,6 +102,6 @@ describe('App', () => {
     server.up = false
     await wait(SETTINGS.poll_sec * 1000)
     expect(screen.getByText(/Can't reach Desk Talk, trying again/)).toBeInTheDocument()
-    expect(screen.getAllByRole('tab')).toHaveLength(7)
+    expect(screen.getAllByRole('tab')).toHaveLength(8)
   })
 })

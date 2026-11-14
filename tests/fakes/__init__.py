@@ -32,6 +32,7 @@ from tests.fakes.parts import (
     SyncEventBus,
     a_server_that_is_off,
 )
+from tests.fakes.system import FakePiStatsLink, FakeStats, FakeStatsReader
 from tests.fakes.views import (
     FakeCameraHealth,
     FakeChatJoins,
@@ -59,4 +60,5 @@ __all__ = [
     'plain_desk_rules', 'FakeChatJoins', 'FakeDesktopNotifications', 'FakeTodoList', 'FakeTracePhotos',
     'RecordingCameraWarnings', 'RecordingFirer', 'RecordingHabitLog', 'RecordingReminders', 'RecordingCloudLink',
     'a_server_that_is_off', 'FixedChance', 'FakeDetectionTimes', 'FakeDiskSpace', 'FakeHealthCheck', 'FakePiLog',
+    'FakePiStatsLink', 'FakeStats', 'FakeStatsReader',
 ]

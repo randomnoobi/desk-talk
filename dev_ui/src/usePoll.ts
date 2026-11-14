@@ -11,8 +11,9 @@ export interface Poll<T> {
  * Calls `load` now and then again `everyMs` after each answer, until the component goes away.
  * A call never starts while the one before is still waiting. The newest `load` is always the one
  * used, so it can be an inline function; call `refresh()` to use a changed one at once.
+ * While `on` is false (say, the tab is hidden) it asks nothing, and it asks at once when `on` comes back.
  */
-export function usePoll<T>(load: () => Promise<T>, everyMs: number): Poll<T> {
+export function usePoll<T>(load: () => Promise<T>, everyMs: number, on = true): Poll<T> {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [lastOk, setLastOk] = useState<number | null>(null)
@@ -21,6 +22,10 @@ export function usePoll<T>(load: () => Promise<T>, everyMs: number): Poll<T> {
   const kick = useRef<() => void>(() => {})
 
   useEffect(() => {
+    if (!on) {
+      kick.current = () => {}
+      return
+    }
     let gone = false
     let timer: ReturnType<typeof setTimeout> | undefined
     let busy = false
@@ -60,7 +65,7 @@ export function usePoll<T>(load: () => Promise<T>, everyMs: number): Poll<T> {
       gone = true
       clearTimeout(timer)
     }
-  }, [everyMs])
+  }, [everyMs, on])
 
   const refresh = useCallback(() => kick.current(), [])
   return { data, error, lastOk, refresh }

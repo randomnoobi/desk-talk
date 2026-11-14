@@ -1,0 +1,52 @@
+{
+  "content_type": "application/json",
+  "headers": {},
+  "json": {
+    "address": "str",
+    "collecting": "bool",
+    "every_sec": "number",
+    "info": {},
+    "keep_min": "number",
+    "samples": [
+      {
+        "at": "number",
+        "cooling": [],
+        "cpu": {
+          "busy_pct": "number",
+          "cores_pct": [],
+          "freq_mhz": [],
+          "iowait_pct": "number",
+          "load": [],
+          "max_freq_mhz": "null",
+          "other_pct": "number",
+          "processes": "null",
+          "running": "null",
+          "system_pct": "number",
+          "user_pct": "number"
+        },
+        "disk_io": [],
+        "disks": [],
+        "fans": [],
+        "memory": {
+          "available_bytes": "number",
+          "buffers_bytes": "number",
+          "cached_bytes": "number",
+          "free_bytes": "number",
+          "swap_total_bytes": "number",
+          "swap_used_bytes": "number",
+          "total_bytes": "number",
+          "used_bytes": "number"
+        },
+        "network": [],
+        "temps": [],
+        "throttled": "str",
+        "top_processes": [],
+        "under_voltage": "null",
+        "uptime_sec": "null",
+        "voltages": [],
+        "wifi": []
+      }
+    ]
+  },
+  "request": "GET /api/dev/pi_stats?since=0 (main server, fresh desk)"
+}

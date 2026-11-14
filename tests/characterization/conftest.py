@@ -28,7 +28,15 @@ from desktalk.bootstrap import DeskTalk, build
 from desktalk.domain import BBox, Detection, PiLogSource, TestItem
 from desktalk.web.pairing import Links
 from tests.conftest import FakeAI
-from tests.fakes import FakeClock, FakeDesktopNotifications, FakeDetector, FakePiLog, FakeTestRunner
+from tests.fakes import (
+    FakeClock,
+    FakeDesktopNotifications,
+    FakeDetector,
+    FakePiLog,
+    FakePiStatsLink,
+    FakeStatsReader,
+    FakeTestRunner,
+)
 from tests.integration.app_kit import changed, desk_config, inbox
 
 from .cases import DEV_TEST_ID, PAIR_KEY, PHONE_HEADERS, PHONE_URL, PI_HEADERS, PICTURE
@@ -117,6 +125,7 @@ def desks(tmp_path):
         app = build(config, clock=clock, detector=detector, data_folder=tmp_path / 'run', pair_key=PAIR_KEY,
                     synchronous_events=True, set_up_logging=False,
                     test_runner=FakeTestRunner(DEV_TESTS, clock=clock), desktop=FakeDesktopNotifications(),
+                    stats_reader=FakeStatsReader(), pi_stats_link=FakePiStatsLink(),
                     pi_log=FakePiLog([PiLogSource(log.name, log.label) for log in config.dev.pi_log.sources],
                                      PI_LOG_PRINTS, clock=clock),
                     client_factory=None if reply is None else lambda **kw: FakeAI(reply=reply, **kw))

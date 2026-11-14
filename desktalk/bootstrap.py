@@ -40,6 +40,7 @@ from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSour
 from desktalk.adapters.cloud import HttpCloudLink
 from desktalk.adapters.detector import NoDetector, UltralyticsDetector
 from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser, SshPiLog
+from desktalk.adapters.dev.pi_stats_link import HttpPiStatsLink
 from desktalk.adapters.llm import OpenAICompatibleChatModel, ResilientChatModel, UnpromptedChatModel
 from desktalk.adapters.notify import QueuedNotifications, make_notifications
 from desktalk.adapters.picture import DeskPainter, OpenCvPictureTools
@@ -47,6 +48,7 @@ from desktalk.adapters.storage import EventLog, JsonFileStore, SqliteStateStore
 from desktalk.adapters.storage.disk_space import FolderDiskSpace
 from desktalk.adapters.storage.json_files import SUFFIX as JSON_SUFFIX
 from desktalk.adapters.storage.trace_photo_files import TracePhotoFiles
+from desktalk.adapters.system.proc_reader import ProcReader
 from desktalk.config import AppConfig, ConfigError, Protocols
 from desktalk.core.agents.profiles import ProfileBook
 from desktalk.core.agents.roster import Roster
@@ -72,6 +74,7 @@ from desktalk.core.habits.tracker import HabitTracker
 from desktalk.core.health import HealthChecks
 from desktalk.core.object_states import ObjectStateTracker
 from desktalk.core.object_states.trace_photos import TracePhotoTaker
+from desktalk.core.system.stats_history import StatsHistory
 from desktalk.core.vision import desk_edges
 from desktalk.core.vision.analyzer import DeskAnalyzer
 from desktalk.core.vision.camera_health import CameraHealth
@@ -116,12 +119,15 @@ from desktalk.ports import (
     PictureInbox,
     PiHeartbeats,
     PiLogReader,
+    PiStatsLink,
     PiStatus,
     Preferences,
     Profiles,
     RosterList,
     SafetyBoard,
     ScheduledJobs,
+    SystemStats,
+    SystemStatsReader,
     TestRunner,
     TodoList,
     TracedObjectStates,
@@ -208,6 +214,11 @@ class DeskTalk:
     demo              the Demo tab's pretend warnings: scenarios(), start(), cancel(), waiting()
                       (/api/dev/scenarios...), and the background job that fires them once their countdown is over
                       (None when settings → dev.enabled is false)
+    system_stats      the system numbers of the machine the app runs on, kept for a while: history()
+                      (/api/system/stats), and the background job that reads them (only run when settings →
+                      system_stats.enabled is on: on the Pi)
+    pi_stats_link     the computer's line to the Pi's numbers (/api/dev/pi_stats); None when settings →
+                      dev.enabled is false
     pi_log            the Pi log tab's reader: sources(), read() (/api/dev/pi_log), and the background job that
                       stops reading once the tab stops asking and connects again after a lost connection; close()
                       at stop() (None when settings → dev.enabled is false)
@@ -264,6 +275,7 @@ class DeskTalk:
     cloud: CloudSending
     scheduler: ScheduledJobs
     supervisor: Jobs
+    system_stats: SystemStats
     started_at: float
     data_folder: Path
     rules_file: Path
@@ -278,6 +290,7 @@ class DeskTalk:
     pi_log: PiLogReader | None = None
     todos: TodoList | None = None
     desktop: DesktopNotifications | None = None
+    pi_stats_link: PiStatsLink | None = None
 
     @property
     def source_kind(self) -> str:
@@ -302,6 +315,8 @@ class DeskTalk:
             jobs.append((self.keepalive, c.llm.ollama_keepalive_start_sec))
         if self.demo is not None:
             jobs.append((self.demo, 0.0))
+        if c.system_stats.enabled:
+            jobs.append((self.system_stats, 0.0))
         if self.pi_log is not None:
             jobs.append((self.pi_log, 0.0))
         return jobs
@@ -420,6 +435,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
           test_runner: TestRunner | None = None, pi_log: PiLogReader | None = None,
           desktop: DesktopNotifications | None = None,
           cloud_link_factory: Callable[[str, str], CloudLink] | None = None,
+          stats_reader: SystemStatsReader | None = None, pi_stats_link: PiStatsLink | None = None,
           saving: Saving = Saving.PLAIN) -> DeskTalk:
     """Every part of Desk Talk, connected. Nothing runs until start().
 
@@ -444,6 +460,9 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         desktop             pop-ups on a Mac or the Pi's speaker, as settings → notifications.output says
         cloud_link_factory  makes the line to the cloud server from its address and token (HttpCloudLink); only
                             called once the computer is linked
+        stats_reader        reads the system numbers (ProcReader on settings → system_stats)
+        pi_stats_link       the developer page's line to the Pi's numbers (HttpPiStatsLink to dev.pi_address),
+                            when settings → dev.enabled is on
     And for every run: `saving`, the saving mode start.sh gives (desktalk/runtime/saving.py). With Saving.OFF
     nothing is written to the project: the danger zones (settings → storage.rules_folder) go under `data_folder`
     too, which must then be given (server.py works it out once, with desktalk/runtime/saving.py folder_for). With
@@ -615,10 +634,19 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     trace_photos = TracePhotoFiles(data_path(story.photos_folder), story.timed_photos_kept, story.step_photos_kept)
     TracePhotoTaker(bus, live_pictures, trace_photos, story, clock, states=object_states)  # the bus keeps it
 
+    # ── the system numbers (the developer page's Pi tab reads the Pi's) ──
+    numbers = config.system_stats
+    if stats_reader is None:
+        stats_reader = ProcReader(numbers, disk_paths=[(disk.label, config.resolve(disk.path))
+                                                       for disk in numbers.disks])
+    system_stats = StatsHistory(stats_reader, numbers)
+
     # ── the developer page's tools (only when settings → dev.enabled) ──
     dev = config.dev
     databases = data_files = demo = None
     if dev.enabled:
+        if pi_stats_link is None:
+            pi_stats_link = HttpPiStatsLink(dev.pi_address, dev.pi_stats_timeout_sec)
         if test_runner is None:
             test_runner = PytestRunner(dev, config.prompts.dev, config.root, clock,
                                        stop_wait_sec=config.supervisor.stop_wait_sec)
@@ -634,7 +662,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
             pi_log = SshPiLog(dev.pi_log, config.prompts.dev.pi_log, clock,
                               stop_wait_sec=config.supervisor.stop_wait_sec)
     else:
-        test_runner = pi_log = None
+        test_runner = pi_stats_link = pi_log = None
 
     return DeskTalk(
         config=config, clock=clock, live_pictures=live_pictures, scene=scene, safety_board=safety_board,
@@ -646,7 +674,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         roster=roster, desk_status=desk_status, habits=habits, ai=ai, model=asked_model, hub=hub, generator=generator,
         rule_runner=rule_runner, reminders=reminders, lens=lens, idle_chat=idle_chat,
         lost_items=lost_items, daily_summary=daily_summary, cloud=cloud, scheduler=scheduler,
-        supervisor=supervisor, started_at=clock.now(), keepalive=ai.keepalive_worker(), log_file=log_file,
-        test_runner=test_runner, databases=databases, data_files=data_files, chat_joins=roster,
-        trace_photos=trace_photos, demo=demo, pi_log=pi_log, todos=todos, desktop=desktop,
+        supervisor=supervisor, system_stats=system_stats, started_at=clock.now(), keepalive=ai.keepalive_worker(),
+        log_file=log_file, test_runner=test_runner, databases=databases, data_files=data_files, chat_joins=roster,
+        trace_photos=trace_photos, demo=demo, pi_log=pi_log, todos=todos, desktop=desktop, pi_stats_link=pi_stats_link,
         data_folder=data_path(config.storage.folder), rules_file=rules_path / RULES_FILE)

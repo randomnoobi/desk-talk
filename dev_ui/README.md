@@ -22,6 +22,16 @@ You need Node 22 (it comes with npm).
   slowed down, disk, clock) and every part on this computer (detection, the event stream, background jobs,
   timed jobs, the event log, the AI), from `/api/health` and `/api/log/status`. Numbers turn amber or red
   at the limits in `dev.health`.
+- **Pi**: every system number the Pi gives, now and over its last `system_stats.keep_min` minutes (the
+  Pi's own setting): the model, how long it has been up, and warnings (the power supply too weak, too hot at
+  `pi.hot_warning_c` and `pi.hot_serious_c`, slowed down now (red) or earlier since it started (amber), the Pi
+  can't be reached); big numbers for CPU, memory, the
+  data folder, the hottest sensor, the fan, Wi-Fi and load; charts of CPU use, each core, CPU speed, load,
+  temperatures, fan speed and power, memory, disk reads and writes, disk busy, network sent and received,
+  Wi-Fi signal and voltages; and tables of disk space, the busiest programs, cooling and network errors.
+  It asks this computer's `/api/dev/pi_stats`, which asks the Pi at `dev.pi_address`, every
+  `system_stats.every_sec` (the Pi says how often), only for samples newer than the ones it has. A number the
+  Pi can't read (no fan, a Mac) says so instead of an empty chart.
 - **Pi log**: one of the Pi's logs, live, as if you typed `ssh pi docker compose logs -f` yourself (pick which
   one; the list is `dev.pi_log.sources`, and the page remembers your pick). It says whether it's connected, and
   what ssh said went wrong (say "Permission denied (publickey)"). Type in the filter box to see only the lines
@@ -85,11 +95,12 @@ The server's `/api/dev/...` routes are listed in [docs/API.md](../docs/API.md#de
 - `src/useScrollToEnd.ts`: keeps a printout box (Checks, Pi log) scrolled to its end, unless you have scrolled up to read.
 - `src/App.tsx`: the tab bar. It loads `/api/dev/settings` once and gives it to every tab. The page keeps
   no numbers of its own: they all come from `config/settings.yaml` through that reply.
-- `src/tabs/`: one file per tab (Checks, Live, System, PiLog, Database, Storage, Demo). Each gets `TabProps`
+- `src/tabs/`: one file per tab (Checks, Live, System, Pi, PiLog, Database, Storage, Demo). Each gets `TabProps`
   (`src/ui.tsx`): the settings, and `shown`, false while another tab is open (opened tabs stay on the page,
-  hidden). The Pi log tab only asks the server while it's shown.
+  hidden). The Pi and Pi log tabs only ask the server while they're shown.
 - The sums behind the tabs: `src/testTree.ts` (Checks), `src/timeline.ts` and
-  `src/SmoothingChart.tsx` (Live), `src/health.ts` (System), `src/queries.ts` (Database's ready-made
+  `src/SmoothingChart.tsx` (Live), `src/health.ts` (System),
+  `src/piStats.ts` and `src/StatsChart.tsx` (Pi), `src/queries.ts` (Database's ready-made
   queries), `src/browserStorage.ts` (Storage, and the choices this page remembers, like the Pi log tab's log).
 - `serverPorts.ts`: reads `web.port` and `dev.vite_port` for `vite.config.ts`.
 - Tests sit next to the file they test (`*.test.ts`, `*.test.tsx`) and fake the server's replies, so they

@@ -27,6 +27,9 @@ only for this computer, from the server's own page or the Vite dev server's (Dev
     POST /api/dev/scenarios                 {"name": ..., "after_sec": n}: start one counting down; 400 for a name
                                             not in the list, a countdown out of range, or too many counting down
     DELETE /api/dev/scenarios/<id>          stop one counting down; 404 when it isn't (any more)
+    GET  /api/dev/pi_stats?since=<ts>       the Pi's system numbers (its GET /api/system/stats, fetched from
+                                            dev.pi_address, since the page can't ask the Pi itself), with
+                                            "address" added; 502 when the Pi doesn't answer
     GET  /api/dev/pi_log?source=&after=<n>  the Pi log tab: the lines of one of the Pi's logs numbered after n
                                             (0: all it kept), and how the ssh connection is doing. Asking starts
                                             ssh (settings → dev.pi_log) and keeps it going; 404 for a log not in
@@ -46,8 +49,8 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Response
 
-from desktalk.domain import QueryRefused, RunAlreadyGoing
-from desktalk.ports import DatabaseBrowser, DataFiles, DemoScenarios, PiLog, TestRunner
+from desktalk.domain import QueryRefused, RunAlreadyGoing, StatsUnavailable
+from desktalk.ports import DatabaseBrowser, DataFiles, DemoScenarios, PiLog, PiStatsLink, TestRunner
 from desktalk.web.deps import App, DevOnly
 from desktalk.web.schemas import QueryRequest, RunRequest, ScenarioRequest
 from desktalk.web.stories import object_story, story_photo
@@ -84,6 +87,12 @@ def _demo(app: App) -> DemoScenarios:
     return app.demo
 
 
+def _pi_stats_link(app: App) -> PiStatsLink:
+    if app.pi_stats_link is None:
+        raise HTTPException(404)
+    return app.pi_stats_link
+
+
 def _pi_log(app: App) -> PiLog:
     if app.pi_log is None:
         raise HTTPException(404)
@@ -112,6 +121,7 @@ def dev_settings(app: App) -> dict[str, Any]:
         'poll_sec': dev.poll_sec,
         'checks': [check.name for check in dev.checks],
         'health': dev.health.model_dump(mode='json'),
+        'pi_hot': {'warning_c': config.pi.hot_warning_c, 'serious_c': config.pi.hot_serious_c},   # the Pi tab
         'trace_pictures': states.trace_pictures,
         'sql_max_rows': dev.sql_max_rows,
         'data_folder': str(app.data_folder),            # the folder in memory when nothing is saved
@@ -266,6 +276,18 @@ def dev_cancel_scenario(app: App, scenario_id: str) -> dict[str, Any]:
     except KeyError as error:
         raise HTTPException(404, _words(error)) from None
     return {'ok': True}
+
+
+@router.get('/api/dev/pi_stats')
+def dev_pi_stats(app: App, since: float | None = None) -> dict[str, Any]:
+    """A plain def, so FastAPI runs it in a thread: the Pi may take up to dev.pi_stats_timeout_sec to answer."""
+    address = app.config.dev.pi_address
+    try:
+        reply = _pi_stats_link(app).fetch(since)
+    except StatsUnavailable as error:
+        raise HTTPException(502, app.config.prompts.dev.pi_stats_unreachable.format(address=address,
+                                                                                    problem=str(error))) from None
+    return {**reply, 'address': address}
 
 
 @router.get('/api/dev/pi_log')

@@ -33,6 +33,20 @@ describe('usePoll', () => {
     expect(result.current).toMatchObject({ data: 2, error: null })
   })
 
+  it('asks nothing while switched off, and starts again at once when switched on', async () => {
+    vi.useFakeTimers()
+    const load = vi.fn<() => Promise<number>>().mockResolvedValue(1)
+    const { rerender } = renderHook(({ on }) => usePoll(load, 500, on), { initialProps: { on: false } })
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    expect(load).not.toHaveBeenCalled()
+    rerender({ on: true })
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(load).toHaveBeenCalledTimes(1)
+    rerender({ on: false })
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    expect(load).toHaveBeenCalledTimes(1)
+  })
+
   it('stops asking once the page is gone', async () => {
     vi.useFakeTimers()
     const load = vi.fn<() => Promise<number>>().mockResolvedValue(1)

@@ -26,6 +26,9 @@ Plain data, no I/O: what the parts of Desk Talk pass to each other.
                            data folder), and its errors RunAlreadyGoing and QueryRefused
     Scenario, WaitingScenario
                            the developer page's Demo tab: a pretend warning, and one counting down
+    RawReading, StatsSample ...
+                           the system numbers of the machine the app runs on (the Pi tab), and StatsUnavailable:
+                           the computer couldn't fetch the Pi's
     PiLogSource, PiLogLine, PiLogPage
                            the developer page's Pi log tab: a log it can show, one line, and what it gets
 """
@@ -83,6 +86,26 @@ from desktalk.domain.health import CheckLevel, HealthMeasure, Saving
 from desktalk.domain.object_states import CHANGE_TYPES, Phase, StateRecord
 from desktalk.domain.pictures import TIMED_PHOTO, Box, Gravity, Picture, Point, Size, TracePhoto, newest_trace_photos
 from desktalk.domain.rules import DeskSnapshot, HabitDone, ObjectSnapshot, RuleHistory, StateChange
+from desktalk.domain.system_stats import (
+    Cooling,
+    CpuNow,
+    CpuTimes,
+    DiskCounters,
+    DiskRate,
+    DiskSpace,
+    Fan,
+    MemoryNow,
+    Named,
+    NetCounters,
+    NetRate,
+    ProcessTicks,
+    RawReading,
+    StatsInfo,
+    StatsSample,
+    StatsUnavailable,
+    TopProcess,
+    WifiNow,
+)
 from desktalk_shared.detection import BBox, Detection, keep_inside
 from desktalk_shared.wire import DetectorState, PiHealth, UploadInfo
 
@@ -98,4 +121,7 @@ __all__ = [
     'TableInfo', 'TestItem', 'TestOutcome', 'ChatJoin', 'Todo', 'TracePhoto', 'TIMED_PHOTO',
     'newest_trace_photos', 'Scenario', 'WaitingScenario', 'CheckLevel', 'HealthMeasure', 'PiLogLine', 'PiLogPage',
     'PiLogSource', 'Saving',
+    'Cooling', 'CpuNow', 'CpuTimes', 'DiskCounters', 'DiskRate', 'DiskSpace', 'Fan', 'MemoryNow', 'Named',
+    'NetCounters', 'NetRate', 'ProcessTicks', 'RawReading', 'StatsInfo', 'StatsSample', 'StatsUnavailable',
+    'TopProcess', 'WifiNow',
 ]

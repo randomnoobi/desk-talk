@@ -9,6 +9,11 @@ detector:
 dev:
   enabled: false                 # no developer page on the Pi
 
+system_stats:
+  enabled: true                  # read the Pi's numbers, for the Pi tab of the developer page on your computer
+  host_proc_folder: /host/proc   # the Pi's own /proc, which compose.yaml lets in read-only: the app container's
+                                 # /proc shows only its own programs and network
+
 web:
   allowed_hosts: [app]           # the camera container reaches the app by this name, on Docker's own network
                                  # (DESKTALK_SERVER in compose.yaml)

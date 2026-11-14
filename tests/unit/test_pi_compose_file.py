@@ -301,6 +301,20 @@ def test_the_pi_reads_the_kernels_boot_id(pi_settings):
     assert pi_settings['object_states']['boot_id_file'] == '/proc/sys/kernel/random/boot_id'
 
 
+def test_the_app_sees_the_pis_own_programs_and_network_read_only(pi_settings, compose):
+    """For the developer page's Pi tab: the app container's own /proc shows only its own programs and network."""
+    line = next(str(v) for v in compose['services']['app']['volumes'] if str(v).startswith('/proc:'))
+    outside, inside, mode = line.split(':')
+    assert (outside, mode) == ('/proc', 'ro')
+    assert pi_settings['system_stats'] == {'enabled': True, 'host_proc_folder': inside}
+
+
+def test_a_computer_reads_no_system_numbers():
+    """Only the Pi reads them: on a Mac there's no /proc, and the developer page fetches the Pi's."""
+    settings = yaml.safe_load((ROOT / 'config' / 'settings.yaml').read_text(encoding='utf-8'))
+    assert settings['system_stats']['enabled'] is False
+
+
 def test_the_app_gets_the_room_settings_and_a_memory_folder(services):
     """start.sh looks for the room's marker when DATA_ROOM is yes, and saves nothing to the card without it: the app
     then writes to a folder in memory instead (raspberry_pi/data_room.sh makes the room)."""
@@ -310,3 +324,12 @@ def test_the_app_gets_the_room_settings_and_a_memory_folder(services):
     assert app['environment']['MEMORY_DATA_FOLDER'] == '/memory-data'
     assert app['tmpfs'] == [
         '/memory-data:size=${APP_MEMORY_DATA_SIZE:-200m},uid=${PI_USER_ID:-1000},gid=${PI_GROUP_ID:-1000},mode=0700']
+
+
+def test_the_pi_tab_shows_the_rest_of_the_sd_card_as_well_as_the_data_folder():
+    """With Desk Talk's own space on the card (raspberry_pi/data_room.sh), the data folder is only that space: the Pi
+    tab also shows the rest of the card, measured where the health checks measure it."""
+    settings = yaml.safe_load((ROOT / 'config' / 'settings.yaml').read_text(encoding='utf-8'))
+    paths = [disk['path'] for disk in settings['system_stats']['disks']]
+    assert paths[0] == settings['storage']['folder']
+    assert settings['health_checks']['rest_of_card_folder'] in paths

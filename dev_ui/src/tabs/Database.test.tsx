@@ -15,7 +15,7 @@ vi.mock('../api', async importOriginal => ({
 const SETTINGS: DevSettings = {
   poll_sec: 1,
   checks: ['Fast tests'],
-  health: { pi_disk_warn_mb: 1000, detect_warn_ms: 500 },
+  health: { pi_disk_warn_mb: 1000, detect_warn_ms: 500 }, pi_hot: { warning_c: 75, serious_c: 80 },
   trace_pictures: 90,
   sql_max_rows: 7,                 // an odd number, so the test knows it came from here
   data_folder: '/tmp/data',
