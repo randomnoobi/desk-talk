@@ -28,7 +28,7 @@ from desktalk.config.prompts import (
 from desktalk.core.habits.habit_days import HabitDay
 from desktalk.core.habits.sun_times import SunTimes
 from desktalk.core.habits.tracker import DayTimes
-from desktalk.domain.dev import DataFile, QueryResult, RunStatus, SmoothingStep, TestOutcome
+from desktalk.domain.dev import DataFile, PiLogLine, PiLogPage, QueryResult, RunStatus, SmoothingStep, TestOutcome
 from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent, NudgeSent
 from desktalk.domain.system_stats import (
     Cooling,
@@ -106,6 +106,8 @@ _developer_page = (
     # Plain data the /api/dev routes send as JSON (dataclasses.asdict) and only dev_ui/ reads.
     RunStatus.output_end, SmoothingStep.votes_yes, SmoothingStep.votes_total, SmoothingStep.waiting_sec,
     QueryResult.truncated, QueryResult.took_ms, DataFile.modified,
+    # The Pi log tab's lines and page, sent as JSON by GET /api/dev/pi_log (dataclasses.asdict) and read by dev_ui/.
+    PiLogLine.at, PiLogPage.retry_at,
 )
 
 # The event log's own tests and the whole-app tests read the pictures it hasn't compacted yet (no route sends them).

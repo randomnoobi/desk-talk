@@ -240,6 +240,13 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'dev.unknown_waiting': ('scenario_id',),
     'dev.cannot_fire': ('name', 'thing', 'where'),
     'dev.pi_stats_unreachable': ('address', 'problem'),
+    'dev.pi_log.unknown_source': ('name',),
+    'dev.pi_log.connecting': ('command',),
+    'dev.pi_log.reconnecting': ('since', 'command'),
+    'dev.pi_log.lost': ('reason', 'seconds'),
+    'dev.pi_log.exit_code': ('code',),
+    'dev.pi_log.cannot_start': ('reason',),
+    'dev.pi_log.stopped': ('seconds',),
     'dev.scenarios.drink_evidence': ('minutes',),
     'dev.scenarios.drink_text': ('minutes',),
 }
@@ -772,6 +779,19 @@ class DemoWords(_Section):
     drink_text: str
 
 
+class PiLogWords(_Section):
+    """The developer page's Pi log tab: its errors, and the lines it adds between the Pi's own."""
+
+    unknown_source: str
+    connecting: str
+    reconnecting: str
+    connected: str
+    lost: str
+    exit_code: str
+    cannot_start: str
+    stopped: str
+
+
 class DevWords(_Section):
     """The developer page's server messages (desktalk/web/routers/dev.py and the parts behind it)."""
 
@@ -800,6 +820,7 @@ class DevWords(_Section):
     too_many_waiting: str
     unknown_waiting: str
     cannot_fire: str
+    pi_log: PiLogWords
     scenarios: DemoWords
 
 

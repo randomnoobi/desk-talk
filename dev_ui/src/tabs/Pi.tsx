@@ -3,7 +3,7 @@ import { getPiStats, type DevSettings, type PiSample, type PiStatsReply } from '
 import { formatBytes, formatClock, formatSeconds } from '../format'
 import { formatRate, hottest, keepCount, lineNames, mergeSamples, series, tempLevel, throttleWords } from '../piStats'
 import StatsChart, { type ChartLine, type LevelLine } from '../StatsChart'
-import { ErrorLine, Pill, Table, type Level } from '../ui'
+import { ErrorLine, Pill, Table, type Level, type TabProps } from '../ui'
 import { usePoll } from '../usePoll'
 
 // Numbers in words, with their unit, for the charts' sides and legends.
@@ -18,9 +18,10 @@ const volts = (v: number) => `${Number(v.toFixed(3))} V`
 const share = (part: number, whole: number) => (whole > 0 ? Math.round(part / whole * 100) : 0)
 const PERCENT: [number, number] = [0, 100]
 
-/** The Pi tab: every system number the Pi gives, now and over the last system_stats.keep_min minutes. */
-export default function Pi(props: { settings: DevSettings }): JSX.Element {
-  const { settings } = props
+/** The Pi tab: every system number the Pi gives, now and over the last system_stats.keep_min minutes. It only
+ *  asks while it is shown, so the Pi isn't asked every few seconds while another tab is open. */
+export default function Pi(props: TabProps): JSX.Element {
+  const { settings, shown } = props
   // The samples so far, oldest first. Each ask is for the ones newer than the newest here.
   const kept = useRef<PiSample[]>([])
   // How often to ask: the Pi's every_sec once it has said, settings.poll_sec until then.
@@ -30,7 +31,7 @@ export default function Pi(props: { settings: DevSettings }): JSX.Element {
     const reply = await getPiStats(newest)
     kept.current = mergeSamples(kept.current, reply.samples, keepCount(reply))
     return { reply, samples: kept.current }
-  }, (everySec ?? settings.poll_sec) * 1000)
+  }, (everySec ?? settings.poll_sec) * 1000, shown)
   const reply = poll.data?.reply ?? null
   useEffect(() => {
     if (reply && reply.every_sec > 0) setEverySec(reply.every_sec)

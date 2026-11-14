@@ -10,6 +10,14 @@ export const APP_KEYS: Readonly<Record<string, string>> = {
   desktalk_habits_v2: 'Habit counters',
 }
 
+/** Where the developer page remembers which Pi log the Pi log tab shows. */
+export const PI_LOG_SOURCE_KEY = 'desktalk_dev_pi_log_source'
+
+/** The keys this developer page keeps for itself, and what each one is for. */
+export const DEV_KEYS: Readonly<Record<string, string>> = {
+  [PI_LOG_SOURCE_KEY]: 'Developer page: the log the Pi log tab shows',
+}
+
 const DESK_TALK_PREFIX = 'desktalk_'
 export const UNKNOWN_DESK_TALK_KEY = 'Desk Talk (unknown key)'
 export const NOT_DESK_TALK = 'Not Desk Talk'
@@ -26,6 +34,7 @@ export interface BrowserKey {
 /** What uses this key, in words. */
 export function usedBy(key: string): string {
   if (key in APP_KEYS) return APP_KEYS[key]
+  if (key in DEV_KEYS) return DEV_KEYS[key]
   return key.startsWith(DESK_TALK_PREFIX) ? UNKNOWN_DESK_TALK_KEY : NOT_DESK_TALK
 }
 
@@ -59,6 +68,7 @@ export function readBrowserStorage(store: Storage): BrowserKey[] {
 /** The question asked before deleting a key. */
 export function deleteQuestion(row: Pick<BrowserKey, 'key' | 'usedBy'>): string {
   if (row.key in APP_KEYS) return `Delete ${row.key}? The app page loses ${row.usedBy}.`
+  if (row.key in DEV_KEYS) return `Delete ${row.key}? The developer page forgets this choice (${row.usedBy}).`
   return `Delete ${row.key}? This page doesn't know what uses it (${row.usedBy}).`
 }
 
@@ -69,6 +79,24 @@ export function deleteBrowserKey(store: Storage, key: string): string | null {
     return null
   } catch (e) {
     return e instanceof Error ? e.message : String(e)
+  }
+}
+
+/** A choice the developer page remembered under `key`, or null when there is none (or the browser won't say). */
+export function readChoice(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+/** Remembers a choice. Does nothing when the browser won't let the page use its storage. */
+export function saveChoice(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value)
+  } catch {
+    // Not remembered: the page still works, it just starts from the first choice next time.
   }
 }
 

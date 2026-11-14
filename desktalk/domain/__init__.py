@@ -29,6 +29,8 @@ Plain data, no I/O: what the parts of Desk Talk pass to each other.
     RawReading, StatsSample ...
                            the system numbers of the machine the app runs on (the Pi tab), and StatsUnavailable:
                            the computer couldn't fetch the Pi's
+    PiLogSource, PiLogLine, PiLogPage
+                           the developer page's Pi log tab: a log it can show, one line, and what it gets
 """
 
 from desktalk.domain.agents import HABITS, LENS, AgentProfile, ChatJoin
@@ -38,6 +40,9 @@ from desktalk.domain.desk import Danger, Photo, SafetyNow, SeenObject
 from desktalk.domain.desk_rules import DeskRules, Zone
 from desktalk.domain.dev import (
     DataFile,
+    PiLogLine,
+    PiLogPage,
+    PiLogSource,
     QueryRefused,
     QueryResult,
     RunAlreadyGoing,
@@ -114,7 +119,8 @@ __all__ = [
     'SafetyNow', 'SeenObject', 'Size', 'StateChange', 'StateRecord', 'UnknownChat', 'UploadInfo', 'Zone',
     'DataFile', 'QueryRefused', 'QueryResult', 'RunAlreadyGoing', 'RunStatus', 'SmoothingStep', 'StepStatus',
     'TableInfo', 'TestItem', 'TestOutcome', 'ChatJoin', 'Todo', 'TracePhoto', 'TIMED_PHOTO',
-    'newest_trace_photos', 'Scenario', 'WaitingScenario', 'CheckLevel', 'HealthMeasure', 'Saving',
+    'newest_trace_photos', 'Scenario', 'WaitingScenario', 'CheckLevel', 'HealthMeasure', 'PiLogLine', 'PiLogPage',
+    'PiLogSource', 'Saving',
     'Cooling', 'CpuNow', 'CpuTimes', 'DiskCounters', 'DiskRate', 'DiskSpace', 'Fan', 'MemoryNow', 'Named',
     'NetCounters', 'NetRate', 'ProcessTicks', 'RawReading', 'StatsInfo', 'StatsSample', 'StatsUnavailable',
     'TopProcess', 'WifiNow',

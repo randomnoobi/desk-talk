@@ -19,6 +19,7 @@ vi.mock('../StatsChart', () => ({
 
 const settings: DevSettings = {
   poll_sec: 5, checks: [], health: { pi_disk_warn_mb: 1000, detect_warn_ms: 500 }, pi_hot: { warning_c: 70, serious_c: 80 },
+  pi_log: { sources: [], keep_lines: 100 },
   trace_pictures: 30, sql_max_rows: 500, data_folder: '/data',
   disconnect_after_sec: 3, web_port: 5000, flicker_flips_per_min: 4,
   output_keep_kb: 2000, flips_window_min: 10, table_counts_every_sec: 30, trace_events_kept: 50,
@@ -71,7 +72,7 @@ afterEach(() => vi.resetAllMocks())
 describe('Pi tab', () => {
   it('shows the model and the big numbers from a reply', async () => {
     vi.mocked(getPiStats).mockResolvedValue(reply([sample(1000)]))
-    render(<Pi settings={settings} />)
+    render(<Pi settings={settings} shown />)
     expect(await screen.findByText(/Raspberry Pi 5 Model B Rev 1\.1/)).toBeInTheDocument()
     expect(screen.getByText(/6\.18\.50\+rpt-rpi-2712/)).toBeInTheDocument()
 
@@ -88,7 +89,7 @@ describe('Pi tab', () => {
 
   it('draws every chart, and the tables', async () => {
     vi.mocked(getPiStats).mockResolvedValue(reply([sample(1000), sample(1002)]))
-    render(<Pi settings={settings} />)
+    render(<Pi settings={settings} shown />)
     await screen.findByText(/Raspberry Pi 5/)
     expect(chart('CPU use')).toHaveTextContent('2 samples: busy, user, system, I/O wait')
     expect(chart('Each core')).toHaveTextContent('core 1, core 2, core 3, core 4')
@@ -105,7 +106,7 @@ describe('Pi tab', () => {
 
   it('says the Pi does not report a number instead of an empty chart (a Mac, no fan)', async () => {
     vi.mocked(getPiStats).mockResolvedValue(reply([sample(1000, { fans: [], wifi: [] })]))
-    render(<Pi settings={settings} />)
+    render(<Pi settings={settings} shown />)
     await screen.findByText(/Raspberry Pi 5/)
     expect(screen.queryByTestId('chart: Fan speed')).not.toBeInTheDocument()
     const fanCard = screen.getByRole('heading', { name: 'Fan speed' }).closest('.card') as HTMLElement
@@ -114,7 +115,7 @@ describe('Pi tab', () => {
 
   it('warns when the power supply is too weak', async () => {
     vi.mocked(getPiStats).mockResolvedValue(reply([sample(1000, { under_voltage: true })]))
-    render(<Pi settings={settings} />)
+    render(<Pi settings={settings} shown />)
     expect(await screen.findByText('The power supply is too weak right now')).toBeInTheDocument()
   })
 
@@ -125,7 +126,7 @@ describe('Pi tab', () => {
       sample(1002, { uptime_sec: null, cpu: { ...cpu, running: null, processes: null, max_freq_mhz: null },
                      fans: [{ name: 'pwmfan', rpm: 3000, pwm_pct: null }] }),
     ]))
-    render(<Pi settings={settings} />)
+    render(<Pi settings={settings} shown />)
     await screen.findByText(/Raspberry Pi 5/)
     const tiles = screen.getByRole('list', { name: 'The Pi now' })
     const tile = (name: string) => within(tiles).getByText(name).closest('li') as HTMLElement
@@ -142,7 +143,7 @@ describe('Pi tab', () => {
 
   it('shows red pills for slowing down now and one amber pill for earlier since the Pi started', async () => {
     vi.mocked(getPiStats).mockResolvedValue(reply([sample(1000, { under_voltage: true, throttled: '0x50005' })]))
-    render(<Pi settings={settings} />)
+    render(<Pi settings={settings} shown />)
     const power = await screen.findAllByText('The power supply is too weak right now')
     expect(power).toHaveLength(1)
     expect(screen.getByText('The processor is slowed down right now')).toHaveClass('bad')
@@ -153,7 +154,7 @@ describe('Pi tab', () => {
 
   it('shows only the amber pill when the Pi slowed down earlier but is fine now', async () => {
     vi.mocked(getPiStats).mockResolvedValue(reply([sample(1000, { throttled: '0x80000' })]))
-    render(<Pi settings={settings} />)
+    render(<Pi settings={settings} shown />)
     expect(await screen.findByText('Earlier since the Pi started: the processor was close to too hot')).toHaveClass('warn')
     expect(screen.queryByText(/right now/)).not.toBeInTheDocument()
   })
@@ -161,7 +162,7 @@ describe('Pi tab', () => {
   it('shows no slow-down pill for 0x0 or when the Pi could not read the flags', async () => {
     for (const throttled of ['0x0', '']) {
       vi.mocked(getPiStats).mockResolvedValue(reply([sample(1000, { throttled })]))
-      const { unmount } = render(<Pi settings={settings} />)
+      const { unmount } = render(<Pi settings={settings} shown />)
       await screen.findByText(/Raspberry Pi 5/)
       expect(screen.queryByText(/right now|Earlier|slowed/)).not.toBeInTheDocument()
       unmount()
@@ -170,14 +171,14 @@ describe('Pi tab', () => {
 
   it('warns amber when the processor is hot and red when it is very hot', async () => {
     vi.mocked(getPiStats).mockResolvedValue(reply([sample(1000, { temps: [{ name: 'cpu-thermal', c: 82 }] })]))
-    render(<Pi settings={settings} />)
+    render(<Pi settings={settings} shown />)
     const warning = await screen.findByText('The processor is hot: 82 °C')
     expect(warning).toHaveClass('bad')
   })
 
   it('says when the Pi is not collecting its numbers', async () => {
     vi.mocked(getPiStats).mockResolvedValue(reply([], { collecting: false, info: {} }))
-    render(<Pi settings={settings} />)
+    render(<Pi settings={settings} shown />)
     expect(await screen.findByText(/The Pi isn't collecting its numbers/)).toBeInTheDocument()
   })
 
@@ -186,7 +187,7 @@ describe('Pi tab', () => {
     vi.mocked(getPiStats)
       .mockResolvedValueOnce(reply([sample(1000), sample(1002)]))
       .mockRejectedValue(new ApiError(502, "Can't reach the Pi at desk-pi.local: timed out"))
-    render(<Pi settings={settings} />)
+    render(<Pi settings={settings} shown />)
     await wait(0)
     expect(chart('CPU use')).toHaveTextContent('2 samples')
 
@@ -204,7 +205,7 @@ describe('Pi tab', () => {
       .mockResolvedValueOnce(r([sample(1000), sample(1002)]))
       .mockResolvedValueOnce(r([sample(1004), sample(1006)]))
       .mockResolvedValue(r([]))
-    render(<Pi settings={settings} />)
+    render(<Pi settings={settings} shown />)
     // The first reply says every_sec is 2, not settings.poll_sec's 5: the tab asks again at once at the new pace.
     await wait(0)
     expect(getPiStats).toHaveBeenNthCalledWith(1, undefined)
@@ -219,10 +220,25 @@ describe('Pi tab', () => {
     expect(getPiStats).toHaveBeenLastCalledWith(1006)
   })
 
+  it('asks the Pi nothing while another tab is shown, and starts when it is shown again', async () => {
+    vi.useFakeTimers()
+    vi.mocked(getPiStats).mockResolvedValue(reply([sample(1000)]))
+    const { rerender } = render(<Pi settings={settings} shown={false} />)
+    await wait(settings.poll_sec * 1000 * 3)
+    expect(getPiStats).not.toHaveBeenCalled()
+    rerender(<Pi settings={settings} shown />)
+    await wait(0)
+    expect(getPiStats).toHaveBeenCalled()      // (twice: the first reply's every_sec sets a new pace at once)
+    rerender(<Pi settings={settings} shown={false} />)
+    const asked = vi.mocked(getPiStats).mock.calls.length
+    await wait(settings.poll_sec * 1000 * 3)
+    expect(getPiStats).toHaveBeenCalledTimes(asked)
+  })
+
   it('asks every settings.poll_sec until the first reply comes', async () => {
     vi.useFakeTimers()
     vi.mocked(getPiStats).mockRejectedValue(new ApiError(502, 'no Pi'))
-    render(<Pi settings={settings} />)
+    render(<Pi settings={settings} shown />)
     await wait(0)
     expect(getPiStats).toHaveBeenCalledTimes(1)
     await wait(settings.poll_sec * 1000 - 1)
