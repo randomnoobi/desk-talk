@@ -114,7 +114,7 @@ def dev_settings(app: App) -> dict[str, Any]:
         'pi_hot': {'warning_c': config.pi.hot_warning_c, 'serious_c': config.pi.hot_serious_c},   # the Pi tab
         'trace_pictures': states.trace_pictures,
         'sql_max_rows': dev.sql_max_rows,
-        'data_folder': str(config.resolve(config.storage.folder)),
+        'data_folder': str(app.data_folder),            # the folder in memory when nothing is saved
         'object_states': {'on_confidence': states.on_confidence, 'off_confidence': states.off_confidence,
                           'appear_sec': appear_sec, 'gone_sec': gone_sec,
                           'window_pictures': states.window_pictures, 'vote_share': states.vote_share},

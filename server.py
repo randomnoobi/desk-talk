@@ -14,13 +14,16 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import sys
 from pathlib import Path
 
 from desktalk.adapters.storage.files import write_atomically
-from desktalk.bootstrap import build
+from desktalk.bootstrap import build, in_data_folder
 from desktalk.config import AppConfig, ConfigError, load_config
+from desktalk.domain import Saving
 from desktalk.runtime.log_setup import STARTUP_LOGGER, setup_logging
+from desktalk.runtime.saving import folder_for, saving_from_environment
 from desktalk.web.pairing import Links, ensure_cert, lan_ip
 from desktalk.web.serve import run
 
@@ -29,11 +32,13 @@ RULE = '═' * 60
 startup = logging.getLogger(STARTUP_LOGGER)
 
 
-def start_logging(config: AppConfig) -> Path:
+def start_logging(config: AppConfig, data_folder: Path | None = None) -> Path:
     """Log to the terminal and the log file (settings → logging) before the first start-up line, so those
-    lines land in the file too. build() sets the same up again, which changes nothing. Returns the file."""
+    lines land in the file too. build() sets the same up again, which changes nothing. The log folder is under
+    `data_folder` when there is one, as in build(). Returns the file."""
     logs = config.logging
-    return setup_logging(config.resolve(logs.folder), logs.level, logs.file_size_mb, logs.files_kept, logs.file_name)
+    return setup_logging(in_data_folder(config, data_folder, logs.folder), logs.level, logs.file_size_mb,
+                         logs.files_kept, logs.file_name)
 
 
 def say(line: str = '') -> None:
@@ -41,14 +46,15 @@ def say(line: str = '') -> None:
     startup.info(line)
 
 
-def settings_lines(config: AppConfig) -> None:
+def settings_lines(config: AppConfig, data_folder: Path | None = None) -> None:
     camera, log = config.camera, config.event_log
     say()
     say(RULE)
     say('  Desk Talk')
     say(RULE)
     say(f'  Camera       : {camera.source}  ({camera.fps:g} pictures a second)')
-    say(f'  Event log    : {config.resolve(log.folder)}  (compacted every {log.compact_every_min:g} min)')
+    events = in_data_folder(config, data_folder, log.folder)
+    say(f'  Event log    : {events}  (compacted every {log.compact_every_min:g} min)')
     if config.env_applied:
         say(f'  From .env    : {", ".join(config.env_applied)}')
     if config.env_moved:
@@ -85,15 +91,20 @@ def main() -> int:
         # Logging isn't set up yet (its settings are what failed): Python still shows an error in the terminal.
         startup.error('Desk Talk could not start, a setting needs fixing:\n%s', exc)
         return 2
-    start_logging(config)
-    settings_lines(config)
+    saving, data_folder = saving_from_environment(os.environ)
+    # Worked out once, here: the same folder for the log file and for build().
+    data_folder = folder_for(saving, data_folder, config.resolve(config.storage.memory_fallback_folder))
+    start_logging(config, data_folder)
+    settings_lines(config, data_folder)
+    if saving is Saving.OFF:
+        say(f"  Saving       : nothing is being saved (Desk Talk's own space is missing; kept for "
+            f"this run only, in {data_folder})")
     if config.detector.enabled:
         say('  Loading YOLO model (the first run downloads it)...')
-    desktalk = build(config)
+    desktalk = build(config, saving=saving, data_folder=data_folder)
     say(f'  Detector     : {desktalk.detector.label}')
     say(f'  AI           : {desktalk.model.label}')
-    rules = config.storage.rules_folder / 'safety_rules.json'
-    say(f'  Danger zones : {rules if desktalk.safety_rules.loaded else "built-in"}')
+    say(f'  Danger zones : {desktalk.rules_file if desktalk.safety_rules.loaded else "built-in"}')
     address = lan_ip()
     phone_cert = None
     phone_port = None

@@ -435,6 +435,7 @@ class ChatSettings(_Section):
     panel_views_min: PositiveInt
     panel_action_max_chars: PositiveInt
     ai_writes_warnings: bool
+    ai_writes_reminders: bool
 
 
 class IdleChatSettings(_Section):
@@ -489,6 +490,7 @@ class LostItemsSettings(_Section):
 class StorageSettings(_Section):
     folder: Path
     rules_folder: Path
+    memory_fallback_folder: Path
 
 
 class LensWaits(_Section):
@@ -539,9 +541,16 @@ class HealthChecksSettings(_Section):
     """When each health check (desktalk/core/health/) says warning or serious."""
 
     _in_order = (('card_serious_below_mb', 'card_warning_below_mb'),
+                 ('room_serious_below_mb', 'room_warning_below_mb'),
+                 ('card_rest_serious_below_mb', 'card_rest_warning_below_mb'),
                  ('no_detections_warning_sec', 'no_detections_serious_sec'))
     card_warning_below_mb: ZeroOrMore
     card_serious_below_mb: ZeroOrMore
+    room_warning_below_mb: ZeroOrMore
+    room_serious_below_mb: ZeroOrMore
+    card_rest_warning_below_mb: ZeroOrMore
+    card_rest_serious_below_mb: ZeroOrMore
+    rest_of_card_folder: Path
     no_detections_warning_sec: PositiveNumber
     no_detections_serious_sec: PositiveNumber
     pi_heartbeat_late_sec: PositiveNumber

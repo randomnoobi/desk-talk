@@ -14,8 +14,10 @@ imported when that camera is used.
 
 from __future__ import annotations
 
+import errno
 import io
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,12 +42,34 @@ class CameraError(RuntimeError):
     """The camera can't be opened or gave no picture. The text says why in plain words."""
 
 
+def blocked_devices(folder: Path = Path('/dev')) -> list[str]:
+    """The camera's media and dma_heap devices in `folder` that are there but this container may not open.
+
+    Docker lets a container open a device only by its numbers, and the Pi numbers the camera's
+    devices afresh at each boot, so after a restart the container's rules can name the old ones.
+    Docker's rules say "operation not permitted" (EPERM). "Permission denied" (EACCES) is a file's
+    group or mode instead, which new numbers wouldn't fix, so it doesn't count here.
+    """
+    heaps = folder / 'dma_heap'
+    # A dma_heap link (like vidbuf_cached) points at one of the real ones, which is checked itself.
+    devices = sorted(folder.glob('media*')) + sorted(path for path in heaps.glob('*') if not path.is_symlink())
+    blocked = []
+    for device in devices:
+        try:
+            os.close(os.open(device, os.O_RDONLY | os.O_NONBLOCK))
+        except OSError as exc:            # gone, broken or not readable: not about the device numbers
+            if exc.errno == errno.EPERM:
+                blocked.append(str(device))
+    return blocked
+
+
 class PiCamera:
     """The Raspberry Pi camera module, through Picamera2."""
 
     name = 'picamera2'
 
-    def __init__(self, width: int, height: int, quality: int, warmup_sec: float, clock: Clock):
+    def __init__(self, width: int, height: int, quality: int, warmup_sec: float, clock: Clock,
+                 devices: Path = Path('/dev')):
         try:
             from picamera2 import Picamera2
         except ImportError:
@@ -60,6 +84,13 @@ class PiCamera:
         except Exception as exc:          # Picamera2 raises almost anything when there's no camera or it's busy
             if self.cam is not None:
                 self.close()
+            blocked = blocked_devices(devices)
+            if blocked:
+                raise CameraError(f'the Pi camera module could not start ({exc}): this container may not open '
+                                  f'{", ".join(blocked)} (operation not permitted). The Pi numbers the camera\'s '
+                                  'devices when it boots, and this container was made with other numbers. On the '
+                                  'Pi, run: cd ~/desk-talk/raspberry_pi && bash device_numbers.sh && docker compose '
+                                  'up -d. desktalk.service does this at each boot.') from None
             raise CameraError(f'the Pi camera module could not start ({exc}). Check the ribbon cable, that '
                               'no other program is using the camera, and (in Docker) that the camera container is '
                               'given the camera devices: every /dev/video*, /dev/media*, /dev/v4l-subdev*, '

@@ -8,8 +8,10 @@ GET /api/health: how every part is doing, in one reply.
     pi          what the Pi said lately: upload format, its detector (ok / busy / off and why), detect time,
                 model, how far its clock is off (null when the camera isn't the Pi)
     detection   detection on this computer: pictures analysed, how long the last one took, what's wrong
-    checks      each health check on its own (camera, detections, pi_temperature, card, pi_heartbeat): its level
-                (ok, warning, serious, unknown), its number and the number's unit
+    checks      each health check on its own (camera, detections, pi_temperature, card, pi_heartbeat, card_rest,
+                saving): its level (ok, warning, serious, unknown), its number and the number's unit. card is the
+                data folder's disk (Desk Talk's own space on the SD card, when it has one), card_rest the rest of
+                the SD card (unknown when the data folder is plain), and saving is serious when nothing is being saved
     ai          the AI: ready, which one, the current problem
 """
 
