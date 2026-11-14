@@ -4,10 +4,11 @@ Date: 2026-11-11. Branch: `pi-reliability` (the setup the Pi runs: three contain
 
 ## Why
 
-On 2026-11-11 the Pi's SD card filled up to 400 MB free. The cause was an 87 GB file, `~/desktalk-fill`, left behind
-by the full-card hand test in `docs/PI_CHECKS.md` (its undo step was never run). Desk Talk's own cleanup was fine: it
-only ever trims Desk Talk's own files, and its data folder was 39 MB. But anything else on the Pi can fill the card the
-same way: a stray download, another program's runaway log, a forgotten test file.
+On 2026-11-11 the Pi's SD card was seen with an 87 GB file, `~/desktalk-fill`, and 400 MB free. That was the
+full-card hand test in `docs/PI_CHECKS.md`, done on purpose: it was made at about 17:10 Pi time to leave 1500 MB free,
+made again at 17:13 to leave 400 MB, and removed at 17:15. Nothing else filled the card. Desk Talk's own cleanup was
+fine: it only ever trims Desk Talk's own files, and its data folder was 39 MB. But the test shows that anything else on
+the Pi can fill the card the same way: a stray download, another program's runaway log, a test file left behind.
 
 The app writes as the Pi's normal user (`PI_USER_ID`, 1000: user `sam`). That is the same user that made the test file,
 so the 5% of an ext4 card that only root may use doesn't protect Desk Talk.
