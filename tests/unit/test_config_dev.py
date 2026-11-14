@@ -101,3 +101,38 @@ def test_the_developer_page_messages_are_there(project):
     assert '../.env' in dev.outside_data_folder.format(path='../.env')
     for text in (dev.other_computer, dev.other_web_page, dev.query_not_one_statement):
         assert text and '{' not in text
+
+
+def test_the_pi_log_settings_load(project):
+    pi_log = load_config(root=project, environ={}).dev.pi_log
+    assert pi_log.ssh[0] == 'ssh' and pi_log.ssh[-1] == 'pi'
+    assert 'BatchMode=yes' in pi_log.ssh                # never asks for a password
+    assert '-tt' in pi_log.ssh                          # a terminal on the Pi, so the command ends with ssh
+    assert [source.name for source in pi_log.sources][:4] == ['all', 'camera', 'detector', 'app']
+    assert all('{first_lines}' in s.start and '{since}' in s.resume for s in pi_log.sources)
+    assert pi_log.retry_start_sec <= pi_log.retry_max_sec
+    assert pi_log.keep_lines >= pi_log.first_lines
+    assert pi_log.connected_ok_sec > 0
+    assert 'LogLevel=ERROR' in pi_log.ssh              # no "Connection closed" chatter, real errors still come
+    journal = [source for source in pi_log.sources if 'journalctl' in source.start]
+    assert journal and all('--no-pager' in s.start and '--no-pager' in s.resume for s in journal)
+    assert all('--since @{since}' in s.resume for s in journal)     # journalctl takes seconds since 1970 after @
+    assert all(s.start.startswith('SYSTEMD_COLORS=0 ') for s in journal)     # no colour codes with a terminal
+    assert not hasattr(pi_log, 'time_pattern')          # the time is always read as ISO (pi_log.py)
+
+
+def test_two_pi_logs_cant_share_a_name(project):
+    path = project / 'config' / 'settings.yaml'
+    data = yaml.safe_load(path.read_text())
+    data['dev']['pi_log']['sources'].append(dict(data['dev']['pi_log']['sources'][0]))
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    with pytest.raises(ConfigError, match='two Pi logs are called all'):
+        load_config(root=project, environ={})
+
+
+def test_the_pi_log_messages_are_there(project):
+    words = load_config(root=project, environ={}).prompts.dev.pi_log
+    assert 'nope' in words.unknown_source.format(name='nope')
+    assert 'ssh pi' in words.connecting.format(command='ssh pi')
+    assert '7' in words.lost.format(reason='exit code 255', seconds=7)
+    assert words.connected and '{' not in words.connected

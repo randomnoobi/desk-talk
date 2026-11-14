@@ -16,10 +16,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from desktalk.bootstrap import DeskTalk
-from desktalk.domain import BBox, Detection, TestItem
+from desktalk.domain import BBox, Detection, PiLogSource, TestItem
 from desktalk.web.app import create_app
 from tests.characterization.client import WebClient
-from tests.fakes import FakeTestRunner
+from tests.fakes import FakePiLog, FakeTestRunner
 from tests.integration.app_kit import CUP_FAR, DeskRig, changed, desk_config
 from tests.integration.web_kit import ON_THE_WIFI, THIS_COMPUTER, links_for
 from tests.integration.web_kit import web_client as main_client
@@ -27,6 +27,9 @@ from tests.integration.web_kit import web_client as main_client
 PEN = Detection('pen/pencil', 0.8, BBox(100, 380, 160, 400))
 TESTS = [TestItem('tests/unit/test_a.py::test_one', 'tests/unit/test_a.py', ()),
          TestItem('tests/unit/test_a.py::test_slow', 'tests/unit/test_a.py', ('slow',))]
+# The Pi logs the fake Pi log reader has, and what the first one prints.
+PI_LOGS = [PiLogSource('all', 'Every container'), PiLogSource('camera', 'Camera')]
+PI_PRINTS = {'all': ['camera  | started', 'detector  | ready']}
 LONGEST_POLL = 20               # a fake run finishes the first time it is asked about; this only stops a stuck loop
 
 # Every /api/dev route, with a request that would work from this computer.
@@ -49,6 +52,7 @@ EVERY_ROUTE: list[tuple[str, str, Any]] = [
     ('GET', '/api/dev/scenarios', None),
     ('POST', '/api/dev/scenarios', {'name': 'sip', 'after_sec': 0}),
     ('DELETE', '/api/dev/scenarios/demo-1', None),
+    ('GET', '/api/dev/pi_log?source=all&after=0', None),
 ]
 
 
@@ -81,8 +85,9 @@ def settle_sec(rig: DeskRig) -> float:
 
 @pytest.fixture
 def rig(tmp_path) -> DeskRig:
-    """A desk that watched a cup and a pen long enough for both to appear, with a fake test runner."""
-    rig = DeskRig(tmp_path, test_runner=FakeTestRunner(TESTS))
+    """A desk that watched a cup and a pen long enough for both to appear, with a fake test runner and a fake
+    Pi log reader."""
+    rig = DeskRig(tmp_path, test_runner=FakeTestRunner(TESTS), pi_log=FakePiLog(PI_LOGS, PI_PRINTS))
     rig.watch(settle_sec(rig), CUP_FAR, PEN)
     return rig
 
@@ -90,6 +95,11 @@ def rig(tmp_path) -> DeskRig:
 def runner(rig: DeskRig) -> FakeTestRunner:
     assert isinstance(rig.app.test_runner, FakeTestRunner)
     return rig.app.test_runner
+
+
+def pi_log(rig: DeskRig) -> FakePiLog:
+    assert isinstance(rig.app.pi_log, FakePiLog)
+    return rig.app.pi_log
 
 
 def test_settings_give_the_page_its_numbers(rig):
@@ -241,6 +251,30 @@ def test_files_and_previews(rig):
     assert missing.json() == {'error': rig.config.prompts.dev.no_such_file.format(path='nothing-here.txt')}
 
 
+def test_the_pi_log_gives_the_lines_after_the_number_asked_for(rig):
+    client = web_client(rig.app)
+    page = client.get('/api/dev/pi_log?source=all').json()
+    assert {key: page[key] for key in ('source', 'state', 'problem', 'retry_at', 'end', 'dropped')} == {
+        'source': 'all', 'state': 'connected', 'problem': '', 'retry_at': None, 'end': 2, 'dropped': False}
+    assert [(line['number'], line['text'], line['kind']) for line in page['lines']] == [
+        (1, 'camera  | started', 'line'), (2, 'detector  | ready', 'line')]
+    assert set(page['lines'][0]) == {'number', 'text', 'kind', 'at'}
+    later = client.get('/api/dev/pi_log?source=all&after=1').json()
+    assert [line['number'] for line in later['lines']] == [2]
+    assert pi_log(rig).asked == [('all', 0), ('all', 1)]
+
+
+def test_an_unknown_pi_log_is_404(rig):
+    reply = web_client(rig.app).get('/api/dev/pi_log?source=nope')
+    assert (reply.status_code, reply.json()) == (404, {'error': 'no Pi log called nope'})     # no quotes added
+
+
+@pytest.mark.parametrize('query', ['', '?after=0', '?source=all&after=-1', '?source=all&after=soon'])
+def test_a_pi_log_question_without_a_source_or_a_good_number_is_400(rig, query):
+    assert web_client(rig.app).get(f'/api/dev/pi_log{query}').status_code == 400
+    assert pi_log(rig).asked == []
+
+
 @pytest.mark.parametrize('path', ['../.env', '/etc/passwd', '../../config/settings.yaml'])
 def test_file_outside_is_400(rig, path):
     reply = web_client(rig.app).get('/api/dev/files/preview', params={'path': path})
@@ -330,9 +364,10 @@ def test_dev_off_means_no_routes(tmp_path):
 
 def test_a_missing_tool_is_404(rig):
     """An app built without the developer tools (bootstrap only builds them with dev.enabled) has none to use."""
-    rig.app.test_runner = rig.app.databases = rig.app.data_files = None
+    rig.app.test_runner = rig.app.databases = rig.app.data_files = rig.app.pi_log = None
     client = web_client(rig.app)
     assert client.get('/api/dev/tests').status_code == 404
+    assert client.get('/api/dev/pi_log?source=all').status_code == 404
     assert client.get('/api/dev/db').status_code == 404
     assert client.get('/api/dev/files').status_code == 404
 

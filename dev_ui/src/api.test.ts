@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ApiError, cancelScenario, getJSON, getTrace, postJSON, startScenario, startTests } from './api'
+import { ApiError, cancelScenario, getJSON, getPiLog, getTrace, postJSON, startScenario, startTests } from './api'
 
 function reply(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -62,6 +62,14 @@ describe('the route functions', () => {
     const fetch = fakeFetch(reply(200, { label: 'pen/pencil', steps: [] }))
     await expect(getTrace('pen/pencil')).resolves.toEqual([])
     expect(fetch.mock.calls[0][0]).toBe('/api/dev/smoothing/trace?label=pen%2Fpencil')
+  })
+})
+
+describe('the Pi log tab', () => {
+  it('getPiLog asks for one log after a line number', async () => {
+    const fetch = fakeFetch(reply(200, { source: 'camera program', lines: [] }))
+    await getPiLog('camera program', 42)
+    expect(fetch.mock.calls[0][0]).toBe('/api/dev/pi_log?source=camera%20program&after=42')
   })
 })
 

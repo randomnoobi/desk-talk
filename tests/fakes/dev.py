@@ -1,6 +1,7 @@
 """Stand-ins for the developer page's tools (desktalk/ports.py: TestRunner, DatabaseBrowser, DataFiles,
-SmoothingTraceView, TracePhotos). They pass the same contracts as the real ones (tests/contracts/dev_contracts.py
-and test_trace_photos_contract.py), but run nothing, open no file and need no tracker."""
+SmoothingTraceView, TracePhotos, PiLogReader). They pass the same contracts as the real ones
+(tests/contracts/dev_contracts.py, test_trace_photos_contract.py and pi_log_contract.py), but run nothing, open no
+file, need no tracker and reach no Pi."""
 
 from __future__ import annotations
 
@@ -10,6 +11,9 @@ from pathlib import PurePosixPath
 
 from desktalk.domain import (
     DataFile,
+    PiLogLine,
+    PiLogPage,
+    PiLogSource,
     QueryRefused,
     QueryResult,
     RunAlreadyGoing,
@@ -220,3 +224,47 @@ class FakeTracePhotos:
 
     def jpeg(self, photo_id: str) -> bytes | None:
         return self._jpegs.get(photo_id)
+
+
+class FakePiLog:
+    """The Pi log tab's reader with no ssh and no Pi: `prints` is each source's name → the lines its log prints.
+    Reading a source hands them all out at once (kind 'line', state 'connected'), numbered on from the last number
+    given out, so a switch or a restart after close() never reuses one. `asked` records every read() as
+    (source, after); `closed` counts the close() calls."""
+
+    name = 'pi log'
+
+    def __init__(self, sources: Sequence[PiLogSource] = (), prints: Mapping[str, Sequence[str]] | None = None,
+                 clock: FakeClock | None = None, check_every_sec: float = 1.0):
+        self._sources = list(sources)
+        self.prints = {name: list(lines) for name, lines in (prints or {}).items()}
+        self.clock = clock or FakeClock()
+        self.check_every_sec = check_every_sec      # what tick() asks the Supervisor to wait
+        self.asked: list[tuple[str, int]] = []
+        self.closed = 0
+        self._reading: str | None = None
+        self._kept: list[PiLogLine] = []
+        self._last = 0                              # the last number given out
+        self._let_go = 0                            # lines up to this number aren't kept any more
+
+    def sources(self) -> list[PiLogSource]:
+        return list(self._sources)
+
+    def read(self, source: str, after: int) -> PiLogPage:
+        self.asked.append((source, after))
+        if source not in {known.name for known in self._sources}:
+            raise KeyError(f'no Pi log called {source}')
+        if source != self._reading:
+            self._let_go, self._reading = self._last, source
+            self._kept = [PiLogLine(self._last + i, text, 'line', self.clock.now())
+                          for i, text in enumerate(self.prints.get(source, []), start=1)]
+            self._last += len(self._kept)
+        lines = tuple(line for line in self._kept if line.number > after)
+        return PiLogPage(source, 'connected', '', None, lines, self._last, after < self._let_go)
+
+    def close(self) -> None:
+        self.closed += 1
+        self._reading, self._kept, self._let_go = None, [], self._last
+
+    def tick(self, now: float) -> float:
+        return self.check_every_sec

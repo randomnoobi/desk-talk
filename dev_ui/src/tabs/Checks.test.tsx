@@ -41,6 +41,7 @@ const SETTINGS: DevSettings = {
   trace_step_photos_kept: 24,
   object_states: { on_confidence: 0.5, off_confidence: 0.3, appear_sec: 2, gone_sec: 5, window_pictures: 5, vote_share: 0.6 },
   scenarios: { countdown_default_sec: 5, countdown_max_sec: 600, waiting_max: 10 },
+  pi_log: { sources: [{ name: 'detector', label: 'Detector service' }], keep_lines: 100 },
 }
 
 const TESTS: TestItem[] = [

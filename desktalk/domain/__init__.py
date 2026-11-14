@@ -26,6 +26,8 @@ Plain data, no I/O: what the parts of Desk Talk pass to each other.
                            data folder), and its errors RunAlreadyGoing and QueryRefused
     Scenario, WaitingScenario
                            the developer page's Demo tab: a pretend warning, and one counting down
+    PiLogSource, PiLogLine, PiLogPage
+                           the developer page's Pi log tab: a log it can show, one line, and what it gets
 """
 
 from desktalk.domain.agents import HABITS, LENS, AgentProfile, ChatJoin
@@ -35,6 +37,9 @@ from desktalk.domain.desk import Danger, Photo, SafetyNow, SeenObject
 from desktalk.domain.desk_rules import DeskRules, Zone
 from desktalk.domain.dev import (
     DataFile,
+    PiLogLine,
+    PiLogPage,
+    PiLogSource,
     QueryRefused,
     QueryResult,
     RunAlreadyGoing,
@@ -91,5 +96,6 @@ __all__ = [
     'SafetyNow', 'SeenObject', 'Size', 'StateChange', 'StateRecord', 'UnknownChat', 'UploadInfo', 'Zone',
     'DataFile', 'QueryRefused', 'QueryResult', 'RunAlreadyGoing', 'RunStatus', 'SmoothingStep', 'StepStatus',
     'TableInfo', 'TestItem', 'TestOutcome', 'ChatJoin', 'Todo', 'TracePhoto', 'TIMED_PHOTO',
-    'newest_trace_photos', 'Scenario', 'WaitingScenario', 'CheckLevel', 'HealthMeasure', 'Saving',
+    'newest_trace_photos', 'Scenario', 'WaitingScenario', 'CheckLevel', 'HealthMeasure', 'PiLogLine', 'PiLogPage',
+    'PiLogSource', 'Saving',
 ]

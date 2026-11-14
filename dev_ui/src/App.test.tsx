@@ -21,18 +21,20 @@ const SETTINGS: DevSettings = {
   trace_step_photos_kept: 24,
   object_states: { on_confidence: 0.5, off_confidence: 0.3, appear_sec: 2, gone_sec: 5, window_pictures: 5, vote_share: 0.6 },
   scenarios: { countdown_default_sec: 5, countdown_max_sec: 600, waiting_max: 10 },
+  pi_log: { sources: [{ name: 'detector', label: 'Detector service' }], keep_lines: 100 },
 }
 
 // A fake server: /api/dev/settings answers while `up` is true; everything else is a 404, so the tabs'
 // own calls (added later) can't break these tests.
 function fakeServer() {
-  const server = { up: true, settingsAsked: 0 }
+  const server = { up: true, settingsAsked: 0, piLogAsked: 0 }
   vi.stubGlobal('fetch', vi.fn(async (path: string) => {
     if (!server.up) throw new TypeError('Failed to fetch')
     if (path === '/api/dev/settings') {
       server.settingsAsked += 1
       return new Response(JSON.stringify(SETTINGS), { status: 200 })
     }
+    if (path.startsWith('/api/dev/pi_log')) server.piLogAsked += 1
     return new Response(JSON.stringify({ error: 'not in this test' }), { status: 404 })
   }))
   return server
@@ -43,7 +45,7 @@ async function wait(ms: number) {
 }
 
 describe('App', () => {
-  it('shows the six tabs once the settings are in, and switches between them', async () => {
+  it('shows the seven tabs once the settings are in, and switches between them', async () => {
     vi.useFakeTimers()
     window.location.hash = ''
     fakeServer()
@@ -51,13 +53,30 @@ describe('App', () => {
     await wait(0)
 
     const names = screen.getAllByRole('tab').map(t => t.textContent)
-    expect(names).toEqual(['Checks', 'Live', 'System', 'Database', 'Storage', 'Demo'])
+    expect(names).toEqual(['Checks', 'Live', 'System', 'Pi log', 'Database', 'Storage', 'Demo'])
     expect(screen.getByRole('tab', { name: 'Checks' })).toHaveAttribute('aria-selected', 'true')
 
     fireEvent.click(screen.getByRole('tab', { name: 'Database' }))
     expect(screen.getByRole('tab', { name: 'Database' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tabpanel', { name: 'Database' })).toBeVisible()
     expect(window.location.hash).toBe('#database')
+  })
+
+  it('only lets the Pi log tab ask while it is the open tab', async () => {
+    vi.useFakeTimers()
+    window.location.hash = ''
+    const server = fakeServer()
+    render(<App />)
+    await wait(0)
+    expect(server.piLogAsked).toBe(0)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Pi log' }))
+    await wait(0)
+    expect(server.piLogAsked).toBe(1)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Checks' }))
+    await wait(5 * SETTINGS.poll_sec * 1000)
+    expect(server.piLogAsked).toBe(1)
   })
 
   it('says when the server can\'t be reached, keeps trying, and gets going once it answers', async () => {
@@ -72,7 +91,7 @@ describe('App', () => {
     server.up = true
     await wait(FIRST_TRY_AGAIN_MS)
     expect(screen.queryByText(/Can't reach Desk Talk/)).not.toBeInTheDocument()
-    expect(screen.getAllByRole('tab')).toHaveLength(6)
+    expect(screen.getAllByRole('tab')).toHaveLength(7)
   })
 
   it('keeps the tabs and shows the bar when the server goes away later', async () => {
@@ -83,6 +102,6 @@ describe('App', () => {
     server.up = false
     await wait(SETTINGS.poll_sec * 1000)
     expect(screen.getByText(/Can't reach Desk Talk, trying again/)).toBeInTheDocument()
-    expect(screen.getAllByRole('tab')).toHaveLength(6)
+    expect(screen.getAllByRole('tab')).toHaveLength(7)
   })
 })

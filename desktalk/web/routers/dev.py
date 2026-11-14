@@ -27,6 +27,10 @@ only for this computer, from the server's own page or the Vite dev server's (Dev
     POST /api/dev/scenarios                 {"name": ..., "after_sec": n}: start one counting down; 400 for a name
                                             not in the list, a countdown out of range, or too many counting down
     DELETE /api/dev/scenarios/<id>          stop one counting down; 404 when it isn't (any more)
+    GET  /api/dev/pi_log?source=&after=<n>  the Pi log tab: the lines of one of the Pi's logs numbered after n
+                                            (0: all it kept), and how the ssh connection is doing. Asking starts
+                                            ssh (settings → dev.pi_log) and keeps it going; 404 for a log not in
+                                            the settings
 
 The Demo tab is the one place this page changes what the app does on purpose: once its countdown is over, a
 pretend warning goes out the way a real one does (the chat, the Mac pop-up, the event log; a pretend sip counts).
@@ -43,7 +47,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Query, Response
 
 from desktalk.domain import QueryRefused, RunAlreadyGoing
-from desktalk.ports import DatabaseBrowser, DataFiles, DemoScenarios, TestRunner
+from desktalk.ports import DatabaseBrowser, DataFiles, DemoScenarios, PiLog, TestRunner
 from desktalk.web.deps import App, DevOnly
 from desktalk.web.schemas import QueryRequest, RunRequest, ScenarioRequest
 from desktalk.web.stories import object_story, story_photo
@@ -78,6 +82,12 @@ def _demo(app: App) -> DemoScenarios:
     if app.demo is None:
         raise HTTPException(404)
     return app.demo
+
+
+def _pi_log(app: App) -> PiLog:
+    if app.pi_log is None:
+        raise HTTPException(404)
+    return app.pi_log
 
 
 def _cell(value: Any) -> Any:
@@ -120,6 +130,8 @@ def dev_settings(app: App) -> dict[str, Any]:
         'scenarios': {'countdown_default_sec': dev.scenarios.countdown_default_sec,
                       'countdown_max_sec': dev.scenarios.countdown_max_sec,
                       'waiting_max': dev.scenarios.waiting_max},
+        'pi_log': {'sources': [{'name': source.name, 'label': source.label} for source in dev.pi_log.sources],
+                   'keep_lines': dev.pi_log.keep_lines},
     }
 
 
@@ -254,3 +266,11 @@ def dev_cancel_scenario(app: App, scenario_id: str) -> dict[str, Any]:
     except KeyError as error:
         raise HTTPException(404, _words(error)) from None
     return {'ok': True}
+
+
+@router.get('/api/dev/pi_log')
+def dev_pi_log(app: App, source: str, after: Annotated[int, Query(ge=0)] = 0) -> dict[str, Any]:
+    try:
+        return asdict(_pi_log(app).read(source, after))
+    except KeyError as error:
+        raise HTTPException(404, _words(error)) from None

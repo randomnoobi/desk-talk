@@ -4,7 +4,7 @@ Every web address (route) the Desk Talk servers answer, grouped by area: what it
 who is allowed to. The code is the source of truth; this page is a map of it. How the parts fit together
 is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-**88 routes in all: 55 on the main server (20 of them for the developer page), 9 on the phone camera's server, 3 on the detector service, 21 on the cloud server.**
+**89 routes in all: 56 on the main server (21 of them for the developer page), 9 on the phone camera's server, 3 on the detector service, 21 on the cloud server.**
 
 ## Four servers
 
@@ -186,7 +186,7 @@ The camera container (`raspberry_pi/camera/`) is the only caller. Both routes ne
 |---|---|---|---|---|
 | GET | `/api/cloud/status` | Whether this Pi (or computer) is linked to a cloud server: `{"linked", "stopped", "last_sent_ts", "waiting"}`. `stopped` means the server no longer knows it, so it needs linking again. `waiting` is how many events were still to go at its last try, so it doesn't count ones written since. | `web_app/app.js` (the line in Settings) | anyone on the network |
 
-### Developer page (this computer only) (20)
+### Developer page (this computer only) (21)
 
 The routes behind the developer page (`dev_ui/`, see [its README](../dev_ui/README.md)), in
 `desktalk/web/routers/dev.py`. They are only there when `dev.enabled` is on in `config/settings.yaml`;
@@ -218,6 +218,7 @@ has `"demo": true`), and a pretend sip counts in today's water.
 | GET | `/api/dev/scenarios` | The pretend warnings (`dev.scenarios.items`) and the ones counting down. | Demo tab | this computer and its own page only |
 | POST | `/api/dev/scenarios` | Start a pretend warning counting down; it goes out like the real one when the countdown is over. | Demo tab (**Start**) | this computer and its own page only |
 | DELETE | `/api/dev/scenarios/{id}` | Stop one counting down, so it never goes out. | Demo tab (**Cancel**) | this computer and its own page only |
+| GET | `/api/dev/pi_log` | The lines of one of the Pi's logs (`?source=` a name in `dev.pi_log.sources`) numbered after `?after=<n>`, and how the ssh connection to the Pi is doing. Asking starts `ssh pi` with that log's command and keeps it going; it stops once the tab stops asking. | Pi log tab, while it is open | this computer and its own page only |
 | GET | `/dev/` | The developer page (`dev_ui/dist/index.html`, from `dev.ui_folder`). Before `npm run build` has made it, a plain line saying how to build it (200). | Your browser | anyone on the network (only the page itself: what it shows comes from the routes above) |
 | GET | `/dev/{file}` | The page's other files (its script and style, the font). | Your browser | anyone on the network |
 
@@ -226,7 +227,7 @@ has `"demo": true`), and a pretend sip counts in today's water.
 - `GET /api/dev/settings`: `{"poll_sec", "checks": [names], "health": {...}, "trace_pictures",
   "trace_events_kept", "trace_photos_kept", "trace_step_photos_kept", "sql_max_rows", "data_folder", "object_states": {"on_confidence", "off_confidence", "appear_sec",
   "gone_sec", "window_pictures", "vote_share"}, "scenarios": {"countdown_default_sec", "countdown_max_sec",
-  "waiting_max"}}`.
+  "waiting_max"}, "pi_log": {"sources": [{"name", "label"}], "keep_lines"}}`.
 - `GET /api/dev/states`: `{"objects": {label: {"state", "since"}}, "watched_since", "changes": [{"ts",
   "label", "change"}]}`.
 - `GET /api/dev/smoothing`: `{"labels": [...]}`. `/api/dev/smoothing/trace`: `{"label", "steps": [...]}`;
@@ -271,6 +272,16 @@ has `"demo": true`), and a pretend sip counts in today's water.
   are counting down already. The background job fires it (checked every `dev.scenarios.check_every_sec`).
 - `DELETE /api/dev/scenarios/{id}`: `{"ok": true}`; 404 when it isn't counting down (never started, cancelled,
   or gone off already).
+- `GET /api/dev/pi_log?source=all&after=0`: `{"source", "state", "problem", "retry_at", "lines": [{"number",
+  "text", "kind", "at"}], "end", "dropped"}`. `state` is `connecting`, `connected`, `waiting` (to try again at
+  `retry_at`, after a lost connection) or `stopped`; `problem` is the last thing that went wrong (`""` once
+  connected again). A line's `kind` is `line` (the Pi printed it, its errors too: ssh runs with a terminal),
+  `problem` (ssh's own errors) or `note` (this computer's own: connecting, lost, trying again); `at` is when
+  this computer got it. Ask again with `?after=<end>` for only the new lines; `dropped` is true when some lines
+  after the number asked for were let go already (only the newest `dev.pi_log.keep_lines` are kept). Asking for
+  another log stops the one being read; asking for the same one after it stopped picks up where it left off,
+  keeping the lines and their numbers. 404 for a `source` not in `dev.pi_log.sources`; 400 without a `source` or
+  with `after` below 0.
 
 ### Pages and files (2)
 

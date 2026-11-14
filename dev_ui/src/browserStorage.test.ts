@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest'
-import { deleteBrowserKey, deleteQuestion, readBrowserStorage, usedBy, whereThisPageIs } from './browserStorage'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  deleteBrowserKey, deleteQuestion, PI_LOG_SOURCE_KEY, readBrowserStorage, readChoice, saveChoice, usedBy, whereThisPageIs,
+} from './browserStorage'
 
 /** A Storage that keeps its keys in a Map, like a browser's localStorage. */
 class FakeStorage implements Storage {
@@ -61,12 +63,39 @@ describe('usedBy', () => {
     expect(usedBy('desktalk_chats_v1')).toBe('Desk Talk (unknown key)')
     expect(usedBy('something_else')).toBe('Not Desk Talk')
   })
+
+  it('names the keys this developer page keeps', () => {
+    expect(usedBy(PI_LOG_SOURCE_KEY)).toBe('Developer page: the log the Pi log tab shows')
+  })
+})
+
+describe('a choice the developer page remembers', () => {
+  it('keeps it and gives it back', () => {
+    localStorage.clear()
+    expect(readChoice(PI_LOG_SOURCE_KEY)).toBeNull()
+    saveChoice(PI_LOG_SOURCE_KEY, 'detector')
+    expect(readChoice(PI_LOG_SOURCE_KEY)).toBe('detector')
+    localStorage.clear()
+  })
+
+  it('gives null, and does not throw, when the browser will not let the page use its storage', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked') })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked') })
+    expect(() => saveChoice(PI_LOG_SOURCE_KEY, 'detector')).not.toThrow()
+    expect(readChoice(PI_LOG_SOURCE_KEY)).toBeNull()
+  })
 })
 
 describe('deleting a key', () => {
   it('asks with what the app page loses', () => {
     const [row] = readBrowserStorage(new FakeStorage({ desktalk_todo_v1: '{}' }))
     expect(deleteQuestion(row)).toBe("Delete desktalk_todo_v1? The app page loses Paper's to-do list.")
+  })
+
+  it('says the developer page only forgets a choice for its own keys', () => {
+    expect(deleteQuestion({ key: PI_LOG_SOURCE_KEY, usedBy: usedBy(PI_LOG_SOURCE_KEY) })).toBe(
+      `Delete ${PI_LOG_SOURCE_KEY}? The developer page forgets this choice ` +
+      '(Developer page: the log the Pi log tab shows).')
   })
 
   it('removes the key, and gives the reason when the browser says no', () => {

@@ -20,9 +20,6 @@ No shell is ever used: the commands only come from the settings, and a test id o
 
 from __future__ import annotations
 
-import codecs
-import contextlib
-import io
 import json
 import logging
 import os
@@ -36,6 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from desktalk.adapters.dev import pytest_report
+from desktalk.adapters.dev.processes import ENCODING, end_process, signal_group, text_of
 from desktalk.config.app import DevSettings
 from desktalk.config.prompts import DevWords
 from desktalk.domain import RunAlreadyGoing, RunStatus, StepStatus, TestItem, TestOutcome
@@ -48,7 +46,6 @@ SLOW = 'slow'                           # the pytest mark the list tags (pyproje
 LIST_ONE_PER_LINE = '--verbosity=-1'    # with --collect-only, pytest prints one test id per line (even after -q)
 LISTED_FINE = (0, 5)                    # pytest's exit codes for "listed" and "no test has those marks"
 STILL_GOING = ('waiting', 'running')
-ENCODING = 'utf-8'
 
 
 class Printout:
@@ -254,15 +251,10 @@ class PytestRunner:
     def _read_output(self, run: _Run, process: subprocess.Popen[bytes]) -> None:
         if process.stdout is None:
             return
-        decoder = codecs.getincrementaldecoder(ENCODING)(errors='replace')
-        handle = process.stdout.fileno()
-        while chunk := os.read(handle, io.DEFAULT_BUFFER_SIZE):     # whatever is there: the page sees it at once
-            text = decoder.decode(chunk)
+        for text in text_of(process.stdout):        # whatever is there: the page sees it at once
             with self._lock:
                 run.output.add(text)
         process.stdout.close()
-        with self._lock:
-            run.output.add(decoder.decode(b'', final=True))
 
     def _read_report(self, run: _Run) -> None:
         """Take in the plugin's new whole lines: one per finished test. (Lock held.)"""
@@ -304,23 +296,7 @@ class PytestRunner:
                     step.state = state
             process = run.process
         if process is not None:
-            self._end_process(process)
-
-    def _end_process(self, process: subprocess.Popen[bytes]) -> None:
-        """Ask the process and everything it started to end; after stop_wait_sec, make them."""
-        self._signal(process, signal.SIGTERM)
-        try:
-            process.wait(timeout=self._stop_wait_sec)
-        except subprocess.TimeoutExpired:
-            self._signal(process, signal.SIGKILL)
-            process.wait()
-
-    @staticmethod
-    def _signal(process: subprocess.Popen[bytes] | subprocess.Popen[str], which: signal.Signals) -> None:
-        if process.returncode is not None:
-            return
-        with contextlib.suppress(ProcessLookupError):     # it has just ended by itself
-            os.killpg(process.pid, which)       # its own process group (start_new_session), so its children too
+            end_process(process, self._stop_wait_sec)
 
     # ── helpers ───────────────────────────────────────────────────
     def _find(self, run_id: str) -> _Run:
@@ -345,7 +321,7 @@ class PytestRunner:
                        for process in processes]
         except (OSError, subprocess.TimeoutExpired) as error:
             for process in processes:
-                self._signal(process, signal.SIGKILL)
+                signal_group(process, signal.SIGKILL)
                 process.communicate()
             raise RuntimeError(self._words.cannot_list_tests.format(reason=error)) from error
         found = []
