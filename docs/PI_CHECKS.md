@@ -350,6 +350,8 @@ DESKTALK_PI=pi DESKTALK_PI_CARD_FILLED=1 uv run pytest -m pi -v -rs -k "card_fil
 
 Result: 2026-11-11, passed. At 1500 MB free the card check said `warning`, and at 400 MB `serious`; Lens said each, and said "enough space ... again" after the undo. Nothing restarted. The first try failed only because the check let no line of the event log be broken, and a power cut on 2026-11-03 left one (zero bytes, in the middle of that day's file): it now allows one, as the other checks do.
 
+Result: 2026-11-14, passed, with Desk Talk's own space (8192 MB). At 1500 MB free `card_rest` said `warning`, and at 400 MB `serious`; Lens said "the rest of the Raspberry Pi's SD card is getting full" (then "almost full"), and "I'm still saving everything in Desk Talk's own space"; `card` (the space) stayed `ok` at 7905 MB and `saving` stayed `ok`, the event log kept growing, and Lens said there's enough room again after the undo.
+
 ### 5. The clock set back to 1990
 
 The Pi's flag that says its clock was set from the internet (`/run/systemd/timesync/synchronized`) stays there when
@@ -455,4 +457,4 @@ and after the undo (step 5):
 DESKTALK_PI=pi DESKTALK_PI_SPACE_BACK=1 uv run pytest -m pi -v -rs -k "space_back or nothing_deleted"
 ```
 
-Result: _date, passed / failed, notes_
+Result: 2026-11-14, passed. With the space away, `saving` said `serious`, `card` `unknown`; Lens said "Nothing is being saved right now, because Desk Talk's own space on the SD card is missing"; the app wrote to `/memory-data` only, and the bare `data/` folder (root's) stayed empty. After the undo, `saving` said `ok`, the history was all there and kept growing, and trims were off again for the space.
