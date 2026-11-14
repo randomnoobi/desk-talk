@@ -1,6 +1,7 @@
 """
 Checks after the failure hand tests in docs/PI_CHECKS.md ("Failure hand tests"): a person pulls the plug, turns the
-network off, pulls the camera's cable, fills the SD card or sets the clock to 1990, and these read what the Pi did.
+network off, pulls the camera's cable, fills the SD card, sets the clock to 1990 or takes Desk Talk's own space away,
+and these read what the Pi did.
 Nothing here breaks anything or changes the Pi.
 
     DESKTALK_PI=pi DESKTALK_PI_NOTE_BEFORE=1 uv run pytest -m pi -v -rs -k note_before     first, before each one
@@ -54,8 +55,11 @@ CAMERA_CABLE_BACK = 'DESKTALK_PI_CAMERA_CABLE_BACK'
 CARD_FILLED = 'DESKTALK_PI_CARD_FILLED'
 CLOCK_1990 = 'DESKTALK_PI_CLOCK_1990'
 CLOCK_BACK = 'DESKTALK_PI_CLOCK_BACK'
+SPACE_MISSING = 'DESKTALK_PI_SPACE_MISSING'
+SPACE_BACK = 'DESKTALK_PI_SPACE_BACK'
+# (Not SPACE_MISSING: while the space is away, its history can't be seen, so nothing_deleted runs after SPACE_BACK.)
 AFTER_A_HAND_TEST = (JUST_POWER_CUT, JUST_NO_NETWORK, CAMERA_CABLE_OUT, CAMERA_CABLE_BACK, CARD_FILLED, CLOCK_1990,
-                     CLOCK_BACK)
+                     CLOCK_BACK, SPACE_BACK)
 STEPS = 'docs/PI_CHECKS.md, "Failure hand tests"'
 
 NOTE_KEY = 'desktalk/pi_hand_test_note'
@@ -69,10 +73,15 @@ CAMERA_COULD_NOT_START = 'the Pi camera module could not start'      # raspberry
 # Lens's warning keys (the `key` of a camera event in /api/log/events?types=camera): desktalk/core/vision/
 # camera_problems.py says `lost` once pictures stop, `no_pictures` when none came since the app started
 CAMERA_WARNING_KEYS = {'lost', 'no_pictures'}
-CARD_WARNING_KEYS = {'card'}                    # Lens's watch on the health check of the same name
-# The SD card's levels, as the app on the Pi has them (settings → health_checks)
+CARD_WARNING_KEYS = {'card'}                    # Lens's watches on the health checks of the same names
+CARD_REST_WARNING_KEYS = {'card_rest'}
+SAVING_WARNING_KEYS = {'saving'}
+# The SD card's levels, as the app on the Pi has them (settings → health_checks): the data folder's disk (Desk Talk's
+# own space, when it has one), and the rest of the card outside that space
 CARD_LEVELS = ('import json; from desktalk.config import load_config; h = load_config().health_checks; '
                'print(json.dumps([h.card_warning_below_mb, h.card_serious_below_mb]))')
+CARD_REST_LEVELS = ('import json; from desktalk.config import load_config; h = load_config().health_checks; '
+                    'print(json.dumps([h.card_rest_warning_below_mb, h.card_rest_serious_below_mb]))')
 
 
 def _just_did(name: str, what: str) -> None:
@@ -254,28 +263,63 @@ def test_with_the_camera_cable_back(pi: Pi):
 
 # ── a nearly full SD card ──
 def test_with_the_card_filled(pi: Pi, request: pytest.FixtureRequest):
-    """A big file leaves the card below the warning level: Lens warns, and everything keeps going."""
+    """A big file leaves the card below the warning level: Lens warns, and everything keeps going. With Desk Talk's
+    own space the file fills the rest of the card (the card_rest check), and Desk Talk keeps saving in its space;
+    on a Pi without that space (card_rest unknown) it fills the data folder's disk (the card check)."""
     _just_did(CARD_FILLED, 'fill the SD card with a big file')
     note = _note(pi, request)
-    free_mb = int(pi.run(f'df -m --output=avail {shlex.quote(pi.data_folder())} | tail -n 1'))
     checks = _health_checks(pi)
-    warning_mb, serious_mb = pi.in_app(CARD_LEVELS)
+    has_space = checks.get('card_rest', {}).get('level', 'unknown') != 'unknown'
+    key, levels, folder = ('card_rest', CARD_REST_LEVELS, '~') if has_space else (
+        'card', CARD_LEVELS, shlex.quote(pi.data_folder()))
+    free_mb = int(pi.run(f'df -m --output=avail {folder} | tail -n 1'))
+    warning_mb, serious_mb = pi.in_app(levels)
     level = card_level(free_mb, warning_mb=warning_mb, serious_mb=serious_mb)
     assert level != 'ok', (f'The card has {free_mb} MB free, above the warning level ({warning_mb} MB): the big file '
                            'is not there')
-    card = checks['card']
-    assert card['level'] == level, (f"/api/health → checks → card says {card['level']} ({card['value']} MB free), "
-                                    f'but with {free_mb} MB free it should say {level}')
+    check = checks[key]
+    assert check['level'] == level, (f"/api/health → checks → {key} says {check['level']} ({check['value']} MB "
+                                     f'free), but with {free_mb} MB free it should say {level}')
+    if has_space:
+        saving = checks['saving']['level']
+        assert saving == 'ok', f'/api/health → checks → saving says {saving} with Desk Talk\'s own space there'
     pi.wait_until_healthy()
     restarted = restarted_since(note['containers'], _containers(pi))
     assert restarted == [], f'started again with the card nearly full: {restarted}'
     pictures_arriving(pi, timeout=60)
     assert_data_readable(pi, broken_allowed=BROKEN_LINES_ALLOWED)
-    said = _lens_warning(pi, CARD_WARNING_KEYS, since=note['pi_at'])
+    said = _lens_warning(pi, CARD_REST_WARNING_KEYS if has_space else CARD_WARNING_KEYS, since=note['pi_at'])
     if said is None:
         pytest.skip(f'{free_mb} MB free ({level}) and all good, but it is quiet hours on the Pi, so Lens says '
                     'nothing. Do it by day.')
     print(f"With {free_mb} MB free ({level}) Lens said: {said['text']}")
+
+
+# ── Desk Talk's own space missing ──
+def test_with_desk_talks_space_missing(pi: Pi, request: pytest.FixtureRequest):
+    """The space isn't mounted and the app was restarted: it runs and saves nothing, the bare data folder stays
+    empty, /api/health → checks → saving says serious, and Lens says nothing is being saved."""
+    _just_did(SPACE_MISSING, "take Desk Talk's own space away and restart the app")
+    note = _note(pi, request)
+    pi.wait_until_healthy()
+    saving = _health_checks(pi).get('saving', {}).get('level')
+    assert saving == 'serious', f'/api/health → checks → saving says {saving} with the space away'
+    left = pi.run(f'ls -A {shlex.quote(pi.data_folder())}').split()
+    assert left == [], f'the bare data folder on the card has files in it: {left}'
+    pictures_arriving(pi, timeout=60)
+    said = _lens_warning(pi, SAVING_WARNING_KEYS, since=note['pi_at'])
+    if said is None:
+        pytest.skip('All good except the warning: it is quiet hours on the Pi, so Lens says nothing. Do it by day.')
+    print(f"With the space away Lens said: {said['text']}")
+
+
+def test_with_desk_talks_space_back(pi: Pi):
+    """After the undo: the space is mounted again and the app saves again."""
+    _just_did(SPACE_BACK, "take Desk Talk's own space away, then put it back")
+    pi.wait_until_healthy()
+    saving = _health_checks(pi).get('saving', {}).get('level')
+    assert saving == 'ok', f'/api/health → checks → saving says {saving} with the space back'
+    pictures_arriving(pi, timeout=60)
 
 
 # ── the clock set to 1990 ──

@@ -5,11 +5,13 @@ from __future__ import annotations
 
 from desktalk.config import HealthChecksSettings, PiSettings
 from desktalk.core.health import HealthChecks
-from desktalk.domain import CheckLevel, PiHealth
+from desktalk.domain import CheckLevel, PiHealth, Saving
 from desktalk.ports import HealthCheck
 from tests.fakes import FakeClock, FakeDetectionTimes, FakeDiskSpace, FakeFrameSource, FakePi
 
 SETTINGS = HealthChecksSettings.model_construct(card_warning_below_mb=2000.0, card_serious_below_mb=500.0,
+                                                room_warning_below_mb=300.0, room_serious_below_mb=100.0,
+                                                card_rest_warning_below_mb=2000.0, card_rest_serious_below_mb=500.0,
                                                 no_detections_warning_sec=300.0, no_detections_serious_sec=900.0,
                                                 pi_heartbeat_late_sec=90.0)
 PI = PiSettings.model_construct(hot_warning_c=75.0, hot_serious_c=80.0)
@@ -17,15 +19,17 @@ OK, WARNING, SERIOUS, UNKNOWN = CheckLevel.OK, CheckLevel.WARNING, CheckLevel.SE
 
 
 class Rig:
-    def __init__(self, *, pi: bool = True, free_mb: float | None = 10_000.0):
+    def __init__(self, *, pi: bool = True, free_mb: float | None = 10_000.0, saving: Saving = Saving.PLAIN,
+                 rest_mb: float | None = 10_000.0):
         self.clock = FakeClock()
         self.source = FakeFrameSource('pi' if pi else 'webcam', clock=self.clock)
         self.source.connected = True
         self.detections = FakeDetectionTimes()
         self.disk = FakeDiskSpace(free_mb)
+        self.card = FakeDiskSpace(rest_mb)
         self.pi = FakePi(self.clock)
         self.checks = HealthChecks(self.source, self.detections, self.disk, SETTINGS, PI, clock=self.clock,
-                                   pi=self.pi if pi else None)
+                                   pi=self.pi if pi else None, saving=saving, card=self.card)
 
     def found_now(self) -> None:
         self.detections.found_at = self.clock.monotonic()
@@ -41,7 +45,7 @@ def test_it_is_a_health_check_with_every_measure_once():
     rig = Rig()
     assert isinstance(rig.checks, HealthCheck)
     assert [m.key for m in rig.checks.measures()] == ['camera', 'detections', 'pi_temperature', 'card',
-                                                       'pi_heartbeat']
+                                                       'pi_heartbeat', 'card_rest', 'saving']
 
 
 # ── camera pictures ──
@@ -155,3 +159,40 @@ def test_no_heartbeat_yet_is_unknown():
     """A Pi with an older camera program never sends one, so there is nothing to miss."""
     assert Rig().level('pi_heartbeat') is UNKNOWN
     assert Rig(pi=False).level('pi_heartbeat') is UNKNOWN
+
+
+# ── the saving modes ──
+def test_plain_mode_measures_the_card_as_before():
+    rig = Rig(free_mb=1500.0)
+    assert rig.level('card') is WARNING
+    assert rig.level('card_rest') is UNKNOWN
+    assert rig.level('saving') is OK
+
+
+def test_room_mode_measures_the_room_with_its_own_levels():
+    for free, level in ((400.0, OK), (250.0, WARNING), (50.0, SERIOUS)):
+        m = Rig(free_mb=free, saving=Saving.ROOM).measure('card')
+        assert (m.level, m.value, m.unit) == (level, free, 'MB')
+
+
+def test_room_mode_measures_the_rest_of_the_card():
+    for free, level in ((1500.0, WARNING), (400.0, SERIOUS), (5000.0, OK)):
+        m = Rig(saving=Saving.ROOM, rest_mb=free).measure('card_rest')
+        assert (m.level, m.value, m.unit) == (level, free, 'MB')
+
+
+def test_off_mode_says_nothing_is_saved():
+    rig = Rig(saving=Saving.OFF, rest_mb=1500.0)
+    assert rig.level('saving') is SERIOUS
+    assert rig.level('card') is UNKNOWN
+    assert rig.level('card_rest') is WARNING
+
+
+def test_unreadable_rest_of_the_card_is_unknown():
+    assert Rig(saving=Saving.ROOM, rest_mb=None).level('card_rest') is UNKNOWN
+
+
+def test_the_rest_of_the_card_is_unknown_without_a_card_to_look_at():
+    rig = Rig(saving=Saving.ROOM)
+    checks = HealthChecks(rig.source, rig.detections, rig.disk, SETTINGS, PI, clock=rig.clock, saving=Saving.ROOM)
+    assert {m.key: m for m in checks.measures()}['card_rest'].level is UNKNOWN

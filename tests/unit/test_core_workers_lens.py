@@ -11,7 +11,7 @@ from pathlib import Path
 from desktalk.config import HealthChecksSettings, LensSettings, LensWaits, PiSettings, load_config
 from desktalk.core.chat.workers.lens import Lens
 from desktalk.core.health import HealthChecks
-from desktalk.domain import CameraNotice, DetectorState, PiHealth, UploadInfo
+from desktalk.domain import CameraNotice, DetectorState, PiHealth, Saving, UploadInfo
 from desktalk.ports import CameraWarnings
 from desktalk_shared.wire import DETECTOR_TURNED_OFF, info_from_v1_headers
 from tests.fakes import (
@@ -31,7 +31,9 @@ SETTINGS = LensSettings.model_construct(check_every_sec=2.0, repeat_after_min=20
 PI = PiSettings.model_construct(hot_warning_c=75.0, hot_serious_c=80.0, clock_off_warning_sec=5.0)
 CHECKS = HealthChecksSettings.model_construct(card_warning_below_mb=2000.0, card_serious_below_mb=500.0,
                                               no_detections_warning_sec=300.0, no_detections_serious_sec=900.0,
-                                              pi_heartbeat_late_sec=90.0)
+                                              pi_heartbeat_late_sec=90.0, room_warning_below_mb=300.0,
+                                              room_serious_below_mb=100.0, card_rest_warning_below_mb=1000.0,
+                                              card_rest_serious_below_mb=300.0)
 WORDS = load_config(environ={}, dotenv=Path('/nonexistent')).prompts.lens
 LOST = {'key': 'lost', 'kind': 'problem', 'text': "I can't see anything: the Raspberry Pi stopped sending pictures."}
 
@@ -97,7 +99,7 @@ class Rig:
     """`detecting`: pictures go through detection at every tick (set it False to stop them). `free_mb`: the card."""
 
     def __init__(self, messages=(), kind='pi', phone=None, layout=None, prefs=None, pi=None, words=WORDS,
-                 hours_from_utc=0.0, free_mb=10_000.0):
+                 hours_from_utc=0.0, free_mb=10_000.0, saving=Saving.PLAIN, rest_mb=10_000.0):
         # 21 October 2026, 14:00 on the clock (its own time zone, so the test is the same on every computer)
         self.clock = FakeClock(calendar.timegm((2026, 10, 21, 14, 0, 0, 0, 0, 0)) - hours_from_utc * 3600,
                                utc_offset_hours=hours_from_utc)
@@ -113,10 +115,12 @@ class Rig:
         self.detecting = True
         self.detections = FakeDetectionTimes()
         self.disk = FakeDiskSpace(free_mb)
-        checks = HealthChecks(self.source, self.detections, self.disk, CHECKS, PI, clock=self.clock, pi=pi)
+        self.rest = FakeDiskSpace(rest_mb)
+        checks = HealthChecks(self.source, self.detections, self.disk, CHECKS, PI, clock=self.clock, pi=pi,
+                              saving=saving, card=self.rest)
         self.lens = Lens(self.health, self.source, layout or Layout(), prefs or FakePreferences(), self.notifier,
                          self.bus, self.photos, SETTINGS, PI, clock=self.clock, prompts=words, preview_chars=120,
-                         checks=checks, phone=phone, pi_uploads=pi)
+                         checks=checks, phone=phone, pi_uploads=pi, saving=saving)
 
     def tick(self, after=0.0):
         self.clock.advance(after)
@@ -660,6 +664,61 @@ def test_the_card_warning_names_the_pis_sd_card_only_when_the_pi_is_the_camera()
         else:
             assert not any('SD card' in text or 'Raspberry Pi' in text for text in texts)
             assert all("this computer's disk" in text.lower() for text in texts)
+
+
+def test_room_mode_uses_the_room_words_for_the_card_check():
+    rig = Rig(saving=Saving.ROOM, free_mb=250.0)
+    rig.tick()
+    rig.disk.free = 80.0
+    rig.tick(after=2)
+    rig.disk.free = 5000.0
+    rig.tick(after=2)
+    rig.tick(after=5)
+    assert rig.said() == [('problem', WORDS.room_low.format(free_mb=250.0)),
+                          ('problem', WORDS.room_full.format(free_mb=80.0)),
+                          ('fixed', WORDS.pi_fixed.room)]
+
+
+def test_the_rest_of_the_card_running_low_says_saving_goes_on():
+    rig = Rig(saving=Saving.ROOM, rest_mb=800.0)
+    rig.tick()
+    rig.rest.free = 200.0
+    rig.tick(after=2)
+    low, full = [text for _, text in rig.said()]
+    assert low == WORDS.card_rest_low.format(free_mb=800.0) and '800' in low
+    assert full == WORDS.card_rest_full.format(free_mb=200.0) and '200' in full
+    for text in (low, full):
+        assert 'still saving' in text and 'updates' in text and 'logs' in text
+    rig.rest.free = 5000.0
+    rig.tick(after=2)
+    rig.tick(after=5)
+    assert rig.said()[-1] == ('fixed', WORDS.pi_fixed.card_rest)
+
+
+def test_the_rest_of_the_card_is_not_watched_in_plain_mode():
+    rig = Rig(rest_mb=10.0)
+    rig.tick()
+    assert rig.said() == []
+
+
+def test_saving_off_is_said_once_and_ranked_serious():
+    rig = Rig(saving=Saving.OFF)
+    rig.tick()
+    rig.tick(after=2)
+    assert rig.said() == [('problem', WORDS.saving_off)]
+    assert 'nothing is being saved' in WORDS.saving_off.lower()
+    assert "If Desk Talk's space is missing" in WORDS.saving_off
+    assert "raspberry_pi/README.md" in WORDS.saving_off
+    assert rig.notifier.sent[0]['notify'] == 'warning'
+
+
+def test_plain_mode_words_are_unchanged():
+    rig = Rig(free_mb=1500.0)
+    rig.tick()
+    rig.disk.free = 400.0
+    rig.tick(after=2)
+    assert rig.said() == [('problem', WORDS.card_low.pi.format(free_mb=1500.0)),
+                          ('problem', WORDS.card_full.pi.format(free_mb=400.0))]
 
 
 def test_a_heartbeat_that_stops_while_the_pictures_still_come_is_said():

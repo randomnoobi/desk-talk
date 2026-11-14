@@ -244,6 +244,12 @@ def test_the_app_image_can_see_no_keys_or_data():
 def test_without_buildkit_the_top_list_keeps_the_same_things_out():
     lines = (ROOT / '.dockerignore').read_text(encoding='utf-8').splitlines()
     assert {'**/.env', 'config/settings.local.yaml', 'raspberry_pi/mine', 'data', 'certs', 'models'} <= set(lines)
+    assert {'data.img*', 'data.before-room-*'} <= set(lines)      # Desk Talk's room on the Pi, and the old folder
+
+
+def test_the_room_on_the_pi_and_the_old_data_folder_are_not_in_git():
+    lines = (ROOT / '.gitignore').read_text(encoding='utf-8').splitlines()
+    assert {'/data.img*', '/data.before-room-*/'} <= set(lines)
 
 
 def test_the_camera_gets_as_few_rights_as_it_can_work_with(services):
@@ -293,3 +299,14 @@ def test_only_the_pi_reads_a_boot_id():
 def test_the_pi_reads_the_kernels_boot_id(pi_settings):
     """/proc needs nothing in compose.yaml: every container shares the Pi's kernel, so it shows the Pi's own id."""
     assert pi_settings['object_states']['boot_id_file'] == '/proc/sys/kernel/random/boot_id'
+
+
+def test_the_app_gets_the_room_settings_and_a_memory_folder(services):
+    """start.sh looks for the room's marker when DATA_ROOM is yes, and saves nothing to the card without it: the app
+    then writes to a folder in memory instead (raspberry_pi/data_room.sh makes the room)."""
+    app = services['app']
+    assert app['environment']['DATA_ROOM'] == '${DATA_ROOM_ON:-no}'
+    assert app['environment']['DATA_ROOM_MARKER'] == '${DATA_ROOM_MARKER:-.desktalk-data-room}'
+    assert app['environment']['MEMORY_DATA_FOLDER'] == '/memory-data'
+    assert app['tmpfs'] == [
+        '/memory-data:size=${APP_MEMORY_DATA_SIZE:-200m},uid=${PI_USER_ID:-1000},gid=${PI_GROUP_ID:-1000},mode=0700']

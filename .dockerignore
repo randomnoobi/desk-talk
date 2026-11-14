@@ -5,6 +5,8 @@
 config/settings.local.yaml
 raspberry_pi/mine
 data
+data.img*
+data.before-room-*
 models
 certs
 .git

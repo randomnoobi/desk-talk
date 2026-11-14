@@ -6,6 +6,9 @@
 # containers someone stopped by hand, and it shows in `systemctl status desktalk` and `journalctl -u desktalk`.
 # It doesn't wait for the network: the Pi has to start with no Wi-Fi.
 #
+# Before it starts them, it writes this boot's numbers for the camera's devices into .env (device_numbers.sh): Docker's
+# own rule would start the camera container with the numbers of the boot it was made in, which may not be this one's.
+#
 # Stopping this service leaves the containers running: Docker stops them cleanly when the Pi shuts down, and its
 # restart rule then still brings them back. To stop them yourself, in raspberry_pi: docker compose stop
 
@@ -20,6 +23,10 @@ RemainAfterExit=yes
 # The Pi's own user, who is in the docker group, so this needs no root. compose.yaml and .env are in this folder.
 User=@PI_USER@
 WorkingDirectory=@COMPOSE_FOLDER@
+# First, this boot's numbers for the camera's devices. The kernel can number them differently at any boot, and the
+# camera container may open only the numbers in .env; when one changed, the `up -d` below makes the camera container
+# again with the new one. The - means a failure here never stops the containers starting.
+ExecStartPre=-@BASH@ device_numbers.sh
 # Never a build here: that takes many minutes and the internet. install.sh and update.sh build.
 ExecStart=@DOCKER@ compose up -d --no-build
 # The camera waits for the app's health check, so a start can take a minute or two.

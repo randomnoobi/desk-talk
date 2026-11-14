@@ -119,7 +119,10 @@ Use `app` or `detector` in place of `camera` for the others. The app also writes
 The install sets up `desktalk.service` (from `raspberry_pi/systemd/desktalk.service`), which starts the three
 containers each time the Pi boots, after a power cut too, with or without Wi-Fi. It runs as your own user, who is in the
 docker group, so it needs no root, and it never builds: it only starts what the install or the update built. Docker's own
-rule (`restart: unless-stopped`) brings them back as well, so either one is enough. To check it, **on the Pi**:
+rule (`restart: unless-stopped`) brings them back as well. First, though, it writes this boot's numbers for the camera's
+devices into `.env` (`raspberry_pi/device_numbers.sh`): the kernel can number them differently at any boot, and the
+camera container may open only the numbers in `.env`, so after a boot that changed them only this brings the camera
+back. To check it, **on the Pi**:
 
 ```bash
 systemctl status desktalk          # "active (exited)" means it started them; it has nothing more to do until the next boot
@@ -316,9 +319,17 @@ cd ~/desk-talk/raspberry_pi && docker compose stop camera
 ```
 
 then `rpicam-hello` should show a picture (check the ribbon cable if not), and `docker compose up -d` starts the camera
-again. If `rpicam-hello` works but the camera container says it can't open the camera, the numbers for the camera's devices
-in `.env` (`CAMERA_MEDIA_MAJOR`, `CAMERA_DMA_HEAP_MAJOR`) may have changed with a kernel update: running
-`bash ~/desk-talk/raspberry_pi/update.sh` fills them in again. For a USB webcam set `pi.camera: usb` in `raspberry_pi/mine/settings.mine.yaml`.
+again. If `rpicam-hello` works but the camera container says it can't open the camera ("Operation not permitted" on
+`/dev/media*`), the numbers for the camera's devices in `.env` (`CAMERA_MEDIA_MAJOR`, `CAMERA_DMA_HEAP_MAJOR`) may not
+be this boot's. The kernel can number them differently at any boot, and `desktalk.service` writes them again each time
+before it starts the containers. To do it by hand, **on the Pi**:
+
+```bash
+cd ~/desk-talk/raspberry_pi && bash device_numbers.sh && docker compose up -d
+```
+
+`journalctl -u desktalk -b` shows what it found at this boot. For a USB webcam set `pi.camera: usb` in
+`raspberry_pi/mine/settings.mine.yaml`.
 
 "No picture from the camera ... it seems stuck": the camera stopped giving pictures for `pi.restart_after_missed_pictures`
 picture times, so the camera program stopped and Docker started the container again. If it keeps happening, check the
@@ -345,9 +356,12 @@ clears old images. Then it cuts Docker's saved build steps down to `INSTALL_KEEP
 ones not used for longest first, so they can't take over the card over many updates. A whole build's steps take about
 13 GB and are kept, since a whole new build takes 12 to 21 minutes; if the card runs low they are all cleared. (Docker
 28 and newer call that `--max-used-space`, older ones `--keep-storage`; if neither works it says so, with how much room
-they take.) It needs no sudo on a Pi `install.sh` set up. On a Pi an older `install.sh` set up, without the journal file
-or `desktalk.service`, it asks for sudo once to put them in, since the containers log to the journal and without that
-file their logs would be lost at every restart. If sudo doesn't work there, it says to run `install.sh` once. It takes
+they take.) It needs no sudo on a Pi this version's `install.sh` set up. On a Pi an older `install.sh` set up, it asks
+for sudo once: to put in the journal file or `desktalk.service` if they're missing, since the containers log to the
+journal and without that file their logs would be lost at every restart, and to put in the new `desktalk.service` if
+this version changed it (it now writes this boot's device numbers for the camera first, so a power cut can't leave the
+camera container unable to open the camera). Then it restarts `desktalk.service`. If sudo doesn't work there, it says
+what that leaves undone and to run `install.sh` once. It takes
 `--dry-run` too. Your data, the pairing key, the models, `.env` and your own settings (`raspberry_pi/mine/settings.mine.yaml`) stay. If `git pull` couldn't run
 (no internet, or a file you changed by hand), it says so and rebuilds with the code that's there.
 
@@ -409,10 +423,81 @@ It runs while you're logged in; a Mac that was asleep then runs it when it wakes
 
 ### What keeps the SD card from filling up
 
-The camera's pictures are kept in memory, not on the card. The app's log files have a size limit (`logging` in
+Desk Talk's own space has a fixed size (see below), so it can't fill the card. The camera's pictures are kept in memory, not on the card. The app's log files have a size limit (`logging` in
 `config/settings.yaml`), the event log keeps 30 days (`event_log.keep_days`), the story pictures a set number per
 object (`object_story`), and the object state database 30 days (`object_states.keep_days`). Docker's saved build
 steps are cut down after each update (see [Updating](#updating)).
+
+### Desk Talk's own space on the SD card
+
+`install.sh` gives Desk Talk a space of its own on the SD card: one big file, `~/desk-talk/data.img`, that the Pi
+mounts as the `data/` folder. Everything Desk Talk saves goes in it (the event log, habits, to-dos, desk rules, story
+pictures and the object state database). Because the space has a fixed size, nothing else on the card can take it
+away: if the rest of the card fills up, Desk Talk keeps saving. The card's own system, the updates and the Pi's logs
+stay outside it, so they keep their own room.
+
+- **How big:** `DATA_ROOM_SIZE_MB` in `raspberry_pi/.env`, 8192 (8 GB) to begin with. If the card is too small for
+  that, `install.sh` makes it smaller, but never under `DATA_ROOM_SMALLEST_MB` (1024). Under that it stops, changes
+  nothing, and says how much room to free.
+- **Making it bigger:** raise `DATA_ROOM_SIZE_MB` and run `install.sh` again. The space grows and your history stays.
+  It can't shrink: if you lower the number, `install.sh` says so and leaves it as it is.
+- **The old folder:** the first time, `install.sh` copies your `data/` folder into the space, checks the copy, and keeps
+  the old one next to it as `data.before-room-<date-time>` (for example `data.before-room-2026-11-11-103015`). Nothing is
+  deleted. When you're happy the history is all there, **on the Pi**, delete it to get its room back:
+
+  ```bash
+  rm -r ~/desk-talk/data.before-room-2026-11-11-103015
+  ```
+
+- **Three checks:** in `/api/health` → `checks`. Lens speaks up only when one of them is in trouble:
+  - `card` is the free space in Desk Talk's own space (levels `room_warning_below_mb` and `room_serious_below_mb` in
+    `health_checks`).
+  - `card_rest` is the free space on the rest of the SD card (`card_rest_warning_below_mb` and
+    `card_rest_serious_below_mb`). When it runs low, Lens says Desk Talk is still saving, but updates and the Pi's
+    logs need room.
+  - `saving` says whether history is being saved. It's `ok` normally and `serious` when the space is missing and
+    nothing is saved (see below).
+- **Updates:** `update.sh` leaves the space alone. On a Pi that doesn't have one yet, it asks for sudo once to make it.
+  Making it bigger needs sudo, so `update.sh` doesn't: it says to run `install.sh` for that.
+- **Trims:** Raspberry Pi OS trims its disks once a week (`fstrim`), which would give part of the space back to the
+  card. Trims are switched off for the space each time it's mounted; if that doesn't work, `install.sh` says so.
+- **A move cut short:** if the power goes while `install.sh` moves your history into the space, nothing is lost: the
+  history is in the old folder and in a checked copy, `data.img.new`. Until the move is finished Desk Talk saves
+  nothing; run `install.sh` again **on the Pi** and it finishes the move. Don't delete `data.img.new` by hand unless
+  `install.sh` says to.
+
+### If Desk Talk's space is missing
+
+If the space isn't mounted at start-up, Desk Talk doesn't write to the SD card's bare `data/` folder. It runs with
+nothing saved, keeping a little in memory, and Lens says so. Pictures and warnings still work. History from before is
+safe in `data.img`. To bring the space back:
+
+1. **On the Pi**, see why it didn't mount:
+
+   ```bash
+   systemctl status desktalk-data-room
+   ```
+
+2. **On the Pi**, if the status mentions a problem with the file, check it (this fixes small errors, and asks before
+   anything bigger):
+
+   ```bash
+   sudo e2fsck -f ~/desk-talk/data.img
+   ```
+
+3. **On the Pi**, mount it:
+
+   ```bash
+   sudo systemctl start desktalk-data-room
+   ```
+
+4. **On the Pi**, restart the app so it saves into the space again:
+
+   ```bash
+   cd ~/desk-talk/raspberry_pi && docker compose restart app
+   ```
+
+Never delete `data.img` to "start fresh": it holds the history. `install.sh` won't make a new one over it.
 
 ## Choosing the model
 
