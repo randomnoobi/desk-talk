@@ -51,8 +51,8 @@ camera:
   webcam_warmup_reads: 10     # pictures tried before deciding a webcam doesn't work
   webcam_max_index: 4         # if the chosen webcam doesn't work, webcams 0 up to (not including) this are tried
   pair_key_bytes: 6           # random bytes in a new pairing key (6 makes an 8-letter key)
-  pair_key_file: certs/pair-key.txt  # the pairing key is kept here, so the Pi's command and the phone
-                              # link stay the same after a restart
+  pair_key_file: certs/pair-key.txt  # the pairing key is kept here, so the phone link stays the same
+                              # after a restart
   keep_newer_picture_sec: 3   # a Pi picture can arrive after one taken later (the Pi sends it once its detector
                               # is done): the live view keeps the later one, unless it hasn't changed for this long
   pi_clock_pictures: 30       # the Pi's clock is judged by the quickest of its last this many pictures (the others
@@ -806,7 +806,9 @@ dev:
   ui_folder: dev_ui/dist        # where `npm run build` in dev_ui/ puts the page
   vite_port: 5173               # `npm run dev` serves the page here while you work on it
   poll_sec: 1                   # how often the page asks for new numbers
-  pi_address: desktalk.local:5000   # where the Pi tab fetches the Pi's numbers from: its name and port
+  pi_address: desktalk.local:5000   # the Pi's name and port: the Pi tab fetches the Pi's numbers from here, and on
+                                    # a computer the app page points here, since the Pi's camera sends its pictures
+                                    # to the Pi's own Desk Talk (yours may be desktalk-pi.local:5000: `hostname` on the Pi)
   pi_stats_timeout_sec: 3       # how long the Pi may take to answer before the tab says it can't reach it
   checks:                       # the "Run everything" button: these run one after the other
     - name: Fast tests

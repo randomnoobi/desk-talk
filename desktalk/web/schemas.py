@@ -228,6 +228,7 @@ class UiPi(BaseModel):
     fps: float
     delete_every_min: float
     public_address: str              # web.public_address: when set, the Pi starts its own camera
+    address: str                     # dev.pi_address: where the Pi's own Desk Talk is, shown on a computer
 
 
 class UiCloud(BaseModel):

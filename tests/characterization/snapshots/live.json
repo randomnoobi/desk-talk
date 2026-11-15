@@ -45,7 +45,6 @@
         }
       ]
     },
-    "pi_command": "str",
     "safety": {
       "explanations": [
         "str"

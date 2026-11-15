@@ -90,13 +90,15 @@ def test_startup_in_docker_skips_the_pi_command(tmp_path, capsys):
     assert not any('raspberry_pi.camera' in line for line in shown)
 
 
-def test_startup_on_a_computer_points_to_the_page_and_the_key_file_for_the_pi(tmp_path, capsys):
-    config = desk_config(tmp_path)
+def test_startup_on_a_computer_points_to_the_pis_own_page_and_no_command(tmp_path, capsys):
+    """The Pi's camera sends its pictures to the Pi's own Desk Talk, so a computer says where that is
+    (dev.pi_address), not a command that would start a second camera program on the Pi."""
+    config = changed(desk_config(tmp_path), 'dev', pi_address='my-pi.local:5000')
     shown = shown_lines(config, 'pi', capsys)
     assert any('http://localhost:5000' in line for line in shown)
-    [by_hand] = [line for line in shown if 'raspberry_pi.camera' in line]
-    assert f'--server http://{DOCKER_ADDRESS}:5000' in by_hand and '--key-file' in by_hand and '--key ' not in by_hand
-    assert any(str(config.resolve(config.camera.pair_key_file)) in line for line in shown)
+    assert any('http://my-pi.local:5000' in line for line in shown)
+    assert not any('raspberry_pi.camera' in line or '--key' in line for line in shown)
+    assert not any(str(config.resolve(config.camera.pair_key_file)) in line for line in shown)
 
 
 @pytest.mark.parametrize('public', ['', PUBLIC])

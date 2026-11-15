@@ -81,3 +81,12 @@ def test_a_public_address_that_would_not_open_the_app_is_refused(tmp_path, addre
     project = project_with_local(tmp_path, {'web': {'public_address': address}})
     with pytest.raises(ConfigError, match=r'public_address must be a name and the port.*like desktalk\.local:5000'):
         load_config(root=project, environ={})
+
+
+@pytest.mark.parametrize('written', [
+    'desktalk-pi.local:5000', ' desktalk-pi.local:5000 ', 'http://desktalk-pi.local:5000',
+    'http://desktalk-pi.local:5000/', ' http://desktalk-pi.local:5000/ ',
+])
+def test_the_pis_address_is_kept_as_a_name_and_port(tmp_path, written):
+    project = project_with_local(tmp_path, {'dev': {'pi_address': written}})
+    assert load_config(root=project, environ={}).dev.pi_address == 'desktalk-pi.local:5000'

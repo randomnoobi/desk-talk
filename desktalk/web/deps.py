@@ -2,10 +2,10 @@
 What the routes share:
 
     App            the running app (desktalk/bootstrap.py → DeskTalk): def live(app: App) ...
-    ShownLinks     the Pi command and the phone link (desktalk/web/pairing.py)
+    ShownLinks     the app's address and the phone link (desktalk/web/pairing.py)
     Streams        the open live streams (desktalk/web/streams.py)
-    FromHere       True when the request comes from this computer (the Pi command and the phone link are
-                   only shown there, not to every device on the Wi-Fi)
+    FromHere       True when the request comes from this computer (the phone link is only shown there, not to
+                   every device on the Wi-Fi)
     DevOnly        403 unless the request comes from this computer, to the server's own address or the Vite dev
                    server's (Host), and, when it says which page sent it (Origin), from the server's own page or
                    the Vite dev server's (the developer page's routes)

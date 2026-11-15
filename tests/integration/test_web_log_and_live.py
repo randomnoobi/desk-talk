@@ -175,7 +175,7 @@ def test_live_reply_has_only_page_fields(tmp_path):
     rig.watch(4, LAPTOP, CUP_FAR)
     live = web_client(rig.app).get('/api/live?qr=1').json()
     assert set(live) == {'camera', 'camera_source', 'camera_index', 'agents', 'detections', 'safety',
-                         'camera_issues', 'ai', 'pi_command'}
+                         'camera_issues', 'ai'}
     assert set(live['detections']) == {'extras'}
     assert set(live['safety']) == {'explanations'}
     assert set(live['ai']) == {'ready', 'problem'}
