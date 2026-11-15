@@ -139,7 +139,6 @@ const state = {
   camIndex: 0,
   feed: 'analysis',     // 'analysis' (boxes) or 'clean'
   phone: null,          // { url, qr_svg } for phone pairing
-  piCommand: '',        // the command to run on the Pi
   view: 'chat',
   chat: 'group',
   agents: {},           // agent id → profile + on_desk / joined_at / left_at
@@ -1220,19 +1219,14 @@ function renderCamStage() {
     return;
   }
   if (state.cameraSource === 'pi') {
+    // Away from the Pi: the Pi's camera sends its pictures to the Pi's own Desk Talk, never to this computer.
+    const piUrl = `http://${ui.pi.address}`;
     stage.innerHTML = `<div class="pair">
-      <h3>Start the Raspberry Pi camera</h3>
-      <ol>
-        <li>Put the Pi on the same Wi-Fi as this computer.</li>
-        <li>On the Pi, in the desk-talk folder, run:</li>
-      </ol>
-      ${state.piCommand
-        ? `<pre class="json pi-cmd">${esc(state.piCommand)}</pre><button type="button" class="btn-quiet" id="copy-pi">Copy command</button>`
-        : '<p class="muted">Open this page on the computer running Desk Talk to see the command.</p>'}
+      <h3>The Pi's camera</h3>
+      <p>Desk Talk runs on your Raspberry Pi, and its camera sends its pictures there, not to this computer. Open the Pi's own Desk Talk:</p>
+      <pre class="json pi-cmd"><a href="${esc(piUrl)}">${esc(piUrl)}</a></pre>
+      <p class="muted">If your Pi has another name, set <code>dev.pi_address</code> in <code>config/settings.local.yaml</code>.</p>
       <p class="pair-url">It takes ${ui.pi.fps} pictures a second${ui.pi.delete_every_min ? `, keeps them on the Pi, and deletes them every ${ui.pi.delete_every_min} minutes` : ' and keeps them on the Pi'}.</p></div>`;
-    $('#copy-pi')?.addEventListener('click', () => {
-      navigator.clipboard?.writeText(state.piCommand).then(() => toast(null, 'Copied'), () => {});
-    });
     return;
   }
   const p = state.phone;
@@ -1357,7 +1351,6 @@ async function pollLive() {
   state.cameraSource = d.camera_source || state.cameraSource;
   state.camOk = !!d.camera;
   state.camIndex = d.camera_index ?? state.camIndex;
-  if (d.pi_command && d.pi_command !== state.piCommand) { state.piCommand = d.pi_command; if (!state.camOk) renderCamStage(); }
   // The QR code is only sent when asked for (?qr=1): keep the one we have when the reply has none.
   if (d.phone) state.phone = { url: d.phone.url || state.phone?.url || '', qr_svg: d.phone.qr_svg || state.phone?.qr_svg || null };
   if (state.camOk !== wasOk) {

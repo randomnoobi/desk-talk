@@ -63,20 +63,18 @@ def settings_lines(config: AppConfig, data_folder: Path | None = None) -> None:
 
 
 def address_lines(config: AppConfig, links: Links, source_kind: str) -> None:
-    """Where to open the app and how the camera gets started. The pairing key is in the Pi command and the phone
-    link, so these lines never show it (they reach the log file and `docker compose logs`): the page shows the
-    command and the QR code, on the computer the app runs on. For the Pi's camera started by hand, the lines name
-    the file the key is in."""
+    """Where to open the app and how the camera gets started. The pairing key is in the phone link, so these lines
+    never show it (they reach the log file and `docker compose logs`): the page shows the QR code, on the computer
+    the app runs on. The Pi's camera sends its pictures to the Pi's own Desk Talk, so on a computer the lines say
+    where that is (dev.pi_address)."""
     web = config.web
     if web.public_address:
         say(f'  → Open {links.web_url} on your phone or computer\n')
         return
-    key_file = config.resolve(config.camera.pair_key_file)
     if source_kind == 'pi':
-        say('\n  📷 Raspberry Pi camera: the page below shows the command to run on the Pi. The pairing key is not')
-        say(f'     printed here: it is in {key_file}. To start the camera by hand, copy that file to the Pi, and')
-        say('     there, in the desk-talk folder, run')
-        say(f'     {links.pi_command_with_key_file(key_file.name)}\n')
+        say('\n  📷 Raspberry Pi camera: Desk Talk runs on the Pi, and its camera sends its pictures there, not here.')
+        say(f'     Open the Pi\'s own Desk Talk at http://{config.dev.pi_address} (if your Pi has another name,')
+        say('     set dev.pi_address in config/settings.local.yaml).\n')
     elif source_kind == 'phone':
         say('  📱 Phone camera: open the page below on this computer, and scan the code it shows with your phone')
         say('     (same Wi-Fi). The phone will warn the connection is "not private" (it\'s this computer\'s own')

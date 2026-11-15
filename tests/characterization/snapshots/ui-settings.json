@@ -75,6 +75,7 @@
       "tilt_max": "number"
     },
     "pi": {
+      "address": "str",
       "delete_every_min": "number",
       "fps": "number",
       "public_address": "str"

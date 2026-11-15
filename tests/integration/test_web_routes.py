@@ -35,14 +35,21 @@ def test_the_pi_gets_its_settings_including_its_detector_only_with_the_key(tmp_p
     assert reply['pi']['detector']['url'] == rig.config.pi.detector.url
 
 
-def test_live_shows_the_agents_the_detections_and_the_pi_command_on_this_computer_only(tmp_path):
+def test_live_shows_the_agents_and_the_detections_and_no_pi_command(tmp_path):
+    """The Pi's camera sends to the Pi's own Desk Talk, so a computer has no command (or key) to show for it."""
     rig = DeskRig(tmp_path)
     rig.watch(4, LAPTOP)
     live = web_client(rig.app).get('/api/live').json()
     assert [a['id'] for a in live['agents'] if a['on_desk']] == ['computer']
     assert live['detections']['extras'] == []                # the laptop is in the chat, so not an extra
-    assert live['pi_command'] == f'python3 -m raspberry_pi.camera --server http://192.168.1.20:5000 --key {PAIR_KEY}'
-    assert 'pi_command' not in web_client(rig.app, from_ip=ON_THE_WIFI).get('/api/live').json()
+    assert 'pi_command' not in live and PAIR_KEY not in json.dumps(live)
+
+
+def test_ui_settings_say_where_the_pis_own_page_is(tmp_path):
+    """On a computer the desk cam panel points to the Pi's own Desk Talk, at dev.pi_address."""
+    config = changed(desk_config(tmp_path), 'dev', pi_address='my-pi.local:5000')
+    rig = DeskRig(tmp_path, config=config)
+    assert web_client(rig.app).get('/api/ui_settings').json()['pi']['address'] == 'my-pi.local:5000'
 
 
 def test_live_with_a_public_address_has_no_pi_command(tmp_path):
@@ -228,7 +235,7 @@ def test_ui_settings_reply(tmp_path):
     assert ui['desk']['edge_proximity']['danger_px'] == 35 and ui['desk']['max_desk_corners'] == 12
     assert ui['desk']['desk_border_share'] == 0.03 and ui['desk']['min_desk_corners'] == 3
     assert ui['quiet_hours'] == {'enabled': False, 'start_hour': 22, 'end_hour': 7}
-    assert ui['pi'] == {'fps': 3, 'delete_every_min': 10, 'public_address': ''}
+    assert ui['pi'] == {'fps': 3, 'delete_every_min': 10, 'public_address': '', 'address': 'desktalk.local:5000'}
     assert ui['phone'] == {'fps': 3, 'max_side': 960, 'jpeg_quality': 70, 'tilt_max': 50,
                            'capture_width': 1280, 'capture_height': 720}
     assert ui['lens_card'] == {'id': 'lens', 'name': 'Lens', 'art': 'art/lens.svg', 'color': 'coral',

@@ -234,6 +234,21 @@ def test_pi_page_uses_the_public_address_and_shows_no_command(page, tmp_path, pi
         expect(stage.locator('#copy-pi')).to_have_count(0)
 
 
+def test_on_a_computer_the_pi_panel_points_to_the_pis_own_page(page, tmp_path, pictures):
+    """Away from the Pi, the Pi's camera isn't sending here: the desk cam says where the Pi's own Desk Talk is
+    (dev.pi_address), with no command to run on the Pi."""
+    def change(config):
+        return changed(config, 'dev', pi_address='my-pi.local:5000')
+
+    with app_server(tmp_path, pictures=pictures, change=change) as server:
+        open_app(page, server.url)
+        stage = page.locator('#cam-stage')
+        expect(stage.locator('a[href="http://my-pi.local:5000"]')).to_be_visible()
+        expect(stage).to_contain_text('dev.pi_address')
+        expect(stage).not_to_contain_text('raspberry_pi.camera')
+        expect(stage.locator('#copy-pi')).to_have_count(0)
+
+
 def watch_for_errors(page: Any) -> list[str]:
     errors: list[str] = []
     page.on('pageerror', lambda exc: errors.append(f'page error: {exc}'))

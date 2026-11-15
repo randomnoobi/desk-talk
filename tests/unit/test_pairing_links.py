@@ -1,4 +1,4 @@
-"""The links the app shows: with web.public_address set they use it, and show no Pi command."""
+"""The links the app shows: with web.public_address set they use it."""
 
 from __future__ import annotations
 
@@ -10,15 +10,17 @@ KEY = 'AbC123xY'
 def test_links_use_the_address_and_port_on_a_computer():
     links = Links('192.168.1.20', 5000, KEY)
     assert links.web_url == 'http://192.168.1.20:5000'
-    assert links.pi_command == f'python3 -m raspberry_pi.camera --server http://192.168.1.20:5000 --key {KEY}'
-    assert links.pi_command_with_key_file('pair-key.txt') == (
-        'python3 -m raspberry_pi.camera --server http://192.168.1.20:5000 --key-file pair-key.txt')
 
 
-def test_a_public_address_replaces_the_address_and_there_is_no_pi_command():
+def test_a_public_address_replaces_the_address():
     links = Links('172.18.0.3', 5000, KEY, public_address='desktalk.local:5000')
     assert links.web_url == 'http://desktalk.local:5000'
-    assert links.pi_command == '' and links.pi_command_with_key_file('pair-key.txt') == ''
+
+
+def test_there_is_no_command_for_starting_the_pis_camera_by_hand():
+    """The Pi starts its own camera, sending to its own Desk Talk; nothing shows a by-hand command any more."""
+    assert not hasattr(Links('192.168.1.20', 5000, KEY), 'pi_command')
+    assert not hasattr(Links('192.168.1.20', 5000, KEY), 'pi_command_with_key_file')
 
 
 def test_the_pairing_key_is_not_in_how_links_print():

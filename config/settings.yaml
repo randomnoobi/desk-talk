@@ -806,7 +806,9 @@ dev:
   ui_folder: dev_ui/dist        # where `npm run build` in dev_ui/ puts the page
   vite_port: 5173               # `npm run dev` serves the page here while you work on it
   poll_sec: 1                   # how often the page asks for new numbers
-  pi_address: desktalk.local:5000   # where the Pi tab fetches the Pi's numbers from: its name and port
+  pi_address: desktalk.local:5000   # the Pi's name and port: the Pi tab fetches the Pi's numbers from here, and on
+                                    # a computer the app page points here, since the Pi's camera sends its pictures
+                                    # to the Pi's own Desk Talk (yours may be desktalk-pi.local:5000: `hostname` on the Pi)
   pi_stats_timeout_sec: 3       # how long the Pi may take to answer before the tab says it can't reach it
   checks:                       # the "Run everything" button: these run one after the other
     - name: Fast tests

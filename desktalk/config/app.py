@@ -950,7 +950,7 @@ class DevSettings(_Section):
     ui_folder: Path
     vite_port: Port
     poll_sec: PositiveNumber
-    pi_address: str                   # the Pi's name and port, like desktalk.local:5000 (the Pi tab)
+    pi_address: str                   # the Pi's name and port, like desktalk.local:5000 (the Pi tab, the app page)
     pi_stats_timeout_sec: PositiveNumber
     checks: Annotated[tuple[DevCheck, ...], Field(min_length=1)]
     test_command: Command

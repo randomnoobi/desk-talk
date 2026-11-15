@@ -91,7 +91,7 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 | Method | Path | What it does | Called by | Access |
 |---|---|---|---|---|
-| GET | `/api/live` | Only what the desk cam panel shows, in one request (the app asks every 1.5 s): `camera`, `camera_source`, `camera_index`, `agents`, `detections.extras` (the other things on the desk, not in the chat: `[{"yolo_class", "ignored"}]`), `safety.explanations` (the "Heads up" sentences), `camera_issues`, `ai: {ready, problem}`, and `phone: {url, qr_svg}` or `pi_command` (left out when `web.public_address` is set: the Pi starts its own camera). `?qr=1` adds the phone link's QR code. | `web_app/app.js`, `tests/e2e/` | anyone on the network; the Pi command, the phone link and the QR code **this computer only** |
+| GET | `/api/live` | Only what the desk cam panel shows, in one request (the app asks every 1.5 s): `camera`, `camera_source`, `camera_index`, `agents`, `detections.extras` (the other things on the desk, not in the chat: `[{"yolo_class", "ignored"}]`), `safety.explanations` (the "Heads up" sentences), `camera_issues`, `ai: {ready, problem}`, and `phone: {url, qr_svg}` with the phone camera. `?qr=1` adds the phone link's QR code. | `web_app/app.js`, `tests/e2e/` | anyone on the network; the phone link and the QR code **this computer only** |
 | GET | `/api/status` | A short summary: running, camera, agents, safety state, uptime. | `web_app/app.js` (once, when the page starts) | anyone on the network |
 
 ### An object's story (2)
@@ -156,7 +156,7 @@ number, kept between 1 and the most `web.list_sizes` allows; anything else is a 
 |---|---|---|---|---|
 | GET | `/api/rules` | The danger rules and the desk corners, plus the objects a zone can be set for. | `web_app/app.js` | anyone on the network |
 | PUT | `/api/rules` | Change some of them. When the desk corners are marked, it also notes how the phone was tilted. | `web_app/app.js` | anyone on the network |
-| GET | `/api/ui_settings` | The numbers and words the app page uses (refresh times, waits, list sizes, the sensitivity steps, the starter to-do and counters, Lens's card ...), so the page keeps no copies of its own. Its `pi` part is `{fps, delete_every_min, public_address}`: `public_address` is `web.public_address` (`desktalk.local:5000` on the Pi, empty on a computer), and when it is set the page says the Pi starts its own camera instead of showing a command to run. | `web_app/app.js` (on start), `tests/e2e/test_page.py` | anyone on the network |
+| GET | `/api/ui_settings` | The numbers and words the app page uses (refresh times, waits, list sizes, the sensitivity steps, the starter to-do and counters, Lens's card ...), so the page keeps no copies of its own. Its `pi` part is `{fps, delete_every_min, public_address, address}`: `public_address` is `web.public_address` (`desktalk.local:5000` on the Pi, empty on a computer), and when it is set the page says the Pi starts its own camera. Otherwise (on a computer) the page links to the Pi's own Desk Talk at `address` (`dev.pi_address`), since the Pi's camera sends its pictures there. | `web_app/app.js` (on start), `tests/e2e/test_page.py` | anyone on the network |
 
 - `PUT /api/rules`: `{"danger_zones": ..., "edge_proximity": ..., "chain_reaction": ..., "temporal": ...,
   "desk_outline": [[x, y], ...]}`. Only the parts sent change; each corner is 0 to 1 of the picture. An

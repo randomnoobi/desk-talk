@@ -3,8 +3,6 @@ How the Pi and the phone find the app:
 
     links = Links(lan_ip(), web_port, pair_key, phone_port=5443, public_address='')
     links.web_url         # http://192.168.1.20:5000  (http://desktalk.local:5000 when public_address says so)
-    links.pi_command      # python3 -m raspberry_pi.camera --server http://192.168.1.20:5000 --key AbC123xY
-                          # ('' when public_address is set: the Pi starts its own camera)
     links.phone_url       # https://192.168.1.20:5443/phone?key=AbC123xY  ('' when the phone isn't the camera)
     links.phone_qr_svg    # that link as a QR code, for the app to show
 
@@ -66,21 +64,6 @@ class Links:
     def web_url(self) -> str:
         """Where other devices open the app."""
         return f'http://{self.public_address or f"{self.address}:{self.web_port}"}'
-
-    def pi_command_with_key_file(self, key_file: str) -> str:
-        """What to run on the Pi, in the desk-talk folder, with the key read from a file there (so it is never
-        written to a log). '' when public_address is set: the Pi starts its own camera."""
-        if self.public_address:
-            return ''
-        return f'python3 -m raspberry_pi.camera --server {self.web_url} --key-file {key_file}'
-
-    @property
-    def pi_command(self) -> str:
-        """What to run on the Pi, in the desk-talk folder, with the key in it. Only for the page, shown on this
-        computer; never log it. '' when public_address is set."""
-        if self.public_address:
-            return ''
-        return f'python3 -m raspberry_pi.camera --server {self.web_url} --key {self.pair_key}'
 
     @property
     def phone_url(self) -> str:
