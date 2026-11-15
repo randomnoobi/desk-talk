@@ -31,7 +31,7 @@ for the live view.
    (`wire.VERSION = 2`): `multipart/form-data` with two parts:
    - `info`: JSON with `version`, `frame_id` (e.g. `pi-000123`), `taken_at`, `lux`, `detector`
      (`ok` / `busy` / `off`), `detector_reason`, `detections`, `detect_ms`, `model` and `health` (which
-     camera, pictures stored, disk free, last cleanup, processor temperature, the slow-down flags it can read).
+     camera, pictures stored, free space in its picture folder, last cleanup, processor temperature, the slow-down flags it can read).
    - `picture`: the JPEG.
 4. In the `app` container, `desktalk/web/routers/pi.py` checks the key, reads the body (at most
    `web.pi_upload_max_mb`), decodes it with `wire.decode_upload`, and hands it to `PiFrameSource`

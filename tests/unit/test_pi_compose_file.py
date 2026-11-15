@@ -347,3 +347,14 @@ def test_the_phone_topic_reaches_the_app_settings_from_the_environment():
     """The app container gets it as an environment variable, which the settings read like a line in .env."""
     config = load_config(root=ROOT, environ={'NTFY_TOPIC': 'desktalk-from-compose'}, dotenv=Path('/nonexistent'))
     assert config.secrets.ntfy_topic.get_secret_value() == 'desktalk-from-compose'
+
+
+def test_the_picture_folder_warning_fits_inside_the_picture_folder(pi_settings):
+    """The developer page turns the Pi's picture folder amber below dev.health.pi_disk_warn_mb. The folder is only
+    CAMERA_PHOTOS_SIZE big (in memory), so a limit above that would be amber all the time; and it should warn before
+    the camera starts deleting early (pi.min_free_mb in settings.pi.yaml)."""
+    size = env_file(PI / '.env.example')['CAMERA_PHOTOS_SIZE']
+    assert size.endswith('m')
+    folder_mb = int(size.removesuffix('m'))
+    warn_mb = load_config(root=ROOT, environ={}).dev.health.pi_disk_warn_mb
+    assert pi_settings['pi']['min_free_mb'] < warn_mb < folder_mb

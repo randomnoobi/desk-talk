@@ -217,8 +217,8 @@ class DeskTalk:
     system_stats      the system numbers of the machine the app runs on, kept for a while: history()
                       (/api/system/stats), and the background job that reads them (only run when settings →
                       system_stats.enabled is on: on the Pi)
-    pi_stats_link     the computer's line to the Pi's numbers (/api/dev/pi_stats); None when settings →
-                      dev.enabled is false
+    pi_stats_link     the computer's line to the Pi's numbers and health (/api/dev/pi_stats, /api/dev/health);
+                      None when settings → dev.enabled is false
     pi_log            the Pi log tab's reader: sources(), read() (/api/dev/pi_log), and the background job that
                       stops reading once the tab stops asking and connects again after a lost connection; close()
                       at stop() (None when settings → dev.enabled is false)
@@ -477,8 +477,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         cloud_link_factory  makes the line to the cloud server from its address and token (HttpCloudLink); only
                             called once the computer is linked
         stats_reader        reads the system numbers (ProcReader on settings → system_stats)
-        pi_stats_link       the developer page's line to the Pi's numbers (HttpPiStatsLink to dev.pi_address),
-                            when settings → dev.enabled is on
+        pi_stats_link       the developer page's line to the Pi's numbers, health and event log status
+                            (HttpPiStatsLink to dev.pi_address), when settings → dev.enabled is on
     And for every run: `saving`, the saving mode start.sh gives (desktalk/runtime/saving.py). With Saving.OFF
     nothing is written to the project: the danger zones (settings → storage.rules_folder) go under `data_folder`
     too, which must then be given (server.py works it out once, with desktalk/runtime/saving.py folder_for). With

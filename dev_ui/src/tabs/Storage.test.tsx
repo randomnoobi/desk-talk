@@ -33,7 +33,11 @@ const FILES: DataFile[] = [
 
 const PI: Partial<PiStatus> = { last_frame_id: 'a1', photos_stored: 42, disk_free_mb: 2048, last_cleanup_ts: 1_700_000_000 }
 
-function fakeServer(pi: Partial<PiStatus> | null = PI) {
+/** The reply GET /api/dev/health gives: from 'here' (this computer's own Desk Talk) unless a test says otherwise. */
+type Whose = { from: 'pi' | 'here', address: string }
+
+function fakeServer(pi: Partial<PiStatus> | null = PI, whose: Whose = { from: 'here', address: '' },
+                    healthStatus = 200) {
   const asked: string[] = []
   vi.stubGlobal('fetch', vi.fn(async (path: string) => {
     asked.push(path)
@@ -43,7 +47,13 @@ function fakeServer(pi: Partial<PiStatus> | null = PI) {
       const file = decodeURIComponent(path.split('=')[1])
       return answer({ path: file, text: `the start of ${file}` })
     }
-    if (path === '/api/health') return answer({ pi })
+    if (path === '/api/dev/health') {
+      if (healthStatus !== 200) {
+        return new Response(JSON.stringify({ error: `Couldn't reach the Pi's Desk Talk at desktalk-pi.local:5000.` }),
+                            { status: healthStatus })
+      }
+      return answer({ pi, ...whose })
+    }
     return new Response(JSON.stringify({ error: 'not in this test' }), { status: 404 })
   }))
   return asked
@@ -154,12 +164,33 @@ describe('Storage tab: this computer', () => {
 })
 
 describe('Storage tab: the Pi', () => {
-  it('shows photos stored, disk free and the last cleanup', async () => {
+  it('shows photos stored, the picture folder\'s free space and the last cleanup', async () => {
     fakeServer()
     render(<Storage settings={SETTINGS} />)
     expect(await screen.findByText('42')).toBeInTheDocument()
     expect(screen.getByText('2 GB')).toBeInTheDocument()
+    expect(screen.getByText('Picture folder free (in memory)')).toBeInTheDocument()
     await waitFor(() => expect(screen.getByText(/ago/)).toBeInTheDocument())
+  })
+
+  it('says the numbers are the Pi\'s own, at its address, when the reply is from the Pi', async () => {
+    fakeServer(PI, { from: 'pi', address: 'desktalk-pi.local:5000' })
+    render(<Storage settings={SETTINGS} />)
+    expect(await screen.findByText('42')).toBeInTheDocument()
+    expect(screen.getByText("From the Pi's own Desk Talk (desktalk-pi.local:5000).")).toBeInTheDocument()
+  })
+
+  it('says nothing about whose numbers they are when the reply is from this computer', async () => {
+    fakeServer(PI, { from: 'here', address: '' })
+    render(<Storage settings={SETTINGS} />)
+    expect(await screen.findByText('42')).toBeInTheDocument()
+    expect(screen.queryByText(/the Pi's own Desk Talk/)).not.toBeInTheDocument()
+  })
+
+  it('shows the words of a 502 when the Pi does not answer', async () => {
+    fakeServer(PI, { from: 'pi', address: 'desktalk-pi.local:5000' }, 502)
+    render(<Storage settings={SETTINGS} />)
+    expect(await screen.findByText("Couldn't reach the Pi's Desk Talk at desktalk-pi.local:5000.")).toHaveAttribute('role', 'alert')
   })
 
   it('says so when the camera is not the Pi', async () => {

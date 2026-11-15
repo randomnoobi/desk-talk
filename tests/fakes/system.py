@@ -51,16 +51,49 @@ class FakeStats:
 
 
 class FakePiStatsLink:
-    """Answers with `reply` (one empty sample at 10.0 when not given), or raises StatsUnavailable(problem) when a
-    problem is given. `asked` records each `since`."""
+    """Answers fetch() with `reply` (one empty sample at 10.0 when not given) and health() with `health_reply` (like
+    the Pi's own GET /api/health when not given), or raises StatsUnavailable(problem) for both when a problem is
+    given. `asked` records each `since`."""
 
-    def __init__(self, reply: dict[str, Any] | None = None, problem: str = ''):
+    def __init__(self, reply: dict[str, Any] | None = None, problem: str = '', *,
+                 health_reply: dict[str, Any] | None = None):
         self.reply = reply if reply is not None else {**EMPTY_REPLY, 'samples': [StatsSample(at=10.0).to_dict()]}
+        self.health_reply = health_reply if health_reply is not None else _pi_health()
         self.problem = problem
         self.asked: list[float | None] = []
 
     def fetch(self, since: float | None) -> dict[str, Any]:
         self.asked.append(since)
+        return self._answer(self.reply)
+
+    def health(self) -> dict[str, Any]:
+        return self._answer(self.health_reply)
+
+    def _answer(self, reply: dict[str, Any]) -> dict[str, Any]:
         if self.problem:
             raise StatsUnavailable(self.problem)
-        return self.reply
+        return reply
+
+
+def _pi_health() -> dict[str, Any]:
+    """Like the Pi's GET /api/health (desktalk/web/routers/health.py): its camera sending, nothing wrong. Its keys
+    are the real route's (tests/integration/test_web_dev.py checks)."""
+    def check(level: str, value: float | None, unit: str) -> dict[str, Any]:
+        return {'level': level, 'value': value, 'unit': unit}
+
+    return {
+        'uptime_sec': 600.0, 'jobs': [],
+        'scheduler': [{'name': 'compact event log', 'every_sec': 3600.0, 'runs': 1, 'last_error': None,
+                       'next_in_sec': 1800.0, 'last_run_at': 8.0, 'next_run_at': 11.0}],
+        'events': [{'name': 'event log', 'handled': 12, 'waiting': 0, 'dropped': 0, 'errors': 0}],
+        'camera': {'source': 'pi', 'connected': True, 'fps': 3.0, 'pictures_received': 1800},
+        'pi': {'last_frame_id': 'f-1', 'camera': 'picamera2', 'photos_stored': 3, 'disk_free_mb': 20000,
+               'last_cleanup_ts': 9.0, 'cpu_temp_c': 52.0, 'throttled': '0x0', 'upload_format': 2, 'detector': 'ok',
+               'detector_reason': '', 'detect_ms': 120.0, 'model': 'yolo11n', 'clock_off_sec': 0.1},
+        'detection': {'pictures_analysed': 0, 'detect_ms': None, 'problem': None, 'model': 'on the Pi'},
+        'ai': {'ready': False, 'label': '', 'problem': None},
+        'checks': {'camera': check('ok', None, ''), 'detections': check('ok', 0.4, 's'),
+                   'pi_temperature': check('ok', 52.0, '°C'), 'card': check('ok', 20000.0, 'MB'),
+                   'pi_heartbeat': check('ok', 2.0, 's'), 'card_rest': check('ok', 9000.0, 'MB'),
+                   'saving': check('ok', None, '')},
+    }

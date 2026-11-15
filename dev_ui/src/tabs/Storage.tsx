@@ -1,9 +1,9 @@
 /// <reference types="vite/client" />
 // The Storage tab: what this browser keeps for the app page, what's in the data folder on this
-// computer, and what the Pi says about its own card. Everything here is read-only, except deleting
-// one localStorage key after you say yes.
+// computer, and what the Pi says about its own card (asked of the Pi's own Desk Talk when the Pi is the
+// camera). Everything here is read-only, except deleting one localStorage key after you say yes.
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { getFiles, getHealth, getPreview, type DataFile, type DevSettings } from '../api'
+import { getFiles, getPreview, getShownHealth, type DataFile, type DevSettings } from '../api'
 import {
   deleteBrowserKey, deleteQuestion, readBrowserStorage, whereThisPageIs, type BrowserKey,
 } from '../browserStorage'
@@ -238,7 +238,7 @@ function Stat(props: { label: string, children: ReactNode }): JSX.Element {
 }
 
 function OnThePi(props: { settings: DevSettings }): JSX.Element {
-  const health = usePoll(getHealth, props.settings.poll_sec * 1000)
+  const health = usePoll(getShownHealth, props.settings.poll_sec * 1000)
   const pi = health.data?.pi
   const notYet = <span className="muted">not sent yet</span>
   const now = Date.now() / 1000
@@ -253,7 +253,7 @@ function OnThePi(props: { settings: DevSettings }): JSX.Element {
     body = (
       <div className="cards">
         <Stat label="Photos stored">{pi.photos_stored ?? notYet}</Stat>
-        <Stat label="Disk free">
+        <Stat label="Picture folder free (in memory)">
           {pi.disk_free_mb === undefined
             ? notYet
             : lowDisk
@@ -272,6 +272,9 @@ function OnThePi(props: { settings: DevSettings }): JSX.Element {
   return (
     <div className="card">
       <h2>On the Pi</h2>
+      {health.data?.from === 'pi' && (
+        <p className="muted small">From the Pi's own Desk Talk ({health.data.address}).</p>
+      )}
       <ErrorLine error={health.error} />
       {body}
     </div>

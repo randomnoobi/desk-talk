@@ -1,6 +1,8 @@
 """The Pi's numbers on the web: GET /api/system/stats (desktalk/web/routers/system.py, on the Pi) and
-GET /api/dev/pi_stats (desktalk/web/routers/dev.py, the developer page on a computer, which fetches the Pi's).
-The routers are built here with fakes; the whole app's characterization cases are in tests/characterization/."""
+GET /api/dev/pi_stats and /api/dev/health (desktalk/web/routers/dev.py, the developer page on
+a computer, which fetches the Pi's). The routers are built here with fakes; the same routes on the whole app (and
+the computer's own health when the Pi isn't elsewhere) are in tests/integration/test_web_dev.py, and the
+characterization cases in tests/characterization/."""
 
 from __future__ import annotations
 
@@ -18,6 +20,7 @@ from tests.unit.test_web_dev_trace import app_config
 
 
 def client_for(router, **parts) -> TestClient:
+    parts.setdefault('pi', object())                 # the camera is the Pi (only whether it's there matters here)
     web = FastAPI()
     web.include_router(router)
     web.dependency_overrides[dev_only] = lambda: None
@@ -71,3 +74,23 @@ def test_the_dev_route_says_in_plain_words_when_the_pi_does_not_answer():
 
 def test_the_dev_route_is_404_without_the_developer_page():
     assert client_for(dev.router, pi_stats_link=None).get('/api/dev/pi_stats').status_code == 404
+
+
+def test_the_pi_health_comes_from_the_pi_with_its_address():
+    """A computer (web.public_address empty) whose camera is the Pi: the Pi's own reply, passed on."""
+    link = FakePiStatsLink()
+    reply = client_for(dev.router, pi_stats_link=link).get('/api/dev/health').json()
+    assert reply['from'] == 'pi'
+    assert reply['address'] == app_config().dev.pi_address
+    assert {k: v for k, v in reply.items() if k not in ('from', 'address')} == link.health_reply
+
+
+def test_the_pi_health_says_in_plain_words_when_the_pi_does_not_answer():
+    """Its own words: the System tab asked for health checks, not numbers."""
+    client = client_for(dev.router, pi_stats_link=FakePiStatsLink(problem='no answer in 3 s'))
+    response = client.get('/api/dev/health')
+    assert response.status_code == 502
+    words = app_config().prompts.dev.pi_health_unreachable.format(address=app_config().dev.pi_address,
+                                                                  problem='no answer in 3 s')
+    assert response.json() == {'error': words}
+    assert 'numbers' not in words

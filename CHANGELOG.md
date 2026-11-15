@@ -6,6 +6,12 @@ full story: what was wrong, what changed, and the checks that were run. What a p
 
 ## 2026-11-15
 
+- **The developer page shows the Pi's own health** ([#24](https://github.com/randomnoobi/desk-talk/pull/24)). On a
+  computer with the Pi as the camera, the System tab's Health checks and Pi cards (and the Storage tab's Pi card)
+  now come from the Pi itself, at `dev.pi_address`, instead of the computer's copy, which gets no pictures. The rest
+  of the tab is the computer's own, marked "(this computer)". The Pi's "disk free" row is now "picture folder free"
+  (the camera's 300 MB folder in memory, not the SD card), and its amber limit is 100 MB instead of 1000.
+
 - **On a computer, the app points to the Pi's own Desk Talk** ([#23](https://github.com/randomnoobi/desk-talk/pull/23)).
   With the Pi as the camera, the camera panel and the start-up lines used to show a command to start the Pi's camera
   by hand, but the Pi's camera sends its pictures to the Pi's own Desk Talk. They now link there instead, at
