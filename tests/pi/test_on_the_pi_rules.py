@@ -26,6 +26,7 @@ from tests.pi.on_the_pi import (
     restore_time_text,
     restored_at_this_start,
     speak_result,
+    to_the_phone_server,
 )
 
 DOCKER = '172.18.0.0/16'
@@ -97,6 +98,28 @@ def test_a_page_on_the_wifi_is_told_from_the_rest():
                                  connection('::ffff:8.8.8.8')])
 def test_anything_else_leaves_the_pi(off):
     assert off_the_pi([off], DOCKER, WIFI) == [off]
+
+
+# ── the one way out that is allowed: phone notifications ──
+NTFY = {'159.203.148.75'}                        # what the ntfy server's name points to on the Pi
+
+
+def from_container(container: str, remote: str, *, remote_port: int = 443) -> dict[str, object]:
+    return {**connection(remote, remote_port=remote_port), 'container': container}
+
+
+@pytest.mark.parametrize('remote', ['159.203.148.75', '::ffff:159.203.148.75'])
+def test_the_app_reaching_the_ntfy_server_is_the_phone_notifications(remote):
+    going = from_container('desktalk-app-1', remote)
+    assert to_the_phone_server([going], NTFY, 443) == [going]
+
+
+@pytest.mark.parametrize('other', [from_container('desktalk-camera-1', '159.203.148.75'),     # not the app
+                                   from_container('desktalk-detector-1', '159.203.148.75'),
+                                   from_container('desktalk-app-1', '8.8.8.8'),               # not the ntfy server
+                                   from_container('desktalk-app-1', '159.203.148.75', remote_port=80)])
+def test_nothing_else_counts_as_the_phone_notifications(other):
+    assert to_the_phone_server([other], NTFY, 443) == []
 
 
 # ── reading the data folder ──

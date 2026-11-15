@@ -34,7 +34,8 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 REPO = Path(__file__).resolve().parent.parent.parent if '__file__' in globals() else Path.cwd()
-CONTAINERS = ('desktalk-app-1', 'desktalk-camera-1', 'desktalk-detector-1')
+APP_CONTAINER = 'desktalk-app-1'
+CONTAINERS = (APP_CONTAINER, 'desktalk-camera-1', 'desktalk-detector-1')
 APP_ADDRESS = 'http://127.0.0.1:5000'
 APP_PORT = 5000
 ASK_WAIT_SEC = 4                    # one question to the app may take this long
@@ -157,6 +158,14 @@ def off_the_pi(connections: Iterable[Mapping[str, Any]], docker_network: str, wi
             continue
         off.append(connection)
     return off
+
+
+def to_the_phone_server(connections: Iterable[Mapping[str, Any]], addresses: set[str],
+                        port: int) -> list[Mapping[str, Any]]:
+    """The app container's connections to the ntfy server (`addresses`, what its name points to, and its `port`): the
+    phone notifications, the one way out allowed once NTFY_TOPIC is set. No other container, address or port."""
+    return [c for c in connections if c.get('container') == APP_CONTAINER and c['remote_port'] == port
+            and str(_plain_ip(str(c['remote']))) in addresses]
 
 
 def pages_on_the_wifi(connections: Iterable[Mapping[str, Any]], wifi_network: str,
