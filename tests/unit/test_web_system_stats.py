@@ -1,5 +1,5 @@
 """The Pi's numbers on the web: GET /api/system/stats (desktalk/web/routers/system.py, on the Pi) and
-GET /api/dev/pi_stats, /api/dev/health and /api/dev/log_status (desktalk/web/routers/dev.py, the developer page on
+GET /api/dev/pi_stats and /api/dev/health (desktalk/web/routers/dev.py, the developer page on
 a computer, which fetches the Pi's). The routers are built here with fakes; the same routes on the whole app (and
 the computer's own health when the Pi isn't elsewhere) are in tests/integration/test_web_dev.py, and the
 characterization cases in tests/characterization/."""
@@ -9,7 +9,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, cast
 
-import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
@@ -77,22 +76,21 @@ def test_the_dev_route_is_404_without_the_developer_page():
     assert client_for(dev.router, pi_stats_link=None).get('/api/dev/pi_stats').status_code == 404
 
 
-@pytest.mark.parametrize('path, key', [('/api/dev/health', 'checks'), ('/api/dev/log_status', 'today')])
-def test_the_pi_health_and_log_status_come_from_the_pi_with_its_address(path, key):
-    """A computer (web.public_address empty) whose camera is the Pi: the Pi's own replies, passed on."""
+def test_the_pi_health_comes_from_the_pi_with_its_address():
+    """A computer (web.public_address empty) whose camera is the Pi: the Pi's own reply, passed on."""
     link = FakePiStatsLink()
-    reply = client_for(dev.router, pi_stats_link=link).get(path).json()
+    reply = client_for(dev.router, pi_stats_link=link).get('/api/dev/health').json()
     assert reply['from'] == 'pi'
     assert reply['address'] == app_config().dev.pi_address
-    expected = link.health_reply if key == 'checks' else link.log_status_reply
-    assert {k: v for k, v in reply.items() if k not in ('from', 'address')} == expected
+    assert {k: v for k, v in reply.items() if k not in ('from', 'address')} == link.health_reply
 
 
-@pytest.mark.parametrize('path', ['/api/dev/health', '/api/dev/log_status'])
-def test_the_pi_health_and_log_status_say_in_plain_words_when_the_pi_does_not_answer(path):
+def test_the_pi_health_says_in_plain_words_when_the_pi_does_not_answer():
+    """Its own words: the System tab asked for health checks, not numbers."""
     client = client_for(dev.router, pi_stats_link=FakePiStatsLink(problem='no answer in 3 s'))
-    response = client.get(path)
+    response = client.get('/api/dev/health')
     assert response.status_code == 502
-    words = app_config().prompts.dev.pi_stats_unreachable.format(address=app_config().dev.pi_address,
-                                                                 problem='no answer in 3 s')
+    words = app_config().prompts.dev.pi_health_unreachable.format(address=app_config().dev.pi_address,
+                                                                  problem='no answer in 3 s')
     assert response.json() == {'error': words}
+    assert 'numbers' not in words

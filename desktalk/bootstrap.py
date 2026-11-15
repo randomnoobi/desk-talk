@@ -217,8 +217,8 @@ class DeskTalk:
     system_stats      the system numbers of the machine the app runs on, kept for a while: history()
                       (/api/system/stats), and the background job that reads them (only run when settings →
                       system_stats.enabled is on: on the Pi)
-    pi_stats_link     the computer's line to the Pi's numbers, health and event log status (/api/dev/pi_stats,
-                      /api/dev/health, /api/dev/log_status); None when settings → dev.enabled is false
+    pi_stats_link     the computer's line to the Pi's numbers and health (/api/dev/pi_stats, /api/dev/health);
+                      None when settings → dev.enabled is false
     pi_log            the Pi log tab's reader: sources(), read() (/api/dev/pi_log), and the background job that
                       stops reading once the tab stops asking and connects again after a lost connection; close()
                       at stop() (None when settings → dev.enabled is false)

@@ -71,6 +71,7 @@
     "pi": {
       "camera": "str",
       "clock_off_sec": "number",
+      "cpu_temp_c": "number",
       "detect_ms": "number",
       "detector": "str",
       "detector_reason": "str",
@@ -79,6 +80,7 @@
       "last_frame_id": "str",
       "model": "str",
       "photos_stored": "number",
+      "throttled": "str",
       "upload_format": "number"
     },
     "scheduler": [

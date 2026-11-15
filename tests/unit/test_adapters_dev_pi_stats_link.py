@@ -190,10 +190,15 @@ def test_the_usual_opener_lets_go_of_an_error_reply(monkeypatch):
     assert body.closed
 
 
-# ── the Pi's health and its log's status (the developer page's System and Storage tabs) ──
+# ── the Pi's health (the developer page's System and Storage tabs) ──
 HEALTH = {'uptime_sec': 60, 'camera': {'source': 'pi'}, 'checks': {'camera': {'level': 'ok', 'value': 2.0,
                                                                               'unit': 'pictures/s'}}}
-LOG_STATUS = {'folder': '/data/events', 'today': {'events': {'alert': 1}, 'pictures_waiting': 0}, 'scheduler': []}
+
+
+def health_problem(opener: Opener) -> str:
+    with pytest.raises(StatsUnavailable) as caught:
+        link_with(opener).health()
+    return str(caught.value)
 
 
 def test_health_asks_the_pi_for_its_health():
@@ -202,31 +207,16 @@ def test_health_asks_the_pi_for_its_health():
     assert opener.asked == [('http://desktalk.local:5000/api/health', 1.5)]
 
 
-def test_log_status_asks_the_pi_for_its_log_status():
-    opener = Opener(json.dumps(LOG_STATUS).encode())
-    assert link_with(opener).log_status() == LOG_STATUS
-    assert opener.asked == [('http://desktalk.local:5000/api/log/status', 3)]
+def test_health_says_what_went_wrong_in_the_same_words_as_the_numbers():
+    assert health_problem(Opener(error=urllib.error.URLError(TimeoutError('timed out')))) == 'no answer in 3 s'
+    assert health_problem(Opener(error=ValueError('unknown url type'))) == "that address can't be used"
 
 
-@pytest.mark.parametrize('ask', ['health', 'log_status'])
-def test_the_rest_say_what_went_wrong_in_the_same_words(ask):
-    def problem_of(opener: Opener) -> str:
-        with pytest.raises(StatsUnavailable) as caught:
-            getattr(link_with(opener), ask)()
-        return str(caught.value)
-
-    assert problem_of(Opener(error=urllib.error.URLError(TimeoutError('timed out')))) == 'no answer in 3 s'
-    assert problem_of(Opener(error=ValueError('unknown url type'))) == "that address can't be used"
-    assert problem_of(Opener(b'not json')) == "it didn't send its numbers (the answer isn't JSON)"
+def test_health_that_is_not_json_says_it_is_not_the_health_checks():
+    """Not "its numbers": the System tab asked for the Pi's health checks."""
+    assert health_problem(Opener(b'not json')) == "it didn't send its health checks (the answer isn't JSON)"
 
 
-@pytest.mark.parametrize('body', [b'[]', b'{}', b'{"checks": []}', b'{"today": {}}', b'null'])
-def test_health_without_a_checks_dict_becomes_stats_unavailable(body):
-    with pytest.raises(StatsUnavailable, match="^it didn't send its numbers$"):
-        link_with(Opener(body)).health()
-
-
-@pytest.mark.parametrize('body', [b'[]', b'{}', b'{"today": []}', b'{"checks": {}}', b'null'])
-def test_log_status_without_a_today_dict_becomes_stats_unavailable(body):
-    with pytest.raises(StatsUnavailable, match="^it didn't send its numbers$"):
-        link_with(Opener(body)).log_status()
+@pytest.mark.parametrize('body', [b'[]', b'{}', b'{"checks": []}', b'{"samples": []}', b'null'])
+def test_health_without_a_checks_dict_says_it_is_not_the_health_checks(body):
+    assert health_problem(Opener(body)) == "it didn't send its health checks"

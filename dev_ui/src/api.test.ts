@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  ApiError, cancelScenario, getJSON, getPiLog, getPiStats, getShownHealth, getShownLogStatus, getTrace, postJSON, startScenario,
+  ApiError, cancelScenario, getHealth, getJSON, getLogStatus, getPiLog, getPiStats, getShownHealth, getTrace, postJSON, startScenario,
   startTests,
 } from './api'
 
@@ -112,13 +112,18 @@ describe('the Pi tab', () => {
 })
 
 describe('the System tab', () => {
-  it('getShownHealth and getShownLogStatus ask the routes that pass on the Pi\'s own replies', async () => {
-    const fetch = fakeFetch(reply(200, { uptime_sec: 5, from: 'pi', address: 'desk-pi.local:5000' }),
-                            reply(200, { folder: '/data/log', from: 'here', address: '' }))
+  it('getShownHealth asks the route that passes on the Pi\'s own health when the Pi is the camera', async () => {
+    const fetch = fakeFetch(reply(200, { uptime_sec: 5, from: 'pi', address: 'desk-pi.local:5000' }))
     await expect(getShownHealth()).resolves.toMatchObject({ from: 'pi', address: 'desk-pi.local:5000' })
-    await expect(getShownLogStatus()).resolves.toMatchObject({ from: 'here', address: '' })
     expect(fetch.mock.calls[0][0]).toBe('/api/dev/health')
-    expect(fetch.mock.calls[1][0]).toBe('/api/dev/log_status')
+  })
+
+  it('getHealth and getLogStatus ask this computer\'s own Desk Talk', async () => {
+    const fetch = fakeFetch(reply(200, { uptime_sec: 5 }), reply(200, { folder: '/data/log' }))
+    await expect(getHealth()).resolves.toEqual({ uptime_sec: 5 })
+    await expect(getLogStatus()).resolves.toEqual({ folder: '/data/log' })
+    expect(fetch.mock.calls[0][0]).toBe('/api/health')
+    expect(fetch.mock.calls[1][0]).toBe('/api/log/status')
   })
 
   it('getShownHealth throws the 502 words when the Pi does not answer', async () => {

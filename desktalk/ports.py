@@ -1305,9 +1305,8 @@ class SystemStats(PeriodicWorker, Protocol):
 @runtime_checkable
 class PiStatsLink(Protocol):
     """The computer's line to the Pi's own Desk Talk, for the developer page on the computer when the camera is
-    the Pi (desktalk/adapters/dev/): its numbers, its health and its event log's status. Each raises
-    StatsUnavailable, saying in a few plain words what went wrong (never the address), when the Pi doesn't answer
-    or doesn't send the right shape."""
+    the Pi (desktalk/adapters/dev/): its numbers and its health. Each raises StatsUnavailable, saying in a few plain
+    words what went wrong (never the address), when the Pi doesn't answer or doesn't send the right shape."""
 
     def fetch(self, since: float | None) -> dict[str, Any]:
         """The Pi's GET /api/system/stats reply (SystemStats.history's shape)."""
@@ -1315,10 +1314,6 @@ class PiStatsLink(Protocol):
 
     def health(self) -> dict[str, Any]:
         """The Pi's GET /api/health reply (how each of its parts is doing, with its `checks`)."""
-        ...
-
-    def log_status(self) -> dict[str, Any]:
-        """The Pi's GET /api/log/status reply (its event log's folder and `today`'s counts, its timed jobs ...)."""
         ...
 
 

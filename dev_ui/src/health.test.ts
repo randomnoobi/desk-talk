@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { CheckLevel, Health, HealthCheck, LogStatus, PiStatus } from './api'
-import { healthRows, remember, type Row, type RowLimits } from './health'
+import {
+  GROUPS, healthRows, OWN_GROUPS, ownRows, remember, SHOWN_GROUPS, shownRows, type Row, type RowLimits,
+} from './health'
 
 const limits: RowLimits = {
   pi_disk_warn_mb: 1000, detect_warn_ms: 500, disconnect_after_sec: 3,
@@ -176,5 +178,32 @@ describe('healthRows', () => {
     expect(row(rows, 'Event log', 'today').value).toContain('alert 2')
     expect(row(rows, 'AI', 'ready').level).toBe('bad')
     expect(row(rows, 'AI', 'problem').value).toBe('no API key')
+  })
+})
+
+describe('the two halves of the System tab', () => {
+  it('shownRows gives the Health checks and the Pi, from the Desk Talk the page shows (the Pi\'s own when it is the camera)', () => {
+    const rows = shownRows(health(), limits, NOW)
+    expect(new Set(rows.map(r => r.group))).toEqual(new Set(SHOWN_GROUPS))
+    expect(row(rows, 'Health checks', 'camera pictures').level).toBe('ok')
+    expect(row(rows, 'Pi', 'connected').value).toBe('yes')
+  })
+
+  it('ownRows gives everything else, from this computer\'s own Desk Talk', () => {
+    const rows = ownRows(health(), log, limits, NOW)
+    expect(new Set(rows.map(r => r.group))).toEqual(new Set(OWN_GROUPS))
+    expect(row(rows, 'Event log', 'folder').value).toBe('/data/log')
+  })
+
+  it('the two halves are all the groups, in the tab\'s order, and healthRows is both together', () => {
+    expect([...SHOWN_GROUPS, ...OWN_GROUPS]).toEqual([...GROUPS])
+    expect(healthRows(health(), log, limits, NOW))
+      .toEqual([...shownRows(health(), limits, NOW), ...ownRows(health(), log, limits, NOW)])
+  })
+
+  it('ownRows works out events a second from what this computer\'s poll before saw', () => {
+    const before = remember(null, health(), NOW)
+    const later = health({ events: [{ name: 'habits', handled: 120, waiting: 0, dropped: 0, errors: 0 }] })
+    expect(row(ownRows(later, log, limits, NOW + 10, before), 'Event stream', 'habits').value).toContain('(2 a second)')
   })
 })

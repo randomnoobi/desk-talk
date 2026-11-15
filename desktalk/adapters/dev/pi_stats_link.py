@@ -5,12 +5,12 @@ Storage tabs, with the standard library only:
     link = HttpPiStatsLink('desktalk.local:5000', 3)     # settings → dev.pi_address, dev.pi_stats_timeout_sec
     reply = link.fetch(since)                             # the Pi's GET /api/system/stats reply, as it is
     reply = link.health()                                 # the Pi's GET /api/health reply
-    reply = link.log_status()                             # the Pi's GET /api/log/status reply
 
 The developer page runs on the computer and the app lets no other web site read it, so the computer's server
 asks the Pi and passes the reply on. When the Pi doesn't answer in time, can't be found, answers with an error,
 or sends something that isn't the reply asked for, each raises StatsUnavailable with a short problem in plain
-words (no address: the route puts it in its own sentence, prompts.yaml → dev.pi_stats_unreachable).
+words (no address: the route puts it in its own sentence, prompts.yaml → dev.pi_stats_unreachable and
+dev.pi_health_unreachable).
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ from typing import Any
 from desktalk.domain import StatsUnavailable
 
 NOT_THEIR_NUMBERS = "it didn't send its numbers"
+NOT_ITS_HEALTH = "it didn't send its health checks"
 BAD_ADDRESS = "that address can't be used"
 
 
@@ -71,17 +72,14 @@ class HttpPiStatsLink:
 
     def fetch(self, since: float | None) -> dict[str, Any]:
         query = '' if since is None else urllib.parse.urlencode({'since': since})
-        return self._ask('/api/system/stats', query, 'samples', list)
+        return self._ask('/api/system/stats', query, 'samples', list, NOT_THEIR_NUMBERS)
 
     def health(self) -> dict[str, Any]:
-        return self._ask('/api/health', '', 'checks', dict)
+        return self._ask('/api/health', '', 'checks', dict, NOT_ITS_HEALTH)
 
-    def log_status(self) -> dict[str, Any]:
-        return self._ask('/api/log/status', '', 'today', dict)
-
-    def _ask(self, path: str, query: str, key: str, kind: type) -> dict[str, Any]:
+    def _ask(self, path: str, query: str, key: str, kind: type, not_it: str) -> dict[str, Any]:
         """The Pi's reply to GET `path`?`query`: a JSON object whose `key` is a `kind` (the part that shows it's the
-        reply asked for), or StatsUnavailable."""
+        reply asked for), or StatsUnavailable (saying `not_it` when the reply is something else)."""
         url = f'{self._base}{path}' + (f'?{query}' if query else '')
         try:
             body = self._open(url, self._timeout)
@@ -92,7 +90,7 @@ class HttpPiStatsLink:
         try:
             reply = json.loads(body)
         except ValueError:                                         # not JSON, or not even text
-            raise StatsUnavailable(f"{NOT_THEIR_NUMBERS} (the answer isn't JSON)") from None
+            raise StatsUnavailable(f"{not_it} (the answer isn't JSON)") from None
         if not isinstance(reply, dict) or not isinstance(reply.get(key), kind):
-            raise StatsUnavailable(NOT_THEIR_NUMBERS)
+            raise StatsUnavailable(not_it)
         return reply

@@ -14,8 +14,7 @@ from tests.contracts.system_stats_contract import PiStatsLinkContract
 
 ONE_SAMPLE = {'collecting': True, 'every_sec': 2, 'keep_min': 30, 'info': {}, 'samples': [{'at': 1.0}]}
 HEALTH = {'uptime_sec': 60, 'checks': {'camera': {'level': 'ok', 'value': 2.0, 'unit': 'pictures/s'}}}
-LOG_STATUS = {'folder': '/data/events', 'today': {'events': {}, 'pictures_waiting': 0}}
-REPLIES = {'/api/system/stats': ONE_SAMPLE, '/api/health': HEALTH, '/api/log/status': LOG_STATUS}
+REPLIES = {'/api/system/stats': ONE_SAMPLE, '/api/health': HEALTH}
 
 
 def answers(url: str, timeout_sec: float) -> bytes:
