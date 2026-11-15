@@ -4,6 +4,13 @@ What changed in Desk Talk, newest first, one line or a few per pull request. Eac
 full story: what was wrong, what changed, and the checks that were run. What a person tried on the real Pi is in
 [docs/PI_CHECKS.md](docs/PI_CHECKS.md).
 
+## 2026-11-15
+
+- **On a computer, the app points to the Pi's own Desk Talk** ([#23](https://github.com/randomnoobi/desk-talk/pull/23)).
+  With the Pi as the camera, the camera panel and the start-up lines used to show a command to start the Pi's camera
+  by hand, but the Pi's camera sends its pictures to the Pi's own Desk Talk. They now link there instead, at
+  `dev.pi_address` (set it to your Pi's name, like `desktalk-pi.local:5000`).
+
 ## 2026-11-14
 
 - **The Pi's numbers on the developer page** ([#20](https://github.com/randomnoobi/desk-talk/pull/20)). A new Pi
