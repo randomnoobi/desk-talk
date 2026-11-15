@@ -99,7 +99,8 @@ class Rig:
     """`detecting`: pictures go through detection at every tick (set it False to stop them). `free_mb`: the card."""
 
     def __init__(self, messages=(), kind='pi', phone=None, layout=None, prefs=None, pi=None, words=WORDS,
-                 hours_from_utc=0.0, free_mb=10_000.0, saving=Saving.PLAIN, rest_mb=10_000.0):
+                 hours_from_utc=0.0, free_mb=10_000.0, saving=Saving.PLAIN, rest_mb=10_000.0,
+                 camera_elsewhere=False):
         # 21 October 2026, 14:00 on the clock (its own time zone, so the test is the same on every computer)
         self.clock = FakeClock(calendar.timegm((2026, 10, 21, 14, 0, 0, 0, 0, 0)) - hours_from_utc * 3600,
                                utc_offset_hours=hours_from_utc)
@@ -120,7 +121,8 @@ class Rig:
                               saving=saving, card=self.rest)
         self.lens = Lens(self.health, self.source, layout or Layout(), prefs or FakePreferences(), self.notifier,
                          self.bus, self.photos, SETTINGS, PI, clock=self.clock, prompts=words, preview_chars=120,
-                         checks=checks, phone=phone, pi_uploads=pi, saving=saving)
+                         checks=checks, phone=phone, pi_uploads=pi, saving=saving,
+                         camera_elsewhere=camera_elsewhere)
 
     def tick(self, after=0.0):
         self.clock.advance(after)
@@ -140,6 +142,23 @@ def test_lens_says_the_camera_problem_in_the_chat_and_logs_it():
         ('group_message', 'lens', LOST['text'], 'problem', True)]
     notice = rig.bus.of_type(CameraNotice)
     assert [(n.key, n.kind, n.text, n.ts) for n in notice] == [('lost', 'problem', LOST['text'], rig.clock.now())]
+
+
+def test_a_camera_that_sends_its_pictures_elsewhere_is_not_warned_about():
+    """On a computer with the Pi as the camera, the Pi's camera sends its pictures to the Pi's own Desk Talk, so
+    'no pictures' here is how it should be: Lens says nothing about it (and the Mac shows no pop-up)."""
+    rig = Rig([LOST], camera_elsewhere=True)
+    rig.source.connected = False
+    rig.tick()
+    rig.tick(after=600)
+    assert rig.notifier.sent == [] and rig.bus.of_type(CameraNotice) == []
+
+
+def test_a_camera_elsewhere_still_lets_lens_say_this_computers_disk_is_full():
+    rig = Rig(camera_elsewhere=True, free_mb=1.0)
+    rig.source.connected = False
+    rig.tick()
+    assert [m['notify'] for m in rig.notifier.sent] == ['warning']
 
 
 def test_lens_problem_flagged_fixed_not():

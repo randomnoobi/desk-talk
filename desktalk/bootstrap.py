@@ -391,6 +391,12 @@ def make_camera(config: AppConfig, clock: Clock) -> Camera:
     return Camera(pi, pi=pi)
 
 
+def pi_camera_elsewhere(config: AppConfig) -> bool:
+    """True on a computer with the Pi as the camera: the Pi's camera sends its pictures to the Pi's own Desk Talk,
+    so none ever come here. On the Pi itself web.public_address is set."""
+    return config.camera.source == 'pi' and not config.web.public_address
+
+
 def cloud_goals(protocols: Protocols) -> dict[str, float]:
     """The goal numbers the weekly report is judged against, from config/protocols.yaml."""
     hydration, breaks, phone, light = protocols.hydration, protocols.breaks, protocols.phone_free, protocols.light
@@ -597,7 +603,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                                config.reminders)
     lens = Lens(camera_health, source, safety_rules, preferences, feed, bus, photos, config.lens, config.pi,
                 clock=clock, checks=health_checks, prompts=config.prompts.lens,
-                preview_chars=config.logging.preview_chars, phone=camera.phone, pi_uploads=camera.pi, saving=saving)
+                preview_chars=config.logging.preview_chars, phone=camera.phone, pi_uploads=camera.pi, saving=saving,
+                camera_elsewhere=pi_camera_elsewhere(config))
     idle_chat = IdleChat(model, hub, desk_status, roster, profiles, character_memory,
                          lambda: generator.live_context()['summary'], config.idle_chat, config.llm.replies,
                          memory_kept=config.llm.memory_per_agent, memory_chars=config.chat.memory_reply_chars,

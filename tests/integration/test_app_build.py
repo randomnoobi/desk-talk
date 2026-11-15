@@ -18,7 +18,7 @@ from desktalk.adapters.dev.pi_log import SshPiLog
 from desktalk.adapters.notify.mac import MAC_PLATFORM, MacNotifications, NoNotifications
 from desktalk.adapters.storage import JsonFileStore
 from desktalk.adapters.storage.trace_photo_files import TracePhotoFiles
-from desktalk.bootstrap import DeskTalk, build
+from desktalk.bootstrap import DeskTalk, build, pi_camera_elsewhere
 from desktalk.domain import AgentJoined, CheckLevel, Saving
 from desktalk.ports import SmoothingTraceView
 from desktalk.runtime import SystemClock
@@ -390,3 +390,12 @@ def test_with_the_developer_page_off_a_pi_log_passed_in_is_not_used(tmp_path):
     app = build_quietly(changed(desk_config(tmp_path), 'dev', enabled=False), tmp_path, pi_log=FakePiLog())
     assert app.pi_log is None
     assert 'pi log' not in [job.name for job, _ in app.background_jobs()]
+
+
+@pytest.mark.parametrize(('source', 'public', 'elsewhere'), [
+    ('pi', '', True),                          # a computer: the Pi's camera sends to the Pi's own Desk Talk
+    ('pi', 'desktalk.local:5000', False),      # the Pi itself: its camera sends here
+    ('phone', '', False), ('webcam', '', False)])
+def test_the_pi_camera_is_elsewhere_only_on_a_computer(tmp_path, source, public, elsewhere):
+    config = changed(changed(desk_config(tmp_path), 'camera', source=source), 'web', public_address=public)
+    assert pi_camera_elsewhere(config) is elsewhere
