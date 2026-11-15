@@ -8,10 +8,11 @@ shows a pop-up: the character's name as the title (a sip uses the "Sip logged" t
 without any action tags, as the text. Nothing pops up when notifications are off, that kind is off, or it is quiet
 hours. Joins, greetings, small talk and replies are never marked.
 
-With a `phone` (ntfy, once NTFY_TOPIC is set), the same ones go there too, with two changes, since a to-do's text
-never leaves the Pi: a to-do reminder (a message whose habit is 'tasks') goes as the `phone_todo` line instead of its
-words, and any other reminder goes with its own ready-made words (`ready_text`), never an AI's, as an AI may have seen
-the to-do list. A problem with one output never stops the other, or the chat.
+With a `phone` (ntfy, once NTFY_TOPIC is set), the same ones go there too, but only with words a sender marked for it
+(`phone_text`): ready-made words from prompts.yaml or protocols.yaml, never an AI's, as an AI may have seen the to-do
+list. A message with no `phone_text` doesn't go to the phone at all. A to-do reminder (a message whose habit is
+'tasks') goes as the `phone_todo` line whatever it was marked with, since a to-do's text never leaves the Pi. A problem
+with one output never stops the other, or the chat.
 
     feed = DesktopAlerts(hub, desktop, preferences, profiles, config.notifications, clock,
                          lens_name=config.prompts.lens.card.name, sip_title=config.prompts.notifications.sip_title,
@@ -34,8 +35,8 @@ log = logging.getLogger(__name__)
 NOTIFY = 'notify'                       # the key a message carries to ask for a pop-up
 WARNING, REMINDER, SIP = 'warning', 'reminder', 'sip'
 TODO_HABIT = 'tasks'                    # a message about this habit names a to-do, which never goes to the phone
-READY_TEXT = 'ready_text'               # a reminder's own ready-made words (never an AI's): what the phone gets
-MARKS = (NOTIFY, READY_TEXT)            # keys only this part reads: the pages never see them
+PHONE_TEXT = 'phone_text'               # the only words the phone may get: ready-made ones, never an AI's
+MARKS = (NOTIFY, PHONE_TEXT)            # keys only this part reads: the pages never see them
 
 
 class DesktopAlerts:
@@ -70,13 +71,17 @@ class DesktopAlerts:
         if shown:
             title, text = shown
             self._show(self._desktop, title, text, 'Could not show a desktop notification')
-            if self._phone is not None:
-                # An AI may have seen the to-do list, so the phone gets a reminder's own words, never the AI's.
-                ready = strip_action_tags(str(message.get(READY_TEXT) or ''))
-                for_phone = self._phone_todo if message.get('habit') == TODO_HABIT else ready or text
-                if for_phone:           # no to-do line given: a to-do reminder doesn't go to the phone at all
-                    self._show(self._phone, title, for_phone, 'Could not send a notification to the phone')
+            for_phone = self._for_phone(message)
+            if self._phone is not None and for_phone:
+                self._show(self._phone, title, for_phone, 'Could not send a notification to the phone')
         return sent
+
+    def _for_phone(self, message: Mapping[str, Any]) -> str:
+        """The words the phone may get: only those a sender marked as ready-made (the to-do line for a to-do), or ''
+        when it gets nothing. An AI may have seen the to-do list, so a message's own words never go."""
+        if message.get('habit') == TODO_HABIT:
+            return self._phone_todo
+        return strip_action_tags(str(message.get(PHONE_TEXT) or ''))
 
     def _what_to_show(self, message: Mapping[str, Any]) -> tuple[str, str] | None:
         """The title and words, or None when nothing should be shown now."""

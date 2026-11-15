@@ -8,6 +8,8 @@ import json
 import logging
 import shutil
 import sys
+import threading
+import time
 import typing
 
 import pytest
@@ -20,7 +22,7 @@ from desktalk.adapters.notify.mac import MAC_PLATFORM, MacNotifications, NoNotif
 from desktalk.adapters.notify.ntfy import NtfyNotifications
 from desktalk.adapters.storage import JsonFileStore
 from desktalk.adapters.storage.trace_photo_files import TracePhotoFiles
-from desktalk.bootstrap import DeskTalk, build, pi_camera_elsewhere
+from desktalk.bootstrap import DeskTalk, build
 from desktalk.domain import AgentJoined, CheckLevel, Saving
 from desktalk.ports import SmoothingTraceView
 from desktalk.runtime import SystemClock
@@ -78,12 +80,54 @@ def test_without_a_phone_topic_nothing_goes_to_a_phone(tmp_path):
     assert build_quietly(desk_config(tmp_path), tmp_path).phone_notifications is None
 
 
-def test_a_phone_topic_makes_the_phone_sender_and_stop_lets_it_finish(tmp_path):
-    """tests/conftest.py keeps a real one from sending anything."""
+class HeldPost:
+    """A phone post that waits until `hold` is set (or WAIT seconds), so a send stays under way."""
+
+    WAIT = 5.0
+
+    def __init__(self):
+        self.hold, self.started = threading.Event(), threading.Event()
+        self.calls: list[str] = []
+
+    def __call__(self, url, body, time_limit):
+        self.calls.append(url)
+        self.started.set()
+        self.hold.wait(self.WAIT)
+
+
+def test_a_phone_topic_makes_the_phone_sender_and_stop_ends_it(tmp_path, ntfy_guard):
+    """build() can't be given a post for it, so ntfy_guard (tests/conftest.py) hands it a fake one."""
+    post = HeldPost()
+    post.hold.set()
+    ntfy_guard.allow(post)
     app = build_quietly(with_topic(desk_config(tmp_path)), tmp_path)
     assert isinstance(app.phone_notifications, NtfyNotifications)
     app.stop()
-    assert not app.phone_notifications._thread.is_alive()
+    app.phone_notifications._thread.join(HeldPost.WAIT)
+    assert not app.phone_notifications._thread.is_alive() and post.calls == []
+
+
+def test_stop_never_waits_for_a_phone_notification_under_way(tmp_path, ntfy_guard):
+    post = HeldPost()
+    ntfy_guard.allow(post)
+    app = build_quietly(with_topic(desk_config(tmp_path)), tmp_path)
+    phone = app.phone_notifications
+    assert phone is not None
+    phone.show('Cup', 'Time for water')
+    phone.show('Cup', 'Waiting its turn')
+    assert post.started.wait(HeldPost.WAIT)
+    started = time.monotonic()
+    app.stop()
+    took = time.monotonic() - started
+    post.hold.set()
+    assert took < app.config.notifications.phone_time_limit_sec / 2
+    assert post.calls == ['https://ntfy.sh/']                 # the one waiting its turn was dropped
+
+
+def test_a_real_phone_sender_is_never_made_in_a_test(tmp_path):
+    """tests/conftest.py: one made without its own post fails at once, in the test's own thread."""
+    with pytest.raises(AssertionError, match='real phone sender'):
+        build_quietly(with_topic(desk_config(tmp_path)), tmp_path)
 
 
 def test_with_notifications_off_a_phone_topic_sends_nothing(tmp_path):
@@ -418,12 +462,3 @@ def test_with_the_developer_page_off_a_pi_log_passed_in_is_not_used(tmp_path):
     app = build_quietly(changed(desk_config(tmp_path), 'dev', enabled=False), tmp_path, pi_log=FakePiLog())
     assert app.pi_log is None
     assert 'pi log' not in [job.name for job, _ in app.background_jobs()]
-
-
-@pytest.mark.parametrize(('source', 'public', 'elsewhere'), [
-    ('pi', '', True),                          # a computer: the Pi's camera sends to the Pi's own Desk Talk
-    ('pi', 'desktalk.local:5000', False),      # the Pi itself: its camera sends here
-    ('phone', '', False), ('webcam', '', False)])
-def test_the_pi_camera_is_elsewhere_only_on_a_computer(tmp_path, source, public, elsewhere):
-    config = changed(changed(desk_config(tmp_path), 'camera', source=source), 'web', public_address=public)
-    assert pi_camera_elsewhere(config) is elsewhere

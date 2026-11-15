@@ -25,6 +25,7 @@ from typing import Any
 
 from desktalk.config import LensSettings, PiSettings
 from desktalk.config.prompts import ByCamera, LensPrompts
+from desktalk.core.chat.desktop_alerts import NOTIFY, PHONE_TEXT, WARNING
 from desktalk.core.habits.preferences import quiet_hours_now
 from desktalk.domain import (
     LENS,
@@ -303,7 +304,8 @@ class Lens:
         kind, text = found['kind'], found['text']
         message = {'type': 'group_message', 'character': LENS, 'text': text, 'lens': kind, 'toast': kind == 'problem'}
         if kind == 'problem':
-            message['notify'] = 'warning'           # a warning also pops up on the desktop
+            message[NOTIFY] = WARNING               # a warning also pops up on the desktop
+            message[PHONE_TEXT] = text              # and goes to the phone: Lens's words are prompts.yaml's, no AI's
         if kind == 'problem' and found['key'] in PHOTO_KEYS:
             photo = self._photos.save(self._words.photo_label)
             if photo:

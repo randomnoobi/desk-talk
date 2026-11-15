@@ -18,6 +18,7 @@ import logging
 
 from desktalk.config import RemindersSettings
 from desktalk.core.agents.speakers import speaker_for
+from desktalk.core.chat.desktop_alerts import NOTIFY, PHONE_TEXT, REMINDER
 from desktalk.domain import LENS, Nudge, NudgeSent
 from desktalk.ports import ChatVoice, DeskStatus, EventBus, HabitsView, Notifier, Profiles, RosterView, RuleNudges
 
@@ -67,7 +68,7 @@ class HabitReminders:
         text = self._voice.phrase_nudge(speaker, nudge) if speaker != LENS else None    # Lens never uses the AI
         text = text or nudge.text
         self._notifier.send({'type': 'group_message', 'character': speaker, 'text': text, 'habit': nudge.habit,
-                             'toast': True, 'notify': 'reminder', 'ready_text': nudge.text})
+                             'toast': True, NOTIFY: REMINDER, PHONE_TEXT: nudge.text})   # the phone: never the AI's
         self._bus.publish(NudgeSent(ts=now, habit=nudge.habit, rule=nudge.key, agent=speaker,
                                     evidence=nudge.evidence, text=text))
         log.info('%s nudged about %s: %s', speaker, nudge.habit, nudge.evidence)

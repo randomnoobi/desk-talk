@@ -45,17 +45,39 @@ def speak_calls(monkeypatch):
 
 
 
+class NtfyGuard:
+    """What ntfy_guard gives a test: allow(post) lets an NtfyNotifications made without its own `post` (as build()
+    makes one when NTFY_TOPIC is set) use that one instead of the real post_json."""
+
+    def __init__(self):
+        self.post: ntfy.Post | None = None
+
+    def allow(self, post: ntfy.Post) -> None:
+        self.post = post
+
+
 @pytest.fixture(autouse=True)
-def ntfy_posts(monkeypatch):
-    """No test ever sends a real phone notification: an NtfyNotifications made without its own `post` (as build()
-    makes one when NTFY_TOPIC is set) gets this recorder instead of the real one, and a test that reached it fails.
-    A test that means to reach it takes this fixture and empties the list. (A test of the real post imports
-    post_json by name, which this doesn't change.)"""
-    calls: list[tuple[Any, ...]] = []
-    monkeypatch.setattr(ntfy, 'post_json', lambda url, body, time_limit: calls.append((url, body, time_limit)))
-    yield calls
-    assert not calls, (f'a test tried to send {len(calls)} real phone notification(s): pass build() a fake '
-                       '`phone_notifications=` (tests.fakes.FakeDesktopNotifications)')
+def ntfy_guard(monkeypatch):
+    """No test ever sends a real phone notification: making an NtfyNotifications without its own `post` fails at
+    once, in the test's own thread (the posts themselves happen on a background thread, where a failure would be
+    missed). A test that builds one through build(), which can't be given a post, takes this fixture and calls
+    allow() with a fake first. (A test of the real post imports post_json by name, which this doesn't change.)"""
+    guard = NtfyGuard()
+    real_init = ntfy.NtfyNotifications.__init__
+
+    def guarded(self, *args, **kwargs):
+        if kwargs.get('post') is None:
+            if guard.post is None:
+                raise AssertionError('a test tried to make a real phone sender: give NtfyNotifications its own '
+                                     '`post=`, pass build() a fake `phone_notifications=` '
+                                     '(tests.fakes.FakeDesktopNotifications), or take the ntfy_guard fixture and '
+                                     'call allow() with a fake post')
+            kwargs['post'] = guard.post
+        real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(ntfy.NtfyNotifications, '__init__', guarded)
+    return guard
+
 
 class _Msg:
     def __init__(self, content):

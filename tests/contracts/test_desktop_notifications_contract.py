@@ -80,8 +80,9 @@ class TestSpeakerNotifications(DesktopNotificationsContract):
 class TestNtfyNotifications(DesktopNotificationsContract):
     @pytest.fixture
     def notifications(self):
-        settings = NotificationsSettings.model_construct(phone_server='https://ntfy.example', phone_time_limit_sec=5.0)
-        phone = NtfyNotifications(settings, 'desktalk-test-topic', queue_size=4,
+        settings = NotificationsSettings.model_construct(phone_server='https://ntfy.example', phone_time_limit_sec=5.0,
+                                                         phone_retry_after_sec=60.0)
+        phone = NtfyNotifications(settings, 'desktalk-test-topic', queue_size=4, clock=FakeClock(),
                                   post=lambda url, body, time_limit: None)          # sends nothing
         yield phone
         phone.close()

@@ -3,7 +3,7 @@ or the Pi's speaker (through Piper), as settings → notifications.output says, 
 NTFY_TOPIC is set.
 
     desktop = make_notifications(config.notifications, sys.platform, queue_size=..., clock=clock)
-    phone = NtfyNotifications(config.notifications, topic, queue_size=...)
+    phone = NtfyNotifications(config.notifications, topic, queue_size=..., clock=clock)
     feed = DesktopAlerts(hub, desktop, preferences, profiles, config.notifications, clock, phone=phone, ...)
 """
 

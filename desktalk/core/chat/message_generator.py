@@ -27,7 +27,7 @@ from desktalk.core.chat import prompts as fill
 from desktalk.core.chat.agent_ai import AgentAI
 from desktalk.core.chat.alert_voice import AlertVoice
 from desktalk.core.chat.chat_answers import ChatAnswers
-from desktalk.core.chat.desktop_alerts import NOTIFY, REMINDER, WARNING
+from desktalk.core.chat.desktop_alerts import NOTIFY, PHONE_TEXT, REMINDER, SIP, WARNING
 from desktalk.core.chat.live_context import build_live_context
 from desktalk.core.chat.memory import ChatMemory, TrackerPanels
 from desktalk.core.chat.nudge_voice import NudgeVoice
@@ -152,7 +152,8 @@ class MessageGenerator:
         speaker = speaker_for((ev.habit,), self._roster.member_ids(), self._profiles)
         message = {'type': 'group_message', 'character': speaker, 'text': ev.say, 'habit': ev.habit}
         if ev.habit == 'hydration' and ev.action == 'sip' and ev.extra.get('how') == 'camera':
-            message['notify'] = 'sip'               # only a sip the camera saw also pops up on the desktop
+            message[NOTIFY] = SIP                   # only a sip the camera saw also pops up on the desktop
+            message[PHONE_TEXT] = ev.say            # its words are prompts.yaml's (habits.logged), no AI's
         self._notifier.send(message)
 
     def on_alert(self, ev: Event) -> None:

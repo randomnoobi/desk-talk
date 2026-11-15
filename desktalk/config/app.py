@@ -6,6 +6,7 @@ What each setting means is in the comments of config/settings.yaml.
 from __future__ import annotations
 
 import re
+import urllib.parse
 from datetime import date
 from pathlib import Path
 from typing import Annotated, Literal
@@ -24,6 +25,7 @@ from desktalk.config.base import (
     PositiveNumber,
     Words,
     ZeroOrMore,
+    _Said,
     _Section,
 )
 from desktalk.config.habits import Protocols
@@ -804,16 +806,27 @@ class NotificationsSettings(_Section):
     speak_max_age_sec: PositiveNumber
     phone_server: str                 # the ntfy server that sends them on to your phone (the topic is in .env)
     phone_time_limit_sec: PositiveNumber
+    phone_retry_after_sec: PositiveNumber   # after a failure, nothing goes to the phone for this long
 
     @field_validator('phone_server')
     @classmethod
-    def _a_web_address(cls, value: str) -> str:
-        """Like https://ntfy.sh: http:// or https:// and a name. Kept without a trailing /, since the sender adds it."""
-        value = value.strip().rstrip('/')
-        scheme, _, rest = value.partition('://')
-        if scheme not in ('http', 'https') or not rest:
-            raise ValueError(f'phone_server must be a web address like https://ntfy.sh (got {value!r})')
-        return value
+    def _a_server_address(cls, value: str) -> str:
+        """Like https://ntfy.sh or http://192.168.1.5:8080: http:// or https://, a name and maybe a port, nothing
+        more (a topic in the address would be in every log line that names the server). Kept without a trailing /,
+        since the sender adds it."""
+        parts = urllib.parse.urlsplit(value.strip())
+        if parts.scheme not in ('http', 'https') or not parts.hostname:
+            raise ValueError(f'phone_server must be a web address like https://ntfy.sh (got {value.strip()!r})')
+        try:
+            parts.port                      # noqa: B018  (a port that isn't a number raises here)
+        except ValueError:
+            raise ValueError('phone_server has a port that is not a number') from None
+        if parts.path not in ('', '/') or parts.query or parts.fragment or '@' in parts.netloc:
+            # What was written isn't shown back: it may hold the topic, which is a secret.
+            raise _Said(f'must be only the server, like {parts.scheme}://{parts.hostname}, with no path, ? or # '
+                        'after it and no name or password before it. The topic goes in NTFY_TOPIC (.env), not in '
+                        'the address.')
+        return f'{parts.scheme}://{parts.netloc}'
 
 
 class LoggingSettings(_Section):
@@ -1046,6 +1059,12 @@ class AppConfig(_Section):
     env_applied: dict[str, str]       # .env name → the setting it changed, e.g. {'OLLAMA_MODEL': 'llm.ollama_model'}
     env_moved: tuple[str, ...]        # old .env names that are set but no longer used
     root: Path                        # the project folder; relative paths in the settings are under it
+
+    @property
+    def pi_camera_elsewhere(self) -> bool:
+        """True on a computer with the Pi as the camera: the Pi's camera sends its pictures to the Pi's own Desk Talk,
+        so none ever come here. On the Pi itself web.public_address is set."""
+        return self.camera.source == 'pi' and not self.web.public_address
 
     def resolve(self, path: str | Path) -> Path:
         """A path from the settings: absolute paths and ~ stay as they are, others are under the project folder."""

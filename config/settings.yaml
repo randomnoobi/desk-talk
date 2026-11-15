@@ -755,8 +755,11 @@ notifications:
   speak_max_age_sec: 60       # a message that has waited its turn longer than this is skipped (and that is logged)
   # Your phone, through ntfy (https://ntfy.sh). Off until NTFY_TOPIC is set. Each one is tried once: with no internet
   # it is dropped and that is logged (once, until it works again), and the chat and the speaker never wait for it.
-  phone_server: https://ntfy.sh   # the ntfy server; your own works too, like http://192.168.1.5:8080
-  phone_time_limit_sec: 10    # a phone notification the server hasn't taken after this long is given up on
+  phone_server: https://ntfy.sh   # the ntfy server, only its address (the topic goes in NTFY_TOPIC); your own works
+                                  # too, like http://192.168.1.5:8080
+  phone_time_limit_sec: 10    # a phone notification not sent after this long (finding the server too) is given up on
+  phone_retry_after_sec: 60   # after one fails, the ones in the next this-many seconds are dropped without trying, so
+                              # with no Wi-Fi nothing waits; the first one after that checks whether it works again
 
 # ── Logs ────────────────────────────────────────────────────────────
 logging:

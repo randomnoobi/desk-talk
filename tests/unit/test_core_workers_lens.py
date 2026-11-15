@@ -168,6 +168,15 @@ def test_lens_problem_flagged_fixed_not():
     assert problem['notify'] == 'warning' and 'notify' not in fixed
 
 
+def test_a_lens_warning_marks_its_own_words_for_the_phone():
+    """Lens's words are prompts.yaml lines with blanks (never an AI's), so the phone may have them; a "fixed"
+    note doesn't pop up, so nothing is marked."""
+    rig = Rig([LOST, {'key': 'dark', 'kind': 'fixed', 'text': 'Much better, thanks for the light!'}])
+    rig.tick()
+    problem, fixed = rig.notifier.sent
+    assert problem['phone_text'] == problem['text'] and 'phone_text' not in fixed
+
+
 def test_a_pi_problem_is_flagged_as_a_warning():
     pi = PiReports()
     rig = Rig(pi=pi)

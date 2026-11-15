@@ -486,19 +486,29 @@ def test_disk_stays_under_limit(stack: Pi):
     assert pi.settings()['pi']['delete_every_min'] == real['delete_every_min'], 'the real settings did not come back'
 
 
+# Run in the app container: whether it has a topic, and the ntfy server's addresses and port as the app itself finds
+# them (its own name lookup, which may not be the Pi's). No topic: no lookup, and nothing is allowed.
+PHONE_SERVER_LOOKUP = """
+import json, socket, urllib.parse
+from desktalk.config import load_config
+c = load_config()
+u = urllib.parse.urlsplit(c.notifications.phone_server)
+port = u.port or (443 if u.scheme == 'https' else 80)
+on = bool(c.secrets.ntfy_topic.get_secret_value())
+try:
+    found = socket.getaddrinfo(u.hostname, port, proto=socket.IPPROTO_TCP) if on else []
+except OSError:
+    found = []
+print(json.dumps([on, sorted({str(a[4][0]) for a in found}), port]))
+"""
+
+
 def phone_server(pi: Pi) -> tuple[set[str], int] | None:
-    """The ntfy server's addresses (what its name points to on the Pi) and port, when the app has a topic set
-    (NTFY_TOPIC) and so sends phone notifications; None when it has none."""
-    asked = pi.compose('exec', '-T', 'app', 'python', '-c',
-                       'import json, urllib.parse; from desktalk.config import load_config; c = load_config(); '
-                       'u = urllib.parse.urlsplit(c.notifications.phone_server); '
-                       'print(json.dumps([bool(c.secrets.ntfy_topic.get_secret_value()), u.hostname, '
-                       'u.port or (443 if u.scheme == "https" else 80)]))')
-    on, host, port = json.loads(asked.strip().splitlines()[-1])
-    if not on:
-        return None
-    looked_up = pi.run(f'getent ahosts {shlex.quote(host)}').splitlines()     # "159.203.148.75  STREAM ntfy.sh"
-    return {line.split()[0] for line in looked_up if line.strip()}, port
+    """The ntfy server's addresses (what its name points to inside the app container, where the app looks it up)
+    and port, when the app has a topic set (NTFY_TOPIC) and so sends phone notifications; None when it has none."""
+    asked = pi.compose('exec', '-T', 'app', 'python', '-c', PHONE_SERVER_LOOKUP)
+    on, addresses, port = json.loads(asked.strip().splitlines()[-1])
+    return (set(addresses), port) if on else None
 
 
 def test_no_picture_goes_off_the_pi(pi: Pi):
@@ -511,7 +521,7 @@ def test_no_picture_goes_off_the_pi(pi: Pi):
     another SSH session on the Wi-Fi, like a download on the Pi, makes it fail with nothing wrong.
 
     With NTFY_TOPIC set, the app may also reach the ntfy server (the phone notifications, text only): that one way
-    out is allowed, for the app container only, to what the server's name points to on the Pi."""
+    out is allowed, for the app container only, to what the server's name points to inside that container."""
     pi.wait_until_healthy()
     status = pi.get('/api/status')
     if status['llm']:

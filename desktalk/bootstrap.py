@@ -355,7 +355,8 @@ class DeskTalk:
         if isinstance(self.desktop, QueuedNotifications):
             self._shutdown_step('show the last notifications', self.desktop.close)
         if isinstance(self.phone_notifications, QueuedNotifications):
-            self._shutdown_step('send the last phone notifications', self.phone_notifications.close)
+            # Never waits: what is waiting for the phone is dropped, and a send under way ends by itself.
+            self._shutdown_step('stop the phone notifications', self.phone_notifications.close)
         still_running += self.bus.close(wait)
         if isinstance(self.source, WebcamSource):
             self.source.release()
@@ -396,12 +397,6 @@ def make_camera(config: AppConfig, clock: Clock) -> Camera:
         return Camera(WebcamSource(clock, camera, camera.webcam_indices[0]))
     pi = PiFrameSource(clock, camera)
     return Camera(pi, pi=pi)
-
-
-def pi_camera_elsewhere(config: AppConfig) -> bool:
-    """True on a computer with the Pi as the camera: the Pi's camera sends its pictures to the Pi's own Desk Talk,
-    so none ever come here. On the Pi itself web.public_address is set."""
-    return config.camera.source == 'pi' and not config.web.public_address
 
 
 def cloud_goals(protocols: Protocols) -> dict[str, float]:
@@ -594,7 +589,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         desktop = make_notifications(notifications, sys.platform, queue_size=notifications.queue_size, clock=clock)
     topic = config.secrets.ntfy_topic.get_secret_value()
     if phone_notifications is None and topic and notifications.enabled:
-        phone_notifications = NtfyNotifications(notifications, topic, queue_size=notifications.queue_size)
+        phone_notifications = NtfyNotifications(notifications, topic, queue_size=notifications.queue_size,
+                                                clock=clock)
         log.info('Notifications also go to your phone through %s', notifications.phone_server)
     feed = DesktopAlerts(hub, desktop, preferences, profiles, notifications, clock,
                          lens_name=config.prompts.lens.card.name, sip_title=config.prompts.notifications.sip_title,
@@ -619,7 +615,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     lens = Lens(camera_health, source, safety_rules, preferences, feed, bus, photos, config.lens, config.pi,
                 clock=clock, checks=health_checks, prompts=config.prompts.lens,
                 preview_chars=config.logging.preview_chars, phone=camera.phone, pi_uploads=camera.pi, saving=saving,
-                camera_elsewhere=pi_camera_elsewhere(config))
+                camera_elsewhere=config.pi_camera_elsewhere)
     idle_chat = IdleChat(model, hub, desk_status, roster, profiles, character_memory,
                          lambda: generator.live_context()['summary'], config.idle_chat, config.llm.replies,
                          memory_kept=config.llm.memory_per_agent, memory_chars=config.chat.memory_reply_chars,

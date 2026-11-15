@@ -9,6 +9,10 @@ said before (a warning about a different desk edge is a new one). When nothing i
 without the AI: "Heads up: scissors next to the cell phone". With chat.ai_writes_warnings off (the Pi) the AI is never
 asked, so a warning can't wait for one. A speaker that isn't in the chat (a Demo tab warning) sends its card along,
 so the page can draw it.
+
+What may go to the phone (`phone_text`, desktop_alerts.py) is only ever ready-made words: a proximity warning's fixed
+line (even when the AI wrote what the chat says), Lens's line, and the words of the alerts in READY_MADE. A lost item's
+words may be an AI's (lost_items.py), so that alert never goes to the phone.
 """
 
 from __future__ import annotations
@@ -20,9 +24,14 @@ from desktalk.config import ChatSettings
 from desktalk.config.prompts import AlertPrompts
 from desktalk.core.chat import prompts
 from desktalk.core.chat.agent_ai import AgentAI
+from desktalk.core.chat.desktop_alerts import PHONE_TEXT
 from desktalk.core.chat.replies import looks_cut_off, response_violates_evidence
 from desktalk.domain import LENS, AgentProfile, Alert, SeenObject
 from desktalk.ports import DeskScene, Profiles, RosterView
+
+# Alerts that carry their own text, by feature, whose text is always prompts.yaml's words with blanks filled in (pets,
+# clutter, plants: desk_monitor.py). Only these go to the phone with their words; any other is left out.
+READY_MADE = frozenset({'pet_risk', 'organization', 'water_plants'})
 
 
 class AlertVoice:
@@ -61,6 +70,8 @@ class AlertVoice:
                 return None
             speaker = pid if self._profiles.get(pid) else LENS
             msg = {'type': 'group_message', 'character': speaker, 'text': d['text'], 'alert': d.get('feature', '')}
+            if d.get('feature') in READY_MADE:
+                msg[PHONE_TEXT] = d['text']
             if snapshot:
                 msg['snapshot'] = snapshot
             return msg
@@ -73,13 +84,15 @@ class AlertVoice:
         key = f'proximity_{pid}_{d.get("near") or ""}' + (f'_{d["edge"]}' if d.get('edge') else '')
         prev = self._said_about.get(key) if follow_up > 0 else None
         text = self._ai_alert(a, d, prev, follow_up) if self._chat.ai_writes_warnings else None
-        text = text or self._fixed_line(a, d, follow_up)
-        msg = {'type': 'group_message', 'character': pid, 'text': text, 'alert': 'proximity'}
+        fixed = self._fixed_line(a, d, follow_up)
+        # The phone only ever gets the fixed line: the AI's may have seen the to-do list.
+        msg = {'type': 'group_message', 'character': pid, 'text': text or fixed, 'alert': 'proximity',
+               PHONE_TEXT: fixed}
         if snapshot:
             msg['snapshot'] = snapshot
         if prev:
             msg['reply_to'] = {'character': prev['character'], 'text': prev['text']}
-        self._said_about[key] = {'character': pid, 'text': text}
+        self._said_about[key] = {'character': pid, 'text': msg['text']}
         return msg
 
     def _fixed_line(self, a: AgentProfile, d: Mapping[str, Any], follow_up: int) -> str:
@@ -104,7 +117,7 @@ class AlertVoice:
             text = w.lens_edge.format(object=self._label(d['object']))
         else:
             text = w.too_close
-        msg = {'type': 'group_message', 'character': LENS, 'text': text, 'alert': 'proximity'}
+        msg = {'type': 'group_message', 'character': LENS, 'text': text, 'alert': 'proximity', PHONE_TEXT: text}
         if d.get('snapshot'):
             msg['snapshot'] = d['snapshot']
         return msg

@@ -132,11 +132,29 @@ def test_the_phone_server_is_kept_without_a_trailing_slash(project, server, kept
     assert load_config(root=project, environ={}).notifications.phone_server == kept
 
 
-@pytest.mark.parametrize('server', ['ntfy.sh', 'ftp://ntfy.sh', 'https://'])
+@pytest.mark.parametrize('server', ['ntfy.sh', 'ftp://ntfy.sh', 'https://', 'http://192.168.1.5:notaport'])
 def test_a_phone_server_that_is_not_a_web_address_is_refused(project, server):
     write_local(project, f'notifications:\n  phone_server: "{server}"\n')
     with pytest.raises(ConfigError, match='phone_server'):
         load_config(root=project, environ={})
+
+
+@pytest.mark.parametrize('server', ['https://ntfy.sh/desktalk-abc123', 'https://ntfy.sh/a/b/', 'https://ntfy.sh/?t=1',
+                                    'https://ntfy.sh/#topic', 'https://me:secret@ntfy.sh'])
+def test_a_phone_server_with_more_than_a_server_address_is_refused(project, server):
+    """Only scheme://name[:port]: a topic in the address would be in every log line that names the server."""
+    write_local(project, f'notifications:\n  phone_server: "{server}"\n')
+    with pytest.raises(ConfigError, match='NTFY_TOPIC'):
+        load_config(root=project, environ={})
+
+
+@pytest.mark.parametrize(('source', 'public', 'elsewhere'), [
+    ('pi', '', True),                          # a computer: the Pi's camera sends to the Pi's own Desk Talk
+    ('pi', 'desktalk.local:5000', False),      # the Pi itself: its camera sends here
+    ('phone', '', False), ('webcam', '', False)])
+def test_the_pi_camera_is_elsewhere_only_on_a_computer(project, source, public, elsewhere):
+    write_local(project, f'camera:\n  source: {source}\nweb:\n  public_address: "{public}"\n')
+    assert load_config(root=project, environ={}).pi_camera_elsewhere is elsewhere
 
 
 def test_dotenv_can_still_set_model_names(project):
