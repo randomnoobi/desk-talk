@@ -30,6 +30,13 @@ only for this computer, from the server's own page or the Vite dev server's (Dev
     GET  /api/dev/pi_stats?since=<ts>       the Pi's system numbers (its GET /api/system/stats, fetched from
                                             dev.pi_address, since the page can't ask the Pi itself), with
                                             "address" added; 502 when the Pi doesn't answer
+    GET  /api/dev/health                    the System tab's health checks and Pi cards, and the Storage tab's
+                                            Pi card: on a computer whose camera is the Pi (settings →
+                                            web.public_address empty), the Pi's own GET /api/health, fetched
+                                            from dev.pi_address, with "from": "pi" and "address"; otherwise this
+                                            server's own, with "from": "here" and "address": "". 502 when the Pi
+                                            doesn't answer. (The rest of the System tab reads this computer's
+                                            own GET /api/health and GET /api/log/status.)
     GET  /api/dev/pi_log?source=&after=<n>  the Pi log tab: the lines of one of the Pi's logs numbered after n
                                             (0: all it kept), and how the ssh connection is doing. Asking starts
                                             ssh (settings → dev.pi_log) and keeps it going; 404 for a log not in
@@ -44,6 +51,7 @@ The errors are the parts' own words from config/prompts.yaml → dev.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import asdict
 from typing import Annotated, Any
 
@@ -52,6 +60,7 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from desktalk.domain import QueryRefused, RunAlreadyGoing, StatsUnavailable
 from desktalk.ports import DatabaseBrowser, DataFiles, DemoScenarios, PiLog, PiStatsLink, TestRunner
 from desktalk.web.deps import App, DevOnly
+from desktalk.web.routers.health import health as own_health
 from desktalk.web.schemas import QueryRequest, RunRequest, ScenarioRequest
 from desktalk.web.stories import object_story, story_photo
 
@@ -91,6 +100,25 @@ def _pi_stats_link(app: App) -> PiStatsLink:
     if app.pi_stats_link is None:
         raise HTTPException(404)
     return app.pi_stats_link
+
+
+def _pi_elsewhere(app: App) -> PiStatsLink | None:
+    """The line to the Pi when this is a computer (web.public_address empty) whose camera is the Pi, so the Pi's
+    own server knows how its camera and the rest are doing; None when this server knows itself."""
+    if app.pi is not None and not app.config.web.public_address and app.pi_stats_link is not None:
+        return app.pi_stats_link
+    return None
+
+
+def _ask_pi(app: App, ask: Callable[[], dict[str, Any]], unreachable: str) -> dict[str, Any]:
+    """`ask()`'s reply from the Pi, with its address; a 502 with `unreachable`'s words (prompts.yaml → dev, with
+    {address} and {problem}) when the Pi doesn't answer or sends something else."""
+    address = app.config.dev.pi_address
+    try:
+        reply = ask()
+    except StatsUnavailable as error:
+        raise HTTPException(502, unreachable.format(address=address, problem=str(error))) from None
+    return {**reply, 'address': address}
 
 
 def _pi_log(app: App) -> PiLog:
@@ -281,13 +309,19 @@ def dev_cancel_scenario(app: App, scenario_id: str) -> dict[str, Any]:
 @router.get('/api/dev/pi_stats')
 def dev_pi_stats(app: App, since: float | None = None) -> dict[str, Any]:
     """A plain def, so FastAPI runs it in a thread: the Pi may take up to dev.pi_stats_timeout_sec to answer."""
-    address = app.config.dev.pi_address
-    try:
-        reply = _pi_stats_link(app).fetch(since)
-    except StatsUnavailable as error:
-        raise HTTPException(502, app.config.prompts.dev.pi_stats_unreachable.format(address=address,
-                                                                                    problem=str(error))) from None
-    return {**reply, 'address': address}
+    link = _pi_stats_link(app)
+    return _ask_pi(app, lambda: link.fetch(since), app.config.prompts.dev.pi_stats_unreachable)
+
+
+@router.get('/api/dev/health')
+def dev_health(app: App) -> dict[str, Any]:
+    """How every part is doing, from the machine that knows: the Pi when it is elsewhere, else this server, each
+    saying where it came from. A plain def, so FastAPI runs it in a thread: the Pi may take up to
+    dev.pi_stats_timeout_sec to answer."""
+    link = _pi_elsewhere(app)
+    if link is None:
+        return {**own_health(app), 'from': 'here', 'address': ''}
+    return {**_ask_pi(app, link.health, app.config.prompts.dev.pi_health_unreachable), 'from': 'pi'}
 
 
 @router.get('/api/dev/pi_log')

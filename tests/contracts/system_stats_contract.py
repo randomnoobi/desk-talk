@@ -66,7 +66,8 @@ class SystemStatsContract:
 
 
 class PiStatsLinkContract:
-    """Subclass this and give `link` (its Pi answers with one sample) and `dead_link` (its Pi doesn't answer)."""
+    """Subclass this and give `link` (its Pi answers: one sample and its health) and `dead_link`
+    (its Pi doesn't answer)."""
 
     def test_it_is_a_link(self, link):
         assert isinstance(link, PiStatsLink)
@@ -82,4 +83,14 @@ class PiStatsLinkContract:
     def test_a_pi_that_does_not_answer_raises(self, dead_link):
         with pytest.raises(StatsUnavailable) as caught:
             dead_link.fetch(None)
+        assert str(caught.value)
+
+    def test_it_brings_back_the_pi_health(self, link):
+        reply = link.health()
+        assert isinstance(reply, dict)
+        assert isinstance(reply['checks'], dict)
+
+    def test_a_pi_that_does_not_answer_raises_for_its_health_too(self, dead_link):
+        with pytest.raises(StatsUnavailable) as caught:
+            dead_link.health()
         assert str(caught.value)
