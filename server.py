@@ -72,8 +72,8 @@ def address_lines(config: AppConfig, links: Links, source_kind: str) -> None:
         say(f'  → Open {links.web_url} on your phone or computer\n')
         return
     if source_kind == 'pi':
-        say('\n  📷 Raspberry Pi camera: Desk Talk runs on the Pi, and its camera sends its pictures there, not here.')
-        say(f'     Open the Pi\'s own Desk Talk at http://{config.dev.pi_address} (if your Pi has another name,')
+        say('\n  📷 Raspberry Pi camera: Desk Talk runs on the Pi, and its camera sends its pictures to the Pi\'s')
+        say(f'     own Desk Talk. Open it at http://{config.dev.pi_address} (if your Pi has another name,')
         say('     set dev.pi_address in config/settings.local.yaml).\n')
     elif source_kind == 'phone':
         say('  📱 Phone camera: open the page below on this computer, and scan the code it shows with your phone')

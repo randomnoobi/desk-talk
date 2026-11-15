@@ -969,6 +969,12 @@ class DevSettings(_Section):
     health: DevHealthLimits
     pi_log: DevPiLogSettings
 
+    @field_validator('pi_address')
+    @classmethod
+    def _just_the_name_and_port(cls, value: str) -> str:
+        """The page and the start-up line put http:// in front, so drop spaces, an http:// and a trailing /."""
+        return value.strip().removeprefix('http://').rstrip('/')
+
 
 # ════════════════════════════════════════════════════════════════════
 #  .env (never YAML)

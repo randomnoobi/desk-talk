@@ -287,8 +287,8 @@ One window, three columns:
    how sure the camera was each time, and the picture taken at each step with its box drawn on (for "went
    away", the empty spot with its last box). The pictures are kept in `data/trace_photos/`
    (settings → `object_story`).
-   Until the camera connects it says so. (Only an app running on a computer, for development, shows the command to
-   run on the Pi.)
+   Until the camera connects it says so. (With the Pi as the camera, an app running on a computer, for development,
+   links to the Pi's own Desk Talk instead.)
 
 **Event log** page: what happened each day, newest first: sips, breaks, food, finished to-dos, sunlight,
 reminders, warnings and camera problems, with filters for habits, reminders and warnings.
@@ -365,7 +365,7 @@ YOLO); without it `server.py` stops and says so. Or set `detector.enabled: false
 
 Open **http://localhost:5000**. A setting with a typo or a bad value stops it at the start, with a message that
 names the file and the setting. With the Pi as the camera (`camera.source: pi`), the page links to the Pi's own Desk
-Talk instead, at `dev.pi_address`: the Pi's camera sends its pictures to the Pi, never to a computer. To see a camera
+Talk instead, at `dev.pi_address`: the Pi's camera sends its pictures to the Pi's own Desk Talk. To see a camera
 here, set `camera.source: webcam` (or `phone`) in `config/settings.local.yaml`.
 
 > **If you ran an older version on a computer.** Older versions wrote the pairing key into `data/logs/` (in the

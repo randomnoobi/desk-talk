@@ -1209,23 +1209,20 @@ function renderCamStage() {
     stage.innerHTML = '<p class="cam-caption">No webcam found. Check that one is plugged in, then restart Desk Talk.</p>';
     return;
   }
-  if (state.cameraSource === 'pi' && ui.pi.public_address) {
-    // On the Pi the camera starts by itself, so there is no command (and no pairing key) to show.
-    stage.innerHTML = `<div class="pair">
-      <h3>The Pi's camera</h3>
-      <p>It starts by itself when the Pi does. Open Desk Talk from any phone or computer on the same Wi-Fi at:</p>
-      <pre class="json pi-cmd">http://${esc(ui.pi.public_address)}</pre>
-      <p class="pair-url">It takes ${ui.pi.fps} pictures a second${ui.pi.delete_every_min ? `, keeps them on the Pi, and deletes them every ${ui.pi.delete_every_min} minutes` : ' and keeps them on the Pi'}.</p></div>`;
-    return;
-  }
   if (state.cameraSource === 'pi') {
-    // Away from the Pi: the Pi's camera sends its pictures to the Pi's own Desk Talk, never to this computer.
-    const piUrl = `http://${ui.pi.address}`;
+    // The Pi's camera starts by itself and sends its pictures to the Pi's own Desk Talk, so there is no command
+    // (and no pairing key) to show. On the Pi, say its address; on a computer, link to the Pi's page.
+    const onThePi = !!ui.pi.public_address;
+    const piUrl = `http://${onThePi ? ui.pi.public_address : ui.pi.address}`;
+    const where = onThePi
+      ? `<p>It starts by itself when the Pi does. Open Desk Talk from any phone or computer on the same Wi-Fi at:</p>
+      <pre class="json pi-cmd">${esc(piUrl)}</pre>`
+      : `<p>Desk Talk runs on your Raspberry Pi, and its camera sends its pictures to the Pi's own Desk Talk. Open it at:</p>
+      <pre class="json pi-cmd"><a href="${esc(piUrl)}">${esc(piUrl)}</a></pre>
+      <p class="muted">If your Pi has another name, set <code>dev.pi_address</code> in <code>config/settings.local.yaml</code>.</p>`;
     stage.innerHTML = `<div class="pair">
       <h3>The Pi's camera</h3>
-      <p>Desk Talk runs on your Raspberry Pi, and its camera sends its pictures there, not to this computer. Open the Pi's own Desk Talk:</p>
-      <pre class="json pi-cmd"><a href="${esc(piUrl)}">${esc(piUrl)}</a></pre>
-      <p class="muted">If your Pi has another name, set <code>dev.pi_address</code> in <code>config/settings.local.yaml</code>.</p>
+      ${where}
       <p class="pair-url">It takes ${ui.pi.fps} pictures a second${ui.pi.delete_every_min ? `, keeps them on the Pi, and deletes them every ${ui.pi.delete_every_min} minutes` : ' and keeps them on the Pi'}.</p></div>`;
     return;
   }

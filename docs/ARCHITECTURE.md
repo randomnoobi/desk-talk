@@ -162,7 +162,7 @@ reply only holds up the message generator's own queue, never the camera or the o
 
 | Folder / file | Job |
 |---|---|
-| `server.py` | Loads the settings, builds the app and runs the web servers with uvicorn. In the `app` container Docker runs it; on a computer, for development, you run it (`uv run python server.py`), and its page shows the Pi command or the phone link. |
+| `server.py` | Loads the settings, builds the app and runs the web servers with uvicorn. In the `app` container Docker runs it; on a computer, for development, you run it (`uv run python server.py`), and its page shows the phone link, or with the Pi as the camera links to the Pi's own Desk Talk. |
 | `desktalk/config/` | Reads `config/*.yaml` and `.env` into typed, read-only settings, one file per config file: `app.py` (`settings.yaml`, and `AppConfig`, everything together), `habits.py` (`protocols.yaml`), `agents.py` (`agents.yaml`), `prompts.py` (`prompts.yaml`), `loader.py` (reading the files, and the plain-words errors), `base.py` (the building blocks). A bad value stops the start (see [Settings](#settings)). |
 | `desktalk/bootstrap.py` | **Builds every part and connects them.** The only place that knows the real classes. `build(config)` returns a `DeskTalk` with every part as a named field, each typed with an interface; `start()` and `stop()` run and stop the background jobs. |
 | `desktalk/ports.py` | The interfaces between the parts (below). |

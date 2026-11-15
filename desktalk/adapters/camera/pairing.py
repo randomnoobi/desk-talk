@@ -37,6 +37,6 @@ def make_pair_key(path: Path | None, key_bytes: int) -> str:
             # a crash never leaves a cut-off key that could pass as one you wrote yourself.
             write_atomically(Path(path), key)
         except OSError as exc:
-            log.warning('Could not save the pairing key in %s (%s): the Pi command and phone link will '
-                        'change after a restart', path, exc)
+            log.warning('Could not save the pairing key in %s (%s): the phone link will change after a restart',
+                        path, exc)
     return key

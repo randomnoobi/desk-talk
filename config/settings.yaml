@@ -51,8 +51,8 @@ camera:
   webcam_warmup_reads: 10     # pictures tried before deciding a webcam doesn't work
   webcam_max_index: 4         # if the chosen webcam doesn't work, webcams 0 up to (not including) this are tried
   pair_key_bytes: 6           # random bytes in a new pairing key (6 makes an 8-letter key)
-  pair_key_file: certs/pair-key.txt  # the pairing key is kept here, so the Pi's command and the phone
-                              # link stay the same after a restart
+  pair_key_file: certs/pair-key.txt  # the pairing key is kept here, so the phone link stays the same
+                              # after a restart
   keep_newer_picture_sec: 3   # a Pi picture can arrive after one taken later (the Pi sends it once its detector
                               # is done): the live view keeps the later one, unless it hasn't changed for this long
   pi_clock_pictures: 30       # the Pi's clock is judged by the quickest of its last this many pictures (the others

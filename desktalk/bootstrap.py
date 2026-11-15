@@ -169,7 +169,7 @@ class DeskTalk:
     pi_heartbeats     the same Pi: heartbeat() for /api/pi/heartbeat (None when it isn't the camera)
     phone_inbox,      the phone when it is the camera (None otherwise): push() for /api/phone/frame, set_motion()
     phone             and mark_stopped(), and its tilt when the desk corners are marked
-    pair_key          what the Pi and the phone must send in X-Desk-Key (and show in the Pi command and phone link)
+    pair_key          what the Pi and the phone must send in X-Desk-Key (and in the phone link)
     safety_rules      the danger rules: for_settings_page(), save(), clean_outline() (/api/rules, desk corners)
     camera_health     Lens's camera checks: issues() (/api/live), phone_tip() (the upload replies), forget()
     photos            proof photos: save() (a photo of the desk on request)

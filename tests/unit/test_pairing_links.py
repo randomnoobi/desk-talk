@@ -17,12 +17,6 @@ def test_a_public_address_replaces_the_address():
     assert links.web_url == 'http://desktalk.local:5000'
 
 
-def test_there_is_no_command_for_starting_the_pis_camera_by_hand():
-    """The Pi starts its own camera, sending to its own Desk Talk; nothing shows a by-hand command any more."""
-    assert not hasattr(Links('192.168.1.20', 5000, KEY), 'pi_command')
-    assert not hasattr(Links('192.168.1.20', 5000, KEY), 'pi_command_with_key_file')
-
-
 def test_the_pairing_key_is_not_in_how_links_print():
     """A Links that lands in a log line, a traceback or a test failure must not show the key."""
     links = Links('192.168.1.20', 5000, KEY, phone_port=5443, public_address='desktalk.local:5000')

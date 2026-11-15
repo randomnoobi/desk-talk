@@ -47,7 +47,7 @@ RULES_COPY = HERE / 'safety_rules.json'     # config/safety_rules.json as commit
 PINNED_NOW = (2026, 10, 21, 10, 0, 0)       # local time when the requests are sent
 WATCH_SEC = 6                               # how long the camera watches the busy desk
 WATCH_STARTS_AGO_SEC = 60
-COMPUTER_ADDRESS = '192.168.1.20'           # this computer on the Wi-Fi (in the Pi command and the phone link)
+COMPUTER_ADDRESS = '192.168.1.20'           # this computer on the Wi-Fi (in the phone link)
 
 
 def det(label: str, x1: float, y1: float, x2: float, y2: float, conf: float = 0.9) -> Detection:
