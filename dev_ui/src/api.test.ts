@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ApiError, cancelScenario, getJSON, getPiLog, getPiStats, getTrace, postJSON, startScenario, startTests } from './api'
+import {
+  ApiError, cancelScenario, getJSON, getPiLog, getPiStats, getShownHealth, getShownLogStatus, getTrace, postJSON, startScenario,
+  startTests,
+} from './api'
 
 function reply(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -105,5 +108,22 @@ describe('the Pi tab', () => {
   it('getPiStats throws the 502 words when the Pi does not answer', async () => {
     fakeFetch(reply(502, { error: "Can't reach the Pi at pi: timed out" }))
     await expect(getPiStats()).rejects.toMatchObject({ status: 502, message: "Can't reach the Pi at pi: timed out" })
+  })
+})
+
+describe('the System tab', () => {
+  it('getShownHealth and getShownLogStatus ask the routes that pass on the Pi\'s own replies', async () => {
+    const fetch = fakeFetch(reply(200, { uptime_sec: 5, from: 'pi', address: 'desk-pi.local:5000' }),
+                            reply(200, { folder: '/data/log', from: 'here', address: '' }))
+    await expect(getShownHealth()).resolves.toMatchObject({ from: 'pi', address: 'desk-pi.local:5000' })
+    await expect(getShownLogStatus()).resolves.toMatchObject({ from: 'here', address: '' })
+    expect(fetch.mock.calls[0][0]).toBe('/api/dev/health')
+    expect(fetch.mock.calls[1][0]).toBe('/api/dev/log_status')
+  })
+
+  it('getShownHealth throws the 502 words when the Pi does not answer', async () => {
+    fakeFetch(reply(502, { error: "Couldn't reach the Pi's Desk Talk at desk-pi.local:5000." }))
+    await expect(getShownHealth())
+      .rejects.toMatchObject({ status: 502, message: "Couldn't reach the Pi's Desk Talk at desk-pi.local:5000." })
   })
 })

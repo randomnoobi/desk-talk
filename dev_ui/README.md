@@ -20,8 +20,10 @@ You need Node 22 (it comes with npm).
   on and off lines, the vote, the state, and the wait before it changes.
 - **System**: how the Pi is doing (connected, pictures a second, last picture, its detector, temperature,
   slowed down, disk, clock) and every part on this computer (detection, the event stream, background jobs,
-  timed jobs, the event log, the AI), from `/api/health` and `/api/log/status`. Numbers turn amber or red
-  at the limits in `dev.health`.
+  timed jobs, the event log, the AI), from `/api/dev/health` and `/api/dev/log_status`. Numbers turn amber or
+  red at the limits in `dev.health`. When the Pi is the camera and this page runs on a computer, it shows the
+  Pi's own Desk Talk (the heading says so, with its address), because the computer's copy gets no pictures:
+  the Pi's camera sends them to the Pi's own Desk Talk. The Storage tab's Pi card does the same.
 - **Pi**: every system number the Pi gives, now and over its last `system_stats.keep_min` minutes (the
   Pi's own setting): the model, how long it has been up, and warnings (the power supply too weak, too hot at
   `pi.hot_warning_c` and `pi.hot_serious_c`, slowed down now (red) or earlier since it started (amber), the Pi

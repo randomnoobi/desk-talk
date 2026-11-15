@@ -56,7 +56,7 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 | Method | Path | What it does | Called by | Access |
 |---|---|---|---|---|
-| GET | `/api/health` | How every part is doing in one reply: background jobs, timed jobs, event consumers, camera, what the Pi said lately, detection, the AI. | The developer page's System and Storage tabs (`dev_ui/src/api.ts`). People `curl` it ([raspberry_pi/README.md](../raspberry_pi/README.md)); `tests/e2e/test_full_stack.py` | anyone on the network |
+| GET | `/api/health` | How every part is doing in one reply: background jobs, timed jobs, event consumers, camera, what the Pi said lately, detection, the AI. | The developer page's System and Storage tabs (`dev_ui/src/api.ts`). People `curl` it ([raspberry_pi/README.md](../raspberry_pi/README.md)); `tests/e2e/test_full_stack.py`; `GET /api/dev/health` on a computer whose camera is the Pi | anyone on the network |
 | GET | `/api/system/stats?since=` | The system numbers of the machine the app runs on, kept for `system_stats.keep_min` minutes: `{collecting, every_sec, keep_min, info, samples}`, the samples newer than `since`. Each sample has the processor (busy, per core, speed, load), memory and swap, temperatures, the fan, voltages, under-voltage, disk space and disk speed, network and Wi-Fi, and the busiest programs. `collecting` is false (and `samples` empty) where `system_stats.enabled` is off: everywhere but the Pi. In `desktalk/web/routers/system.py`. | `GET /api/dev/pi_stats` on a computer (the Pi tab); `tests/pi/test_real_pi.py` | anyone on the network |
 
 ### Chat (9)
@@ -148,7 +148,7 @@ number, kept between 1 and the most `web.list_sizes` allows; anything else is a 
 |---|---|---|---|---|
 | GET | `/api/log/days` | `{"days", "today"}`: the days that have a log, newest first (at most `event_log.keep_days`), and today. | `web_app/app.js` | anyone on the network |
 | GET | `/api/log/events` | Only the events that matter to you, newest first: sips, breaks, food, finished to-dos, sunlight (`habit`), reminders (`nudge`), warnings (`alert`, with a plain `subtitle` like "near Computer") and camera problems (`camera`). `?types=habit,nudge,alert,camera` picks some of those four (others are ignored); `?limit=` counts only these. | `web_app/app.js` | anyone on the network |
-| GET | `/api/log/status` | The log's folder, today's counts, the timed jobs, the event stream, the camera. | the developer page's System tab | anyone on the network |
+| GET | `/api/log/status` | The log's folder, today's counts, the timed jobs, the event stream, the camera. | the developer page's System tab; `GET /api/dev/log_status` on a computer whose camera is the Pi | anyone on the network |
 
 ### Settings (3)
 
@@ -220,6 +220,8 @@ has `"demo": true`), and a pretend sip counts in today's water.
 | POST | `/api/dev/scenarios` | Start a pretend warning counting down; it goes out like the real one when the countdown is over. | Demo tab (**Start**) | this computer and its own page only |
 | DELETE | `/api/dev/scenarios/{id}` | Stop one counting down, so it never goes out. | Demo tab (**Cancel**) | this computer and its own page only |
 | GET | `/api/dev/pi_stats?since=` | The Pi's `GET /api/system/stats`, fetched from `dev.pi_address` (the page can't ask the Pi itself: `web.cors_origins` is empty), with `"address"` added. 502 with `dev.pi_stats_unreachable`'s words when the Pi doesn't answer within `dev.pi_stats_timeout_sec`. | Pi tab | this computer and its own page only |
+| GET | `/api/dev/health` | How every part is doing, from the machine that knows. On a computer whose camera is the Pi (`camera.source: pi`, `web.public_address` empty), the Pi's own `GET /api/health`, fetched from `dev.pi_address`, with `"from": "pi"` and `"address"` added: the Pi's camera sends its pictures to the Pi's Desk Talk, so this computer's own camera health would say it isn't connected. Anywhere else (on the Pi itself, or another camera), this server's own `GET /api/health` with `"from": "here"` and `"address": ""`. 502 with `dev.pi_stats_unreachable`'s words when the Pi doesn't answer within `dev.pi_stats_timeout_sec`. | System and Storage tabs | this computer and its own page only |
+| GET | `/api/dev/log_status` | The same for `GET /api/log/status`: the Pi's event log folder, today's counts, timed jobs, event stream and camera when the Pi is elsewhere (`"from": "pi"`), else this server's own (`"from": "here"`). 502 like `/api/dev/health`. | System and Storage tabs | this computer and its own page only |
 | GET | `/api/dev/pi_log` | The lines of one of the Pi's logs (`?source=` a name in `dev.pi_log.sources`) numbered after `?after=<n>`, and how the ssh connection to the Pi is doing. Asking starts `ssh pi` with that log's command and keeps it going; it stops once the tab stops asking. | Pi log tab, while it is open | this computer and its own page only |
 | GET | `/dev/` | The developer page (`dev_ui/dist/index.html`, from `dev.ui_folder`). Before `npm run build` has made it, a plain line saying how to build it (200). | Your browser | anyone on the network (only the page itself: what it shows comes from the routes above) |
 | GET | `/dev/{file}` | The page's other files (its script and style, the font). | Your browser | anyone on the network |

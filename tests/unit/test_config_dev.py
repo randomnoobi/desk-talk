@@ -51,7 +51,7 @@ def test_dev_settings_load(project):
     assert dev.ui_folder == Path('dev_ui/dist')
     assert (dev.vite_port, dev.poll_sec, dev.run_timeout_min, dev.sql_timeout_sec) == (5173, 1, 15, 5)
     assert isinstance(dev.health, DevHealthLimits)
-    assert dev.health.pi_disk_warn_mb == 1000
+    assert dev.health.pi_disk_warn_mb == 100
     assert config.object_states.trace_pictures == 90
     assert (dev.flicker_flips_per_min, dev.sql_check_every_steps) == (4, 1000)
     assert (dev.collect_timeout_sec, dev.flips_window_min, dev.table_counts_every_sec) == (120, 10, 30)

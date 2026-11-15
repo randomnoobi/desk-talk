@@ -42,7 +42,7 @@ export function remember(before: Seen | null, health: Health, at: number): Seen 
 const MBYTE = 1024 * 1024
 
 const PI_ROWS = ['connected', 'pictures per second', 'last picture', 'detector', 'detect ms', 'model', 'CPU °C',
-                 'slowed down', 'disk free', 'photos stored', 'last cleanup', 'clock off by'] as const
+                 'slowed down', 'picture folder free', 'photos stored', 'last cleanup', 'clock off by'] as const
 
 /** How much something went up a second between the poll before and now; null without one before. */
 function perSecond(now: number, then: number | null | undefined, before: Seen | null, nowAt: number): number | null {
@@ -114,7 +114,8 @@ function piRows(health: Health, pi: PiStatus | null, limits: RowLimits, now: num
     'slowed down': pi.throttled === undefined ? notSent
       : pi.throttled === '' || Number.isNaN(parseInt(pi.throttled, 16)) ? ["can't tell", 'off']
       : parseInt(pi.throttled, 16) === 0 ? ['no', 'ok'] : [`yes (${pi.throttled})`, 'bad'],
-    'disk free': pi.disk_free_mb === undefined ? notSent
+    // the camera's picture folder (in the Pi's memory, not the SD card): the Pi tab has the card's space
+    'picture folder free': pi.disk_free_mb === undefined ? notSent
       : [formatBytes(pi.disk_free_mb * MBYTE), pi.disk_free_mb < limits.pi_disk_warn_mb ? 'warn' : 'ok'],
     'photos stored': pi.photos_stored === undefined ? notSent : [String(pi.photos_stored), 'ok'],
     'last cleanup': pi.last_cleanup_ts === undefined ? notSent : [formatAgo(pi.last_cleanup_ts, now), 'ok'],

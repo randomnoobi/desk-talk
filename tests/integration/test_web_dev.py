@@ -19,7 +19,7 @@ from desktalk.bootstrap import DeskTalk
 from desktalk.domain import BBox, Detection, PiLogSource, TestItem
 from desktalk.web.app import create_app
 from tests.characterization.client import WebClient
-from tests.fakes import FakePiLog, FakeTestRunner
+from tests.fakes import FakePiLog, FakePiStatsLink, FakeTestRunner
 from tests.integration.app_kit import CUP_FAR, DeskRig, changed, desk_config
 from tests.integration.web_kit import ON_THE_WIFI, THIS_COMPUTER, links_for
 from tests.integration.web_kit import web_client as main_client
@@ -53,6 +53,8 @@ EVERY_ROUTE: list[tuple[str, str, Any]] = [
     ('POST', '/api/dev/scenarios', {'name': 'sip', 'after_sec': 0}),
     ('DELETE', '/api/dev/scenarios/demo-1', None),
     ('GET', '/api/dev/pi_stats?since=0', None),
+    ('GET', '/api/dev/health', None),
+    ('GET', '/api/dev/log_status', None),
     ('GET', '/api/dev/pi_log?source=all&after=0', None),
 ]
 
@@ -275,6 +277,57 @@ def test_an_unknown_pi_log_is_404(rig):
 def test_a_pi_log_question_without_a_source_or_a_good_number_is_400(rig, query):
     assert web_client(rig.app).get(f'/api/dev/pi_log{query}').status_code == 400
     assert pi_log(rig).asked == []
+
+
+# ── the System and Storage tabs: the Pi's health and log status when the Pi is elsewhere, else this server's ──
+PI_ELSEWHERE = [('/api/dev/health', '/api/health'), ('/api/dev/log_status', '/api/log/status')]
+
+
+def without_measured_numbers(reply: dict[str, Any]) -> dict[str, Any]:
+    """The reply without the health checks' numbers: the free space on this computer's disk moves between asks."""
+    checks = {key: {k: v for k, v in check.items() if k != 'value'} for key, check in reply.get('checks', {}).items()}
+    return {**reply, 'checks': checks}
+
+
+@pytest.mark.parametrize('path, _', PI_ELSEWHERE)
+def test_on_a_computer_with_the_pi_as_camera_the_pi_answers(tmp_path, path, _):
+    """web.public_address empty (a computer) and camera.source pi: the Pi's own reply, from dev.pi_address."""
+    rig = DeskRig(tmp_path, pi_stats_link=FakePiStatsLink())
+    assert rig.config.camera.source == 'pi' and rig.config.web.public_address == ''
+    reply = web_client(rig.app).get(path).json()
+    assert (reply['from'], reply['address']) == ('pi', rig.config.dev.pi_address)
+
+
+@pytest.mark.parametrize('path, own_route', PI_ELSEWHERE)
+def test_on_the_pi_itself_it_answers_with_its_own(tmp_path, path, own_route):
+    """web.public_address set: this server is the Pi, so it gives its own reply and asks no one."""
+    config = changed(desk_config(tmp_path), 'web', public_address='desktalk.local:5000')
+    link = FakePiStatsLink(problem='it should not be asked')
+    rig = DeskRig(tmp_path, config=config, pi_stats_link=link)
+    client = web_client(rig.app)
+    reply = client.get(path).json()
+    assert (reply.pop('from'), reply.pop('address')) == ('here', '')
+    assert without_measured_numbers(reply) == without_measured_numbers(client.get(own_route).json())
+
+
+@pytest.mark.parametrize('path, own_route', PI_ELSEWHERE)
+def test_with_a_camera_that_is_not_the_pi_it_answers_with_its_own(tmp_path, path, own_route):
+    config = changed(desk_config(tmp_path), 'camera', source='phone')
+    rig = DeskRig(tmp_path, config=config, pi_stats_link=FakePiStatsLink(problem='it should not be asked'))
+    assert rig.app.pi is None
+    client = web_client(rig.app)
+    reply = client.get(path).json()
+    assert (reply.pop('from'), reply.pop('address')) == ('here', '')
+    assert without_measured_numbers(reply) == without_measured_numbers(client.get(own_route).json())
+
+
+@pytest.mark.parametrize('path, _', PI_ELSEWHERE)
+def test_a_pi_that_does_not_answer_is_502_in_plain_words(tmp_path, path, _):
+    rig = DeskRig(tmp_path, pi_stats_link=FakePiStatsLink(problem='no answer in 3 s'))
+    reply = web_client(rig.app).get(path)
+    words = rig.config.prompts.dev.pi_stats_unreachable.format(address=rig.config.dev.pi_address,
+                                                               problem='no answer in 3 s')
+    assert (reply.status_code, reply.json()) == (502, {'error': words})
 
 
 @pytest.mark.parametrize('path', ['../.env', '/etc/passwd', '../../config/settings.yaml'])

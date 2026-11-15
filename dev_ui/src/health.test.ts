@@ -115,7 +115,7 @@ describe('healthRows', () => {
   })
 
   it('turns little free space on the Pi amber', () => {
-    expect(row(healthRows(health({ pi: pi({ disk_free_mb: 500 }) }), log, limits, NOW), 'Pi', 'disk free').level).toBe('warn')
+    expect(row(healthRows(health({ pi: pi({ disk_free_mb: 500 }) }), log, limits, NOW), 'Pi', 'picture folder free').level).toBe('warn')
   })
 
   it('turns slow detection on this computer amber', () => {

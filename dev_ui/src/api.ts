@@ -1,6 +1,6 @@
 // Every call the developer page makes to the Desk Talk server, and the shape of each reply.
-// The /api/dev routes are in desktalk/web/routers/dev.py; /api/health and /api/log/status already
-// existed for the app page and are used as they are.
+// The /api/dev routes are in desktalk/web/routers/dev.py. /api/dev/health and /api/dev/log_status give the same
+// replies as /api/health and /api/log/status (which the app page uses), but the Pi's own when the Pi is the camera.
 
 /** A call that didn't work. `status` is the HTTP status, or 0 when the server couldn't be reached. */
 export class ApiError extends Error {
@@ -394,6 +394,24 @@ export interface LogStatus {
   }
 }
 
+// GET /api/dev/health and /api/dev/log_status (desktalk/web/routers/dev.py): the same replies as /api/health and
+// /api/log/status, plus whose Desk Talk gave them. When the camera is the Pi and the page runs on a computer, this
+// computer's own Desk Talk gets no pictures (the Pi's camera sends them to the Pi's own Desk Talk), so the server
+// passes on the Pi's replies instead.
+
+/** Whose Desk Talk a reply is from: 'pi' is the Pi's own, at `address` (say 'desktalk-pi.local:5000'); 'here' is
+ *  this computer's own, and `address` is ''. */
+export interface Whose {
+  from: 'pi' | 'here'
+  address: string
+}
+
+/** GET /api/dev/health */
+export type ShownHealth = Health & Whose
+
+/** GET /api/dev/log_status */
+export type ShownLogStatus = LogStatus & Whose
+
 // GET /api/dev/pi_stats (desktalk/web/routers/dev.py): the Pi's GET /api/system/stats, passed on by this
 // computer, plus the Pi's address. A number the Pi can't read (no fan, no Wi-Fi, a Mac) is left out of its list.
 
@@ -553,9 +571,12 @@ export const cancelScenario = async (id: string): Promise<void> => {
 export const getPiLog = (source: string, after: number) =>
   getJSON<PiLog>(`/api/dev/pi_log?source=${q(source)}&after=${q(String(after))}`)
 
-export const getHealth = () => getJSON<Health>('/api/health')
+/** How Desk Talk is doing: the Pi's own when the Pi is the camera, else this computer's. A 502 ApiError says in
+ *  plain words why the Pi couldn't be reached. */
+export const getShownHealth = () => getJSON<ShownHealth>('/api/dev/health')
 
-export const getLogStatus = () => getJSON<LogStatus>('/api/log/status')
+/** What the event log says, from the same Desk Talk as getShownHealth. 502 when the Pi couldn't be reached. */
+export const getShownLogStatus = () => getJSON<ShownLogStatus>('/api/dev/log_status')
 
 /** The Pi's system numbers. `since` (the newest sample's `at` you have) asks only for newer samples. A 502 ApiError
  *  says in plain words why the Pi couldn't be reached. */

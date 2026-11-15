@@ -871,8 +871,9 @@ dev:
         minutes: 20             # "hasn't been seen for this many minutes"
   health:                       # when the system tab turns a number amber or red (the Pi's temperature goes by
                                 # pi.hot_warning_c and pi.hot_serious_c, as the health checks say on /api/health)
-    pi_disk_warn_mb: 1000       # less free space than this in the Pi's picture folder (pi.photo_dir, kept in
-                                # memory, not the SD card) turns amber
+    pi_disk_warn_mb: 100        # less free space than this in the Pi's picture folder (pi.photo_dir, kept in
+                                # memory, not the SD card) turns amber. The folder is only CAMERA_PHOTOS_SIZE big
+                                # (300 MB in raspberry_pi/.env), and the camera deletes early near pi.min_free_mb
     detect_warn_ms: 500         # finding things in one picture here (the app's own YOLO) taking longer turns amber
   # The Pi log tab: the Pi's log, as if you typed `ssh pi docker compose logs -f` yourself. This computer runs ssh
   # only while the tab is open, so the Pi does nothing extra the rest of the time. When the connection drops (the Pi

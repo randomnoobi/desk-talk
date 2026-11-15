@@ -4,6 +4,7 @@ same contracts as the real ones (tests/contracts/system_stats_contract.py), but 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from copy import deepcopy
 from dataclasses import replace
 from typing import Any
 
@@ -51,16 +52,66 @@ class FakeStats:
 
 
 class FakePiStatsLink:
-    """Answers with `reply` (one empty sample at 10.0 when not given), or raises StatsUnavailable(problem) when a
-    problem is given. `asked` records each `since`."""
+    """Answers fetch() with `reply` (one empty sample at 10.0 when not given), health() with `health_reply` and
+    log_status() with `log_status_reply` (each like the Pi's own route when not given), or raises
+    StatsUnavailable(problem) for all three when a problem is given. `asked` records each `since`."""
 
-    def __init__(self, reply: dict[str, Any] | None = None, problem: str = ''):
+    def __init__(self, reply: dict[str, Any] | None = None, problem: str = '', *,
+                 health_reply: dict[str, Any] | None = None, log_status_reply: dict[str, Any] | None = None):
         self.reply = reply if reply is not None else {**EMPTY_REPLY, 'samples': [StatsSample(at=10.0).to_dict()]}
+        self.health_reply = health_reply if health_reply is not None else _pi_health()
+        self.log_status_reply = log_status_reply if log_status_reply is not None else _pi_log_status()
         self.problem = problem
         self.asked: list[float | None] = []
 
     def fetch(self, since: float | None) -> dict[str, Any]:
         self.asked.append(since)
+        return self._answer(self.reply)
+
+    def health(self) -> dict[str, Any]:
+        return self._answer(self.health_reply)
+
+    def log_status(self) -> dict[str, Any]:
+        return self._answer(self.log_status_reply)
+
+    def _answer(self, reply: dict[str, Any]) -> dict[str, Any]:
         if self.problem:
             raise StatsUnavailable(self.problem)
-        return self.reply
+        return reply
+
+
+_SCHEDULER_JOB = {'name': 'compact event log', 'every_sec': 3600.0, 'runs': 1, 'last_error': None,
+                  'next_in_sec': 1800.0}
+_EVENT_STREAM = [{'name': 'event log', 'handled': 12, 'waiting': 0, 'dropped': 0, 'errors': 0}]
+_PI_CAMERA = {'camera': 'ok', 'disk_free_mb': 20000, 'last_cleanup_ts': 9.0, 'last_frame_id': 'f-1',
+              'photos_stored': 3}
+
+
+def _pi_health() -> dict[str, Any]:
+    """Like the Pi's GET /api/health (desktalk/web/routers/health.py): its camera sending, nothing wrong."""
+    def check(level: str, value: float | None, unit: str) -> dict[str, Any]:
+        return {'level': level, 'value': value, 'unit': unit}
+
+    return {
+        'uptime_sec': 600.0, 'jobs': [], 'scheduler': [{**_SCHEDULER_JOB, 'last_run_at': 8.0, 'next_run_at': 11.0}],
+        'events': deepcopy(_EVENT_STREAM),
+        'camera': {'source': 'pi', 'connected': True, 'fps': 3.0, 'pictures_received': 1800},
+        'pi': {**deepcopy(_PI_CAMERA), 'upload_format': 2, 'detector': 'ok', 'detector_reason': '', 'detect_ms': 120.0,
+               'model': 'yolo11n', 'clock_off_sec': 0.1},
+        'detection': {'pictures_analysed': 0, 'detect_ms': None, 'problem': None, 'model': 'on the Pi'},
+        'ai': {'ready': False, 'label': '', 'problem': None},
+        'checks': {'camera': check('ok', None, ''), 'detections': check('ok', 0.4, 's'),
+                   'pi_temperature': check('ok', 52.0, '°C'), 'card': check('ok', 20000.0, 'MB'),
+                   'pi_heartbeat': check('ok', 2.0, 's'), 'card_rest': check('ok', 9000.0, 'MB'),
+                   'saving': check('ok', None, '')},
+    }
+
+
+def _pi_log_status() -> dict[str, Any]:
+    """Like the Pi's GET /api/log/status (desktalk/web/routers/log.py): a few events saved today."""
+    return {
+        'folder': '/data/desktalk/events', 'today': {'events': {'object_state': 4, 'alert': 1}, 'pictures_waiting': 0},
+        'last_compaction': None, 'scheduler': [{**_SCHEDULER_JOB}], 'stream': deepcopy(_EVENT_STREAM),
+        'camera': {'source': 'pi', 'connected': True, 'fps': 3.0, 'frames_received': 1800, 'yolo_ms': 120,
+                   'model': 'on the Pi', 'pi': {**_PI_CAMERA}},
+    }

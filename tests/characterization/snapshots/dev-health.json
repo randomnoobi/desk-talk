@@ -1,0 +1,98 @@
+{
+  "content_type": "application/json",
+  "headers": {},
+  "json": {
+    "address": "str",
+    "ai": {
+      "label": "str",
+      "problem": "null",
+      "ready": "bool"
+    },
+    "camera": {
+      "connected": "bool",
+      "fps": "number",
+      "pictures_received": "number",
+      "source": "str"
+    },
+    "checks": {
+      "camera": {
+        "level": "str",
+        "unit": "str",
+        "value": "null"
+      },
+      "card": {
+        "level": "str",
+        "unit": "str",
+        "value": "number"
+      },
+      "card_rest": {
+        "level": "str",
+        "unit": "str",
+        "value": "number"
+      },
+      "detections": {
+        "level": "str",
+        "unit": "str",
+        "value": "number"
+      },
+      "pi_heartbeat": {
+        "level": "str",
+        "unit": "str",
+        "value": "number"
+      },
+      "pi_temperature": {
+        "level": "str",
+        "unit": "str",
+        "value": "number"
+      },
+      "saving": {
+        "level": "str",
+        "unit": "str",
+        "value": "null"
+      }
+    },
+    "detection": {
+      "detect_ms": "null",
+      "model": "str",
+      "pictures_analysed": "number",
+      "problem": "null"
+    },
+    "events": [
+      {
+        "dropped": "number",
+        "errors": "number",
+        "handled": "number",
+        "name": "str",
+        "waiting": "number"
+      }
+    ],
+    "from": "str",
+    "jobs": [],
+    "pi": {
+      "camera": "str",
+      "clock_off_sec": "number",
+      "detect_ms": "number",
+      "detector": "str",
+      "detector_reason": "str",
+      "disk_free_mb": "number",
+      "last_cleanup_ts": "number",
+      "last_frame_id": "str",
+      "model": "str",
+      "photos_stored": "number",
+      "upload_format": "number"
+    },
+    "scheduler": [
+      {
+        "every_sec": "number",
+        "last_error": "null",
+        "last_run_at": "number",
+        "name": "str",
+        "next_in_sec": "number",
+        "next_run_at": "number",
+        "runs": "number"
+      }
+    ],
+    "uptime_sec": "number"
+  },
+  "request": "GET /api/dev/health (main server, fresh desk)"
+}

@@ -1,12 +1,14 @@
 import { render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, getHealth, getLogStatus, NO_ANSWER, type DevSettings, type Health, type LogStatus } from '../api'
+import {
+  ApiError, getShownHealth, getShownLogStatus, NO_ANSWER, type DevSettings, type ShownHealth, type ShownLogStatus,
+} from '../api'
 import System from './System'
 
 vi.mock('../api', async original => ({
   ...await original<typeof import('../api')>(),
-  getHealth: vi.fn(),
-  getLogStatus: vi.fn(),
+  getShownHealth: vi.fn(),
+  getShownLogStatus: vi.fn(),
 }))
 
 const settings: DevSettings = {
@@ -21,7 +23,8 @@ const settings: DevSettings = {
   pi_log: { sources: [{ name: 'detector', label: 'Detector service' }], keep_lines: 100 },
 }
 
-const health: Health = {
+const health: ShownHealth = {
+  from: 'here', address: '',
   uptime_sec: 125, jobs: [], scheduler: [], events: [{ name: 'habits', handled: 4, waiting: 0, dropped: 0, errors: 0 }],
   camera: { source: 'pi', connected: true, fps: 3, pictures_received: 10 },
   pi: { last_frame_id: 'f-1', cpu_temp_c: 82, upload_format: 2, detector: 'ok', detector_reason: '', detect_ms: 150,
@@ -39,7 +42,8 @@ const health: Health = {
   },
 }
 
-const log: LogStatus = {
+const log: ShownLogStatus = {
+  from: 'here', address: '',
   folder: '/data/log', today: { pictures_waiting: 0, events: {} }, last_compaction: null, scheduler: [], stream: [],
   camera: { source: 'pi', connected: true, fps: 3, frames_received: 10, yolo_ms: 90, model: 'yolo11n' },
 }
@@ -48,8 +52,8 @@ afterEach(() => vi.resetAllMocks())
 
 describe('System tab', () => {
   it('shows each group with its rows, coloured by level', async () => {
-    vi.mocked(getHealth).mockResolvedValue(health)
-    vi.mocked(getLogStatus).mockResolvedValue(log)
+    vi.mocked(getShownHealth).mockResolvedValue(health)
+    vi.mocked(getShownLogStatus).mockResolvedValue(log)
     render(<System settings={settings} />)
     expect(await screen.findByRole('heading', { name: 'Pi' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Event stream' })).toBeInTheDocument()
@@ -61,9 +65,41 @@ describe('System tab', () => {
     expect(screen.getByText('/data/log')).toBeInTheDocument()
   })
 
+  it('says it is this computer\'s own Desk Talk when the reply is from here', async () => {
+    vi.mocked(getShownHealth).mockResolvedValue(health)
+    vi.mocked(getShownLogStatus).mockResolvedValue(log)
+    render(<System settings={settings} />)
+    expect(await screen.findByText(/^Desk Talk has been running for 2 min 5 s\. Last asked at .+, again every 2 s\.$/))
+      .toBeInTheDocument()
+    expect(screen.queryByText(/the Pi's own Desk Talk/i)).not.toBeInTheDocument()
+  })
+
+  it('says it is the Pi\'s own Desk Talk, at its address, and shows the Pi\'s checks when the reply is from the Pi', async () => {
+    const fromPi: ShownHealth = {
+      ...health, from: 'pi', address: 'desktalk-pi.local:5000', uptime_sec: 39_600,
+      checks: { ...health.checks, camera: { level: 'serious', value: null, unit: '' } },
+    }
+    vi.mocked(getShownHealth).mockResolvedValue(fromPi)
+    vi.mocked(getShownLogStatus).mockResolvedValue({ ...log, from: 'pi', address: 'desktalk-pi.local:5000', folder: '/pi/data/log' })
+    render(<System settings={settings} />)
+    expect(await screen.findByText(
+      /^The Pi's own Desk Talk \(desktalk-pi\.local:5000\) has been running for 11 h\. Last asked at .+, again every 2 s\.$/,
+    )).toBeInTheDocument()
+    expect(screen.getByText('camera pictures').closest('tr')).toHaveClass('bad')
+    expect(screen.getByText('/pi/data/log')).toBeInTheDocument()
+  })
+
+  it('shows the words of a 502 when the Pi does not answer', async () => {
+    const words = "Couldn't reach the Pi's Desk Talk at desktalk-pi.local:5000."
+    vi.mocked(getShownHealth).mockRejectedValue(new ApiError(502, words))
+    vi.mocked(getShownLogStatus).mockRejectedValue(new ApiError(502, words))
+    render(<System settings={settings} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent(words)
+  })
+
   it('says what went wrong when the server does not answer', async () => {
-    vi.mocked(getHealth).mockRejectedValue(new ApiError(0, NO_ANSWER))
-    vi.mocked(getLogStatus).mockResolvedValue(log)
+    vi.mocked(getShownHealth).mockRejectedValue(new ApiError(0, NO_ANSWER))
+    vi.mocked(getShownLogStatus).mockResolvedValue(log)
     render(<System settings={settings} />)
     expect(await screen.findByRole('alert')).toHaveTextContent(NO_ANSWER)
   })

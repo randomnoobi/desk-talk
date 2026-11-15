@@ -66,7 +66,8 @@ class SystemStatsContract:
 
 
 class PiStatsLinkContract:
-    """Subclass this and give `link` (its Pi answers with one sample) and `dead_link` (its Pi doesn't answer)."""
+    """Subclass this and give `link` (its Pi answers: one sample, its health and its log's status) and `dead_link`
+    (its Pi doesn't answer)."""
 
     def test_it_is_a_link(self, link):
         assert isinstance(link, PiStatsLink)
@@ -82,4 +83,20 @@ class PiStatsLinkContract:
     def test_a_pi_that_does_not_answer_raises(self, dead_link):
         with pytest.raises(StatsUnavailable) as caught:
             dead_link.fetch(None)
+        assert str(caught.value)
+
+    def test_it_brings_back_the_pi_health(self, link):
+        reply = link.health()
+        assert isinstance(reply, dict)
+        assert isinstance(reply['checks'], dict)
+
+    def test_it_brings_back_the_pi_log_status(self, link):
+        reply = link.log_status()
+        assert isinstance(reply, dict)
+        assert isinstance(reply['today'], dict)
+
+    @pytest.mark.parametrize('ask', ['health', 'log_status'])
+    def test_a_pi_that_does_not_answer_raises_for_the_rest_too(self, dead_link, ask):
+        with pytest.raises(StatsUnavailable) as caught:
+            getattr(dead_link, ask)()
         assert str(caught.value)

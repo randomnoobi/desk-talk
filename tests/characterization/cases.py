@@ -320,6 +320,14 @@ CASES = [
     Case('dev-pi-stats', 'GET', '/api/dev/pi_stats?since=0', 200, desk='fresh',
          values={'address': 'desktalk.local:5000', 'collecting': True}),
     Case('dev-pi-stats-other-computer', 'GET', '/api/dev/pi_stats', 403, desk='fresh', from_ip=LAN_DEVICE),
+    # the System and Storage tabs: the fresh desk is a computer with the Pi as camera, so the Pi's own health and
+    # log status (its FakePiStatsLink's), from dev.pi_address
+    Case('dev-health', 'GET', '/api/dev/health', 200, desk='fresh',
+         values={'from': 'pi', 'address': 'desktalk.local:5000'}),
+    Case('dev-health-other-computer', 'GET', '/api/dev/health', 403, desk='fresh', from_ip=LAN_DEVICE),
+    Case('dev-log-status', 'GET', '/api/dev/log_status', 200, desk='fresh',
+         values={'from': 'pi', 'address': 'desktalk.local:5000'}),
+    Case('dev-log-status-other-computer', 'GET', '/api/dev/log_status', 403, desk='fresh', from_ip=LAN_DEVICE),
     Case('dev-run-check', 'POST', '/api/dev/runs', 200, desk='fresh', json={'check': True},
          values={'run_id': 'run-1'}),
     Case('dev-run-check-from-vite', 'POST', '/api/dev/runs', 200, desk='fresh', json={'check': True},
