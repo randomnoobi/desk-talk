@@ -67,7 +67,7 @@ class HabitReminders:
         text = self._voice.phrase_nudge(speaker, nudge) if speaker != LENS else None    # Lens never uses the AI
         text = text or nudge.text
         self._notifier.send({'type': 'group_message', 'character': speaker, 'text': text, 'habit': nudge.habit,
-                             'toast': True, 'notify': 'reminder'})
+                             'toast': True, 'notify': 'reminder', 'ready_text': nudge.text})
         self._bus.publish(NudgeSent(ts=now, habit=nudge.habit, rule=nudge.key, agent=speaker,
                                     evidence=nudge.evidence, text=text))
         log.info('%s nudged about %s: %s', speaker, nudge.habit, nudge.evidence)

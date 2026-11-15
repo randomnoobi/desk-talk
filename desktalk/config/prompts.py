@@ -729,9 +729,10 @@ class ObjectStoryWords(_Section):
 
 
 class NotificationWords(_Section):
-    """The Mac's own pop-up notifications."""
+    """The Mac's own pop-up notifications, and the ones sent to your phone."""
 
     sip_title: str
+    phone_todo: str
 
 
 class ServerWords(_Section):

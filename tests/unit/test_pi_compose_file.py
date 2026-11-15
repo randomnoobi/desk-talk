@@ -333,3 +333,17 @@ def test_the_pi_tab_shows_the_rest_of_the_sd_card_as_well_as_the_data_folder():
     paths = [disk['path'] for disk in settings['system_stats']['disks']]
     assert paths[0] == settings['storage']['folder']
     assert settings['health_checks']['rest_of_card_folder'] in paths
+
+
+def test_only_the_app_gets_the_phone_topic_and_it_is_empty_until_you_set_one(services):
+    """NTFY_TOPIC is a secret: off (empty) in the example, and only the app, which sends the notifications, sees it."""
+    assert services['app']['environment']['NTFY_TOPIC'] == '${NTFY_TOPIC:-}'
+    assert env_file(PI / '.env.example')['NTFY_TOPIC'] == ''
+    for name in set(services) - {'app'}:
+        assert 'NTFY_TOPIC' not in str(services[name])
+
+
+def test_the_phone_topic_reaches_the_app_settings_from_the_environment():
+    """The app container gets it as an environment variable, which the settings read like a line in .env."""
+    config = load_config(root=ROOT, environ={'NTFY_TOPIC': 'desktalk-from-compose'}, dotenv=Path('/nonexistent'))
+    assert config.secrets.ntfy_topic.get_secret_value() == 'desktalk-from-compose'

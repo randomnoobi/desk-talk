@@ -11,11 +11,13 @@ import sys
 import typing
 
 import pytest
+from pydantic import SecretStr
 
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource
 from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser
 from desktalk.adapters.dev.pi_log import SshPiLog
 from desktalk.adapters.notify.mac import MAC_PLATFORM, MacNotifications, NoNotifications
+from desktalk.adapters.notify.ntfy import NtfyNotifications
 from desktalk.adapters.storage import JsonFileStore
 from desktalk.adapters.storage.trace_photo_files import TracePhotoFiles
 from desktalk.bootstrap import DeskTalk, build, pi_camera_elsewhere
@@ -66,6 +68,32 @@ def test_without_a_desktop_the_settings_pick_the_pop_ups(tmp_path):
     on = build_quietly(config, tmp_path / 'on', desktop=None)
     assert isinstance(on.desktop, MacNotifications if sys.platform == MAC_PLATFORM else NoNotifications)
     on.stop()
+
+
+def with_topic(config, topic='desktalk-test-topic'):
+    return changed(config, 'secrets', ntfy_topic=SecretStr(topic))
+
+
+def test_without_a_phone_topic_nothing_goes_to_a_phone(tmp_path):
+    assert build_quietly(desk_config(tmp_path), tmp_path).phone_notifications is None
+
+
+def test_a_phone_topic_makes_the_phone_sender_and_stop_lets_it_finish(tmp_path):
+    """tests/conftest.py keeps a real one from sending anything."""
+    app = build_quietly(with_topic(desk_config(tmp_path)), tmp_path)
+    assert isinstance(app.phone_notifications, NtfyNotifications)
+    app.stop()
+    assert not app.phone_notifications._thread.is_alive()
+
+
+def test_with_notifications_off_a_phone_topic_sends_nothing(tmp_path):
+    config = changed(with_topic(desk_config(tmp_path)), 'notifications', enabled=False)
+    assert build_quietly(config, tmp_path).phone_notifications is None
+
+
+def test_a_phone_passed_in_is_used(tmp_path):
+    phone = FakeDesktopNotifications()
+    assert build_quietly(desk_config(tmp_path), tmp_path, phone_notifications=phone).phone_notifications is phone
 
 
 @pytest.mark.parametrize('kind, cls', [('pi', PiFrameSource), ('phone', PhoneFrameSource), ('webcam', WebcamSource)])

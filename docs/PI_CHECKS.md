@@ -155,6 +155,20 @@ No test can tell if speech sounds right, so this is by ear.
 
 A webcam with a microphone can get picked ahead of the speaker, as its name has `usb` in it too. If so, set `notifications.sound_card` in `raspberry_pi/mine/settings.mine.yaml` to a word only the speaker's name has: **on the Pi**, `cat /proc/asound/cards` lists them.
 
+## A notification on your phone
+
+No test can tell if a real phone buzzes, so this is by hand. Set up the topic first (README, "Phone notifications").
+
+1. Put your hand over the camera's lens for 10 seconds.
+2. Your phone should show Lens's warning within a few seconds.
+3. **On the Pi**, see that the app sent it:
+
+   ```bash
+   cd ~/desk-talk/raspberry_pi && docker compose logs --since 5m app | grep "your phone"
+   ```
+
+   You should see `Sent a notification to your phone (Lens)`. `Could not send a notification to your phone` says why it failed.
+
 ## Close the laptop while chat is on
 
 Only for a Pi with `llm.ai_url` pointing at an AI on your laptop, and `llm.ai_on_my_computer: true`. Shows warnings don't wait for an AI that has gone away.

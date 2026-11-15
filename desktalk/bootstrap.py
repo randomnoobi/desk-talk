@@ -42,7 +42,7 @@ from desktalk.adapters.detector import NoDetector, UltralyticsDetector
 from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser, SshPiLog
 from desktalk.adapters.dev.pi_stats_link import HttpPiStatsLink
 from desktalk.adapters.llm import OpenAICompatibleChatModel, ResilientChatModel, UnpromptedChatModel
-from desktalk.adapters.notify import QueuedNotifications, make_notifications
+from desktalk.adapters.notify import NtfyNotifications, QueuedNotifications, make_notifications
 from desktalk.adapters.picture import DeskPainter, OpenCvPictureTools
 from desktalk.adapters.storage import EventLog, JsonFileStore, SqliteStateStore
 from desktalk.adapters.storage.disk_space import FolderDiskSpace
@@ -225,6 +225,9 @@ class DeskTalk:
     todos             the to-do list the server keeps: items(), replace(), has_list() (/api/todos, /api/chat_todos)
     desktop           the Mac's pop-ups or the Pi's speaker (warnings, reminders, sips): nothing on the web uses it;
                       stop() lets its thread finish
+    phone_notifications
+                      the same notifications sent to your phone through ntfy (None until NTFY_TOPIC is set): nothing
+                      on the web uses it; stop() lets its thread finish
     data_folder       the data folder this run really saves in (the folder in memory when nothing is saved):
                       /api/dev/settings
     rules_file        where safety_rules.json is really read and saved (under that folder in memory when nothing is
@@ -290,6 +293,7 @@ class DeskTalk:
     pi_log: PiLogReader | None = None
     todos: TodoList | None = None
     desktop: DesktopNotifications | None = None
+    phone_notifications: DesktopNotifications | None = None
     pi_stats_link: PiStatsLink | None = None
 
     @property
@@ -331,7 +335,8 @@ class DeskTalk:
     def stop(self, timeout: float | None = None) -> list[str]:
         """Stop everything, in this order: the background jobs, a developer page test run still going and the Pi
         log's ssh; the events still waiting are handled; the object states are saved; today's habits are saved;
-        the event log is compacted; the Mac pop-ups still waiting are shown; the event stream is closed (and a
+        the event log is compacted; the Mac pop-ups (or the speaker's words) and the phone notifications still
+        waiting are dealt with; the event stream is closed (and a
         webcam let go); the object states database is closed.
         A step that fails is logged and the rest still happen. `timeout`: how long to wait for each job
         (settings → supervisor.stop_wait_sec when not given). Returns the names of jobs and event consumers
@@ -349,6 +354,8 @@ class DeskTalk:
         self._shutdown_step('compact the event log', lambda: self.event_log.compact(self.clock.now()))
         if isinstance(self.desktop, QueuedNotifications):
             self._shutdown_step('show the last notifications', self.desktop.close)
+        if isinstance(self.phone_notifications, QueuedNotifications):
+            self._shutdown_step('send the last phone notifications', self.phone_notifications.close)
         still_running += self.bus.close(wait)
         if isinstance(self.source, WebcamSource):
             self.source.release()
@@ -440,6 +447,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
           synchronous_events: bool = False, set_up_logging: bool = True,
           test_runner: TestRunner | None = None, pi_log: PiLogReader | None = None,
           desktop: DesktopNotifications | None = None,
+          phone_notifications: DesktopNotifications | None = None,
           cloud_link_factory: Callable[[str, str], CloudLink] | None = None,
           stats_reader: SystemStatsReader | None = None, pi_stats_link: PiStatsLink | None = None,
           saving: Saving = Saving.PLAIN) -> DeskTalk:
@@ -464,6 +472,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         pi_log              the developer page's Pi log tab (SshPiLog: ssh to the Pi, settings → dev.pi_log), when
                             settings → dev.enabled is on
         desktop             pop-ups on a Mac or the Pi's speaker, as settings → notifications.output says
+        phone_notifications your phone's notifications (NtfyNotifications to settings → notifications.phone_server),
+                            when NTFY_TOPIC is set and notifications are on
         cloud_link_factory  makes the line to the cloud server from its address and token (HttpCloudLink); only
                             called once the computer is linked
         stats_reader        reads the system numbers (ProcReader on settings → system_stats)
@@ -577,13 +587,18 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     vision = model if model.local_vision else None
     hub = MessageHub(clock, recent_kept=config.chat.recent_kept, queue_size=config.web.live_queue_size)
     # Warnings, reminders and sips the camera saw go to the chat through `feed`, which also pops them up on the Mac
-    # or says them through the Pi's speaker.
-    # The web keeps reading the hub.
+    # or says them through the Pi's speaker, and sends them to your phone once NTFY_TOPIC is set (never a to-do's
+    # words). The web keeps reading the hub.
     notifications = config.notifications
     if desktop is None:
         desktop = make_notifications(notifications, sys.platform, queue_size=notifications.queue_size, clock=clock)
+    topic = config.secrets.ntfy_topic.get_secret_value()
+    if phone_notifications is None and topic and notifications.enabled:
+        phone_notifications = NtfyNotifications(notifications, topic, queue_size=notifications.queue_size)
+        log.info('Notifications also go to your phone through %s', notifications.phone_server)
     feed = DesktopAlerts(hub, desktop, preferences, profiles, notifications, clock,
-                         lens_name=config.prompts.lens.card.name, sip_title=config.prompts.notifications.sip_title)
+                         lens_name=config.prompts.lens.card.name, sip_title=config.prompts.notifications.sip_title,
+                         phone=phone_notifications, phone_todo=config.prompts.notifications.phone_todo)
     default_temperature = config.agents_file.default.temperature
     lost_items = LostItems(clock, bus, desk, roster, profiles, habits, model, vision, config.lost_items,
                            config.llm.replies, photos=photos, default_temperature=default_temperature,
@@ -683,5 +698,6 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         lost_items=lost_items, daily_summary=daily_summary, cloud=cloud, scheduler=scheduler,
         supervisor=supervisor, system_stats=system_stats, started_at=clock.now(), keepalive=ai.keepalive_worker(),
         log_file=log_file, test_runner=test_runner, databases=databases, data_files=data_files, chat_joins=roster,
-        trace_photos=trace_photos, demo=demo, pi_log=pi_log, todos=todos, desktop=desktop, pi_stats_link=pi_stats_link,
+        trace_photos=trace_photos, demo=demo, pi_log=pi_log, todos=todos, desktop=desktop,
+        phone_notifications=phone_notifications, pi_stats_link=pi_stats_link,
         data_folder=data_path(config.storage.folder), rules_file=rules_path / RULES_FILE)

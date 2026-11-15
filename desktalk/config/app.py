@@ -785,7 +785,7 @@ Command = Annotated[tuple[str, ...], Field(min_length=1)]    # a program and its
 
 class NotificationsSettings(_Section):
     """Warnings and reminders outside the chat (desktalk/adapters/notify/): the Mac's own pop-ups or the Pi's speaker,
-    which kinds, and how they're given."""
+    and your phone through ntfy, which kinds, and how they're given."""
 
     output: Literal['mac', 'speaker', 'none']
     enabled: bool
@@ -802,6 +802,18 @@ class NotificationsSettings(_Section):
     speak_time_limit_sec: PositiveNumber
     speak_stop_wait_sec: PositiveNumber
     speak_max_age_sec: PositiveNumber
+    phone_server: str                 # the ntfy server that sends them on to your phone (the topic is in .env)
+    phone_time_limit_sec: PositiveNumber
+
+    @field_validator('phone_server')
+    @classmethod
+    def _a_web_address(cls, value: str) -> str:
+        """Like https://ntfy.sh: http:// or https:// and a name. Kept without a trailing /, since the sender adds it."""
+        value = value.strip().rstrip('/')
+        scheme, _, rest = value.partition('://')
+        if scheme not in ('http', 'https') or not rest:
+            raise ValueError(f'phone_server must be a web address like https://ntfy.sh (got {value!r})')
+        return value
 
 
 class LoggingSettings(_Section):
@@ -980,12 +992,14 @@ class DevSettings(_Section):
 #  .env (never YAML)
 # ════════════════════════════════════════════════════════════════════
 class Secrets(_Section):
-    """API keys and the Ollama address. Empty when not set. Keys are hidden when printed."""
+    """API keys, the Ollama address and the phone's ntfy topic. Empty when not set. Keys and the topic are hidden
+    when printed."""
 
     gemini_api_key: SecretStr
     openai_api_key: SecretStr
     groq_api_key: SecretStr
     ollama_url: str
+    ntfy_topic: SecretStr             # anyone who knows it can read and send your phone notifications
 
 
 

@@ -109,6 +109,36 @@ def test_api_keys_come_from_dotenv_and_are_hidden_when_printed(project):
     assert 'abc123' not in repr(cfg)
 
 
+def test_phone_notifications_are_off_until_a_topic_is_set(project):
+    cfg = load_config(root=project, environ={})
+    assert cfg.secrets.ntfy_topic.get_secret_value() == ''
+    assert cfg.notifications.phone_server == 'https://ntfy.sh'
+    assert cfg.notifications.phone_time_limit_sec > 0
+    assert cfg.prompts.notifications.phone_todo
+
+
+def test_the_phone_topic_comes_from_dotenv_or_the_environment_and_is_hidden_when_printed(project):
+    (project / '.env').write_text('NTFY_TOPIC=desktalk-from-dotenv\n')
+    assert load_config(root=project, environ={}).secrets.ntfy_topic.get_secret_value() == 'desktalk-from-dotenv'
+    cfg = load_config(root=project, environ={'NTFY_TOPIC': ' desktalk-from-compose '})
+    assert cfg.secrets.ntfy_topic.get_secret_value() == 'desktalk-from-compose'
+    assert 'desktalk-from-compose' not in repr(cfg)
+
+
+@pytest.mark.parametrize('server, kept', [('https://ntfy.example/', 'https://ntfy.example'),
+                                          (' http://192.168.1.5:8080 ', 'http://192.168.1.5:8080')])
+def test_the_phone_server_is_kept_without_a_trailing_slash(project, server, kept):
+    write_local(project, f'notifications:\n  phone_server: "{server}"\n')
+    assert load_config(root=project, environ={}).notifications.phone_server == kept
+
+
+@pytest.mark.parametrize('server', ['ntfy.sh', 'ftp://ntfy.sh', 'https://'])
+def test_a_phone_server_that_is_not_a_web_address_is_refused(project, server):
+    write_local(project, f'notifications:\n  phone_server: "{server}"\n')
+    with pytest.raises(ConfigError, match='phone_server'):
+        load_config(root=project, environ={})
+
+
 def test_dotenv_can_still_set_model_names(project):
     (project / '.env').write_text('OLLAMA_MODEL=llama3.2\nYOLO_MODEL=models/yolo26s-objv1-150.pt\n')
     cfg = load_config(root=project, environ={'OLLAMA_MODEL': 'gpt-oss:20b'})
@@ -126,6 +156,7 @@ def test_old_dotenv_settings_that_moved_to_yaml_are_listed_not_used(project):
 @pytest.mark.parametrize('local, setting', [
     ('secrets:\n  gemini_api_key: abc\n', 'secrets'),
     ('llm:\n  gemini_api_key: abc\n', 'llm.gemini_api_key'),
+    ('notifications:\n  ntfy_topic: abc\n', 'notifications.ntfy_topic'),
 ])
 def test_api_keys_in_yaml_are_refused(project, local, setting):
     write_local(project, local)

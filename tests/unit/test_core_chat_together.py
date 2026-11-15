@@ -40,7 +40,8 @@ def build(reply):
         clients.append(FakeAI(reply=reply, **kw))
         return clients[-1]
     llm = CONFIG.llm.model_copy(update={'min_interval_sec': 0})
-    ai = OpenAICompatibleChatModel(llm, Secrets(gemini_api_key='g', openai_api_key='', groq_api_key='', ollama_url=''),
+    ai = OpenAICompatibleChatModel(llm, Secrets(gemini_api_key='g', openai_api_key='', groq_api_key='', ollama_url='',
+                                                ntfy_topic=''),
                                    clock, client_factory=factory, replies=CONFIG.prompts.replies)
     model = ResilientChatModel(ai, clock, llm, chat_time_limit=lambda: ai.time_limit_sec,
                                replies=CONFIG.prompts.replies)
@@ -103,8 +104,8 @@ def test_an_ollama_that_keeps_answering_with_nothing_is_asked_at_most_max_retrie
         return clients[-1]
     llm = CONFIG.llm.model_copy(update={'min_interval_sec': 0, 'max_retries': 3})
     ai = OpenAICompatibleChatModel(llm, Secrets(gemini_api_key='', openai_api_key='', groq_api_key='',
-                                                ollama_url='http://ollama.test/v1'), clock, client_factory=factory,
-                                   replies=CONFIG.prompts.replies)
+                                                ollama_url='http://ollama.test/v1', ntfy_topic=''), clock,
+                                   client_factory=factory, replies=CONFIG.prompts.replies)
     model = ResilientChatModel(ai, clock, llm, chat_time_limit=lambda: ai.time_limit_sec,
                                replies=CONFIG.prompts.replies)
     with pytest.raises(AIUnavailable) as err:

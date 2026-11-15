@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from desktalk.adapters.notify import mac, speaker
+from desktalk.adapters.notify import mac, ntfy, speaker
 
 
 @pytest.fixture(autouse=True)
@@ -43,6 +43,19 @@ def speak_calls(monkeypatch):
     assert not calls, (f'a test tried to really say {len(calls)} thing(s): pass build() a fake `desktop=` '
                        '(tests.fakes.FakeDesktopNotifications)')
 
+
+
+@pytest.fixture(autouse=True)
+def ntfy_posts(monkeypatch):
+    """No test ever sends a real phone notification: an NtfyNotifications made without its own `post` (as build()
+    makes one when NTFY_TOPIC is set) gets this recorder instead of the real one, and a test that reached it fails.
+    A test that means to reach it takes this fixture and empties the list. (A test of the real post imports
+    post_json by name, which this doesn't change.)"""
+    calls: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(ntfy, 'post_json', lambda url, body, time_limit: calls.append((url, body, time_limit)))
+    yield calls
+    assert not calls, (f'a test tried to send {len(calls)} real phone notification(s): pass build() a fake '
+                       '`phone_notifications=` (tests.fakes.FakeDesktopNotifications)')
 
 class _Msg:
     def __init__(self, content):

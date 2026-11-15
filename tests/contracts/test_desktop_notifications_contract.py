@@ -1,6 +1,6 @@
 """What every DesktopNotifications must do (desktalk/ports.py): show the computer's own pop-up, never raising and
 never holding up the caller. The fake runs it here, and the real Mac and speaker ones join as test classes of their
-own (each with a `notifications` fixture that doesn't really show or say anything, e.g. with a fake runner)."""
+own (each with a `notifications` fixture that doesn't really show, say or send anything, e.g. with a fake runner)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from desktalk.adapters.notify.mac import MacNotifications, NoNotifications
+from desktalk.adapters.notify.ntfy import NtfyNotifications
 from desktalk.adapters.notify.speaker import SpeakerNotifications
 from desktalk.config import NotificationsSettings
 from desktalk.ports import DesktopNotifications
@@ -74,3 +75,13 @@ class TestSpeakerNotifications(DesktopNotificationsContract):
                                        run_command=lambda args, text, time_limit: None)
         yield speaker
         speaker.close()
+
+
+class TestNtfyNotifications(DesktopNotificationsContract):
+    @pytest.fixture
+    def notifications(self):
+        settings = NotificationsSettings.model_construct(phone_server='https://ntfy.example', phone_time_limit_sec=5.0)
+        phone = NtfyNotifications(settings, 'desktalk-test-topic', queue_size=4,
+                                  post=lambda url, body, time_limit: None)          # sends nothing
+        yield phone
+        phone.close()

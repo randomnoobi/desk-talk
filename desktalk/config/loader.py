@@ -25,7 +25,7 @@ from desktalk.config.prompts import blank_problems, fill_settings, prompt_values
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
-SECRET_KEYS = ('GEMINI_API_KEY', 'OPENAI_API_KEY', 'GROQ_API_KEY', 'OLLAMA_URL')
+SECRET_KEYS = ('GEMINI_API_KEY', 'OPENAI_API_KEY', 'GROQ_API_KEY', 'OLLAMA_URL', 'NTFY_TOPIC')
 # Settings that may also be set in .env (kept so an existing .env keeps working).
 ENV_OVERRIDES = {
     'OLLAMA_MODEL': ('llm', 'ollama_model'),

@@ -39,7 +39,7 @@ def llm(base_llm):
 
 
 def secrets(gemini='', openai='', groq='', ollama=''):
-    return Secrets(gemini_api_key=gemini, openai_api_key=openai, groq_api_key=groq, ollama_url=ollama)
+    return Secrets(gemini_api_key=gemini, openai_api_key=openai, groq_api_key=groq, ollama_url=ollama, ntfy_topic='')
 
 
 class Factory:
