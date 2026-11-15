@@ -352,6 +352,8 @@ Result: 2026-11-11, passed. At 1500 MB free the card check said `warning`, and a
 
 Result: 2026-11-14, passed, with Desk Talk's own space (8192 MB). At 1500 MB free `card_rest` said `warning`, and at 400 MB `serious`; Lens said "the rest of the Raspberry Pi's SD card is getting full" (then "almost full"), and "I'm still saving everything in Desk Talk's own space"; `card` (the space) stayed `ok` at 7905 MB and `saving` stayed `ok`, the event log kept growing, and Lens said there's enough room again after the undo.
 
+Result: 2026-11-14, passed, a 6-hour run (10:51 to 16:53, the Pi's time) with the rest of the card held at 400 MB free and a line written every 5 minutes. `card_rest` said `serious` the whole time and every other check stayed `ok`: `card` (the space) at 7903 to 7905 MB, `saving`, the camera, detections, the temperature (55 to 58 °C) and the heartbeat. No container restarted or went unhealthy (each kept its start time and 0 restarts). The data folder grew from 41 to 43 MB and the database stayed at 1 MB; the event log kept growing (the detections file goes up and down because the log tidies it up every few minutes, as it should). Free memory stayed between 6596 and 6722 MB and the journal at 64.1 MB, so nothing was building up. Two minutes after the fill file went away, `card_rest` was back to `ok` (80628 MB free).
+
 ### 5. The clock set back to 1990
 
 The Pi's flag that says its clock was set from the internet (`/run/systemd/timesync/synchronized`) stays there when
