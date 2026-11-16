@@ -6,6 +6,13 @@ full story: what was wrong, what changed, and the checks that were run. What a p
 
 ## 2026-11-15
 
+- **Notifications on your phone, and no false camera warning on a computer**
+  ([#25](https://github.com/randomnoobi/desk-talk/pull/25)). Set `NTFY_TOPIC` (a secret name, in `.env` or
+  `raspberry_pi/.env`) and the warnings, reminders, Lens's camera problems and sips the camera saw also go to your
+  phone through ntfy. Only ready-made words go, never an AI's, and a to-do reminder only says a to-do is due. A send
+  gives up after 10 seconds, and after a failure nothing is tried for a minute. On a computer with the Pi as the
+  camera, Lens no longer warns that no pictures are coming in.
+
 - **The developer page shows the Pi's own health** ([#24](https://github.com/randomnoobi/desk-talk/pull/24)). On a
   computer with the Pi as the camera, the System tab's Health checks and Pi cards (and the Storage tab's Pi card)
   now come from the Pi itself, at `dev.pi_address`, instead of the computer's copy, which gets no pictures. The rest
