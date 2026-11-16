@@ -1,9 +1,11 @@
 """DesktopAlerts: the chat message always goes out first; warnings, reminders and camera-seen sips also pop up as the
-computer's own notification, unless that kind (or all of them) is off or quiet hours are on."""
+computer's own notification (and go to your phone, when there is one), unless that kind (or all of them) is off or
+quiet hours are on. The phone only gets words a sender marked for it (`phone_text`), never a to-do's."""
 
 from __future__ import annotations
 
 import calendar
+from typing import Any
 
 import pytest
 
@@ -16,17 +18,19 @@ from tests.fakes import FakeClock, FakeDesktopNotifications, FakePreferences, Fa
 ALL_ON = dict(enabled=True, warnings=True, reminders=True, sips=True, time_limit_sec=5.0, command='osascript')
 NOON = calendar.timegm((2026, 10, 21, 12, 0, 0, 0, 0, 0))
 QUIET = {'quiet_enabled': True, 'quiet_start_hour': 22, 'quiet_end_hour': 7}
+TODO_LINE = 'A to-do is due. Open Desk Talk to see it.'
 
 
 class Rig:
-    def __init__(self, prefs=None, desktop=None, **switches):
+    def __init__(self, prefs=None, desktop=None, phone=None, phone_todo: Any = TODO_LINE, **switches):
         self.clock = FakeClock(NOON)
         self.inner = RecordingNotifier(self.clock)
         self.desktop = desktop or FakeDesktopNotifications()
+        self.phone: Any = phone                     # a FakeDesktopNotifications, Broken or None
         self.profiles = FakeProfiles([AgentProfile(id='cup', name='Cup'), AgentProfile(id='computer', name='Computer')])
         self.alerts = DesktopAlerts(self.inner, self.desktop, FakePreferences(prefs, self.clock), self.profiles,
                                     NotificationsSettings.model_construct(**{**ALL_ON, **switches}), self.clock,
-                                    lens_name='Lens', sip_title='Sip logged')
+                                    lens_name='Lens', sip_title='Sip logged', phone=phone, phone_todo=phone_todo)
 
     def send(self, **message):
         return self.alerts.send({'type': 'group_message', 'character': 'cup', 'text': 'Time for water', **message})
@@ -132,3 +136,104 @@ def test_chat_message_sent_even_if_desktop_raises():
     r = Rig(desktop=Broken())
     sent = r.send(notify='warning')
     assert sent['text'] == 'Time for water' and len(r.inner.sent) == 1
+
+
+class Broken:
+    def show(self, title, text):
+        raise RuntimeError('no internet')
+
+
+# ── the phone ─────────────────────────────────────────────────────────
+def with_phone(**kw):
+    return Rig(phone=FakeDesktopNotifications(), **kw)
+
+
+@pytest.mark.parametrize('kind', ['warning', 'reminder', 'sip'])
+def test_the_phone_gets_the_words_marked_for_it(kind):
+    r = with_phone()
+    r.send(text='Nice, [LOG_SIP] one more', notify=kind, phone_text='Nice, [LOG_SIP] one more')
+    assert r.phone.shown == r.desktop.shown and [text for _, text in r.phone.shown] == ['Nice, one more']
+
+
+@pytest.mark.parametrize('kind', ['warning', 'reminder', 'sip'])
+def test_a_message_with_no_words_marked_for_the_phone_does_not_go_there(kind):
+    """Only words a sender marked as ready-made (never an AI's) go to the phone: anything else stays home."""
+    r = with_phone()
+    r.send(notify=kind)
+    assert r.phone.shown == [] and len(r.desktop.shown) == 1
+
+
+def test_the_phone_never_gets_the_messages_own_words():
+    """An AI may have seen the to-do list, so its words stay home: the phone gets the words marked for it, while
+    the chat and the speaker or the Mac get the AI's."""
+    r = with_phone()
+    r.send(character='book', text='Phone away, then "Pay the rent"?', habit='phone_free', notify='reminder',
+           phone_text='Your phone has been out a while.')
+    assert r.phone.shown == [('book', 'Your phone has been out a while.')]
+    assert r.desktop.shown == [('book', 'Phone away, then "Pay the rent"?')]
+    assert r.inner.sent[0]['text'] == 'Phone away, then "Pay the rent"?'
+
+
+def test_the_pages_never_see_the_phones_words():
+    r = with_phone()
+    sent = r.send(notify='warning', phone_text='Time for water')
+    assert 'phone_text' not in sent and 'phone_text' not in r.inner.sent[0] and 'notify' not in r.inner.sent[0]
+
+
+def test_the_phone_gets_nothing_that_does_not_pop_up():
+    r = with_phone()
+    r.send(type='roster', text='Cup joined the chat', phone_text='Cup joined the chat')
+    r.send(notify='gossip', phone_text='Time for water')
+    r.send(text='[LOG_SIP]', notify='reminder', phone_text='[LOG_SIP]')
+    assert r.phone.shown == [] and len(r.inner.sent) == 3
+
+
+def test_words_for_the_phone_with_only_action_tags_do_not_go():
+    r = with_phone()
+    r.send(notify='reminder', phone_text='[LOG_SIP]')
+    assert r.phone.shown == [] and len(r.desktop.shown) == 1
+
+
+@pytest.mark.parametrize('kind', ['warning', 'reminder', 'sip'])
+def test_quiet_hours_mute_the_phone_too(kind):
+    r = with_phone(prefs=QUIET)
+    r.clock.advance(11 * 3600)                    # 23:00
+    r.send(notify=kind, phone_text='Time for water')
+    assert r.phone.shown == []
+
+
+@pytest.mark.parametrize('switch, kind', [('warnings', 'warning'), ('reminders', 'reminder'), ('sips', 'sip'),
+                                          ('enabled', 'warning')])
+def test_the_switches_hold_for_the_phone_too(switch, kind):
+    r = with_phone(**{switch: False})
+    r.send(notify=kind, phone_text='Time for water')
+    assert r.phone.shown == []
+
+
+@pytest.mark.parametrize('marked', [{}, {'phone_text': '"Pay the rent" is due today!'}])
+def test_a_to_do_reminder_goes_to_the_phone_without_its_words(marked):
+    """Whatever a sender marked, a to-do reminder goes to the phone as the to-do line."""
+    r = with_phone()
+    r.send(character='book', text='"Pay the rent" is due today!', habit='tasks', notify='reminder', **marked)
+    assert r.phone.shown == [('book', TODO_LINE)]
+    assert r.desktop.shown == [('book', '"Pay the rent" is due today!')]        # the speaker or the Mac: its words
+    assert r.inner.sent[0]['text'] == '"Pay the rent" is due today!'           # and the chat
+
+
+def test_a_phone_problem_stops_neither_the_chat_nor_the_pop_up():
+    r = Rig(phone=Broken())
+    sent = r.send(notify='warning', phone_text='Time for water')
+    assert sent['text'] == 'Time for water' and len(r.inner.sent) == 1
+    assert r.desktop.shown == [('Cup', 'Time for water')]
+
+
+def test_a_pop_up_problem_does_not_stop_the_phone():
+    r = Rig(desktop=Broken(), phone=FakeDesktopNotifications())
+    r.send(notify='warning', phone_text='Time for water')
+    assert r.phone.shown == [('Cup', 'Time for water')] and len(r.inner.sent) == 1
+
+
+def test_without_a_to_do_line_a_to_do_reminder_does_not_go_to_the_phone():
+    r = with_phone(phone_todo='')
+    r.send(text='"Pay the rent" is due today!', habit='tasks', notify='reminder', phone_text='Pay the rent')
+    assert r.phone.shown == [] and len(r.desktop.shown) == 1

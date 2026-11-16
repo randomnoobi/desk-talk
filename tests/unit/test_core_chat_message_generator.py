@@ -259,6 +259,12 @@ def test_camera_sip_message_flagged():
     assert r.sent(type='group_message')[0]['notify'] == 'sip'
 
 
+def test_a_camera_sip_marks_its_ready_made_words_for_the_phone():
+    r = Rig()
+    r.gen.on_habit(HabitEvent(ts=1.0, habit='hydration', action='sip', say='Sip detected!', extra={'how': 'camera'}))
+    assert r.sent(type='group_message')[0]['phone_text'] == 'Sip detected!'
+
+
 @pytest.mark.parametrize('how', ['button', 'chat'])
 def test_button_sip_not_flagged(how):
     r = Rig()
@@ -491,6 +497,46 @@ def test_a_proximity_alert_for_an_unknown_agent_is_dropped():
     r = Rig()
     r.gen.on_alert(proximity(agent='ghost'))
     assert r.notifier.sent == []
+
+
+# ── what goes to the phone: only ready-made words, never an AI's ──────
+def test_an_ai_written_warning_marks_its_fixed_line_for_the_phone():
+    r = Rig(reply='That cup is a little close to my keyboard, could you scoot it back?')
+    r.gen.on_alert(proximity())
+    msg = r.notifier.sent[0]
+    assert msg['text'] == 'That cup is a little close to my keyboard, could you scoot it back?'
+    assert msg['phone_text'] == 'Cup is too close to my keyboard!'
+
+
+def test_a_fixed_line_warning_marks_the_same_words_for_the_phone():
+    r = Rig(chat=FIXED_LINES)
+    r.gen.on_alert(edge_alert())
+    r.gen.on_alert(edge_alert(follow_up=1))
+    assert [m['phone_text'] for m in r.notifier.sent] == [m['text'] for m in r.notifier.sent] == \
+        [CONFIG.prompts.alert.edge, CONFIG.prompts.alert.edge_again]
+
+
+def test_a_lens_warning_marks_its_words_for_the_phone():
+    r = Rig(members=())
+    r.gen.on_alert(lens_alert(near='phone', intruder='scissors', rule_label='Screen scratch zone'))
+    assert r.notifier.sent[0]['phone_text'] == r.notifier.sent[0]['text']
+
+
+@pytest.mark.parametrize('feature', ['pet_risk', 'organization', 'water_plants'])
+def test_an_alert_with_ready_made_words_marks_them_for_the_phone(feature):
+    """Pets, clutter and plants are said in prompts.yaml's words (desk_monitor.py)."""
+    r = Rig()
+    r.gen.on_alert(Alert(ts=1.0, kind='scenario', agent='cup', feature=feature, text='Cat near the desk!'))
+    assert r.notifier.sent[0]['phone_text'] == 'Cat near the desk!'
+
+
+def test_a_lost_item_alert_never_goes_to_the_phone():
+    """An AI may write a lost item's words (lost_items.py), so they stay home."""
+    r = Rig()
+    r.gen.on_alert(Alert(ts=1.0, kind='scenario', scenario='lost_object', feature='keys', agent='lens',
+                         text='Your keys have been gone 20 minutes.'))
+    assert r.notifier.sent[0]['text'] == 'Your keys have been gone 20 minutes.'
+    assert 'phone_text' not in r.notifier.sent[0]
 
 
 # ── habit reminders ──────────────────────────────────────────────────

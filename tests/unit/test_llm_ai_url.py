@@ -47,7 +47,7 @@ def make(ai_url, *, link=None, reply: Any = 'Hi there, nice desk you have!', oll
     factory = Factory(reply)
     settings = CONFIG.llm.model_copy(update={'ai_url': ai_url, 'ollama_model': 'small-model', **llm})
     none = SecretStr('')
-    secrets = Secrets(gemini_api_key=none, openai_api_key=none, groq_api_key=none, ollama_url=ollama)
+    secrets = Secrets(gemini_api_key=none, openai_api_key=none, groq_api_key=none, ollama_url=ollama, ntfy_topic=none)
     model = OpenAICompatibleChatModel(settings, secrets, FakeClock(), client_factory=factory,
                                       replies=CONFIG.prompts.replies,
                                       cloud_link=lambda: linked_server(store, CONFIG.cloud.link_key))

@@ -882,11 +882,13 @@ object_story:
   # earlier run. {object} is the detector's word for it
   never_seen: "The camera hasn't seen {object} yet."
 
-# ── The Mac's own pop-up notifications (settings → notifications) ───
+# ── The Mac's own pop-up notifications, and your phone's (settings → notifications) ───
 # A warning or reminder pops up with the character's name as its title and its message as the text.
 notifications:
   # the title of the pop-up when the camera saw you drink
   sip_title: Sip logged
+  # what your phone gets instead of a to-do reminder's words, since a to-do's text never leaves the Pi
+  phone_todo: A to-do is due. Open Desk Talk to see it.
 
 # ── What the app's web servers answer the camera, the phone and the page ───
 server:

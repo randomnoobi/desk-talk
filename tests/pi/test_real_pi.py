@@ -37,6 +37,7 @@ from tests.pi.on_the_pi import (
     restore_time_text,
     restored_at_this_start,
     speak_result,
+    to_the_phone_server,
 )
 
 pytestmark = pytest.mark.pi
@@ -485,6 +486,31 @@ def test_disk_stays_under_limit(stack: Pi):
     assert pi.settings()['pi']['delete_every_min'] == real['delete_every_min'], 'the real settings did not come back'
 
 
+# Run in the app container: whether it has a topic, and the ntfy server's addresses and port as the app itself finds
+# them (its own name lookup, which may not be the Pi's). No topic: no lookup, and nothing is allowed.
+PHONE_SERVER_LOOKUP = """
+import json, socket, urllib.parse
+from desktalk.config import load_config
+c = load_config()
+u = urllib.parse.urlsplit(c.notifications.phone_server)
+port = u.port or (443 if u.scheme == 'https' else 80)
+on = bool(c.secrets.ntfy_topic.get_secret_value())
+try:
+    found = socket.getaddrinfo(u.hostname, port, proto=socket.IPPROTO_TCP) if on else []
+except OSError:
+    found = []
+print(json.dumps([on, sorted({str(a[4][0]) for a in found}), port]))
+"""
+
+
+def phone_server(pi: Pi) -> tuple[set[str], int] | None:
+    """The ntfy server's addresses (what its name points to inside the app container, where the app looks it up)
+    and port, when the app has a topic set (NTFY_TOPIC) and so sends phone notifications; None when it has none."""
+    asked = pi.compose('exec', '-T', 'app', 'python', '-c', PHONE_SERVER_LOOKUP)
+    on, addresses, port = json.loads(asked.strip().splitlines()[-1])
+    return (set(addresses), port) if on else None
+
+
 def test_no_picture_goes_off_the_pi(pi: Pi):
     """With no AI set. It looks in each container about once a second, so a connection that opens and closes between
     two looks can go unseen. The Wi-Fi's byte count over the whole look covers that for pictures: one alone would use
@@ -492,7 +518,10 @@ def test_no_picture_goes_off_the_pi(pi: Pi):
 
     What it still can't see: anything smaller than the limit (words, or a tiny picture) sent now and then; anything
     sent outside these 90 s; anything sent on another way out (a cable, when the Wi-Fi isn't the default route). And
-    another SSH session on the Wi-Fi, like a download on the Pi, makes it fail with nothing wrong."""
+    another SSH session on the Wi-Fi, like a download on the Pi, makes it fail with nothing wrong.
+
+    With NTFY_TOPIC set, the app may also reach the ntfy server (the phone notifications, text only): that one way
+    out is allowed, for the app container only, to what the server's name points to inside that container."""
     pi.wait_until_healthy()
     status = pi.get('/api/status')
     if status['llm']:
@@ -504,7 +533,9 @@ def test_no_picture_goes_off_the_pi(pi: Pi):
           f"{seen['wifi_sent_bytes']} bytes out on {seen['wifi_device']}")
     assert seen['looks'] >= LOOK_FOR_CONNECTIONS_SEC / 10, f"only {seen['looks']} looks"
     assert seen['connections'], 'saw no connections at all, not even the camera to the app: the check is broken'
-    assert off_the_pi(seen['connections'], docker_network, seen['wifi_network']) == []
+    phone = phone_server(pi)
+    allowed = to_the_phone_server(seen['connections'], *phone) if phone else []
+    assert [c for c in off_the_pi(seen['connections'], docker_network, seen['wifi_network']) if c not in allowed] == []
 
     sent = seen['wifi_sent_bytes']
     if sent >= MOST_WIFI_SENT_BYTES and pages_on_the_wifi(seen['connections'], seen['wifi_network']):

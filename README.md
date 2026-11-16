@@ -127,6 +127,28 @@ hours, and each kind can be switched off in the `notifications:` section of `con
 plugged in the Pi says so once in its log and carries on. (A Mac running the app for development shows them as its
 own pop-ups instead, through `osascript`.)
 
+**Phone notifications**: the same warnings, reminders and sips can also come to your phone as push notifications,
+through [ntfy](https://ntfy.sh), as well as on the speaker. Only ready-made words go to the phone, never an AI's
+(an AI may have seen your to-do list): an AI-written warning comes as its plain fixed line, and a lost-item alert,
+whose words an AI may write, doesn't come at all. A to-do's words never leave the Pi: a to-do reminder comes to the
+phone as "A to-do is due. Open Desk Talk to see it." It's off until you pick a topic, and the topic is a
+secret: anyone who knows it can read your notifications and send you some, so make it long and random, never a word
+like `desktalk`.
+
+1. **On the Pi**, make a topic: `python3 -c "import secrets; print('desktalk-' + secrets.token_urlsafe(18))"`
+2. **On the Pi**, put it in `raspberry_pi/.env` as `NTFY_TOPIC=desktalk-...` (copy `.env.example` to `.env` first if
+   there is none).
+3. On your phone, install the ntfy app and subscribe to that topic (on `ntfy.sh`, or your own server:
+   `notifications.phone_server`).
+4. **On the Pi**, restart the app so it reads the topic: `cd ~/desk-talk/raspberry_pi && docker compose up -d` (or
+   `bash raspberry_pi/update.sh`).
+
+Quiet hours and the switches in `notifications:` hold for the phone too. With no internet the Pi carries on: each
+notification is tried once, with one time limit for all of it, the first failure is logged, and for a minute after a
+failure (`notifications.phone_retry_after_sec`) the next ones are dropped without trying. The chat, the speaker and
+stopping the app never wait for it. `notifications.phone_server` is only the server's address: the topic goes in
+`NTFY_TOPIC`, never in the address.
+
 ## Character Relationships
 
 ### Interaction Map
@@ -413,7 +435,7 @@ Areas of `config/settings.yaml` that came with the new design:
 | `event_stream` | how many events may wait per consumer before old picture events are dropped |
 | `web` | the web server: port, upload size limits, live updates, and the app page's refresh times, waits and list sizes (the page asks for them at `GET /api/ui_settings`) |
 | `drawing` | the boxes and desk drawings on the live view: colors, line widths, writing sizes, how see-through |
-| `notifications` | the speaker on the Pi (`output: speaker`) or the Mac's own pop-ups: on or off, which kinds (warnings, reminders, sips), how long one may take |
+| `notifications` | the speaker on the Pi (`output: speaker`) or the Mac's own pop-ups: on or off, which kinds (warnings, reminders, sips), how long one may take; the ntfy server for your phone (`phone_server`; the topic is `NTFY_TOPIC` in `.env`) |
 | `llm` | the optional AI: `ai_url` (an AI on your computer or your cloud server), the waits and limits |
 | `logging` | the log file in `data/logs/` |
 | `storage` | where preferences, habit days and learned personalities are kept (`data/`) |

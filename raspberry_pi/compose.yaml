@@ -38,6 +38,8 @@ services:
       DATA_ROOM: ${DATA_ROOM_ON:-no}
       DATA_ROOM_MARKER: ${DATA_ROOM_MARKER:-.desktalk-data-room}
       MEMORY_DATA_FOLDER: /memory-data
+      # Your phone's secret ntfy topic (.env). Empty = no phone notifications. Only this container sees it.
+      NTFY_TOPIC: ${NTFY_TOPIC:-}
     ports:
       - "${APP_HOST_PORT:-5000}:${APP_PORT:-5000}"                  # the one door: phones and computers on your Wi-Fi come in here
     volumes:

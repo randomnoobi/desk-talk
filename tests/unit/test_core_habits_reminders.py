@@ -93,7 +93,8 @@ def test_a_nudge_is_said_by_an_agent_for_that_habit(config):
     assert wait == 30                                            # reminders.check_every_sec
     assert r.voice.asked == [('computer', SIT)]
     assert r.notifier.sent == [{'type': 'group_message', 'character': 'computer', 'text': 'Hey, stretch your legs!',
-                                'habit': 'breaks', 'toast': True, 'notify': 'reminder', 'id': r.notifier.sent[0]['id'],
+                                'habit': 'breaks', 'toast': True, 'notify': 'reminder',
+                                'phone_text': 'Time for a walk.', 'id': r.notifier.sent[0]['id'],
                                 'ts': r.notifier.sent[0]['ts']}]
     assert r.habits.fired == [(SIT, NOON)]
     sent = r.bus.of_type(NudgeSent)

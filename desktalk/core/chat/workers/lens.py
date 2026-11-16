@@ -25,6 +25,7 @@ from typing import Any
 
 from desktalk.config import LensSettings, PiSettings
 from desktalk.config.prompts import ByCamera, LensPrompts
+from desktalk.core.chat.desktop_alerts import NOTIFY, PHONE_TEXT, WARNING
 from desktalk.core.habits.preferences import quiet_hours_now
 from desktalk.domain import (
     LENS,
@@ -121,14 +122,16 @@ class Lens:
                  notifier: Notifier, bus: EventBus, photos: PhotoTaker, settings: LensSettings,
                  pi_settings: PiSettings, *, clock: Clock, checks: HealthCheck, prompts: LensPrompts,
                  preview_chars: int, phone: PhoneCamera | None = None, pi_uploads: PiUploads | None = None,
-                 saving: Saving = Saving.PLAIN):
+                 saving: Saving = Saving.PLAIN, camera_elsewhere: bool = False):
         """How long the Pi must be hot (or its clock off) before Lens says so: lens.wait_before_saying_sec.pi;
         how long its own detection must be off: lens.wait_before_saying_sec.pi_detector. The other health checks
         are said as soon as `checks` finds them (their settings already say how long or how little). `prompts`:
         config/prompts.yaml → lens (what Lens says about the Pi, and its photos' label). `preview_chars`:
         settings → logging.preview_chars, the longest line quoted in the log. `clock` gives the local hour, for
         quiet hours. `saving`: where the data is kept (Saving: Desk Talk's own
-        space on the Pi's card changes what the card check says, and no space at all is said too)."""
+        space on the Pi's card changes what the card check says, and no space at all is said too).
+        `camera_elsewhere`: the camera sends its pictures to another Desk Talk (the Pi's camera, seen from a
+        computer), so none coming here is how it should be: the camera's own checks are left out."""
         self._health = health
         self._source = source
         self._layout = layout
@@ -145,6 +148,7 @@ class Lens:
         self._saving = saving
         self._phone = phone
         self._pi = pi_uploads
+        self._camera_elsewhere = camera_elsewhere
         self._detector_reason_logged: str | None = None
         waits = settings.wait_before_saying_sec
         timing = {'repeat': settings.repeat_after_min * 60, 'fixed_after': settings.fixed_after_sec}
@@ -166,11 +170,10 @@ class Lens:
         connected = source.connected
         measures = {m.key: m for m in self._checks.measures()}     # (also while quiet: they follow the camera)
         quiet = quiet_hours_now(self._prefs, now, self._clock)
-        found = self._health.check(now, connected=connected, fps=source.fps if source.kind in FPS_KINDS else None,
-                                   gravity=phone.recent_gravity() if phone else None,
-                                   reference_gravity=self._layout.reference_gravity(),
-                                   has_outline=self._layout.has_outline(),
-                                   stopped=phone.stopped_by_user if phone else False, quiet=quiet)
+        found = [] if self._camera_elsewhere else self._health.check(
+            now, connected=connected, fps=source.fps if source.kind in FPS_KINDS else None,
+            gravity=phone.recent_gravity() if phone else None, reference_gravity=self._layout.reference_gravity(),
+            has_outline=self._layout.has_outline(), stopped=phone.stopped_by_user if phone else False, quiet=quiet)
         if quiet:
             return self._settings.check_every_sec       # (the Pi isn't checked either: no thanks for unseen warnings)
         for message in list(found) + self._pi_messages(now, connected, measures):
@@ -301,7 +304,8 @@ class Lens:
         kind, text = found['kind'], found['text']
         message = {'type': 'group_message', 'character': LENS, 'text': text, 'lens': kind, 'toast': kind == 'problem'}
         if kind == 'problem':
-            message['notify'] = 'warning'           # a warning also pops up on the desktop
+            message[NOTIFY] = WARNING               # a warning also pops up on the desktop
+            message[PHONE_TEXT] = text              # and goes to the phone: Lens's words are prompts.yaml's, no AI's
         if kind == 'problem' and found['key'] in PHOTO_KEYS:
             photo = self._photos.save(self._words.photo_label)
             if photo:

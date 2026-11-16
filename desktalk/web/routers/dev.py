@@ -103,11 +103,9 @@ def _pi_stats_link(app: App) -> PiStatsLink:
 
 
 def _pi_elsewhere(app: App) -> PiStatsLink | None:
-    """The line to the Pi when this is a computer (web.public_address empty) whose camera is the Pi, so the Pi's
+    """The line to the Pi when this is a computer whose camera is the Pi (settings: pi_camera_elsewhere), so the Pi's
     own server knows how its camera and the rest are doing; None when this server knows itself."""
-    if app.pi is not None and not app.config.web.public_address and app.pi_stats_link is not None:
-        return app.pi_stats_link
-    return None
+    return app.pi_stats_link if app.config.pi_camera_elsewhere else None
 
 
 def _ask_pi(app: App, ask: Callable[[], dict[str, Any]], unreachable: str) -> dict[str, Any]:

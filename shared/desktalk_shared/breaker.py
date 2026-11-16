@@ -17,7 +17,8 @@ back() closes it without a call having worked (say a health check said it's read
 pause stays as long as it was, so something that keeps coming and going waits longer each time.
 
 It has no clock and no lock: the caller passes the time in (`now`, from a monotonic clock) and keeps it to one thread
-or behind its own lock. Used by Desk Talk's AI calls and the Pi's detector client. Standard library only.
+or behind its own lock. Used by Desk Talk's AI calls and phone notifications, and the Pi's detector client. Standard
+library only.
 """
 
 from __future__ import annotations

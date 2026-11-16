@@ -115,7 +115,8 @@ def test_a_sip_logged_in_the_app_stops_the_hydration_nudge(tmp_path):
 
 # ── Lens ─────────────────────────────────────────────────────────────
 def test_lens_speaks_up_when_the_pi_goes_quiet(tmp_path):
-    rig = DeskRig(tmp_path)
+    """On the Pi itself (web.public_address set): there its camera sends here, so pictures stopping is a problem."""
+    rig = DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'web', public_address='desktalk.local:5000'))
     rig.watch(3, LAPTOP)
     rig.tick(rig.app.lens)
     said = []
