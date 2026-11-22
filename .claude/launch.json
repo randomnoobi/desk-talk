@@ -1,0 +1,27 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "desk-talk",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "python",
+        "server.py"
+      ],
+      "port": 5000
+    },
+    {
+      "name": "desk-talk-reliability",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "--directory",
+        "../desk-talk-reliability",
+        "python",
+        "server.py"
+      ],
+      "port": 5000
+    }
+  ]
+}
