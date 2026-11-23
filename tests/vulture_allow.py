@@ -51,7 +51,7 @@ _ = (
     LensWaits.covered, LensWaits.dark, LensWaits.blurry,
     # Request fields read through model_dump().
     PreferenceChanges.quiet_enabled, PreferenceChanges.quiet_start_hour, PreferenceChanges.quiet_end_hour,
-    PreferenceChanges.sensitivity,
+    PreferenceChanges.sensitivity, PreferenceChanges.auto_sensitivity,
     PreferenceChanges.dnd_enabled, PreferenceChanges.dnd_start_hour, PreferenceChanges.dnd_end_hour,
     # Event and status fields the web page (web_app/app.js) reads from the JSON.
     AgentLeft.stayed_sec, Compaction.from_ts, PiHealth.last_cleanup_ts,

@@ -464,6 +464,51 @@ def test_sensitivity_slider_saves(page, tmp_path, pictures):
         expect(page.get_by_label('Sensitivity')).to_have_value('0')
 
 
+
+def test_sensitivity_switch_saves(page, tmp_path, pictures):
+    """Under the sensitivity slider, a switch (the server's words) lets the slider move by itself; it's saved with
+    the other settings, and comes back on a reload. Before the slider has moved by itself, no line says it did."""
+    with running_app(tmp_path, pictures=pictures) as url:
+        ui = page.request.get(f'{url}/api/ui_settings').json()
+        assert page.request.get(f'{url}/api/preferences').json()['auto_sensitivity'] is True
+        open_app(page, url)
+        page.locator('.page-link[data-view="settings"]').click()
+        switch = page.get_by_label(ui['sensitivity_auto'])
+        expect(switch).to_be_checked()
+        expect(page.locator('#sensitivity-moved')).to_be_hidden()
+        switch.uncheck()
+        page.get_by_role('button', name='Save settings').click()
+        expect(page.locator('#saved')).to_have_text('Saved')
+        assert page.request.get(f'{url}/api/preferences').json()['auto_sensitivity'] is False
+        page.reload()
+        expect(page.locator('#conn')).to_have_attribute('data-state', LIVE)
+        page.locator('.page-link[data-view="settings"]').click()
+        expect(page.get_by_label(ui['sensitivity_auto'])).not_to_be_checked()
+
+
+def test_settings_page_says_when_the_slider_moved_by_itself(page, tmp_path, pictures):
+    """After the slider moved by itself, the Settings page says the newest move in the server's words
+    (GET /api/sensitivity_review), and when; the slider shows the step it moved to (GET /api/preferences)."""
+    moved_at = time.mktime((2026, 11, 20, 14, 5, 0, 0, 0, -1))
+    move = {'ts': moved_at, 'from_step': 2, 'to_step': 1, 'why': 'jumpy', 'watched_hours': 4.0, 'blinks': 28,
+            'misses': 0, 'step': 'Careful',
+            'says': 'Moved to Careful: things flashed on and off about 7 times an hour.'}
+    older = {**move, 'ts': moved_at - 86400, 'says': 'An older move.'}
+    reply = {'enabled': True, 'last': {**move, 'to_step': 1, 'from_step': 1, 'why': 'steady', 'says': None},
+             'moves': [move, older]}
+    with running_app(tmp_path, pictures=pictures) as url:
+        assert page.request.put(f'{url}/api/preferences', data=json.dumps({'sensitivity': 1}),
+                                headers={'Content-Type': 'application/json'}).ok      # as the reviewer would
+        page.route('**/api/sensitivity_review', lambda route: route.fulfill(json=reply))
+        open_app(page, url)
+        page.locator('.page-link[data-view="settings"]').click()
+        line = page.locator('#sensitivity-moved')
+        expect(line).to_be_visible()
+        expect(line).to_contain_text(move['says'])
+        expect(line).to_contain_text('Nov')
+        expect(line).not_to_contain_text(older['says'])
+        expect(page.get_by_label('Sensitivity')).to_have_value('1')
+
 def test_settings_page_says_whether_a_cloud_server_is_linked(page, tmp_path, pictures):
     """The Settings page has one line about the optional cloud server, in the server's words (GET /api/ui_settings);
     this app is not linked to one."""

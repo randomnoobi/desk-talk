@@ -4,6 +4,7 @@
   "json": {
     "ok": "bool",
     "preferences": {
+      "auto_sensitivity": "bool",
       "bed_time": "str",
       "quiet_enabled": "bool",
       "quiet_end_hour": "number",

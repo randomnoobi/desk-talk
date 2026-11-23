@@ -99,6 +99,7 @@ class PreferenceChanges(BaseModel):
     quiet_start_hour: Any = None
     quiet_end_hour: Any = None
     sensitivity: int | None = None       # a step of the sensitivity slider (settings → agents.sensitivity_steps)
+    auto_sensitivity: bool | None = None  # the slider may move by itself (settings → sensitivity_review)
     dnd_enabled: Any = None              # the old names, from the previous app version
     dnd_start_hour: Any = None
     dnd_end_hour: Any = None
@@ -262,6 +263,30 @@ class UiSensitivityStep(BaseModel):
     says: str                            # what the step does, in words (prompts.yaml → ui.sensitivity_step)
 
 
+class SensitivityLook(BaseModel):
+    """One look back by the sensitivity reviewer (desktalk/domain/agents.py → SensitivityVerdict), for the
+    Settings page."""
+
+    ts: float
+    from_step: int
+    to_step: int
+    why: str
+    watched_hours: float
+    blinks: int
+    misses: int
+    step: str                            # the name of the step it left the slider at (agents.sensitivity_steps)
+    says: str | None                     # for a move, what the page says about it (prompts.yaml → ui.sensitivity_
+                                         # moved_pickier / _easier); None when it left the slider alone
+
+
+class SensitivityReviewReply(BaseModel):
+    """GET /api/sensitivity_review"""
+
+    enabled: bool                        # the Settings page's "Adjust by itself" switch (preferences)
+    last: SensitivityLook | None         # its newest look back; None before the first
+    moves: list[SensitivityLook]         # the moves it made, newest first
+
+
 class UiLensCard(BaseModel):
     id: str
     name: str
@@ -286,6 +311,7 @@ class UiSettings(BaseModel):
     sensitivity_steps: list[UiSensitivityStep]
     sensitivity_intro: str               # prompts.yaml → ui.sensitivity_intro: what the slider covers
     sensitivity_default: int             # the step used until the slider is moved (agents.sensitivity_default)
+    sensitivity_auto: str                # prompts.yaml → ui.sensitivity_auto: the switch that lets it move by itself
     # How long the page waits for a chat reply: as long as the server may keep trying the AI (llm.longest_reply_sec)
     # for each AI call one message can make (routers/settings.py: most_ai_calls_per_message), plus an ordinary
     # request's wait for the trip there and back.

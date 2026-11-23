@@ -52,6 +52,7 @@ from desktalk.adapters.system.proc_reader import ProcReader
 from desktalk.config import AppConfig, ConfigError, Protocols
 from desktalk.core.agents.profiles import ProfileBook
 from desktalk.core.agents.roster import Roster
+from desktalk.core.agents.sensitivity_review import SensitivityReviewer
 from desktalk.core.chat.desktop_alerts import DesktopAlerts
 from desktalk.core.chat.message_generator import MessageGenerator
 from desktalk.core.chat.message_hub import MessageHub
@@ -126,6 +127,7 @@ from desktalk.ports import (
     RosterList,
     SafetyBoard,
     ScheduledJobs,
+    SensitivityReview,
     SystemStats,
     SystemStatsReader,
     TestRunner,
@@ -195,6 +197,9 @@ class DeskTalk:
     idle_chat         small talk between agents (a background job)
     lost_items        "have you seen my keys?": is_lost_query(), answer() and the items (/api/chat, /api/live)
     daily_summary     the end-of-day recap (a background job)
+    sensitivity_review
+                      moves the sensitivity slider one step when what the camera saw makes it clear (a background
+                      job, no AI): last() and moves() (/api/sensitivity_review)
     cloud             sends filtered habit events to a linked cloud server, and does nothing until linked (a
                       background job): status() (/api/cloud/status)
     scheduler         timed jobs (compacting and pruning the event log, saving habits and object states, deleting
@@ -275,6 +280,7 @@ class DeskTalk:
     idle_chat: PeriodicWorker
     lost_items: LostItemsView
     daily_summary: PeriodicWorker
+    sensitivity_review: SensitivityReview
     cloud: CloudSending
     scheduler: ScheduledJobs
     supervisor: Jobs
@@ -313,6 +319,7 @@ class DeskTalk:
             (self.lost_items, c.lost_items.start_delay_sec),
             (self.lens, c.lens.check_every_sec),
             (self.daily_summary, c.daily_summary.start_delay_sec),
+            (self.sensitivity_review, c.sensitivity_review.check_every_min * MINUTE),
             (self.cloud, c.cloud.send_every_sec),
         ]
         if self.keepalive is not None:
@@ -513,7 +520,8 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     profiles = ProfileBook(config.agents_file, store, personality_max_chars=config.agents.personality_max_chars)
     preferences = PreferencesFile(store, config.protocols.schedule, config.reminders.quiet_hours,
                                   sensitivity_steps=len(config.agents.sensitivity_steps),
-                                  sensitivity_default=config.agents.sensitivity_default, clock=clock)
+                                  sensitivity_default=config.agents.sensitivity_default,
+                                  auto_sensitivity_default=config.sensitivity_review.enabled, clock=clock)
 
     # ── the camera, the desk rules and detection ──
     camera = Camera(source) if source is not None else make_camera(config, clock)
@@ -625,6 +633,9 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     daily_summary = DailySummary(model, hub, roster, habits, store, config.daily_summary, config.llm.replies,
                                  default_temperature=default_temperature, clock=clock,
                                  prompts=config.prompts.daily_recap, preview_chars=config.logging.preview_chars)
+    sensitivity_review = SensitivityReviewer(config.sensitivity_review, config.agents, preferences, state_store,
+                                             event_log, store, profiles, clock,
+                                             person_label=config.object_states.person_label)
     def http_line(server: str, token: str) -> CloudLink:
         return HttpCloudLink(server, token, timeout_sec=config.cloud.timeout_sec,
                              error_text_chars=config.cloud.error_text_chars)
@@ -691,8 +702,9 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         producer=producer, health_checks=health_checks, object_states=object_states, state_store=state_store,
         roster=roster, desk_status=desk_status, habits=habits, ai=ai, model=asked_model, hub=hub, generator=generator,
         rule_runner=rule_runner, reminders=reminders, lens=lens, idle_chat=idle_chat,
-        lost_items=lost_items, daily_summary=daily_summary, cloud=cloud, scheduler=scheduler,
-        supervisor=supervisor, system_stats=system_stats, started_at=clock.now(), keepalive=ai.keepalive_worker(),
+        lost_items=lost_items, daily_summary=daily_summary, sensitivity_review=sensitivity_review, cloud=cloud,
+        scheduler=scheduler, supervisor=supervisor, system_stats=system_stats, started_at=clock.now(),
+        keepalive=ai.keepalive_worker(),
         log_file=log_file, test_runner=test_runner, databases=databases, data_files=data_files, chat_joins=roster,
         trace_photos=trace_photos, demo=demo, pi_log=pi_log, todos=todos, desktop=desktop,
         phone_notifications=phone_notifications, pi_stats_link=pi_stats_link,

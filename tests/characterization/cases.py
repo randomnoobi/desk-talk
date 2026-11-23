@@ -260,6 +260,8 @@ CASES = [
     Case('preferences-put-sensitivity', 'PUT', '/api/preferences', 200, json={'sensitivity': 0},
          values={'preferences.sensitivity': 0}),
     Case('preferences-put-bad-sensitivity', 'PUT', '/api/preferences', 400, json={'sensitivity': 'abc'}),
+    Case('preferences-put-auto-sensitivity', 'PUT', '/api/preferences', 200, json={'auto_sensitivity': False},
+         values={'preferences.auto_sensitivity': False}),
     Case('preferences-put-old-names', 'PUT', '/api/preferences', 200, json={'dnd_enabled': True, 'dnd_start_hour': 21},
          values={'preferences.quiet_enabled': True, 'preferences.quiet_start_hour': 21}),
     Case('preferences-after-put', 'GET', '/api/preferences', 200,
@@ -285,7 +287,14 @@ CASES = [
     Case('rules-put-too-few-corners', 'PUT', '/api/rules', 400, json={'desk_outline': [[0, 0], [1, 0]]}),
     Case('rules-put-bad-outline', 'PUT', '/api/rules', 400, json={'desk_outline': 'the whole desk'}),
     Case('rules-put-empty', 'PUT', '/api/rules', 400, json={}),
-    Case('ui-settings', 'GET', '/api/ui_settings', 200, values={'web.refresh_ms.live': 1500, 'lens_card.id': 'lens'}),
+    Case('ui-settings', 'GET', '/api/ui_settings', 200,
+         values={'web.refresh_ms.live': 1500, 'lens_card.id': 'lens',
+                 'sensitivity_auto': 'Adjust by itself, from what the camera has been seeing'}),
+    # the slider moving by itself: the reviewer hasn't looked yet on these desks (its first look is an hour in)
+    Case('sensitivity-review', 'GET', '/api/sensitivity_review', 200,
+         values={'enabled': True, 'last': None, 'moves': []}),
+    Case('sensitivity-review-switched-off', 'GET', '/api/sensitivity_review', 200, desk='fresh',
+         before=(Step('PUT', '/api/preferences', {'auto_sensitivity': False}),), values={'enabled': False}),
 
     # ── The cloud server (optional): the desks here are not linked to one ──
     Case('cloud-status', 'GET', '/api/cloud/status', 200,

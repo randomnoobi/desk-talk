@@ -14,7 +14,7 @@ from tests.fakes import FakeClock, FakePreferences, InMemoryKeyValueStore
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULTS = {'wake_time': '07:00', 'bed_time': '22:30', 'quiet_enabled': False, 'quiet_start_hour': 22,
-            'quiet_end_hour': 7, 'sensitivity': 2}
+            'quiet_end_hour': 7, 'sensitivity': 2, 'auto_sensitivity': True}
 
 
 @pytest.fixture(scope='module')
@@ -34,7 +34,8 @@ def store():
 def prefs_from(config, store, clock=None):
     return PreferencesFile(store, config.protocols.schedule, config.reminders.quiet_hours,
                            sensitivity_steps=len(config.agents.sensitivity_steps),
-                           sensitivity_default=config.agents.sensitivity_default, clock=clock or FakeClock())
+                           sensitivity_default=config.agents.sensitivity_default,
+                           auto_sensitivity_default=config.sensitivity_review.enabled, clock=clock or FakeClock())
 
 
 def test_it_is_a_preferences_view(config, store):
@@ -50,7 +51,8 @@ def test_defaults_come_from_protocols_and_settings(config, store):
 def test_defaults_follow_the_config_files(config, store):
     schedule = config.protocols.schedule.model_copy(update={'wake_time': '06:15'})
     quiet = config.reminders.quiet_hours.model_copy(update={'enabled': True, 'start_hour': 21})
-    p = PreferencesFile(store, schedule, quiet, sensitivity_steps=5, sensitivity_default=2, clock=FakeClock())
+    p = PreferencesFile(store, schedule, quiet, sensitivity_steps=5, sensitivity_default=2,
+                        auto_sensitivity_default=True, clock=FakeClock())
     assert p.get('wake_time') == '06:15' and p.get('quiet_enabled') is True and p.get('quiet_start_hour') == 21
 
 
@@ -58,7 +60,7 @@ def test_changes_are_saved_and_validated(config, store):
     p = prefs_from(config, store)
     out = p.update({'wake_time': '6:45', 'bed_time': '23:15', 'quiet_enabled': 1, 'quiet_start_hour': 25})
     expected = {'wake_time': '06:45', 'bed_time': '23:15', 'quiet_enabled': True, 'quiet_start_hour': 1,
-                'quiet_end_hour': 7, 'sensitivity': 2}
+                'quiet_end_hour': 7, 'sensitivity': 2, 'auto_sensitivity': True}
     assert out == expected
     assert store.data == {'preferences': expected}             # data/preferences.json, as before
     again = prefs_from(config, store)
@@ -111,7 +113,7 @@ def test_preferences_file_from_before_still_loads(config):
                                                    'quiet_start_hour': 23, 'quiet_end_hour': 8, 'old_thing': 1}})
     p = prefs_from(config, store)
     assert p.all() == {'wake_time': '08:00', 'bed_time': '00:30', 'quiet_enabled': True, 'quiet_start_hour': 23,
-                       'quiet_end_hour': 8, 'sensitivity': 2}
+                       'quiet_end_hour': 8, 'sensitivity': 2, 'auto_sensitivity': True}
 
 
 def test_a_broken_saved_value_falls_back_to_the_default(config, caplog):
@@ -205,3 +207,26 @@ def test_a_saved_sensitivity_that_is_missing_or_wrong_still_loads(config, saved)
     expected = {99: 4, -1: 0}.get(saved, 2) if not isinstance(saved, list) else 2
     assert prefs_from(config, store).get('sensitivity') == expected
     assert prefs_from(config, InMemoryKeyValueStore({'preferences': {'wake_time': '08:00'}})).get('sensitivity') == 2
+
+
+# ── the switch that lets the slider move by itself (settings → sensitivity_review) ──
+def test_auto_sensitivity_starts_like_the_setting(config, store):
+    assert config.sensitivity_review.enabled is True
+    assert prefs_from(config, store).get('auto_sensitivity') is True
+    off = PreferencesFile(store, config.protocols.schedule, config.reminders.quiet_hours, sensitivity_steps=5,
+                          sensitivity_default=2, auto_sensitivity_default=False, clock=FakeClock())
+    assert off.get('auto_sensitivity') is False
+
+
+def test_auto_sensitivity_is_saved_as_yes_or_no(config, store):
+    p = prefs_from(config, store)
+    assert p.update({'auto_sensitivity': 0})['auto_sensitivity'] is False
+    assert prefs_from(config, store).get('auto_sensitivity') is False          # saved
+    assert p.update({'auto_sensitivity': 'yes'})['auto_sensitivity'] is True
+
+
+def test_a_file_from_before_the_switch_still_loads(config):
+    """A data/preferences.json saved before the switch existed: the switch starts like the setting."""
+    store = InMemoryKeyValueStore({'preferences': {'wake_time': '08:00', 'sensitivity': 1}})
+    p = prefs_from(config, store)
+    assert p.get('auto_sensitivity') is True and p.get('sensitivity') == 1

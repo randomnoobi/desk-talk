@@ -4,7 +4,7 @@ Every web address (route) the Desk Talk servers answer, grouped by area: what it
 who is allowed to. The code is the source of truth; this page is a map of it. How the parts fit together
 is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-**93 routes in all: 60 on the main server (23 of them for the developer page), 9 on the phone camera's server, 3 on the detector service, 21 on the cloud server.**
+**94 routes in all: 61 on the main server (23 of them for the developer page), 9 on the phone camera's server, 3 on the detector service, 21 on the cloud server.**
 
 ## Four servers
 
@@ -128,14 +128,16 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 |---|---|---|---|---|
 | GET | `/api/habits/today` | Today's habits (water, breaks, light, phone, food). | `web_app/app.js`, `tests/e2e/test_page.py` | anyone on the network |
 | POST | `/api/habits/log` | A habit button: a sip, a break, some sunlight, a snack. | `web_app/app.js` | anyone on the network |
-| GET | `/api/preferences` | Wake time, bedtime, quiet hours, and the sensitivity step. | `web_app/app.js` | anyone on the network |
+| GET | `/api/preferences` | Wake time, bedtime, quiet hours, the sensitivity step, and whether that step may move by itself (`auto_sensitivity`). | `web_app/app.js` | anyone on the network |
 | PUT | `/api/preferences` | Change them. Only the fields sent change. | `web_app/app.js` | anyone on the network |
 
 - `POST /api/habits/log`: `{"habit": "hydration", "action": "glass", ...}`. Any other field (`ml`,
   `minutes`, `label` ...) goes to the tracker. 400 for an unknown habit.
 - `PUT /api/preferences`: `{"wake_time": "06:30", "bed_time": ..., "quiet_enabled": ..., "quiet_start_hour":
-  ..., "quiet_end_hour": ..., "sensitivity": 2}`. `sensitivity` is the step of `agents.sensitivity_steps`,
-  0 (Picky) to 4 (Eager); a number past either end is kept at that end, and anything else is a 400. The old
+  ..., "quiet_end_hour": ..., "sensitivity": 2, "auto_sensitivity": true}`. `sensitivity` is the step of
+  `agents.sensitivity_steps`, 0 (Picky) to 4 (Eager); a number past either end is kept at that end, and anything
+  else is a 400. `auto_sensitivity` is the Settings page's "Adjust by itself" switch (it starts like
+  `sensitivity_review.enabled`). The old
   names (`dnd_enabled`, `dnd_start_hour`, `dnd_end_hour`) still work.
   Replies `{"ok": true, "preferences": {...}}`; 400 for a value that isn't valid.
 
@@ -150,17 +152,23 @@ number, kept between 1 and the most `web.list_sizes` allows; anything else is a 
 | GET | `/api/log/events` | Only the events that matter to you, newest first: sips, breaks, food, finished to-dos, sunlight (`habit`), reminders (`nudge`), warnings (`alert`, with a plain `subtitle` like "near Computer") and camera problems (`camera`). `?types=habit,nudge,alert,camera` picks some of those four (others are ignored); `?limit=` counts only these. | `web_app/app.js` | anyone on the network |
 | GET | `/api/log/status` | The log's folder, today's counts, the timed jobs, the event stream, the camera. | the developer page's System tab, for this computer's own cards | anyone on the network |
 
-### Settings (3)
+### Settings (4)
 
 | Method | Path | What it does | Called by | Access |
 |---|---|---|---|---|
 | GET | `/api/rules` | The danger rules and the desk corners, plus the objects a zone can be set for. | `web_app/app.js` | anyone on the network |
 | PUT | `/api/rules` | Change some of them. When the desk corners are marked, it also notes how the phone was tilted. | `web_app/app.js` | anyone on the network |
 | GET | `/api/ui_settings` | The numbers and words the app page uses (refresh times, waits, list sizes, the sensitivity steps, the starter to-do and counters, Lens's card ...), so the page keeps no copies of its own. Its `pi` part is `{fps, delete_every_min, public_address, address}`: `public_address` is `web.public_address` (`desktalk.local:5000` on the Pi, empty on a computer), and when it is set the page says the Pi starts its own camera. Otherwise (on a computer) the page links to the Pi's own Desk Talk at `address` (`dev.pi_address`), since the Pi's camera sends its pictures there. | `web_app/app.js` (on start), `tests/e2e/test_page.py` | anyone on the network |
+| GET | `/api/sensitivity_review` | Whether the sensitivity slider may move by itself, the reviewer's newest look back, and the moves it made (newest first, at most `sensitivity_review.changes_kept`). The Settings page shows the newest move's words and when. | `web_app/app.js` (when the Settings page opens) | anyone on the network |
 
 - `PUT /api/rules`: `{"danger_zones": ..., "edge_proximity": ..., "chain_reaction": ..., "temporal": ...,
   "desk_outline": [[x, y], ...]}`. Only the parts sent change; each corner is 0 to 1 of the picture. An
   empty body is a 400. Replies `{"ok": true}`.
+- `GET /api/sensitivity_review`: `{"enabled": true, "last": {...} or null, "moves": [{...}, ...]}`. Each look back
+  is `{"ts", "from_step", "to_step", "why", "watched_hours", "blinks", "misses", "step", "says"}`: `why` is one of
+  `SENSITIVITY_WHYS` in `desktalk/domain/agents.py`, `step` the name of the step it left the slider at, and `says`
+  what the page shows for a move (`ui.sensitivity_moved_pickier` or `ui.sensitivity_moved_easier` in
+  `config/prompts.yaml`, filled in), or null when it left the slider alone.
 
 ### Pi (2)
 

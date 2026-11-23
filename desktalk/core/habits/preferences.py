@@ -1,10 +1,11 @@
 """
-PreferencesFile: wake time, bedtime, quiet hours and how picky joining the chat is (sensitivity), chosen in the
-app's Settings page.
+PreferencesFile: wake time, bedtime, quiet hours, how picky joining the chat is (sensitivity) and whether that
+slider may move by itself (auto_sensitivity), chosen in the app's Settings page.
 
 They win over config/protocols.yaml (schedule) and config/settings.yaml (reminders.quiet_hours,
-agents.sensitivity_default), which give the starting values. Saved in the store under "preferences"
-(data/preferences.json, the same file and layout as before; a file from before sensitivity existed still loads).
+agents.sensitivity_default, sensitivity_review.enabled), which give the starting values. Saved in the store under
+"preferences" (data/preferences.json, the same file and layout as before; a file from before sensitivity or
+auto_sensitivity existed still loads).
 """
 
 from __future__ import annotations
@@ -28,10 +29,11 @@ HOURS_IN_DAY = 24
 class PreferencesFile:
     """Implements the Preferences interface (desktalk/ports.py). `sensitivity_steps`: how many steps the
     sensitivity slider has (settings → agents.sensitivity_steps); `sensitivity_default`: the one used until it's
-    moved, and when the saved one is missing or broken."""
+    moved, and when the saved one is missing or broken; `auto_sensitivity_default`: whether the slider may move by
+    itself until the Settings page's switch is changed (settings → sensitivity_review.enabled)."""
 
     def __init__(self, store: KeyValueStore, schedule: Schedule, quiet_hours: QuietHours, *, sensitivity_steps: int,
-                 sensitivity_default: int, clock: Clock):
+                 sensitivity_default: int, auto_sensitivity_default: bool, clock: Clock):
         self._store = store
         self._clock = clock                    # for quiet_now: the local hour
         self._steps = sensitivity_steps
@@ -43,6 +45,7 @@ class PreferencesFile:
             'quiet_start_hour': quiet_hours.start_hour,
             'quiet_end_hour': quiet_hours.end_hour,
             'sensitivity': sensitivity_default,
+            'auto_sensitivity': auto_sensitivity_default,
         }
         saved = store.load(KEY, {})
         if not isinstance(saved, dict):
@@ -83,7 +86,7 @@ class PreferencesFile:
         if key in ('wake_time', 'bed_time'):
             h, m = parse_hhmm(str(value))
             return f'{h:02d}:{m:02d}'
-        if key == 'quiet_enabled':
+        if key in ('quiet_enabled', 'auto_sensitivity'):
             return bool(value)
         if key == 'sensitivity':
             try:

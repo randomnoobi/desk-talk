@@ -85,6 +85,7 @@
       "end_hour": "number",
       "start_hour": "number"
     },
+    "sensitivity_auto": "str",
     "sensitivity_default": "number",
     "sensitivity_intro": "str",
     "sensitivity_steps": [

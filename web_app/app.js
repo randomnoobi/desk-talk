@@ -927,6 +927,8 @@ async function renderCaptures(poll = false) {
 // The sliders' ranges and where a new danger zone's slider starts come from ui.web.settings_sliders and
 // ui.web.new_zone_px (settings → web). The sensitivity steps come from ui.sensitivity_steps (settings → agents),
 // each with what it does in words (`says`), and what the slider covers from ui.sensitivity_intro (prompts.yaml → ui).
+// The switch that lets the slider move by itself is labelled ui.sensitivity_auto; what it says after a move comes
+// from GET /api/sensitivity_review, already in words.
 const hourText = (h) => `${String(h).padStart(2, '0')}:00`;
 let savedTimer = null;
 async function renderSettings() {
@@ -957,6 +959,7 @@ async function renderSettings() {
     quiet_start: hourText(prefs.quiet_start_hour ?? ui.quiet_hours.start_hour),
     quiet_end: hourText(prefs.quiet_end_hour ?? ui.quiet_hours.end_hour),
     sensitivity: Math.min(steps.length - 1, Math.max(0, prefs.sensitivity ?? ui.sensitivity_default)),
+    auto_sensitivity: !!prefs.auto_sensitivity,
   };
   const keepTyped = () => {
     if (!$('#wake-time')) return;
@@ -966,6 +969,7 @@ async function renderSettings() {
     draft.quiet_start = $('#dnd-start').value;
     draft.quiet_end = $('#dnd-end').value;
     if ($('#sensitivity')) draft.sensitivity = +$('#sensitivity').value;
+    if ($('#sensitivity-auto')) draft.auto_sensitivity = $('#sensitivity-auto').checked;
   };
   const range = (name, value, { min, max }, label) => `<span class="range"><input type="range" name="${name}" min="${min}" max="${max}" value="${value}" aria-label="${esc(label)}"></span>`;
 
@@ -983,6 +987,8 @@ async function renderSettings() {
         <label class="field"><span>Sensitivity</span><span class="range"><input type="range" id="sensitivity" min="0" max="${steps.length - 1}" step="1" value="${draft.sensitivity}" aria-valuetext="${esc(steps[draft.sensitivity].name)}"><output id="sensitivity-name">${esc(steps[draft.sensitivity].name)}</output></span></label>
         <p class="range-ends"><span>${esc(steps[0].name)}</span><span>${esc(steps.at(-1).name)}</span></p>
         <p class="hint" id="sensitivity-says" role="status">${esc(steps[draft.sensitivity].says)}</p>
+        <label class="check"><input type="checkbox" id="sensitivity-auto" ${draft.auto_sensitivity ? 'checked' : ''}> ${esc(ui.sensitivity_auto)}</label>
+        <p class="hint" id="sensitivity-moved" role="status" hidden></p>
       </div></section>` : ''}
     <section><h2>Danger zones</h2>
       <p class="hint">Each object gets an invisible bubble around it. When something risky enters the bubble (a cup near the laptop), the desk speaks up. Slide right for a bigger bubble.</p>
@@ -1053,6 +1059,7 @@ async function renderSettings() {
     });
     wireEdgeEditor();
     showCloudStatus();
+    showSensitivityMove();
     $('#clear-chats').addEventListener('click', () => {
       if (!window.confirm('Clear every chat on this page? This can’t be undone.')) return;
       for (const id of Object.keys(state.messages)) { state.messages[id] = []; state.unread[id] = 0; }
@@ -1074,6 +1081,17 @@ async function renderSettings() {
       const out = $('#cloud-status');
       if (out) out.textContent = line;
     } catch { /* the line stays empty; the rest of the page works without it */ }
+  };
+  // The newest time the slider moved by itself, in the server's words, and when; nothing when it never has.
+  const showSensitivityMove = async () => {
+    try {
+      const [move] = (await api('/api/sensitivity_review')).moves || [];
+      const out = $('#sensitivity-moved');
+      if (!out || !move?.says) return;
+      const when = new Date(move.ts * MS).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+      out.textContent = `${move.says} (${when})`;
+      out.hidden = false;
+    } catch { /* the line stays hidden; the rest of the page works without it */ }
   };
   const say = (text, error = false) => {
     const out = $('#saved');
@@ -1108,7 +1126,7 @@ async function renderSettings() {
         wake_time: draft.wake_time, bed_time: draft.bed_time, quiet_enabled: draft.quiet_enabled,
         quiet_start_hour: +draft.quiet_start.slice(0, 2), quiet_end_hour: +draft.quiet_end.slice(0, 2),
       };
-      if (steps.length) body.sensitivity = draft.sensitivity;
+      if (steps.length) Object.assign(body, { sensitivity: draft.sensitivity, auto_sensitivity: draft.auto_sensitivity });
       prefs = (await api('/api/preferences', { method: 'PUT', body })).preferences;
       refreshHabits();
     } catch (err) { failed.push(steps.length ? 'your day, sensitivity and quiet hours' : 'your day and quiet hours'); problem = err; }

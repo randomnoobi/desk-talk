@@ -1,0 +1,10 @@
+{
+  "content_type": "application/json",
+  "headers": {},
+  "json": {
+    "enabled": "bool",
+    "last": "null",
+    "moves": []
+  },
+  "request": "GET /api/sensitivity_review (main server, busy desk)"
+}

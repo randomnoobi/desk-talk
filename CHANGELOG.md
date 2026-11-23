@@ -4,6 +4,16 @@ What changed in Desk Talk, newest first, one line or a few per change. Each pull
 full story: what was wrong, what changed, and the checks that were run. What a person tried on the real Pi is in
 [docs/PI_CHECKS.md](docs/PI_CHECKS.md).
 
+## 2026-11-23
+
+- **The sensitivity slider can move by itself.** Every hour Desk Talk looks back at what the camera saw and what
+  that turned into. When things keep flashing on and off (put down and taken away again within 15 seconds, 6 times an
+  hour or more), it moves the Settings page's slider one step pickier. When something with a character of its own
+  stays in view for a minute or more but isn't quite sure enough for this step, though the next easier step would
+  take it (3 times or more), it moves one step easier. No AI, on the Pi. After you move the slider yourself it waits a
+  day. The Settings page has a switch to turn this off and says why it last moved. Numbers in
+  `sensitivity_review:` in `config/settings.yaml`; `GET /api/sensitivity_review` shows what it found.
+
 ## 2026-11-21
 
 - **A cover picture and a preview setting**, pushed straight to main. The Desk Talk cover (the page it was made from,
