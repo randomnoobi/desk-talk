@@ -156,7 +156,10 @@ def _boundary(content_type: str) -> str:
     for param in params.split(';'):
         key, _, value = param.strip().partition('=')
         if key.lower() == 'boundary' and value.strip('"'):
-            return value.strip('"')
+            boundary = value.strip('"')
+            if not boundary.isascii():
+                raise WireError(f'upload boundary must be plain ASCII (got {boundary!r})')
+            return boundary
     raise WireError('upload Content-Type has no boundary')
 
 

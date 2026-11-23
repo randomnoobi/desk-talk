@@ -429,6 +429,9 @@ def test_every_setting_has_a_comment(name):
     no_comment = {f'{name}: {".".join(map(str, path))}' for path, line in _key_lines(text).items()
                   if '#' not in lines[line] and not lines[line - 1].lstrip().startswith('#')}
     assert sorted(no_comment - allowed) == []
+    listed = {entry for entry in allowed if entry.startswith(f'{name}: ')}
+    assert sorted(listed - no_comment) == [], (
+        f'these have a comment now (or are gone), so take them off {WITHOUT_A_COMMENT.name}')
 
 
 def test_the_phone_drawing_and_page_settings_load(project):

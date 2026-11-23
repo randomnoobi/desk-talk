@@ -75,7 +75,7 @@ describe('Storage tab: this browser', () => {
     render(<Storage settings={SETTINGS} />)
 
     const row = screen.getByText('desktalk_todo_v1').closest('tr')!
-    expect(within(row).getByText("Book's to-do list")).toBeInTheDocument()
+    expect(within(row).getByText('To-do list')).toBeInTheDocument()
     fireEvent.click(within(row).getByText('desktalk_todo_v1'))
     expect(screen.getByText(/"type": "todo"/)).toBeInTheDocument()
   })
@@ -87,7 +87,7 @@ describe('Storage tab: this browser', () => {
     render(<Storage settings={SETTINGS} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete desktalk_todo_v1' }))
-    expect(confirm).toHaveBeenCalledWith("Delete desktalk_todo_v1? The app page loses Book's to-do list.")
+    expect(confirm).toHaveBeenCalledWith('Delete desktalk_todo_v1? The app page loses To-do list.')
     expect(localStorage.getItem('desktalk_todo_v1')).toBe('{}')
     expect(screen.getByText('desktalk_todo_v1')).toBeInTheDocument()
 

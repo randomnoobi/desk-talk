@@ -6,7 +6,7 @@
 #  size, format and precision below is timed and checked for accuracy.
 #  The desk test (uv run deskbench desk run, on the Mac) scores them on desk
 #  photos for Sam's desk things (desk: below), and the report names three picks.
-#  Results go to benchmarks/results/ (kept in git so we can compare runs).
+#  Results stay on this computer, in benchmarks/results/ (not in git).
 # ════════════════════════════════════════════════════════════════════
 
 # ── What to try ────────────────────────────────────────────────────
@@ -79,7 +79,7 @@ report:
 paths:
   models: models/bench        # downloaded and converted models (not in git)
   data: data/bench            # COCO photos and Ultralytics' own settings (not in git)
-  results: benchmarks/results # results (in git)
+  results: benchmarks/results # results, kept on this computer (not in git)
 
 # ── Quick check (deskbench run --quick): only to see that everything works ──
 # Its results go to data/bench/quick-results, not into git.

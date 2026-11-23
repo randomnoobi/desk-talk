@@ -78,6 +78,12 @@ def test_missing_parts_and_garbage_give_clear_errors():
         UploadInfo.from_json(b'{not json')
 
 
+def test_a_boundary_that_is_not_plain_ascii_is_refused_with_a_clear_error():
+    body, _ = encode_upload(JPEG, make_info())
+    with pytest.raises(WireError, match='boundary'):
+        decode_upload(body, 'multipart/form-data; boundary=caf\u00e9')
+
+
 def test_bad_detection_in_info_is_rejected_with_its_position():
     data = make_info().to_dict()
     data['detections'][0]['conf'] = 7
