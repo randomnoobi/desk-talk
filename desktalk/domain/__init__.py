@@ -33,7 +33,7 @@ Plain data, no I/O: what the parts of Desk Talk pass to each other.
                            the developer page's Pi log tab: a log it can show, one line, and what it gets
 """
 
-from desktalk.domain.agents import HABITS, LENS, AgentProfile, ChatJoin
+from desktalk.domain.agents import HABITS, LENS, SENSITIVITY_WHYS, AgentProfile, ChatJoin, SensitivityVerdict
 from desktalk.domain.camera import Frame
 from desktalk.domain.days import is_day
 from desktalk.domain.desk import Danger, Photo, SafetyNow, SeenObject
@@ -119,6 +119,7 @@ __all__ = [
     'SafetyNow', 'SeenObject', 'Size', 'StateChange', 'StateRecord', 'UnknownChat', 'UploadInfo', 'Zone',
     'DataFile', 'QueryRefused', 'QueryResult', 'RunAlreadyGoing', 'RunStatus', 'SmoothingStep', 'StepStatus',
     'TableInfo', 'TestItem', 'TestOutcome', 'ChatJoin', 'Todo', 'TracePhoto', 'TIMED_PHOTO',
+    'SensitivityVerdict', 'SENSITIVITY_WHYS',
     'newest_trace_photos', 'Scenario', 'WaitingScenario', 'CheckLevel', 'HealthMeasure', 'PiLogLine', 'PiLogPage',
     'PiLogSource', 'Saving',
     'Cooling', 'CpuNow', 'CpuTimes', 'DiskCounters', 'DiskRate', 'DiskSpace', 'Fan', 'MemoryNow', 'Named',

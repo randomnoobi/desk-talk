@@ -185,6 +185,21 @@ class AgentsSettings(_Section):
         return self.leave_after_sec * step.steady
 
 
+class SensitivityReviewSettings(_Section):
+    """The sensitivity slider moving by itself (desktalk/core/agents/sensitivity_review.py)."""
+
+    enabled: bool                     # the Settings page's "Adjust by itself" switch starts like this
+    check_every_min: PositiveNumber
+    look_back_hours: PositiveNumber
+    min_watch_hours: ZeroOrMore
+    wait_after_you_change_hours: ZeroOrMore
+    blink_sec: PositiveNumber
+    jumpy_per_hour: PositiveNumber
+    missed_min_sec: PositiveNumber
+    missed_at_least: PositiveInt
+    changes_kept: PositiveInt
+
+
 class PresenceSettings(_Section):
     appear_after_sec: ZeroOrMore
     disappear_after_sec: ZeroOrMore
@@ -1024,6 +1039,7 @@ class AppConfig(_Section):
     pi: PiSettings
     detector: DetectorSettings
     agents: AgentsSettings
+    sensitivity_review: SensitivityReviewSettings
     presence: PresenceSettings
     object_states: ObjectStatesSettings
     clock: ClockSettings

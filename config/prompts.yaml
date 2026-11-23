@@ -838,6 +838,14 @@ ui:
     It counts as put down after {appear_sec} seconds in view, taken away after {gone_sec} seconds out of view, and
     moved when it shifts {move_percent}% of the picture. It leaves the chat after {leave_min} min out of view.
     Something new needs {new_sure}% and {new_join_sec} seconds.
+  # the Settings page's switch that lets the slider move by itself (settings → sensitivity_review)
+  sensitivity_auto: Adjust by itself, from what the camera has been seeing
+  # what the Settings page says after the slider moved by itself: {step} is the step it moved to, {per_hour} how many
+  # times an hour things flashed on and off, {count} how many times something stayed in view without counting
+  sensitivity_moved_pickier: >-
+    Moved to {step}: things flashed on and off about {per_hour} times an hour.
+  sensitivity_moved_easier: >-
+    Moved to {step}: {count} times something stayed in view but the camera wasn't quite sure enough to count it.
 
 # ── The cloud server (optional; settings → cloud) ───────────────────
 cloud:
