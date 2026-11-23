@@ -277,7 +277,7 @@ class EdgeProximity(_Section):
 
 class DangerZone(_Section):
     expand: ZeroOrMore
-    base_share: Annotated[float, Field(gt=0, le=1)] = 1.0     # left out = the whole box (as before it existed)
+    base_share: Annotated[float, Field(gt=0, le=1)] = 1.0     # left out = the whole box
     label: str
 
 
@@ -1057,7 +1057,6 @@ class AppConfig(_Section):
     prompts: Prompts                  # config/prompts.yaml, with the settings blanks filled in
     secrets: Secrets
     env_applied: dict[str, str]       # .env name → the setting it changed, e.g. {'OLLAMA_MODEL': 'llm.ollama_model'}
-    env_moved: tuple[str, ...]        # old .env names that are set but no longer used
     root: Path                        # the project folder; relative paths in the settings are under it
 
     @property

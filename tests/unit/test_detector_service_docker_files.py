@@ -81,4 +81,4 @@ def test_healthcheck_timings_come_from_the_env_file(detector):
     for raw in (health['interval'], health['timeout'], health['start_period'], health['retries']):
         assert NAME.fullmatch(str(raw)), f'{raw!r} is written into compose.yaml: put it in .env'
     filled = {key: fill(health[key], values) for key in ('interval', 'timeout', 'start_period', 'retries')}
-    assert filled == {'interval': '30s', 'timeout': '5s', 'start_period': '60s', 'retries': '3'}    # as before
+    assert filled == {'interval': '30s', 'timeout': '5s', 'start_period': '60s', 'retries': '3'}

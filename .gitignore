@@ -39,12 +39,17 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+*.code-workspace
+
+# Your own Claude Code settings and hooks
+.claude/
 
 # App screenshots made by scripts/capture_app_screenshots.py
 _screenshots/
 
-# Benchmark models (downloaded and converted by deskbench; ncnn folders hold .param/.bin files)
+# Benchmark models (downloaded and converted by deskbench; ncnn folders hold .param/.bin files) and its results
 models/bench/
+benchmarks/results/
 
 # Models converted to ncnn (yolo export ... format=ncnn makes a folder next to the .pt)
 models/*_ncnn_model/

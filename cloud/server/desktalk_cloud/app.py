@@ -1,4 +1,4 @@
-"""create_app: builds the FastAPI app from the parts and the routers. bootstrap (Task 9) is the only place that
+"""create_app: builds the FastAPI app from the parts and the routers. bootstrap.py is the only place that
 knows the real parts."""
 
 from __future__ import annotations

@@ -3,7 +3,6 @@ The ncnn model (what the Pi will run) finds the same objects as the .pt model it
 
 Ultralytics' ncnn export always leaves out YOLO26's end-to-end head and pads every picture to a square,
 so here the .pt model is run the same way (end2end=False, rect=False). That checks the conversion itself.
-How this differs from the app's normal .pt run: docs/plans/2026-10-21-ncnn-check.md.
 
 Skipped unless both models are in models/ (model name and picture size from config/settings.yaml):
     uv run python scripts/download_models.py

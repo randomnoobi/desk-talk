@@ -618,7 +618,7 @@ def test_the_last_sent_time_is_kept_when_the_app_restarts(rig):
 # ── a server that refuses an upload that is too big ──
 def test_every_upload_fits_the_servers_limit_even_with_goals_and_totals(tmp_path):
     """The real limit: the server takes 500 events and refuses (413) more. A full batch plus the goals and the day's
-    numbers used to make 501 to 503 and the sender stalled for good."""
+    numbers must not make 501 to 503, or the sender would stall for good."""
     rig = Rig(tmp_path)
     rig.link = RecordingCloudLink(limit=500)
     rig.linked()

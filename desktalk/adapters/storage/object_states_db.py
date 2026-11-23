@@ -3,10 +3,9 @@ The object state history, kept on this computer in one SQLite file (data/object_
 
 One table, `events`: a row each time an object appears, goes away or moves, plus a `snapshot` row for every
 object now and then. Each row says which boot of the computer saved it (`boot_id`) and whether the clock had been
-set from the internet when it did (`clock_synced`); a file from before rows kept them gets the columns when it
-opens, and its old rows have none. Rows are only ever added: two triggers make the
-database refuse any UPDATE or DELETE, so the history can't be rewritten by mistake. WAL mode is on, so reading
-and writing don't block each other.
+set from the internet when it did (`clock_synced`). Rows are only ever added: two triggers make the database refuse
+any UPDATE or DELETE, so the history can't be rewritten by mistake. WAL mode is on, so reading and writing don't
+block each other.
 
 So the file doesn't fill the SD card, prune(before) deletes the rows older than a time (the scheduler asks for
 everything older than object_states.keep_days). It is the one way a row ever leaves: in one transaction it takes the
@@ -102,15 +101,6 @@ class SqliteStateStore:
         with self._lock:
             self._db.execute('PRAGMA journal_mode=WAL')
             self._db.executescript(_SCHEMA)
-            columns = {row[1] for row in self._db.execute('PRAGMA table_info(events)')}
-            # A file from before rows kept their boot, or whether the clock was synced
-            for name, kind in (('boot_id', 'TEXT'), ('clock_synced', 'INTEGER')):
-                if name not in columns:
-                    try:
-                        self._db.execute(f'ALTER TABLE events ADD COLUMN {name} {kind}')
-                    except sqlite3.OperationalError as exc:
-                        if 'duplicate column' not in str(exc):      # another program opening it just added it
-                            raise
         log.info('Object states are kept in %s', self.path)
 
     def append(self, records: Sequence[StateRecord]) -> None:

@@ -5,8 +5,8 @@ import { fakeServer } from '../fakeServer'
 import Pis from './Pis'
 
 const DEVICES = [
-  { id: 'd1', name: 'Desk Pi', time_zone: 'America/New_York', created_at: 1000, last_seen_at: 1700000000, removed_at: null },
-  { id: 'd2', name: 'Old Pi', time_zone: 'UTC', created_at: 900, last_seen_at: null, removed_at: 1800000000 },
+  { id: 'd1', name: 'Desk Pi', time_zone: 'America/New_York', created_at: 1000, last_seen_at: 1700000000, caught_up_at: null, removed: false },
+  { id: 'd2', name: 'Old Pi', time_zone: 'UTC', created_at: 900, last_seen_at: null, caught_up_at: null, removed: true },
 ]
 
 function code(serverUrl: string) {
@@ -20,7 +20,7 @@ function code(serverUrl: string) {
 
 describe('Pis', () => {
   it('lists the Pis, each linking to its own page, and marks a removed one', async () => {
-    fakeServer({ 'GET /api/devices': { body: { devices: DEVICES } } })
+    fakeServer({ 'GET /api/devices': { body: DEVICES } })
     render(<Pis />)
     const first = await screen.findByRole('link', { name: /desk pi/i })
     expect(first).toHaveAttribute('href', '#/pis/d1')
@@ -31,7 +31,7 @@ describe('Pis', () => {
   })
 
   it('says there are none yet', async () => {
-    fakeServer({ 'GET /api/devices': { body: { devices: [] } } })
+    fakeServer({ 'GET /api/devices': { body: [] } })
     render(<Pis />)
     expect(await screen.findByText(/no pis linked yet/i)).toBeInTheDocument()
   })
@@ -40,7 +40,7 @@ describe('Pis', () => {
     vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
       .mockReturnValue({ timeZone: 'Asia/Tokyo' } as Intl.ResolvedDateTimeFormatOptions)
     const server = fakeServer({
-      'GET /api/devices': { body: { devices: [] } },
+      'GET /api/devices': { body: [] },
       'POST /api/devices/code': { body: code('http://192.168.1.20:8080') },
     })
     render(<Pis />)
@@ -57,7 +57,7 @@ describe('Pis', () => {
 
   it('warns when the server address is localhost, because a Pi can not reach that', async () => {
     fakeServer({
-      'GET /api/devices': { body: { devices: [] } },
+      'GET /api/devices': { body: [] },
       'POST /api/devices/code': { body: code('http://localhost:8080') },
     })
     render(<Pis />)
@@ -68,7 +68,7 @@ describe('Pis', () => {
 
   it('does not warn when the address is one a Pi can reach', async () => {
     fakeServer({
-      'GET /api/devices': { body: { devices: [] } },
+      'GET /api/devices': { body: [] },
       'POST /api/devices/code': { body: code('http://192.168.1.20:8080') },
     })
     render(<Pis />)
@@ -79,7 +79,7 @@ describe('Pis', () => {
 
   it('shows the server words when a code can not be made', async () => {
     fakeServer({
-      'GET /api/devices': { body: { devices: [] } },
+      'GET /api/devices': { body: [] },
       'POST /api/devices/code': { status: 400, body: { detail: 'That time zone is not one we know.' } },
     })
     render(<Pis />)

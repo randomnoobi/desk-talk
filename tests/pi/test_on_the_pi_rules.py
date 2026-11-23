@@ -129,30 +129,22 @@ def test_a_line_cut_off_by_a_power_cut_is_counted_not_fatal(tmp_path):
     assert read_json_lines(path) == ([{'ts': 1}], 2)
 
 
-def make_database(path, *, boot_ids: bool):
+def make_database(path):
     with contextlib.closing(sqlite3.connect(path)) as db:
-        boot = ', boot_id TEXT, clock_synced INTEGER' if boot_ids else ''
         db.execute('CREATE TABLE events (id INTEGER PRIMARY KEY, ts REAL, type TEXT, object TEXT, '
-                   f'new_state TEXT{boot})')
+                   'new_state TEXT, boot_id TEXT, clock_synced INTEGER)')
         db.execute("INSERT INTO events (ts, type, object, new_state) VALUES (100.0, 'snapshot', 'cup', 'PRESENT')")
-        if boot_ids:
-            db.execute("INSERT INTO events (ts, type, object, new_state, boot_id, clock_synced) "
-                       "VALUES (101.0, 'appeared', 'pen', 'PRESENT', 'boot-a', 1)")
+        db.execute("INSERT INTO events (ts, type, object, new_state, boot_id, clock_synced) "
+                   "VALUES (101.0, 'appeared', 'pen', 'PRESENT', 'boot-a', 1)")
         db.commit()
 
 
 def test_the_saved_states_say_which_boot_saved_them_and_whether_the_clock_was_synced(tmp_path):
-    make_database(tmp_path / 'object_states.sqlite', boot_ids=True)
+    make_database(tmp_path / 'object_states.sqlite')
     assert check_data(tmp_path)['states']['rows'] == [
         {'object': 'cup', 'state': 'PRESENT', 'ts': 100.0, 'type': 'snapshot', 'boot_id': None, 'clock_synced': None},
         {'object': 'pen', 'state': 'PRESENT', 'ts': 101.0, 'type': 'appeared', 'boot_id': 'boot-a',
          'clock_synced': True}]
-
-
-def test_a_database_from_before_boot_ids_can_still_be_read(tmp_path):
-    make_database(tmp_path / 'object_states.sqlite', boot_ids=False)
-    assert check_data(tmp_path)['states']['rows'] == [
-        {'object': 'cup', 'state': 'PRESENT', 'ts': 100.0, 'type': 'snapshot', 'boot_id': None, 'clock_synced': None}]
 
 
 def test_a_data_folder_with_no_database_says_so(tmp_path):

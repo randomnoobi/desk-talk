@@ -1,4 +1,4 @@
-"""Settings the Phase 2 parts asked for (see docs/plans/2026-10-21-phase3-notes.md)."""
+"""The web address settings (web.public_address, dev.pi_address), and settings the camera and detector use."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from tests.unit.test_config import CONFIG_FILES
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_settings_the_new_parts_need_are_in_settings_yaml():
+def test_the_detector_camera_and_pi_settings_load():
     c = load_config(root=ROOT, environ={})
     assert (c.detector.end2end, c.detector.rect) == (False, False)
     assert c.camera.pair_key_bytes == 6
@@ -24,10 +24,6 @@ def test_settings_the_new_parts_need_are_in_settings_yaml():
     assert c.lens.wait_before_saying_sec.pi == 10
     assert (c.pi.camera_warmup_sec, c.pi.pause_after_error_sec, c.pi.status_every_sec, c.pi.health_every_sec,
             c.pi.settings_check_every_sec) == (1, 0.5, 30, 3, 60)
-
-
-def test_the_producers_old_error_pause_is_gone():
-    assert not hasattr(load_config(root=ROOT, environ={}).camera, 'pause_after_error_sec')
 
 
 def project_with_local(tmp_path, local: dict | None = None, *, copy_from: Path | None = None):

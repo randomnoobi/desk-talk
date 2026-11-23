@@ -7,7 +7,7 @@ The tests on the Mac send this file over SSH for the two things that read a lot 
     python3 - connections --seconds 90              who do the containers talk to, and how much leaves over Wi-Fi?
 
 A person starts the third by hand, because it has to keep going while the Pi has no network and no SSH
-(docs/PI_CHECKS.md says when):
+(docs/RUNBOOK.md, "Checking on the real Pi", says when):
 
     python3 tests/pi/on_the_pi.py no-network
 
@@ -96,11 +96,7 @@ def check_data(data: Path) -> dict[str, Any]:
     database = data / 'object_states.sqlite'
     if database.exists():
         with contextlib.closing(sqlite3.connect(f'file:{database}?mode=ro', uri=True, timeout=10)) as db:
-            # A file from before rows kept their boot (or whether the clock was synced) has no such column until the
-            # app opens it
-            columns = {row[1] for row in db.execute('PRAGMA table_info(events)')}
-            boot, synced = (name if name in columns else 'NULL' for name in ('boot_id', 'clock_synced'))
-            rows = db.execute(f'SELECT object, new_state, ts, type, {boot}, {synced} FROM events WHERE type != ? '
+            rows = db.execute('SELECT object, new_state, ts, type, boot_id, clock_synced FROM events WHERE type != ? '
                               'ORDER BY ts, id', ('moved',)).fetchall()
             states = {'readable': True,
                       'integrity': db.execute('PRAGMA integrity_check').fetchone()[0],

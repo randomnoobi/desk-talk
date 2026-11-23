@@ -6,7 +6,7 @@
 /** The keys web_app/app.js uses, and what each one is for. */
 export const APP_KEYS: Readonly<Record<string, string>> = {
   desktalk_chats_v2: 'Chat history',
-  desktalk_todo_v1: "Paper's to-do list",
+  desktalk_todo_v1: "Book's to-do list",
   desktalk_habits_v2: 'Habit counters',
 }
 

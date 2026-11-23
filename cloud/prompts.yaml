@@ -1,5 +1,4 @@
 # The words the cloud server says, in plain language. The code only fills in the {blanks}.
-# (The weekly report's prompt is added here under `report:` by the report job.)
 
 messages:
   # Events a Pi sends (why one was not kept)

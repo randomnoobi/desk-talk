@@ -22,14 +22,14 @@ PI = ROOT / 'raspberry_pi'
 UNIT = PI / 'systemd' / 'desktalk.service'
 JOURNALD = PI / 'systemd' / 'journald-desktalk.conf'
 RPI_VOLATILE = '40-rpi-volatile-storage.conf'      # Raspberry Pi OS's own, which keeps the journal in memory only
-REMOTE_FILE = '/home/sam/desk-talk/pi_logs/desktalk-logs-desktalk-2026-11-10_120000.tar.gz'
+REMOTE_FILE = '/home/pi/desk-talk/pi_logs/desktalk-logs-desktalk-2026-11-10_120000.tar.gz'
 
 STAND_IN = r'''#!/bin/bash
 printf '%s\n' "$(basename "$0") $*" >> "$FAKE/calls"
 name=$(basename "$0")
 [ -e "$FAKE/fails_$name" ] && { echo "$name went wrong" >&2; exit 1; }
 case "$name" in
-  id) case "$*" in -nG) cat "$FAKE/groups" ;; -un) echo sam ;; -u) echo 1000 ;; esac ;;
+  id) case "$*" in -nG) cat "$FAKE/groups" ;; -un) echo pi ;; -u) echo 1000 ;; esac ;;
   hostname) echo desktalk ;;
   journalctl) echo "journal lines for: $*" ;;
   vcgencmd) echo "temp=56.5'C" ;;
@@ -85,7 +85,7 @@ def place(tmp_path) -> Place:
         shutil.copy(PI / name, root / 'raspberry_pi' / name)
     shutil.copy(ROOT / 'scripts' / 'pi_logs.sh', root / 'scripts' / 'pi_logs.sh')
     stand_ins(fake, 'id', 'hostname', 'journalctl', 'docker', 'systemctl', 'vcgencmd', 'df', 'uptime', 'ssh', 'scp')
-    (fake / 'groups').write_text('sam adm docker\n', encoding='utf-8')
+    (fake / 'groups').write_text('pi adm docker\n', encoding='utf-8')
     (fake / 'remote_path').write_text(REMOTE_FILE + '\n', encoding='utf-8')
     (fake / 'the_file').write_bytes(b'the logs')
     return Place(root, fake, {'PATH': f'{fake / "bin"}:/usr/bin:/bin', 'FAKE': str(fake), 'HOME': str(tmp_path),
@@ -239,7 +239,7 @@ def test_a_command_that_fails_is_written_down_and_the_rest_still_saved(place):
 def test_without_the_right_to_read_the_journal_it_asks_docker_and_says_so(place):
     """Raspberry Pi OS puts its first user in adm, which may read the whole journal. Someone else gets what Docker
     still has: the containers running now, not the ones a rebuild replaced."""
-    (place.fake / 'groups').write_text('sam docker\n', encoding='utf-8')
+    (place.fake / 'groups').write_text('pi docker\n', encoding='utf-8')
     result = get_logs(place, '6')
     assert result.code == 0
     assert 'docker compose logs --since 6h --timestamps --no-color app' in result.calls

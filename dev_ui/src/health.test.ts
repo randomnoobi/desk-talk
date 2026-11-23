@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { CheckLevel, Health, HealthCheck, LogStatus, PiStatus } from './api'
 import {
-  GROUPS, healthRows, OWN_GROUPS, ownRows, remember, SHOWN_GROUPS, shownRows, type Row, type RowLimits,
+  OWN_GROUPS, ownRows, remember, SHOWN_GROUPS, shownRows, type Row, type RowLimits, type Seen,
 } from './health'
+
+/** Every row of the System tab, in order, as when one Desk Talk gives them all. */
+function healthRows(health: Health, logStatus: LogStatus, limits: RowLimits, now: number,
+                    before: Seen | null = null): Row[] {
+  return [...shownRows(health, limits, now, before), ...ownRows(health, logStatus, limits, now, before)]
+}
 
 const limits: RowLimits = {
   pi_disk_warn_mb: 1000, detect_warn_ms: 500, disconnect_after_sec: 3,
@@ -193,12 +199,6 @@ describe('the two halves of the System tab', () => {
     const rows = ownRows(health(), log, limits, NOW)
     expect(new Set(rows.map(r => r.group))).toEqual(new Set(OWN_GROUPS))
     expect(row(rows, 'Event log', 'folder').value).toBe('/data/log')
-  })
-
-  it('the two halves are all the groups, in the tab\'s order, and healthRows is both together', () => {
-    expect([...SHOWN_GROUPS, ...OWN_GROUPS]).toEqual([...GROUPS])
-    expect(healthRows(health(), log, limits, NOW))
-      .toEqual([...shownRows(health(), limits, NOW), ...ownRows(health(), log, limits, NOW)])
   })
 
   it('ownRows works out events a second from what this computer\'s poll before saw', () => {

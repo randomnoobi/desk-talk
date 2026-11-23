@@ -65,7 +65,7 @@ def test_unknown_label_gets_a_profile_made_from_default(book):
     assert p.personality.startswith('A stapler on the desk who just found out it can talk.')
     assert p.about == 'A stapler that showed up on your desk.'
     assert p.icon == '✨' and p.temperature == 0.8
-    assert p.color == 'cobalt'                                 # same color as before the refactor
+    assert p.color == 'cobalt'
     assert p.hello_text() == "Oh hi, I'm the stapler. Mind if I hang out here?"
     assert p.too_close_text('Cup') == 'Cup is getting pretty close to me. Could you give us some room?'
     assert book.for_label('stapler') is p                     # made once
@@ -124,7 +124,7 @@ def test_missing_lines_in_an_agent_block_come_from_default(agents_file, store):
     assert p.icon == '✨' and p.temperature == 0.8 and not p.auto
     assert p.personality.startswith('A Thing on the desk')     # {object} filled in
     assert p.too_close == agents_file.default.too_close and p.hello == ''
-    assert p.color == 'mustard'                               # same color as before the refactor
+    assert p.color == 'mustard'
 
 
 def test_learned_personality_is_remembered(agents_file, store, book):

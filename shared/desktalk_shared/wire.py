@@ -15,18 +15,13 @@ Detector states (what this computer should do with the picture):
     off   the Pi's detector is down (detector_reason says why): detect it on this computer.
           detector_reason is one of OFF_ON_PURPOSE when it was turned off on purpose
 
-Version 1 (the old raspberry_pi/camera_node.py) sent the JPEG as the whole body and a few
-X-... headers; info_from_v1_headers() reads those, so old Pis keep working.
-
 Standard library only: the camera program on the Pi imports this with the Pi's own python3.
 """
 
 from __future__ import annotations
 
 import json
-import math
 import secrets
-from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -40,11 +35,10 @@ VERSION = 2
 # Reasons the Pi's detector is off on purpose (not broken), so there's nothing to warn about. Pis already running
 # send these exact words, so they must not change.
 DETECTOR_TURNED_OFF = 'detection on the Pi is turned off (--no-detector)'
-OLD_CAMERA_PROGRAM = 'this Pi runs the old camera program (no detector)'
-OFF_ON_PURPOSE = frozenset({DETECTOR_TURNED_OFF, OLD_CAMERA_PROGRAM})
+OFF_ON_PURPOSE = frozenset({DETECTOR_TURNED_OFF})
 
-__all__ = ['DETECTOR_TURNED_OFF', 'OFF_ON_PURPOSE', 'OLD_CAMERA_PROGRAM', 'VERSION', 'DetectorState', 'PiHealth',
-           'UploadInfo', 'WireError', 'decode_upload', 'encode_upload', 'info_from_v1_headers']
+__all__ = ['DETECTOR_TURNED_OFF', 'OFF_ON_PURPOSE', 'VERSION', 'DetectorState', 'PiHealth', 'UploadInfo', 'WireError',
+           'decode_upload', 'encode_upload']
 
 
 class DetectorState(StrEnum):
@@ -196,26 +190,3 @@ def decode_upload(body: bytes, content_type: str) -> tuple[bytes, UploadInfo]:
         raise WireError('upload has no picture part')
     return parts['picture'], UploadInfo.from_json(parts['info'])
 
-
-def info_from_v1_headers(headers: Mapping[str, str]) -> UploadInfo:
-    """The info an old Pi (upload format 1) sends in X-... headers. Its detector is always off."""
-    h = {str(k).lower(): v for k, v in headers.items()}
-
-    def value(header: str, cast):
-        """The header as a number, or None when it's missing or not a plain number (nan and inf can't go
-        into a JSON reply)."""
-        raw = h.get(header.lower())
-        if raw in (None, ''):
-            return None
-        try:
-            number = cast(raw)
-        except ValueError:
-            return None
-        return number if math.isfinite(number) else None
-
-    return UploadInfo(version=1, frame_id=h.get('x-frame-id', ''), taken_at=value('X-Taken-At', float),
-                      lux=value('X-Lux', float), detector=DetectorState.OFF,
-                      detector_reason=OLD_CAMERA_PROGRAM,
-                      health=PiHealth(camera=h.get('x-pi-camera', ''), photos_stored=value('X-Pi-Photos', int),
-                                      disk_free_mb=value('X-Pi-Free-MB', int),
-                                      last_cleanup_ts=value('X-Pi-Last-Cleanup', float)))

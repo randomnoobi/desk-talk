@@ -44,8 +44,6 @@ CHECKSUMS=$PI_DIR/model_checksums.txt
 PROC=${DESKTALK_PROC:-/proc}                # only tests change this
 ZONES=/usr/share/zoneinfo
 MEMORY_FLAGS="cgroup_enable=memory cgroup_memory=1"
-OLD_PROJECT=desktalk-detector               # the detector's own compose project, from before all three ran together
-OLD_CAMERA_SERVICE=desk-talk-camera         # the camera program outside Docker, from before that
 IMAGES="desktalk-app:local desktalk-camera:local desktalk-detector:local"     # the ones compose.yaml builds
 WRITERS="app camera"                        # the app, and the camera that depends on it: stopped while the room is made
 LINK_FAILED_EXIT=3
@@ -66,7 +64,7 @@ NEW_NAMES=" "                               # the names .env didn't have when th
 LINK_FAILED=0
 TEMP_FOLDER=""
 SERVICE_CHANGED=0                           # desktalk.service was installed or changed in this run
-SETUP_SUDO=0                                # an update run may use sudo, to set up what an older install didn't
+SETUP_SUDO=0                                # an update run may use sudo, to set up what the Pi doesn't have yet
 START_FAILED=0
 ROOM=""                                     # what data_room.sh status said: room, elsewhere, unmounted, leftover or none
 ROOM_STOPPED=""                             # why data_room.sh make stopped, in its own words
@@ -305,12 +303,6 @@ check_sound() {
     word=$(pi_setting notifications.sound_card)
     if ! grep -qi -- "$word" "$cards"; then
         later "No $word speaker is plugged in. That's fine: voice starts when one's plugged in."
-    fi
-}
-
-check_old_camera_program() {
-    if systemctl is-active --quiet "$OLD_CAMERA_SERVICE" 2> /dev/null; then
-        later "The old camera program ($OLD_CAMERA_SERVICE) is running outside Docker and holds the camera. Stop it with: sudo systemctl disable --now $OLD_CAMERA_SERVICE"
     fi
 }
 
@@ -691,8 +683,8 @@ keep_the_journal() {
     say "Installed $file: the journal, the containers' logs too, stays on the SD card, at most $(setting JOURNAL_MAX_USE), for $(setting JOURNAL_KEEP)."
 }
 
-# A Pi set up by an older install.sh may have neither file, or a desktalk.service that isn't the one this version
-# wants. An update sets them up then, as install.sh would, so it can't leave the logs worse than before: compose.yaml
+# A Pi may have neither file (sudo didn't work when they were due), or a desktalk.service that isn't the one this
+# version wants. An update sets them up then, as install.sh would, so it can't leave the logs worse than before: compose.yaml
 # sends the containers' logs to the journal, and without the journal file Raspberry Pi OS keeps that in memory only.
 # And update.sh is how new code reaches the Pi, so a changed service has to come with it. That needs sudo, so it is
 # asked for once, and only then. $1 is the service's new text.
@@ -861,39 +853,6 @@ set_hostname() {
 # The app can't see the Pi's name from inside Docker, so it's written down each time for compose to hand over.
 write_public_name() {
     put PUBLIC_NAME "$PI_NAME.local"
-}
-
-# ── The old setup ──
-
-old_models_volume() {
-    docker_ volume ls -q --filter "label=com.docker.compose.project=$OLD_PROJECT" --filter label=com.docker.compose.volume=models
-}
-
-bring_down_old_setup() {
-    [ "$DOCKER_READY" = 1 ] || return 0
-    [ -n "$(docker_ ps -aq --filter "label=com.docker.compose.project=$OLD_PROJECT")" ] || return 0
-    if [ "$DRY_RUN" = 1 ]; then
-        would "stop the old $OLD_PROJECT containers, and keep their models."
-        return
-    fi
-    say "Stopping the old $OLD_PROJECT containers. Their models stay."
-    # From / so compose goes by the project's name, not by the compose.yaml in this folder.
-    (cd / && compose_ -p "$OLD_PROJECT" down --remove-orphans)
-}
-
-carry_old_models() {
-    local volume
-    [ "$DOCKER_READY" = 1 ] || return 0
-    volume=$(old_models_volume)
-    [ -n "$volume" ] || return 0
-    if [ "$DRY_RUN" = 1 ]; then
-        would "copy any models missing here from the old volume $volume, and leave that volume as it is."
-        return
-    fi
-    say "Copying any models missing here from the old volume $volume. That volume stays as it is."
-    compose_ run --rm --no-deps -T -u 0 -v "$volume:/from:ro" --entrypoint sh detector \
-        -c 'cp -an /from/. /models/ || true' < /dev/null \
-        || say "Those models couldn't be copied. The next step fetches the one that's needed."
 }
 
 # ── The model ──
@@ -1254,7 +1213,6 @@ main() {
         check_memory
     fi
     check_sound
-    check_old_camera_program
     write_env
     make_my_settings
     ROOM=$(data_room_ status) || exit 1     # a bad setting: data_room.sh has said why
@@ -1270,11 +1228,9 @@ main() {
     fi
     find_docker
     set_up_systemd
-    bring_down_old_setup
     put_room_on "$(room_on_for "$ROOM")"     # before the build starts the app, so it never starts on the wrong one
     start_containers
     set_up_data_room
-    carry_old_models
     place_model
     try_start_on_boot
     finish

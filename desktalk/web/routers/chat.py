@@ -67,7 +67,7 @@ def chat(sent: ChatMessage, app: App) -> dict[str, Any]:
                               'cta': answer['cta'], 'id': uuid.uuid4().hex[:MESSAGE_ID_LENGTH]}],
                 'lost_object_lookup': True}
     try:
-        return app.generator.answer(sent.chat, message, sent.recent_messages or sent.history, widget=sent.widget)
+        return app.generator.answer(sent.chat, message, sent.recent_messages, widget=sent.widget)
     except UnknownChat:
         raise HTTPException(400, UNKNOWN_CHAT) from None
 

@@ -69,7 +69,7 @@ def _timezone(utc_offset_sec: float) -> str:
 
 
 def _rounded(det: Detection) -> tuple[float, float, float, float]:
-    """A box as (x1, y1, x2, y2), kept to 0.1 px like Detection.to_dict() and the rows saved before."""
+    """A box as (x1, y1, x2, y2), kept to 0.1 px like Detection.to_dict() and the saved rows."""
     x1, y1, x2, y2 = det.bbox.to_list()
     return x1, y1, x2, y2
 

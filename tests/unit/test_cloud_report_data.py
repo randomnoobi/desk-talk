@@ -171,7 +171,7 @@ def test_no_outcomes_at_all_says_so():
 
 
 def old_next_sign(n, events, window_min=15, blip_sec=120):
-    """data/weekly_report_test/build_weekly_input.py:next_sign, as it was (the part that decides; wording the same)."""
+    """A plain copy of how next_sign decides (wording the same), to check the real one gives the same answers."""
     habit_name, after = n['habit'], n['ts']
     limit = after + window_min * 60
     later = [e for e in events if after < e['ts']]

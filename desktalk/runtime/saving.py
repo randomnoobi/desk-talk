@@ -1,5 +1,4 @@
-"""The saving mode raspberry_pi/app/start.sh gives the app when its container starts (docs/superpowers/specs/
-2026-11-11-reserved-data-space-design.md, requirement 5):
+"""The saving mode raspberry_pi/app/start.sh gives the app when its container starts:
 
     DESKTALK_SAVING       plain: the data folder as always (no value, on a Mac, means this too)
                           room:  the data folder is Desk Talk's own fixed space on the SD card

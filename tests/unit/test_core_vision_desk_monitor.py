@@ -143,7 +143,7 @@ def test_lens_says_which_thing_is_at_the_desk_edge_one_at_a_time():
 
 def test_lens_gap_is_kept_for_each_kind_and_not_for_the_chat():
     """A Lens edge warning doesn't hold up a Lens danger-zone warning, and agents in the chat speak for
-    themselves as before."""
+    themselves."""
     rig = Rig(saved={'desk_outline': [[0, 0], [1, 0], [1, 0.8], [0, 0.8]]})
     things = {**knife_near_phone(), 'cup': ('cup', (400, 480, 470, 570)), 'computer': ('mouse', (600, 480, 640, 570))}
     alerts = rig.look(T + 1000, things, size=(960, 720), chat=('cup',))

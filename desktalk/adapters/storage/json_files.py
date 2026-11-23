@@ -3,8 +3,6 @@ Small JSON documents, one file per key, under one folder (data/ in the app):
 
     preferences          → data/preferences.json
     habits/2026-10-21    → data/habits/2026-10-21.json
-
-These are the same files the app has always written, so data saved before keeps loading.
 """
 
 from __future__ import annotations

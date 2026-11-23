@@ -1,5 +1,5 @@
 """
-The event log, kept on this computer in data/events/<day>/ (the same files as always, so old logs still read):
+The event log, kept on this computer in data/events/<day>/:
 
     detections.jsonl   one line per analysed picture (3 a second), until the next compaction
     presence.jsonl     what compaction turns those into: "cup was on the desk from 14:02:10 to 14:31:55"

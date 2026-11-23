@@ -26,7 +26,7 @@ from desktalk.config.prompts import blank_problems, fill_settings, prompt_values
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 SECRET_KEYS = ('GEMINI_API_KEY', 'OPENAI_API_KEY', 'GROQ_API_KEY', 'OLLAMA_URL', 'NTFY_TOPIC')
-# Settings that may also be set in .env (kept so an existing .env keeps working).
+# Settings that may also be set in .env or the environment.
 ENV_OVERRIDES = {
     'OLLAMA_MODEL': ('llm', 'ollama_model'),
     'LOST_VISION_MODEL': ('llm', 'vision_model'),
@@ -37,31 +37,10 @@ ENV_OVERRIDES = {
     'PUBLIC_ADDRESS': ('web', 'public_address'),      # raspberry_pi/compose.yaml: the Pi's real name and open port
     'OUTSIDE_PORT': ('web', 'outside_port'),
 }
-# Old .env settings that moved to config/settings.yaml (startup shows a hint if they're set).
-MOVED_ENV = ('CAMERA_SOURCE', 'CAMERA_INDICES', 'PIPELINE_CAMERA', 'EVENT_COOLDOWN', 'APPEAR_FRAMES',
-             'DISAPPEAR_FRAMES', 'REMINDER_WARMUP_MIN', 'HABIT_MIN_GAP_SEC', 'IDLE_CHAT_MIN_SEC')
 # The files laid over settings.yaml, in this order, each one only if it is there. The second is the user's own file on
 # a Pi, which raspberry_pi/compose.yaml mounts from the git-ignored raspberry_pi/mine/ folder (a folder, because
 # Docker turns a missing file into a folder, but a missing folder is just empty).
 LOCAL_SETTINGS = ('settings.local.yaml', 'mine/settings.mine.yaml')
-# Settings that are gone. Your own settings.local.yaml may still have them, so they're left out (with a note in the
-# log) instead of stopping startup. agents.join_after_sec and agents.min_confidence became agents.sensitivity_steps;
-# vision_habits went with the posture checks; web.list_sizes.habit_log / log_detections went with the Event log's
-# detections list and the vision habit timeline; dev.trace_photo_quality was never used (the trace pictures are
-# the camera's own JPEG).
-RETIRED_SETTINGS: tuple[tuple[str, ...], ...] = (('agents', 'join_after_sec'), ('agents', 'min_confidence'),
-                                                 ('vision_habits',), ('web', 'list_sizes', 'habit_log'),
-                                                 ('web', 'list_sizes', 'log_detections'),
-                                                 ('dev', 'trace_photo_quality'))
-# Settings that moved. Your own settings.local.yaml may still set them in the old place: the value goes to the new
-# place (with a note in the log), unless the file sets the new one too. The object trace became the object's story,
-# which the app page shows too, so its settings left the developer page's section.
-MOVED_SETTINGS: dict[tuple[str, ...], tuple[str, ...]] = {
-    ('dev', 'trace_photos_folder'): ('object_story', 'photos_folder'),
-    ('dev', 'trace_photos_kept'): ('object_story', 'timed_photos_kept'),
-    ('dev', 'trace_photo_every_sec'): ('object_story', 'photo_every_sec'),
-    ('dev', 'trace_events_kept'): ('object_story', 'events_kept'),
-}
 
 log = logging.getLogger(__name__)
 
@@ -227,7 +206,7 @@ def _dotted(loc: Loc) -> str:
 
 _OTHER_FILES = ('protocols', 'agents_file', 'prompts')
 # Parts of AppConfig that don't come from settings.yaml, so settings.yaml may not set them.
-_NOT_FROM_SETTINGS = ('protocols', 'agents_file', 'prompts', 'secrets', 'env_applied', 'env_moved', 'root')
+_NOT_FROM_SETTINGS = ('protocols', 'agents_file', 'prompts', 'secrets', 'env_applied', 'root')
 _SECRET_NAMES = {'secrets', *(k.lower() for k in SECRET_KEYS)}
 
 
@@ -273,31 +252,6 @@ def _problem(err: Mapping[str, Any], sources: _Sources) -> str:
     return f'{file}: {_dotted(shown)} must be {_describe(*_field_at(loc))} (got {_got(err["input"])})'
 
 
-def _drop_retired(data: dict) -> None:
-    """Leave out the settings in RETIRED_SETTINGS, saying so in the log."""
-    for path in RETIRED_SETTINGS:
-        section = data
-        for key in path[:-1]:
-            section = section.get(key) if isinstance(section, dict) else None
-        if isinstance(section, dict) and path[-1] in section:
-            del section[path[-1]]
-            log.warning('Settings: %s is no longer used, so it was left out (remove it from your settings.local.yaml)',
-                        '.'.join(path))
-
-
-def _move_settings(local: dict) -> None:
-    """Move the settings in MOVED_SETTINGS from where your own file still has them to where they are now."""
-    for old, new in MOVED_SETTINGS.items():
-        section = local.get(old[0])
-        if not isinstance(section, dict) or old[1] not in section:
-            continue
-        value = section.pop(old[1])
-        target = local.setdefault(new[0], {})
-        if isinstance(target, dict) and new[1] not in target:
-            target[new[1]] = value
-        log.warning('Settings: %s is now %s (change it in your settings.local.yaml)', '.'.join(old), '.'.join(new))
-
-
 def load_config(root: Path | None = None, environ: Mapping[str, str] | None = None,
                 dotenv: Path | None = None) -> AppConfig:
     """Build the config from <root>/config/ and <root>/.env. Tests pass a temp folder and environ={}.
@@ -320,9 +274,7 @@ def load_config(root: Path | None = None, environ: Mapping[str, str] | None = No
     for name in LOCAL_SETTINGS:
         if (config_dir / name).is_file():
             local = read(name)
-            _move_settings(local)
             _merge(data, local)
-    _drop_retired(data)
     problems = [_unknown(sources.last((key,)), (key,), (key,)) for key in data if key in _NOT_FROM_SETTINGS]
     data['protocols'] = read('protocols.yaml', ('protocols',))
     data['agents_file'] = read('agents.yaml', ('agents_file',))
@@ -335,7 +287,6 @@ def load_config(root: Path | None = None, environ: Mapping[str, str] | None = No
             sources.files[(section, key)] = [f'.env or the environment ({name})']
             applied[name] = f'{section}.{key}'
     data['env_applied'] = applied
-    data['env_moved'] = tuple(k for k in MOVED_ENV if env.get(k, '').strip())
     data['secrets'] = {k.lower(): env.get(k, '').strip() for k in SECRET_KEYS}
     data['root'] = root
     try:

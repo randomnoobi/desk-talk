@@ -38,7 +38,7 @@ class WebcamSource:
 
     The chosen webcam is tried first, then the others (settings → camera.webcam_max_index): many USB
     webcams are number 1 on a Mac while 0 is the built-in one, and a webcam can open but give no pictures.
-    If none works, it stops trying until the app restarts, as before."""
+    If none works, it stops trying until the app restarts."""
 
     kind = 'webcam'
 

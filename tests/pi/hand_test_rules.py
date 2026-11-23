@@ -1,5 +1,5 @@
 """
-Plain rules for tests/pi/test_failure_checks.py: what the checks after a hand test (docs/PI_CHECKS.md, "Failure hand
+Plain rules for tests/pi/test_failure_checks.py: what the checks after a hand test (docs/RUNBOOK.md, "Failure hand
 tests") make of what they read from the Pi. No SSH here, so tests/pi/test_hand_test_rules.py runs them with no Pi.
 """
 

@@ -4,7 +4,7 @@ app's Settings page.
 
 They win over config/protocols.yaml (schedule) and config/settings.yaml (reminders.quiet_hours,
 agents.sensitivity_default), which give the starting values. Saved in the store under "preferences"
-(data/preferences.json, the same file and layout as before; a file from before sensitivity existed still loads).
+(data/preferences.json). A saved file missing some of them uses the starting values for those.
 """
 
 from __future__ import annotations

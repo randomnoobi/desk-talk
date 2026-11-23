@@ -60,7 +60,7 @@ def test_changes_are_saved_and_validated(config, store):
     expected = {'wake_time': '06:45', 'bed_time': '23:15', 'quiet_enabled': True, 'quiet_start_hour': 1,
                 'quiet_end_hour': 7, 'sensitivity': 2}
     assert out == expected
-    assert store.data == {'preferences': expected}             # data/preferences.json, as before
+    assert store.data == {'preferences': expected}             # data/preferences.json
     again = prefs_from(config, store)
     assert again.all() == expected
     assert again.get('quiet_enabled') is True
@@ -106,7 +106,7 @@ def test_unknown_and_empty_changes_are_ignored(config, store):
     assert p.update({'favorite_color': 'teal', 'wake_time': None}) == DEFAULTS
 
 
-def test_preferences_file_from_before_still_loads(config):
+def test_a_saved_file_missing_some_keys_or_with_unknown_ones_loads(config):
     store = InMemoryKeyValueStore({'preferences': {'wake_time': '08:00', 'bed_time': '00:30', 'quiet_enabled': True,
                                                    'quiet_start_hour': 23, 'quiet_end_hour': 8, 'old_thing': 1}})
     p = prefs_from(config, store)
@@ -200,7 +200,7 @@ def test_sensitivity_bad_value_raises_value_error(config, store):
 
 @pytest.mark.parametrize('saved', ['abc', None, [2], 99, -1])
 def test_a_saved_sensitivity_that_is_missing_or_wrong_still_loads(config, saved):
-    """An old data/preferences.json (no sensitivity), or one edited by hand: the default step, or the nearest."""
+    """A data/preferences.json with no sensitivity, or one edited by hand: the default step, or the nearest."""
     store = InMemoryKeyValueStore({'preferences': {'wake_time': '08:00', 'sensitivity': saved}})
     expected = {99: 4, -1: 0}.get(saved, 2) if not isinstance(saved, list) else 2
     assert prefs_from(config, store).get('sensitivity') == expected

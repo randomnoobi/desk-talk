@@ -23,8 +23,8 @@ schedule:
 
 # ── 1. Hydration ── Nutrition Protocol 2: "Stay Hydrated" ──────────
 hydration:
-  # Off: the hydration rule (under "rules:" at the end of this file) took over these nudges, so you don't
-  # get two water nudges. This only stops the nudges below ("no sip in 45 minutes" and "water on waking").
+  # Off: the hydration rule (under "rules:" at the end of this file) sends the water nudges instead, so you
+  # don't get two. This only stops the nudges below ("no sip in 45 minutes" and "water on waking").
   # Sip counting and the Habits page keep working.
   enabled: false
   on_waking_ml: 600           # "18 to 24 ounces of water upon waking", before coffee (~530-710 ml)

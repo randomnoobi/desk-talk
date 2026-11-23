@@ -1,5 +1,5 @@
 """Everything the Demo tab makes is marked `demo`, so nothing it fires is ever sent to the cloud server (the sip
-and the camera warning used to go out unmarked)."""
+and the camera warning included)."""
 
 from __future__ import annotations
 
@@ -86,7 +86,7 @@ def test_a_pretend_sip_is_tallied_apart_so_the_cloud_totals_can_leave_it_out(rig
 
 
 def test_the_demo_tab_looks_the_same_with_the_tally(rig):
-    """The person still sees the pretend sip in today's water, as before."""
+    """The person still sees the pretend sip in today's water."""
     before = rig.app.habits.today(rig.clock.now())['hydration']
     fire(rig, 'sip')
     after = rig.app.habits.today(rig.clock.now())['hydration']

@@ -153,7 +153,7 @@ def test_overlays_that_keep_failing_the_same_way_are_logged_once(caplog):
     assert len([r for r in caplog.records if 'overlays' in r.getMessage()]) == 2
 
 
-# ── each desk overlay, in the colours the old live view used ──
+# ── each desk overlay, in its own colour ──
 WARN, ZONE_OK, CHAIN, MOVING, WHITE = (0, 190, 255), (200, 160, 0), (220, 80, 255), (255, 200, 0), (255, 255, 255)
 FRONT_EDGE = {'desk_outline': [[0, 0], [1, 0], [1, 0.8], [0, 0.8]]}       # the front edge is at y = 384
 MORE_PROFILES = FakeProfiles([*PROFILES.all(), AgentProfile('mouse', 'Mouse', labels=['mouse']),

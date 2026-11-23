@@ -69,11 +69,6 @@ def test_each_container_logs_to_the_journal_under_its_own_name(services, name):
     assert services[name]['logging'] == {'driver': 'journald', 'options': {'tag': f'desktalk-{name}'}}
 
 
-def test_the_old_log_file_sizes_are_gone():
-    """The journald driver takes no file sizes: the journal's own limit is the one."""
-    assert not {'LOG_FILE_SIZE', 'LOG_FILES'} & set(env_file(PI / '.env.example'))
-
-
 def test_every_name_the_compose_file_uses_is_in_the_env_file():
     text = (PI / 'compose.yaml').read_text(encoding='utf-8')
     used = set(re.findall(r'\$\{(\w+)', '\n'.join(line.split(' #')[0] for line in text.splitlines())))

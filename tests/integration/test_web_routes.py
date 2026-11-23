@@ -1,7 +1,6 @@
 """
 The main web server (desktalk/web/app.py) on the whole app built by bootstrap, with a fake detector, a fake AI
-and a FakeClock. Ported from test_web_api.py (the Flask server's tests); the exact reply shapes are checked by
-tests/characterization/.
+and a FakeClock. The exact reply shapes are checked by tests/characterization/.
 """
 
 from __future__ import annotations
@@ -153,18 +152,15 @@ def test_habit_buttons_log_and_unknown_habits_are_refused(tmp_path):
     assert food['food']['entries'][0]['label'] == 'apple'
     nope = client.post('/api/habits/log', json={'habit': 'nope', 'action': 'x'})
     assert nope.status_code == 400 and 'nope' in nope.json()['error']
-    assert 'vision' not in client.get('/api/habits/today').json()          # the posture checks are gone
 
 
-def test_preferences_change_and_the_old_names_still_work(tmp_path):
+def test_preferences_change(tmp_path):
     rig = DeskRig(tmp_path)
     client = web_client(rig.app)
     reply = client.put('/api/preferences', json={'wake_time': '06:30', 'quiet_enabled': True}).json()
     assert reply['preferences']['wake_time'] == '06:30' and reply['preferences']['quiet_enabled'] is True
     bad = client.put('/api/preferences', json={'wake_time': 'noon'})
     assert bad.status_code == 400 and 'noon' in bad.json()['error']
-    old = client.put('/api/preferences', json={'dnd_enabled': False, 'dnd_start_hour': 21}).json()
-    assert (old['preferences']['quiet_enabled'], old['preferences']['quiet_start_hour']) == (False, 21)
     assert rig.app.store.load('preferences')['wake_time'] == '06:30'
     assert client.get('/api/preferences').json()['min_gap_sec'] == rig.config.reminders.min_gap_sec
 
@@ -214,7 +210,7 @@ def test_marking_the_desk_corners_saves_them_in_the_rules(tmp_path):
 
 
 def test_ui_settings_reply(tmp_path):
-    """GET /api/ui_settings: the numbers and words the app page used to keep its own copies of."""
+    """GET /api/ui_settings: the numbers and words the app page needs, so it keeps no copies of its own."""
     rig = DeskRig(tmp_path)
     c = rig.config
     ui = web_client(rig.app).get('/api/ui_settings').json()
@@ -295,27 +291,6 @@ def test_ui_chat_timeout_stops_at_the_cap(tmp_path):
 
 
 # ── what every reply has in common ───────────────────────────────────
-# Routes nothing called, taken out in the 2026-10 cleanup. They answer like any path the server doesn't know:
-# 404 to a GET, and 405 to anything else (only the page's files are left at that path, and they only GET).
-REMOVED_ROUTES = (
-    ('GET', '/api/context'), ('GET', '/api/daily_stats'), ('GET', '/api/habit_policy'), ('PUT', '/api/habit_policy'),
-    ('GET', '/api/detections'), ('GET', '/api/safety'), ('POST', '/api/safety'), ('GET', '/api/scenarios'),
-    ('GET', '/api/phone/info'), ('GET', '/api/video_feed'), ('GET', '/api/latest_frame/0'),
-    # Taken out in the 2026-10 desk fixes: the app page no longer shows them.
-    ('GET', '/api/habit_log'), ('GET', '/api/log/presence'), ('GET', '/api/log/detections'),
-    ('POST', '/api/log/compact'),
-)
-
-
-def test_removed_routes_answer_404(tmp_path):
-    rig = DeskRig(tmp_path)
-    rig.watch(1, LAPTOP)                        # a picture, so a video route that is still there would answer
-    client = web_client(rig.app)
-    for method, path in REMOVED_ROUTES:
-        reply = client.request(method, path, json={} if method != 'GET' else None)
-        assert reply.status_code == (404 if method == 'GET' else 405), f'{method} {path}'
-
-
 def test_errors_say_error_not_detail(tmp_path):
     client = web_client(DeskRig(tmp_path).app)
     missing = client.get('/api/nothing-here')

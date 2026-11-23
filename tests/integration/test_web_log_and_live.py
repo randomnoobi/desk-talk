@@ -7,8 +7,6 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-import pytest
-
 from desktalk.domain import (
     AgentJoined,
     Alert,
@@ -154,19 +152,6 @@ def test_log_days_has_today_and_keep_days(tmp_path):
     reply = web_client(rig.app).get('/api/log/days').json()
     assert reply['today'] == today.isoformat()
     assert reply['days'] == [(today - timedelta(days=back)).isoformat() for back in range(5)]
-
-
-# ── routes that went ─────────────────────────────────────────────────
-@pytest.mark.parametrize('method, path', [
-    ('GET', '/api/log/presence'), ('GET', '/api/log/detections'), ('POST', '/api/log/compact'),
-    ('GET', '/api/habit_log'),
-])
-def test_removed_routes_are_404(tmp_path, method, path):
-    rig = DeskRig(tmp_path)
-    rig.watch(1, LAPTOP)
-    reply = web_client(rig.app).request(method, path)
-    assert reply.status_code in (404, 405), (method, path)
-    assert web_client(rig.app).get('/api/log/status').status_code == 200       # the developer page still uses it
 
 
 # ── live ─────────────────────────────────────────────────────────────

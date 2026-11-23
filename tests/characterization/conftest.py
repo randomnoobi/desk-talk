@@ -39,7 +39,7 @@ from tests.fakes import (
 )
 from tests.integration.app_kit import changed, desk_config, inbox
 
-from .cases import DEV_TEST_ID, PAIR_KEY, PHONE_HEADERS, PHONE_URL, PI_HEADERS, PICTURE
+from .cases import DEV_TEST_ID, PAIR_KEY, PHONE_HEADERS, PHONE_URL, PI_HEADERS, PI_UPLOAD, PICTURE
 from .client import WebClient
 
 HERE = Path(__file__).resolve().parent
@@ -136,7 +136,7 @@ def desks(tmp_path):
             desk.watch(WATCH_SEC, ON_THE_DESK)
         clock.advance(pinned - clock.now())
         if name == 'busy':
-            assert desk.main.post('/api/pi/frame', data=PICTURE, headers=PI_HEADERS).status == 200
+            assert desk.main.post('/api/pi/frame', data=PI_UPLOAD, headers=PI_HEADERS).status == 200
         if name == 'phone':
             assert links.phone_url == PHONE_URL
             assert desk.phone.post('/api/phone/frame', data=PICTURE, headers=PHONE_HEADERS).status == 200

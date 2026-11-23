@@ -45,6 +45,5 @@
   "objects_seen": [],
   "danger_count": 0,
   "lost_alerts": 0,
-  "nudges_sent": 0,
-  "summary_sent": false
+  "nudges_sent": 0
 }

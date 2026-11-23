@@ -4,7 +4,8 @@ Tests against a real Raspberry Pi running all three containers. Nothing here is 
     DESKTALK_PI=<host> uv run pytest -m pi -v
 
 They need no cable, keyboard or screen, only SSH with a key. A test that needs a person (a cup on the desk, the power
-cut, the Wi-Fi off) skips and says what to do; docs/PI_CHECKS.md has the steps and which of these to run after each.
+cut, the Wi-Fi off) skips and says what to do; docs/RUNBOOK.md, "Checking on the real Pi", has the steps and which
+of these to run after each.
 Tests that stop or change containers use the `stack` fixture, which puts everything back even if the test fails.
 """
 
@@ -45,7 +46,7 @@ pytestmark = pytest.mark.pi
 OBJECT_ON_DESK = 'DESKTALK_PI_OBJECT_ON_DESK'
 JUST_POWER_CUT = 'DESKTALK_PI_JUST_POWER_CUT'
 NO_WIFI_AT_BOOT = 'DESKTALK_PI_NO_WIFI_AT_BOOT'
-STEPS = 'docs/PI_CHECKS.md'
+STEPS = 'docs/RUNBOOK.md, "Checking on the real Pi"'
 
 OBJECT_WAIT_SEC = 180               # how long the cup has to be noticed, from when the test starts
 OBJECT_LOOKS_BACK_SEC = 300         # a cup put down this long before the test started counts too

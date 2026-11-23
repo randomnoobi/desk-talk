@@ -22,7 +22,7 @@ async def _thread():                                # the thread that runs the e
 
 
 @login_router.get('/_test/login/{user_id}')
-def _login(request: Request, user_id: str):         # stands in for Google login (Task 5), which sets this key
+def _login(request: Request, user_id: str):         # stands in for Google login, which sets this key
     request.session['user_id'] = user_id
     return {'ok': True}
 

@@ -42,14 +42,14 @@ case "$name" in
   uname) cat "$FAKE/uname" ;;
   getconf) cat "$FAKE/long_bit" ;;
   df) printf 'Filesystem 1M-blocks Used Available Capacity Mounted\n/dev/x 100000 1000 %s 1%% /\n' "$(cat "$FAKE/free_mb")" ;;
-  getent) case "$2" in video) echo 'video:x:45:sam' ;; audio) echo 'audio:x:30:sam' ;; *) exit 2 ;; esac ;;
-  id) case "$*" in -u) cat "$FAKE/uid" ;; -g) echo 1002 ;; -un) echo sam ;; "-nG sam") cat "$FAKE/groups" ;; esac ;;
+  getent) case "$2" in video) echo 'video:x:45:pi' ;; audio) echo 'audio:x:30:pi' ;; *) exit 2 ;; esac ;;
+  id) case "$*" in -u) cat "$FAKE/uid" ;; -g) echo 1002 ;; -un) echo pi ;; "-nG pi") cat "$FAKE/groups" ;; esac ;;
   hostname) cat "$FAKE/hostname" ;;
   hostnamectl) echo "$2" > "$FAKE/hostname" ;;
   timedatectl) echo Europe/Paris ;;
   systemctl)
     case "$1" in
-      is-active) [ -e "$FAKE/active_$3" ] || { [ "$3" = desk-talk-camera ] && [ -e "$FAKE/old_camera_running" ]; } ;;
+      is-active) [ -e "$FAKE/active_$3" ] ;;
       is-enabled) [ -e "$FAKE/enabled_$3" ] ;;
       enable) shift; for unit in "$@"; do touch "$FAKE/enabled_$unit"; done ;;
       start|restart) [ "$2" = desktalk.service ] && [ -e "$FAKE/start_fails" ] && exit 1; touch "$FAKE/active_$2" ;;
@@ -86,8 +86,6 @@ case "$name" in
       "image inspect "*) [ -e "$FAKE/images_built" ] ;;
       "system df "*) cat "$FAKE/docker_holds" 2>/dev/null; exit 0 ;;
       info) [ -e "$FAKE/docker_group_active" ] || [ -n "${FAKE_SUDO:-}" ] ;;
-      "ps -aq --filter label=com.docker.compose.project=desktalk-detector") cat "$FAKE/old_containers" 2>/dev/null; exit 0 ;;
-      "volume ls -q "*"project=desktalk-detector"*) cat "$FAKE/old_volume" 2>/dev/null; exit 0 ;;
       compose\ *--volumes*|compose\ *down*" -v"*) rm -f "$FAKE/pairing-key" "$FAKE/models/"*; exit 0 ;;
       "compose up -d --build") [ -e "$FAKE/up_fails" ] && exit 1
                                printf 'compose saw %s\n' "$(grep '^DATA_ROOM_ON=' .env)" >> "$FAKE/calls" ;;
@@ -250,7 +248,7 @@ def pi(tmp_path) -> FakePi:
     made.state('long_bit', '64\n')
     made.state('free_mb', '90000')
     made.state('uid', '1001\n')
-    made.state('groups', 'sam docker video\n')
+    made.state('groups', 'pi docker video\n')
     made.state('hostname', 'desktalk\n')
     made.state('git_checkout', '1')
     made.state('docker_group_active')
@@ -640,10 +638,10 @@ def test_docker_is_installed_only_if_missing(pi):
 
 def test_the_docker_group_is_added_only_if_missing_and_this_run_uses_sudo(pi):
     assert not any('usermod' in line for line in pi.run().calls)
-    pi.state('groups', 'sam video\n')
+    pi.state('groups', 'pi video\n')
     (pi.fake / 'docker_group_active').unlink()
     result = pi.run()
-    assert result.code == 0 and 'sudo usermod -aG docker sam' in result.calls
+    assert result.code == 0 and 'sudo usermod -aG docker pi' in result.calls
     assert 'sudo docker compose up -d --build' in result.calls
     assert 'log' in result.out
 
@@ -675,8 +673,6 @@ def test_never_removes_volumes(pi, script):
     assert '--volumes' not in text and 'volume rm' not in text and 'volume prune' not in text
     assert 'system prune' not in text
     assert not re.search(r'\bdown\b[^\n]* -v\b', text)
-    pi.state('old_containers', 'abc\n')
-    pi.state('old_volume', 'desktalk-detector_models\n')
     for line in pi.run(script=script).calls:
         assert '--volumes' not in line and 'volume rm' not in line
 
@@ -756,11 +752,6 @@ def test_a_camera_set_by_hand_is_left_alone_and_it_says_so(pi, text):
     result = pi.run()
     assert pi.config_txt.read_text(encoding='utf-8') == text and 'left' in result.out
     assert 'restart' not in result.out.lower()
-
-
-def test_the_old_camera_program_outside_docker_gets_a_line(pi):
-    pi.state('old_camera_running')
-    assert 'desk-talk-camera' in pi.run().out
 
 
 # ── The name ──
@@ -867,31 +858,6 @@ def test_a_model_with_no_checksum_listed_is_still_used_and_says_so(pi):
 def test_the_chosen_model_has_a_checksum():
     listed = (PI / 'model_checksums.txt').read_text(encoding='utf-8')
     assert re.search(rf'^[0-9a-f]{{64}}  {re.escape(model_name())}$', listed, re.M)
-
-
-# ── The old setup ──
-
-def test_the_old_detector_project_is_brought_down_and_its_models_carried_over(pi):
-    pi.state('old_containers', 'abc\n')
-    pi.state('old_volume', 'desktalk-detector_models\n')
-    calls = docker_calls(pi.run())
-    assert 'docker compose -p desktalk-detector down --remove-orphans' in calls
-    carry = next(line for line in calls if 'desktalk-detector_models:/from:ro' in line)
-    assert 'cp -an /from/. /models/' in carry
-    assert calls.index('docker compose -p desktalk-detector down --remove-orphans') < calls.index(
-        'docker compose up -d --build') < calls.index(carry)
-
-
-def test_no_old_setup_means_nothing_extra(pi):
-    calls = docker_calls(pi.run())
-    assert not any(' -p desktalk-detector' in line or '/from:ro' in line for line in calls)
-
-
-def test_a_dry_run_only_says_it_would_bring_the_old_setup_down(pi):
-    pi.state('old_containers', 'abc\n')
-    pi.state('old_volume', 'desktalk-detector_models\n')
-    result = pi.run('--dry-run')
-    assert 'desktalk-detector' in result.out and not any(' down' in line for line in result.calls)
 
 
 # ── Linking to the cloud ──
@@ -1175,7 +1141,7 @@ def test_the_service_is_filled_in_for_this_pi_installed_and_switched_on(pi):
     result = pi.run()
     assert result.code == 0, result.out
     unit = unit_lines(pi.service_file)
-    assert unit['User'] == 'sam'
+    assert unit['User'] == 'pi'
     assert unit['WorkingDirectory'] == str(pi.root / 'raspberry_pi')
     assert unit['ExecStart'] == f'{pi.fake / "bin" / "docker"} compose up -d --no-build'
     assert unit['TimeoutStartSec'] == pi.values()['SERVICE_START_WAIT_SEC']
@@ -1291,7 +1257,7 @@ def test_update_on_a_pi_not_set_up_yet_sets_it_up_asking_for_sudo_once_and_says_
     assert before_the_build(result).count('sudo -v') == 1
     assert result.calls.index('sudo -v') < result.calls.index('sudo systemctl daemon-reload')
     assert unit_lines(pi.journald_file)['Storage'] == 'persistent'
-    assert unit_lines(pi.service_file)['User'] == 'sam'
+    assert unit_lines(pi.service_file)['User'] == 'pi'
     assert 'sudo systemctl restart systemd-journald' in result.calls
     assert 'sudo systemctl enable docker.service containerd.service desktalk.service' in result.calls
     assert 'sudo systemctl start desktalk.service' in result.calls

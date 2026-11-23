@@ -35,7 +35,7 @@ function isThisComputer(address: string): boolean {
 }
 
 /** The one-time code and the command to run. The code is only shown here, never put in an address. */
-export function CodeBox({ reply }: { reply: CodeReply }) {
+function CodeBox({ reply }: { reply: CodeReply }) {
   return (
     <div className="card">
       <p>Your one-time code:</p>

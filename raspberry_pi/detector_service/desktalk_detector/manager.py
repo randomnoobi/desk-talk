@@ -43,7 +43,7 @@ def describe(s: ModelSettings) -> str:
 
 
 def _note(s: ModelSettings) -> str:
-    """What's worth knowing about how this model runs (decision 9 in docs/plans/2026-10-21-refactor-plan.md)."""
+    """What's worth knowing about how this model runs."""
     if s.format == 'ncnn' and 'yolo26' in s.model.lower():
         return (" Note: ncnn can't run YOLO26's end-to-end head, so Ultralytics runs this model with its other head "
                 'plus the usual overlap filter (NMS). It finds slightly different boxes than the end-to-end head.')

@@ -7,8 +7,8 @@ The habit tracker: today's numbers for the Protocols habits.
                      the nudges, and today() for the Habits page
 
 When something happens (a sip, a break ...) it publishes a HabitEvent, which the chat turns
-into a message. The day is saved in the store under "habits/<day>" (data/habits/<day>.json,
-the same files as before), so a restart doesn't lose today's numbers.
+into a message. The day is saved in the store under "habits/<day>" (data/habits/<day>.json),
+so a restart doesn't lose today's numbers.
 """
 
 from __future__ import annotations

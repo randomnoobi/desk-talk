@@ -81,7 +81,7 @@ markers = [
     "slow: runs the real YOLO model (skipped if the model file isn't in models/)",
     "docker: builds and starts the detector's Docker image (needs Docker and the internet)",
     "e2e: drives the real page in a browser; needs `uv run playwright install chromium` once",
-    "pi: runs against a real Pi over SSH; only with DESKTALK_PI=<host> uv run pytest -m pi (docs/PI_CHECKS.md)",
+    "pi: runs against a real Pi over SSH; only with DESKTALK_PI=<host> uv run pytest -m pi (docs/RUNBOOK.md, 'Checking on the real Pi')",
 ]
 filterwarnings = ["ignore::DeprecationWarning"]
 
@@ -93,7 +93,7 @@ branch = true                  # also count each side of every if, not just each
 omit = ["cloud/server/desktalk_cloud/store_postgres.py", "cloud/server/desktalk_cloud/migrations/*"]
 
 [tool.coverage.report]
-fail_under = 97                # the share of code the fast tests run (measured 2026-10-24); it may only go up
+fail_under = 97                # the share of code the fast tests run; it may only go up
 
 [tool.vulture]
 # The dead code check: uv run vulture. tests/vulture_allow.py lists names it can't see being used.
@@ -116,7 +116,6 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "T20"]
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/*" = ["T20"]          # command-line helpers print for the person running them
-".claude/hooks/*" = ["T20"]    # Claude Code hooks answer by printing JSON
 "tests/*" = ["T20"]
 
 [tool.ruff.lint.isort]

@@ -8,7 +8,6 @@ The app's real page (web_app/) in a headless Chromium, on the whole app on a rea
 
 from __future__ import annotations
 
-import json
 import re
 import time
 from datetime import date, timedelta
@@ -297,7 +296,7 @@ def test_every_page_opens_on_the_real_app(page, tmp_path, pictures):
         page.locator('.page-link[data-view="habits"]').click()
         habits = page.locator('#view-habits')
         expect(habits).to_contain_text('desk warnings')
-        for gone in ('Nail biting', 'nail biting', 'Camera log', 'Protocols', 'lux', '/255'):
+        for gone in ('Camera log', 'Protocols', 'lux', '/255'):
             expect(habits).not_to_contain_text(gone)
     assert errors == []
 
@@ -419,7 +418,7 @@ def test_a_server_that_answers_late_switches_the_demo_to_live(page, tmp_path, pi
 
 
 def test_heads_up_shows_camera_problems(page, tmp_path, pictures):
-    """A camera problem in "Heads up" (with Lens's picture) used to stop the page."""
+    """A camera problem in "Heads up" (with Lens's picture) shows without stopping the page."""
     errors = watch_for_errors(page)
     problem = {'title': 'The camera is covered', 'fix': 'Take your hand off it.'}
 
@@ -538,34 +537,6 @@ def test_a_failed_todo_load_never_overwrites_the_servers_list(page, tmp_path, pi
         page.wait_for_timeout(SETTLE_MS)
         assert sent == []
         assert httpx.get(f'{server.url}/api/todos').json()['items'] == [kept]
-
-
-OLD_COUNTERS = {'day': date.today().isoformat(), 'items': [
-    {'label': 'Nail biting', 'count': 2}, {'label': 'Picked up phone', 'count': 1},
-    {'label': 'Slouching', 'count': 0}, {'label': 'Stretch', 'count': 3}]}
-
-
-def test_old_starter_counters_are_dropped_once(page):
-    """A browser that saved the old starter counters (Nail biting, Slouching) loses those two, keeps the rest,
-    and a "Slouching" you add yourself afterwards stays."""
-    page.add_init_script(f'''if (!localStorage.getItem('desktalk_habits_v2'))
-        localStorage.setItem('desktalk_habits_v2', {json.dumps(json.dumps(OLD_COUNTERS))});''')
-    page.goto((APP_FOLDER / 'index.html').as_uri(), wait_until='domcontentloaded')
-    expect(page.locator('#conn')).to_have_attribute('data-state', 'demo')
-    page.locator('.page-link[data-view="habits"]').click()
-    counters = page.locator('.counter-list li')
-    expect(counters).to_have_count(2)
-    expect(counters.first).to_contain_text('Picked up phone')
-    expect(counters.last).to_contain_text('Stretch')
-    expect(counters.last.locator('strong')).to_have_text('3')
-    page.get_by_label('New counter').fill('Slouching')
-    page.get_by_label('New counter').press('Enter')
-    expect(counters).to_have_count(3)
-    page.reload()
-    expect(page.locator('#conn')).to_have_attribute('data-state', 'demo')
-    page.locator('.page-link[data-view="habits"]').click()
-    expect(page.locator('.counter-list li')).to_have_count(3)
-    expect(page.locator('.counter-list')).to_contain_text('Slouching')
 
 
 def test_coming_back_to_the_tab_refreshes_at_once(page, tmp_path, pictures):

@@ -1,5 +1,5 @@
 """
-The pages and their files (web_app/, phone_camera/), as the Flask server sent them: with
+The pages and their files (web_app/, phone_camera/), sent with
 Cache-Control: no-cache (the browser checks for a newer one each time), and "; charset=utf-8" on text,
 scripts and SVG drawings.
 

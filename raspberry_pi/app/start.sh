@@ -5,7 +5,7 @@
 set -e
 
 # Where the data folder comes from (set by compose.yaml). Desk Talk keeps its own fixed-size space on the SD card,
-# mounted at data. With no DATA_ROOM (a new Pi, `docker compose up` as is) the data folder is plain, as before.
+# mounted at data. With no DATA_ROOM (a new Pi, `docker compose up` as is) the data folder is plain.
 # If the space should be there but its marker file is missing, it isn't mounted: the app then saves nothing to the
 # card and keeps what it must in memory, and the bare mount point is left alone.
 mode=plain

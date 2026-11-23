@@ -57,9 +57,6 @@ def settings_lines(config: AppConfig, data_folder: Path | None = None) -> None:
     say(f'  Event log    : {events}  (compacted every {log.compact_every_min:g} min)')
     if config.env_applied:
         say(f'  From .env    : {", ".join(config.env_applied)}')
-    if config.env_moved:
-        say(f'  Note         : {", ".join(config.env_moved)} in .env are no longer used; '
-            f'they live in config/settings.yaml now.')
 
 
 def address_lines(config: AppConfig, links: Links, source_kind: str) -> None:

@@ -128,7 +128,7 @@ def test_settings_yaml_may_not_set_prompts(project):
         load_config(root=project, environ={})
 
 
-def test_the_desk_fixes_wording_loads(project):
+def test_the_to_do_starter_and_sip_wording_loads(project):
     """The to-do due dates, the app page's starter list and counters, and the sip notification."""
     prompts = load_config(root=project, environ={}).prompts
     due = prompts.habits.tasks_due
