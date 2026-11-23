@@ -193,6 +193,7 @@ class SensitivityReviewSettings(_Section):
     look_back_hours: PositiveNumber
     min_watch_hours: ZeroOrMore
     wait_after_you_change_hours: ZeroOrMore
+    wait_before_undo_hours: ZeroOrMore
     blink_sec: PositiveNumber
     jumpy_per_hour: PositiveNumber
     missed_min_sec: PositiveNumber

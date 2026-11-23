@@ -68,6 +68,8 @@ SENSITIVITY_WHYS = (
     'missing',              # things stayed in view without counting: one step easier
     'mixed',                # both at once: no change
     'at_the_end',           # it would move, but the slider is already at that end
+    'too_soon_to_undo',     # it would move back the way it came, but it moved the slider itself too recently
+                            # (settings → sensitivity_review.wait_before_undo_hours)
     'steady',               # nothing to fix
 )
 

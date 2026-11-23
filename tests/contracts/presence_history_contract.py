@@ -55,6 +55,14 @@ class PresenceHistoryContract:
             assert iv['interval'] == [TS, TS + 2]
             assert iv['avg_conf'] == pytest.approx(0.8)
 
+    def test_intervals_carry_the_picture_size(self, store):
+        for i in range(3):
+            store.write(picture(TS + i, 'cup'))
+        day = self.day_of(TS)
+        assert [iv['size'] for iv in store.presence(day)] == [[640, 480]]
+        store.compact(TS + 60)
+        assert [iv['size'] for iv in store.presence(day, include_live=False)] == [[640, 480]]
+
     def test_compacted_and_live_pictures_join_into_one_interval(self, store):
         store.write(picture(TS, 'cup'))
         store.write(picture(TS + 1, 'cup'))

@@ -633,9 +633,9 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     daily_summary = DailySummary(model, hub, roster, habits, store, config.daily_summary, config.llm.replies,
                                  default_temperature=default_temperature, clock=clock,
                                  prompts=config.prompts.daily_recap, preview_chars=config.logging.preview_chars)
-    sensitivity_review = SensitivityReviewer(config.sensitivity_review, config.agents, preferences, state_store,
-                                             event_log, store, profiles, clock,
-                                             person_label=config.object_states.person_label)
+    sensitivity_review = SensitivityReviewer(config.sensitivity_review, config.agents, config.object_states,
+                                             preferences, state_store, event_log, event_log, store, profiles, clock,
+                                             person_label=config.object_states.person_label, on_desk=on_desk)
     def http_line(server: str, token: str) -> CloudLink:
         return HttpCloudLink(server, token, timeout_sec=config.cloud.timeout_sec,
                              error_text_chars=config.cloud.error_text_chars)

@@ -143,11 +143,15 @@ class InMemoryEventStore:
         self._presence: dict[str, list[dict]] = {}        # compacted intervals, by day
         self.merge_gap_sec = 3.0
 
-    def add_presence(self, label: str, start: float, end: float, avg_conf: float, frames: int = 1) -> None:
-        """Put one compacted interval in the log by hand (as presence.jsonl would hold it)."""
-        self._presence.setdefault(_day(start), []).append(
-            {'type': 'presence', 'label': label, 'interval': [start, end], 'frames': frames, 'avg_conf': avg_conf,
-             'center': [0.0, 0.0], 'source': 'fake'})
+    def add_presence(self, label: str, start: float, end: float, avg_conf: float, frames: int = 1,
+                     size: tuple[int, int] | None = None) -> None:
+        """Put one compacted interval in the log by hand (as presence.jsonl would hold it). `size`: the picture's
+        width and height; None for an interval saved before intervals had one."""
+        interval = {'type': 'presence', 'label': label, 'interval': [start, end], 'frames': frames,
+                    'avg_conf': avg_conf, 'center': [0.0, 0.0], 'source': 'fake'}
+        if size is not None:
+            interval['size'] = list(size)
+        self._presence.setdefault(_day(start), []).append(interval)
 
     def presence(self, day: str, include_live: bool = True) -> list[dict]:
         out = [dict(i) for i in self._presence.get(day, [])]

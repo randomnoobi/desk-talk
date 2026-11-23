@@ -10,9 +10,12 @@ full story: what was wrong, what changed, and the checks that were run. What a p
   that turned into. When things keep flashing on and off (put down and taken away again within 15 seconds, 6 times an
   hour or more), it moves the Settings page's slider one step pickier. When something with a character of its own
   stays in view for a minute or more but isn't quite sure enough for this step, though the next easier step would
-  take it (3 times or more), it moves one step easier. No AI, on the Pi. After you move the slider yourself it waits a
-  day. The Settings page has a switch to turn this off and says why it last moved. Numbers in
-  `sensitivity_review:` in `config/settings.yaml`; `GET /api/sensitivity_review` shows what it found.
+  take it, and didn't join the chat (3 times or more), it moves one step easier. Things off the marked desk don't
+  count. No AI, on the Pi. It starts fresh, judging only what comes after its first look. After you move the slider
+  yourself it waits a day, and after it moves the slider itself it waits a day before moving it back the other way.
+  The Settings page has a switch to turn this off and says why it last moved. Numbers in `sensitivity_review:` in
+  `config/settings.yaml`; `GET /api/sensitivity_review` shows what it found. The event log's intervals now keep the
+  picture's size.
 
 ## 2026-11-21
 

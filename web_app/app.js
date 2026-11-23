@@ -961,6 +961,9 @@ async function renderSettings() {
     sensitivity: Math.min(steps.length - 1, Math.max(0, prefs.sensitivity ?? ui.sensitivity_default)),
     auto_sensitivity: !!prefs.auto_sensitivity,
   };
+  // The slider and its switch as the page last loaded or saved them. The slider can also move by itself while the
+  // page is open, so a save sends them only when you changed them here; otherwise it would undo that move.
+  const sensitivityShown = { sensitivity: draft.sensitivity, auto_sensitivity: draft.auto_sensitivity };
   const keepTyped = () => {
     if (!$('#wake-time')) return;
     draft.wake_time = $('#wake-time').value;
@@ -1126,8 +1129,11 @@ async function renderSettings() {
         wake_time: draft.wake_time, bed_time: draft.bed_time, quiet_enabled: draft.quiet_enabled,
         quiet_start_hour: +draft.quiet_start.slice(0, 2), quiet_end_hour: +draft.quiet_end.slice(0, 2),
       };
-      if (steps.length) Object.assign(body, { sensitivity: draft.sensitivity, auto_sensitivity: draft.auto_sensitivity });
+      if (steps.length) {
+        for (const key of ['sensitivity', 'auto_sensitivity']) if (draft[key] !== sensitivityShown[key]) body[key] = draft[key];
+      }
       prefs = (await api('/api/preferences', { method: 'PUT', body })).preferences;
+      Object.assign(sensitivityShown, { sensitivity: draft.sensitivity, auto_sensitivity: draft.auto_sensitivity });
       refreshHabits();
     } catch (err) { failed.push(steps.length ? 'your day, sensitivity and quiet hours' : 'your day and quiet hours'); problem = err; }
     if (failed.length) say(`Couldn’t save ${failed.join(' or ')}. ${why(problem)}`, true);

@@ -509,6 +509,42 @@ def test_settings_page_says_when_the_slider_moved_by_itself(page, tmp_path, pict
         expect(line).not_to_contain_text(older['says'])
         expect(page.get_by_label('Sensitivity')).to_have_value('1')
 
+
+def test_saving_settings_keeps_a_move_the_slider_made_by_itself(page, tmp_path, pictures):
+    """The slider can move by itself while the Settings page is open. Saving only the wake time leaves that move
+    (and the switch) alone; moving the slider in the page still saves it."""
+    def put(body: dict[str, Any]) -> None:
+        assert page.request.put(f'{url}/api/preferences', data=json.dumps(body),
+                                headers={'Content-Type': 'application/json'}).ok
+
+    def prefs() -> dict[str, Any]:
+        return page.request.get(f'{url}/api/preferences').json()
+
+    with running_app(tmp_path, pictures=pictures) as url:
+        put({'sensitivity': 2, 'auto_sensitivity': True})
+        open_app(page, url)
+        page.locator('.page-link[data-view="settings"]').click()
+        expect(page.get_by_label('Sensitivity')).to_have_value('2')
+        put({'sensitivity': 1})                                     # as the reviewer would, with the page open
+        page.locator('#wake-time').fill('06:45')
+        page.get_by_role('button', name='Save settings').click()
+        expect(page.locator('#saved')).to_have_text('Saved')
+        saved = prefs()
+        assert saved['wake_time'] == '06:45'
+        assert saved['sensitivity'] == 1                            # the move the slider made by itself stays
+        assert saved['auto_sensitivity'] is True
+
+        page.get_by_label('Sensitivity').fill('0')
+        page.get_by_role('button', name='Save settings').click()
+        expect(page.locator('#saved')).to_have_text('Saved')
+        assert prefs()['sensitivity'] == 0
+        put({'sensitivity': 2})                                     # it moves by itself again after that save
+        page.locator('#wake-time').fill('07:15')
+        page.get_by_role('button', name='Save settings').click()
+        expect(page.locator('#saved')).to_have_text('Saved')
+        assert prefs()['sensitivity'] == 2
+
+
 def test_settings_page_says_whether_a_cloud_server_is_linked(page, tmp_path, pictures):
     """The Settings page has one line about the optional cloud server, in the server's words (GET /api/ui_settings);
     this app is not linked to one."""
