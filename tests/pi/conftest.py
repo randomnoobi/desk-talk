@@ -31,6 +31,8 @@ SSH_WAIT_SEC = 30                   # for the first connection
 RUN_WAIT_SEC = 120                  # one command on the Pi may take this long, unless it says otherwise
 HEALTHY_WAIT_SEC = 360              # after a restart. The detector's check runs every 30 s and a model takes a while
 LOOK_EVERY_SEC = 2
+STATUS_LOG_TAIL = 40                # lines at the end of the camera's log to look through
+LOG_END_LINES = 5                   # lines at the end of the camera's log to show when no status line came
 
 
 class PiCommandFailed(AssertionError):
@@ -58,9 +60,29 @@ def status_line_wait_sec(pi_settings: dict[str, Any]) -> float:
 def wait_for_status_lines[T](read_log: Callable[[], str], parse: Callable[[str], Sequence[T]], *, timeout: float,
                              every: float = LOOK_EVERY_SEC) -> Sequence[T]:
     """Reads the camera's log until `parse` finds a status line in it, and gives back what it found. The camera writes
-    its first one only a status time after it starts, so right after a restart there is none yet."""
-    return wait_for("a status line in the camera's log", lambda: parse(read_log()) or None, timeout=timeout,
-                    every=every)
+    its first one only a status time after it starts, so right after a restart there is none yet. If none comes, the
+    failure shows the end of the last log it read."""
+    last = ''
+
+    def read_and_parse() -> Sequence[T] | None:
+        nonlocal last
+        last = read_log()
+        return parse(last) or None
+    try:
+        return wait_for("a status line in the camera's log", read_and_parse, timeout=timeout, every=every)
+    except AssertionError as error:
+        end = '\n'.join(last.splitlines()[-LOG_END_LINES:]) or '(nothing)'
+        raise AssertionError(f'{error}. Its log ends:\n{end}') from None
+
+
+def camera_log_command(container: str, started: str, pi_now: str, tail: int) -> str:
+    """The `docker logs -t` command for the camera's log since its container started (`started`, Docker's StartedAt).
+    `docker logs --since` goes by the Pi's clock, so if the clock was set back after the camera started, every new line
+    is stamped before `started` and would be hidden: then it looks at the last `tail` lines only. `pi_now` is the Pi's
+    time, like `date -u +%Y-%m-%dT%H:%M:%S`. Both are UTC in the same form, so they compare as text, at whole seconds
+    (Docker leaves the trailing zeros off the fraction)."""
+    since = f'--since {shlex.quote(started)} ' if pi_now[:19] >= started[:19] else ''
+    return f'docker logs -t {since}--tail {tail} {container} 2>&1'
 
 
 class Pi:
@@ -136,13 +158,22 @@ class Pi:
         except AssertionError as error:
             raise AssertionError(f'{error}. They say: {last}') from None
 
-    def camera_status_lines[T](self, parse: Callable[[str], Sequence[T]], *, tail: int = 40) -> Sequence[T]:
+    def camera_status_lines[T](self, parse: Callable[[str], Sequence[T]], *,
+                               tail: int = STATUS_LOG_TAIL) -> Sequence[T]:
         """The camera's status lines since its container last started, as `parse` reads them from `docker logs -t`.
         If the camera has only just started, this waits for its first one."""
-        started = self.state('camera')['StartedAt']
-        command = f'docker logs -t --since {shlex.quote(started)} --tail {tail} {self.container("camera")} 2>&1'
-        return wait_for_status_lines(lambda: self.run(command, check=False), parse,
-                                     timeout=status_line_wait_sec(self.settings()['pi']))
+        state = self.state('camera')
+        if state.get('Missing'):
+            raise AssertionError("the camera's container is missing")
+        pi_now = self.run('date -u +%Y-%m-%dT%H:%M:%S').strip()
+        command = camera_log_command(self.container('camera'), state['StartedAt'], pi_now, tail)
+
+        def read_log() -> str:
+            return self.run(command, check=False)
+        found = parse(read_log())
+        if found:
+            return found
+        return wait_for_status_lines(read_log, parse, timeout=status_line_wait_sec(self.settings()['pi']))
 
     def restore_stack(self) -> None:
         """Back to what compose.yaml says, with its own settings: `up -d` starts what's stopped and replaces what a test
