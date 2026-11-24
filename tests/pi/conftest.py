@@ -17,7 +17,7 @@ import re
 import shlex
 import subprocess
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +47,20 @@ def wait_for[T](what: str, find: Callable[[], T | None], *, timeout: float, ever
         if time.monotonic() > end:
             raise AssertionError(f'{what}: still not so after {timeout:g} s')
         time.sleep(every)
+
+
+def status_line_wait_sec(pi_settings: dict[str, Any]) -> float:
+    """How long the camera may take to write its first status line, from the Pi's settings (the `pi:` section): one
+    status time for the line itself, one more as room for the camera program to start, and the camera's warm-up."""
+    return 2 * pi_settings['status_every_sec'] + pi_settings['camera_warmup_sec']
+
+
+def wait_for_status_lines[T](read_log: Callable[[], str], parse: Callable[[str], Sequence[T]], *, timeout: float,
+                             every: float = LOOK_EVERY_SEC) -> Sequence[T]:
+    """Reads the camera's log until `parse` finds a status line in it, and gives back what it found. The camera writes
+    its first one only a status time after it starts, so right after a restart there is none yet."""
+    return wait_for("a status line in the camera's log", lambda: parse(read_log()) or None, timeout=timeout,
+                    every=every)
 
 
 class Pi:
@@ -121,6 +135,14 @@ class Pi:
             wait_for('all three containers healthy', all_healthy, timeout=timeout, every=3)
         except AssertionError as error:
             raise AssertionError(f'{error}. They say: {last}') from None
+
+    def camera_status_lines[T](self, parse: Callable[[str], Sequence[T]], *, tail: int = 40) -> Sequence[T]:
+        """The camera's status lines since its container last started, as `parse` reads them from `docker logs -t`.
+        If the camera has only just started, this waits for its first one."""
+        started = self.state('camera')['StartedAt']
+        command = f'docker logs -t --since {shlex.quote(started)} --tail {tail} {self.container("camera")} 2>&1'
+        return wait_for_status_lines(lambda: self.run(command, check=False), parse,
+                                     timeout=status_line_wait_sec(self.settings()['pi']))
 
     def restore_stack(self) -> None:
         """Back to what compose.yaml says, with its own settings: `up -d` starts what's stopped and replaces what a test

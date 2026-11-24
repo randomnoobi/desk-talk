@@ -97,8 +97,7 @@ def assert_data_readable(pi: Pi, *, broken_allowed: int = 0) -> dict[str, Any]:
 
 def latest_camera_status(pi: Pi) -> tuple[int, ...]:
     """The numbers in the camera's newest status line: taken, sent, failed, skipped, ok, busy, off."""
-    found = CAMERA_STATUS.findall(pi.run(f'docker logs --tail 40 {pi.container("camera")} 2>&1'))
-    assert found, "the camera's log has no status line"
+    found = pi.camera_status_lines(CAMERA_STATUS.findall)
     return tuple(int(n) for n in found[-1])
 
 

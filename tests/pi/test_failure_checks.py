@@ -168,8 +168,7 @@ def test_ready_for_a_hand_test(pi: Pi):
     status = pi.get('/api/status')
     assert status is not None, "the app doesn't answer /api/status"
     assert status['camera'] is True, f'the app has no camera: {status}'
-    lines = parse_status_lines(_camera_log(pi, tail=40))
-    assert lines, "the camera's log has no status line"
+    lines = pi.camera_status_lines(parse_status_lines)
     age = _pi_now(pi) - lines[-1].at
     assert age < STATUS_LINE_FRESH_SEC, f"the camera's newest status line is {age:.0f} s old"
 
