@@ -141,8 +141,19 @@ class LimitSettings(_Section):
     claim_body_kb: PositiveInt
 
 
+class FindPisSettings(_Section):
+    pi_port: Port
+    network_prefix: Annotated[int, Field(ge=16, le=30)]
+    knock_timeout_sec: PositiveNumber
+    at_once: PositiveInt
+    link_timeout_sec: PositiveNumber
+    reply_max_kb: PositiveInt
+    reason_max_chars: PositiveInt
+
+
 class Messages(_Section):
-    """The words in cloud/prompts.yaml → messages. A message with {max} is filled in with .format(max=...)."""
+    """The words in cloud/prompts.yaml → messages. A message with {max} is filled in with .format(max=...), and
+    pi_refused's {reason} with the Pi's own words."""
 
     refused_not_an_object: str
     refused_not_kept: str
@@ -176,6 +187,13 @@ class Messages(_Section):
     chat_failed: str
     report_no_key: str
     report_pi_removed: str
+    no_network_to_search: str
+    pi_search_running: str
+    pi_not_in_network: str
+    pi_already_linked: str
+    pi_refused: str
+    pi_refused_no_reason: str
+    pi_no_answer: str
 
 
 class Secrets(_Section):
@@ -201,6 +219,7 @@ class CloudConfig(_Section):
     chat: ChatSettings
     retention: RetentionSettings
     limits: LimitSettings
+    find_pis: FindPisSettings
     secrets: Secrets
     messages: Messages
     prompts: dict[str, Any]          # all of prompts.yaml as it is (the report job reads its own part)
@@ -263,7 +282,8 @@ def load_config(root: Path, environ: Mapping[str, str]) -> CloudConfig:
                 server[key] = _env(environ, name)
     try:
         sections = {name: settings.get(name) for name in
-                    ('server', 'google', 'pairing', 'ingest', 'reports', 'site', 'chat', 'retention', 'limits')}
+                    ('server', 'google', 'pairing', 'ingest', 'reports', 'site', 'chat', 'retention', 'limits',
+                     'find_pis')}
         unknown = sorted(set(settings) - set(sections))
         if unknown:
             raise ConfigError(f"{SETTINGS_FILE}: '{unknown[0]}' is not a section the server knows")
@@ -291,3 +311,4 @@ class _Parts(_Section):
     chat: ChatSettings
     retention: RetentionSettings
     limits: LimitSettings
+    find_pis: FindPisSettings

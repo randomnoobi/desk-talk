@@ -110,6 +110,28 @@ def test_chat_limits_must_be_above_zero(tmp_path, name):
         load_config(folder, {'SESSION_SECRET': SECRET})
 
 
+def test_find_pis_defaults():
+    settings = load_config(CLOUD_FOLDER, {'SESSION_SECRET': SECRET}).find_pis
+    assert (settings.pi_port, settings.network_prefix, settings.at_once) == (5000, 24, 64)
+    assert (settings.knock_timeout_sec, settings.link_timeout_sec, settings.reply_max_kb) == (1.5, 20, 4)
+    assert settings.reason_max_chars == 200
+
+
+@pytest.mark.parametrize(('name', 'value'), [('pi_port', 0), ('pi_port', 70000), ('network_prefix', 8),
+                                             ('network_prefix', 31), ('knock_timeout_sec', 0), ('at_once', 0),
+                                             ('link_timeout_sec', 0), ('reply_max_kb', 0), ('reason_max_chars', 0)])
+def test_find_pis_settings_are_checked(tmp_path, name, value):
+    folder = _copy_folder(tmp_path, lambda s: s['find_pis'].update({name: value}))
+    with pytest.raises(ConfigError, match=f'find_pis.{name}'):
+        load_config(folder, {'SESSION_SECRET': SECRET})
+
+
+def test_find_pis_is_a_section_the_server_needs(tmp_path):
+    folder = _copy_folder(tmp_path, lambda s: s.pop('find_pis'))
+    with pytest.raises(ConfigError, match='settings.yaml: find_pis'):
+        load_config(folder, {'SESSION_SECRET': SECRET})
+
+
 def test_unknown_setting_is_an_error(tmp_path):
     folder = _copy_folder(tmp_path, lambda s: s['ingest'].update(max_batchh=5))
     with pytest.raises(ConfigError, match='max_batchh'):

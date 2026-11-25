@@ -95,3 +95,13 @@ class GoogleUser:
     email: str
     name: str
     email_verified: bool
+
+
+@dataclass(frozen=True)
+class FoundPi:
+    """A Pi that answered on the home network: its address there, the name it gives itself, and whether it is linked
+    to a cloud server already."""
+
+    address: str
+    name: str
+    linked: bool

@@ -3,6 +3,7 @@ knows the real parts."""
 
 from __future__ import annotations
 
+import asyncio
 import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -12,7 +13,7 @@ from fastapi import APIRouter, FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 
 from desktalk_cloud.config import CloudConfig
-from desktalk_cloud.ports import ChatForwarder, Clock, GoogleLogin, Store
+from desktalk_cloud.ports import ChatForwarder, Clock, GoogleLogin, PiFinder, Store
 from desktalk_cloud.rate_limit import RateLimiter
 
 __all__ = ['CloudParts', 'create_app']
@@ -22,16 +23,20 @@ __all__ = ['CloudParts', 'create_app']
 class CloudParts:
     """What the routes use. `google` and `chat_forwarder` are None when they aren't set up. `claim_limiter` counts
     tries to use a code per address (and admin login tries); `chat_limiter` counts chat requests per Pi; `chat_slots`
-    holds one slot for each chat running now, on the whole server (it is one process, so counting here is enough)."""
+    holds one slot for each chat running now, on the whole server (it is one process, so counting here is enough).
+    `pi_finder` looks for Pis on the home network; `pi_search` is held while one search runs, so only one runs at a
+    time on the whole server."""
 
     config: CloudConfig
     store: Store
     clock: Clock
     google: GoogleLogin | None
     chat_forwarder: ChatForwarder | None
+    pi_finder: PiFinder
     claim_limiter: RateLimiter
     chat_limiter: RateLimiter
     chat_slots: threading.BoundedSemaphore
+    pi_search: asyncio.Lock
 
 
 def create_app(parts: CloudParts, routers: Sequence[APIRouter], *, lifespan: Any = None) -> FastAPI:

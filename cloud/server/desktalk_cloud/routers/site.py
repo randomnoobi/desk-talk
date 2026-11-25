@@ -18,7 +18,7 @@ from desktalk_cloud.domain import Device, Report, User, is_clean_text
 from desktalk_cloud.routers.auth import needs_json, public_address
 from desktalk_cloud.tokens import hash_secret, new_code
 
-__all__ = ['check_site_words', 'router']
+__all__ = ['check_site_words', 'make_link_code', 'router']
 
 router = APIRouter()
 
@@ -108,6 +108,25 @@ def devices(request: Request, user: Annotated[User, Depends(current_user)]) -> l
     return [_device_row(d) for d in parts_of(request).store.list_devices(user.id)]
 
 
+async def make_link_code(request: Request, user: User, zone: str, device_id: str | None = None) -> tuple[str, float]:
+    """A new one-time code for this person, kept (as a hash) for `pairing.code_valid_min`: (code, expires_at).
+    With a `device_id` it links that Pi of theirs again. 400 for a time zone the server doesn't know, 404 for a Pi
+    that isn't theirs or went away. Both "Add a Pi" and "Find Pis on my network" make their codes here."""
+    parts = parts_of(request)
+    config, messages = parts.config, parts.config.messages
+    if not _time_zone_ok(zone):
+        raise HTTPException(400, messages.bad_time_zone)
+    if device_id is not None:
+        await run_in_threadpool(_my_device, request, user, device_id)
+    code = new_code()
+    expires_at = parts.clock.now() + config.pairing.code_valid_min * 60
+    try:
+        await run_in_threadpool(parts.store.add_code, hash_secret(code), user.id, device_id, zone, expires_at)
+    except LookupError:         # the Pi or the person went away since we looked
+        raise HTTPException(404, messages.not_found) from None
+    return code, expires_at
+
+
 @router.post('/api/devices/code')
 async def make_code(request: Request, user: Annotated[User, Depends(current_user)],
                     _json: Annotated[None, Depends(needs_json)]) -> dict[str, Any]:
@@ -120,16 +139,7 @@ async def make_code(request: Request, user: Annotated[User, Depends(current_user
     zone, device_id = body.get('time_zone'), body.get('device_id')
     if not isinstance(zone, str) or not (device_id is None or isinstance(device_id, str)):
         raise HTTPException(400, messages.bad_body)
-    if not _time_zone_ok(zone):
-        raise HTTPException(400, messages.bad_time_zone)
-    if device_id is not None:
-        await run_in_threadpool(_my_device, request, user, device_id)
-    code = new_code()
-    expires_at = parts.clock.now() + config.pairing.code_valid_min * 60
-    try:
-        await run_in_threadpool(parts.store.add_code, hash_secret(code), user.id, device_id, zone, expires_at)
-    except LookupError:         # the Pi or the person went away since we looked
-        raise HTTPException(404, messages.not_found) from None
+    code, expires_at = await make_link_code(request, user, zone, device_id)
     server_url = public_address(config)
     command = config.prompts['site']['setup_command'].format(server_url=shlex.quote(server_url), code=code)
     return {'code': code, 'expires_at': expires_at, 'server_url': server_url, 'command': command}

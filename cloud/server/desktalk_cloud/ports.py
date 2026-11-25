@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, Protocol, runtime_checkable
 
-from desktalk_cloud.domain import Admin, Device, GoogleUser, ObjectState, Report, StateChange, User
+from desktalk_cloud.domain import Admin, Device, FoundPi, GoogleUser, ObjectState, Report, StateChange, User
 
 
 class ReportFailed(Exception):
@@ -31,6 +31,17 @@ class ChatFailed(Exception):
 
 class GoogleFailed(Exception):
     """Google would not log the person in. The message is plain words and never holds a secret."""
+
+
+class PiOfferFailed(Exception):
+    """A Pi on the home network did not take a link offer. `kind` is 'already_linked' (it said it is linked, or busy
+    linking), 'refused' (it said no) or 'no_answer' (it couldn't be reached, gave up, or answered like no Pi).
+    `reason` is the Pi's own words, only when they are short clean text; it never holds the code."""
+
+    def __init__(self, kind: str, reason: str | None = None):
+        super().__init__(kind)
+        self.kind = kind
+        self.reason = reason
 
 
 @runtime_checkable
@@ -213,4 +224,19 @@ class ChatForwarder(Protocol):
     async def complete(self, messages: Sequence[Mapping[str, Any]], max_tokens: int | None,
                        temperature: float | None) -> dict[str, Any]:
         """The AI company's reply in the OpenAI chat completion shape. Raises ChatFailed."""
+        ...
+
+
+@runtime_checkable
+class PiFinder(Protocol):
+    """Looks for Desk Talk Pis on the home network and offers one a link. Contract:
+    tests/contracts/test_cloud_pi_finder_contract.py."""
+
+    async def find(self, addresses: Sequence[str]) -> list[FoundPi]:
+        """The Pis among these addresses that answer "who are you" as a Desk Talk Pi, sorted by address. Anything
+        else that answers (or doesn't) is left out."""
+        ...
+
+    async def offer(self, address: str, server_url: str, code: str) -> None:
+        """Ask the Pi at `address` to link itself to `server_url` with this one-time code. Raises PiOfferFailed."""
         ...

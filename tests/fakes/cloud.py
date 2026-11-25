@@ -1,18 +1,32 @@
 """Fakes and helpers for the cloud server's tests: a config built from the real cloud/settings.yaml, fake Google,
-fake report writer and fake chat forwarder, and a quick way to link a Pi without going through the routes."""
+fake report writer, fake chat forwarder and fake Pi finder, and a quick way to link a Pi without going through the
+routes."""
 
 from __future__ import annotations
 
+import asyncio
+import inspect
+import ipaddress
 import threading
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from desktalk_cloud.app import CloudParts
 from desktalk_cloud.config import CloudConfig, load_config
-from desktalk_cloud.domain import Device, GoogleUser, User
-from desktalk_cloud.ports import ChatFailed, ChatForwarder, Clock, GoogleFailed, GoogleLogin, ReportFailed, Store
+from desktalk_cloud.domain import Device, FoundPi, GoogleUser, User
+from desktalk_cloud.ports import (
+    ChatFailed,
+    ChatForwarder,
+    Clock,
+    GoogleFailed,
+    GoogleLogin,
+    PiFinder,
+    PiOfferFailed,
+    ReportFailed,
+    Store,
+)
 from desktalk_cloud.rate_limit import RateLimiter
 from desktalk_cloud.store_memory import MemoryStore
 from desktalk_cloud.tokens import hash_secret, new_code, new_token
@@ -80,16 +94,68 @@ class FakeChatForwarder:
                              'message': {'role': 'assistant', 'content': self.reply}}]}
 
 
+OfferHook = Callable[[str, str, str], Awaitable[None] | None]
+
+
+class FakePiFinder:
+    """A home network where the Pis in `pis` answer. An offer to an address that isn't one of them gets no answer, and
+    one to a Pi that says it is linked gets 'already_linked'. `offer_fails` fails every other offer; `refusals` fails
+    the offers to one address (refusals['192.168.86.41'] = PiOfferFailed('refused', 'Wrong code')).
+
+    `on_offer(address, server_url, code)` runs for an offer that goes through (it may be async): an end-to-end test
+    uses it to stand in for the Pi and claim the code (POST /v1/devices/claim), as a real Pi would.
+    `hold`, when set, is an asyncio.Event a search waits for before it answers. It remembers what it was asked:
+    `searched` (each search's addresses) and `offers` ((address, server_url, code) of each offer)."""
+
+    def __init__(self, pis: Iterable[FoundPi] = (), offer_fails: PiOfferFailed | None = None, *,
+                 name_max_chars: int | None = None, on_offer: OfferHook | None = None) -> None:
+        self.pis = list(pis)
+        self.offer_fails = offer_fails
+        self.refusals: dict[str, PiOfferFailed] = {}
+        self.name_max_chars = name_max_chars
+        self.on_offer = on_offer
+        self.hold: asyncio.Event | None = None
+        self.searched: list[list[str]] = []
+        self.offers: list[tuple[str, str, str]] = []
+
+    async def find(self, addresses: Sequence[str]) -> list[FoundPi]:
+        self.searched.append(list(addresses))
+        if self.hold is not None:
+            await self.hold.wait()
+        wanted = set(addresses)
+        found = [FoundPi(pi.address, pi.name[:self.name_max_chars] if self.name_max_chars else pi.name, pi.linked)
+                 for pi in self.pis if pi.address in wanted]
+        return sorted(found, key=lambda pi: ipaddress.ip_address(pi.address))
+
+    async def offer(self, address: str, server_url: str, code: str) -> None:
+        self.offers.append((address, server_url, code))
+        pi = next((pi for pi in self.pis if pi.address == address), None)
+        if pi is None:
+            raise PiOfferFailed('no_answer')
+        if pi.linked:
+            raise PiOfferFailed('already_linked')
+        failure = self.refusals.get(address) or self.offer_fails
+        if failure is not None:
+            raise failure
+        if self.on_offer is not None:
+            done = self.on_offer(address, server_url, code)
+            if inspect.isawaitable(done):
+                await done
+
+
 def make_parts(config: CloudConfig | None = None, *, store: Store | None = None, clock: Clock | None = None,
-               google: GoogleLogin | None = None, chat_forwarder: ChatForwarder | None = None) -> CloudParts:
-    """Everything the server needs, built from fakes and the in-memory store."""
+               google: GoogleLogin | None = None, chat_forwarder: ChatForwarder | None = None,
+               pi_finder: PiFinder | None = None) -> CloudParts:
+    """Everything the server needs, built from fakes and the in-memory store. The Pi finder finds no Pi unless one
+    is given."""
     config = config or cloud_config()
     clock = clock or FakeClock()
     return CloudParts(
         config=config, store=store or MemoryStore(), clock=clock, google=google, chat_forwarder=chat_forwarder,
+        pi_finder=pi_finder or FakePiFinder(),
         claim_limiter=RateLimiter(config.limits.claim_tries, config.limits.claim_window_sec, clock),
         chat_limiter=RateLimiter(config.chat.limit_requests, config.chat.limit_window_sec, clock),
-        chat_slots=threading.BoundedSemaphore(config.chat.max_at_once))
+        chat_slots=threading.BoundedSemaphore(config.chat.max_at_once), pi_search=asyncio.Lock())
 
 
 @dataclass(frozen=True)
