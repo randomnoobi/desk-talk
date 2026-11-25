@@ -2,7 +2,8 @@
   "content_type": "application/json",
   "headers": {},
   "json": {
-    "error": "str"
+    "error": "str",
+    "kind": "str"
   },
   "request": "POST /api/cloud/link (main server, busy desk)"
 }

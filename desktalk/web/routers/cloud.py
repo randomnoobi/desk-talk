@@ -8,18 +8,23 @@ and linking it with one click:
     GET  /api/cloud/hello   {desk_talk: "pi", name, linked}: who this is, for the cloud server looking for Pis.
                             Nothing else (no events, no server address, no device id).
     POST /api/cloud/link    {server, code}: link to the cloud server at `server` with its one-time code. 200
-                            {linked: true}; 400 a bad offer or the server didn't take the code; 403 `server` isn't
-                            the home network computer asking; 409 linked already, another offer going, or saving
-                            is off; 502 the server couldn't be reached. Who asks is the connection's own address,
-                            never a header (X-Forwarded-For) anyone could write.
+                            {linked: true}, or {error, kind}: `error` the plain words, `kind` why, for the cloud
+                            server to pick its own words. 400 bad_request (not a web address and a code, or not
+                            JSON at all) or refused (the server didn't take the code); 403 not_caller (`server`
+                            isn't the home network computer asking); 409 already_linked, busy (another offer
+                            going) or not_saved (saving is off); 502 unavailable (the server couldn't be
+                            reached). Who asks is the connection's own address, never a header (X-Forwarded-For)
+                            anyone could write (desktalk/web/serve.py turns uvicorn's proxy headers off).
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, StrictStr
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, StrictStr, ValidationError
+from starlette.concurrency import run_in_threadpool
 
 from desktalk.domain import CloudLinkRefused
 from desktalk.web.deps import App
@@ -49,11 +54,20 @@ def cloud_hello(app: App) -> dict[str, Any]:
     return {'desk_talk': 'pi', 'name': hello.name, 'linked': hello.linked}
 
 
-@router.post('/api/cloud/link')
-def cloud_link(offer: LinkOffer, request: Request, app: App) -> dict[str, Any]:
-    caller = request.client.host if request.client is not None else ''
+def _refused(exc: CloudLinkRefused) -> JSONResponse:
+    return JSONResponse({'error': exc.text, 'kind': exc.kind}, status_code=REFUSAL_STATUS.get(exc.kind, 400))
+
+
+@router.post('/api/cloud/link', response_model=None)
+async def cloud_link(request: Request, app: App) -> dict[str, Any] | JSONResponse:
+    # The body is read here, not by FastAPI, so a body that isn't an offer (or isn't JSON) says bad_request too.
     try:
-        app.cloud_linker.link(offer.server, offer.code, caller)
+        offer = LinkOffer.model_validate_json(await request.body())
+    except ValidationError:
+        return _refused(CloudLinkRefused('bad_request', app.config.prompts.cloud.offer_bad))
+    caller = request.client.host if request.client is not None else ''
+    try:      # claiming waits on the cloud server: not on the event loop
+        await run_in_threadpool(app.cloud_linker.link, offer.server, offer.code, caller)
     except CloudLinkRefused as exc:
-        raise HTTPException(REFUSAL_STATUS.get(exc.kind, 400), exc.text) from None
+        return _refused(exc)
     return {'linked': True}

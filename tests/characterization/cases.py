@@ -294,11 +294,13 @@ CASES = [
     # the offers are refused first (a bad body, or a server that isn't the device asking).
     Case('cloud-hello', 'GET', '/api/cloud/hello', 200, from_ip=LAN_DEVICE,
          values={'desk_talk': 'pi', 'linked': False}),
-    Case('cloud-link-bad-body', 'POST', '/api/cloud/link', 400, from_ip=LAN_DEVICE, json={'server': 5}),
+    # A refusal says why in `kind` too, which the cloud server reads to pick its own words (docs/API.md).
+    Case('cloud-link-bad-body', 'POST', '/api/cloud/link', 400, from_ip=LAN_DEVICE, json={'server': 5},
+         values={'kind': 'bad_request'}),
     Case('cloud-link-bad-address', 'POST', '/api/cloud/link', 400, from_ip=LAN_DEVICE,
-         json={'server': f'ftp://{LAN_DEVICE}', 'code': 'ABCD-EFGH'}),
+         json={'server': f'ftp://{LAN_DEVICE}', 'code': 'ABCD-EFGH'}, values={'kind': 'bad_request'}),
     Case('cloud-link-not-the-caller', 'POST', '/api/cloud/link', 403, from_ip=LAN_DEVICE,
-         json={'server': 'http://192.168.1.9:8080', 'code': 'ABCD-EFGH'}),
+         json={'server': 'http://192.168.1.9:8080', 'code': 'ABCD-EFGH'}, values={'kind': 'not_caller'}),
 
     # ── The developer page (dev_ui/ at /dev/, and /api/dev/...) ──
     Case('dev-page-not-built', 'GET', '/dev/', 200, desk='fresh', reply=FILE, starts_with=HTML_START),

@@ -5,14 +5,16 @@ from __future__ import annotations
 
 import logging
 
+import httpx
 import pytest
 
 from desktalk.domain import CloudHello, CloudLinkRefused, CloudNotLinked, CloudUnavailable, Saving
 from desktalk.ports import CloudSending
+from desktalk.web.app import create_app
 from desktalk_shared.cloud_api import ClaimReply
 from tests.fakes import RecordingCloudLink, a_server_that_is_off
 from tests.integration.app_kit import CUP_FAR, LAPTOP, DeskRig
-from tests.integration.web_kit import web_client
+from tests.integration.web_kit import links_for, running, web_client
 
 TOKEN = 'super-secret-token-xyz'
 AI_LINE = 'Hey! All good over here on the desk.'
@@ -251,7 +253,7 @@ def test_link_route_maps_each_refusal_to_its_status(tmp_path, kind, status):
     rig = make_rig(tmp_path, None)
     rig.app.cloud_linker = Refusing(kind)
     reply = web_client(rig.app, from_ip=HOME).post('/api/cloud/link', json=OFFER)
-    assert reply.status_code == status and reply.json() == {'error': f'no ({kind})'}
+    assert reply.status_code == status and reply.json() == {'error': f'no ({kind})', 'kind': kind}
 
 
 @pytest.mark.parametrize('body', [{}, {'server': OFFER['server']}, {'code': CODE}, {'server': 5, 'code': CODE},
@@ -260,8 +262,17 @@ def test_link_route_refuses_a_body_of_the_wrong_shape(tmp_path, body):
     claims = Claims()
     rig = make_rig(tmp_path, None, cloud_claim=claims)
     reply = web_client(rig.app, from_ip=HOME).post('/api/cloud/link', json=body)
-    assert reply.status_code == 400 and 'error' in reply.json() and CODE not in reply.text
-    assert claims.calls == []
+    assert reply.status_code == 400 and reply.json()['kind'] == 'bad_request' and reply.json()['error']
+    assert CODE not in reply.text and claims.calls == []
+
+
+@pytest.mark.parametrize('raw', [b'', b'not json', b'{"server": "http://x", "code": ', b'\xff\xfe'])
+def test_link_route_says_bad_request_for_a_body_that_is_not_json(tmp_path, raw):
+    claims = Claims()
+    rig = make_rig(tmp_path, None, cloud_claim=claims)
+    reply = web_client(rig.app, from_ip=HOME).post('/api/cloud/link', content=raw,
+                                                   headers={'Content-Type': 'application/json'})
+    assert reply.status_code == 400 and reply.json()['kind'] == 'bad_request' and claims.calls == []
 
 
 def test_link_route_uses_the_socket_peer_not_forwarded_for(tmp_path):
@@ -270,7 +281,19 @@ def test_link_route_uses_the_socket_peer_not_forwarded_for(tmp_path):
     client = web_client(rig.app, from_ip='192.168.86.99')
     reply = client.post('/api/cloud/link', json=OFFER, headers={'X-Forwarded-For': HOME, 'X-Real-IP': HOME})
     assert reply.status_code == 403 and claims.calls == []
-    assert reply.json() == {'error': rig.config.prompts.cloud.offer_not_caller}
+    assert reply.json() == {'error': rig.config.prompts.cloud.offer_not_caller, 'kind': 'not_caller'}
+
+
+@pytest.mark.parametrize('header', ['X-Forwarded-For', 'Forwarded'])
+def test_a_real_server_ignores_forwarded_headers_even_from_this_computer(tmp_path, header):
+    """uvicorn would believe X-Forwarded-For from 127.0.0.1, so any program on the Pi could pretend to be the
+    computer asking. The real server goes by the connection's own address."""
+    claims = Claims()
+    rig = make_rig(tmp_path, None, cloud_claim=claims)
+    value = HOME if header == 'X-Forwarded-For' else f'for={HOME}'
+    with running(create_app(rig.app, links_for(rig.app))) as url:
+        reply = httpx.post(f'{url}/api/cloud/link', json=OFFER, headers={header: value, 'X-Forwarded-Proto': 'https'})
+    assert reply.status_code == 403 and reply.json()['kind'] == 'not_caller' and claims.calls == []
 
 
 def test_link_route_takes_a_post_with_no_origin(tmp_path):
@@ -289,7 +312,7 @@ def test_link_route_refuses_while_linked(tmp_path):
     rig = make_rig(tmp_path, None, cloud_claim=claims)
     link_it(rig)
     reply = web_client(rig.app, from_ip=HOME).post('/api/cloud/link', json=OFFER)
-    assert reply.status_code == 409 and claims.calls == []
+    assert reply.status_code == 409 and reply.json()['kind'] == 'already_linked' and claims.calls == []
     assert rig.app.store.load(rig.config.cloud.link_key)['server'] == 'http://cloud.test:8000'
 
 
@@ -298,7 +321,7 @@ def test_link_route_with_saving_off_says_no(tmp_path):
     rig = make_rig(tmp_path, None, cloud_claim=claims, saving=Saving.OFF)
     reply = web_client(rig.app, from_ip=HOME).post('/api/cloud/link', json=OFFER)
     assert reply.status_code == 409 and claims.calls == []
-    assert reply.json() == {'error': rig.config.prompts.cloud.offer_not_saved}
+    assert reply.json() == {'error': rig.config.prompts.cloud.offer_not_saved, 'kind': 'not_saved'}
 
 
 @pytest.mark.parametrize('damage', [{'place_ts': 1e300}, {'recent_ids': 'oops'}, {'server': 'ftp://x'}])

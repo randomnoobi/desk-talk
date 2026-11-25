@@ -10,6 +10,11 @@ running get web.stop_wait_sec to finish.
 
 uvicorn logs through the same handlers as the rest of the app (settings → logging), and only failed
 requests are logged (desktalk/web/middleware.py).
+
+Nothing stands in front of these servers (no proxy: on the Pi, Docker hands the port straight to the `app`
+container), so uvicorn's proxy headers are off: X-Forwarded-For and X-Forwarded-Proto are never believed, not even
+from this computer, and who asks is always the connection's own address (the cloud link offers and the developer
+page's "this computer only" both go by it).
 """
 
 from __future__ import annotations
@@ -36,7 +41,7 @@ def server_config(app: FastAPI, *, host: str, port: int, cert: Cert | None = Non
     desktalk: DeskTalk = app.state.desktalk
     https = {'ssl_certfile': str(cert.cert_file), 'ssl_keyfile': str(cert.key_file)} if cert else {}
     return uvicorn.Config(app, host=host, port=port, lifespan=lifespan, log_config=None, access_log=False,
-                          timeout_graceful_shutdown=desktalk.config.web.stop_wait_sec, **https)
+                          proxy_headers=False, timeout_graceful_shutdown=desktalk.config.web.stop_wait_sec, **https)
 
 
 class Server(uvicorn.Server):
