@@ -66,7 +66,8 @@ def run(argv: Sequence[str], *, config: Any, store: Any, clock: Any, claim: Call
         say(words.link_no_answer.format(server=server, error=str(exc)))
         return 1
 
-    store.save(config.cloud.link_key, link_record(server, reply.device_id, reply.token, old, clock.now()))
+    store.save(config.cloud.link_key, link_record(server, reply.device_id, reply.token, old, clock.now(),
+                                                       clock.local_day))
     say(words.link_saved.format(server=server, device_id=reply.device_id))
     return 0
 

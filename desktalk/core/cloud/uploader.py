@@ -18,7 +18,8 @@ Each round it:
      leave an old "last seen" on its website.
 Everything in one send, the goals and the day's numbers too, is at most cloud.batch_size events (the server refuses
 more). The link is saved as {server, device_id, token, place_ts, start_ts, recent_ids, stopped, last_sent_ts,
-goals_sent, totals_sent}; a link that is damaged (a bad address or token, odd numbers) counts as not linked.
+goals_sent, totals_sent}; a link that is damaged (a bad address or token, odd numbers) counts as not linked
+(desktalk/domain/cloud_link.py: the same check the Pi's hello and link offers use).
 Nothing before `start_ts` (the moment of linking) is ever sent, so old history does not go by surprise.
 Each round looks `overlap_sec` back from the place, so an event written a little late still goes; `recent_ids` stops
 those looked-at-again events from going twice.
@@ -35,17 +36,16 @@ from __future__ import annotations
 import json
 import logging
 import math
-import re
 import threading
 from collections.abc import Callable, Mapping
 from datetime import date, timedelta
 from typing import Any
-from urllib.parse import urlsplit
 
 from desktalk.config import CloudSettings
 from desktalk.config.prompts import CloudWords
 from desktalk.core.habits.habit_days import day_key
 from desktalk.domain import CloudNotLinked, CloudRefused, CloudUnavailable, is_day, plain_error
+from desktalk.domain.cloud_link import is_usable_link, is_well_formed_link
 from desktalk.ports import Clock, CloudLink, EventStore, KeyValueStore, Preferences
 from desktalk_shared.backoff import Backoff, Chance
 from desktalk_shared.cloud_api import IngestReply, daily_totals_event, goals_event, to_cloud_event
@@ -61,7 +61,6 @@ TOTALS = ('desk_sec', 'water_ml', 'sips', 'breaks', 'longest_sit_sec', 'phone_fr
           'sunlight_minutes', 'nudges_sent')
 HOURLY = 'hourly_activity'
 PRETEND = (('sips', 'demo_sips'), ('water_ml', 'demo_water_ml'))
-USABLE_TOKEN = re.compile(r'[\x21-\x7e]+')     # printable ASCII, no space or line break: fit for a header
 
 LinkFactory = Callable[[str, str], CloudLink]       # (the server's address, the token) → the line to that server
 
@@ -89,29 +88,6 @@ def _when(entry: Any, signature: str | None = None) -> float | None:
     return float(entry['ts']) if signature is None or entry.get('sig') == signature else None
 
 
-def _well_formed(saved: Any) -> bool:
-    """A saved link this sender can work with: a web address, a token fit for a header, numbers that are real and a
-    list of ids. (A link made by scripts/link_cloud.py always is; this is for one that was damaged or edited. The
-    clock checks the times too: see CloudUploader._usable.)"""
-    if not isinstance(saved, dict):
-        return False
-    server, token = saved.get('server'), saved.get('token')
-    if not isinstance(server, str) or not isinstance(token, str) or not USABLE_TOKEN.fullmatch(token):
-        return False
-    try:
-        parts = urlsplit(server)
-        parts.port                                      # noqa: B018  (a bad port raises ValueError here)
-    except ValueError:
-        return False
-    if parts.scheme not in ('http', 'https') or not parts.hostname or server != server.strip():
-        return False
-    if any(key in saved and not _is_finite(saved[key]) for key in ('place_ts', 'start_ts', 'last_sent_ts')):
-        return False
-    ids = saved.get('recent_ids', [])
-    stopped = saved.get('stopped', False)
-    return isinstance(ids, list) and all(isinstance(i, str) for i in ids) and isinstance(stopped, bool)
-
-
 class _Pending:
     """One event the sender made itself (the goals, a day's numbers), and what to remember once it is sent."""
 
@@ -124,7 +100,7 @@ def linked_server(store: KeyValueStore, link_key: str) -> tuple[str, str] | None
     """(the server's address, the token) of the saved link, or None when there's no link fit to use. Read fresh each
     time, so a link made while the app runs counts at once."""
     saved = store.load(link_key)
-    return (saved['server'], saved['token']) if _well_formed(saved) else None
+    return (saved['server'], saved['token']) if is_well_formed_link(saved) else None
 
 
 class CloudUploader:
@@ -191,10 +167,6 @@ class CloudUploader:
             return None
         return day if is_day(day) else None
 
-    def _usable(self, saved: Any) -> bool:
-        return _well_formed(saved) and all(self._day_of(saved[key]) is not None
-                                           for key in ('place_ts', 'start_ts', 'last_sent_ts') if key in saved)
-
     def _linked(self, say: bool = False) -> dict[str, Any] | None:
         """The saved link, or None when this computer isn't linked: nothing saved, or a link that can't be used (said
         once in the log, with `say`)."""
@@ -202,7 +174,7 @@ class CloudUploader:
         if saved is None:
             self._said_damaged = False
             return None
-        if not self._usable(saved):
+        if not is_usable_link(saved, self._clock.local_day):
             if say and not self._said_damaged:
                 log.warning(self._words.log_bad_link)
             self._said_damaged = self._said_damaged or say

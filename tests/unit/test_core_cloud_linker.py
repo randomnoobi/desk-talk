@@ -79,10 +79,23 @@ def test_hello_says_linked_with_an_active_link_saved():
     assert linker.hello().linked is True
 
 
-@pytest.mark.parametrize('changes', [{'stopped': True}, {'token': ''}, {'device_id': None}])
+DAMAGED = [{'token': ''}, {'device_id': None}, {'place_ts': 1e300}, {'recent_ids': 'oops'}, {'server': 'ftp://x'},
+           {'token': 'abc def'}, {'start_ts': float('nan')}, {'stopped': 'maybe'}]
+
+
+@pytest.mark.parametrize('changes', [{'stopped': True}, *DAMAGED])
 def test_a_stopped_or_damaged_link_is_not_linked(changes):
     linker, _, _, _ = make(InMemoryKeyValueStore({KEY: active_link(**changes)}))
     assert linker.hello().linked is False
+
+
+@pytest.mark.parametrize('changes', DAMAGED)
+def test_a_damaged_link_the_sender_cannot_use_does_not_stop_a_new_link(changes):
+    """The sender counts a damaged link as not linked, so the Pi says so too and takes a new link."""
+    linker, store, claims, _ = make(InMemoryKeyValueStore({KEY: active_link(**changes)}))
+    linker.link(SERVER, CODE, caller=CALLER)
+    assert len(claims.calls) == 1 and store.load(KEY)['token'] == TOKEN
+    assert linker.hello().linked is True
 
 
 def test_hello_uses_the_host_name_when_there_is_no_public_address():

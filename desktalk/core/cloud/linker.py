@@ -90,7 +90,8 @@ class CloudLinker:
         return name[:self._s.name_max_chars]
 
     def hello(self) -> CloudHello:
-        return CloudHello(name=self._name(), linked=is_active_link(self._store.load(self._s.link_key)))
+        return CloudHello(name=self._name(), linked=is_active_link(self._store.load(self._s.link_key),
+                                                                    self._clock.local_day))
 
     def _server(self, server: str, code: str, caller: str) -> str:
         """The server's address without a trailing slash, once the offer passes every check before the lock."""
@@ -122,7 +123,7 @@ class CloudLinker:
     def _link(self, server: str, code: str) -> None:
         words, key = self._words, self._s.link_key
         old = self._store.load(key)      # read first: the code works once, so nothing may fail after it is used
-        if is_active_link(old):
+        if is_active_link(old, self._clock.local_day):
             raise CloudLinkRefused('already_linked', words.offer_already_linked)
         try:
             reply = self._claim(server, code, self._name(), timeout_sec=self._s.timeout_sec,
@@ -133,6 +134,7 @@ class CloudLinker:
                                    else words.link_code_refused) from None
         except CloudUnavailable as exc:
             raise CloudLinkRefused('unavailable', words.link_no_answer.format(server=server, error=str(exc))) from None
-        self._store.save(key, link_record(server, reply.device_id, reply.token, old, self._clock.now()))
+        self._store.save(key, link_record(server, reply.device_id, reply.token, old, self._clock.now(),
+                                              self._clock.local_day))
         log.info(words.offer_linked_log.format(server=server))
         self._desktop.show(words.offer_linked_title, words.offer_linked_said)

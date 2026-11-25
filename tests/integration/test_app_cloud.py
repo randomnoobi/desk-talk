@@ -299,3 +299,16 @@ def test_link_route_with_saving_off_says_no(tmp_path):
     reply = web_client(rig.app, from_ip=HOME).post('/api/cloud/link', json=OFFER)
     assert reply.status_code == 409 and claims.calls == []
     assert reply.json() == {'error': rig.config.prompts.cloud.offer_not_saved}
+
+
+@pytest.mark.parametrize('damage', [{'place_ts': 1e300}, {'recent_ids': 'oops'}, {'server': 'ftp://x'}])
+def test_a_damaged_link_is_not_linked_to_the_sender_hello_or_a_link_offer(tmp_path, damage):
+    """One check of the saved link for the whole app: the sender, the hello and a link offer all agree."""
+    claims = Claims()
+    rig = make_rig(tmp_path, None, cloud_claim=claims)
+    link_it(rig, **damage)
+    client = web_client(rig.app, from_ip=HOME)
+    assert rig.app.cloud.status()['linked'] is False
+    assert client.get('/api/cloud/hello').json()['linked'] is False
+    assert client.post('/api/cloud/link', json=OFFER).status_code == 200 and len(claims.calls) == 1
+    assert rig.app.cloud.status()['linked'] is True and client.get('/api/cloud/hello').json()['linked'] is True
