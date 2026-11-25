@@ -200,6 +200,7 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'cloud.link_saved': ('server', 'device_id'),
     'cloud.link_bad_address': ('server',),
     'cloud.link_no_answer': ('server', 'error'),
+    'cloud.offer_linked_log': ('server',),
     'lens.pi_hot': ('temp',),
     'lens.pi_clock': ('seconds', 'way'),
     'lens.pi_very_hot': ('temp',),
@@ -755,7 +756,8 @@ class DetectionWords(_Section):
 
 class CloudWords(_Section):
     """The cloud sender's words: the status line on the Settings page, its log lines, and what
-    scripts/link_cloud.py says (desktalk/core/cloud/, scripts/link_cloud.py)."""
+    scripts/link_cloud.py says, and why the Pi says no to a link the cloud website offers
+    (desktalk/core/cloud/, scripts/link_cloud.py)."""
 
     status_off: str
     status_on: str
@@ -771,6 +773,14 @@ class CloudWords(_Section):
     link_bad_address: str
     link_code_refused: str
     link_no_answer: str
+    offer_bad: str
+    offer_not_caller: str
+    offer_already_linked: str
+    offer_busy: str
+    offer_not_saved: str
+    offer_linked_title: str
+    offer_linked_said: str
+    offer_linked_log: str
 
 
 class DemoWords(_Section):

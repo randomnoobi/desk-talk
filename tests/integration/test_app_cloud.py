@@ -7,8 +7,9 @@ import logging
 
 import pytest
 
-from desktalk.domain import CloudNotLinked, CloudUnavailable
+from desktalk.domain import CloudHello, CloudLinkRefused, CloudNotLinked, CloudUnavailable, Saving
 from desktalk.ports import CloudSending
+from desktalk_shared.cloud_api import ClaimReply
 from tests.fakes import RecordingCloudLink, a_server_that_is_off
 from tests.integration.app_kit import CUP_FAR, LAPTOP, DeskRig
 from tests.integration.web_kit import web_client
@@ -182,3 +183,119 @@ def test_the_developer_pages_storage_tab_never_shows_the_link_file(tmp_path):
     client = web_client(rig.app)
     assert TOKEN not in client.get('/api/dev/files').text
     assert TOKEN not in client.get('/api/dev/files/preview', params={'path': name}).text
+
+
+# ── the cloud website finding this Pi and linking it ──
+CODE = 'ABCD-EFGH'
+HOME = '192.168.86.30'              # the computer running the cloud server, on the home network
+OFFER = {'server': f'http://{HOME}:8080', 'code': CODE}
+
+
+class Claims:
+    """Stands in for the cloud server's claim route."""
+
+    def __init__(self):
+        self.calls: list[tuple[str, str, str]] = []
+
+    def __call__(self, server: str, code: str, name: str, *, timeout_sec: float, error_text_chars: int) -> ClaimReply:
+        self.calls.append((server, code, name))
+        return ClaimReply(device_id='dev-1', token=TOKEN)
+
+
+class Refusing:
+    """A linker that says no with one `kind`."""
+
+    def __init__(self, kind: str):
+        self.kind = kind
+
+    def hello(self) -> CloudHello:
+        return CloudHello(name='desktalk', linked=False)
+
+    def link(self, server: str, code: str, caller: str) -> None:
+        raise CloudLinkRefused(self.kind, f'no ({self.kind})')
+
+
+def test_hello_route(tmp_path):
+    rig = make_rig(tmp_path, None)
+    reply = web_client(rig.app, from_ip=HOME).get('/api/cloud/hello')
+    assert reply.status_code == 200
+    assert reply.json() == {'desk_talk': 'pi', 'name': rig.app.cloud_linker.hello().name, 'linked': False}
+    link_it(rig)
+    assert web_client(rig.app, from_ip=HOME).get('/api/cloud/hello').json()['linked'] is True
+
+
+def test_hello_never_shows_the_link(tmp_path):
+    rig = make_rig(tmp_path, None)
+    link_it(rig)
+    reply = web_client(rig.app, from_ip=HOME).get('/api/cloud/hello')
+    assert set(reply.json()) == {'desk_talk', 'name', 'linked'}
+    assert TOKEN not in reply.text and 'cloud.test' not in reply.text and 'dev-1' not in reply.text
+
+
+def test_link_route_links_and_speaks(tmp_path):
+    claims = Claims()
+    rig = make_rig(tmp_path, None, cloud_claim=claims)
+    reply = web_client(rig.app, from_ip=HOME).post('/api/cloud/link', json=OFFER)
+    assert reply.status_code == 200 and reply.json() == {'linked': True}
+    assert [call[:2] for call in claims.calls] == [(OFFER['server'], CODE)]
+    assert rig.app.store.load(rig.config.cloud.link_key)['token'] == TOKEN
+    words = rig.config.prompts.cloud
+    assert (words.offer_linked_title, words.offer_linked_said) in rig.desktop.shown
+    assert rig.app.cloud.status()['linked'] is True
+
+
+@pytest.mark.parametrize('kind, status', [('bad_request', 400), ('refused', 400), ('not_caller', 403),
+                                          ('already_linked', 409), ('busy', 409), ('not_saved', 409),
+                                          ('unavailable', 502)])
+def test_link_route_maps_each_refusal_to_its_status(tmp_path, kind, status):
+    rig = make_rig(tmp_path, None)
+    rig.app.cloud_linker = Refusing(kind)
+    reply = web_client(rig.app, from_ip=HOME).post('/api/cloud/link', json=OFFER)
+    assert reply.status_code == status and reply.json() == {'error': f'no ({kind})'}
+
+
+@pytest.mark.parametrize('body', [{}, {'server': OFFER['server']}, {'code': CODE}, {'server': 5, 'code': CODE},
+                                  {'server': OFFER['server'], 'code': 1234}, ['a list']])
+def test_link_route_refuses_a_body_of_the_wrong_shape(tmp_path, body):
+    claims = Claims()
+    rig = make_rig(tmp_path, None, cloud_claim=claims)
+    reply = web_client(rig.app, from_ip=HOME).post('/api/cloud/link', json=body)
+    assert reply.status_code == 400 and 'error' in reply.json() and CODE not in reply.text
+    assert claims.calls == []
+
+
+def test_link_route_uses_the_socket_peer_not_forwarded_for(tmp_path):
+    claims = Claims()
+    rig = make_rig(tmp_path, None, cloud_claim=claims)
+    client = web_client(rig.app, from_ip='192.168.86.99')
+    reply = client.post('/api/cloud/link', json=OFFER, headers={'X-Forwarded-For': HOME, 'X-Real-IP': HOME})
+    assert reply.status_code == 403 and claims.calls == []
+    assert reply.json() == {'error': rig.config.prompts.cloud.offer_not_caller}
+
+
+def test_link_route_takes_a_post_with_no_origin(tmp_path):
+    """The cloud server is a program, not a web page: it sends no Origin, so OwnPagesOnly lets it through. And it
+    calls the Pi by its number, which KnownNamesOnly lets through."""
+    claims = Claims()
+    rig = make_rig(tmp_path, None, cloud_claim=claims)
+    pi = f'http://192.168.86.225:{rig.config.web.port}'
+    reply = web_client(rig.app, from_ip=HOME).post(f'{pi}/api/cloud/link', json=OFFER)
+    assert 'origin' not in {name.lower() for name in reply.request.headers}
+    assert reply.status_code == 200 and len(claims.calls) == 1
+
+
+def test_link_route_refuses_while_linked(tmp_path):
+    claims = Claims()
+    rig = make_rig(tmp_path, None, cloud_claim=claims)
+    link_it(rig)
+    reply = web_client(rig.app, from_ip=HOME).post('/api/cloud/link', json=OFFER)
+    assert reply.status_code == 409 and claims.calls == []
+    assert rig.app.store.load(rig.config.cloud.link_key)['server'] == 'http://cloud.test:8000'
+
+
+def test_link_route_with_saving_off_says_no(tmp_path):
+    claims = Claims()
+    rig = make_rig(tmp_path, None, cloud_claim=claims, saving=Saving.OFF)
+    reply = web_client(rig.app, from_ip=HOME).post('/api/cloud/link', json=OFFER)
+    assert reply.status_code == 409 and claims.calls == []
+    assert reply.json() == {'error': rig.config.prompts.cloud.offer_not_saved}

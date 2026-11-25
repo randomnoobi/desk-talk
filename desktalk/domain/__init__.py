@@ -8,7 +8,9 @@ Plain data, no I/O: what the parts of Desk Talk pass to each other.
     ChatJoin, Todo         an object joining, leaving or refused by the chat; a to-do on your list
     LENS                   Lens's id: the camera's own character
     AIUnavailable ...      errors (and UnknownChat: a 1-on-1 chat with an agent that doesn't exist;
-                           CloudUnavailable and CloudNotLinked: the cloud server didn't answer, or doesn't know us)
+                           CloudUnavailable and CloudNotLinked: the cloud server didn't answer, or doesn't know us;
+                           CloudLinkRefused: the Pi said no to a link the cloud website offered)
+    CloudHello             what the Pi tells the cloud server looking for it: its name, whether it is linked
     Picture, Size, Box     a picture, how big it is, a box on it (Point, Gravity too)
     HealthMeasure          how one measure is doing (CheckLevel: ok, warning, serious, unknown), for the health checks
     Saving                 where Desk Talk saves: plain (the SD card), room (its own fixed space on it) or off
@@ -35,6 +37,7 @@ Plain data, no I/O: what the parts of Desk Talk pass to each other.
 
 from desktalk.domain.agents import HABITS, LENS, AgentProfile, ChatJoin
 from desktalk.domain.camera import Frame
+from desktalk.domain.cloud_link import CloudHello
 from desktalk.domain.days import is_day
 from desktalk.domain.desk import Danger, Photo, SafetyNow, SeenObject
 from desktalk.domain.desk_rules import DeskRules, Zone
@@ -57,6 +60,7 @@ from desktalk.domain.dev import (
 )
 from desktalk.domain.errors import (
     AIUnavailable,
+    CloudLinkRefused,
     CloudNotLinked,
     CloudRefused,
     CloudUnavailable,
@@ -111,7 +115,7 @@ from desktalk_shared.wire import DetectorState, PiHealth, UploadInfo
 
 __all__ = [
     'CHANGE_TYPES', 'EVENT_TYPES', 'HABITS', 'LENS', 'AgentJoined', 'AgentLeft', 'AgentProfile', 'AIUnavailable',
-    'CloudNotLinked', 'CloudRefused', 'CloudUnavailable',
+    'CloudHello', 'CloudLinkRefused', 'CloudNotLinked', 'CloudRefused', 'CloudUnavailable',
     'Alert', 'BBox', 'Box', 'CameraNotice', 'Compaction', 'Danger', 'DeskRules', 'DeskSnapshot', 'Detection',
     'DetectionEvent', 'DetectorState', 'DetectorUnavailable', 'Event', 'event_from_dict', 'Frame', 'Gravity',
     'HabitDone', 'HabitEvent', 'is_day', 'keep_inside', 'Light', 'new_event_id', 'Nudge', 'NudgeSent', 'ObjectSnapshot',

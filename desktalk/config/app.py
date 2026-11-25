@@ -582,6 +582,7 @@ class CloudSettings(_Section):
     totals_every_min: PositiveNumber
     goals_every_hours: PositiveNumber
     error_text_chars: PositiveInt
+    name_max_chars: PositiveInt          # most letters of the name the Pi gives the cloud website
 
 
 class SnapshotsSettings(_Section):

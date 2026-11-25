@@ -290,6 +290,15 @@ CASES = [
     # ── The cloud server (optional): the desks here are not linked to one ──
     Case('cloud-status', 'GET', '/api/cloud/status', 200,
          values={'linked': False, 'stopped': False, 'last_sent_ts': None, 'waiting': 0}),
+    # The cloud website looking for Pis on the home network, and offering one a link. Nothing here reaches a claim:
+    # the offers are refused first (a bad body, or a server that isn't the device asking).
+    Case('cloud-hello', 'GET', '/api/cloud/hello', 200, from_ip=LAN_DEVICE,
+         values={'desk_talk': 'pi', 'linked': False}),
+    Case('cloud-link-bad-body', 'POST', '/api/cloud/link', 400, from_ip=LAN_DEVICE, json={'server': 5}),
+    Case('cloud-link-bad-address', 'POST', '/api/cloud/link', 400, from_ip=LAN_DEVICE,
+         json={'server': f'ftp://{LAN_DEVICE}', 'code': 'ABCD-EFGH'}),
+    Case('cloud-link-not-the-caller', 'POST', '/api/cloud/link', 403, from_ip=LAN_DEVICE,
+         json={'server': 'http://192.168.1.9:8080', 'code': 'ABCD-EFGH'}),
 
     # ── The developer page (dev_ui/ at /dev/, and /api/dev/...) ──
     Case('dev-page-not-built', 'GET', '/dev/', 200, desk='fresh', reply=FILE, starts_with=HTML_START),

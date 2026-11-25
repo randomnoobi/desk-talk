@@ -1,0 +1,10 @@
+{
+  "content_type": "application/json",
+  "headers": {},
+  "json": {
+    "desk_talk": "str",
+    "linked": "bool",
+    "name": "str"
+  },
+  "request": "GET /api/cloud/hello (main server, busy desk)"
+}

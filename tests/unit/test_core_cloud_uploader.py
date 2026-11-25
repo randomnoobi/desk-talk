@@ -38,7 +38,7 @@ START = 1_760_000_000.0                      # 9 October 2025, 08:53 UTC
 DAY_SEC, HOUR, MIN = 86_400, 3_600, 60
 SETTINGS = CloudSettings(link_key='cloud', send_every_sec=30, idle_check_every_sec=60, idle_beat_min=15, batch_size=500,
                          overlap_sec=120, timeout_sec=10, retry_start_sec=30, retry_max_sec=240, retry_jitter=0,
-                         totals_every_min=15, goals_every_hours=24, error_text_chars=200)
+                         totals_every_min=15, goals_every_hours=24, error_text_chars=200, name_max_chars=60)
 SERVER, TOKEN = 'http://cloud.test:8000', 'secret-token-abc'
 GOALS = {'water_ml': 2400, 'phone_free_min': 120}
 
