@@ -4,7 +4,7 @@ Every web address (route) the Desk Talk servers answer, grouped by area: what it
 who is allowed to. The code is the source of truth; this page is a map of it. How the parts fit together
 is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-**93 routes in all: 60 on the main server (23 of them for the developer page), 9 on the phone camera's server, 3 on the detector service, 21 on the cloud server.**
+**97 routes in all: 62 on the main server (23 of them for the developer page), 9 on the phone camera's server, 3 on the detector service, 23 on the cloud server.**
 
 ## Four servers
 
@@ -181,11 +181,13 @@ The camera container (`raspberry_pi/camera/`) is the only caller. Both routes ne
 - Errors: 400 not a JPEG or a bad `info`, 403 wrong key, 409 `camera.source` is not `pi`, 413 bigger than
   `web.pi_upload_max_mb`.
 
-### Cloud link (1)
+### Cloud link (3)
 
 | Method | Path | What it does | Called by | Access |
 |---|---|---|---|---|
 | GET | `/api/cloud/status` | Whether this Pi (or computer) is linked to a cloud server: `{"linked", "stopped", "last_sent_ts", "waiting"}`. `stopped` means the server no longer knows it, so it needs linking again. `waiting` is how many events were still to go at its last try, so it doesn't count ones written since. | `web_app/app.js` (the line in Settings) | anyone on the network |
+| GET | `/api/cloud/hello` | "Who are you": `{"desk_talk": "pi", "name", "linked"}`. The cloud server's search for Pis on the home network knocks here on each address. | `cloud/server/` (`PiFinder`), only to find Pis | anyone on the network |
+| POST | `/api/cloud/link` | "Link to this server with this code": body `{"server", "code"}`, where `server` is an `http` or `https` address. Trades the code with the server, saves the link and replies `{"linked": true}`. 400 for a bad body, a bad address or a code the server refused (its reason); 403 when `server` is not a private home network address equal to the address the request came from; 409 when already linked, when another offer is being worked on, or when the link could not be saved; 502 when the server could not be reached. | The cloud website's **Link** button, through the cloud server (`POST /api/pis/link`) | anyone on the network |
 
 ### Developer page (this computer only) (23)
 
@@ -388,7 +390,7 @@ The optional server in `cloud/`. Its own access rules:
 | POST | `/auth/logout` | Log out. | open |
 | POST | `/auth/admin/login` | The admin's username and password. 404 with no admin set up. | limited |
 
-### The website (9)
+### The website (11)
 
 All need the login, and only reach that person's own things.
 
@@ -401,6 +403,8 @@ All need the login, and only reach that person's own things.
 | PATCH | `/api/devices/{device_id}` | Rename a Pi. |
 | DELETE | `/api/devices/{device_id}` | Remove a Pi: cancels its token and keeps its history. |
 | DELETE | `/api/devices/{device_id}/data` | Delete a Pi and everything kept for it. |
+| GET | `/api/pis/nearby` | Search the home network around `PUBLIC_URL` (its /24) for Desk Talk Pis: `{"pis": [{"address", "name", "linked"}]}`, sorted by address. 409, in plain words, when `PUBLIC_URL` gives no private network to search; 429 while another search runs. |
+| POST | `/api/pis/link` | Link a found Pi: body `{"address", "time_zone"}`. Makes a one-time code and offers it to that Pi. Replies `{"linked": true}`. 400 for an address outside the searched network or a bad time zone; 409 when that Pi is already linked; 502 when the Pi refused (its reason) or didn't answer. |
 | GET | `/api/reports` | Their weekly reports, newest week first, with each Pi's name and no report text. `?device_id=` for one Pi. |
 | GET | `/api/reports/{report_id}` | One report. |
 

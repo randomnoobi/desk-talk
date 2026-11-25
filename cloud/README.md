@@ -49,9 +49,18 @@ Settings in `settings.yaml` and wording in `prompts.yaml` are built into the ima
 
 ## 4. Add a Pi
 
-1. Log in on the website and click **Add a Pi**.
-2. Run the command it shows, **on the Pi**, from any folder. It gets Desk Talk if the Pi doesn't have it, installs it, and uses the code first. The code in it works once, for a few minutes.
+1. Log in on the website and click **Find Pis on my network**. It looks for Desk Talk Pis on the home network in `PUBLIC_URL`, so `PUBLIC_URL` in `.env` must be this computer's home network number, like `http://192.168.86.30:8080`, not `localhost` or a name.
+2. Click **Link** next to your Pi. No command needed.
 3. The Pi appears on the website. Its events show up as it sends them.
+
+Or, with a command: click **Add a Pi**, then run the command it shows, **on the Pi**, from any folder. It gets Desk Talk if the Pi doesn't have it, installs it, and uses the code first. The code in it works once, for a few minutes.
+
+## If it doesn't find your Pi
+
+- The Pi and this computer must be on the same Wi-Fi or network.
+- The Pi must be on, with Desk Talk running.
+- `PUBLIC_URL` must be a number address on your home network, not `localhost` or a name. After changing it, run `docker compose up -d` again.
+- A Pi that is already linked shows "Already linked" and has no **Link** button.
 
 ## If linking says "Too many tries"
 
