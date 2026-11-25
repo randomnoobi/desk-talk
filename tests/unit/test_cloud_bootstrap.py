@@ -762,9 +762,9 @@ def nginx_wait_sec() -> int:
     return int(found.group(1))
 
 
-def test_the_finder_knocks_on_the_port_the_pi_answers_on():
+def test_the_finder_knocks_on_the_port_other_computers_reach_the_pi_on():
+    # APP_HOST_PORT is the Pi's one open door (raspberry_pi/compose.yaml); web.port is only inside its container.
     port = cloud_config().find_pis.pi_port
-    assert port == pi_settings()['web']['port']
     assert str(port) == env_value(ROOT / 'raspberry_pi' / '.env.example', 'APP_HOST_PORT')
 
 
@@ -783,3 +783,13 @@ def test_the_longest_search_and_link_end_before_nginx_gives_up():
 def test_the_pi_cuts_its_name_to_what_the_cloud_takes():
     # Needs config/settings.yaml cloud.name_max_chars, which the Pi side of "Find Pis on my network" adds.
     assert pi_settings()['cloud']['name_max_chars'] == cloud_config().pairing.name_max_chars
+
+
+def test_the_pis_longest_reason_for_saying_no_fits_what_the_website_shows():
+    # The Pi's own words reach the website only when it refused (kind bad_request or refused): offer_bad,
+    # link_code_refused, or link_refused_because around the server's reason cut to cloud.error_text_chars. Longer
+    # words would still be cut cleanly (pi_finder.py), but these should show whole.
+    words = yaml.safe_load((ROOT / 'config' / 'prompts.yaml').read_text('utf-8'))['cloud']
+    wrapped = words['link_refused_because'].format(reason='x' * pi_settings()['cloud']['error_text_chars'])
+    longest = max(len(wrapped), len(words['link_code_refused']), len(words['offer_bad']))
+    assert longest <= cloud_config().find_pis.reason_max_chars

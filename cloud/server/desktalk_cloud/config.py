@@ -152,8 +152,9 @@ class FindPisSettings(_Section):
 
 
 class Messages(_Section):
-    """The words in cloud/prompts.yaml → messages. A message with {max} is filled in with .format(max=...), and
-    pi_refused's {reason} with the Pi's own words."""
+    """The words in cloud/prompts.yaml → messages. A message with {max} is filled in with .format(max=...),
+    pi_refused's {reason} with the Pi's own words, and pi_not_caller's and pi_cant_reach_server's {server} with
+    PUBLIC_URL."""
 
     refused_not_an_object: str
     refused_not_kept: str
@@ -194,6 +195,10 @@ class Messages(_Section):
     pi_refused: str
     pi_refused_no_reason: str
     pi_no_answer: str
+    pi_busy: str
+    pi_not_saved: str
+    pi_not_caller: str
+    pi_cant_reach_server: str
 
 
 class Secrets(_Section):

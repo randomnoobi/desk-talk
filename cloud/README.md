@@ -61,6 +61,8 @@ Or, with a command: click **Add a Pi**, then run the command it shows, **on the 
 - The Pi must be on, with Desk Talk running.
 - `PUBLIC_URL` must be a number address on your home network, not `localhost` or a name. After changing it, run `docker compose up -d` again.
 - A Pi that is already linked shows "Already linked" and has no **Link** button.
+- The search knocks on port 5000, the port the Pi opens by default (`APP_HOST_PORT` in the Pi's `raspberry_pi/.env`). If your Pi uses another port, set `find_pis.pi_port` in `settings.yaml` to the same number, then run `docker compose up -d --build` again.
+- If **Link** says the Pi couldn't reach this server, the Pi found the server's address in `PUBLIC_URL` but couldn't get through: check the port in it, and that this computer's firewall lets other devices on the network in on that port.
 
 ## If linking says "Too many tries"
 

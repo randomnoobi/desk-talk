@@ -50,6 +50,12 @@ messages:
   pi_refused: 'The Pi would not link: {reason}'
   pi_refused_no_reason: The Pi would not link. Try again, or use the command below.
   pi_no_answer: The Pi didn't answer. Check that it is on and on the same Wi-Fi, then try again.
+  pi_busy: That Pi is linking right now. Try again in a moment.
+  pi_not_saved: "That Pi isn't saving anything right now, so a link wouldn't last after it restarts. Turn its saving back on, then try again."
+  # {server} is PUBLIC_URL. The Pi only links to the computer that asks it, by its home network number.
+  pi_not_caller: "The Pi only links to the computer that asks it. Check that PUBLIC_URL ({server}) is this computer's home network number, then try again."
+  # {server} is PUBLIC_URL. The Pi took the offer but couldn't call this server back to use the code.
+  pi_cant_reach_server: "The Pi couldn't reach this server at {server}. Check the port in PUBLIC_URL, and that this computer's firewall lets the Pi in on it."
 
 # The website's "Add a Pi" box (the code only fills in {server_url} and {code})
 site:

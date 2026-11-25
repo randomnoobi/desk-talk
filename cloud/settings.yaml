@@ -81,10 +81,10 @@ limits:
   claim_body_kb: 4               # the biggest request to link a Pi, in kilobytes
 
 find_pis:                        # "Find Pis on my network" on the website: knocking on each address of the home network
-  pi_port: 5000                  # the port a Pi's Desk Talk answers on (config/settings.yaml: web.port)
+  pi_port: 5000                  # the port other computers reach a Pi's Desk Talk on (raspberry_pi/.env: APP_HOST_PORT). A Pi set to another port isn't found until this matches it
   network_prefix: 24             # how big a home network to search around PUBLIC_URL's address: 24 = the 254 addresses that share its first three numbers
   knock_timeout_sec: 1.5         # how long to wait for each address to answer, in seconds
   at_once: 64                    # how many addresses to knock on at the same time
   link_timeout_sec: 20           # how long to wait for a Pi to finish linking, in seconds (it calls this server back to use the code, so longer than the Pi's own wait: config/settings.yaml cloud.timeout_sec)
   reply_max_kb: 4                # the biggest answer read from an address, in kilobytes; anything bigger is not a Pi
-  reason_max_chars: 200          # a Pi's reason for saying no is shown on the website only when it is this many characters or fewer
+  reason_max_chars: 250          # most letters of a Pi's reason for saying no shown on the website; a longer one is cut (enough for the Pi's longest: config/prompts.yaml cloud.link_refused_because around config/settings.yaml cloud.error_text_chars)

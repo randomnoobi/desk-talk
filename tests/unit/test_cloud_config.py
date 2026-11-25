@@ -114,7 +114,7 @@ def test_find_pis_defaults():
     settings = load_config(CLOUD_FOLDER, {'SESSION_SECRET': SECRET}).find_pis
     assert (settings.pi_port, settings.network_prefix, settings.at_once) == (5000, 24, 64)
     assert (settings.knock_timeout_sec, settings.link_timeout_sec, settings.reply_max_kb) == (1.5, 20, 4)
-    assert settings.reason_max_chars == 200
+    assert settings.reason_max_chars == 250
 
 
 @pytest.mark.parametrize(('name', 'value'), [('pi_port', 0), ('pi_port', 70000), ('network_prefix', 8),

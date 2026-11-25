@@ -27,9 +27,17 @@ log = logging.getLogger(__name__)
 
 HELLO_PATH = '/api/cloud/hello'
 LINK_PATH = '/api/cloud/link'
-OK, ALREADY_LINKED = 200, 409
-REFUSED = (400, 403)
+OK = 200
 PI_KIND = 'pi'
+# The Pi's `kind` when it says no to a link offer (desktalk/web/routers/cloud.py), as a PiOfferFailed kind: the Pi's
+# bad_request and refused both carry its own words.
+KIND_THE_PI_SAID = {'bad_request': 'refused', 'refused': 'refused', 'not_caller': 'not_caller',
+                    'already_linked': 'already_linked', 'busy': 'busy', 'not_saved': 'not_saved',
+                    'unavailable': 'unavailable'}
+# With no kind we know, the status says it: the one kind the Pi gives that status (409 is all three of
+# already_linked, busy and not_saved, so it reads as the first). Any other status is no answer.
+KIND_OF_STATUS = {400: 'refused', 403: 'not_caller', 409: 'already_linked', 502: 'unavailable'}
+CUT_MARK = '…'
 
 
 class _TooBig(Exception):
@@ -124,22 +132,34 @@ class HttpPiFinder:
         except httpx.HTTPError as error:        # its text can hold the address with the code: only the kind
             log.warning('The Pi at %s did not answer the link offer (%s)', address, type(error).__name__)
             raise PiOfferFailed('no_answer') from None
-        log.info('The Pi at %s answered the link offer with status %d', address, status)
         if status == OK:
+            log.info('The Pi at %s took the link offer', address)
             return
-        if status == ALREADY_LINKED:
-            raise PiOfferFailed('already_linked', self._reason(content))
-        if status in REFUSED:
-            raise PiOfferFailed('refused', self._reason(content))
-        raise PiOfferFailed('no_answer')
+        reply = _json_object(content)
+        said = reply.get('kind')
+        kind = KIND_THE_PI_SAID[said] if isinstance(said, str) and said in KIND_THE_PI_SAID else \
+            KIND_OF_STATUS.get(status, 'no_answer')
+        log.info('The Pi at %s answered the link offer with status %d (%s)', address, status, kind)
+        raise PiOfferFailed(kind, self._reason(reply) if kind == 'refused' else None)
 
-    def _reason(self, content: bytes | None) -> str | None:
-        """The Pi's `{"error": "..."}` words, when they are one short line of clean text."""
-        try:
-            reply = json.loads(content) if content is not None else None
-        except (ValueError, RecursionError):
+    def _reason(self, reply: dict[str, Any]) -> str | None:
+        """The Pi's `{"error": "..."}` words, when they are one line of clean text, cut between words to
+        `reason_max_chars` (with a … to show it)."""
+        reason = reply.get('error')
+        if not _is_plain_line(reason):
             return None
-        reason = reply.get('error') if isinstance(reply, dict) else None
-        if not _is_plain_line(reason) or len(reason.strip()) > self._settings.reason_max_chars:
-            return None
-        return reason.strip()
+        reason, most = reason.strip(), self._settings.reason_max_chars
+        if len(reason) <= most:
+            return reason
+        cut = reason[:most - len(CUT_MARK) + 1]         # one letter more, to see whether the cut falls on a space
+        cut = cut.rsplit(' ', 1)[0] if ' ' in cut.strip() else cut[:-1]
+        return cut.rstrip() + CUT_MARK
+
+
+def _json_object(content: bytes | None) -> dict[str, Any]:
+    """The reply as a JSON object; an empty one when it is too big, not JSON or not an object."""
+    try:
+        reply = json.loads(content) if content is not None else None
+    except (ValueError, RecursionError):
+        return {}
+    return reply if isinstance(reply, dict) else {}

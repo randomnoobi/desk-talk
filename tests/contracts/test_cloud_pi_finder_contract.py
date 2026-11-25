@@ -117,9 +117,10 @@ class PretendNetwork:
         self.hellos: dict = {pi.address: httpx.Response(200, json=hello(pi)) for pi in GOOD_PIS}
         self.links: dict = {
             HOME_PI.address: httpx.Response(200, json={'linked': True}),
-            LINKED_PI.address: httpx.Response(409, json={'error': 'This Pi is already linked.'}),
+            LINKED_PI.address: httpx.Response(409, json={'error': 'This Pi is already linked.',
+                                                          'kind': 'already_linked'}),
             LONG_PI.address: httpx.Response(200, json={'linked': True}),
-            REFUSING_PI.address: httpx.Response(400, json={'error': REFUSAL}),
+            REFUSING_PI.address: httpx.Response(400, json={'error': REFUSAL, 'kind': 'refused'}),
         }
         self.seen: list[httpx.Request] = []
 
@@ -242,20 +243,61 @@ class TestHttpPiFinder(PiFinderContract):
         assert failed.value.kind == 'no_answer'
         assert len(network.seen) == 1
 
-    def test_a_403_is_a_refusal_with_its_reason(self, finder, network):
-        network.links[HOME_PI.address] = httpx.Response(403, json={'error': 'Only the asking server.'})
+    @pytest.mark.parametrize(('status', 'said', 'kind'), [
+        (409, 'already_linked', 'already_linked'), (409, 'busy', 'busy'), (409, 'not_saved', 'not_saved'),
+        (403, 'not_caller', 'not_caller'), (502, 'unavailable', 'unavailable'),
+        (400, 'refused', 'refused'), (400, 'bad_request', 'refused'),
+    ])
+    def test_the_pis_own_kind_says_why(self, finder, network, status, said, kind):
+        network.links[HOME_PI.address] = httpx.Response(status, json={'error': 'Some words.', 'kind': said})
         with pytest.raises(PiOfferFailed) as failed:
             asyncio.run(finder.offer(HOME_PI.address, SERVER, CODE))
-        assert (failed.value.kind, failed.value.reason) == ('refused', 'Only the asking server.')
+        assert failed.value.kind == kind
+        assert failed.value.reason == ('Some words.' if kind == 'refused' else None)   # the others have our words
 
-    def test_a_409_keeps_a_clean_reason(self, finder, network):
+    @pytest.mark.parametrize(('status', 'kind'), [(400, 'refused'), (403, 'not_caller'), (409, 'already_linked'),
+                                                  (502, 'unavailable')])
+    @pytest.mark.parametrize('said', [None, 'something_new', 5, ['busy']])
+    def test_without_a_kind_it_knows_the_status_says_why(self, finder, network, status, kind, said):
+        body = {'error': 'Some words.'} if said is None else {'error': 'Some words.', 'kind': said}
+        network.links[HOME_PI.address] = httpx.Response(status, json=body)
         with pytest.raises(PiOfferFailed) as failed:
-            asyncio.run(finder.offer(LINKED_PI.address, SERVER, CODE))
-        assert failed.value.reason == 'This Pi is already linked.'
+            asyncio.run(finder.offer(HOME_PI.address, SERVER, CODE))
+        assert failed.value.kind == kind
 
-    @pytest.mark.parametrize('body', [{'error': 'x' * 201}, {'error': 'bad\x00words'}, {'error': 'two\nlines'},
+    def test_a_kind_that_is_not_json_falls_back_to_the_status(self, finder, network):
+        network.links[HOME_PI.address] = httpx.Response(409, html='<h1>busy</h1>')
+        with pytest.raises(PiOfferFailed) as failed:
+            asyncio.run(finder.offer(HOME_PI.address, SERVER, CODE))
+        assert (failed.value.kind, failed.value.reason) == ('already_linked', None)
+
+    def test_a_long_reason_is_cut_between_words(self, finder, network):
+        most = cloud_config().find_pis.reason_max_chars
+        words = ' '.join(['word'] * most)
+        network.links[HOME_PI.address] = httpx.Response(400, json={'error': words, 'kind': 'refused'})
+        with pytest.raises(PiOfferFailed) as failed:
+            asyncio.run(finder.offer(HOME_PI.address, SERVER, CODE))
+        reason = failed.value.reason
+        assert reason is not None and len(reason) <= most
+        assert reason.endswith('…') and set(reason[:-1].split()) == {'word'} and len(reason) > most - 6
+
+    def test_a_long_reason_with_no_spaces_is_cut_too(self, finder, network):
+        most = cloud_config().find_pis.reason_max_chars
+        network.links[HOME_PI.address] = httpx.Response(400, json={'error': 'x' * (most + 1), 'kind': 'refused'})
+        with pytest.raises(PiOfferFailed) as failed:
+            asyncio.run(finder.offer(HOME_PI.address, SERVER, CODE))
+        assert failed.value.reason == 'x' * (most - 1) + '…'
+
+    def test_a_reason_that_just_fits_is_kept_whole(self, finder, network):
+        most = cloud_config().find_pis.reason_max_chars
+        network.links[HOME_PI.address] = httpx.Response(400, json={'error': f'  {"x" * most}  ', 'kind': 'refused'})
+        with pytest.raises(PiOfferFailed) as failed:
+            asyncio.run(finder.offer(HOME_PI.address, SERVER, CODE))
+        assert failed.value.reason == 'x' * most
+
+    @pytest.mark.parametrize('body', [{'error': 'bad\x00words'}, {'error': 'two\nlines'},
                                       {'error': 5}, {'error': '  '}, {'nothing': 'here'}, ['error']])
-    def test_a_reason_that_is_not_short_clean_text_is_dropped(self, finder, network, body):
+    def test_a_reason_that_is_not_clean_text_is_dropped(self, finder, network, body):
         network.links[HOME_PI.address] = httpx.Response(400, json=body)
         with pytest.raises(PiOfferFailed) as failed:
             asyncio.run(finder.offer(HOME_PI.address, SERVER, CODE))
@@ -273,7 +315,7 @@ class TestHttpPiFinder(PiFinderContract):
             asyncio.run(finder.offer(HOME_PI.address, SERVER, CODE))
         assert (failed.value.kind, failed.value.reason) == ('refused', None)
 
-    @pytest.mark.parametrize('answer', [httpx.Response(500), httpx.Response(502, json={'error': 'cloud down'}),
+    @pytest.mark.parametrize('answer', [httpx.Response(500), httpx.Response(503, json={'error': 'cloud down'}),
                                         httpx.Response(404), httpx.Response(201, json={'linked': True})])
     def test_any_other_status_is_no_answer(self, finder, network, answer):
         network.links[HOME_PI.address] = answer

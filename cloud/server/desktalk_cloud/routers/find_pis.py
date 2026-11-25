@@ -11,13 +11,16 @@ import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 
+from desktalk_cloud.config import Messages
 from desktalk_cloud.deps import current_user, parts_of, read_json
 from desktalk_cloud.domain import User
 from desktalk_cloud.pi_network import addresses_to_search, in_search_network
 from desktalk_cloud.ports import PiOfferFailed
 from desktalk_cloud.routers.auth import needs_json, public_address
 from desktalk_cloud.routers.site import make_link_code
+from desktalk_cloud.tokens import hash_secret
 
 __all__ = ['router']
 
@@ -55,18 +58,25 @@ async def link(request: Request, user: Annotated[User, Depends(current_user)],
     code, _expires_at = await make_link_code(request, user, zone)
     try:
         await parts.pi_finder.offer(address, server_url, code)
-    except PiOfferFailed as failure:            # the code just runs out: nothing was linked
-        log.info('Person %s offered a link to the Pi at %s, and it said %s', user.id, address, failure.kind)
-        raise HTTPException(*_refusal(request, failure)) from None
+    except PiOfferFailed as failure:
+        # Our wait can end while the Pi is still using the code (its own waits are per step, not in all), so a Pi
+        # that didn't answer in time may have linked after all: the code says so. Otherwise it just runs out.
+        if failure.kind != 'no_answer' or not await run_in_threadpool(parts.store.code_was_used, hash_secret(code)):
+            log.info('Person %s offered a link to the Pi at %s, and it said %s', user.id, address, failure.kind)
+            raise HTTPException(*_refusal(messages, failure, server_url)) from None
+        log.info('The Pi at %s answered too late, but it had used the code', address)
     log.info('Person %s linked the Pi at %s from the website', user.id, address)
     return {'linked': True}
 
 
-def _refusal(request: Request, failure: PiOfferFailed) -> tuple[int, str]:
-    messages = parts_of(request).config.messages
-    if failure.kind == 'no_answer':
-        return 502, messages.pi_no_answer
-    status = 409 if failure.kind == 'already_linked' else 502
-    if failure.reason is not None:
-        return status, messages.pi_refused.format(reason=failure.reason)
-    return status, messages.pi_already_linked if status == 409 else messages.pi_refused_no_reason
+def _refusal(messages: Messages, failure: PiOfferFailed, server_url: str) -> tuple[int, str]:
+    """The status and words for each way a link offer fails (PiOfferFailed in ports.py)."""
+    if failure.kind == 'refused':
+        if failure.reason is not None:
+            return 502, messages.pi_refused.format(reason=failure.reason)
+        return 502, messages.pi_refused_no_reason
+    answers = {'already_linked': (409, messages.pi_already_linked), 'busy': (409, messages.pi_busy),
+               'not_saved': (409, messages.pi_not_saved),
+               'not_caller': (502, messages.pi_not_caller.format(server=server_url)),
+               'unavailable': (502, messages.pi_cant_reach_server.format(server=server_url))}
+    return answers.get(failure.kind, (502, messages.pi_no_answer))

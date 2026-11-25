@@ -204,12 +204,34 @@ def test_a_pi_that_is_already_linked_is_409(home):
     assert reply.status_code == 409 and reply.json()['detail'] == parts.config.messages.pi_already_linked
 
 
-def test_an_already_linked_answer_with_the_pis_own_words_shows_them(home):
+def test_an_already_linked_answer_says_so_in_this_servers_words(home):
     parts, finder, client = home
-    finder.refusals[DESK.address] = PiOfferFailed('already_linked', 'Busy linking another server.')
+    finder.refusals[DESK.address] = PiOfferFailed('already_linked', 'Some words from the Pi.')
     reply = client.post('/api/pis/link', json={'address': DESK.address, 'time_zone': 'UTC'})
-    assert reply.status_code == 409
-    assert reply.json()['detail'] == parts.config.messages.pi_refused.format(reason='Busy linking another server.')
+    assert reply.status_code == 409 and reply.json()['detail'] == parts.config.messages.pi_already_linked
+
+
+@pytest.mark.parametrize(('kind', 'status', 'message'), [
+    ('busy', 409, 'pi_busy'),
+    ('not_saved', 409, 'pi_not_saved'),
+    ('not_caller', 502, 'pi_not_caller'),
+    ('unavailable', 502, 'pi_cant_reach_server'),
+    ('something_new', 502, 'pi_no_answer'),
+])
+def test_each_way_the_pi_says_no_gets_its_own_words(home, kind, status, message):
+    parts, finder, client = home
+    finder.refusals[DESK.address] = PiOfferFailed(kind, 'Some words from the Pi.')
+    reply = client.post('/api/pis/link', json={'address': DESK.address, 'time_zone': 'UTC'})
+    assert reply.status_code == status
+    assert reply.json()['detail'] == getattr(parts.config.messages, message).format(server=HOME)
+    assert 'Some words from the Pi.' not in reply.text
+
+
+def test_the_words_for_a_pi_that_cant_reach_this_server_name_public_url(home):
+    parts, finder, client = home
+    finder.refusals[DESK.address] = PiOfferFailed('unavailable')
+    reply = client.post('/api/pis/link', json={'address': DESK.address, 'time_zone': 'UTC'})
+    assert HOME in reply.json()['detail']
 
 
 def test_a_pi_that_refuses_is_502_with_its_reason(home):
@@ -252,3 +274,23 @@ def test_a_failed_offer_leaves_a_code_that_simply_runs_out(home):
     finder.offer_fails = PiOfferFailed('no_answer')
     client.post('/api/pis/link', json={'address': DESK.address, 'time_zone': 'UTC'})
     assert parts.store.list_devices(ann_of(parts).id) == []
+
+
+def test_a_pi_that_took_the_code_but_answered_too_late_counts_as_linked():
+    def claims_then_times_out(_address, _server_url, code):
+        assert parts.store.claim_code(hash_secret(code), 'desktalk', hash_secret('tok'), parts.clock.now())
+        raise PiOfferFailed('no_answer')
+    parts, finder, app = build(on_offer=claims_then_times_out)
+    client = sign_in(app)
+    reply = client.post('/api/pis/link', json={'address': DESK.address, 'time_zone': 'UTC'})
+    assert reply.status_code == 200 and reply.json() == {'linked': True}
+    assert len(parts.store.list_devices(ann_of(parts).id)) == 1
+
+
+def test_only_no_answer_looks_for_a_claimed_code():
+    def claims_then_refuses(_address, _server_url, code):
+        assert parts.store.claim_code(hash_secret(code), 'desktalk', hash_secret('tok'), parts.clock.now())
+        raise PiOfferFailed('unavailable')
+    parts, finder, app = build(on_offer=claims_then_refuses)
+    reply = sign_in(app).post('/api/pis/link', json={'address': DESK.address, 'time_zone': 'UTC'})
+    assert reply.status_code == 502
