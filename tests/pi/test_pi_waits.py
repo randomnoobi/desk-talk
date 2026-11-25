@@ -6,8 +6,9 @@ from typing import Any
 
 import pytest
 
-from tests.pi.conftest import Pi, camera_log_command, status_line_wait_sec, wait_for_status_lines
+from tests.pi.conftest import Pi, camera_log_command, status_line_fresh_sec, status_line_wait_sec, wait_for_status_lines
 from tests.pi.hand_test_rules import parse_status_lines
+from tests.pi.test_real_pi import latest_camera_status, next_camera_status
 
 STATUS = ('2026-11-24T05:26:03.5Z Pictures taken 90, sent 89, failed 0, skipped 0; detector ok 80, busy 9, off 0; '
           'stored 9; 250 MB free; 56.2 °C')
@@ -43,6 +44,11 @@ def test_the_timeout_shows_the_end_of_the_last_log_read():
 def test_the_wait_is_two_status_times_and_the_warm_up():
     """One status time for the line itself, one more as room for the camera program to start."""
     assert status_line_wait_sec({'status_every_sec': 30, 'camera_warmup_sec': 1}) == 61
+
+
+def test_a_status_line_is_fresh_for_three_status_times():
+    """Two status times, and one more as room."""
+    assert status_line_fresh_sec({'status_every_sec': 30, 'camera_warmup_sec': 1}) == 90
 
 
 STARTED = '2026-11-24T05:25:58.123456789Z'
@@ -106,3 +112,18 @@ def test_asks_for_the_settings_and_waits_when_the_first_read_has_none():
     pi = FakePi({'Running': True, 'StartedAt': STARTED}, ['', STATUS])
     assert [line.taken for line in pi.camera_status_lines(parse_status_lines)] == [90]
     assert pi.settings_asked == 1
+
+
+def test_waits_for_a_status_line_newer_than_the_one_before():
+    later = STATUS.replace('taken 90', 'taken 180')
+    pi = FakePi({'Running': True, 'StartedAt': STARTED}, [STATUS, later])
+    before = latest_camera_status(pi)
+    assert before[0] == 90
+    assert next_camera_status(pi, before, every=0)[0] == 180
+
+
+def test_a_camera_that_started_again_never_gives_a_newer_status_line():
+    """Its count starts from 0 again, so the line after it isn't newer, and the wait says so."""
+    pi = FakePi({'Running': True, 'StartedAt': STARTED}, [STATUS.replace('taken 90', 'taken 3')])
+    with pytest.raises(AssertionError, match='a status line newer than the one with 90 pictures taken'):
+        next_camera_status(pi, (90, 89, 0, 0, 80, 9, 0), every=0)

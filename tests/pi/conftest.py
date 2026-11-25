@@ -57,6 +57,12 @@ def status_line_wait_sec(pi_settings: dict[str, Any]) -> float:
     return 2 * pi_settings['status_every_sec'] + pi_settings['camera_warmup_sec']
 
 
+def status_line_fresh_sec(pi_settings: dict[str, Any]) -> float:
+    """How old the camera's newest status line may be on a camera that's working, from the Pi's settings (the `pi:`
+    section): two status times, and one more as room."""
+    return 3 * pi_settings['status_every_sec']
+
+
 def wait_for_status_lines[T](read_log: Callable[[], str], parse: Callable[[str], Sequence[T]], *, timeout: float,
                              every: float = LOOK_EVERY_SEC) -> Sequence[T]:
     """Reads the camera's log until `parse` finds a status line in it, and gives back what it found. The camera writes

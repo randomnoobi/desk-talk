@@ -21,7 +21,7 @@ from typing import Any
 
 import pytest
 
-from tests.pi.conftest import HEALTHY_WAIT_SEC, SERVICES, Pi, wait_for
+from tests.pi.conftest import HEALTHY_WAIT_SEC, SERVICES, Pi, status_line_fresh_sec, wait_for
 from tests.pi.hand_test_rules import (
     card_level,
     clock_distrusted,
@@ -64,7 +64,6 @@ STEPS = 'docs/PI_CHECKS.md, "Failure hand tests"'
 
 NOTE_KEY = 'desktalk/pi_hand_test_note'
 NOTE_FRESH_SEC = 24 * 3600
-STATUS_LINE_FRESH_SEC = 90          # two of the camera's status lines (pi.status_every_sec = 30), and some room
 QUIET_ALLOWED_SEC = 90              # with no network, the camera may go this long without a status line of new pictures
 WARNING_WAIT_SEC = 600              # how long Lens has to say a warning, from when the check starts
 SCHEDULER_SLACK_SEC = 60            # a job's next run may be this much past its interval
@@ -170,7 +169,8 @@ def test_ready_for_a_hand_test(pi: Pi):
     assert status['camera'] is True, f'the app has no camera: {status}'
     lines = pi.camera_status_lines(parse_status_lines)
     age = _pi_now(pi) - lines[-1].at
-    assert age < STATUS_LINE_FRESH_SEC, f"the camera's newest status line is {age:.0f} s old"
+    fresh = status_line_fresh_sec(pi.settings()['pi'])
+    assert age < fresh, f"the camera's newest status line is {age:.0f} s old (at most {fresh:g} s is fine)"
 
 
 # ── before each hand test ──
