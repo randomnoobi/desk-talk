@@ -77,6 +77,31 @@ describe('Pis', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
+  it('finding and linking a Pi on the home network reloads the list, so the new Pi shows up', async () => {
+    let linked = false
+    const server = fakeServer({
+      'GET /api/devices': () => ({ body: { devices: linked ? [DEVICES[0]] : [] } }),
+      'GET /api/pis/nearby': { body: { pis: [{ address: '192.168.86.225', name: 'desktalk', linked: false }] } },
+      'POST /api/pis/link': () => { linked = true; return { body: { linked: true } } },
+    })
+    render(<Pis />)
+    expect(await screen.findByText(/no pis linked yet/i)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Find Pis on my network' }))
+    await userEvent.click(await screen.findByRole('button', { name: /link desktalk/i }))
+    expect(await screen.findByRole('link', { name: /desk pi/i })).toHaveAttribute('href', '#/pis/d1')
+    expect(server.made('GET', '/api/devices')).toHaveLength(2)
+  })
+
+  it('keeps the command way below the finder', async () => {
+    fakeServer({ 'GET /api/devices': { body: { devices: [] } } })
+    render(<Pis />)
+    const finder = await screen.findByRole('button', { name: 'Find Pis on my network' })
+    const heading = screen.getByRole('heading', { name: 'Or link it with a command' })
+    const add = screen.getByRole('button', { name: /add a pi/i })
+    expect(finder.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(heading.compareDocumentPosition(add) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('shows the server words when a code can not be made', async () => {
     fakeServer({
       'GET /api/devices': { body: { devices: [] } },

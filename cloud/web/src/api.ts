@@ -6,6 +6,7 @@
 //   GET  /api/me                                DELETE /api/me
 //   GET  /api/devices                           POST /api/devices/code   PATCH|DELETE /api/devices/{id}
 //   DELETE /api/devices/{id}/data
+//   GET  /api/pis/nearby                        POST /api/pis/link
 //   GET  /v1/devices/{id}/state                 GET  /v1/devices/{id}/events?since=&after_id=
 //   GET  /api/reports                           GET  /api/reports/{id}
 //   GET  /api/admin/overview                    POST /api/admin/reports/{id}/rerun
@@ -143,6 +144,22 @@ export interface CodeReply {
 export async function makeCode(timeZone: string, deviceId?: string): Promise<CodeReply> {
   const body = fields(await post('/api/devices/code', deviceId ? { time_zone: timeZone, device_id: deviceId } : { time_zone: timeZone }))
   return { code: text(body.code), expires_at: num(body.expires_at), server_url: text(body.server_url), command: text(body.command) }
+}
+
+/** A Pi that answered on the home network. `linked` means it is already linked to a server. */
+export interface FoundPi { address: string, name: string, linked: boolean }
+
+/** Asks the server to look for Pis on the home network around its own address. Takes a few seconds. */
+export async function findPis(): Promise<FoundPi[]> {
+  return listOf(await get('/api/pis/nearby'), 'pis')
+    .map(raw => ({ address: text(raw.address), name: text(raw.name), linked: raw.linked === true }))
+    .filter(pi => pi.address !== '')
+}
+
+/** Links the Pi at `address`: the server makes a one-time code and hands it to the Pi itself, so the code
+ *  never comes to the page. */
+export async function linkPi(address: string, timeZone: string): Promise<void> {
+  await post('/api/pis/link', { address, time_zone: timeZone })
 }
 
 export async function renameDevice(id: string, name: string): Promise<void> {

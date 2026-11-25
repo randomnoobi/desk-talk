@@ -4,7 +4,8 @@ import { vi } from 'vitest'
 
 export interface Call { method: string, path: string, body: unknown }
 export interface Reply { status?: number, body?: unknown }
-type Handler = Reply | ((call: Call) => Reply)
+// A function may answer later (a Promise), so a test can look at the page while a call waits.
+type Handler = Reply | ((call: Call) => Reply | Promise<Reply>)
 
 /** `routes` is keyed like 'GET /api/me': the method, a space, and the path (a query string is left out). */
 export function fakeServer(routes: Record<string, Handler>) {
@@ -16,7 +17,7 @@ export function fakeServer(routes: Record<string, Handler>) {
     calls.push(call)
     const handler = routes[`${method} ${input}`] ?? routes[`${method} ${path}`]
     if (!handler) return new Response(JSON.stringify({ detail: 'not in this test' }), { status: 404 })
-    const reply = typeof handler === 'function' ? handler(call) : handler
+    const reply = typeof handler === 'function' ? await handler(call) : handler
     const status = reply.status ?? 200
     return new Response(status === 204 ? null : JSON.stringify(reply.body ?? {}), { status })
   }))
