@@ -61,6 +61,9 @@ from desktalk.domain import QueryRefused, RunAlreadyGoing, StatsUnavailable
 from desktalk.ports import DatabaseBrowser, DataFiles, DemoScenarios, PiLog, PiStatsLink, TestRunner
 from desktalk.web.deps import App, DevOnly
 from desktalk.web.routers.health import health as own_health
+from desktalk.web.routers.objects import smoothing as object_smoothing
+from desktalk.web.routers.objects import smoothing_trace as object_smoothing_trace
+from desktalk.web.routers.objects import states as object_states
 from desktalk.web.schemas import QueryRequest, RunRequest, ScenarioRequest
 from desktalk.web.stories import object_story, story_photo
 
@@ -173,22 +176,17 @@ def dev_settings(app: App) -> dict[str, Any]:
 
 @router.get('/api/dev/states')
 def dev_states(app: App, since: float = 0.0) -> dict[str, Any]:
-    snapshot = app.object_states.snapshot()
-    return {
-        'objects': {label: {'state': seen.state, 'since': seen.since} for label, seen in snapshot.objects.items()},
-        'watched_since': snapshot.watched_since,
-        'changes': [asdict(change) for change in app.object_states.changes(since)],
-    }
+    return object_states(app, since)
 
 
 @router.get('/api/dev/smoothing')
 def dev_smoothing(app: App) -> dict[str, Any]:
-    return {'labels': app.object_states.traced_labels()}
+    return object_smoothing(app)
 
 
 @router.get('/api/dev/smoothing/trace')
 def dev_smoothing_trace(app: App, label: str) -> dict[str, Any]:
-    return {'label': label, 'steps': [asdict(step) for step in app.object_states.trace(label)]}
+    return object_smoothing_trace(app, label)
 
 
 # Before the trace route: its {label:path} would take "photo/<id>" too.

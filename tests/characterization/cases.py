@@ -185,6 +185,16 @@ CASES = [
          values={'error': "The camera hasn't seen pen/pencil yet."}),
     Case('object-photo', 'GET', '/api/objects/photo/{story_photo_id}', 200, reply=FILE, starts_with=JPEG_START),
     Case('object-photo-gone', 'GET', '/api/objects/photo/nope', 404, reply=STATUS),
+    # what the camera sees, for a computer whose camera is the Pi to ask the Pi (any device on the Wi-Fi may ask)
+    Case('objects-states', 'GET', '/api/objects/states?since=0', 200),
+    Case('objects-states-nothing-seen', 'GET', '/api/objects/states', 200, desk='fresh'),
+    Case('objects-states-bad-since', 'GET', '/api/objects/states?since=yesterday', 400),
+    Case('objects-states-other-computer', 'GET', '/api/objects/states?since=0', 200, from_ip=LAN_DEVICE),
+    Case('objects-smoothing', 'GET', '/api/objects/smoothing', 200),
+    Case('objects-smoothing-trace', 'GET', '/api/objects/smoothing/trace?label=cup', 200, values={'label': 'cup'}),
+    Case('objects-smoothing-trace-never-seen', 'GET', '/api/objects/smoothing/trace?label=pen%2Fpencil', 200,
+         values={'label': 'pen/pencil', 'steps': []}),
+    Case('objects-smoothing-trace-no-label', 'GET', '/api/objects/smoothing/trace', 400),
 
     # ── Live status ──
     Case('live', 'GET', '/api/live', 200),
