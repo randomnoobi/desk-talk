@@ -1,11 +1,15 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getObjectTrace, getStates, getTrace, getTracedLabels, type DevSettings, type SmoothingStep,
+import { ApiError, getObjectTrace, getStates, getTrace, getTracedLabels, type DevSettings, type SmoothingStep,
          type States } from '../api'
 import Live from './Live'
 
-vi.mock('../api')
+// The server is faked: only the calls this tab makes are swapped out; ApiError stays the real one.
+vi.mock('../api', async importOriginal => {
+  const real = await importOriginal<typeof import('../api')>()
+  return { ...real, getStates: vi.fn(), getTracedLabels: vi.fn(), getTrace: vi.fn(), getObjectTrace: vi.fn() }
+})
 // uPlot needs a real canvas, which jsdom doesn't have: the chart here only says what it was given.
 vi.mock('../SmoothingChart', () => ({
   default: (props: { steps: SmoothingStep[] }) => <div data-testid="smoothing-chart">{props.steps.length} pictures</div>,
@@ -37,6 +41,8 @@ const states: States = {
   objects: { cup: { state: 'PRESENT', since: now - 30 }, 'pen/pencil': { state: 'ABSENT', since: now - 5 } },
   watched_since: now - 600,
   changes: [{ ts: now - 30, label: 'cup', change: 'appeared' }],
+  from: 'here',
+  address: '',
 }
 
 const step = (over: Partial<SmoothingStep>): SmoothingStep => ({
@@ -125,5 +131,29 @@ describe('Live tab', () => {
     expect(await within(panel).findByText('refused: not on the chat list')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'pen/pencil' })).toHaveAttribute('aria-pressed', 'true')
     expect(getTrace).toHaveBeenCalledWith('pen/pencil')
+  })
+
+  it('shows that the objects come from the Pi', async () => {
+    vi.mocked(getStates).mockResolvedValue({
+      objects: { cup: { state: 'PRESENT', since: 1 } }, watched_since: 0, changes: [],
+      from: 'pi', address: 'desktalk-pi.local:5000',
+    })
+    render(<Live settings={settings} />)
+    expect(await screen.findByText("From the Pi's own Desk Talk (desktalk-pi.local:5000)")).toBeInTheDocument()
+  })
+
+  it('says nothing about the Pi when the objects come from here', async () => {
+    render(<Live settings={settings} />)
+    await screen.findByRole('button', { name: 'cup' })
+    expect(screen.queryByText(/From the Pi's own Desk Talk/)).not.toBeInTheDocument()
+  })
+
+  it("shows the server's words when it can't get the objects, not that none were seen", async () => {
+    const words = "Couldn't get what the Pi's camera sees from desktalk-pi.local:5000: no answer in 3 s."
+    vi.mocked(getStates).mockRejectedValue(new ApiError(502, words))
+    vi.mocked(getTracedLabels).mockRejectedValue(new ApiError(502, words))
+    render(<Live settings={settings} />)
+    expect((await screen.findAllByRole('alert'))[0]).toHaveTextContent(words)
+    expect(screen.queryByText('No objects seen yet.')).not.toBeInTheDocument()
   })
 })

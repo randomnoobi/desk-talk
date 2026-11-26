@@ -1,5 +1,7 @@
 // Numbers in words the tabs share. Times from the server are seconds since 1970.
 
+import type { Whose } from './api'
+
 const SIZES = ['B', 'KB', 'MB', 'GB', 'TB']
 
 /** 1536 → "1.5 KB" (1 KB = 1024 bytes). */
@@ -45,4 +47,11 @@ export function formatDateTime(ts: number): string {
 /** The last `chars` characters of `text`: the oldest text goes first, like the server's own printout. */
 export function keepLast(text: string, chars: number): string {
   return text.length > chars ? text.slice(-chars) : text
+}
+
+/** Whose Desk Talk a reply is from: the Pi's own (when the Pi is the camera and this page runs on a computer) or
+ *  this computer's. `midSentence` starts it with "the" rather than "The". */
+export function whoseWords(whose: Whose, midSentence = false): string {
+  if (whose.from !== 'pi') return 'Desk Talk'
+  return `${midSentence ? 'the' : 'The'} Pi's own Desk Talk (${whose.address})`
 }

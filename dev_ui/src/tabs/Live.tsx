@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getObjectTrace, getStates, getTrace, getTracedLabels, type DevSettings, type ObjectNow,
          type ObjectTraceReply, type SmoothingStep, type StateChange, type States } from '../api'
-import { formatClock, formatSeconds } from '../format'
+import { formatClock, formatSeconds, whoseWords } from '../format'
 import ObjectTrace from '../ObjectTrace'
 import SmoothingChart from '../SmoothingChart'
 import { ErrorLine, Pill, Table } from '../ui'
@@ -188,6 +188,7 @@ export default function Live(props: { settings: DevSettings }): JSX.Element {
     <div className="stack">
       <div className="card">
         <h2>Now</h2>
+        {states.data?.from === 'pi' && <p className="muted small">From {whoseWords(states.data, true)}</p>}
         <ErrorLine error={states.error} />
         {states.data ? <NowCards states={states.data} now={now} flickerLimit={settings.flicker_flips_per_min}
                                  picked={picked} onPick={pick} />
@@ -216,7 +217,7 @@ export default function Live(props: { settings: DevSettings }): JSX.Element {
         </div>
         <ErrorLine error={traced.error ?? trace.error ?? smoothing.error} />
         {picked === null
-          ? <p className="muted">No objects seen yet.</p>
+          ? !(traced.error ?? states.error) && <p className="muted">No objects seen yet.</p>
           : trace.data?.label !== picked || trace.data.data === null
             ? <p className="muted">Asking for {picked}'s trace…</p>
             : <ObjectTrace

@@ -163,12 +163,13 @@ export interface StateChange {
   change: Change
 }
 
-/** GET /api/dev/states?since= */
-export interface States {
+/** GET /api/dev/states?since= (from the Pi's own Desk Talk when the Pi is the camera and this page runs on a
+ *  computer: see `Whose`) */
+export type States = {
   objects: Record<string, ObjectNow>
   watched_since: number | null     // when the camera's current run of pictures began
   changes: StateChange[]           // oldest first
-}
+} & Whose
 
 /** One picture of one object's smoothing (GET /api/dev/smoothing/trace). */
 export interface SmoothingStep {
