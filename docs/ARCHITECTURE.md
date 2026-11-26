@@ -86,3 +86,48 @@ How the detection log gets shrunk
 - Compaction. Every 10 minutes (event_log.compact_every_min), Desk Talk goes back over those lines and turns them into time ranges: "cup on desk from start to end." In the diagram, "left" is when a range starts and "right" is when it ends.
   - Gap under 3 seconds: joined. If the cup goes missing for less than 3 seconds (event_log.merge_gap_sec), say because a hand covered it, those pictures stay in the same range. One cup on the desk stays one entry.
   - Gap over 3 seconds: new interval. If it's missing for longer, the first range ends and a new one starts when the cup comes back. So you get two entries: left 1 to right 1 and left 2 to right 2.
+ 
+### Roadblocks and challenges
+
+#### Camera speed and picture size
+
+Desk Talk looks at 3 pictures a second, so each picture has to be checked in under 333 ms. My first model (yolo26m-objv1-150 at 640 pixels) managed only 1.7 pictures a second on the Pi 5, so it couldn't keep up.
+
+How I fixed it:
+
+- I wrote a benchmark that tried every model at different picture sizes (640, 480, 320) and formats on both the Mac and the Pi. It recorded the speed, accuracy, memory and temperature for each.
+- I made a desk test that scored each model on 240 desk photos plus 6 of my own, so I picked models that are good at desks, not just fast.
+- I settled on the smaller yolo26s-objv1-150 at 640 pixels with 1280 × 720 pictures from the camera. It checks every picture in 200–215 ms, uses about 2 of the Pi's 4 cores, and stays around 60 °C.
+- I kept pictures in memory instead of saving them to the SD card. That cut card writes from about 500 MB an hour to about 35 MB.
+
+
+#### Bugs and how I fixed them
+- Fake sips. Covering the bottle with a hand, or covering the camera, counted as a sip. Now a sip only counts when the bottle is seen lifted and then put back. If most objects vanish at once, as when the camera is covered, nothing counts.
+- Fake objects. "Glasses" kept joining the chat, but I don't wear glasses. Now only objects on a set list can join. A sensitivity slider makes joining stricter or looser, and the developer page shows what the detector thought it saw.
+- False safety alerts. A drink behind the laptop looked like it was next to it, and an arm close to the lens looked like a cat. Danger zones now go by where things sit on the desk. A pet only counts when the detector is at least 80% sure in 5 of the last 7 pictures.
+- The first model failed on every picture. The detector loaded every model as "detect", but this one was a "segment" model. It now reads the model's type from the file the conversion writes.
+- Docker's memory limits did nothing. The Pi started with memory limits turned off. I changed a boot setting, and now a container that uses too much memory gets stopped.
+The camera broke after a power cut. The Pi can number the camera's devices differently at each boot. A boot service now writes the current numbers before the containers start.
+- A wrong clock after a power cut. The Pi has no clock battery, so it can start days behind. Desk Talk now starts every object over when the clock is behind, and it never deletes anything by date until the clock has been set from the internet.
+- A full SD card. I gave Desk Talk its own fixed 8 GB space on the card so it keeps saving even when the rest is full. A 6-hour run with the card nearly full passed.
+
+#### All the tests
+- About 7,200 automated tests in Python, plus 32 test files for the developer page. None of them need the network, a camera or the Pi. They use fake versions of each part (a fake clock, a fake detector, a fake AI).
+- Every test must pass, and the fast tests must cover at least 97% of the code.
+- Separate groups of tests run only when needed: the real YOLO model, the Docker images, the real web page in a browser, and the real Pi over ssh.
+- Before each change is merged, the linter, the type checker and a dead-code check all have to come back clean.
+- Some things only a person can check, like a power cut, a full SD card or the clock set to 1990. I ran those by hand on the real Pi and wrote down the results.
+
+
+#### Developer panel
+
+I built a developer page at /dev/ so I could see inside the app while it runs. It has seven tabs:
+
+- Checks: runs all the tests from the browser and shows each one pass or fail.
+- Live: shows each object's state and a chart of its smoothing (confidence, the vote and the wait). This is how I found the phantom glasses and the fake sips.
+- System: the health of every part of the app.
+- Pi: the Pi's processor, memory, temperature, fan, disks and Wi-Fi over the last 30 minutes.
+- Pi log: the Pi's logs, live.
+- Database and Storage: what's saved and how much room is left.
+- Demo: sets off warnings on purpose to show them.
+
