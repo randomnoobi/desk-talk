@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { fakeServer, type Reply } from './fakeServer'
+import { fakeServer, homeNetwork, type Reply } from './fakeServer'
 import { PiFinder } from './PiFinder'
 
 const FOUND = [
@@ -22,19 +22,19 @@ function rowOf(name: string) {
 
 describe('PiFinder', () => {
   it('has a button to search, and says it is looking while it waits', async () => {
-    const nearby = held({ body: { pis: FOUND } })
-    fakeServer({ 'GET /api/pis/nearby': nearby.answer })
+    const where = held(homeNetwork([])['GET /api/pis/where_to_look'] as Reply)
+    fakeServer({ ...homeNetwork(FOUND), 'GET /api/pis/where_to_look': where.answer })
     render(<PiFinder onLinked={() => {}} />)
     await userEvent.click(screen.getByRole('button', { name: 'Find Pis on my network' }))
     expect(await screen.findByText('Looking on your home network…')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Find Pis on my network' })).toBeDisabled()
-    nearby.release()
+    where.release()
     expect(await screen.findByText('desktalk')).toBeInTheDocument()
     expect(screen.queryByText('Looking on your home network…')).not.toBeInTheDocument()
   })
 
   it('lists each Pi found with its address, and a linked one has no Link button', async () => {
-    fakeServer({ 'GET /api/pis/nearby': { body: { pis: FOUND } } })
+    fakeServer(homeNetwork(FOUND))
     render(<PiFinder onLinked={() => {}} />)
     await userEvent.click(screen.getByRole('button', { name: 'Find Pis on my network' }))
     await screen.findByText('desktalk')
@@ -51,7 +51,7 @@ describe('PiFinder', () => {
     vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
       .mockReturnValue({ timeZone: 'Asia/Tokyo' } as Intl.ResolvedDateTimeFormatOptions)
     const server = fakeServer({
-      'GET /api/pis/nearby': { body: { pis: FOUND } },
+      ...homeNetwork(FOUND),
       'POST /api/pis/link': { body: { linked: true } },
     })
     const onLinked = vi.fn()
@@ -68,7 +68,7 @@ describe('PiFinder', () => {
   })
 
   it('says no Pi answered, and points at the command below', async () => {
-    fakeServer({ 'GET /api/pis/nearby': { body: { pis: [] } } })
+    fakeServer(homeNetwork([]))
     render(<PiFinder onLinked={() => {}} />)
     await userEvent.click(screen.getByRole('button', { name: 'Find Pis on my network' }))
     const line = await screen.findByText(/no pi answered/i)
@@ -78,7 +78,7 @@ describe('PiFinder', () => {
 
   it('shows the server words when there is no home network to search', async () => {
     fakeServer({
-      'GET /api/pis/nearby': { status: 409, body: { detail: 'Set PUBLIC_URL to this computer\'s home network number.' } },
+      'GET /api/pis/where_to_look': { status: 409, body: { detail: 'Set PUBLIC_URL to this computer\'s home network number.' } },
     })
     render(<PiFinder onLinked={() => {}} />)
     await userEvent.click(screen.getByRole('button', { name: 'Find Pis on my network' }))
@@ -86,11 +86,14 @@ describe('PiFinder', () => {
     expect(screen.queryByText(/no pi answered/i)).not.toBeInTheDocument()
   })
 
-  it('shows the server words when a search is already running', async () => {
-    fakeServer({ 'GET /api/pis/nearby': { status: 429, body: { detail: 'A search is already running.' } } })
+  it('looks again from the start when the button is clicked again', async () => {
+    const server = fakeServer(homeNetwork(FOUND))
     render(<PiFinder onLinked={() => {}} />)
     await userEvent.click(screen.getByRole('button', { name: 'Find Pis on my network' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('A search is already running.')
+    await screen.findByText('desktalk')
+    await userEvent.click(screen.getByRole('button', { name: 'Find Pis on my network' }))
+    await screen.findByText('desktalk')
+    expect(server.made('GET', '/api/pis/where_to_look')).toHaveLength(2)
   })
 
   it.each([
@@ -99,7 +102,7 @@ describe('PiFinder', () => {
   ])('shows the server words when a link fails with %i', async (status, words) => {
     const onLinked = vi.fn()
     fakeServer({
-      'GET /api/pis/nearby': { body: { pis: FOUND } },
+      ...homeNetwork(FOUND),
       'POST /api/pis/link': { status, body: { detail: words } },
     })
     render(<PiFinder onLinked={onLinked} />)
@@ -115,7 +118,7 @@ describe('PiFinder', () => {
   it('a Link button can not be clicked twice while its link is going', async () => {
     const link = held({ body: { linked: true } })
     const server = fakeServer({
-      'GET /api/pis/nearby': { body: { pis: FOUND } },
+      ...homeNetwork(FOUND),
       'POST /api/pis/link': link.answer,
     })
     render(<PiFinder onLinked={() => {}} />)
@@ -132,7 +135,7 @@ describe('PiFinder', () => {
 
   it('puts no code or address in a URL', async () => {
     const server = fakeServer({
-      'GET /api/pis/nearby': { body: { pis: FOUND } },
+      ...homeNetwork(FOUND),
       'POST /api/pis/link': { body: { linked: true, code: 'ABCD-EFGH' } },
     })
     render(<PiFinder onLinked={() => {}} />)
@@ -140,8 +143,10 @@ describe('PiFinder', () => {
     await screen.findByText('desktalk')
     await userEvent.click(within(rowOf('desktalk')).getByRole('button', { name: /link/i }))
     await waitFor(() => expect(server.made('POST', '/api/pis/link')).toHaveLength(1))
-    expect(server.calls.every(c => !c.path.includes('?'))).toBe(true)
-    expect(server.calls.every(c => !c.path.includes('192.168'))).toBe(true)
+    // The server is told the address only in the link's body; the knocks go to the addresses themselves.
+    expect(server.toServer().every(c => !c.path.includes('?'))).toBe(true)
+    expect(server.toServer().every(c => !c.path.includes('192.168'))).toBe(true)
+    expect(server.calls.every(c => !c.path.includes('ABCD'))).toBe(true)
     expect(window.location.href).not.toContain('192.168')
     expect(window.location.href).not.toContain('ABCD')
     expect(document.body).not.toHaveTextContent('ABCD')

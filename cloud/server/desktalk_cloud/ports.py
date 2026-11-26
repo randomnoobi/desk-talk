@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, Protocol, runtime_checkable
 
-from desktalk_cloud.domain import Admin, Device, FoundPi, GoogleUser, ObjectState, Report, StateChange, User
+from desktalk_cloud.domain import Admin, Device, GoogleUser, ObjectState, Report, StateChange, User
 
 
 class ReportFailed(Exception):
@@ -236,14 +236,9 @@ class ChatForwarder(Protocol):
 
 
 @runtime_checkable
-class PiFinder(Protocol):
-    """Looks for Desk Talk Pis on the home network and offers one a link. Contract:
-    tests/contracts/test_cloud_pi_finder_contract.py."""
-
-    async def find(self, addresses: Sequence[str]) -> list[FoundPi]:
-        """The Pis among these addresses that answer "who are you" as a Desk Talk Pi, sorted by address. Anything
-        else that answers (or doesn't) is left out."""
-        ...
+class PiOffers(Protocol):
+    """Offers a Pi on the home network a link. The looking is done by the person's browser (the website's
+    "Find Pis on my network"), never by this server. Contract: tests/contracts/test_cloud_pi_offers_contract.py."""
 
     async def offer(self, address: str, server_url: str, code: str) -> None:
         """Ask the Pi at `address` to link itself to `server_url` with this one-time code. Raises PiOfferFailed."""

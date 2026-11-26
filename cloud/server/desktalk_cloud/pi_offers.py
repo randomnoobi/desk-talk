@@ -1,9 +1,11 @@
-"""Finds Desk Talk Pis on the home network by knocking on each address's "who are you" route, and offers one a link.
+"""Offers a Desk Talk Pi on the home network a link. The person's browser found it (the website's "Find Pis on my
+network"): this server never knocks on the home network, because from inside Docker on a Mac (Colima, Docker
+Desktop) each knock on an empty address stays open in a relay for over a minute, and a whole network of them stalls
+every other connection the server makes.
 
-The home network can answer with anything: a router's admin page, a printer, a redirect, a huge page, or nothing at
-all. Only a short JSON reply that says it is a Desk Talk Pi counts; everything else is left out, and nothing is ever
-followed to another address. Each address gets its own time limit (`find_pis.knock_timeout_sec`) and an offer gets
-`find_pis.link_timeout_sec`, each one `asyncio.timeout` around the whole call (httpx's own timeout is for one read).
+The address can answer with anything: a redirect, a huge page, words that aren't clean, or nothing at all. Nothing is
+ever followed to another address, and an offer gets `find_pis.link_timeout_sec`, an `asyncio.timeout` around the
+whole call (httpx's own timeout is for one read).
 
 The offer carries a one-time code, and a Pi's reply is not ours to keep: neither goes in a log line or an error.
 Only the address, the status and the kind of error are logged."""
@@ -11,24 +13,20 @@ Only the address, the status and the kind of error are logged."""
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import json
 import logging
-from collections.abc import Sequence
 from typing import Any, TypeGuard
 
 import httpx
 
 from desktalk_cloud.config import FindPisSettings
-from desktalk_cloud.domain import FoundPi, is_clean_text
+from desktalk_cloud.domain import is_clean_text
 from desktalk_cloud.ports import PiOfferFailed
 
 log = logging.getLogger(__name__)
 
-HELLO_PATH = '/api/cloud/hello'
 LINK_PATH = '/api/cloud/link'
 OK = 200
-PI_KIND = 'pi'
 # The Pi's `kind` when it says no to a link offer (desktalk/web/routers/cloud.py), as a PiOfferFailed kind: the Pi's
 # bad_request and refused both carry its own words.
 KIND_THE_PI_SAID = {'bad_request': 'refused', 'refused': 'refused', 'not_caller': 'not_caller',
@@ -49,17 +47,12 @@ def _is_plain_line(text: Any) -> TypeGuard[str]:
     return isinstance(text, str) and bool(text.strip()) and is_clean_text(text) and text.isprintable()
 
 
-def _by_number(pi: FoundPi) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
-    return ipaddress.ip_address(pi.address)
+class HttpPiOffers:
+    """The PiOffers (ports.py) over the home network. `client` is for tests (an httpx client with a fake transport)."""
 
-
-class HttpPiFinder:
-    """The PiFinder (ports.py) over the home network. `client` is for tests (an httpx client with a fake transport)."""
-
-    def __init__(self, settings: FindPisSettings, name_max_chars: int, client: httpx.AsyncClient | None = None):
+    def __init__(self, settings: FindPisSettings, client: httpx.AsyncClient | None = None):
         self._settings = settings
-        self._name_max_chars = name_max_chars
-        # trust_env=False: a proxy set for the internet must not carry knocks on the home network.
+        # trust_env=False: a proxy set for the internet must not carry offers on the home network.
         self._client = client or httpx.AsyncClient(trust_env=False, follow_redirects=False)
 
     async def aclose(self) -> None:
@@ -91,37 +84,6 @@ class HttpPiFinder:
                 except _TooBig:
                     return reply.status_code, None
 
-    # ── who is there ───────────────────────────────────────────────────
-    async def find(self, addresses: Sequence[str]) -> list[FoundPi]:
-        slots = asyncio.Semaphore(self._settings.at_once)
-
-        async def knock(address: str) -> FoundPi | None:
-            async with slots:
-                return await self._hello(address)
-        answers = await asyncio.gather(*(knock(address) for address in addresses))
-        found = sorted((pi for pi in answers if pi is not None), key=_by_number)
-        log.info('Looked for Pis at %d addresses and found %d', len(addresses), len(found))
-        return found
-
-    async def _hello(self, address: str) -> FoundPi | None:
-        try:
-            status, content = await self._call('GET', address, HELLO_PATH, self._settings.knock_timeout_sec)
-        except Exception:                       # whatever one address does, the search goes on
-            return None                         # most addresses have nobody there: that is not worth a log line
-        if status != OK or content is None:
-            return None
-        try:
-            reply = json.loads(content)
-        except (ValueError, RecursionError):
-            return None
-        if not isinstance(reply, dict) or reply.get('desk_talk') != PI_KIND:
-            return None
-        name, linked = reply.get('name'), reply.get('linked')
-        if not _is_plain_line(name) or not isinstance(linked, bool):
-            return None
-        return FoundPi(address, name.strip()[:self._name_max_chars].strip(), linked)
-
-    # ── linking ────────────────────────────────────────────────────────
     async def offer(self, address: str, server_url: str, code: str) -> None:
         try:
             status, content = await self._call('POST', address, LINK_PATH, self._settings.link_timeout_sec,

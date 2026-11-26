@@ -1,12 +1,14 @@
 // Every call the website makes to the server, and the shape of each reply. Nothing else in the page fetches,
-// so if a route's reply looks different from what is written here, this is the one file to fix.
+// so if a route's reply looks different from what is written here, this is the one file to fix. The one call
+// that isn't to the server is the knock on each address of the home network, to find Pis (findPis).
 //
 // Routes used (the Pi's /v1 routes also answer to the person's login cookie):
 //   GET  /auth/google/login                     POST /auth/logout        POST /auth/admin/login
 //   GET  /api/me                                DELETE /api/me
 //   GET  /api/devices                           POST /api/devices/code   PATCH|DELETE /api/devices/{id}
 //   DELETE /api/devices/{id}/data
-//   GET  /api/pis/nearby                        POST /api/pis/link
+//   GET  /api/pis/where_to_look                 POST /api/pis/link
+//   GET  http://<each address>:<port>/api/cloud/hello  (each Pi's "who are you", from the browser)
 //   GET  /v1/devices/{id}/state                 GET  /v1/devices/{id}/events?since=&after_id=
 //   GET  /api/reports                           GET  /api/reports/{id}
 //   GET  /api/admin/overview                    POST /api/admin/reports/{id}/rerun
@@ -146,14 +148,114 @@ export async function makeCode(timeZone: string, deviceId?: string): Promise<Cod
   return { code: text(body.code), expires_at: num(body.expires_at), server_url: text(body.server_url), command: text(body.command) }
 }
 
-/** A Pi that answered on the home network. `linked` means it is already linked to a server. */
+// ---------------------------------------------------------------- finding Pis on the home network
+// The browser does the looking, not the server: knocking on a whole home network from the server's container
+// stalls every other connection it makes (on a Mac, Docker's relay keeps each empty knock open for a minute).
+
+/** A Pi that answered on the home network: its address there, the name it gives itself, and whether it is
+ *  already linked to a cloud server. Only this page knows them; the server is told just the address to link. */
 export interface FoundPi { address: string, name: string, linked: boolean }
 
-/** Asks the server to look for Pis on the home network around its own address. Takes a few seconds. */
+/** How to knock, from GET /api/pis/where_to_look, so the page keeps no copy of these settings. */
+interface WhereToLook { addresses: string[], port: number, waitMs: number, atOnce: number, nameMaxChars: number, replyMaxKb: number }
+
+const FOUR_NUMBERS = /^\d{1,3}(\.\d{1,3}){3}$/
+// What a one-line name may not hold: control and format characters, half letters, line breaks, and any space
+// but a plain one.
+const NOT_PLAIN = /[\p{C}\p{Zl}\p{Zp}]|(?! )\p{Zs}/u
+
+const whole = (value: unknown, otherwise: number) =>
+  typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : otherwise
+
+async function whereToLook(): Promise<WhereToLook> {
+  const body = fields(await get('/api/pis/where_to_look'))
+  const addresses = Array.isArray(body.addresses) ? body.addresses : []
+  return {
+    addresses: addresses.filter((a): a is string => typeof a === 'string' && FOUR_NUMBERS.test(a)),
+    port: whole(body.port, 0),
+    waitMs: whole(body.wait_ms, 0),
+    atOnce: whole(body.at_once, 1),
+    nameMaxChars: whole(body.name_max_chars, 0),
+    replyMaxKb: whole(body.reply_max_kb, 0),
+  }
+}
+
+const addressNumber = (address: string) => address.split('.').reduce((sum, part) => sum * 256 + Number(part), 0)
+
+/** The whole reply as text, or null when it passes `limit` bytes or isn't UTF-8. */
+async function readUpTo(response: Response, limit: number): Promise<string | null> {
+  const reader = response.body?.getReader()
+  if (!reader) return ''
+  const pieces: Uint8Array[] = []
+  let size = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > limit) {
+      void reader.cancel().catch(() => {})
+      return null
+    }
+    pieces.push(value)
+  }
+  const all = new Uint8Array(size)
+  let at = 0
+  for (const piece of pieces) {
+    all.set(piece, at)
+    at += piece.byteLength
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(all)
+  } catch {
+    return null
+  }
+}
+
+function isPlainLine(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '' && !NOT_PLAIN.test(value)
+}
+
+/** The Pi in a "who are you" reply, or null for anything that isn't one. */
+function asFoundPi(address: string, reply: unknown, nameMaxChars: number): FoundPi | null {
+  if (typeof reply !== 'object' || reply === null || Array.isArray(reply)) return null
+  const { desk_talk: kind, name, linked } = reply as Fields
+  if (kind !== 'pi' || !isPlainLine(name) || typeof linked !== 'boolean') return null
+  return { address, name: Array.from(name.trim()).slice(0, nameMaxChars).join('').trim(), linked }
+}
+
+/** Asks one address "who are you". Most addresses have nobody there, or something that isn't a Pi: null. */
+async function knock(address: string, where: WhereToLook): Promise<FoundPi | null> {
+  const stop = new AbortController()
+  const timer = setTimeout(() => stop.abort(), where.waitMs)
+  try {
+    // No cookies go, a redirect counts as no answer, and only a reply with the Pi's CORS header can be read.
+    const response = await fetch(`http://${address}:${where.port}/api/cloud/hello`,
+      { mode: 'cors', credentials: 'omit', redirect: 'error', cache: 'no-store', signal: stop.signal })
+    if (response.status !== 200) return null
+    const text = await readUpTo(response, where.replyMaxKb * 1024)
+    return text === null ? null : asFoundPi(address, JSON.parse(text), where.nameMaxChars)
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** Looks for Pis on the home network around the server's own address: the server says where, and this browser
+ *  knocks on each address, `at_once` at a time. Takes a few seconds. */
 export async function findPis(): Promise<FoundPi[]> {
-  return listOf(await get('/api/pis/nearby'), 'pis')
-    .map(raw => ({ address: text(raw.address), name: text(raw.name), linked: raw.linked === true }))
-    .filter(pi => pi.address !== '')
+  const where = await whereToLook()
+  const answers: (FoundPi | null)[] = []
+  let next = 0
+  async function knockOnTheNext() {
+    while (next < where.addresses.length) {
+      const index = next++
+      answers[index] = await knock(where.addresses[index], where)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(where.atOnce, where.addresses.length) }, knockOnTheNext))
+  return answers.filter((pi): pi is FoundPi => pi !== null)
+    .sort((a, b) => addressNumber(a.address) - addressNumber(b.address))
 }
 
 /** Links the Pi at `address`: the server makes a one-time code and hands it to the Pi itself, so the code

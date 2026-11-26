@@ -11,6 +11,7 @@ The page must be built (cloud/web/dist/); the `cloud_site_folder` fixture builds
 from __future__ import annotations
 
 import contextlib
+import json
 import shutil
 import socket
 import subprocess
@@ -19,6 +20,7 @@ import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
@@ -28,8 +30,9 @@ from fastapi.staticfiles import StaticFiles
 from desktalk_cloud import bootstrap
 from desktalk_cloud.app import CloudParts
 from desktalk_cloud.clock import SystemClock
-from desktalk_cloud.domain import DONE, FoundPi, GoogleUser
-from tests.fakes.cloud import CLOUD_FOLDER, FakeGoogleLogin, FakePiFinder, cloud_config, make_parts
+from desktalk_cloud.domain import DONE, GoogleUser
+from desktalk_cloud.pi_network import addresses_to_search
+from tests.fakes.cloud import CLOUD_FOLDER, FakeGoogleLogin, FakePiOffers, cloud_config, make_parts
 
 pytest.importorskip('playwright.sync_api')
 from playwright.sync_api import expect  # noqa: E402  (only when Playwright is installed)
@@ -92,7 +95,7 @@ HOME_SERVER = 'http://192.168.86.30:8080'
 @pytest.fixture
 def site_on_a_home_network(cloud_site_folder: Path) -> Iterator[tuple[str, CloudParts]]:
     """PUBLIC_URL is a home network number, as the search needs, and the browser logs in at this computer's own
-    address (LOGIN_URL). The fake finder's one Pi claims the code it is offered, the way a real Pi does."""
+    address (LOGIN_URL). The fake offers' one Pi claims the code it is offered, the way a real Pi does."""
     port = free_port()
     url = f'http://{THIS_COMPUTER}:{port}'
 
@@ -101,9 +104,9 @@ def site_on_a_home_network(cloud_site_folder: Path) -> Iterator[tuple[str, Cloud
             claimed = await client.post(f'{url}/v1/devices/claim', json={'code': code, 'name': 'Desk Pi'})
         assert claimed.status_code == 200
 
-    finder = FakePiFinder([FoundPi(HOME_PI, 'Desk Pi', linked=False)], on_offer=claim_like_a_pi)
+    offers = FakePiOffers(pis=[HOME_PI], on_offer=claim_like_a_pi)
     parts = make_parts(cloud_config(server={'public_url': HOME_SERVER, 'login_url': url}), clock=SystemClock(),
-                       google=ann_at_google(), pi_finder=finder)
+                       google=ann_at_google(), pi_offers=offers)
     yield from serve(parts, port, cloud_site_folder)
 
 
@@ -167,8 +170,36 @@ def test_log_in_add_a_pi_see_it_listed_and_read_its_report(page: Any, site: tupl
     expect(page.get_by_text('The water bottle came out often.')).to_be_visible()
 
 
+class PretendHomeNetwork:
+    """Stands in for the home network in the browser, so the page never knocks on a real one: HOME_PI answers "who
+    are you" as a Pi does (with the header that lets the page read it), and every other address can't be reached.
+    Anything else that isn't this computer is stopped too. `knocked` is each address the page knocked on."""
+
+    def __init__(self, port: int) -> None:
+        self.port = port
+        self.knocked: list[str] = []
+        self.stopped: list[str] = []
+
+    def __call__(self, route: Any) -> None:
+        where = urlsplit(route.request.url)
+        if where.hostname == THIS_COMPUTER:
+            route.continue_()
+        elif where.port == self.port and where.path == '/api/cloud/hello':
+            self.knocked.append(where.hostname or '')
+            if where.hostname == HOME_PI:
+                route.fulfill(status=200, headers={'Access-Control-Allow-Origin': '*'}, content_type='application/json',
+                              body=json.dumps({'desk_talk': 'pi', 'name': 'Desk Pi', 'linked': False}))
+            else:
+                route.abort('connectionrefused')
+        else:
+            self.stopped.append(route.request.url)
+            route.abort('blockedbyclient')
+
+
 def test_find_a_pi_on_the_home_network_and_link_it(page: Any, site_on_a_home_network: tuple[str, CloudParts]):
     url, parts = site_on_a_home_network
+    network = PretendHomeNetwork(parts.config.find_pis.pi_port)
+    page.context.route('**/*', network)
     page.goto(url)
     page.get_by_role('link', name='Log in with Google').click()
     expect(page.get_by_text('No Pis linked yet.')).to_be_visible()
@@ -181,6 +212,12 @@ def test_find_a_pi_on_the_home_network_and_link_it(page: Any, site_on_a_home_net
 
     # The page lists the newly linked Pi without a reload.
     expect(page.get_by_role('link', name='Desk Pi')).to_be_visible()
-    finder = parts.pi_finder
-    assert isinstance(finder, FakePiFinder)
-    assert [(address, server) for address, server, _code in finder.offers] == [(HOME_PI, HOME_SERVER)]
+    offers = parts.pi_offers
+    assert isinstance(offers, FakePiOffers)
+    assert [(address, server) for address, server, _code in offers.offers] == [(HOME_PI, HOME_SERVER)]
+
+    # The browser knocked on the whole home network around PUBLIC_URL, every address but the server's own, and
+    # nothing reached a real one.
+    expected = addresses_to_search(HOME_SERVER, parts.config.find_pis.network_prefix)
+    assert expected is not None and sorted(network.knocked) == sorted(expected)
+    assert network.stopped == []

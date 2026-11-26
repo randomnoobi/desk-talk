@@ -6,7 +6,6 @@ row (its DETAIL line), so a database error is logged by its kind only, whichever
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import sys
 import threading
@@ -27,7 +26,7 @@ from desktalk_cloud.config import CloudConfig, ConfigError
 from desktalk_cloud.google_login import HttpGoogleLogin
 from desktalk_cloud.llm_anthropic import AnthropicReportWriter
 from desktalk_cloud.llm_openai import OpenAIReportWriter
-from desktalk_cloud.pi_finder import HttpPiFinder
+from desktalk_cloud.pi_offers import HttpPiOffers
 from desktalk_cloud.ports import Clock, ReportWriter, Store
 from desktalk_cloud.rate_limit import RateLimiter
 from desktalk_cloud.report_data import load_report_words
@@ -93,10 +92,10 @@ def build_parts(config: CloudConfig, store: Store, clock: Clock) -> CloudParts:
         chat_forwarder = HttpChatForwarder(config.chat, secrets.chat_api_key.get_secret_value(), clock)
     return CloudParts(
         config=config, store=store, clock=clock, google=google, chat_forwarder=chat_forwarder,
-        pi_finder=HttpPiFinder(config.find_pis, config.pairing.name_max_chars),
+        pi_offers=HttpPiOffers(config.find_pis),
         claim_limiter=RateLimiter(config.limits.claim_tries, config.limits.claim_window_sec, clock),
         chat_limiter=RateLimiter(config.chat.limit_requests, config.chat.limit_window_sec, clock),
-        chat_slots=threading.BoundedSemaphore(config.chat.max_at_once), pi_search=asyncio.Lock())
+        chat_slots=threading.BoundedSemaphore(config.chat.max_at_once))
 
 
 def build_app(parts: CloudParts, *, lifespan=None) -> FastAPI:
@@ -119,8 +118,8 @@ def build(config: CloudConfig) -> Server:
     async def close_things_at_the_end(_app: FastAPI) -> AsyncIterator[None]:
         yield
         try:
-            if isinstance(parts.pi_finder, HttpPiFinder):
-                await parts.pi_finder.aclose()
+            if isinstance(parts.pi_offers, HttpPiOffers):
+                await parts.pi_offers.aclose()
         finally:
             try:
                 if isinstance(parts.chat_forwarder, HttpChatForwarder):

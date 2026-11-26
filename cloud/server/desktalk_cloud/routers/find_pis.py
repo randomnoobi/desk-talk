@@ -1,9 +1,10 @@
-"""The website's "Find Pis on my network": GET /api/pis/nearby looks on the home network around PUBLIC_URL for Desk Talk
-Pis, and POST /api/pis/link makes a one-time code (as "Add a Pi" does) and offers it to one of them, which then links
-itself by using the code, as it would with the command. Both need the person's login.
+"""The website's "Find Pis on my network": GET /api/pis/where_to_look tells the page which addresses of the home network
+around PUBLIC_URL to knock on, and how, and the person's browser does the knocking (pi_offers.py says why this server
+doesn't). POST /api/pis/link makes a one-time code (as "Add a Pi" does) and offers it to one Pi it found, which then
+links itself by using the code, as it would with the command. Both need the person's login.
 
-Only the addresses of the one private network around PUBLIC_URL's address are ever knocked on or offered a code
-(pi_network.py), and one search runs at a time on the whole server. The code never goes in a reply or a log."""
+Only the addresses of the one private network around PUBLIC_URL's address are ever given to knock on or offered a
+code (pi_network.py). The code never goes in a reply or a log."""
 
 from __future__ import annotations
 
@@ -28,18 +29,17 @@ router = APIRouter()
 log = logging.getLogger(__name__)
 
 
-@router.get('/api/pis/nearby')
-async def nearby(request: Request, _user: Annotated[User, Depends(current_user)]) -> dict[str, Any]:
-    parts = parts_of(request)
-    config, messages = parts.config, parts.config.messages
-    addresses = addresses_to_search(public_address(config), config.find_pis.network_prefix)
+@router.get('/api/pis/where_to_look')
+async def where_to_look(request: Request, _user: Annotated[User, Depends(current_user)]) -> dict[str, Any]:
+    """What the page needs to knock on each address itself, so it keeps no copy of these settings."""
+    config = parts_of(request).config
+    settings = config.find_pis
+    addresses = addresses_to_search(public_address(config), settings.network_prefix)
     if addresses is None:
-        raise HTTPException(409, messages.no_network_to_search)
-    if parts.pi_search.locked():                # checked and taken with no wait between, so only one runs
-        raise HTTPException(429, messages.pi_search_running)
-    async with parts.pi_search:
-        found = await parts.pi_finder.find(addresses)
-    return {'pis': [{'address': pi.address, 'name': pi.name, 'linked': pi.linked} for pi in found]}
+        raise HTTPException(409, config.messages.no_network_to_search)
+    return {'addresses': addresses, 'port': settings.pi_port, 'wait_ms': round(settings.knock_timeout_sec * 1000),
+            'at_once': settings.at_once, 'name_max_chars': config.pairing.name_max_chars,
+            'reply_max_kb': settings.reply_max_kb}
 
 
 @router.post('/api/pis/link')
@@ -57,7 +57,7 @@ async def link(request: Request, user: Annotated[User, Depends(current_user)],
         raise HTTPException(400, messages.pi_not_in_network)
     code, _expires_at = await make_link_code(request, user, zone)
     try:
-        await parts.pi_finder.offer(address, server_url, code)
+        await parts.pi_offers.offer(address, server_url, code)
     except PiOfferFailed as failure:
         # Our wait can end while the Pi is still using the code (its own waits are per step, not in all), so a Pi
         # that didn't answer in time may have linked after all: the code says so. Otherwise it just runs out.

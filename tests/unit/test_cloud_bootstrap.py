@@ -6,7 +6,6 @@ from __future__ import annotations
 import io
 import ipaddress
 import logging
-import math
 import re
 import signal
 import tomllib
@@ -28,8 +27,7 @@ from desktalk_cloud.config import ConfigError
 from desktalk_cloud.google_login import HttpGoogleLogin
 from desktalk_cloud.llm_anthropic import AnthropicReportWriter
 from desktalk_cloud.llm_openai import OpenAIReportWriter
-from desktalk_cloud.pi_finder import HttpPiFinder
-from desktalk_cloud.pi_network import addresses_to_search
+from desktalk_cloud.pi_offers import HttpPiOffers
 from desktalk_cloud.report_job import ReportJob
 from desktalk_cloud.retention import RetentionJob
 from desktalk_cloud.store_memory import MemoryStore
@@ -57,7 +55,7 @@ def test_build_uses_the_real_parts_from_the_settings():
     assert isinstance(parts.clock, SystemClock)
     assert isinstance(parts.google, HttpGoogleLogin)
     assert isinstance(parts.chat_forwarder, HttpChatForwarder)
-    assert isinstance(parts.pi_finder, HttpPiFinder)
+    assert isinstance(parts.pi_offers, HttpPiOffers)
     assert parts.claim_limiter.hit('a') and not parts.claim_limiter.hit('a')
     assert parts.chat_limiter.hit('a') and not parts.chat_limiter.hit('a')
 
@@ -89,7 +87,7 @@ def test_every_router_is_included():
     assert {'/auth/google/login', '/auth/google/callback', '/auth/logout', '/auth/admin/login',
             '/api/me', '/api/devices', '/api/devices/code', '/api/reports', '/api/admin/overview',
             '/v1/chat/completions', '/v1/devices/claim', '/v1/devices/x/state',
-            '/v1/devices/x/events', '/v1/events', '/api/pis/nearby', '/api/pis/link', '/healthz'} <= paths
+            '/v1/devices/x/events', '/v1/events', '/api/pis/where_to_look', '/api/pis/link', '/healthz'} <= paths
     client = TestClient(bootstrap.build_app(make_parts()), raise_server_exceptions=False)
     for method, path in every_route():
         reply = client.request(method, path, json={})
@@ -115,32 +113,27 @@ def test_stopping_the_server_closes_the_chat_client(monkeypatch):
     assert client.is_closed
 
 
-def test_stopping_the_server_closes_the_pi_finders_client(monkeypatch):
+def test_stopping_the_server_closes_the_pi_offers_client(monkeypatch):
     monkeypatch.setattr(PostgresStore, 'dispose', lambda self: None)
     server = bootstrap.build(cloud_config(ALL_SET))
-    client = server.app.state.parts.pi_finder._client
+    client = server.app.state.parts.pi_offers._client
     with TestClient(server.app):
         assert not client.is_closed
     assert client.is_closed
 
 
-def test_the_rest_is_closed_even_if_closing_the_pi_finder_fails(monkeypatch):
+def test_the_rest_is_closed_even_if_closing_the_pi_offers_fails(monkeypatch):
     closed = []
     monkeypatch.setattr(PostgresStore, 'dispose', lambda self: closed.append(self))
 
     async def breaks(self):
         raise RuntimeError('boom')
-    monkeypatch.setattr(HttpPiFinder, 'aclose', breaks)
+    monkeypatch.setattr(HttpPiOffers, 'aclose', breaks)
     server = bootstrap.build(cloud_config(ALL_SET))
     chat_client = server.app.state.parts.chat_forwarder._client
     with pytest.raises(RuntimeError), TestClient(server.app):
         pass
     assert closed == [server.store] and chat_client.is_closed
-
-
-def test_build_makes_one_search_lock():
-    parts = bootstrap.build(cloud_config(ALL_SET)).app.state.parts
-    assert not parts.pi_search.locked()
 
 
 def test_the_database_is_closed_even_if_closing_the_chat_client_fails(monkeypatch):
@@ -762,22 +755,19 @@ def nginx_wait_sec() -> int:
     return int(found.group(1))
 
 
-def test_the_finder_knocks_on_the_port_other_computers_reach_the_pi_on():
+def test_the_search_knocks_on_the_port_other_computers_reach_the_pi_on():
     # APP_HOST_PORT is the Pi's one open door (raspberry_pi/compose.yaml); web.port is only inside its container.
     port = cloud_config().find_pis.pi_port
     assert str(port) == env_value(ROOT / 'raspberry_pi' / '.env.example', 'APP_HOST_PORT')
 
 
-def test_the_finder_waits_longer_than_the_pi_waits_to_claim_its_code():
+def test_a_link_offer_waits_longer_than_the_pi_waits_to_claim_its_code():
     assert cloud_config().find_pis.link_timeout_sec > pi_settings()['cloud']['timeout_sec']
 
 
-def test_the_longest_search_and_link_end_before_nginx_gives_up():
-    settings = cloud_config().find_pis
-    addresses = addresses_to_search('http://192.168.86.30', settings.network_prefix)
-    assert addresses is not None
-    assert math.ceil(len(addresses) / settings.at_once) * settings.knock_timeout_sec < nginx_wait_sec()
-    assert settings.link_timeout_sec < nginx_wait_sec()
+def test_the_longest_link_ends_before_nginx_gives_up():
+    # The search goes from the browser straight to each address, not through nginx; a link offer still does.
+    assert cloud_config().find_pis.link_timeout_sec < nginx_wait_sec()
 
 
 def test_the_pi_cuts_its_name_to_what_the_cloud_takes():
@@ -788,7 +778,7 @@ def test_the_pi_cuts_its_name_to_what_the_cloud_takes():
 def test_the_pis_longest_reason_for_saying_no_fits_what_the_website_shows():
     # The Pi's own words reach the website only when it refused (kind bad_request or refused): offer_bad,
     # link_code_refused, or link_refused_because around the server's reason cut to cloud.error_text_chars. Longer
-    # words would still be cut cleanly (pi_finder.py), but these should show whole.
+    # words would still be cut cleanly (pi_offers.py), but these should show whole.
     words = yaml.safe_load((ROOT / 'config' / 'prompts.yaml').read_text('utf-8'))['cloud']
     wrapped = words['link_refused_because'].format(reason='x' * pi_settings()['cloud']['error_text_chars'])
     longest = max(len(wrapped), len(words['link_code_refused']), len(words['offer_bad']))

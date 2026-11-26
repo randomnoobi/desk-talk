@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { fakeServer } from '../fakeServer'
+import { fakeServer, homeNetwork } from '../fakeServer'
 import Pis from './Pis'
 
 const DEVICES = [
@@ -81,7 +81,7 @@ describe('Pis', () => {
     let linked = false
     const server = fakeServer({
       'GET /api/devices': () => ({ body: { devices: linked ? [DEVICES[0]] : [] } }),
-      'GET /api/pis/nearby': { body: { pis: [{ address: '192.168.86.225', name: 'desktalk', linked: false }] } },
+      ...homeNetwork([{ address: '192.168.86.225', name: 'desktalk', linked: false }]),
       'POST /api/pis/link': () => { linked = true; return { body: { linked: true } } },
     })
     render(<Pis />)

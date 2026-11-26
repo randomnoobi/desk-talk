@@ -189,7 +189,6 @@ class Messages(_Section):
     report_no_key: str
     report_pi_removed: str
     no_network_to_search: str
-    pi_search_running: str
     pi_not_in_network: str
     pi_already_linked: str
     pi_refused: str

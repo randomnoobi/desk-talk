@@ -1,5 +1,5 @@
-// Finds Pis on the home network and links one with a click. The server does the looking and hands the Pi its
-// one-time code itself, so the code never comes to this page.
+// Finds Pis on the home network and links one with a click. This browser does the looking (findPis in api.ts);
+// the server hands the Pi its one-time code itself, so the code never comes to this page.
 import { useState } from 'react'
 import { ApiError, findPis, linkPi, type FoundPi } from './api'
 import { browserTimeZone } from './format'
