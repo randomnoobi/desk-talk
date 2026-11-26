@@ -948,6 +948,8 @@ dev:
   # the System and Storage tabs couldn't get the Pi's health checks (on a computer whose camera is the Pi): the
   # same blanks
   pi_health_unreachable: "Couldn't get the Pi's health checks from {address}: {problem}. Is the Pi on, and on your Wi-Fi? If it goes by another name, set dev.pi_address."
+  # the Live tab couldn't get what the Pi's camera sees (on a computer whose camera is the Pi): the same blanks
+  pi_objects_unreachable: "Couldn't get what the Pi's camera sees from {address}: {problem}. Is the Pi on, and on your Wi-Fi? If it goes by another name, set dev.pi_address."
   # /dev/ before `npm run build` has made the page
   not_built: "The developer page isn't built yet. In dev_ui/, run: npm install && npm run build"
   # the Demo tab (settings → dev.scenarios): a pretend warning that isn't in the list, or a countdown out of range

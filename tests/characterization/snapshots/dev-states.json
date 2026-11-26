@@ -2,6 +2,7 @@
   "content_type": "application/json",
   "headers": {},
   "json": {
+    "address": "str",
     "changes": [
       {
         "change": "str",
@@ -9,28 +10,9 @@
         "ts": "number"
       }
     ],
+    "from": "str",
     "objects": {
-      "book": {
-        "since": "number",
-        "state": "str"
-      },
       "cup": {
-        "since": "number",
-        "state": "str"
-      },
-      "key": {
-        "since": "number",
-        "state": "str"
-      },
-      "laptop": {
-        "since": "number",
-        "state": "str"
-      },
-      "person": {
-        "since": "number",
-        "state": "str"
-      },
-      "remote": {
         "since": "number",
         "state": "str"
       }

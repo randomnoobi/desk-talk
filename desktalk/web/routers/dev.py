@@ -3,6 +3,12 @@ The developer page (http://localhost:5000/dev/, dev_ui/). Only there when settin
 only for this computer, from the server's own page or the Vite dev server's (DevOnly): anything else is a 403.
 
     GET  /api/dev/settings                  every number the page uses (it keeps no copies)
+
+  The Live tab's five routes answer from the machine that sees the objects: on a computer whose camera is the Pi
+  (settings: pi_camera_elsewhere), the Pi's own GET /api/objects/... (routers/objects.py), fetched from
+  dev.pi_address, with "from": "pi" and "address"; otherwise this server's own, with "from": "here" and
+  "address": "". 502 when the Pi doesn't answer. (The photo route stays a JPEG, with no "from".)
+
     GET  /api/dev/states?since=<ts>         each object's state now, and the changes after `since`
     GET  /api/dev/smoothing                 the objects with a smoothing trace
     GET  /api/dev/smoothing/trace?label=    one object's last pictures of smoothing, oldest first ([] for one
@@ -13,6 +19,7 @@ only for this computer, from the server's own page or the Vite dev server's (Dev
                                             of it (pen/pencil works too). The same story the app page shows
                                             (desktalk/web/stories.py), but an empty one for a word never seen
     GET  /api/dev/objects/photo/<id>        one of those pictures (a JPEG); 404 once it's gone
+
     GET  /api/dev/tests                     every test pytest finds
     POST /api/dev/runs                      {"check": true} or {"tests": [ids]} → {run_id}; 409 while a run is
                                             going, 400 for a test that isn't in the list
@@ -111,15 +118,29 @@ def _pi_elsewhere(app: App) -> PiStatsLink | None:
     return app.pi_stats_link if app.config.pi_camera_elsewhere else None
 
 
+def _pi_unreachable(app: App, unreachable: str, error: StatsUnavailable) -> HTTPException:
+    """A 502 with `unreachable`'s words (prompts.yaml → dev, with {address} and {problem})."""
+    return HTTPException(502, unreachable.format(address=app.config.dev.pi_address, problem=str(error)))
+
+
 def _ask_pi(app: App, ask: Callable[[], dict[str, Any]], unreachable: str) -> dict[str, Any]:
-    """`ask()`'s reply from the Pi, with its address; a 502 with `unreachable`'s words (prompts.yaml → dev, with
-    {address} and {problem}) when the Pi doesn't answer or sends something else."""
-    address = app.config.dev.pi_address
+    """`ask()`'s reply from the Pi, with its address; a 502 with `unreachable`'s words when the Pi doesn't answer
+    or sends something else."""
     try:
         reply = ask()
     except StatsUnavailable as error:
-        raise HTTPException(502, unreachable.format(address=address, problem=str(error))) from None
-    return {**reply, 'address': address}
+        raise _pi_unreachable(app, unreachable, error) from None
+    return {**reply, 'address': app.config.dev.pi_address}
+
+
+def _live(app: App, ask_pi: Callable[[PiStatsLink], dict[str, Any]],
+          here: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    """A Live tab reply from the machine that sees the objects: the Pi when its camera is elsewhere (`ask_pi`),
+    else this server (`here`), each saying where it came from, as /api/dev/health does."""
+    link = _pi_elsewhere(app)
+    if link is None:
+        return {**here(), 'from': 'here', 'address': ''}
+    return {**_ask_pi(app, lambda: ask_pi(link), app.config.prompts.dev.pi_objects_unreachable), 'from': 'pi'}
 
 
 def _pi_log(app: App) -> PiLog:
@@ -174,30 +195,43 @@ def dev_settings(app: App) -> dict[str, Any]:
     }
 
 
+# The Live tab's routes are plain defs, so FastAPI runs them in a thread: the Pi may take up to
+# dev.pi_stats_timeout_sec to answer.
 @router.get('/api/dev/states')
 def dev_states(app: App, since: float = 0.0) -> dict[str, Any]:
-    return object_states(app, since)
+    return _live(app, lambda link: link.states(since), lambda: object_states(app, since))
 
 
 @router.get('/api/dev/smoothing')
 def dev_smoothing(app: App) -> dict[str, Any]:
-    return object_smoothing(app)
+    return _live(app, lambda link: link.traced_labels(), lambda: object_smoothing(app))
 
 
 @router.get('/api/dev/smoothing/trace')
 def dev_smoothing_trace(app: App, label: str) -> dict[str, Any]:
-    return object_smoothing_trace(app, label)
+    return _live(app, lambda link: link.trace(label), lambda: object_smoothing_trace(app, label))
 
 
 # Before the trace route: its {label:path} would take "photo/<id>" too.
 @router.get('/api/dev/objects/photo/{photo_id}')
 def dev_object_photo(app: App, photo_id: str) -> Response:
-    return story_photo(app, photo_id)
+    """The picture from the machine that took it: the Pi when its camera is elsewhere (404 once it's gone there
+    too), else this server."""
+    link = _pi_elsewhere(app)
+    if link is None:
+        return story_photo(app, photo_id)
+    try:
+        jpeg = link.photo(photo_id)
+    except StatsUnavailable as error:
+        raise _pi_unreachable(app, app.config.prompts.dev.pi_objects_unreachable, error) from None
+    if jpeg is None:
+        raise HTTPException(404)                 # the Pi keeps only the newest
+    return Response(jpeg, media_type='image/jpeg')
 
 
 @router.get('/api/dev/objects/{label:path}')
 def dev_object_trace(app: App, label: str) -> dict[str, Any]:
-    return object_story(app, label)
+    return _live(app, lambda link: link.story(label), lambda: object_story(app, label))
 
 
 @router.get('/api/dev/tests')

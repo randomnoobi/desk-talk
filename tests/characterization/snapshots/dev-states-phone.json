@@ -2,9 +2,11 @@
   "content_type": "application/json",
   "headers": {},
   "json": {
+    "address": "str",
     "changes": [],
+    "from": "str",
     "objects": {},
     "watched_since": "null"
   },
-  "request": "GET /api/dev/states (main server, fresh desk)"
+  "request": "GET /api/dev/states (main server, phone desk)"
 }

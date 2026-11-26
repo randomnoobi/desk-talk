@@ -29,7 +29,7 @@ def test_states_reply_matches_the_dev_reply(rig):
     states = reply.json()
     assert states['objects']['cup']['state'] == 'PRESENT'
     assert states['changes']
-    assert states == client.get('/api/dev/states?since=0').json()
+    assert {**states, 'from': 'here', 'address': ''} == client.get('/api/dev/states?since=0').json()
 
 
 def test_smoothing_lists_traced_labels(rig):
@@ -43,7 +43,7 @@ def test_trace_of_a_word_never_seen_is_empty(rig):
     reply = client.get('/api/objects/smoothing/trace?label=pen%2Fpencil')
     assert (reply.status_code, reply.json()) == (200, {'label': 'pen/pencil', 'steps': []})
     cup = client.get('/api/objects/smoothing/trace?label=cup').json()
-    assert cup == client.get('/api/dev/smoothing/trace?label=cup').json()
+    assert {**cup, 'from': 'here', 'address': ''} == client.get('/api/dev/smoothing/trace?label=cup').json()
     assert cup['steps']
 
 
