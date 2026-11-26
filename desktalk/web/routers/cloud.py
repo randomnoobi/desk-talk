@@ -5,7 +5,8 @@ and linking it with one click:
     GET  /api/cloud/status  {linked, stopped, last_sent_ts, waiting}: whether this computer is linked to a cloud
                             server, whether the server said it doesn't know us any more, when something was last
                             sent (null: never) and how many events wait to go. Never the token or the address.
-    GET  /api/cloud/hello   {desk_talk: "pi", name, linked}: who this is, for the cloud server looking for Pis.
+    GET  /api/cloud/hello   {desk_talk: "pi", name, linked}: who this is, for the cloud website looking for Pis from
+                            the browser, so any site's page may read it (Access-Control-Allow-Origin: *).
                             Nothing else (no events, no server address, no device id).
     POST /api/cloud/link    {server, code}: link to the cloud server at `server` with its one-time code. 200
                             {linked: true}, or {error, kind}: `error` the plain words, `kind` why, for the cloud
@@ -21,7 +22,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, StrictStr, ValidationError
 from starlette.concurrency import run_in_threadpool
@@ -48,9 +49,16 @@ def cloud_status(app: App) -> dict[str, Any]:
     return app.cloud.status()
 
 
+# The cloud website looks for Pis from the person's browser (a server in Docker on a Mac can't knock on a whole home
+# network), so a page from another site may read this one answer. It holds nothing but the name and "linked", and no
+# cookies go with it. Every other route stays this server's own.
+ANY_SITE = {'Access-Control-Allow-Origin': '*'}
+
+
 @router.get('/api/cloud/hello')
-def cloud_hello(app: App) -> dict[str, Any]:
+def cloud_hello(app: App, response: Response) -> dict[str, Any]:
     hello = app.cloud_linker.hello()
+    response.headers.update(ANY_SITE)
     return {'desk_talk': 'pi', 'name': hello.name, 'linked': hello.linked}
 
 

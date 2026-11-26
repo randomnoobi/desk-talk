@@ -234,6 +234,23 @@ def test_hello_never_shows_the_link(tmp_path):
     assert TOKEN not in reply.text and 'cloud.test' not in reply.text and 'dev-1' not in reply.text
 
 
+def test_a_page_on_another_site_may_read_hello(tmp_path):
+    # The cloud website looks for Pis from the browser, so its page (another site) must be able to read the answer.
+    rig = make_rig(tmp_path, None)
+    reply = web_client(rig.app, from_ip=HOME).get('/api/cloud/hello', headers={'Origin': 'http://localhost:8080'})
+    assert reply.status_code == 200
+    assert reply.headers['access-control-allow-origin'] == '*'
+    assert 'access-control-allow-credentials' not in reply.headers
+
+
+def test_only_hello_may_be_read_by_another_site(tmp_path):
+    rig = make_rig(tmp_path, None)
+    client = web_client(rig.app, from_ip=HOME)
+    origin = {'Origin': 'http://localhost:8080'}
+    assert 'access-control-allow-origin' not in client.get('/api/cloud/status', headers=origin).headers
+    assert 'access-control-allow-origin' not in client.post('/api/cloud/link', json=OFFER).headers
+
+
 def test_link_route_links_and_speaks(tmp_path):
     claims = Claims()
     rig = make_rig(tmp_path, None, cloud_claim=claims)
