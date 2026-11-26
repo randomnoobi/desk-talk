@@ -1,16 +1,22 @@
 """
-The computer's line to the Pi's own Desk Talk (ports.PiStatsLink), for the developer page's Pi, System and
-Storage tabs, with the standard library only:
+The computer's line to the Pi's own Desk Talk (ports.PiStatsLink), for the developer page's Pi, System, Storage
+and Live tabs, with the standard library only:
 
     link = HttpPiStatsLink('desktalk.local:5000', 3)     # settings → dev.pi_address, dev.pi_stats_timeout_sec
     reply = link.fetch(since)                             # the Pi's GET /api/system/stats reply, as it is
     reply = link.health()                                 # the Pi's GET /api/health reply
+    reply = link.states(since)                            # the Pi's GET /api/objects/states?since=
+    reply = link.traced_labels()                          # the Pi's GET /api/objects/smoothing
+    reply = link.trace(label)                             # the Pi's GET /api/objects/smoothing/trace?label=
+    reply = link.story(label)                             # the Pi's GET /api/objects/<label>/story (empty on its 404)
+    jpeg = link.photo(photo_id)                           # the Pi's GET /api/objects/photo/<id> (None on its 404)
 
 The developer page runs on the computer and the app lets no other web site read it, so the computer's server
 asks the Pi and passes the reply on. When the Pi doesn't answer in time, can't be found, answers with an error,
 or sends something that isn't the reply asked for, each raises StatsUnavailable with a short problem in plain
-words (no address: the route puts it in its own sentence, prompts.yaml → dev.pi_stats_unreachable and
-dev.pi_health_unreachable).
+words (no address: the route puts it in its own sentence, prompts.yaml → dev.pi_stats_unreachable,
+dev.pi_health_unreachable and dev.pi_objects_unreachable). Only a story or a picture may be missing on the Pi
+(its 404): any other 404 is a problem like the rest.
 """
 
 from __future__ import annotations
@@ -28,6 +34,7 @@ from desktalk.domain import StatsUnavailable
 
 NOT_THEIR_NUMBERS = "it didn't send its numbers"
 NOT_ITS_HEALTH = "it didn't send its health checks"
+NOT_ITS_OBJECTS = "it didn't send what its camera sees"
 BAD_ADDRESS = "that address can't be used"
 
 
@@ -77,20 +84,56 @@ class HttpPiStatsLink:
     def health(self) -> dict[str, Any]:
         return self._ask('/api/health', '', 'checks', dict, NOT_ITS_HEALTH)
 
+    def states(self, since: float) -> dict[str, Any]:
+        query = urllib.parse.urlencode({'since': since})
+        return self._ask('/api/objects/states', query, 'objects', dict, NOT_ITS_OBJECTS)
+
+    def traced_labels(self) -> dict[str, Any]:
+        return self._ask('/api/objects/smoothing', '', 'labels', list, NOT_ITS_OBJECTS)
+
+    def trace(self, label: str) -> dict[str, Any]:
+        query = urllib.parse.urlencode({'label': label})          # a slash too: pen/pencil → label=pen%2Fpencil
+        return self._ask('/api/objects/smoothing/trace', query, 'steps', list, NOT_ITS_OBJECTS)
+
+    def story(self, label: str) -> dict[str, Any]:
+        path = f"/api/objects/{urllib.parse.quote(label, safe='')}/story"
+        body = self._get(path, '', missing_ok=True)
+        if body is None:                                           # the Pi has nothing to tell about it
+            return {'label': label, 'timeline': [], 'photos': []}
+        return _shaped(body, 'timeline', list, NOT_ITS_OBJECTS)
+
+    def photo(self, photo_id: str) -> bytes | None:
+        return self._get(f"/api/objects/photo/{urllib.parse.quote(photo_id, safe='')}", '', missing_ok=True)
+
     def _ask(self, path: str, query: str, key: str, kind: type, not_it: str) -> dict[str, Any]:
         """The Pi's reply to GET `path`?`query`: a JSON object whose `key` is a `kind` (the part that shows it's the
         reply asked for), or StatsUnavailable (saying `not_it` when the reply is something else)."""
+        body = self._get(path, query)
+        assert body is not None                                    # only missing_ok gives None
+        return _shaped(body, key, kind, not_it)
+
+    def _get(self, path: str, query: str, *, missing_ok: bool = False) -> bytes | None:
+        """The body of the Pi's reply to GET `path`?`query`, or StatsUnavailable when there's no good answer. With
+        `missing_ok`, the Pi's 404 (it hasn't got that) is None instead."""
         url = f'{self._base}{path}' + (f'?{query}' if query else '')
         try:
-            body = self._open(url, self._timeout)
+            return self._open(url, self._timeout)
+        except urllib.error.HTTPError as exc:
+            if missing_ok and exc.code == 404:
+                return None
+            raise StatsUnavailable(_why(exc, self._timeout)) from None
         except (OSError, http.client.HTTPException) as exc:       # URLError and timeouts are OSErrors too
             raise StatsUnavailable(_why(exc, self._timeout)) from None
         except ValueError:                                         # an address urllib can't make sense of
             raise StatsUnavailable(BAD_ADDRESS) from None
-        try:
-            reply = json.loads(body)
-        except ValueError:                                         # not JSON, or not even text
-            raise StatsUnavailable(f"{not_it} (the answer isn't JSON)") from None
-        if not isinstance(reply, dict) or not isinstance(reply.get(key), kind):
-            raise StatsUnavailable(not_it)
-        return reply
+
+
+def _shaped(body: bytes, key: str, kind: type, not_it: str) -> dict[str, Any]:
+    """`body` as a JSON object whose `key` is a `kind`, or StatsUnavailable saying `not_it`."""
+    try:
+        reply = json.loads(body)
+    except ValueError:                                             # not JSON, or not even text
+        raise StatsUnavailable(f"{not_it} (the answer isn't JSON)") from None
+    if not isinstance(reply, dict) or not isinstance(reply.get(key), kind):
+        raise StatsUnavailable(not_it)
+    return reply

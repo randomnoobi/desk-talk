@@ -1305,8 +1305,9 @@ class SystemStats(PeriodicWorker, Protocol):
 @runtime_checkable
 class PiStatsLink(Protocol):
     """The computer's line to the Pi's own Desk Talk, for the developer page on the computer when the camera is
-    the Pi (desktalk/adapters/dev/): its numbers and its health. Each raises StatsUnavailable, saying in a few plain
-    words what went wrong (never the address), when the Pi doesn't answer or doesn't send the right shape."""
+    the Pi (desktalk/adapters/dev/): its numbers, its health, and what its camera sees (the Live tab). Each raises
+    StatsUnavailable, saying in a few plain words what went wrong (never the address), when the Pi doesn't answer
+    or doesn't send the right shape."""
 
     def fetch(self, since: float | None) -> dict[str, Any]:
         """The Pi's GET /api/system/stats reply (SystemStats.history's shape)."""
@@ -1314,6 +1315,28 @@ class PiStatsLink(Protocol):
 
     def health(self) -> dict[str, Any]:
         """The Pi's GET /api/health reply (how each of its parts is doing, with its `checks`)."""
+        ...
+
+    def states(self, since: float) -> dict[str, Any]:
+        """The Pi's GET /api/objects/states?since= reply: its `objects` (a dict), `watched_since` and `changes`."""
+        ...
+
+    def traced_labels(self) -> dict[str, Any]:
+        """The Pi's GET /api/objects/smoothing reply: the `labels` (a list) it keeps a smoothing trace of."""
+        ...
+
+    def trace(self, label: str) -> dict[str, Any]:
+        """The Pi's GET /api/objects/smoothing/trace?label= reply: the `label` and its `steps` (a list)."""
+        ...
+
+    def story(self, label: str) -> dict[str, Any]:
+        """The Pi's GET /api/objects/<label>/story reply: `label`, `timeline` (a list) and `photos`. When the Pi has
+        nothing to tell about it, the empty story: {"label": label, "timeline": [], "photos": []}."""
+        ...
+
+    def photo(self, photo_id: str) -> bytes | None:
+        """One of the story's pictures, the Pi's GET /api/objects/photo/<id> (a JPEG's bytes); None once it's gone
+        there."""
         ...
 
 

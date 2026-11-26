@@ -66,8 +66,8 @@ class SystemStatsContract:
 
 
 class PiStatsLinkContract:
-    """Subclass this and give `link` (its Pi answers: one sample and its health) and `dead_link`
-    (its Pi doesn't answer)."""
+    """Subclass this and give `link` (its Pi answers: one sample, its health, and what its camera sees: a cup with a
+    story and one picture of it, nothing ever seen of a pen/pencil) and `dead_link` (its Pi doesn't answer)."""
 
     def test_it_is_a_link(self, link):
         assert isinstance(link, PiStatsLink)
@@ -93,4 +93,48 @@ class PiStatsLinkContract:
     def test_a_pi_that_does_not_answer_raises_for_its_health_too(self, dead_link):
         with pytest.raises(StatsUnavailable) as caught:
             dead_link.health()
+        assert str(caught.value)
+
+    # ── what the Pi's camera sees (the developer page's Live tab) ──
+    def test_it_brings_back_the_pi_states(self, link):
+        reply = link.states(0.0)
+        assert isinstance(reply, dict)
+        assert isinstance(reply['objects'], dict)
+
+    def test_it_brings_back_the_traced_labels(self, link):
+        assert isinstance(link.traced_labels()['labels'], list)
+
+    def test_it_brings_back_one_trace(self, link):
+        reply = link.trace('cup')
+        assert reply['label'] == 'cup'
+        assert isinstance(reply['steps'], list)
+
+    def test_it_brings_back_a_story(self, link):
+        reply = link.story('cup')
+        assert reply['label'] == 'cup'
+        assert isinstance(reply['timeline'], list)
+        assert isinstance(reply['photos'], list)
+
+    def test_a_story_never_seen_is_empty(self, link):
+        assert link.story('pen/pencil') == {'label': 'pen/pencil', 'timeline': [], 'photos': []}
+
+    def test_a_picture_comes_back_as_its_bytes(self, link):
+        photo_id = link.story('cup')['photos'][0]['id']
+        jpeg = link.photo(photo_id)
+        assert isinstance(jpeg, bytes)
+        assert jpeg
+
+    def test_a_picture_that_is_gone_is_none(self, link):
+        assert link.photo('gone') is None
+
+    @pytest.mark.parametrize('ask', [
+        lambda link: link.states(0.0),
+        lambda link: link.traced_labels(),
+        lambda link: link.trace('cup'),
+        lambda link: link.story('cup'),
+        lambda link: link.photo('cup-1'),
+    ], ids=['states', 'traced_labels', 'trace', 'story', 'photo'])
+    def test_a_pi_that_does_not_answer_raises_for_its_objects_too(self, dead_link, ask):
+        with pytest.raises(StatsUnavailable) as caught:
+            ask(dead_link)
         assert str(caught.value)
