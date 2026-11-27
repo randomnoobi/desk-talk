@@ -23,13 +23,12 @@ from desktalk.config.habits import _ComputerZone
 from desktalk.config.prompts import (
     ByCamera,
     HabitAreas,
-    ObjectStoryWords,
 )
 from desktalk.core.habits.habit_days import HabitDay
 from desktalk.core.habits.sun_times import SunTimes
 from desktalk.core.habits.tracker import DayTimes
 from desktalk.domain.dev import DataFile, PiLogLine, PiLogPage, QueryResult, RunStatus, SmoothingStep, TestOutcome
-from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent, NudgeSent
+from desktalk.domain.events import AgentLeft, Compaction, DetectionEvent
 from desktalk.domain.system_stats import (
     Cooling,
     CpuNow,
@@ -58,8 +57,6 @@ _ = (
     # Written to the picture log to show where the detector ran (pi or computer); the tests check it to tell a Pi
     # detection from one done here.
     DetectionEvent.detected_on,
-    # Written with every habit reminder; the rule engine (PR #6) reads it.
-    NudgeSent.rule,
     # Wording in config/prompts.yaml, read by name when the config loads (desktalk/config/prompts.py: prompt_texts).
     HabitAreas.screens,
     # The habit day file's fields: HabitDay.to_dict() writes them to data/habits/<day>.json, and today() reads
@@ -92,9 +89,7 @@ _ = (
     PreferenceChanges.model_config, Server(config=None).should_exit,  # type: ignore[arg-type]
 )
 
-# The developer page (docs/plans/2026-10-24-developer-ui-plan.md): its settings, wording, plain data and
-# interfaces. Task 1 of the plan adds them; Tasks 2 to 6 use them (the test runner, the database browser, the data
-# folder viewer, the smoothing trace and the /api/dev routes). Take a name off once its task uses it.
+# The developer page: names that only pytest, Python itself or the page (dev_ui/, reading JSON) use.
 _developer_page = (
     # pytest calls a plugin's hooks by name: desktalk/adapters/dev/pytest_report.py, loaded with -p.
     pytest_report.pytest_runtest_logreport,
@@ -114,8 +109,6 @@ _developer_page = (
 _ = EventLog.recent_detections
 # A test's result, sent to the developer page as JSON (dataclasses.asdict) and shown by dev_ui/ (the Checks tab).
 _ = TestOutcome.duration_sec
-# The words for each step of an object's story, picked by the step's kind (desktalk/web/stories.py, getattr).
-_ = ObjectStoryWords.refused
 # urllib calls this by name when a reply says "go to another address": the cloud link answers "no", so the token is
 # never sent anywhere the reply points (desktalk/adapters/cloud/http_link.py).
 _ = _NoRedirects.redirect_request

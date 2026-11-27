@@ -1,4 +1,4 @@
-"""Settings the Phase 2 parts asked for (see docs/plans/2026-10-21-phase3-notes.md)."""
+"""Settings the Phase 2 parts asked for."""
 
 from __future__ import annotations
 

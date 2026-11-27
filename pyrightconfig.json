@@ -32,7 +32,6 @@
     "tests/unit/test_camera_program_main.py",
     "tests/unit/test_camera_sources_push.py",
     "tests/unit/test_core_agents_profiles.py",
-    "tests/unit/test_core_agents_roster.py",
     "tests/unit/test_core_chat_message_generator.py",
     "tests/unit/test_core_chat_together.py",
     "tests/unit/test_core_habits_reminders.py",

@@ -413,7 +413,7 @@ def test_environment_variables_win_and_moved_ones_are_listed(project):
     assert cfg.env_moved == ('CAMERA_SOURCE',)
 
 
-# ── settings added by the 2026 cleanup (docs/plans/2026-10-23-codebase-cleanup-plan.md) ──
+# ── settings added by the 2026 cleanup ──
 BEFORE_CLEANUP = ROOT / 'tests' / 'fixtures' / 'settings_before_cleanup.yaml'   # config/settings.yaml before it
 NEW_SETTINGS = {
     'settings.yaml': [
@@ -432,7 +432,7 @@ NEW_SETTINGS = {
         ('web', 'settings_sliders', 'zone'), ('web', 'settings_sliders', 'warn'), ('web', 'settings_sliders', 'alert'),
         ('web', 'new_zone_px'), ('lens', 'trusted_gravity'),
         ('lens', 'covered_detail_below'), ('lens', 'covered_by_box_share'),
-        # the developer page (docs/plans/2026-10-24-developer-ui-plan.md)
+        # the developer page
         ('object_states', 'trace_pictures'), ('dev', 'enabled'), ('dev', 'ui_folder'), ('dev', 'vite_port'),
         ('dev', 'poll_sec'), ('dev', 'checks'), ('dev', 'test_command'), ('dev', 'collect_markers'),
         ('dev', 'run_timeout_min'), ('dev', 'output_keep_kb'), ('dev', 'sql_max_rows'), ('dev', 'sql_timeout_sec'),
@@ -535,7 +535,7 @@ def test_the_page_no_longer_has_a_first_check_wait():
     assert 'first_check_timeout_ms' not in type(load_config(environ={}, dotenv=Path('/nonexistent')).web).model_fields
 
 
-# ── the desk fixes (docs/superpowers/specs/2026-10-25-desk-fixes-design.md) ──
+# ── the desk fixes ──
 def test_sensitivity_steps_load(project):
     agents = load_config(root=project, environ={}).agents
     assert [s.name for s in agents.sensitivity_steps] == ['Picky', 'Careful', 'Normal', 'Easy', 'Eager']
