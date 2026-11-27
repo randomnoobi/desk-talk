@@ -131,3 +131,79 @@ I built a developer page at /dev/ so I could see inside the app while it runs. I
 - Database and Storage: what's saved and how much room is left.
 - Demo: sets off warnings on purpose to show them.
 
+### Limitations
+
+#### Blind spots
+
+Desk Talk only knows what its one camera can see. A water bottle behind my monitor looks, to the system, like a bottle I took away, and anything off the edge of the picture doesn't exist at all.
+
+The camera can't judge depth either. In a flat picture, a cup next to the laptop and a cup a foot behind it look almost the same. I estimate distance from where things sit on the desk, which works most of the time and fails when objects overlap.
+
+The detector also makes mistakes. Early on it kept finding glasses on my desk, and I don't wear glasses. An arm close to the lens can pass for a cat for a moment. The smoothing filters out most of these, though a few still get through. Bad lighting makes it worse, so when the picture is too dark or blurry, Desk Talk reports that the camera is covered.
+
+The model only recognizes about 365 kinds of objects. Desk Talk also ignores anything that lasts less than 3 seconds. I set that wait to filter out flicker, and the side effect is that a very quick sip can go uncounted.
+
+#### Only small models fit on the Pi
+
+The Raspberry Pi 5 has no graphics chip for AI, so the model runs on its 4-core processor. At 3 pictures a second, each picture gets about a third of a second. The model I started with only reached 1.7 pictures a second, so I switched to a smaller one. It keeps up, and it misses more objects than the bigger model did.
+
+The chat AI is too big for the Pi entirely. It runs on my computer through Ollama, or in the cloud, and you can turn it off. Without it, the characters use ready-made lines.
+
+#### The camera can't move
+
+The camera points one way. If someone bumps it, the desk area and danger zones I marked stop lining up until I mark them again. It's also built for one person at one desk, so someone sitting next to me or walking past can confuse it about whether anyone is there.
+
+### Possible extensions
+
+A second camera would cover what's hidden behind the laptop. A depth camera would go further and measure how far away things are.
+
+The Pi has an add-on board for AI, the AI HAT, which should let it run larger models at the same speed. I'd also like to train the model on photos of my own desk. A general model has to recognize hundreds of things, and mine only needs to get about ten of them right.
+
+I'd like to be able to correct it, too. If I could tell it "that wasn't a sip," it could tune its limits to how I actually drink.
+
+My favorite idea is putting the camera on a small motor and letting an AI agent steer it. If my phone went missing, the agent could turn the camera to look for it, and after the camera got knocked it could turn itself back. To do that, it would have to remember where the desk and danger zones are from every angle it can point.
+
+Smaller ideas: a little speaker or screen on the desk so the characters don't need a computer nearby, habits like posture or standing up, and a phone app to replace the web page and notifications.
+
+### Tools and technologies
+
+#### Detection and the camera
+
+- YOLO (Ultralytics) finds the objects in each picture.
+- ncnn runs the model fast on the Pi's processor.
+- PyTorch and ONNX were used to run and convert the models.
+- OpenCV handles the pictures.
+- picamera2 reads from the Pi camera.
+
+#### The app
+
+- Python, with FastAPI and Uvicorn as the web server.
+- YAML files hold the settings, wording, habit rules and characters, and Pydantic gives each setting a type.
+- SQLite saves object states on the Pi.
+- Piper is the voice.
+- Chat can go through Ollama, Gemini, OpenAI or Groq if you turn it on.
+- ntfy sends phone notifications.
+
+#### The Raspberry Pi
+
+- A Raspberry Pi 5 (8 GB) with the camera module.
+- Docker Compose runs three containers: the camera, the detector and the app.
+- systemd starts them when the Pi boots.
+
+#### The cloud server (optional)
+
+- FastAPI again, with PostgreSQL, SQLAlchemy and Alembic for the database.
+- nginx serves the website.
+- Claude writes the weekly report.
+
+#### The developer page
+
+- React and TypeScript, built with Vite and tested with Vitest.
+
+#### Testing and code quality
+
+- pytest runs about 7,200 tests, and pytest-cov checks that they cover at least 97% of the code.
+- Playwright clicks through the real web pages in a browser.
+- Ruff checks style, Pyright checks types, and Vulture finds dead code.
+- uv installs packages and runs everything.
+- The code lives on GitHub.
