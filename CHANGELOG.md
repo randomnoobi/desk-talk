@@ -2,7 +2,7 @@
 
 What changed in Desk Talk, newest first, one line or a few per change. Each pull request on GitHub has the
 full story: what was wrong, what changed, and the checks that were run. What a person tried on the real Pi is in
-[docs/PI_CHECKS.md](docs/PI_CHECKS.md).
+[docs/RUNBOOK.md](docs/RUNBOOK.md#checking-on-the-real-pi).
 
 ## 2026-11-21
 
@@ -34,7 +34,7 @@ full story: what was wrong, what changed, and the checks that were run. What a p
 
 - **A 6-hour run on the real Pi with the SD card nearly full passed**, written down straight on main
   ([854273e](https://github.com/randomnoobi/desk-talk/commit/854273e)): Desk Talk kept saving in its own space and no
-  container restarted. The numbers are in [docs/PI_CHECKS.md](docs/PI_CHECKS.md).
+  container restarted. The numbers are in [docs/RUNBOOK.md](docs/RUNBOOK.md#checking-on-the-real-pi).
 - **The Pi's numbers on the developer page** ([#20](https://github.com/randomnoobi/desk-talk/pull/20)). A new Pi
   tab shows, live and for the last 30 minutes: processor use per core, speed and load; every temperature sensor;
   the fan's speed; memory and swap; disk space (Desk Talk's own space and the rest of the SD card), disk reads and

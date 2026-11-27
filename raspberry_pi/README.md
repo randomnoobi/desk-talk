@@ -4,20 +4,6 @@ The Pi runs all of Desk Talk by itself: it is the camera, it finds the objects i
 the app's page. Three Docker containers from one compose file (`raspberry_pi/compose.yaml`) do it, and nothing runs
 outside Docker. No computer, no AI and no account is needed.
 
-```
-Raspberry Pi (docker compose)
- camera                      detector                       app
- ──────                      ────────                       ───
- 3 pictures a second,   ───▶ YOLO: what is in this picture? ──┐
- kept on the Pi,        ◀─── (no open port: only camera       │
- deleted every 10 min        and app can reach it)            ▼
-        │                                          events, characters, habits,
-        └── picture + what was found, one upload ─▶ warnings on the speaker,
-            for each picture                        the page on port 5000
-                                                        ▲
-                       http://desktalk.local:5000, from a phone or computer on your Wi-Fi
-```
-
 - **`camera`** takes **3 pictures a second**, keeps them in the Pi's memory (not on the SD card) and **deletes them
   every 10 minutes**, asks the detector what's in each one, and sends each picture with what was found to the app.
   Only this container gets the camera's devices.
@@ -29,18 +15,12 @@ Raspberry Pi (docker compose)
 Pictures never leave the Pi, except to a page someone opens on your own Wi-Fi. The app has no login on the Wi-Fi:
 anyone who can join your Wi-Fi can open the page, and only the Wi-Fi's password keeps them out.
 
-> **What has and hasn't been tried on a real Pi.** Tried on a Pi 5 (8 GB): `install.sh` from a fresh clone at
-> `~/desk-talk` with Docker emptied first (exit 0 in about 9 minutes, including the model), running it again (4 seconds,
-> the pairing key kept), `update.sh` (5 seconds and nothing restarted when there is no new code; all three containers
-> rebuilt and made again with a new commit), all three containers coming back by themselves after `sudo reboot`, the
-> three containers together with the real camera, pictures flowing into events, the speak command with a stand-in for
-> the speaker (so nobody has heard it), and that no picture leaves the Pi. `DESKTALK_PI=pi uv run pytest -m pi` gave 7
-> passed and 5 skipped; the skipped ones need a person. A pulled plug was tried too (2026-11-10): all three came back
-> by themselves, the files stayed readable, and saved states started over until the Pi's clock had synced.
-> **Not tried yet:** `install.sh` on a blank card (this card already had Docker, the lines in the boot files for the
-> memory limits and the camera, and the new name, put in by hand, so it skipped those), a real USB speaker, a real
-> object on the desk, a start with no Wi-Fi, no network at all, a real phone, a real cloud link, and
-> closing the laptop an AI runs on. They are the steps in [docs/PI_CHECKS.md](../docs/PI_CHECKS.md).
+> **What has been tried on a real Pi.** On a Pi 5 (8 GB): `install.sh` from a fresh clone (about 9 minutes, including
+> the model) and run again, `update.sh`, the three containers with the real camera, pictures turning into events, no
+> picture leaving the Pi, a pulled plug, a full SD card, the clock set back to 1990 and Desk Talk's own space missing.
+> **Not tried yet:** `install.sh` on a blank SD card, a real USB speaker, a start with no Wi-Fi, no network at all, a
+> real phone, a real cloud link, and closing the laptop an AI runs on. The steps for each are in
+> [Checking on the real Pi](../docs/RUNBOOK.md#checking-on-the-real-pi).
 
 More detail: the camera's [README](camera/README.md) and the detector's [README](detector_service/README.md).
 
@@ -68,9 +48,6 @@ while: it builds the images, which download PyTorch. A Pi still called `raspberr
 named keeps its name. It's safe to run again, and never touches the data folder, the pairing key or the models. It says
 if the Pi needs a restart (for the memory limits and the camera, which need a line in the Pi's boot settings), and only
 does that by itself with `--reboot`. At the end it prints the address to open.
-
-It replaces the old steps by hand: apt packages, a systemd service for the camera, and starting the camera with
-`--server` and `--key`. None of those are needed any more.
 
 | Flag | What it does |
 |---|---|
@@ -278,25 +255,10 @@ cd ~/desk-talk/raspberry_pi && docker compose up -d
 
 ### The Pi is too hot
 
-Lens says the Pi is running hot (from `pi.hot_warning_c`, 75 °C; the Pi slows itself down at about 80 °C),
-or that it's slowing itself down. Detection gets slower, so more pictures go out as `busy`.
-
-The camera container can read the temperature, but not all the slow-down flags: `vcgencmd` doesn't work inside a
-container, and a Pi 5's kernel only gives whether the power supply is too weak. So the Pi can't always tell whether it
-slowed itself down. **On the Pi itself** (not inside a container), the temperature, and the slow-down flags
-(`throttled=0x0` means fine):
-
-```bash
-vcgencmd measure_temp
-```
-
-```bash
-vcgencmd get_throttled
-```
-
-What helps: a cooler or a small fan, a case with air holes, or less work for the Pi: a smaller model or
-picture size (`pi.detector.model`, `pi.detector.image_size`) or fewer pictures a second (`pi.fps`). If Lens says the
-power supply is too weak, use the official Raspberry Pi power supply.
+Lens says the Pi is running hot (from `pi.hot_warning_c`, 75 °C), or that it's slowing itself down, and detection
+gets slower. The camera container can read the temperature but not every slow-down flag (`vcgencmd` doesn't work
+inside a container), so check **on the Pi itself**. What to check and what helps is in
+[the runbook](../docs/RUNBOOK.md#the-pi-is-too-hot).
 
 ### The page won't open
 
@@ -310,9 +272,10 @@ power supply is too weak, use the official Raspberry Pi power supply.
 
 The Pi keeps going: it takes pictures, finds objects, saves events and says warnings on the speaker. The cloud server
 (if linked) gets its events later, and an AI on another computer can't be reached, so chat says so. Nobody can open the
-page until the Wi-Fi is back. Without a network, the Pi's clock can be wrong after a power cut (it has no clock
-battery) until the network is back, so objects start over instead of picking up where they were. Starting with no Wi-Fi hasn't been tried on a real Pi yet
-([docs/PI_CHECKS.md](../docs/PI_CHECKS.md)).
+page until the Wi-Fi is back. Without a network, the Pi's clock can be wrong after a power cut (unless it has a clock
+battery), so objects start over instead of picking up where they were: see
+[the runbook](../docs/RUNBOOK.md#the-clock-is-wrong-after-a-power-cut). Starting with no Wi-Fi hasn't been tried on a
+real Pi yet.
 
 ### Camera problem
 
@@ -343,9 +306,8 @@ ribbon cable or the USB plug.
 
 - **"Pairing key does not match"** in the camera's log: the app made a new key (its `pairing` volume was removed). The
   camera reads the key when it starts, so run `docker compose up -d` again, or `docker compose restart camera`.
-- **The old camera service is still running** (the install command says so): the old setup holds the camera. Stop it with
-  `sudo systemctl disable --now desk-talk-camera`.
-- **Lens says the Pi's clock is off**: **on the Pi**, `timedatectl` should say `System clock synchronized: yes`.
+- **Lens says the Pi's clock is off**: **on the Pi**, `timedatectl` should say `System clock synchronized: yes`. More
+  in [the runbook](../docs/RUNBOOK.md#the-clock-is-wrong-after-a-power-cut).
 
 ## Updating
 
@@ -355,31 +317,19 @@ ribbon cable or the USB plug.
 bash ~/desk-talk/raspberry_pi/update.sh
 ```
 
-It runs `git pull`, fills in the camera's device numbers again, since a kernel update can change them, rebuilds, and
-clears old images. Then it cuts Docker's saved build steps down to `INSTALL_KEEP_BUILD_STEPS_MB` in `.env` (20 GB), the
-ones not used for longest first, so they can't take over the card over many updates. A whole build's steps take about
-13 GB and are kept, since a whole new build takes 12 to 21 minutes; if the card runs low they are all cleared. (Docker
-28 and newer call that `--max-used-space`, older ones `--keep-storage`; if neither works it says so, with how much room
-they take.) It needs no sudo on a Pi this version's `install.sh` set up. On a Pi an older `install.sh` set up, it asks
-for sudo once: to put in the journal file or `desktalk.service` if they're missing, since the containers log to the
-journal and without that file their logs would be lost at every restart, and to put in the new `desktalk.service` if
-this version changed it (it now writes this boot's device numbers for the camera first, so a power cut can't leave the
-camera container unable to open the camera). Then it restarts `desktalk.service`. If sudo doesn't work there, it says
-what that leaves undone and to run `install.sh` once. It takes
-`--dry-run` too. Your data, the pairing key, the models, `.env` and your own settings (`raspberry_pi/mine/settings.mine.yaml`) stay. If `git pull` couldn't run
-(no internet, or a file you changed by hand), it says so and rebuilds with the code that's there.
+It runs `git pull`, fills in the camera's device numbers again (a kernel update can change them), rebuilds all three
+images and clears old ones. Your data, the pairing key, the models, `.env` and your own settings
+(`raspberry_pi/mine/settings.mine.yaml`) stay. If `git pull` can't run (no internet, or a file you changed by hand),
+it says so and rebuilds with the code that's there. `--dry-run` says what it would do and changes nothing.
+
+- **Docker's saved build steps** are cut down to `INSTALL_KEEP_BUILD_STEPS_MB` in `.env` (20 GB), oldest first, so they
+  can't take over the card. A whole build's steps take about 13 GB and are kept, since a build from nothing takes 12 to
+  21 minutes. If the card runs low they are all cleared. If this Docker refuses both ways of asking
+  (`--max-used-space`, `--keep-storage`), it says so, with how much room they take.
+- **sudo**: none, normally. If `desktalk.service` or the journal settings changed in the new code, it asks once to put
+  them in, then restarts the service. If sudo doesn't work, it says what's left undone and to run `install.sh` once.
 
 All three containers are rebuilt together, so they are always the same version.
-
-### Coming from the older setup
-
-If you ran the camera program as a systemd service and the detector from `raspberry_pi/detector_service`, run the install
-command once. It stops the old `desktalk-detector` containers and keeps their models, and it tells you to stop the old
-camera service (`sudo systemctl disable --now desk-talk-camera`), which would otherwise hold the camera. The computer that
-ran `server.py` is no longer needed.
-
-If that computer wrote its pairing key into `data/logs/` (older versions did), see
-[README.md](../README.md#on-a-computer-for-working-on-it) for the command that clears those lines and makes a new key.
 
 ## Backups
 
@@ -509,15 +459,15 @@ The Pi runs `yolo26s-objv1-150.pt` at 640 pixels (`pi.detector` in `raspberry_pi
 same 365 kinds of objects as the computer's model, so the words in `config/agents.yaml` mean the same here. Measured
 on a Pi 5 (8 GB) with all three containers running, it looked at all 3 pictures a second, 200 to 215 ms each, using about
 2 of the 4 cores, and stayed under 62 °C with the fan. The bigger `yolo26m-objv1-150.pt` at 640 managed only 1.5 a second,
-and at 480 2.4 a second. The numbers are in [the first-run notes](../docs/plans/2026-10-30-pi-first-run-notes.md).
+and at 480 2.4 a second.
 
 To try another, the speed test in [`benchmarks/`](../benchmarks/README.md) helps:
 
 1. Run the benchmark on the Pi, in its own Docker image. The steps, each labelled **on the Pi** or
    **on your Mac**, are in [benchmarks/README.md](../benchmarks/README.md); the full run takes a few hours.
-2. **On your Mac**, fetch the results and rebuild the summary (also in that README). The **best pick** in
-   [benchmarks/results/README.md](../benchmarks/results/README.md) is the fastest combination that keeps up
-   with 3 pictures a second and reaches at least 90% of the best accuracy.
+2. **On your Mac**, fetch the results and rebuild the summary (also in that README). The **best pick** in the
+   summary it writes (`benchmarks/results/README.md`) is the fastest combination that keeps up with 3 pictures a
+   second and reaches at least 90% of the best accuracy.
 3. Set it **on the Pi**, in `raspberry_pi/mine/settings.mine.yaml`, under `pi:` then `detector:`:
 
    | Benchmark name, e.g. `yolo11s-480-ncnn-fp16` | Setting |

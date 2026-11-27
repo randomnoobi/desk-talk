@@ -1,6 +1,7 @@
 """The real clock: the computer's own time. It's the same one the Pi uses (shared/desktalk_shared/clock.py).
 Also how far to trust it: has it been set from the internet since this computer started, and is it believable at
-all, not too early and not jumped far ahead (ClockCheck)? docs/CLOCK.md says why a Pi's clock can be wrong."""
+all, not too early and not jumped far ahead (ClockCheck)? docs/RUNBOOK.md ("The clock is wrong after a power cut")
+says why a Pi's clock can be wrong."""
 
 from __future__ import annotations
 
@@ -50,7 +51,8 @@ class ClockCheck:
     the clock (it touches `flag_file` each time: the file appears, or its time changes), so the sync that puts a
     Pi right after a power cut, days ahead, is believed. A jump back deletes less, never more, so only a jump ahead
     counts. With no flag file (a Mac) jumps aren't looked for: its clock is kept right, and its monotonic clock
-    stops while it sleeps, so waking up looks like a jump. docs/CLOCK.md says more."""
+    stops while it sleeps, so waking up looks like a jump. docs/RUNBOOK.md ("The clock is wrong after a
+    power cut") says more."""
 
     def __init__(self, flag_file: Path | None, earliest_believable: date, *, clock: Clock,
                  largest_jump_ahead_sec: float):

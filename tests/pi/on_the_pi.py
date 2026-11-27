@@ -7,7 +7,7 @@ The tests on the Mac send this file over SSH for the two things that read a lot 
     python3 - connections --seconds 90              who do the containers talk to, and how much leaves over Wi-Fi?
 
 A person starts the third by hand, because it has to keep going while the Pi has no network and no SSH
-(docs/PI_CHECKS.md says when):
+(docs/RUNBOOK.md, "No network at all", says when):
 
     python3 tests/pi/on_the_pi.py no-network
 

@@ -90,7 +90,7 @@ Open it at `localhost`, not `127.0.0.1`: the server only lets `http://localhost:
 The Storage tab only sees the app page's localStorage at http://localhost:5000/dev/, because a browser
 keeps one localStorage per address.
 
-The server's `/api/dev/...` routes are listed in [docs/API.md](../docs/API.md#developer-page-this-computer-only-21).
+The server's `/api/dev/...` routes are listed in [docs/API.md](../docs/API.md#developer-page-this-computer-only).
 
 ## How it's laid out
 

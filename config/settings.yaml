@@ -216,7 +216,7 @@ object_states:
   unsaved_most: 5000
   trace_pictures: 90          # the developer page shows each object's last this many pictures of smoothing
 
-# ── The clock (docs/CLOCK.md) ──────────────────────────────────────
+# ── The clock (docs/RUNBOOK.md, "The clock is wrong after a power cut") ──
 clock:
   # A clock before this day is plainly wrong (say, set to 1990 by hand, or a Pi that lost its saved time). Until it
   # is right again, saved object states aren't picked up after a restart and nothing is deleted for being old
@@ -724,8 +724,8 @@ web:
 # Desk Talk does this itself, so it comes whether or not an app page is open. Quiet hours (the app's Settings page) mute
 # them all. On a Mac, the first one may ask once to allow notifications from "Script Editor".
 # The same ones also go to your phone through ntfy once NTFY_TOPIC is set in .env (on the Pi: raspberry_pi/.env), but
-# never a to-do's words: the phone gets prompts → notifications.phone_todo instead. See "Phone notifications" in the
-# README.
+# never a to-do's words: the phone gets prompts → notifications.phone_todo instead. See "Phone notifications" in
+# docs/NOTIFICATIONS.md.
 notifications:
   output: mac                 # mac = the Mac's pop-ups, speaker = said out loud (the Pi), none = neither (the phone
                               # still gets them when NTFY_TOPIC is set)

@@ -1,12 +1,14 @@
 # The Desk Talk cloud server
 
-It keeps what your Pis may send (never pictures, never to-dos), and writes each Pi a weekly report you read on a website. You run it yourself, with Docker.
+It keeps what your Pis may send (never pictures, never to-dos), and writes each Pi a weekly report you read on a website. You run it yourself, with Docker, on any computer at home. It's optional: a Pi works without it.
+
+The commands below run on that computer, in the `cloud` folder, unless they say **on the Pi**. Every web address it answers is in [docs/API.md](../docs/API.md#cloud-server).
 
 **It's plain HTTP on your home network for now.** There's no HTTPS, so keep it on the home network and don't open its port to the internet. Passwords, tokens and reports travel unencrypted between your devices and the server.
 
 ## 1. Fill in `.env`
 
-```
+```bash
 cd cloud
 cp .env.example .env
 ```
@@ -35,7 +37,7 @@ Open the website at the `LOGIN_URL` address. The login cookie belongs to one add
 
 ## 3. Start it
 
-```
+```bash
 docker compose up -d --build --wait
 ```
 
@@ -59,13 +61,13 @@ The server counts tries per address: 10 in 10 minutes (`limits.claim_tries` and 
 
 On Colima or Docker Desktop, every device on your home network may reach the server as the same address, so 10 tries from anyone can block linking for everyone for up to 10 minutes. To spot it:
 
-```
+```bash
 docker compose logs web
 ```
 
 Each request's line starts with the address the server saw. If your Pi and your other devices all show one address, like `172.30.87.1`, they share one count. Restarting `api` clears the count (`docker compose restart api`), because it's kept in memory.
 
-## Your own API keys
+## Which AI writes the reports
 
 Reports go to Anthropic by default. To use Gemini, OpenAI, Groq or Ollama, set `reports.provider: openai_compatible`, `reports.url` and `reports.model` in `settings.yaml`. A keyless Ollama still needs some text in `REPORT_API_KEY`. Your key stays on this server. Each report sends the AI company that Pi's events for the week.
 
@@ -77,7 +79,7 @@ The password is saved the first time a username is used, and after that the one 
 
 ## Stopping, and backing up
 
-```
+```bash
 docker compose stop                   # stop it for now
 docker compose down                   # stop it and remove the containers; the data stays
 docker compose down --volumes         # also DELETES ALL THE DATA
@@ -85,13 +87,13 @@ docker compose down --volumes         # also DELETES ALL THE DATA
 
 Your data is in a Docker volume. To back it up, with the server running:
 
-```
+```bash
 docker compose exec -T postgres pg_dump -U desktalk -d desktalk > desktalk-backup.sql
 ```
 
 To put a backup back, start from an empty database, and start only Postgres until it's in:
 
-```
+```bash
 docker compose down --volumes
 docker compose up -d --wait postgres
 docker compose exec -T postgres psql -U desktalk -d desktalk < desktalk-backup.sql

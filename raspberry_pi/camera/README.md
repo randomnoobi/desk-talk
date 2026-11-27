@@ -5,11 +5,6 @@ Inside it runs Debian's Python 3 (3.11 or newer) with apt's Picamera2, OpenCV an
 keeps them on the Pi for a while, asks the `detector` container what's in them, and sends each picture with what
 was found to the `app` container, on the same Pi. Nothing here needs a computer.
 
-```
-camera → picture ─┬─▶ detector container (http://detector:8100) ──▶ what's in it
-                  └─▶ app container (/api/pi/frame): picture + what was found, one upload per picture
-```
-
 Each picture goes to the app marked:
 
 - `ok`: the detector found these things; the app uses them.

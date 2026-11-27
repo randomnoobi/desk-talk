@@ -4,11 +4,6 @@ The detector service finds objects in the Pi's pictures, on the Pi itself. It ru
 the ncnn model format (the fastest choice on the Pi's CPU) inside a Docker container, one of the Pi's three
 (`raspberry_pi/compose.yaml`).
 
-```
-camera container ── POST /detect, picture ──▶ detector container (http://detector:8100, no open port)
-                 ◀──────── detections ───────
-```
-
 The camera sends each picture here, then sends the picture and its detections to the app. If the service is down,
 the camera sends pictures alone, with nothing found, until it is back: there is no backup detector. It has no port
 open on the Pi: only the camera and app containers can reach it, by its name, `detector`.
@@ -32,7 +27,7 @@ and precision. Until a model is ready, `/detect` replies 503 and no objects are 
 
 YOLO26 models: ncnn can't run their end-to-end head, so Ultralytics runs them with their other head plus the
 usual overlap filter. They find slightly different boxes than the `.pt` run the normal way.
-`/health` says so (details in `docs/plans/2026-10-21-ncnn-check.md`).
+`/health` says so, and `tests/slow/test_ncnn_matches_pt.py` checks they find the same objects.
 
 ## Set it up
 

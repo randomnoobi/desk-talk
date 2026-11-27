@@ -1,5 +1,5 @@
 """
-Checks after the failure hand tests in docs/PI_CHECKS.md ("Failure hand tests"): a person pulls the plug, turns the
+Checks after the failure hand tests in docs/RUNBOOK.md ("Failure hand tests"): a person pulls the plug, turns the
 network off, pulls the camera's cable, fills the SD card, sets the clock to 1990 or takes Desk Talk's own space away,
 and these read what the Pi did.
 Nothing here breaks anything or changes the Pi.
@@ -60,7 +60,7 @@ SPACE_BACK = 'DESKTALK_PI_SPACE_BACK'
 # (Not SPACE_MISSING: while the space is away, its history can't be seen, so nothing_deleted runs after SPACE_BACK.)
 AFTER_A_HAND_TEST = (JUST_POWER_CUT, JUST_NO_NETWORK, CAMERA_CABLE_OUT, CAMERA_CABLE_BACK, CARD_FILLED, CLOCK_1990,
                      CLOCK_BACK, SPACE_BACK)
-STEPS = 'docs/PI_CHECKS.md, "Failure hand tests"'
+STEPS = 'docs/RUNBOOK.md, "Failure hand tests"'
 
 NOTE_KEY = 'desktalk/pi_hand_test_note'
 NOTE_FRESH_SEC = 24 * 3600

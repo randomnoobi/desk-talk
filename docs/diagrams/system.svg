@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="636" viewBox="0 0 980 636">
+<defs><marker id="ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5F6B76"/></marker><marker id="pi" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1D6A8C"/></marker><marker id="st" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2E7D4F"/></marker><marker id="ev" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#B5680F"/></marker><marker id="red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#B3392B"/></marker><marker id="grey" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7B8790"/></marker></defs>
+<rect x="0.5" y="0.5" width="979" height="635" rx="12" fill="#FFFFFF" stroke="#C5CDD3"/>
+<text x="24" y="38" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#1F2933" text-anchor="start">The whole system</text>
+<text x="24" y="60" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5F6B76" text-anchor="start">Everything runs on the Pi. The computer and the cloud server are optional.</text>
+<rect x="176" y="84" width="524" height="372" rx="14" fill="#F3F8FB" stroke="#1D6A8C" stroke-width="1.5"/>
+<text x="196" y="110" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="600" fill="#1D6A8C" text-anchor="start" letter-spacing="1">RASPBERRY PI 5 · 3 DOCKER CONTAINERS</text>
+<rect x="24" y="136" width="124" height="72" rx="10" fill="#FFFFFF" stroke="#1F2933" stroke-width="1.5"/>
+<text x="86" y="168" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1F2933" text-anchor="middle">Pi Camera</text>
+<text x="86" y="188" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#5F6B76" text-anchor="middle">above the desk</text>
+<line x1="148" y1="172" x2="198" y2="172" stroke="#1D6A8C" stroke-width="2" marker-end="url(#pi)"/>
+<circle cx="173" cy="154" r="11" fill="#1D6A8C"/><text x="173" y="158.5" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">1</text>
+<rect x="200" y="130" width="180" height="84" rx="10" fill="#FFFFFF" stroke="#1D6A8C" stroke-width="1.5"/>
+<text x="216" y="160" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1F2933" text-anchor="start">camera</text>
+<text x="216" y="182" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5F6B76" text-anchor="start">3 pictures a second</text>
+<text x="216" y="200" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5F6B76" text-anchor="start">1280 × 720</text>
+<rect x="200" y="318" width="180" height="96" rx="10" fill="#FFFFFF" stroke="#1D6A8C" stroke-width="1.5"/>
+<text x="216" y="348" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1F2933" text-anchor="start">detector</text>
+<text x="216" y="370" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5F6B76" text-anchor="start">YOLO26s finds objects</text>
+<text x="216" y="388" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5F6B76" text-anchor="start">about 0.2 s a picture</text>
+<text x="216" y="406" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5F6B76" text-anchor="start">no open port</text>
+<line x1="260" y1="214" x2="260" y2="316" stroke="#1D6A8C" stroke-width="2" marker-end="url(#pi)"/>
+<line x1="320" y1="318" x2="320" y2="216" stroke="#1D6A8C" stroke-width="2" marker-end="url(#pi)"/>
+<circle cx="260" cy="250" r="11" fill="#1D6A8C"/><text x="260" y="254.5" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">2</text>
+<text x="248" y="284" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#1D6A8C" text-anchor="end">picture</text>
+<circle cx="320" cy="250" r="11" fill="#1D6A8C"/><text x="320" y="254.5" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">3</text>
+<text x="332" y="284" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#1D6A8C" text-anchor="start">boxes</text>
+<line x1="380" y1="172" x2="466" y2="172" stroke="#1D6A8C" stroke-width="2" marker-end="url(#pi)"/>
+<circle cx="423" cy="150" r="11" fill="#1D6A8C"/><text x="423" y="154.5" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">4</text>
+<text x="423" y="196" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#1D6A8C" text-anchor="middle">picture</text>
+<text x="423" y="212" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#1D6A8C" text-anchor="middle">+ boxes</text>
+<rect x="468" y="130" width="208" height="284" rx="10" fill="#FFFFFF" stroke="#1D6A8C" stroke-width="1.5"/>
+<text x="484" y="160" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1F2933" text-anchor="start">app</text>
+<rect x="484" y="176" width="176" height="36" rx="6" fill="#E4F0F6" stroke="#E4F0F6" stroke-width="1.5"/>
+<text x="496" y="199" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="400" fill="#1F2933" text-anchor="start">pictures → events</text>
+<rect x="484" y="221" width="176" height="36" rx="6" fill="#E4F0F6" stroke="#E4F0F6" stroke-width="1.5"/>
+<text x="496" y="244" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="400" fill="#1F2933" text-anchor="start">smoothing + states</text>
+<rect x="484" y="266" width="176" height="36" rx="6" fill="#E4F0F6" stroke="#E4F0F6" stroke-width="1.5"/>
+<text x="496" y="289" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="400" fill="#1F2933" text-anchor="start">habit rules</text>
+<rect x="484" y="311" width="176" height="36" rx="6" fill="#E4F0F6" stroke="#E4F0F6" stroke-width="1.5"/>
+<text x="496" y="334" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="400" fill="#1F2933" text-anchor="start">chat characters</text>
+<rect x="484" y="356" width="176" height="36" rx="6" fill="#E4F0F6" stroke="#E4F0F6" stroke-width="1.5"/>
+<text x="496" y="379" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="400" fill="#1F2933" text-anchor="start">saves the event log</text>
+<text x="196" y="440" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#5F6B76" text-anchor="start">Pictures never leave the Pi.</text>
+<rect x="756" y="130" width="200" height="72" rx="10" fill="#FBEEDD" stroke="#B5680F" stroke-width="1.5"/>
+<text x="772" y="160" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1F2933" text-anchor="start">Web page</text>
+<text x="772" y="182" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5F6B76" text-anchor="start">chat and live view</text>
+<line x1="676" y1="166" x2="754" y2="166" stroke="#B5680F" stroke-width="2" marker-end="url(#ev)"/>
+<rect x="756" y="228" width="200" height="72" rx="10" fill="#FBEEDD" stroke="#B5680F" stroke-width="1.5"/>
+<text x="772" y="258" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1F2933" text-anchor="start">Speaker</text>
+<text x="772" y="280" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5F6B76" text-anchor="start">says warnings</text>
+<line x1="676" y1="264" x2="754" y2="264" stroke="#B5680F" stroke-width="2" marker-end="url(#ev)"/>
+<rect x="756" y="326" width="200" height="72" rx="10" fill="#FBEEDD" stroke="#B5680F" stroke-width="1.5"/>
+<text x="772" y="356" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1F2933" text-anchor="start">Phone</text>
+<text x="772" y="378" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5F6B76" text-anchor="start">ntfy (optional)</text>
+<line x1="676" y1="362" x2="754" y2="362" stroke="#B5680F" stroke-width="2" marker-end="url(#ev)"/>
+<circle cx="715" cy="145" r="11" fill="#B5680F"/><text x="715" y="149.5" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">5</text>
+<rect x="468" y="500" width="208" height="70" rx="10" fill="#F4F6F7" stroke="#7B8790" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="484" y="528" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1F2933" text-anchor="start">Your computer</text>
+<text x="484" y="550" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5F6B76" text-anchor="start">chat AI, developer page</text>
+<rect x="756" y="500" width="200" height="70" rx="10" fill="#F4F6F7" stroke="#7B8790" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="772" y="528" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1F2933" text-anchor="start">Cloud server</text>
+<text x="772" y="550" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#5F6B76" text-anchor="start">weekly report</text>
+<line x1="540" y1="414" x2="540" y2="498" stroke="#7B8790" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#grey)"/>
+<text x="550" y="476" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#5F6B76" text-anchor="start">chat text</text>
+<path d="M640 414 L640 474 L856 474 L856 498" fill="none" stroke="#7B8790" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#grey)"/>
+<text x="748" y="466" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#5F6B76" text-anchor="middle">events only</text>
+<circle cx="36" cy="606" r="11" fill="#1D6A8C"/><text x="36" y="610.5" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">1</text>
+<text x="54" y="611" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1F2933" text-anchor="start">take a picture</text>
+<circle cx="186" cy="606" r="11" fill="#1D6A8C"/><text x="186" y="610.5" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">2</text>
+<text x="204" y="611" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1F2933" text-anchor="start">ask the detector</text>
+<circle cx="346" cy="606" r="11" fill="#1D6A8C"/><text x="346" y="610.5" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">3</text>
+<text x="364" y="611" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1F2933" text-anchor="start">get boxes back</text>
+<circle cx="500" cy="606" r="11" fill="#1D6A8C"/><text x="500" y="610.5" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">4</text>
+<text x="518" y="611" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1F2933" text-anchor="start">send both to the app</text>
+<circle cx="686" cy="606" r="11" fill="#B5680F"/><text x="686" y="610.5" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">5</text>
+<text x="704" y="611" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#1F2933" text-anchor="start">tell you</text>
+</svg>

@@ -1,7 +1,6 @@
 # Desk Talk: notes for coding agents
 
-What the app does and how it fits together: [README.md](README.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-How it got this way (history): the refactor, [docs/plans/2026-10-21-refactor-plan.md](docs/plans/2026-10-21-refactor-plan.md), and the cleanup after it, [docs/plans/2026-10-23-codebase-cleanup-plan.md](docs/plans/2026-10-23-codebase-cleanup-plan.md), both finished. The move of everything onto the Pi: [docs/plans/2026-10-30-pi-standalone-refactor-plan.md](docs/plans/2026-10-30-pi-standalone-refactor-plan.md).
+What the app does and how it fits together: [README.md](README.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Every route: [docs/API.md](docs/API.md). When the Pi needs a person, and the by-hand checks on a real Pi: [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 ## How to work
 - **Before making a plan:** read the code the change will touch and find where the new pieces should plug in. Name those files and functions in the plan.
@@ -12,7 +11,7 @@ How it got this way (history): the refactor, [docs/plans/2026-10-21-refactor-pla
 
 ## Check your work before saying it's done
 - Packages come from uv (`uv sync --all-packages`; never pip). Run things with `uv run ...`.
-- Fast tests: `uv run pytest -m "not slow"`. The `slow` tests run the real YOLO model; run them only when you change detection. `docker` tests build the Pi's images; run them only when you change them. `uv run pytest -m e2e` drives the real page in a browser (`uv run playwright install chromium` once); run it when you change `web_app/`, `phone_camera/` or a route they use. `DESKTALK_PI=pi uv run pytest -m pi -v -rs` runs against the real Pi over `ssh pi`; run it when you change `raspberry_pi/`, or anything that runs in the Pi's containers. Without `DESKTALK_PI` every test skips. If the compose file isn't in `~/desk-talk/raspberry_pi`, also set `DESKTALK_PI_DIR='~/your-folder/raspberry_pi'` (quoted, so `~` is the Pi's home). What only a person can do is in [docs/PI_CHECKS.md](docs/PI_CHECKS.md).
+- Fast tests: `uv run pytest -m "not slow"`. The `slow` tests run the real YOLO model; run them only when you change detection. `docker` tests build the Pi's images; run them only when you change them. `uv run pytest -m e2e` drives the real page in a browser (`uv run playwright install chromium` once); run it when you change `web_app/`, `phone_camera/` or a route they use. `DESKTALK_PI=pi uv run pytest -m pi -v -rs` runs against the real Pi over `ssh pi`; run it when you change `raspberry_pi/`, or anything that runs in the Pi's containers. Without `DESKTALK_PI` every test skips. If the compose file isn't in `~/desk-talk/raspberry_pi`, also set `DESKTALK_PI_DIR='~/your-folder/raspberry_pi'` (quoted, so `~` is the Pi's home). What only a person can do is in [docs/RUNBOOK.md](docs/RUNBOOK.md#checking-on-the-real-pi).
 - Coverage: `uv run pytest -m "not slow and not docker and not e2e" --cov` fails below `fail_under` in `pyproject.toml`. It may only go up.
 - Lint: `uv run ruff check <files you changed>`. Old files may still have ruff errors, so don't fix files you didn't touch. Just don't add new errors. Don't run `ruff format`.
 - Types: `uv run pyright` must show 0 errors. `pyrightconfig.json`'s `ignore` list only shrinks: fix a file and take it off; never add one.
@@ -45,7 +44,7 @@ How it got this way (history): the refactor, [docs/plans/2026-10-21-refactor-pla
 - Write the failing test first, watch it fail, then write the code (superpowers test-driven-development skill).
 
 ## Raspberry Pi
-Desk Talk runs entirely on the Pi, in Docker; see [the Pi standalone plan](docs/plans/2026-10-30-pi-standalone-refactor-plan.md) for how it got there. What only a person can check on a real Pi (a USB speaker, a cup on the desk, a start with no Wi-Fi, a real phone, a real cloud link) is still open: see [docs/PI_CHECKS.md](docs/PI_CHECKS.md), and don't say those work until someone has done them.
+Desk Talk runs entirely on the Pi, in Docker; see [raspberry_pi/README.md](raspberry_pi/README.md). What only a person can check on a real Pi (a USB speaker, a cup on the desk, a start with no Wi-Fi, a real phone, a real cloud link) is still open: see [Checking on the real Pi](docs/RUNBOOK.md#checking-on-the-real-pi), and don't say those work until someone has done them.
 - Everything on the Pi runs in Docker, three containers from one compose file: **`camera`** (`raspberry_pi/camera/`), **`detector`** (`raspberry_pi/detector_service/`) and **`app`**, which runs the `desktalk` code. Nothing runs outside Docker.
 - `camera` and `detector` never import `desktalk/`. `camera` uses Debian's Python 3 (3.11 or newer) with apt's `picamera2`, `cv2` and `yaml`, so it is standard library plus those, plus `desktalk_shared`. Import the apt packages inside the function that uses them. `detector` may use anything uv installs, but imports only `desktalk_shared`.
 - `shared/desktalk_shared/` is used on the Pi and on this computer. It must stay standard library only and work on Python 3.11.
