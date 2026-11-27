@@ -22,6 +22,18 @@
         "server.py"
       ],
       "port": 5000
+    },
+    {
+      "name": "desk-talk-live-from-pi",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "--directory",
+        "../desk-talk-live-from-pi",
+        "python",
+        "server.py"
+      ],
+      "port": 5000
     }
   ]
 }
