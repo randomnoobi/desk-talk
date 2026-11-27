@@ -40,6 +40,9 @@ Desk Talk runs entirely on a Raspberry Pi 5, split into three Docker containers.
 4. Wait. The voted answer has to stay the same for 3 seconds before Desk Talk believes it. This covers short moments, like a hand passing in front of the cup.
 5. Steady state. Only after all of that does the cup's state change to PRESENT or ABSENT. That change is what sends out events like "cup appeared."
 
+<img width="958" height="548" alt="Screenshot 2026-11-27 at 3 02 17 PM" src="https://github.com/user-attachments/assets/24ba4ee7-f7ab-4969-a59f-b599543a4158" />
+smoothing as shown in the Developer Page
+
 #### State Transitions
 
 <img width="3841" height="1041" alt="DeskTalk-StateTransitions" src="https://github.com/user-attachments/assets/36cb0cb0-cb62-4f75-b6e1-d51e4f3fab9d" />
