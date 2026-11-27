@@ -207,3 +207,5 @@ Smaller ideas: a little speaker or screen on the desk so the characters don't ne
 - Ruff checks style, Pyright checks types, and Vulture finds dead code.
 - uv installs packages and runs everything.
 - The code lives on GitHub.
+
+Github Link: https://github.com/randomnoobi/desk-talk
