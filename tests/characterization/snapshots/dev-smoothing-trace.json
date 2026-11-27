@@ -5,6 +5,14 @@
     "address": "str",
     "from": "str",
     "label": "str",
+    "rules": {
+      "appear_sec": "number",
+      "gone_sec": "number",
+      "off_confidence": "number",
+      "on_confidence": "number",
+      "vote_share": "number",
+      "window_pictures": "number"
+    },
     "steps": [
       {
         "box_seen": "bool",

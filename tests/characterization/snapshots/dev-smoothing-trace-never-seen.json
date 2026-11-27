@@ -5,22 +5,15 @@
     "address": "str",
     "from": "str",
     "label": "str",
-    "steps": [
-      {
-        "box_seen": "bool",
-        "center": [
-          "number"
-        ],
-        "conf": "number",
-        "heading": "null",
-        "phase": "str",
-        "seen": "bool",
-        "ts": "number",
-        "votes_total": "number",
-        "votes_yes": "number",
-        "waiting_sec": "null"
-      }
-    ]
+    "rules": {
+      "appear_sec": "number",
+      "gone_sec": "number",
+      "off_confidence": "number",
+      "on_confidence": "number",
+      "vote_share": "number",
+      "window_pictures": "number"
+    },
+    "steps": []
   },
   "request": "GET /api/dev/smoothing/trace?label=pen%2Fpencil (main server, busy desk)"
 }

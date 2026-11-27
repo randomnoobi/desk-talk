@@ -5,6 +5,7 @@
     "address": "str",
     "changes": [],
     "from": "str",
+    "now": "number",
     "objects": {},
     "watched_since": "null"
   },

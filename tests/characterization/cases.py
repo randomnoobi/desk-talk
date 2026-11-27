@@ -326,7 +326,7 @@ CASES = [
     Case('dev-smoothing-trace', 'GET', '/api/dev/smoothing/trace?label=cup', 200,
          values={'label': 'cup', 'from': 'pi'}),
     Case('dev-smoothing-trace-never-seen', 'GET', '/api/dev/smoothing/trace?label=pen%2Fpencil', 200,
-         values={'label': 'pen/pencil', 'from': 'pi'}),
+         values={'label': 'pen/pencil', 'steps': [], 'from': 'pi'}),
     Case('dev-smoothing-trace-no-label', 'GET', '/api/dev/smoothing/trace', 400),
     Case('dev-object-trace', 'GET', '/api/dev/objects/cup', 200, values={'label': 'cup', 'from': 'pi'}),
     Case('dev-object-trace-never-seen', 'GET', '/api/dev/objects/pen%2Fpencil', 200,

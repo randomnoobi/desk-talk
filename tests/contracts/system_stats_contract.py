@@ -65,6 +65,10 @@ class SystemStatsContract:
         assert stats.history(everything[-1]['at'] + 1000.0)['samples'] == everything
 
 
+# The keys of a smoothing trace's `rules` (the same as GET /api/dev/settings' object_states).
+SMOOTHING_RULES = {'on_confidence', 'off_confidence', 'appear_sec', 'gone_sec', 'window_pictures', 'vote_share'}
+
+
 class PiStatsLinkContract:
     """Subclass this and give `link` (its Pi answers: one sample, its health, and what its camera sees: a cup with a
     story and one picture of it, nothing ever seen of a pen/pencil) and `dead_link` (its Pi doesn't answer)."""
@@ -100,6 +104,7 @@ class PiStatsLinkContract:
         reply = link.states(0.0)
         assert isinstance(reply, dict)
         assert isinstance(reply['objects'], dict)
+        assert isinstance(reply['now'], (int, float))           # the Pi's own time, by its clock
 
     def test_it_brings_back_the_traced_labels(self, link):
         assert isinstance(link.traced_labels()['labels'], list)
@@ -107,7 +112,12 @@ class PiStatsLinkContract:
     def test_it_brings_back_one_trace(self, link):
         reply = link.trace('cup')
         assert reply['label'] == 'cup'
-        assert isinstance(reply['steps'], list)
+        assert reply['steps'] and isinstance(reply['steps'], list)
+        assert set(reply['rules']) == SMOOTHING_RULES             # the Pi's own lines and waits for the chart
+
+    def test_a_trace_never_seen_has_no_steps(self, link):
+        reply = link.trace('pen/pencil')
+        assert (reply['label'], reply['steps']) == ('pen/pencil', [])
 
     def test_it_brings_back_a_story(self, link):
         reply = link.story('cup')

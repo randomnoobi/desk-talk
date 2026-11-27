@@ -75,7 +75,8 @@ export interface HealthLimits {
 }
 
 /** settings → object_states: the numbers the smoothing chart draws its lines at. appear_sec and gone_sec are the
- *  waits in use now: the sensitivity slider's step stretches them (a new thing waits a little longer to appear). */
+ *  waits in use now: the sensitivity slider's step stretches them (a new thing waits a little longer to appear).
+ *  The chart draws with a trace's own `rules` (SmoothingTrace), the numbers of the server that smoothed it. */
 export interface SmoothingSettings {
   on_confidence: number
   off_confidence: number
@@ -103,7 +104,7 @@ export interface DevSettings {
   trace_events_kept: number        // settings → object_story.events_kept: an object's trace keeps this many changes and chat joins
   trace_photos_kept: number        // settings → object_story.timed_photos_kept: this many timed pictures...
   trace_step_photos_kept: number   // settings → object_story.step_photos_kept: ...and this many step pictures
-  object_states: SmoothingSettings
+  object_states: SmoothingSettings // this server's; the Live tab draws a trace with the trace's own rules
   scenarios: DemoLimits
   pi_log: PiLogSettings
 }
@@ -169,6 +170,7 @@ export type States = {
   objects: Record<string, ObjectNow>
   watched_since: number | null     // when the camera's current run of pictures began
   changes: StateChange[]           // oldest first
+  now: number                      // when it answered, by the answering server's clock (the Pi's may be off from this computer's)
 } & Whose
 
 /** One picture of one object's smoothing (GET /api/dev/smoothing/trace). */
@@ -184,6 +186,14 @@ export interface SmoothingStep {
   heading: Phase | null            // where it's going while it waits
   waiting_sec: number | null
 }
+
+/** GET /api/dev/smoothing/trace?label=: one object's smoothing, oldest picture first, with the rules the answering
+ *  server smoothed it by (the Pi's own when it comes from the Pi: its settings and sensitivity may differ). */
+export type SmoothingTrace = {
+  label: string
+  steps: SmoothingStep[]
+  rules: SmoothingSettings
+} & Whose
 
 /** One thing that happened to an object (GET /api/dev/objects/{label}): a state change ('state'), a chat join,
  *  leave or refusal ('chat'), or a picture that goes with no other step ('photo'), with why and the picture taken
@@ -512,8 +522,7 @@ export const getStates = (since: number) => getJSON<States>(`/api/dev/states?sin
 export const getTracedLabels = async () => (await getJSON<{ labels: string[] }>('/api/dev/smoothing')).labels
 
 /** The label goes in the query, so one with a slash (pen/pencil) works. Oldest picture first. */
-export const getTrace = async (label: string) =>
-  (await getJSON<{ label: string, steps: SmoothingStep[] }>(`/api/dev/smoothing/trace?label=${q(label)}`)).steps
+export const getTrace = (label: string) => getJSON<SmoothingTrace>(`/api/dev/smoothing/trace?label=${q(label)}`)
 
 /** One object's whole trace. The label is in the path; a slash in it (pen/pencil) is sent as %2F and still works. */
 export const getObjectTrace = (label: string) => getJSON<ObjectTraceReply>(`/api/dev/objects/${q(label)}`)

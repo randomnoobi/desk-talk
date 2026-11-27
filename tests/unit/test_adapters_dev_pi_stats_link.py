@@ -12,7 +12,7 @@ import urllib.request
 
 import pytest
 
-from desktalk.adapters.dev.pi_stats_link import NOT_ITS_OBJECTS, HttpPiStatsLink
+from desktalk.adapters.dev.pi_stats_link import NOT_A_PICTURE, NOT_ITS_OBJECTS, HttpPiStatsLink
 from desktalk.domain import StatsUnavailable
 
 GOOD = {'collecting': True, 'every_sec': 2, 'keep_min': 30, 'info': {'cores': 4}, 'samples': [{'at': 1.0}]}
@@ -224,7 +224,9 @@ def test_health_without_a_checks_dict_says_it_is_not_the_health_checks(body):
 
 
 # ── what the Pi's camera sees (the developer page's Live tab) ──
-STATES = {'objects': {'cup': {'state': 'PRESENT', 'since': 5.0}}, 'watched_since': 1.0, 'changes': []}
+STATES = {'objects': {'cup': {'state': 'PRESENT', 'since': 5.0}}, 'watched_since': 1.0, 'changes': [], 'now': 9.0}
+RULES = {'on_confidence': 0.5, 'off_confidence': 0.4, 'appear_sec': 3.0, 'gone_sec': 3.0, 'window_pictures': 5,
+         'vote_share': 0.5}
 STORY = {'label': 'pen/pencil', 'timeline': [{'ts': 5.0, 'kind': 'appeared'}], 'photos': []}
 
 
@@ -245,8 +247,9 @@ def test_traced_labels_asks_for_the_smoothing_list():
 
 
 def test_a_trace_sends_a_label_with_a_slash_in_the_query():
-    opener = Opener(b'{"label": "pen/pencil", "steps": []}')
-    assert link_with(opener).trace('pen/pencil') == {'label': 'pen/pencil', 'steps': []}
+    trace = {'label': 'pen/pencil', 'steps': [], 'rules': RULES}
+    opener = Opener(json.dumps(trace).encode())
+    assert link_with(opener).trace('pen/pencil') == trace
     assert opener.asked[0][0] == 'http://desktalk.local:5000/api/objects/smoothing/trace?label=pen%2Fpencil'
 
 
@@ -265,6 +268,16 @@ def test_a_picture_comes_back_as_it_is():
     opener = Opener(b'\xff\xd8 not json at all')
     assert link_with(opener).photo('cup 1/2') == b'\xff\xd8 not json at all'
     assert opener.asked[0][0] == 'http://desktalk.local:5000/api/objects/photo/cup%201%2F2'
+
+
+@pytest.mark.parametrize('body', [b'<!doctype html><p>Sign in to the Wi-Fi</p>', b'', b'\xff', b'\xd8\xff'],
+                         ids=['a web page', 'nothing', 'half the start', 'the start the wrong way round'])
+def test_a_200_answer_that_is_not_a_jpeg_says_so(body):
+    """Something else answering 200 at the Pi's address (a Wi-Fi sign-in page, a different server) isn't passed on as
+    a picture: a JPEG starts with the bytes FF D8."""
+    with pytest.raises(StatsUnavailable) as caught:
+        link_with(Opener(body)).photo('cup-1')
+    assert str(caught.value) == NOT_A_PICTURE == "it didn't send a picture"
 
 
 def test_a_picture_that_is_gone_is_none():
@@ -288,6 +301,10 @@ def test_a_404_for_the_states_is_still_a_problem():
     (lambda link: link.states(0.0), b'{}'),
     (lambda link: link.traced_labels(), b'{"labels": {}}'),
     (lambda link: link.trace('cup'), b'{"label": "cup"}'),
+    (lambda link: link.trace('cup'), b'{"label": "cup", "steps": []}'),                         # no rules
+    (lambda link: link.trace('cup'), b'{"label": "cup", "steps": [], "rules": []}'),
+    (lambda link: link.states(0.0), json.dumps({**STATES, 'now': None}).encode()),             # no time
+    (lambda link: link.states(0.0), json.dumps({k: v for k, v in STATES.items() if k != 'now'}).encode()),
     (lambda link: link.story('cup'), b'{"label": "cup", "timeline": {}}'),
     (lambda link: link.story('cup'), b'[]'),
 ])

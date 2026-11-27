@@ -11,6 +11,7 @@
       }
     ],
     "from": "str",
+    "now": "number",
     "objects": {
       "cup": {
         "since": "number",

@@ -61,9 +61,10 @@ describe('postJSON', () => {
 })
 
 describe('the route functions', () => {
-  it('getTrace URL-encodes the label', async () => {
-    const fetch = fakeFetch(reply(200, { label: 'pen/pencil', steps: [] }))
-    await expect(getTrace('pen/pencil')).resolves.toEqual([])
+  it('getTrace URL-encodes the label, and gives the steps with the rules they were smoothed by', async () => {
+    const rules = { on_confidence: 0.5, off_confidence: 0.4, appear_sec: 3, gone_sec: 3, window_pictures: 5, vote_share: 0.5 }
+    const fetch = fakeFetch(reply(200, { label: 'pen/pencil', steps: [], rules, from: 'pi', address: 'pi:5000' }))
+    await expect(getTrace('pen/pencil')).resolves.toMatchObject({ steps: [], rules })
     expect(fetch.mock.calls[0][0]).toBe('/api/dev/smoothing/trace?label=pen%2Fpencil')
   })
 })

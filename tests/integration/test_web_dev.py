@@ -160,8 +160,9 @@ def test_smoothing_trace_for_a_label_with_a_slash(rig):
     assert set(trace['steps'][0]) == {'ts', 'conf', 'box_seen', 'votes_yes', 'votes_total', 'seen', 'center',
                                       'phase', 'heading', 'waiting_sec'}
     nothing = client.get('/api/dev/smoothing/trace?label=nothing')
-    assert (nothing.status_code, nothing.json()) == (200, {'label': 'nothing', 'steps': [], 'from': 'here',
-                                                           'address': ''})
+    rules = client.get('/api/dev/settings').json()['object_states']
+    assert (nothing.status_code, nothing.json()) == (200, {'label': 'nothing', 'steps': [], 'rules': rules,
+                                                           'from': 'here', 'address': ''})
     assert client.get('/api/dev/smoothing/trace').status_code == 400
 
 
@@ -358,12 +359,14 @@ def test_live_routes_ask_the_pi_when_it_is_the_camera(tmp_path):
     assert client.get('/api/dev/states?since=7').json() == {**link.states_reply, **pi}
     assert link.asked_states == [7.0]
     assert client.get('/api/dev/smoothing').json() == {**link.labels_reply, **pi}
-    trace = client.get('/api/dev/smoothing/trace?label=pen%2Fpencil').json()
-    assert trace == {'label': 'pen/pencil', 'steps': link.trace_steps, **pi}
+    trace = client.get('/api/dev/smoothing/trace?label=cup').json()
+    assert trace == {'label': 'cup', 'steps': link.trace_steps, 'rules': link.trace_rules, **pi}
+    never = client.get('/api/dev/smoothing/trace?label=pen%2Fpencil').json()      # a slash, and never seen there
+    assert never == {'label': 'pen/pencil', 'steps': [], 'rules': link.trace_rules, **pi}
     assert client.get('/api/dev/objects/cup').json() == {**link.story_reply, 'label': 'cup', **pi}
     photo = client.get(f'/api/dev/objects/photo/{PHOTO_ID}')
     assert (photo.status_code, photo.headers['content-type'], photo.content) == (200, 'image/jpeg', PHOTO_BYTES)
-    assert (link.asked_traces, link.asked_stories, link.asked_photos) == (['pen/pencil'], ['cup'], [PHOTO_ID])
+    assert (link.asked_traces, link.asked_stories, link.asked_photos) == (['cup', 'pen/pencil'], ['cup'], [PHOTO_ID])
 
 
 @pytest.mark.parametrize('section, setting, value', [('web', 'public_address', 'desktalk.local:5000'),
@@ -415,6 +418,7 @@ def object_keys(states: dict[str, Any], trace: dict[str, Any], story: dict[str, 
     them (the first of each)."""
     return {'states': sorted(states), 'object': sorted(next(iter(states['objects'].values()))),
             'change': sorted(states['changes'][0]), 'trace': sorted(trace), 'step': sorted(trace['steps'][0]),
+            'rules': sorted(trace['rules']),
             'story': sorted(story), 'story_step': sorted(story['timeline'][0]), 'photo': sorted(story['photos'][0])}
 
 
@@ -431,6 +435,27 @@ def test_the_fake_pi_objects_have_the_same_keys_as_the_real_routes(tmp_path):
     fake = FakePiStatsLink()
     assert object_keys(fake.states(0.0), fake.trace('cup'), fake.story('cup')) == real
     assert set(client.get('/api/objects/smoothing').json()) == set(fake.traced_labels())
+
+
+def test_the_pi_trace_is_drawn_with_the_pis_rules_not_these(tmp_path):
+    """The Pi's settings (its own settings.local.yaml, its sensitivity slider) may differ from this computer's: the
+    trace passes on the Pi's rules as they are."""
+    pis = {'on_confidence': 0.7, 'off_confidence': 0.6, 'appear_sec': 6.0, 'gone_sec': 9.0, 'window_pictures': 8,
+           'vote_share': 0.75}
+    rig = DeskRig(tmp_path, pi_stats_link=FakePiStatsLink(trace_rules=pis))
+    client = web_client(rig.app)
+    assert client.get('/api/dev/smoothing/trace?label=cup').json()['rules'] == pis
+    assert client.get('/api/dev/settings').json()['object_states'] != pis
+
+
+def test_the_pi_states_say_the_pis_time(tmp_path):
+    link = FakePiStatsLink(states_reply={'objects': {}, 'watched_since': None, 'changes': [], 'now': 1234.5})
+    rig = DeskRig(tmp_path, pi_stats_link=link)
+    assert web_client(rig.app).get('/api/dev/states').json()['now'] == 1234.5
+
+
+def test_states_here_say_this_servers_time(rig):
+    assert web_client(rig.app).get('/api/dev/states').json()['now'] == rig.clock.now()
 
 
 @pytest.mark.parametrize('path', ['../.env', '/etc/passwd', '../../config/settings.yaml'])

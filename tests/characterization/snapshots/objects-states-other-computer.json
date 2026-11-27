@@ -9,6 +9,7 @@
         "ts": "number"
       }
     ],
+    "now": "number",
     "objects": {
       "book": {
         "since": "number",

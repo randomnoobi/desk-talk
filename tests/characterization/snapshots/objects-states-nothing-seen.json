@@ -3,6 +3,7 @@
   "headers": {},
   "json": {
     "changes": [],
+    "now": "number",
     "objects": {},
     "watched_since": "null"
   },

@@ -5,11 +5,13 @@ and Live tabs, with the standard library only:
     link = HttpPiStatsLink('desktalk.local:5000', 3)     # settings → dev.pi_address, dev.pi_stats_timeout_sec
     reply = link.fetch(since)                             # the Pi's GET /api/system/stats reply, as it is
     reply = link.health()                                 # the Pi's GET /api/health reply
-    reply = link.states(since)                            # the Pi's GET /api/objects/states?since=
+    reply = link.states(since)                            # the Pi's GET /api/objects/states?since= (with its `now`)
     reply = link.traced_labels()                          # the Pi's GET /api/objects/smoothing
-    reply = link.trace(label)                             # the Pi's GET /api/objects/smoothing/trace?label=
+    reply = link.trace(label)                             # the Pi's GET /api/objects/smoothing/trace?label= (with
+                                                          # its `rules`)
     reply = link.story(label)                             # the Pi's GET /api/objects/<label>/story (empty on its 404)
-    jpeg = link.photo(photo_id)                           # the Pi's GET /api/objects/photo/<id> (None on its 404)
+    jpeg = link.photo(photo_id)                           # the Pi's GET /api/objects/photo/<id> (None on its 404;
+                                                          # anything but a JPEG is a problem)
 
 The developer page runs on the computer and the app lets no other web site read it, so the computer's server
 asks the Pi and passes the reply on. When the Pi doesn't answer in time, can't be found, answers with an error,
@@ -27,7 +29,7 @@ import socket
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from desktalk.domain import StatsUnavailable
@@ -35,7 +37,9 @@ from desktalk.domain import StatsUnavailable
 NOT_THEIR_NUMBERS = "it didn't send its numbers"
 NOT_ITS_HEALTH = "it didn't send its health checks"
 NOT_ITS_OBJECTS = "it didn't send what its camera sees"
+NOT_A_PICTURE = "it didn't send a picture"
 BAD_ADDRESS = "that address can't be used"
+JPEG_START = b'\xff\xd8'                 # every JPEG starts with these two bytes
 
 
 def _open(url: str, timeout_sec: float) -> bytes:
@@ -79,38 +83,43 @@ class HttpPiStatsLink:
 
     def fetch(self, since: float | None) -> dict[str, Any]:
         query = '' if since is None else urllib.parse.urlencode({'since': since})
-        return self._ask('/api/system/stats', query, 'samples', list, NOT_THEIR_NUMBERS)
+        return self._ask('/api/system/stats', query, {'samples': list}, NOT_THEIR_NUMBERS)
 
     def health(self) -> dict[str, Any]:
-        return self._ask('/api/health', '', 'checks', dict, NOT_ITS_HEALTH)
+        return self._ask('/api/health', '', {'checks': dict}, NOT_ITS_HEALTH)
 
     def states(self, since: float) -> dict[str, Any]:
         query = urllib.parse.urlencode({'since': since})
-        return self._ask('/api/objects/states', query, 'objects', dict, NOT_ITS_OBJECTS)
+        return self._ask('/api/objects/states', query, {'objects': dict, 'now': (int, float)}, NOT_ITS_OBJECTS)
 
     def traced_labels(self) -> dict[str, Any]:
-        return self._ask('/api/objects/smoothing', '', 'labels', list, NOT_ITS_OBJECTS)
+        return self._ask('/api/objects/smoothing', '', {'labels': list}, NOT_ITS_OBJECTS)
 
     def trace(self, label: str) -> dict[str, Any]:
         query = urllib.parse.urlencode({'label': label})          # a slash too: pen/pencil → label=pen%2Fpencil
-        return self._ask('/api/objects/smoothing/trace', query, 'steps', list, NOT_ITS_OBJECTS)
+        return self._ask('/api/objects/smoothing/trace', query, {'steps': list, 'rules': dict}, NOT_ITS_OBJECTS)
 
     def story(self, label: str) -> dict[str, Any]:
         path = f"/api/objects/{urllib.parse.quote(label, safe='')}/story"
         body = self._get(path, '', missing_ok=True)
         if body is None:                                           # the Pi has nothing to tell about it
             return {'label': label, 'timeline': [], 'photos': []}
-        return _shaped(body, 'timeline', list, NOT_ITS_OBJECTS)
+        return _shaped(body, {'timeline': list}, NOT_ITS_OBJECTS)
 
     def photo(self, photo_id: str) -> bytes | None:
-        return self._get(f"/api/objects/photo/{urllib.parse.quote(photo_id, safe='')}", '', missing_ok=True)
+        jpeg = self._get(f"/api/objects/photo/{urllib.parse.quote(photo_id, safe='')}", '', missing_ok=True)
+        if jpeg is not None and not jpeg.startswith(JPEG_START):  # a sign-in page, another server ...
+            raise StatsUnavailable(NOT_A_PICTURE)
+        return jpeg
 
-    def _ask(self, path: str, query: str, key: str, kind: type, not_it: str) -> dict[str, Any]:
-        """The Pi's reply to GET `path`?`query`: a JSON object whose `key` is a `kind` (the part that shows it's the
-        reply asked for), or StatsUnavailable (saying `not_it` when the reply is something else)."""
+    def _ask(self, path: str, query: str, kinds: Mapping[str, type | tuple[type, ...]],
+             not_it: str) -> dict[str, Any]:
+        """The Pi's reply to GET `path`?`query`: a JSON object whose every key in `kinds` is of its kind (the parts
+        that show it's the reply asked for), or StatsUnavailable (saying `not_it` when the reply is something
+        else)."""
         body = self._get(path, query)
         assert body is not None                                    # only missing_ok gives None
-        return _shaped(body, key, kind, not_it)
+        return _shaped(body, kinds, not_it)
 
     def _get(self, path: str, query: str, *, missing_ok: bool = False) -> bytes | None:
         """The body of the Pi's reply to GET `path`?`query`, or StatsUnavailable when there's no good answer. With
@@ -128,12 +137,12 @@ class HttpPiStatsLink:
             raise StatsUnavailable(BAD_ADDRESS) from None
 
 
-def _shaped(body: bytes, key: str, kind: type, not_it: str) -> dict[str, Any]:
-    """`body` as a JSON object whose `key` is a `kind`, or StatsUnavailable saying `not_it`."""
+def _shaped(body: bytes, kinds: Mapping[str, type | tuple[type, ...]], not_it: str) -> dict[str, Any]:
+    """`body` as a JSON object whose every key in `kinds` is of its kind, or StatsUnavailable saying `not_it`."""
     try:
         reply = json.loads(body)
     except ValueError:                                             # not JSON, or not even text
         raise StatsUnavailable(f"{not_it} (the answer isn't JSON)") from None
-    if not isinstance(reply, dict) or not isinstance(reply.get(key), kind):
+    if not isinstance(reply, dict) or not all(isinstance(reply.get(key), kind) for key, kind in kinds.items()):
         raise StatsUnavailable(not_it)
     return reply

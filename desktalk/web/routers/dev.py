@@ -9,10 +9,12 @@ only for this computer, from the server's own page or the Vite dev server's (Dev
   dev.pi_address, with "from": "pi" and "address"; otherwise this server's own, with "from": "here" and
   "address": "". 502 when the Pi doesn't answer. (The photo route stays a JPEG, with no "from".)
 
-    GET  /api/dev/states?since=<ts>         each object's state now, and the changes after `since`
+    GET  /api/dev/states?since=<ts>         each object's state now, the changes after `since`, and `now` (the
+                                            time by the clock of the machine that answered)
     GET  /api/dev/smoothing                 the objects with a smoothing trace
     GET  /api/dev/smoothing/trace?label=    one object's last pictures of smoothing, oldest first ([] for one
-                                            never seen; the label is a query parameter, so pen/pencil works)
+                                            never seen; the label is a query parameter, so pen/pencil works), and
+                                            the `rules` that machine smooths with (the chart's lines and waits)
     GET  /api/dev/objects/<label>           one object's whole trace: its state changes since the camera
                                             started and its chat joins, leaves and refusals (oldest first,
                                             each with why and the picture taken for it), and the pictures kept
@@ -69,6 +71,7 @@ from desktalk.ports import DatabaseBrowser, DataFiles, DemoScenarios, PiLog, PiS
 from desktalk.web.deps import App, DevOnly
 from desktalk.web.routers.health import health as own_health
 from desktalk.web.routers.objects import smoothing as object_smoothing
+from desktalk.web.routers.objects import smoothing_rules
 from desktalk.web.routers.objects import smoothing_trace as object_smoothing_trace
 from desktalk.web.routers.objects import states as object_states
 from desktalk.web.schemas import QueryRequest, RunRequest, ScenarioRequest
@@ -163,10 +166,6 @@ def _cell(value: Any) -> Any:
 def dev_settings(app: App) -> dict[str, Any]:
     config = app.config
     dev, states, story = config.dev, config.object_states, config.object_story
-    # The waits the tracker uses now: the sensitivity slider's step stretches them (a new thing waits
-    # agents.new_things.extra_wait_sec longer to appear than this).
-    step = config.agents.step_at(app.preferences.get('sensitivity')) or config.agents.default_step()
-    appear_sec, gone_sec, _ = states.steady_rules(step.steady)
     return {
         'poll_sec': dev.poll_sec,
         'checks': [check.name for check in dev.checks],
@@ -175,9 +174,7 @@ def dev_settings(app: App) -> dict[str, Any]:
         'trace_pictures': states.trace_pictures,
         'sql_max_rows': dev.sql_max_rows,
         'data_folder': str(app.data_folder),            # the folder in memory when nothing is saved
-        'object_states': {'on_confidence': states.on_confidence, 'off_confidence': states.off_confidence,
-                          'appear_sec': appear_sec, 'gone_sec': gone_sec,
-                          'window_pictures': states.window_pictures, 'vote_share': states.vote_share},
+        'object_states': smoothing_rules(app),          # this server's (a Pi's trace brings the Pi's own)
         'disconnect_after_sec': config.camera.disconnect_after_sec,
         'web_port': config.web.port,
         'flicker_flips_per_min': dev.flicker_flips_per_min,

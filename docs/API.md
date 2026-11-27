@@ -100,9 +100,9 @@ is in [ARCHITECTURE.md](ARCHITECTURE.md).
 |---|---|---|---|---|
 | GET | `/api/objects/{label}/story` | What happened to one kind of object since the camera started, step by step, oldest first, each step in plain words with the picture taken for it, plus the pictures of it kept from earlier runs (so after a restart it can still answer, with older pictures). `pen%2Fpencil/story` works for a word with a slash. 404 `{"error": "The camera hasn't seen ... yet."}` (`config/prompts.yaml` → `object_story.never_seen`) when there's nothing to tell: no step this run and no kept picture. | `web_app/app.js` (click something under "On the desk") | anyone on the network |
 | GET | `/api/objects/photo/{photo_id}` | One of its pictures (JPEG, without the box: the page draws it). 404 when it's gone. | `web_app/app.js` | anyone on the network |
-| GET | `/api/objects/states` | Each object's state now, and the changes since `?since=<time>`: the same reply as `GET /api/dev/states`. Only names, states and times. | `GET /api/dev/states` on a computer whose camera is the Pi | anyone on the network |
+| GET | `/api/objects/states` | Each object's state now, the changes since `?since=<time>`, and `now` (the time by this server's clock): the same reply as `GET /api/dev/states`. Only names, states and times. | `GET /api/dev/states` on a computer whose camera is the Pi | anyone on the network |
 | GET | `/api/objects/smoothing` | The objects that have a smoothing trace: the same reply as `GET /api/dev/smoothing`. | `GET /api/dev/smoothing` on a computer whose camera is the Pi | anyone on the network |
-| GET | `/api/objects/smoothing/trace` | What the smoothing made of one object's last pictures, oldest first (confidence numbers and times, no pictures): the same reply as `GET /api/dev/smoothing/trace`. `?label=pen%2Fpencil` works; an object never seen gives an empty list. | `GET /api/dev/smoothing/trace` on a computer whose camera is the Pi | anyone on the network |
+| GET | `/api/objects/smoothing/trace` | What the smoothing made of one object's last pictures, oldest first (confidence numbers and times, no pictures), and the `rules` this server smooths with: the same reply as `GET /api/dev/smoothing/trace`. `?label=pen%2Fpencil` works; an object never seen gives an empty list. | `GET /api/dev/smoothing/trace` on a computer whose camera is the Pi | anyone on the network |
 
 - The reply is the same as `GET /api/dev/objects/{label}` (see the developer page below), read by the same code
   (`desktalk/web/stories.py`): `{"label", "timeline": [step], "photos": [photo]}`. Each step has `what`, the
@@ -209,7 +209,7 @@ has `"demo": true`), and a pretend sip counts in today's water.
 | GET | `/api/dev/smoothing` | The objects that have a smoothing trace. On a computer whose camera is the Pi (`camera.source: pi`, `web.public_address` empty), the Pi's own `GET /api/objects/smoothing`, fetched from `dev.pi_address`, with `"from": "pi"` and `"address"` added; anywhere else this server's own, with `"from": "here"` and `"address": ""`. 502 with `dev.pi_objects_unreachable`'s words when the Pi doesn't answer within `dev.pi_stats_timeout_sec`. | Live tab | this computer and its own page only |
 | GET | `/api/dev/smoothing/trace` | What the smoothing made of one object's last pictures, oldest first. `?label=pen%2Fpencil` (a query, so a label with a slash works); an object never seen gives an empty list, not an error. On a computer whose camera is the Pi (`camera.source: pi`, `web.public_address` empty), the Pi's own `GET /api/objects/smoothing/trace`, fetched from `dev.pi_address`, with `"from": "pi"` and `"address"` added; anywhere else this server's own, with `"from": "here"` and `"address": ""`. 502 with `dev.pi_objects_unreachable`'s words when the Pi doesn't answer within `dev.pi_stats_timeout_sec`. | Live tab | this computer and its own page only |
 | GET | `/api/dev/objects/{label}` | One kind of object's whole trace: its state changes since the camera started and its chat joins, leaves and refusals (with why), oldest first, each with the picture taken for it, and its pictures. `pen%2Fpencil` works for a word with a slash; an object never seen gives empty lists. On a computer whose camera is the Pi (`camera.source: pi`, `web.public_address` empty), the Pi's own `GET /api/objects/{label}/story` (its 404 for an object it never saw is the empty story here), fetched from `dev.pi_address`, with `"from": "pi"` and `"address"` added; anywhere else this server's own, with `"from": "here"` and `"address": ""`. 502 with `dev.pi_objects_unreachable`'s words when the Pi doesn't answer within `dev.pi_stats_timeout_sec`. | Live tab | this computer and its own page only |
-| GET | `/api/dev/objects/photo/{photo_id}` | One trace picture (JPEG). 404 when it's gone. On a computer whose camera is the Pi, fetched from the Pi's own `GET /api/objects/photo/{photo_id}` at `dev.pi_address` (404 when it's gone there; 502 with `dev.pi_objects_unreachable`'s words when the Pi doesn't answer). | Live tab | this computer and its own page only |
+| GET | `/api/dev/objects/photo/{photo_id}` | One trace picture (JPEG). 404 when it's gone. On a computer whose camera is the Pi, fetched from the Pi's own `GET /api/objects/photo/{photo_id}` at `dev.pi_address` (404 when it's gone there; 502 with `dev.pi_objects_unreachable`'s words when the Pi doesn't answer, or answers with something that isn't a JPEG). | Live tab | this computer and its own page only |
 | GET | `/api/dev/tests` | Every test the Checks tab lists (`dev.collect_markers`), slow ones marked. | Checks tab | this computer and its own page only |
 | POST | `/api/dev/runs` | Start a run: every step in `dev.checks`, or some tests by id. One run at a time. | Checks tab | this computer and its own page only |
 | GET | `/api/dev/runs/{run_id}` | How a run is going: its steps, each finished test, and the printout after `?from=<offset>`. | Checks tab, while a run goes | this computer and its own page only |
@@ -233,13 +233,19 @@ has `"demo": true`), and a pretend sip counts in today's water.
 - `GET /api/dev/settings`: `{"poll_sec", "checks": [names], "health": {...}, "pi_hot": {"warning_c", "serious_c"}, "trace_pictures",
   "trace_events_kept", "trace_photos_kept", "trace_step_photos_kept", "sql_max_rows", "data_folder", "object_states": {"on_confidence", "off_confidence", "appear_sec",
   "gone_sec", "window_pictures", "vote_share"}, "scenarios": {"countdown_default_sec", "countdown_max_sec",
-  "waiting_max"}, "pi_log": {"sources": [{"name", "label"}], "keep_lines"}}`.
+  "waiting_max"}, "pi_log": {"sources": [{"name", "label"}], "keep_lines"}}`. `object_states` are this server's
+  smoothing numbers, with the waits the sensitivity slider has now; a smoothing trace brings its own (`rules`).
 - `GET /api/dev/states`: `{"objects": {label: {"state", "since"}}, "watched_since", "changes": [{"ts",
-  "label", "change"}], "from", "address"}`. It, `/api/dev/smoothing`, `/api/dev/smoothing/trace` and `/api/dev/objects/{label}`
-  each add `"from": "pi" | "here"` and `"address"`, like `/api/dev/health`.
-- `GET /api/dev/smoothing`: `{"labels": [...]}`. `/api/dev/smoothing/trace`: `{"label", "steps": [...]}`;
+  "label", "change"}], "now", "from", "address"}`. `now` is when it answered, by the clock of the server that
+  answered (the Pi's, from the Pi): the page measures "for 5 s" and the last minute's flips from it, so a Pi clock
+  that is off from the computer's doesn't throw them. It, `/api/dev/smoothing`, `/api/dev/smoothing/trace` and
+  `/api/dev/objects/{label}` each add `"from": "pi" | "here"` and `"address"`, like `/api/dev/health`.
+- `GET /api/dev/smoothing`: `{"labels": [...]}`. `/api/dev/smoothing/trace`: `{"label", "steps": [...],
+  "rules": {"on_confidence", "off_confidence", "appear_sec", "gone_sec", "window_pictures", "vote_share"}}`;
   each step has `ts`, `conf`, `box_seen`, `votes_yes`, `votes_total`, `seen`, `center`, `phase`, `heading`
-  and `waiting_sec`.
+  and `waiting_sec`. `rules` are the numbers the answering server smoothed with (the same keys as
+  `/api/dev/settings`' `object_states`; the Pi's own, from the Pi, whose settings and sensitivity may differ): the
+  chart draws its lines, vote mark and countdown with them.
 - `GET /api/dev/objects/{label}` (and `GET /api/objects/{label}/story`): `{"label", "timeline": [{"ts",
   "source": "state" | "chat" | "photo", "kind", "what", "confidence", "seen_for_sec", "on_desk", "step",
   "before", "after", "photo"}], "photos": [photo]}`, where a photo is `{"id", "ts", "why", "confidence",

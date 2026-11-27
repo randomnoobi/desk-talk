@@ -16,8 +16,11 @@ from tests.contracts.system_stats_contract import PiStatsLinkContract
 ONE_SAMPLE = {'collecting': True, 'every_sec': 2, 'keep_min': 30, 'info': {}, 'samples': [{'at': 1.0}]}
 HEALTH = {'uptime_sec': 60, 'checks': {'camera': {'level': 'ok', 'value': 2.0, 'unit': 'pictures/s'}}}
 STATES = {'objects': {'cup': {'state': 'PRESENT', 'since': 5.0}}, 'watched_since': 1.0,
-          'changes': [{'ts': 5.0, 'label': 'cup', 'change': 'appeared'}]}
-TRACE = {'label': 'cup', 'steps': [{'ts': 5.0, 'conf': 0.9, 'phase': 'PRESENT'}]}
+          'changes': [{'ts': 5.0, 'label': 'cup', 'change': 'appeared'}], 'now': 12.0}
+RULES = {'on_confidence': 0.5, 'off_confidence': 0.4, 'appear_sec': 3.0, 'gone_sec': 3.0, 'window_pictures': 5,
+         'vote_share': 0.5}
+TRACE = {'label': 'cup', 'steps': [{'ts': 5.0, 'conf': 0.9, 'phase': 'PRESENT'}], 'rules': RULES}
+NOTHING_TRACED = {'label': 'pen/pencil', 'steps': [], 'rules': RULES}
 PHOTO = {'id': 'cup-1', 'ts': 5.0, 'why': 'appeared', 'confidence': 0.9, 'box': [1, 2, 3, 4], 'size': [640, 480]}
 STORY = {'label': 'cup', 'timeline': [{'ts': 5.0, 'source': 'state', 'kind': 'appeared', 'photo': PHOTO}],
          'photos': [PHOTO]}
@@ -30,6 +33,8 @@ PICTURES = {'/api/objects/photo/cup-1': b'\xff\xd8 a jpeg'}
 def answers(url: str, timeout_sec: float) -> bytes:
     """Answers like the Pi's own server: each route its own reply, and 404 for a story or picture it hasn't got."""
     path = urllib.parse.urlsplit(url).path
+    if urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).get('label') == ['pen/pencil']:
+        return json.dumps(NOTHING_TRACED).encode()              # never seen: no steps
     if path in PICTURES:
         return PICTURES[path]
     if path not in REPLIES:

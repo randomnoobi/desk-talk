@@ -41,7 +41,8 @@ def test_smoothing_lists_traced_labels(rig):
 def test_trace_of_a_word_never_seen_is_empty(rig):
     client = main_client(rig.app)
     reply = client.get('/api/objects/smoothing/trace?label=pen%2Fpencil')
-    assert (reply.status_code, reply.json()) == (200, {'label': 'pen/pencil', 'steps': []})
+    assert reply.status_code == 200
+    assert (reply.json()['label'], reply.json()['steps']) == ('pen/pencil', [])
     cup = client.get('/api/objects/smoothing/trace?label=cup').json()
     assert {**cup, 'from': 'here', 'address': ''} == client.get('/api/dev/smoothing/trace?label=cup').json()
     assert cup['steps']
@@ -50,3 +51,22 @@ def test_trace_of_a_word_never_seen_is_empty(rig):
 @pytest.mark.parametrize('path', ROUTES)
 def test_any_device_on_the_wifi_may_ask(rig, path):
     assert main_client(rig.app, from_ip=ON_THE_WIFI).get(path).status_code == 200
+
+
+def test_states_say_the_time_by_this_servers_clock(rig):
+    """The page measures "for 5 s" and the last minute's flips from this, not from the computer's own clock."""
+    rig.clock.advance(12.5)
+    assert main_client(rig.app).get('/api/objects/states').json()['now'] == rig.clock.now()
+
+
+def test_a_trace_carries_the_smoothing_rules_this_server_uses(rig):
+    """The lines and waits the chart draws, the same as the developer page's settings → object_states here, so a
+    computer drawing the Pi's trace uses the Pi's numbers (its own settings, its sensitivity slider)."""
+    client = main_client(rig.app)
+    normal = client.get('/api/dev/settings').json()['object_states']
+    for label in ('cup', 'pen%2Fpencil'):
+        assert client.get(f'/api/objects/smoothing/trace?label={label}').json()['rules'] == normal
+    rig.app.preferences.update({'sensitivity': 0})
+    picky = client.get('/api/objects/smoothing/trace?label=cup').json()['rules']
+    assert picky == client.get('/api/dev/settings').json()['object_states']
+    assert picky['appear_sec'] != normal['appear_sec']
