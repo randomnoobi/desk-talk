@@ -14,7 +14,7 @@ columns:
 
 Click anything under "On the desk" for its story: when it appeared, joined the chat, moved or went away, how sure the
 camera was each time, and the picture taken at each step with its box drawn on (for "went away", the empty spot with
-its last box). The pictures are kept in `data/trace_photos/` (set in the `object_story` settings).
+its last box). The pictures are kept in data/trace_photos/ (set in the object_story settings).
 
 ## Event log
 
@@ -28,15 +28,15 @@ things near a real edge get a warning.
 
 ## The demo
 
-With no server to talk to, the page plays a short demo where four characters join the chat. Serve `web_app/` with any
+With no server to talk to, the page plays a short demo where four characters join the chat. Serve web_app/ with any
 static server, or open the GitHub Pages site.
 
-Pushing to `main` publishes `web_app/` to GitHub Pages ([`.github/workflows/deploy-pages.yml`](../.github/workflows/deploy-pages.yml)).
+Pushing to main publishes web_app/ to GitHub Pages ([.github/workflows/deploy-pages.yml](../.github/workflows/deploy-pages.yml)).
 To set it up for your own copy of the repository:
 
 1. On GitHub, open Settings, then Pages, and under Build and deployment set Source to GitHub Actions.
-2. Push to `main`, open the Actions tab and check that "Deploy site to GitHub Pages" succeeds.
-3. The site is at `https://<username>.github.io/<repo>/`, unless you use a custom domain.
+2. Push to main, open the Actions tab and check that "Deploy site to GitHub Pages" succeeds.
+3. The site is at https://\<username\>.github.io/\<repo\>/, unless you use a custom domain.
 
 ## Design principles
 
