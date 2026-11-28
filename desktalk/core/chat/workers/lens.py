@@ -12,9 +12,8 @@ so a heartbeat keeps it checked when the pictures stop. A warning that turns ser
 Nothing is said during quiet hours (by the clock's local hour).
 
     lens = Lens(camera_health, source, desk_layout, preferences, notifier, bus, proof_photos, config.lens, config.pi,
-                clock=clock, checks=health_checks, phone=<the phone source, if it's the camera>,
-                pi_uploads=<the Pi source, if it's the camera>, prompts=config.prompts.lens,
-                preview_chars=config.logging.preview_chars)
+                clock=clock, checks=health_checks, pi_uploads=<the Pi source, if it's the camera>,
+                prompts=config.prompts.lens, preview_chars=config.logging.preview_chars)
     supervisor.add(lens, start_after=config.lens.check_every_sec)
 """
 
@@ -45,7 +44,6 @@ from desktalk.ports import (
     FrameSource,
     HealthCheck,
     Notifier,
-    PhoneCamera,
     PhotoTaker,
     PiUploads,
     Preferences,
@@ -54,8 +52,8 @@ from desktalk_shared.wire import OFF_ON_PURPOSE
 
 log = logging.getLogger(__name__)
 
-PHOTO_KEYS = {'cutoff', 'bumped', 'empty', 'glare'}     # problems you can see in a photo, so one goes with them
-FPS_KINDS = {'phone', 'pi'}                              # cameras whose picture rate is checked
+PHOTO_KEYS = {'cutoff', 'empty', 'glare'}     # problems you can see in a photo, so one goes with them
+FPS_KINDS = {'pi'}                             # cameras whose picture rate is checked
 
 # The Pi's slow-down flags (vcgencmd get_throttled). The low bits are "right now"; higher ones mean
 # "happened since the Pi started" and stay set, so only the low ones count.
@@ -114,14 +112,14 @@ class _PiWatch:
 
 
 class Lens:
-    """A PeriodicWorker. `phone` / `pi_uploads`: pass the camera source when it's the phone / the Pi."""
+    """A PeriodicWorker. `pi_uploads`: pass the camera source when it's the Pi."""
 
     name = 'lens'
 
     def __init__(self, health: CameraHealthView, source: FrameSource, layout: DeskLayout, prefs: Preferences,
                  notifier: Notifier, bus: EventBus, photos: PhotoTaker, settings: LensSettings,
                  pi_settings: PiSettings, *, clock: Clock, checks: HealthCheck, prompts: LensPrompts,
-                 preview_chars: int, phone: PhoneCamera | None = None, pi_uploads: PiUploads | None = None,
+                 preview_chars: int, pi_uploads: PiUploads | None = None,
                  saving: Saving = Saving.PLAIN, camera_elsewhere: bool = False):
         """How long the Pi must be hot (or its clock off) before Lens says so: lens.wait_before_saying_sec.pi;
         how long its own detection must be off: lens.wait_before_saying_sec.pi_detector. The other health checks
@@ -146,7 +144,6 @@ class Lens:
         self._words = prompts
         self._preview_chars = preview_chars
         self._saving = saving
-        self._phone = phone
         self._pi = pi_uploads
         self._camera_elsewhere = camera_elsewhere
         self._detector_reason_logged: str | None = None
@@ -166,14 +163,13 @@ class Lens:
                             _PiWatch('pi_heartbeat', fixed.pi_heartbeat, wait=0, **timing)]
 
     def tick(self, now: float) -> float:
-        source, phone = self._source, self._phone
+        source = self._source
         connected = source.connected
         measures = {m.key: m for m in self._checks.measures()}     # (also while quiet: they follow the camera)
         quiet = quiet_hours_now(self._prefs, now, self._clock)
         found = [] if self._camera_elsewhere else self._health.check(
             now, connected=connected, fps=source.fps if source.kind in FPS_KINDS else None,
-            gravity=phone.recent_gravity() if phone else None, reference_gravity=self._layout.reference_gravity(),
-            has_outline=self._layout.has_outline(), stopped=phone.stopped_by_user if phone else False, quiet=quiet)
+            has_outline=self._layout.has_outline(), quiet=quiet)
         if quiet:
             return self._settings.check_every_sec       # (the Pi isn't checked either: no thanks for unseen warnings)
         for message in list(found) + self._pi_messages(now, connected, measures):
@@ -262,7 +258,7 @@ class Lens:
 
     def _for_camera(self, words: ByCamera) -> str:
         """The card's wording for this camera: the app runs on the Pi when the Pi is the camera (its SD card), and
-        on this computer with a webcam or the phone (its disk)."""
+        on this computer with a webcam (its disk)."""
         return words.model_dump().get(self._source.kind, words.webcam)
 
     def _heartbeat_text(self, m: HealthMeasure | None) -> tuple[str, int] | None:

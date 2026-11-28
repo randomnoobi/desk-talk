@@ -21,7 +21,7 @@ CUP = AgentProfile(id='cup', name='Cup', object='cup', labels=['cup'], habits=['
                    hello='Hi, I hold water.')
 TODAY = {'hydration': {'sips': 3, 'water_ml': 240, 'goal_ml': 2400, 'pace_ml': 900, 'last_sip_ts': None},
          'breaks': {'count': 1, 'last_break_ts': None, 'sitting_sec': 600, 'sit_limit_min': 30},
-         'phone_free': {'counted': False}, 'light': {'sunlight_ts': None}}
+         'phone_free': {'phone_free_sec': 0}, 'light': {'sunlight_ts': None}}
 
 
 class HabitLog:

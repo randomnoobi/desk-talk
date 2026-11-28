@@ -132,13 +132,12 @@ function paint(box, html, poll = false) {
 const state = {
   live: false,          // the Python server answered when the page opened (otherwise: the demo)
   offline: false,       // ...but can't be reached right now
-  cameraSource: 'pi',   // pi | phone | webcam
+  cameraSource: 'pi',   // pi | webcam
   camOk: false,         // pictures are arriving right now
   camNoted: false,      // what the last "Camera connected / disconnected" note said...
   camSince: 0,          // ...and since when (ms) camOk has been what it is now
   camIndex: 0,
   feed: 'analysis',     // 'analysis' (boxes) or 'clean'
-  phone: null,          // { url, qr_svg } for phone pairing
   view: 'chat',
   chat: 'group',
   agents: {},           // agent id → profile + on_desk / joined_at / left_at
@@ -376,9 +375,9 @@ function renderConn() {
     st = 'waiting';
     text = 'Offline';
   } else if (state.live) {
-    const name = { pi: 'Pi camera', phone: 'Phone camera', webcam: 'Webcam' }[state.cameraSource] || 'Camera';
+    const name = { pi: 'Pi camera', webcam: 'Webcam' }[state.cameraSource] || 'Camera';
     st = state.camOk ? 'live' : 'waiting';
-    text = state.camOk ? `${name} on` : (state.cameraSource === 'phone' ? 'Connect your phone' : `${name} off`);
+    text = state.camOk ? `${name} on` : `${name} off`;
   }
   el.dataset.state = st;
   $('#conn-text').textContent = text;
@@ -755,13 +754,12 @@ function trackerHtml(kind, h) {
   }
 
   const p = h.phone_free;
-  return p.counted ? `<div class="tracker-row">
+  return `<div class="tracker-row">
         <div class="stat"><strong>${mins(p.phone_free_sec)} min</strong><span>phone-free desk time (goal ${p.goal_min})</span></div>
         <div class="tracker-grow">${bar(mins(p.phone_free_sec), p.goal_min, null, 'Phone-free time today')}</div>
         <div class="stat"><strong>${mins(p.streak_sec)}</strong><span>min streak</span></div>
       </div>
-      <p class="tracker-note">${p.phone_on_desk ? 'The phone is on the desk right now.' : 'No phone on the desk right now.'} Keep it out of sight while you focus.</p>`
-    : '<p class="tracker-note">The phone is the camera right now, so phone-free time isn’t counted.</p>';
+      <p class="tracker-note">${p.phone_on_desk ? 'The phone is on the desk right now.' : 'No phone on the desk right now.'} Keep it out of sight while you focus.</p>`;
 }
 
 function renderTracker(poll = false) {
@@ -827,10 +825,9 @@ function renderHabits(poll = false) {
       </article>
       <article class="habit-card" style="--tint:var(--coral-tint)">
         <h2>Phone-free</h2>
-        ${p.counted ? `<p class="big">${mins(p.phone_free_sec)} min <small>of ${p.goal_min}</small></p>
+        <p class="big">${mins(p.phone_free_sec)} min <small>of ${p.goal_min}</small></p>
         ${bar(mins(p.phone_free_sec), p.goal_min, null, 'Phone-free time today')}
-        <p class="hint">Desk time with no phone in sight. Streak now ${mins(p.streak_sec)} min, best ${mins(p.best_sec)} min. ${p.phone_on_desk ? 'The phone is on the desk.' : ''} Even a phone in the same room pulls at your focus; an hour before bed, put it away.</p>`
-        : '<p class="hint">The phone is the camera right now, so this isn’t counted. Use the Raspberry Pi camera to track phone-free time.</p>'}
+        <p class="hint">Desk time with no phone in sight. Streak now ${mins(p.streak_sec)} min, best ${mins(p.best_sec)} min. ${p.phone_on_desk ? 'The phone is on the desk.' : ''} Even a phone in the same room pulls at your focus; an hour before bed, put it away.</p>
       </article>
     </section>
     <section><h2>Today</h2>
@@ -1209,34 +1206,20 @@ function renderCamStage() {
     stage.innerHTML = '<p class="cam-caption">No webcam found. Check that one is plugged in, then restart Desk Talk.</p>';
     return;
   }
-  if (state.cameraSource === 'pi') {
-    // The Pi's camera starts by itself and sends its pictures to the Pi's own Desk Talk, so there is no command
-    // (and no pairing key) to show. On the Pi, say its address; on a computer, link to the Pi's page.
-    const onThePi = !!ui.pi.public_address;
-    const piUrl = `http://${onThePi ? ui.pi.public_address : ui.pi.address}`;
-    const where = onThePi
-      ? `<p>It starts by itself when the Pi does. Open Desk Talk from any phone or computer on the same Wi-Fi at:</p>
+  // The Pi's camera starts by itself and sends its pictures to the Pi's own Desk Talk, so there is no command
+  // (and no pairing key) to show. On the Pi, say its address; on a computer, link to the Pi's page.
+  const onThePi = !!ui.pi.public_address;
+  const piUrl = `http://${onThePi ? ui.pi.public_address : ui.pi.address}`;
+  const where = onThePi
+    ? `<p>It starts by itself when the Pi does. Open Desk Talk from any phone or computer on the same Wi-Fi at:</p>
       <pre class="json pi-cmd">${esc(piUrl)}</pre>`
-      : `<p>Desk Talk runs on your Raspberry Pi, and its camera sends its pictures to the Pi's own Desk Talk. Open it at:</p>
+    : `<p>Desk Talk runs on your Raspberry Pi, and its camera sends its pictures to the Pi's own Desk Talk. Open it at:</p>
       <pre class="json pi-cmd"><a href="${esc(piUrl)}">${esc(piUrl)}</a></pre>
       <p class="muted">If your Pi has another name, set <code>dev.pi_address</code> in <code>config/settings.local.yaml</code>.</p>`;
-    stage.innerHTML = `<div class="pair">
+  stage.innerHTML = `<div class="pair">
       <h3>The Pi's camera</h3>
       ${where}
       <p class="pair-url">It takes ${ui.pi.fps} pictures a second${ui.pi.delete_every_min ? `, keeps them on the Pi, and deletes them every ${ui.pi.delete_every_min} minutes` : ' and keeps them on the Pi'}.</p></div>`;
-    return;
-  }
-  const p = state.phone;
-  stage.innerHTML = p?.url ? `<div class="pair">
-      ${p.qr_svg ? `<div class="pair-qr">${p.qr_svg}</div>` : ''}
-      <h3>Scan with your phone</h3>
-      <ol>
-        <li>Use the same Wi-Fi as this computer.</li>
-        <li>If it says the connection is not private, tap <b>Show Details</b>, then <b>visit this website</b>.</li>
-        <li>Tap <b>Start camera</b> and point it at your desk.</li>
-      </ol>
-      <p class="pair-url">${esc(p.url)}</p></div>`
-    : '<div class="pair"><h3>Starting the phone link…</h3><p class="muted">If this doesn’t change, restart Desk Talk.</p></div>';
 }
 
 function renderOnDesk(det) {
@@ -1338,7 +1321,7 @@ async function pollLive() {
   let d;
   try {
     if (state.offline) ui = await api('/api/ui_settings');     // back: the settings may have changed meanwhile
-    d = await api(`/api/live${state.phone?.qr_svg ? '' : '?qr=1'}`, { timeout: ui.web.live_timeout_ms });
+    d = await api('/api/live', { timeout: ui.web.live_timeout_ms });
   } catch {
     showOffline(true);
     return;
@@ -1348,14 +1331,10 @@ async function pollLive() {
   state.cameraSource = d.camera_source || state.cameraSource;
   state.camOk = !!d.camera;
   state.camIndex = d.camera_index ?? state.camIndex;
-  // The QR code is only sent when asked for (?qr=1): keep the one we have when the reply has none.
-  if (d.phone) state.phone = { url: d.phone.url || state.phone?.url || '', qr_svg: d.phone.qr_svg || state.phone?.qr_svg || null };
   if (state.camOk !== wasOk) {
     state.camSince = Date.now();
     renderCamStage();
     renderConn();
-  } else if (!state.camOk && state.phone && !$('#cam-stage .pair-qr') && state.phone.qr_svg) {
-    renderCamStage();
   }
   // "Camera connected / disconnected" only once the change has lasted web.camera_note_after_sec.
   if (state.camOk !== state.camNoted && Date.now() - state.camSince >= (ui.web.camera_note_after_sec || 0) * MS) {
@@ -1526,7 +1505,7 @@ function demoHabits() {
     day: todayKey(), times: { wake_ts: now - 5 * HOUR, bed_ts: now + 9 * HOUR, sunset_ts: now + 4 * HOUR },
     hydration: { sips: 9, water_ml: 720, goal_ml: 2400, on_waking_ml: 600, pace_ml: 1200, last_sip_ts: now - 1500, ml_per_sip: 80 },
     breaks: { count: 3, last_break_ts: now - 2400, sitting_sec: 34 * MINUTE, longest_sit_sec: 51 * MINUTE, sit_limit_min: 30, log: [] },
-    phone_free: { counted: true, phone_free_sec: 64 * MINUTE, phone_on_desk_sec: 10 * MINUTE, streak_sec: 22 * MINUTE, best_sec: 41 * MINUTE, phone_on_desk: false, goal_min: 120 },
+    phone_free: { phone_free_sec: 64 * MINUTE, phone_on_desk_sec: 10 * MINUTE, streak_sec: 22 * MINUTE, best_sec: 41 * MINUTE, phone_on_desk: false, goal_min: 120 },
     light: { sunlight_ts: now - 4 * HOUR, afternoon_light_ts: null, sunlight_minutes: 10 },
     food: { entries: [{ label: 'apple', healthy: true }, { label: 'chips', healthy: false }] },
     desk_sec: 3 * HOUR, danger_count: 2, lost_alerts: 0, hourly_activity: [], objects_seen: [],

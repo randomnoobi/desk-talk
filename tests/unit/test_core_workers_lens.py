@@ -39,22 +39,11 @@ LOST = {'key': 'lost', 'kind': 'problem', 'text': "I can't see anything: the Ras
 
 
 class Layout:
-    def __init__(self, outline=True, gravity=None):
-        self.outline, self.gravity = outline, gravity
+    def __init__(self, outline=True):
+        self.outline = outline
 
     def has_outline(self):
         return self.outline
-
-    def reference_gravity(self):
-        return self.gravity
-
-
-class Phone:
-    def __init__(self, gravity=None, stopped=False):
-        self.gravity, self.stopped_by_user = gravity, stopped
-
-    def recent_gravity(self):
-        return self.gravity
 
 
 class PiReports:
@@ -98,7 +87,7 @@ class PiReports:
 class Rig:
     """`detecting`: pictures go through detection at every tick (set it False to stop them). `free_mb`: the card."""
 
-    def __init__(self, messages=(), kind='pi', phone=None, layout=None, prefs=None, pi=None, words=WORDS,
+    def __init__(self, messages=(), kind='pi', layout=None, prefs=None, pi=None, words=WORDS,
                  hours_from_utc=0.0, free_mb=10_000.0, saving=Saving.PLAIN, rest_mb=10_000.0,
                  camera_elsewhere=False):
         # 21 October 2026, 14:00 on the clock (its own time zone, so the test is the same on every computer)
@@ -121,7 +110,7 @@ class Rig:
                               saving=saving, card=self.rest)
         self.lens = Lens(self.health, self.source, layout or Layout(), prefs or FakePreferences(), self.notifier,
                          self.bus, self.photos, SETTINGS, PI, clock=self.clock, prompts=words, preview_chars=120,
-                         checks=checks, phone=phone, pi_uploads=pi, saving=saving,
+                         checks=checks, pi_uploads=pi, saving=saving,
                          camera_elsewhere=camera_elsewhere)
 
     def tick(self, after=0.0):
@@ -199,19 +188,10 @@ def test_nothing_to_say_sends_nothing():
 
 
 def test_the_check_gets_the_pi_cameras_state_and_the_desk_layout():
-    rig = Rig(layout=Layout(outline=False, gravity=(0.0, -9.8, 0.0)))
+    rig = Rig(layout=Layout(outline=False))
     rig.tick()
-    assert rig.health.checks == [{'now': rig.clock.now(), 'connected': True, 'fps': 3.0, 'gravity': None,
-                                  'reference_gravity': (0.0, -9.8, 0.0), 'has_outline': False, 'stopped': False,
+    assert rig.health.checks == [{'now': rig.clock.now(), 'connected': True, 'fps': 3.0, 'has_outline': False,
                                   'quiet': False}]
-
-
-def test_the_check_gets_the_phones_tilt_and_stop_button():
-    rig = Rig(kind='phone', phone=Phone(gravity=(0.1, -9.7, 0.3), stopped=True))
-    rig.source.connected = False
-    rig.tick()
-    check = rig.health.checks[0]
-    assert (check['connected'], check['gravity'], check['stopped']) == (False, (0.1, -9.7, 0.3), True)
 
 
 def test_a_webcam_is_not_checked_for_a_slow_picture_rate():
@@ -676,8 +656,8 @@ def test_a_card_hovering_around_the_warning_level_is_said_once_until_the_repeat_
 
 
 def test_the_card_warning_names_the_pis_sd_card_only_when_the_pi_is_the_camera():
-    """The app runs on the Pi when the Pi is the camera; with a webcam or the phone it's this computer's disk."""
-    for kind in ('pi', 'webcam', 'phone'):
+    """The app runs on the Pi when the Pi is the camera; with a webcam it's this computer's disk."""
+    for kind in ('pi', 'webcam'):
         rig = Rig(kind=kind, free_mb=1500.0)
         rig.tick()
         rig.disk.free = 400.0

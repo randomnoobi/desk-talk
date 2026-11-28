@@ -7,7 +7,6 @@ import pytest
 from desktalk.domain import DeskRules
 
 OUTLINE = [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9]]
-TILT = {'gravity': [0.1, -9.7, 0.4]}
 
 
 class DeskRulesContract:
@@ -17,13 +16,11 @@ class DeskRulesContract:
         assert isinstance(rules.current, DeskRules)
         assert not rules.loaded
         assert not rules.has_outline() and rules.current.outline == ()
-        assert rules.reference_gravity() is None
 
-    def test_saved_corners_and_tilt_are_used_at_once(self, rules):
-        rules.save({'desk_outline': OUTLINE, 'camera_reference': TILT})
+    def test_saved_corners_are_used_at_once(self, rules):
+        rules.save({'desk_outline': OUTLINE})
         assert rules.loaded and rules.has_outline()
         assert rules.current.outline == ((0.1, 0.1), (0.9, 0.1), (0.9, 0.9))
-        assert rules.reference_gravity() == (0.1, -9.7, 0.4)
 
     def test_a_save_keeps_the_parts_it_was_not_given(self, rules):
         rules.save({'desk_outline': OUTLINE})

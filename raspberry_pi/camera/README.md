@@ -93,7 +93,7 @@ The log (`docker compose logs --tail 50 camera`, **on the Pi**, in `~/desk-talk/
 - **"Cannot reach the app"**: is the `app` container up? `docker compose ps`. The camera keeps taking pictures meanwhile and
   tries again after a short wait that grows each time (up to `pi.upload_retry_max_sec`).
 - **"Pairing key does not match"**: the app made a new key. Run `docker compose up -d` again, or `docker compose restart camera`.
-- **"camera.source: phone"**: the app is set to take its pictures from a phone or webcam. On the Pi it shouldn't be:
+- **"camera.source: webcam"**: the app is set to take its pictures from a webcam. On the Pi it shouldn't be:
   `raspberry_pi/settings.pi.yaml` leaves it at `pi`, so look for a `camera:` line in `raspberry_pi/mine/settings.mine.yaml`.
 - **"Stopped asking the detector"**: the detector isn't answering. `docker compose ps` and `docker compose logs detector`.
   The camera checks again by itself and goes back to using it once it's ready. The detector has no open port, so

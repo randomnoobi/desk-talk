@@ -27,8 +27,6 @@ dependencies = [
     "python-dotenv>=1.0",
     "pyyaml>=6.0",             # config/*.yaml
     "numpy>=1.24",
-    "cryptography>=42.0",      # HTTPS for the phone camera page
-    "qrcode>=7.4",
 ]
 
 [project.optional-dependencies]
@@ -100,7 +98,7 @@ fail_under = 97                # the share of code the fast tests run (measured 
 paths = ["desktalk", "shared", "raspberry_pi", "cloud/server", "scripts", "server.py", "tests/vulture_allow.py"]
 min_confidence = 60
 # Web routes and pydantic checks are called by FastAPI and pydantic, not by our code.
-ignore_decorators = ["@router.*", "@phone_router.*", "@app.*", "@model_validator", "@field_validator"]
+ignore_decorators = ["@router.*", "@app.*", "@model_validator", "@field_validator"]
 
 [tool.ruff]
 line-length = 120

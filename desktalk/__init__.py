@@ -19,5 +19,5 @@ Package layout (each folder has one job):
                          characters remember, the proof photos (one small part each)
       adapters/        the real outside things: cameras, the YOLO detector, the AI, files on disk
       runtime/         the clock, the scheduler, the Supervisor that keeps background jobs running, logging
-      web/             the FastAPI servers: the app (web_app/), the Pi's uploads and the phone camera page
+      web/             the FastAPI server: the app (web_app/) and the Pi's uploads
 """

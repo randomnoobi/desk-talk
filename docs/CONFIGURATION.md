@@ -30,12 +30,12 @@ The cloud server has its own: cloud/settings.yaml, cloud/prompts.yaml and cloud/
 
 Every setting has a comment in plain words above it. These are the areas you're most likely to look for:
 
-- camera: where the pictures come from (pi, phone or webcam) and how many a second
+- camera: where the pictures come from (pi or webcam) and how many a second
 - pi: the camera container: pictures a second, cleanup, upload waits, temperature warnings. The camera asks the
   app for this area, so you change it only here
 - pi.detector: the Pi's detector container: model, format (ncnn or pt), picture size, how long to wait per
   picture, when to stop asking a container that keeps failing
-- detector: YOLO inside the app itself, for a computer with a phone or webcam. Off on the Pi
+- detector: YOLO inside the app itself, for a computer with a webcam. Off on the Pi
 - agents: who may join the chat, the sensitivity steps, how long before joining and leaving
 - object_states, presence: when something counts as put down, taken away or moved, and when you count as at the
   desk

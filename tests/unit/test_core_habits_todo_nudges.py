@@ -48,7 +48,7 @@ class Rig:
         prefs = FakePreferences({'wake_time': '07:00', 'bed_time': '22:30'})
         self.tracker = HabitTracker(self.clock, self.bus, InMemoryKeyValueStore(), profiles, prefs, self.desk,
                                     config.protocols, config.habit_tracker, config.presence, config.agents,
-                                    phone_counts=True, words=config.prompts.habits)
+                                    words=config.prompts.habits)
 
     def wait(self, seconds):
         """Time goes by with someone at the desk (one picture at the end)."""

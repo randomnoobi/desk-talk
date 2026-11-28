@@ -47,9 +47,8 @@ def recap_facts(stats: dict[str, Any], objects_listed: int, *, words: RecapFacts
     water, breaks, phone_free = stats['hydration'], stats['breaks'], stats['phone_free']
     facts.append(w.water.format(water_l=water['water_ml'] / 1000, goal_l=water['goal_ml'] / 1000, sips=water['sips']))
     facts.append(w.breaks.format(count=breaks['count'], longest_min=int(breaks['longest_sit_sec'] // 60)))
-    if phone_free.get('counted'):
-        facts.append(w.phone_free.format(minutes=int(phone_free['phone_free_sec'] // 60),
-                                         best_min=int(phone_free['best_sec'] // 60)))
+    facts.append(w.phone_free.format(minutes=int(phone_free['phone_free_sec'] // 60),
+                                     best_min=int(phone_free['best_sec'] // 60)))
     facts.append(w.sunlight_logged if stats['light'].get('sunlight_ts') else w.sunlight_not_logged)
     if stats.get('desk_sec'):
         facts.append(w.desk_time.format(minutes=int(stats['desk_sec'] // 60)))

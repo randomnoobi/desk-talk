@@ -2,8 +2,8 @@
 
 ## Running it on a computer
 
-The app runs on the Pi. For working on it, uv run python server.py runs it on a computer instead; the tests, the
-phone camera and the webcam use this. Install [uv](https://docs.astral.sh/uv/) once (brew install uv, or see its
+The app runs on the Pi. For working on it, uv run python server.py runs it on a computer instead; the tests and the
+webcam use this. Install [uv](https://docs.astral.sh/uv/) once (brew install uv, or see its
 page). Then, **on your Mac**, in the desk-talk folder:
 
 ```bash
@@ -19,7 +19,7 @@ YOLO). Without it, server.py stops and says so. You can also set detector.enable
 Open http://localhost:5000. A setting with a typo or a bad value stops it at the start, with a message that
 names the file and the setting. With the Pi as the camera (camera.source: pi), the page links to the Pi's own Desk
 Talk instead, at dev.pi_address, because the Pi's camera sends its pictures there. To see a camera
-here, set camera.source: webcam (or phone) in config/settings.local.yaml.
+here, set camera.source: webcam in config/settings.local.yaml.
 
 ## Tests
 
@@ -104,7 +104,7 @@ To work on the page itself, npm run dev in dev_ui/ serves it at http://localhost
 
 ## Adding a route
 
-Every web address the servers answer is listed in [API.md](API.md). A new route on the main or phone server needs:
+Every web address the servers answer is listed in [API.md](API.md). A new route on the main server needs:
 
 1. the route, in its file in desktalk/web/routers/ (one file per area), and a line in that file's top comment;
 2. a case in tests/characterization/cases.py: tests/characterization/test_route_coverage.py fails without one;
@@ -133,7 +133,7 @@ desk-talk/
 │   │   ├── habits/           #     Protocols rules, habit days, habit tracker, reminders, preferences, sun times
 │   │   └── chat/             #     message generator and its voices, message hub, chat context; workers/: idle chat, lost items, Lens, recap
 │   ├── adapters/             #   the real things behind the interfaces
-│   │   ├── camera/           #     the Pi, phone and webcam as picture sources
+│   │   ├── camera/           #     the Pi and the webcam as picture sources
 │   │   ├── detector/         #     YOLO inside the app (Ultralytics), for a computer; off on the Pi
 │   │   ├── llm/              #     the optional AI (Gemini / OpenAI / Groq / Ollama, or `llm.ai_url`), with time limits, retries and a breaker; text only on the Pi
 │   │   ├── picture/          #     OpenCV: the picture tools, and the drawing on the live view
@@ -150,7 +150,6 @@ desk-talk/
 ├── cloud/                    # the optional cloud server, in Docker: its server, website and settings (cloud/README.md)
 ├── benchmarks/               # times YOLO models on your Mac and on the Pi, to pick the Pi's model
 ├── web_app/                  # the app you open at localhost:5000 (HTML / CSS / JS, art, fonts)
-├── phone_camera/             # the page a phone opens to be the camera instead of the Pi (when the app runs on a computer)
 ├── dev_ui/                   # the developer page at localhost:5000/dev/ (Vite + React + TypeScript; dev_ui/README.md)
 ├── models/                   # YOLO model files (downloaded, not uploaded)
 ├── tests/                    # unit, contracts, integration, characterization, slow, docker, e2e, pi; fakes/, e2e_kit/

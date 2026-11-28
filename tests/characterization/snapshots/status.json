@@ -12,7 +12,6 @@
     "camera_source": "str",
     "llm": "bool",
     "llm_label": "str",
-    "phone_mode": "bool",
     "risk_level": "number",
     "safety_rules": "bool",
     "safety_state": "str",

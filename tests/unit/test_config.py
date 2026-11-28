@@ -151,7 +151,7 @@ def test_a_phone_server_with_more_than_a_server_address_is_refused(project, serv
 @pytest.mark.parametrize(('source', 'public', 'elsewhere'), [
     ('pi', '', True),                          # a computer: the Pi's camera sends to the Pi's own Desk Talk
     ('pi', 'desktalk.local:5000', False),      # the Pi itself: its camera sends here
-    ('phone', '', False), ('webcam', '', False)])
+    ('webcam', '', False)])
 def test_the_pi_camera_is_elsewhere_only_on_a_computer(project, source, public, elsewhere):
     write_local(project, f'camera:\n  source: {source}\nweb:\n  public_address: "{public}"\n')
     assert load_config(root=project, environ={}).pi_camera_elsewhere is elsewhere
@@ -166,7 +166,7 @@ def test_dotenv_can_still_set_model_names(project):
 
 
 def test_old_dotenv_settings_that_moved_to_yaml_are_listed_not_used(project):
-    cfg = load_config(root=project, environ={'CAMERA_SOURCE': 'phone'})
+    cfg = load_config(root=project, environ={'CAMERA_SOURCE': 'webcam'})
     assert cfg.camera.source == 'pi'
     assert cfg.env_moved == ('CAMERA_SOURCE',)
 
@@ -205,7 +205,8 @@ def test_missing_setting_names_the_file_it_belongs_in(project):
 
 
 @pytest.mark.parametrize('local, problem', [
-    ('camera:\n  source: usb\n', 'camera.source must be one of: pi, phone, webcam (got "usb")'),
+    ('camera:\n  source: usb\n', 'camera.source must be one of: pi, webcam (got "usb")'),
+    ('camera:\n  source: phone\n', 'camera.source must be one of: pi, webcam (got "phone")'),   # the phone camera went
     ('agents:\n  announce: maybe\n', 'agents.announce must be true or false (got "maybe")'),
     ('agents:\n  max_agents: 2.5\n', 'agents.max_agents must be a whole number above 0 (got 2.5)'),
     ('camera:\n  disconnect_after_sec: -1\n', 'camera.disconnect_after_sec must be a number above 0 (got -1)'),
@@ -341,7 +342,7 @@ def test_numbers_moved_out_of_the_old_code_keep_their_values(project):
     lens, safety = cfg.lens, cfg.safety
     assert (lens.measure_width, lens.edge_touch_px, lens.fixed_after_sec, lens.edge_tip_after_sec) == (240, 3, 5, 120)
     assert lens.wait_before_saying_sec.model_dump() == {
-        'lost': 15, 'no_pictures': 120, 'covered': 4, 'dark': 8, 'glare': 8, 'blurry': 12, 'bumped': 5, 'empty': 180,
+        'lost': 15, 'no_pictures': 120, 'covered': 4, 'dark': 8, 'glare': 8, 'blurry': 12, 'empty': 180,
         'cutoff': 45,
         'slow': 30, 'pi': 10, 'pi_detector': 60}
     assert cfg.camera.moved_within_sec == 1.5
@@ -402,7 +403,7 @@ def test_every_value_in_the_config_files_reaches_the_config_unchanged(project):
 
 def test_environment_variables_win_and_moved_ones_are_listed(project):
     environ = {'OLLAMA_MODEL': 'gpt-oss:20b', 'YOLO_MODEL': 'models/yolo26s.pt', 'GEMINI_API_KEY': 'abc',
-               'OLLAMA_URL': 'http://localhost:11434/v1', 'CAMERA_SOURCE': 'phone'}
+               'OLLAMA_URL': 'http://localhost:11434/v1', 'CAMERA_SOURCE': 'webcam'}
     cfg = load_config(root=project, environ=environ)
     assert cfg.llm.ollama_model == 'gpt-oss:20b'
     assert cfg.detector.model == 'models/yolo26s.pt'
@@ -417,8 +418,6 @@ def test_environment_variables_win_and_moved_ones_are_listed(project):
 BEFORE_CLEANUP = ROOT / 'tests' / 'fixtures' / 'settings_before_cleanup.yaml'   # config/settings.yaml before it
 NEW_SETTINGS = {
     'settings.yaml': [
-        ('camera', 'phone_cert_file'), ('camera', 'phone_key_file'), ('camera', 'phone_max_side'),
-        ('camera', 'phone_jpeg_quality'), ('camera', 'phone_tilt_max'),
         ('drawing', 'colors', 'risk'), ('drawing', 'line_px'), ('drawing', 'font_scale'),
         ('drawing', 'fill_alpha', 'zone'), ('drawing', 'trail', 'start_after'), ('drawing', 'trail', 'keep'),
         ('drawing', 'dash'), ('drawing', 'arrow_tip'), ('drawing', 'radius'),
@@ -426,11 +425,10 @@ NEW_SETTINGS = {
         ('web', 'request_timeout_ms'), ('web', 'activity_ping_ms'), ('web', 'toast_ms'),
         ('web', 'list_sizes', 'log'), ('web', 'list_sizes', 'photos'),
         ('web', 'list_sizes', 'chat_kept'), ('web', 'list_sizes', 'chat_saved'), ('web', 'left_chat_shown_min'),
-        ('camera', 'phone_capture_width'), ('camera', 'phone_capture_height'),
         ('logging', 'file_name'), ('logging', 'preview_chars'), ('llm', 'error_text_chars'),
         ('pi', 'camera'), ('pi', 'error_text_chars'), ('llm', 'error_log_chars'), ('safety', 'min_desk_corners'),
         ('web', 'settings_sliders', 'zone'), ('web', 'settings_sliders', 'warn'), ('web', 'settings_sliders', 'alert'),
-        ('web', 'new_zone_px'), ('lens', 'trusted_gravity'),
+        ('web', 'new_zone_px'),
         ('lens', 'covered_detail_below'), ('lens', 'covered_by_box_share'),
         # the developer page
         ('object_states', 'trace_pictures'), ('dev', 'enabled'), ('dev', 'ui_folder'), ('dev', 'vite_port'),
@@ -495,9 +493,7 @@ def test_every_new_setting_has_a_comment(name):
 
 def test_new_settings_keep_the_values_the_code_has_today(project):
     cfg = load_config(root=project, environ={})
-    camera, drawing, web = cfg.camera, cfg.drawing, cfg.web
-    assert (camera.phone_cert_file, camera.phone_key_file) == ('desk-talk.crt', 'desk-talk.key')    # web/pairing.py
-    assert (camera.phone_max_side, camera.phone_jpeg_quality, camera.phone_tilt_max) == (960, 70, 50)   # camera.js
+    drawing, web = cfg.drawing, cfg.web
     assert drawing.colors.box_on == (60, 200, 90) and drawing.colors.danger == (0, 0, 255)          # drawing.py
     assert drawing.colors.risk == ((0, 200, 0), (0, 220, 220), (0, 140, 255), (0, 0, 255), (0, 0, 160))
     assert (drawing.line_px, drawing.arrow_tip, drawing.trail.start_after, drawing.trail.keep) == (2, 0.15, 3, 6)
@@ -506,11 +502,9 @@ def test_new_settings_keep_the_values_the_code_has_today(project):
     assert (web.request_timeout_ms, web.activity_ping_ms, web.toast_ms) == (8000, 3000, 4000)
     assert (web.list_sizes.log, web.list_sizes.photos) == (150, 6)
     assert (web.list_sizes.chat_kept, web.list_sizes.chat_saved, web.left_chat_shown_min) == (200, 60, 60)  # app.js
-    assert (camera.phone_capture_width, camera.phone_capture_height) == (1280, 720)                  # camera.js
     assert web.settings_sliders.model_dump() == {'zone': {'min': 10, 'max': 200}, 'warn': {'min': 20, 'max': 200},
                                                  'alert': {'min': 10, 'max': 120}}                    # app.js
     assert web.new_zone_px == 60                                                                     # app.js
-    assert cfg.lens.trusted_gravity == 1.0                                                           # camera_measure.py
     assert (cfg.logging.file_name, cfg.llm.error_text_chars, cfg.llm.error_log_chars) == ('desktalk.log', 160, 200)
     assert 'banana' in cfg.protocols.food.healthy and len(cfg.protocols.food.healthy) == 20          # tracker.py
 
@@ -683,6 +677,20 @@ def test_the_event_log_lists_and_the_photo_quality_that_went_are_dropped_from_yo
         cfg = load_config(root=project, environ={})
     assert cfg.web.list_sizes.toast_chars == 99
     assert all(word in caplog.text for word in ('habit_log', 'log_detections', 'trace_photo_quality'))
+
+
+def test_the_phone_camera_settings_are_dropped_from_your_own_file(project, caplog):
+    """The phone camera is gone: your own file may still set its settings, so they're left out with a note."""
+    write_local(project, 'camera:\n  phone_port: 5443\n  phone_tilt_max_age_sec: 5\n  fps: 2\n'
+                         'web:\n  phone_folder: phone_camera\n'
+                         'lens:\n  bump_degrees: 12\n  trusted_gravity: 1.0\n'
+                         '  wait_before_saying_sec:\n    bumped: 5\n')
+    with caplog.at_level('WARNING'):
+        cfg = load_config(root=project, environ={})
+    assert cfg.camera.fps == 2
+    assert all(f'{name} is no longer used' in caplog.text for name in (
+        'camera.phone_port', 'camera.phone_tilt_max_age_sec', 'web.phone_folder', 'lens.bump_degrees',
+        'lens.trusted_gravity', 'lens.wait_before_saying_sec.bumped'))
 
 
 def test_the_blocked_camera_settings_load(project):

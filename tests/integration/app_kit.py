@@ -49,7 +49,7 @@ DESK_PICTURE_SIZE = (640, 480)          # width and height of the desk pictures 
 
 
 def inbox(app: DeskTalk) -> PictureInbox:
-    """The app's camera (the Pi or the phone), which the whole-app tests send pictures to by hand."""
+    """The app's camera (the Pi), which the whole-app tests send pictures to by hand."""
     assert isinstance(app.source, PictureInbox)
     return app.source
 
@@ -93,7 +93,7 @@ def desk_config(tmp_path: Path, *, ai: bool = False, ollama: bool = False) -> Ap
     """The settings in git (never your config/settings.local.yaml or .env), in a project folder under tmp_path.
     ai: a (fake) Gemini key; ollama: an Ollama address, so pictures go to a vision AI on this computer.
     AI calls aren't spaced out (llm.min_interval_sec 0), so the FakeClock only moves when a test moves it.
-    The web servers serve the pages in this repo (web_app/, phone_camera/)."""
+    The web server serves the page in this repo (web_app/)."""
     project = tmp_path / 'project'
     (project / 'config').mkdir(parents=True, exist_ok=True)
     for name in CONFIG_FILES_IN_GIT:
@@ -104,7 +104,7 @@ def desk_config(tmp_path: Path, *, ai: bool = False, ollama: bool = False) -> Ap
     if ollama:
         environ['OLLAMA_URL'] = 'http://localhost:11434/v1'
     config = load_config(root=project, environ=environ, dotenv=project / '.env')
-    config = changed(config, 'web', app_folder=ROOT / 'web_app', phone_folder=ROOT / 'phone_camera')  # the real pages
+    config = changed(config, 'web', app_folder=ROOT / 'web_app')  # the real page
     return changed(config, 'llm', min_interval_sec=0)
 
 

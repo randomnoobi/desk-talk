@@ -8,8 +8,8 @@ gets only the interfaces it asks for (desktalk/ports.py) and its own section of 
     desktalk.stop()                     # stop the jobs, finish the events, save the states and habits, compact the log
 
     Camera ──► DetectionProducer ──► EventStream ──┬─► EventLog          (data/events/)
-    (Pi / phone /                                  ├─► ObjectStateTracker (present / absent per object, saved in
-     webcam)                                       │     SQLite; your own state switches reminders on and off)
+    (Pi / webcam)                                  ├─► ObjectStateTracker (present / absent per object, saved in
+                                                   │     SQLite; your own state switches reminders on and off)
                                                    ├─► Roster            (agents join / leave, and what's on
                                                    │                      the desk for the warnings)
                                                    ├─► HabitTracker      (water, breaks, light, phone)
@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource, make_pair_key
+from desktalk.adapters.camera import PiFrameSource, WebcamSource, make_pair_key
 from desktalk.adapters.cloud import HttpCloudLink
 from desktalk.adapters.detector import NoDetector, UltralyticsDetector
 from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser, SshPiLog
@@ -113,7 +113,6 @@ from desktalk.ports import (
     LostItemsView,
     ObjectStateStore,
     PeriodicWorker,
-    PhoneControls,
     PhotoAlbum,
     PhotoTaker,
     PictureInbox,
@@ -167,11 +166,9 @@ class DeskTalk:
     pi_inbox, pi      the Pi when it is the camera (None otherwise): push() for /api/pi/frame, status() and
                       pi_info() for /api/health and /api/live
     pi_heartbeats     the same Pi: heartbeat() for /api/pi/heartbeat (None when it isn't the camera)
-    phone_inbox,      the phone when it is the camera (None otherwise): push() for /api/phone/frame, set_motion()
-    phone             and mark_stopped(), and its tilt when the desk corners are marked
-    pair_key          what the Pi and the phone must send in X-Desk-Key (and in the phone link)
+    pair_key          what the Pi must send in X-Desk-Key
     safety_rules      the danger rules: for_settings_page(), save(), clean_outline() (/api/rules, desk corners)
-    camera_health     Lens's camera checks: issues() (/api/live), phone_tip() (the upload replies), forget()
+    camera_health     Lens's camera checks: issues() (/api/live), forget()
     photos            proof photos: save() (a photo of the desk on request)
     detector          object detection on this computer: label (/api/live)
     producer          camera pictures → events: pictures_analysed, last_detect_ms (yolo_ms), problem (/api/health)
@@ -251,8 +248,6 @@ class DeskTalk:
     pi_inbox: PictureInbox | None
     pi: PiStatus | None
     pi_heartbeats: PiHeartbeats | None
-    phone_inbox: PictureInbox | None
-    phone: PhoneControls | None
     pair_key: str
     safety_rules: DeskRulesView
     camera_health: CameraTips
@@ -298,7 +293,7 @@ class DeskTalk:
 
     @property
     def source_kind(self) -> str:
-        """pi, phone or webcam."""
+        """pi or webcam."""
         return self.source.kind
 
     def background_jobs(self) -> list[tuple[PeriodicWorker, float]]:
@@ -378,19 +373,15 @@ class DeskTalk:
 # ════════════════════════════════════════════════════════════════════
 @dataclass(frozen=True)
 class Camera:
-    """The camera, and what else it is when it's the Pi or the phone (both send their pictures to us)."""
+    """The camera, and what else it is when it's the Pi (it sends its pictures to us)."""
 
     source: FrameSource
     pi: PiFrameSource | None = None
-    phone: PhoneFrameSource | None = None
 
 
 def make_camera(config: AppConfig, clock: Clock) -> Camera:
     """The camera named in settings → camera.source."""
     camera = config.camera
-    if camera.source == 'phone':
-        phone = PhoneFrameSource(clock, camera)
-        return Camera(phone, phone=phone)
     if camera.source == 'webcam':
         if not camera.webcam_indices:
             raise ConfigError('config/settings.yaml: camera.webcam_indices needs at least one webcam number')
@@ -453,7 +444,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         detector            UltralyticsDetector (settings → detector), warmed up; NoDetector if detector.enabled is off
         client_factory      makes the OpenAI-compatible client (openai.OpenAI)
         source              the camera in settings → camera.source (one passed in is only a camera: not the
-                            Pi's or the phone's uploads)
+                            Pi's uploads)
         data_folder         where the files this run writes go (the store, the event log, the object states
                             database, the log files):
                             the folders in the settings are taken under it instead of the project folder
@@ -553,7 +544,6 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         outline = safety_rules.current.outline
         return desk_edges.on_desk((x, y), outline, (width, height)) if outline else None   # None: no desk marked
 
-    phone_is_camera = source.kind == 'phone'
     roster = Roster(bus, profiles, scene, config.agents, config.presence, preferences, on_desk=on_desk,
                     joins_kept=config.object_story.events_kept)
     todos = TodoFile(store, bus, clock, key=config.habit_tracker.todos_key, max_items=config.chat.todo_max_items,
@@ -561,8 +551,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     desk_status = DeskStatusService(desk, source, preferences, config.reminders, object_states,
                                     person_label=config.object_states.person_label, clock=clock, todos=todos)
     habits = HabitTracker(clock, bus, store, profiles, preferences, scene, config.protocols, config.habit_tracker,
-                          config.presence, config.agents, phone_counts=not phone_is_camera,
-                          words=config.prompts.habits)
+                          config.presence, config.agents, words=config.prompts.habits)
     # The desk monitor has nothing the web calls: it subscribes itself, and the event stream keeps it.
     DeskMonitor(bus, desk, analyzer, profiles, habits, desk_status, photos, config.alerts,
                 words=config.prompts.desk_alerts)
@@ -599,7 +588,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     lost_items = LostItems(clock, bus, desk, roster, profiles, habits, model, vision, config.lost_items,
                            config.llm.replies, photos=photos, default_temperature=default_temperature,
                            pictures=pictures, prompts=config.prompts.lost_items,
-                           photos_kept=config.snapshots.max_kept, phone_is_camera=phone_is_camera)
+                           photos_kept=config.snapshots.max_kept)
     generator = MessageGenerator(asked_model, feed, roster, profiles, habits, desk, clock, status=desk_status,
                                  habit_log=habits, todos=todos, llm=config.llm, chat=config.chat, agents=config.agents,
                                  sunlight_default_min=config.habit_tracker.sunlight_default_min,
@@ -614,7 +603,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                                config.reminders)
     lens = Lens(camera_health, source, safety_rules, preferences, feed, bus, photos, config.lens, config.pi,
                 clock=clock, checks=health_checks, prompts=config.prompts.lens,
-                preview_chars=config.logging.preview_chars, phone=camera.phone, pi_uploads=camera.pi, saving=saving,
+                preview_chars=config.logging.preview_chars, pi_uploads=camera.pi, saving=saving,
                 camera_elsewhere=config.pi_camera_elsewhere)
     idle_chat = IdleChat(model, hub, desk_status, roster, profiles, character_memory,
                          lambda: generator.live_context()['summary'], config.idle_chat, config.llm.replies,
@@ -686,7 +675,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         config=config, clock=clock, live_pictures=live_pictures, scene=scene, safety_board=safety_board,
         character_memory=character_memory, photo_album=photo_album, bus=bus, event_log=event_log, store=store,
         config_store=config_store, profiles=profiles, preferences=preferences, source=source,
-        pi_inbox=camera.pi, pi=camera.pi, pi_heartbeats=camera.pi, phone_inbox=camera.phone, phone=camera.phone,
+        pi_inbox=camera.pi, pi=camera.pi, pi_heartbeats=camera.pi,
         pair_key=pair_key, safety_rules=safety_rules, camera_health=camera_health, photos=photos, detector=detector,
         producer=producer, health_checks=health_checks, object_states=object_states, state_store=state_store,
         roster=roster, desk_status=desk_status, habits=habits, ai=ai, model=asked_model, hub=hub, generator=generator,

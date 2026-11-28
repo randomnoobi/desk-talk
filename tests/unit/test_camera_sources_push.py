@@ -1,4 +1,4 @@
-"""Cameras that send us pictures: the Pi (PiFrameSource) and the phone (PhoneFrameSource)."""
+"""The camera that sends us pictures: the Pi (PiFrameSource)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 import yaml
 
-from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource
+from desktalk.adapters.camera import PiFrameSource
 from desktalk.config import CameraSettings
 from desktalk.domain import BBox, Detection, DetectorState, PiHealth, UploadInfo
 from desktalk.ports import FrameSource, PictureInbox, PiUploads
@@ -46,20 +46,6 @@ class TestPiFrameSourceContract(FrameSourceContract, PushSourceContract):
         return jpeg_of
 
 
-class TestPhoneFrameSourceContract(FrameSourceContract, PushSourceContract):
-    @pytest.fixture
-    def source(self):
-        return PhoneFrameSource(FakeClock(), camera_settings())
-
-    @pytest.fixture
-    def send(self):
-        return lambda source, picture: source.push(jpeg_of(picture))
-
-    @pytest.fixture(name='jpeg_of')
-    def jpeg_maker(self):
-        return jpeg_of
-
-
 def picture(value: int, width: int = 64, height: int = 48):
     return np.full((height, width, 3), value, np.uint8)
 
@@ -69,9 +55,9 @@ def clock():
     return FakeClock()
 
 
-@pytest.fixture(params=[PiFrameSource, PhoneFrameSource], ids=['pi', 'phone'])
-def make_source(request, clock):
-    return lambda **changes: request.param(clock, camera_settings(**changes))
+@pytest.fixture
+def make_source(clock):
+    return lambda **changes: PiFrameSource(clock, camera_settings(**changes))
 
 
 def test_an_empty_upload_is_refused_without_crashing(make_source):
@@ -143,15 +129,6 @@ def test_counts_the_pictures_received(make_source):
     source.push(b'not a picture')
     source.push(jpeg_of(picture(2)))
     assert source.pictures_received == 2
-
-
-def test_stop_pressed_means_not_connected_until_the_next_picture(make_source):
-    source = make_source()
-    source.push(jpeg_of(picture(1)))
-    source.mark_stopped()
-    assert source.stopped_by_user and not source.connected
-    source.push(jpeg_of(picture(2)))
-    assert not source.stopped_by_user and source.connected
 
 
 # ── the Pi ───────────────────────────────────────────────────────────
@@ -298,31 +275,6 @@ def test_latest_upload_is_what_came_with_the_newest_picture_and_when_it_arrived(
     assert source.latest_upload() == (cooler, arrived + 4)
 
 
-# ── the phone ────────────────────────────────────────────────────────
-def phone_source(clock, **changes):
-    return PhoneFrameSource(clock, camera_settings(**changes))
-
-
-def test_phone_tilt_is_used_only_while_it_is_recent(clock):
-    source = phone_source(clock, phone_tilt_max_age_sec=5)
-    assert source.recent_gravity() is None
-    source.set_motion(gravity=(0.12, -9.71, 0.85))
-    clock.advance(4.9)
-    assert source.recent_gravity() == (0.12, -9.71, 0.85)
-    clock.advance(0.2)
-    assert source.recent_gravity() is None
-
-
-def test_phone_rotation_and_tilt_are_kept_when_the_other_one_comes(clock):
-    source = phone_source(clock)
-    assert source.rotation == 0
-    source.set_motion(gravity=(0.0, -9.8, 0.0), rotation=90)
-    source.set_motion(rotation=180)
-    assert source.recent_gravity() == (0.0, -9.8, 0.0)
-    source.set_motion(gravity=(1.0, -9.7, 0.0))
-    assert source.rotation == 180
-
-
-def test_pi_and_phone_have_all_of_their_interfaces(make_source):
+def test_the_pi_has_all_of_its_interfaces(make_source):
     source = make_source()
     assert isinstance(source, FrameSource) and isinstance(source, PictureInbox)

@@ -16,7 +16,7 @@ class FrameSourceContract:
     a new picture arrive (push it, or have the fake camera produce it)."""
 
     def test_kind_is_named(self, source):
-        assert source.kind in ('pi', 'phone', 'webcam', 'fake')
+        assert source.kind in ('pi', 'webcam', 'fake')
 
     def test_nothing_new_gives_none(self, source):
         assert source.read(timeout=0.01) is None

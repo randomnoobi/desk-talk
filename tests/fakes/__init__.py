@@ -4,7 +4,7 @@ tests/contracts/) but needs no network, camera, Pi, AI key or real time.
     from tests.fakes import FakeClock, FakeDetector, SyncEventBus, FakeChatModel
 """
 
-from tests.fakes.cameras import FakePhone, FakePi
+from tests.fakes.cameras import FakePi
 from tests.fakes.chance import FixedChance
 from tests.fakes.clock import FakeClock
 from tests.fakes.demo import RecordingCameraWarnings, RecordingFirer, RecordingHabitLog, RecordingReminders
@@ -54,7 +54,7 @@ __all__ = [
     'FakeCameraHealth', 'FakeCharacterMemory', 'FakeChatModel', 'FakeChatVoice', 'FakeClock', 'FakeDatabaseBrowser',
     'FakeDataFiles', 'FakeDeskRules', 'FakeSmoothingTrace', 'FakeTestRunner', 'smoothing_step',
     'FakeDeskScene', 'FakeDeskStatus', 'FakeDetector', 'FakeFrameSource', 'FakeHabits', 'FakeLivePictures',
-    'FakeObjectStates', 'FakePainter', 'FakePhone', 'FakePhotoAlbum', 'FakePhotoTaker', 'FakePi', 'FakePictureCheck',
+    'FakeObjectStates', 'FakePainter', 'FakePhotoAlbum', 'FakePhotoTaker', 'FakePi', 'FakePictureCheck',
     'FakePictureTools', 'FakePreferences', 'FakeProfiles', 'FakeRuleNudges', 'FakeSafetyBoard', 'InMemoryEventStore',
     'InMemoryKeyValueStore', 'InMemoryStateStore', 'RecordingNotifier', 'StaticRoster', 'SyncEventBus',
     'plain_desk_rules', 'FakeChatJoins', 'FakeDesktopNotifications', 'FakeTodoList', 'FakeTracePhotos',

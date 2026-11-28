@@ -98,7 +98,7 @@ class DetectionEvent(Event):
     KEYS: ClassVar[Mapping[str, str]] = {'detections': 'detected_obj'}
 
     frame_id: str
-    source: str                         # pi, phone or webcam
+    source: str                         # pi or webcam
     size: tuple[int, int]               # picture width, height
     detections: tuple[Detection, ...]
     person: bool

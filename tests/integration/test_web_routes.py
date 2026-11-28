@@ -9,9 +9,8 @@ from __future__ import annotations
 import json
 
 from desktalk.domain import BBox, Detection
-from desktalk.web.app import create_app
 from tests.integration.app_kit import CUP_FAR, LAPTOP, PAIR_KEY, DeskRig, changed, desk_config
-from tests.integration.web_kit import ON_THE_WIFI, links_for, web_client
+from tests.integration.web_kit import ON_THE_WIFI, web_client
 
 KEY = Detection('key', 0.9, BBox(50, 50, 80, 70))
 MB = 1024 * 1024
@@ -208,7 +207,7 @@ def test_marking_the_desk_corners_saves_them_in_the_rules(tmp_path):
     assert client.put('/api/rules', json={'desk_outline': outline}).json() == {'ok': True}
     saved = rig.app.config_store.load('safety_rules')
     assert saved['desk_outline'] == [[0, 0.5], [1, 0.5], [1, 1], [0, 1]] and 'danger_zones' in saved
-    assert saved['camera_reference'] is None                   # only the phone says how it's tilted
+    assert 'camera_reference' not in saved                     # (the phone camera's tilt went with it)
     assert client.get('/api/rules').json()['desk_outline'] == saved['desk_outline']
 
 
@@ -236,8 +235,7 @@ def test_ui_settings_reply(tmp_path):
     assert ui['desk']['desk_border_share'] == 0.03 and ui['desk']['min_desk_corners'] == 3
     assert ui['quiet_hours'] == {'enabled': False, 'start_hour': 22, 'end_hour': 7}
     assert ui['pi'] == {'fps': 3, 'delete_every_min': 10, 'public_address': '', 'address': 'desktalk.local:5000'}
-    assert ui['phone'] == {'fps': 3, 'max_side': 960, 'jpeg_quality': 70, 'tilt_max': 50,
-                           'capture_width': 1280, 'capture_height': 720}
+    assert 'phone' not in ui
     assert ui['lens_card'] == {'id': 'lens', 'name': 'Lens', 'art': 'art/lens.svg', 'color': 'coral',
                                'about': 'The camera. Speaks up when the view needs fixing.'}
     assert ui['chat_reply_timeout_ms'] > ui['web']['request_timeout_ms']
@@ -354,16 +352,6 @@ def test_the_browser_app_is_served_and_always_checked_again(tmp_path):
     assert script.headers['cache-control'] == 'no-cache'
     assert client.get('/art/desk.svg').headers['content-type'] == 'image/svg+xml; charset=utf-8'
     assert client.get('/no-such-file.js').status_code == 404
-
-
-def test_the_phone_link_shows_only_on_this_computer(tmp_path):
-    rig = DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'camera', source='phone'))
-    web = create_app(rig.app, links_for(rig.app, phone_page=True))
-    here = web_client(web).get('/api/live?qr=1').json()['phone']
-    assert here['url'] == f'https://192.168.1.20:{rig.config.camera.phone_port}/phone?key={PAIR_KEY}'
-    assert here['qr_svg'].startswith('<svg')
-    there = web_client(web, from_ip=ON_THE_WIFI).get('/api/live?qr=1').json()['phone']
-    assert (there['url'], there['qr_svg']) == ('', None)
 
 
 def test_the_agents_lens_the_status_and_the_recent_messages_have_their_values(tmp_path):

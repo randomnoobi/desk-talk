@@ -1,12 +1,10 @@
 """
 Lens's numbers: how bright, how much glare and how sharp a picture is, how much it changed since the last one
-(all through the picture tools), which side a box is cut off at, how much of the picture a box covers, and how
-far the phone tilted.
+(all through the picture tools), which side a box is cut off at, and how much of the picture a box covers.
 """
 
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -68,12 +66,3 @@ def box_share(box: Sequence[float], size: tuple[int, int]) -> float:
     h = max(0.0, min(y2, fh) - max(y1, 0))
     return w * h / (fw * fh)
 
-
-def tilt_degrees(g1: Sequence[float], g2: Sequence[float], *, trusted: float) -> float:
-    """Degrees between two gravity readings (0 when either is weaker than `trusted`, in m/s²: settings →
-    lens.trusted_gravity)."""
-    a, b = math.hypot(*g1), math.hypot(*g2)
-    if a < trusted or b < trusted:
-        return 0.0
-    cos = sum(x * y for x, y in zip(g1, g2, strict=True)) / (a * b)
-    return math.degrees(math.acos(max(-1.0, min(1.0, cos))))

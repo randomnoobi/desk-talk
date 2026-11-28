@@ -47,7 +47,7 @@ def config(tmp_path_factory):
 class Rig:
     """A habit tracker on a synchronous bus, fed made-up pictures (3 a second)."""
 
-    def __init__(self, config, store=None, phone_counts=True, protocols=None, prefs=None, words=None,
+    def __init__(self, config, store=None, protocols=None, prefs=None, words=None,
                  utc_offset_hours=LOCAL_OFFSET_HOURS, **tracker_settings):
         self.clock = FakeClock(start=at('09:00'), utc_offset_hours=utc_offset_hours)
         self.bus = SyncEventBus()
@@ -58,7 +58,7 @@ class Rig:
         self.tracker = HabitTracker(
             self.clock, self.bus, self.store, self.profiles, self.prefs, self.desk,
             protocols or config.protocols, config.habit_tracker.model_copy(update=tracker_settings),
-            config.presence, config.agents, phone_counts=phone_counts, words=words or config.prompts.habits)
+            config.presence, config.agents, words=words or config.prompts.habits)
 
     def picture(self, *labels, person=True, light=None, conf=0.9, boxes=None):
         boxes = boxes or {}
@@ -285,7 +285,7 @@ def test_phone_free_time_and_streak(config):
     assert r.state().phone_on_desk_since is not None
     pf = r.today()['phone_free']
     assert pf['streak_sec'] == 0 and pf['phone_on_desk_sec'] > 20 and pf['phone_on_desk'] is True
-    assert pf['best_sec'] >= 69 and pf['counted'] is True and pf['goal_min'] == 120
+    assert pf['best_sec'] >= 69 and pf['goal_min'] == 120
 
 
 def test_no_cheering_when_celebrate_every_min_is_zero(config):
@@ -293,14 +293,6 @@ def test_no_cheering_when_celebrate_every_min_is_zero(config):
     r = Rig(config, protocols=config.protocols.model_copy(update={'phone_free': phone}))
     r.run(70, 'laptop')
     assert r.said('streak') == []
-
-
-def test_phone_not_counted_when_it_is_the_camera(config):
-    r = Rig(config, phone_counts=False)
-    r.run(20, 'laptop', 'cell phone')
-    pf = r.today()['phone_free']
-    assert pf['phone_free_sec'] == 0 and pf['counted'] is False and pf['phone_on_desk'] is None
-    assert r.state().phone_on_desk_since is None and r.state().phone_counts is False
 
 
 # ── food ──────────────────────────────────────────────────────────────
@@ -486,7 +478,7 @@ def test_today_has_the_same_shape_as_before(config):
     assert set(t['hydration']) == {'sips', 'water_ml', 'goal_ml', 'on_waking_ml', 'pace_ml', 'last_sip_ts',
                                    'ml_per_sip'}
     assert set(t['breaks']) == {'count', 'last_break_ts', 'sitting_sec', 'longest_sit_sec', 'sit_limit_min', 'log'}
-    assert set(t['phone_free']) == {'counted', 'phone_free_sec', 'phone_on_desk_sec', 'streak_sec', 'best_sec',
+    assert set(t['phone_free']) == {'phone_free_sec', 'phone_on_desk_sec', 'streak_sec', 'best_sec',
                                     'phone_on_desk', 'goal_min'}
     assert set(t['light']) == {'sunlight_ts', 'afternoon_light_ts', 'sunlight_minutes', 'lux', 'brightness'}
     assert t['food'] == {'entries': []} and t['day'] == '2026-06-15'

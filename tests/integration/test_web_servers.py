@@ -5,7 +5,6 @@ The web servers for real: uvicorn on 127.0.0.1 and a free port, in a thread (des
   format 2, in each detector state (ported from test_pi_to_server.py).
 - The server's lifespan starts the background jobs and stops them when the server stops, and open pages
   don't hold it up.
-- The phone page's server speaks HTTPS with its own certificate.
 """
 
 from __future__ import annotations
@@ -15,15 +14,12 @@ import time
 
 import anyio
 import httpx
-import pytest
 
 from desktalk.adapters.notify.mac import MacNotifications
-from desktalk.adapters.storage.files import write_atomically
 from desktalk.bootstrap import build
 from desktalk.domain import DetectorState, UploadInfo
 from desktalk.runtime import SystemClock
-from desktalk.web.app import create_app, create_phone_app
-from desktalk.web.pairing import ensure_cert
+from desktalk.web.app import create_app
 from raspberry_pi.camera import cli as camera_program
 from raspberry_pi.camera.clock import SystemClock as PiClock
 from raspberry_pi.camera.uploader import Uploader
@@ -40,7 +36,7 @@ from tests.integration.app_kit import (
     inbox,
     pi_camera,
 )
-from tests.integration.web_kit import links_for, running
+from tests.integration.web_kit import running
 
 WAIT_SEC = 10          # longest a test waits for something to happen
 
@@ -82,7 +78,7 @@ def from_pi(state: DetectorState, number: int, *found) -> UploadInfo:
 def test_the_camera_programs_uploads_reach_the_server_in_each_detector_state(tmp_path):
     rig = DeskRig(tmp_path)
     app = rig.app
-    with running(create_app(app, links_for(app))) as url:
+    with running(create_app(app)) as url:
         pi = uploader(url)
         pi.offer(rig.jpeg, from_pi(DetectorState.OK, 1, LAPTOP, PERSON))
         assert pi.tick() == 0.0
@@ -104,7 +100,7 @@ def test_the_camera_programs_uploads_reach_the_server_in_each_detector_state(tmp
 
 def test_the_camera_program_reports_a_wrong_key(tmp_path):
     rig = DeskRig(tmp_path)
-    with running(create_app(rig.app, links_for(rig.app))) as url:
+    with running(create_app(rig.app)) as url:
         pi = uploader(url, key='WRONG')
         pi.offer(rig.jpeg, from_pi(DetectorState.OFF, 1))
         pi.tick()
@@ -118,7 +114,7 @@ def test_the_camera_program_gets_its_settings_from_the_server_and_its_pictures_g
     pictures.mkdir()
     for i in range(3):
         (pictures / f'{i}.jpg').write_bytes(desk_jpeg(90 + 40 * i))
-    with running(create_app(app, links_for(app)), lifespan='on') as url:
+    with running(create_app(app), lifespan='on') as url:
         status = camera_program.main(['--server', url, '--key', PAIR_KEY, '--camera', f'folder:{pictures}',
                                       '--no-detector', '--fps', '10', '--max-pictures', '10', '--min-free-mb', '0',
                                       '--photo-dir', str(tmp_path / 'pi-photos')])
@@ -137,7 +133,7 @@ def test_the_camera_program_gets_its_settings_from_the_server_and_its_pictures_g
 # ── starting and stopping ────────────────────────────────────────────
 def test_the_server_runs_the_background_jobs_while_it_runs(tmp_path):
     app = real_desk(tmp_path)
-    with running(create_app(app, links_for(app)), lifespan='on'):
+    with running(create_app(app), lifespan='on'):
         assert {job['state'] for job in app.supervisor.status()} == {'running'}
     assert {job['state'] for job in app.supervisor.status()} == {'stopped'}
     assert app.store.load(f'habits/{time.strftime("%Y-%m-%d")}') is not None     # saved when it stopped
@@ -158,7 +154,7 @@ def test_open_pages_do_not_hold_up_the_server_when_it_stops(tmp_path):
                 pass
             ended[path] = True
 
-    with running(create_app(app, links_for(app))) as url:
+    with running(create_app(app)) as url:
         readers = [threading.Thread(target=watch, args=(url, path), daemon=True)
                    for path in ('/api/events', '/api/video_feed/0')]
         inbox(app).push(desk_jpeg())
@@ -190,7 +186,7 @@ def test_open_chat_pages_do_not_use_up_the_threads_the_other_routes_need(tmp_pat
     pool = 2
     pages = pool + 2
     app = real_desk(tmp_path)
-    web = create_app(app, links_for(app))
+    web = create_app(app)
     web.add_middleware(SmallThreadPool, size=pool)
     opened = threading.Semaphore(0)
 
@@ -216,27 +212,3 @@ def test_open_chat_pages_do_not_use_up_the_threads_the_other_routes_need(tmp_pat
     assert live.status_code == 200
     assert took < 1, f'/api/live waited {took:.1f} s for a free thread'
 
-
-# ── the phone page's server ──────────────────────────────────────────
-@pytest.fixture
-def phone_desk(tmp_path):
-    return DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'camera', source='phone'))
-
-
-def test_the_phone_page_is_served_over_https_with_its_own_certificate(tmp_path, phone_desk):
-    cert = ensure_cert(tmp_path / 'certs', '127.0.0.1', phone_desk.config.camera, save=write_atomically)
-    with running(create_phone_app(phone_desk.app), cert=cert) as url:
-        assert url.startswith('https://')
-        page = httpx.get(url + '/phone', verify=str(cert.cert_file))
-    assert page.status_code == 200 and page.text.startswith('<!DOCTYPE html>')
-
-
-def test_the_certificate_is_made_once_and_kept_for_the_next_start(tmp_path):
-    camera = desk_config(tmp_path).camera
-    cert = ensure_cert(tmp_path / 'certs', '192.168.1.20', camera, save=write_atomically)
-    made = cert.cert_file.read_bytes()
-    assert ensure_cert(tmp_path / 'certs', '192.168.1.20', camera, save=write_atomically) == cert
-    assert cert.cert_file.read_bytes() == made
-    ensure_cert(tmp_path / 'certs', '192.168.1.77', camera, save=write_atomically)      # a new Wi-Fi address:
-    assert cert.cert_file.read_bytes() != made                                          # a new certificate
-    assert (cert.cert_file.name, cert.key_file.name) == (camera.phone_cert_file, camera.phone_key_file)

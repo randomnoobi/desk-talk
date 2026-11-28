@@ -55,6 +55,6 @@ def test_health_shows_each_background_job_once_they_run(tmp_path):
     assert {job['state'] for job in jobs} == {'running'}
 
 
-def test_health_has_no_pi_part_when_the_camera_is_the_phone(tmp_path):
-    rig = DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'camera', source='phone'))
+def test_health_has_no_pi_part_when_the_camera_is_a_webcam(tmp_path):
+    rig = DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'camera', source='webcam'))
     assert web_client(rig.app).get('/api/health').json()['pi'] is None

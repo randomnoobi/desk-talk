@@ -1,9 +1,8 @@
 """
-Fixtures for the characterization tests: ready-made desks, each with its two web servers.
+Fixtures for the characterization tests: ready-made desks, each with its web server.
 
     desk = desks('busy')    # see cases.py for the list of desks
-    desk.main               # WebClient for the main server (web_app/ and the Pi)
-    desk.phone              # WebClient for the phone camera's own server
+    desk.main               # WebClient for the server (web_app/ and the Pi)
 
 Each desk is the whole app built by bootstrap.build(), in temp folders, with a fake detector, a fake AI, a fake
 test runner for the developer page (DEV_TESTS), a fake Pi log reader (PI_LOG_PRINTS) and a FakeClock; nothing
@@ -26,7 +25,6 @@ import pytest
 
 from desktalk.bootstrap import DeskTalk, build
 from desktalk.domain import BBox, Detection, PiLogSource, TestItem
-from desktalk.web.pairing import Links
 from tests.conftest import FakeAI
 from tests.fakes import (
     FakeClock,
@@ -39,7 +37,7 @@ from tests.fakes import (
 )
 from tests.integration.app_kit import changed, desk_config, inbox
 
-from .cases import DEV_TEST_ID, PAIR_KEY, PHONE_HEADERS, PHONE_URL, PI_HEADERS, PICTURE
+from .cases import DEV_TEST_ID, PAIR_KEY, PI_HEADERS, PICTURE
 from .client import WebClient
 
 HERE = Path(__file__).resolve().parent
@@ -47,7 +45,6 @@ RULES_COPY = HERE / 'safety_rules.json'     # config/safety_rules.json as commit
 PINNED_NOW = (2026, 10, 21, 10, 0, 0)       # local time when the requests are sent
 WATCH_SEC = 6                               # how long the camera watches the busy desk
 WATCH_STARTS_AGO_SEC = 60
-COMPUTER_ADDRESS = '192.168.1.20'           # this computer on the Wi-Fi (in the phone link)
 
 
 def det(label: str, x1: float, y1: float, x2: float, y2: float, conf: float = 0.9) -> Detection:
@@ -81,15 +78,14 @@ def fake_ai(request: dict) -> str:
 
 
 class Desk:
-    def __init__(self, app: DeskTalk, clock: FakeClock, detector: FakeDetector, links: Links):
+    def __init__(self, app: DeskTalk, clock: FakeClock, detector: FakeDetector):
         self.app = app
         self.clock = clock
         self.detector = detector
-        self.main = WebClient.main_server(app, links)
-        self.phone = WebClient.phone_server(app)
+        self.main = WebClient.main_server(app)
 
     def server(self, name: str) -> WebClient:
-        return {'main': self.main, 'phone': self.phone}[name]
+        return {'main': self.main}[name]
 
     def watch(self, seconds: float, objects=()) -> None:
         """The camera takes pictures (camera.fps a second) of `objects` and a person, and the app looks at
@@ -112,14 +108,14 @@ def desks(tmp_path):
         if name in built:
             return built[name]
         assert not built, f'one desk per test: already built {list(built)}, asked for {name}'
-        if name not in ('fresh', 'busy', 'no_ai', 'ai_down', 'phone'):
+        if name not in ('fresh', 'busy', 'no_ai', 'ai_down', 'webcam'):
             raise ValueError(f'no desk called {name!r}')
         reply: Any = {'no_ai': None, 'ai_down': ConnectionError('Connection refused')}.get(name, fake_ai)
         # ollama also gives the busy desk a (fake) vision AI, for the lost-items scan of the pictures
         config = desk_config(tmp_path, ai=reply is not None, ollama=name == 'busy')
         shutil.copy(RULES_COPY, config.resolve(config.storage.rules_folder) / 'safety_rules.json')
-        if name == 'phone':
-            config = changed(config, 'camera', source='phone')
+        if name == 'webcam':
+            config = changed(config, 'camera', source='webcam')
         clock = FakeClock(pinned - WATCH_STARTS_AGO_SEC)
         detector = FakeDetector()
         app = build(config, clock=clock, detector=detector, data_folder=tmp_path / 'run', pair_key=PAIR_KEY,
@@ -129,17 +125,12 @@ def desks(tmp_path):
                     pi_log=FakePiLog([PiLogSource(log.name, log.label) for log in config.dev.pi_log.sources],
                                      PI_LOG_PRINTS, clock=clock),
                     client_factory=None if reply is None else lambda **kw: FakeAI(reply=reply, **kw))
-        phone_port = config.camera.phone_port if name == 'phone' else None    # its server runs only then
-        links = Links(COMPUTER_ADDRESS, config.web.port, app.pair_key, phone_port=phone_port)
-        desk = Desk(app, clock, detector, links)
+        desk = Desk(app, clock, detector)
         if name in ('busy', 'no_ai', 'ai_down'):
             desk.watch(WATCH_SEC, ON_THE_DESK)
         clock.advance(pinned - clock.now())
         if name == 'busy':
             assert desk.main.post('/api/pi/frame', data=PICTURE, headers=PI_HEADERS).status == 200
-        if name == 'phone':
-            assert links.phone_url == PHONE_URL
-            assert desk.phone.post('/api/phone/frame', data=PICTURE, headers=PHONE_HEADERS).status == 200
         built[name] = desk
         return desk
 

@@ -48,7 +48,6 @@
     ],
     "phone_free": {
       "best_sec": "number",
-      "counted": "bool",
       "goal_min": "number",
       "phone_free_sec": "number",
       "phone_on_desk": "bool",

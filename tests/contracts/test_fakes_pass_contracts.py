@@ -25,7 +25,6 @@ from tests.contracts.key_value_contract import KeyValueContract
 from tests.contracts.live_pictures_contract import LivePicturesContract
 from tests.contracts.notifier_contract import NotifierContract
 from tests.contracts.object_states_contract import ObjectStatesContract
-from tests.contracts.phone_camera_contract import PhoneCameraContract
 from tests.contracts.photo_album_contract import PhotoAlbumContract
 from tests.contracts.photo_taker_contract import PhotoTakerContract
 from tests.contracts.pi_log_contract import PiLogContract
@@ -46,7 +45,6 @@ from tests.fakes import (
     FakeFrameSource,
     FakeLivePictures,
     FakeObjectStates,
-    FakePhone,
     FakePhotoAlbum,
     FakePhotoTaker,
     FakePi,
@@ -138,8 +136,8 @@ class TestFakeChatModel(ChatModelContract):
     ('FakeCameraHealth', 'CameraHealthView'),
     ('FakeDeskStatus', 'DeskStatus'), ('FakePictureCheck', 'PictureCheck'), ('FakePainter', 'LiveViewPainter'),
     ('FakePictureTools', 'PictureTools'), ('FakePhotoTaker', 'PhotoTaker'), ('FakeDeskRules', 'DeskRulesView'),
-    ('FakeDeskRules', 'DeskLayout'), ('FakePi', 'PiStatus'), ('FakePi', 'PiUploads'), ('FakePhone', 'PhoneCamera'),
-    ('FakePhone', 'PhoneControls'), ('FakeLivePictures', 'LivePictures'), ('FakeDeskScene', 'DeskScene'),
+    ('FakeDeskRules', 'DeskLayout'), ('FakePi', 'PiStatus'), ('FakePi', 'PiUploads'),
+    ('FakeLivePictures', 'LivePictures'), ('FakeDeskScene', 'DeskScene'),
     ('FakeSafetyBoard', 'SafetyBoard'), ('FakeCharacterMemory', 'CharacterMemory'), ('FakePhotoAlbum', 'PhotoAlbum'),
     ('FakeTestRunner', 'TestRunner'), ('FakeDatabaseBrowser', 'DatabaseBrowser'), ('FakeDataFiles', 'DataFiles'),
     ('FakeSmoothingTrace', 'SmoothingTraceView'), ('FakeDesktopNotifications', 'DesktopNotifications'),
@@ -210,12 +208,6 @@ class TestFakePassesPiStatusContract(PiStatusContract):
     @pytest.fixture
     def upload(self):
         return lambda pi, info: pi.receive(info, arrived_at=1_760_000_000.0)
-
-
-class TestFakePassesPhoneCameraContract(PhoneCameraContract):
-    @pytest.fixture
-    def phone(self):
-        return FakePhone()
 
 
 class TestFakePassesLivePicturesContract(LivePicturesContract):

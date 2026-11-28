@@ -65,7 +65,7 @@ class Desk:
         self.tracker = HabitTracker(
             self.clock, self.bus, InMemoryKeyValueStore(), profiles,
             FakePreferences({'wake_time': '07:00', 'bed_time': '22:30'}), FakeDeskScene(), rules,
-            config.habit_tracker, config.presence, config.agents, phone_counts=True, words=config.prompts.habits)
+            config.habit_tracker, config.presence, config.agents, words=config.prompts.habits)
 
     def picture(self, boxes: dict[str, BBox]) -> None:
         self.detections(*(Detection(label, 0.9, box) for label, box in boxes.items()))

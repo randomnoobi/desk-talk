@@ -3,18 +3,15 @@
 Every web address (route) the Desk Talk servers answer, grouped by area: what it does, who calls it, and
 who may call it. Where this page and the code disagree, the code is right.
 
-There are 94 routes in all: 61 on the main server (24 of them for the developer page), 9 on the phone camera's server, 3 on
-the detector service and 21 on the cloud server.
+There are 85 routes in all: 61 on the main server (24 of them for the developer page), 3 on the detector service
+and 21 on the cloud server.
 
-## Four servers
+## Three servers
 
 - Main server: The Pi, in the app container (a computer runs it with uv run python server.py, for development).
   Port: web.port in config/settings.yaml, 5000; the Pi opens it as APP_HOST_PORT in raspberry_pi/.env. What
   it's for: The app page (web_app/) and everything it asks for, the camera container's uploads, and (on a computer
   only) the developer page (dev_ui/, at /dev/).
-- Phone camera server: A computer running server.py, in a thread of the main one. Only runs when the phone is the
-  camera; not on the Pi. Port: camera.phone_port, 5443, https. What it's for: The phone camera page
-  (phone_camera/). Phones only allow the camera on https pages, so it has its own certificate.
 - Detector service: The Pi, in the detector container. Port: DETECTOR_PORT in raspberry_pi/.env, 8100, inside
   Docker's own network only: it is not open on the Pi, so only the other two containers reach it. What it's for: YOLO
   object detection for the Pi's camera program.
@@ -24,16 +21,15 @@ the detector service and 21 on the cloud server.
 
 ### Finding a route in the code
 
-- The main server and the phone server: desktalk/web/app.py builds both (create_app, create_phone_app).
-  The routes are in desktalk/web/routers/, one file per area, and the top of each file lists its URLs.
-  routers/\_\_init\_\_.py says which files belong to which server (MAIN_SERVER, PHONE_SERVER). What the
-  routes share (the pairing key check, "is this computer", the developer page's DevOnly) is in
+- The main server: desktalk/web/app.py builds it (create_app). The routes are in desktalk/web/routers/, one
+  file per area, and the top of each file lists its URLs. routers/\_\_init\_\_.py says which files belong to it
+  (MAIN_SERVER). What the routes share (the pairing key check, the developer page's DevOnly) is in
   desktalk/web/deps.py; what a request body looks like is in desktalk/web/schemas.py.
 - The detector service: raspberry_pi/detector_service/desktalk_detector/app.py. The request and reply
   shapes are in shared/desktalk_shared/detector_api.py.
 - The cloud server: cloud/server/desktalk_cloud/routers/, one file per area, built by bootstrap.py. The shapes a Pi
   sends are in shared/desktalk_shared/cloud_api.py.
-- Every route of the main and phone servers has a test case in tests/characterization/cases.py. The cloud server's
+- Every route of the main server has a test case in tests/characterization/cases.py. The cloud server's
   are in tests/unit/test_cloud\_\*.py, and test_cloud_bootstrap.py checks each one needs the right login.
 
 ### What every reply of the main server has in common
@@ -41,7 +37,7 @@ the detector service and 21 on the cloud server.
 - Errors are {"error": "plain words"}, never {"detail": ...}. A body that doesn't fit is a 400 (not
   422); a request bigger than web.max_request_mb is a 413.
 - No other web site may read a reply or send a write. A reply carries no Access-Control-Allow-Origin unless the site is listed in web.cors_origins (empty by default; the app's own pages and npm run dev for the developer page need nothing in it), so a page from another site can't read it. A write whose Origin isn't the address it was sent to, and isn't in that list, gets 403. Programs send no Origin and pass, so the camera container's uploads and curl work.
-- A request sent to a name the server doesn't go by gets 403, on the main server and the phone camera's. The Host (without the port) must be a number address (IPv4 or IPv6), localhost, a name ending in .local, the name in web.public_address, or one in web.allowed_hosts (empty by default; for a reverse proxy, and app on the Pi for the camera container). So a site that points its own name at the Pi's address by DNS ("rebinding") can't read or change anything.
+- A request sent to a name the server doesn't go by gets 403 on the main server. The Host (without the port) must be a number address (IPv4 or IPv6), localhost, a name ending in .local, the name in web.public_address, or one in web.allowed_hosts (empty by default; for a reverse proxy, and app on the Pi for the camera container). So a site that points its own name at the Pi's address by DNS ("rebinding") can't read or change anything.
 - There is still no login, so anyone on the same Wi-Fi can call the routes marked "anyone on the network".
 - A trailing slash is not forgiven: /api/live/ is a 404.
 - Only GET routes exist for the page's files, so POST or PUT to a path that isn't a route gets 405.
@@ -52,12 +48,7 @@ the detector service and 21 on the cloud server.
   on the same Wi-Fi can call these.
 - pairing key: The request must carry the key in the X-Desk-Key header, or it gets 403. The app makes the key on its
   first start and keeps it (camera.pair_key_file; on the Pi in the pairing volume, which the camera container
-  reads). On a computer the page shows it in the phone link (desktalk/web/pairing.py); it is never in a log. Checked
-  by key_check in deps.py.
-- this computer only: The route answers everyone, but leaves out some parts of its reply unless the request comes from
-  127.0.0.1 or ::1 (FromHere in deps.py). Today only GET /api/live does this: the phone link (and its QR
-  code) is only shown on the computer running server.py. On the Pi no one is "this computer" (the app is in its
-  container), so it is never shown there.
+  reads). It is never in a log. Checked by key_check in deps.py.
 - this computer and its own page only: Everyone else is turned away. A request that doesn't come from 127.0.0.1 or
   ::1 gets 403. So does one whose Host header isn't one of this computer's own addresses (localhost, 127.0.0.1
   or [::1], on web.port or dev.vite_port), so a web site that points its own name at this computer can't read
@@ -120,9 +111,8 @@ the detector service and 21 on the cloud server.
 
 - GET /api/live: Only what the desk cam panel shows, in one request (the app asks every 1.5 s): camera,
   camera_source, camera_index, agents, detections.extras (the other things on the desk, not in the chat:
-  [{"yolo_class", "ignored"}]), safety.explanations (the "Heads up" sentences), camera_issues, ai: {ready,
-  problem}, and phone: {url, qr_svg} with the phone camera. ?qr=1 adds the phone link's QR code. Called by:
-  web_app/app.js, tests/e2e/. Access: anyone on the network; the phone link and the QR code: this computer only
+  [{"yolo_class", "ignored"}]), safety.explanations (the "Heads up" sentences), camera_issues and ai: {ready,
+  problem}. Called by: web_app/app.js, tests/e2e/. Access: anyone on the network
 - GET /api/status: A short summary: running, camera, agents, safety state, uptime. Called by: web_app/app.js
   (once, when the page starts). Access: anyone on the network
 
@@ -198,8 +188,7 @@ number, kept between 1 and the most web.list_sizes allows; anything else is a 40
 
 - GET /api/rules: The danger rules and the desk corners, plus the objects a zone can be set for. Called by:
   web_app/app.js. Access: anyone on the network
-- PUT /api/rules: Change some of them. When the desk corners are marked, it also notes how the phone was tilted.
-  Called by: web_app/app.js. Access: anyone on the network
+- PUT /api/rules: Change some of them. Called by: web_app/app.js. Access: anyone on the network
 - GET /api/ui_settings: The numbers and words the app page uses (refresh times, waits, list sizes, the sensitivity
   steps, the starter to-do and counters, Lens's card ...), so the page keeps no copies of its own. Its pi part is
   {fps, delete_every_min, public_address, address}: public_address is web.public_address (desktalk.local:5000
@@ -227,7 +216,7 @@ The camera container (raspberry_pi/camera/) is the only caller. All three need t
 - POST /api/pi/frame: Content-Type: multipart/form-data with two parts, info (JSON: format version,
   picture id, when it was taken, light, how the Pi is doing, the detector's state ok / busy / off and its
   detections) and picture (the JPEG). This is the only format it takes. Read by
-  desktalk_shared.wire.decode_upload. Replies {"ok": true, "fps": 3, "tip": null or "..."}.
+  desktalk_shared.wire.decode_upload. Replies {"ok": true, "fps": 3}.
 - Errors: 400 not a JPEG or a bad info, 403 wrong key, 409 camera.source is not pi, 413 bigger than
   web.pi_upload_max_mb.
 - POST /api/pi/heartbeat: JSON {"health": {...}}, the same "how the Pi is doing" as in a picture's info.
@@ -244,7 +233,7 @@ The camera container (raspberry_pi/camera/) is the only caller. All three need t
 
 The routes behind the developer page (dev_ui/, see [its README](../dev_ui/README.md)), in
 desktalk/web/routers/dev.py. They are only there when dev.enabled is on in config/settings.yaml;
-switched off, every one of them, and /dev/, is a 404. They are never on the phone server. The only caller
+switched off, every one of them, and /dev/, is a 404. The only caller
 is the developer page, through dev_ui/src/api.ts; each entry's "Called by" says which tab uses it.
 
 They change nothing in the app, with two exceptions: starting and stopping a test run, and the Demo tab's
@@ -384,34 +373,6 @@ has "demo": true), and a pretend sip counts in today's water.
   Called by: Your browser. Access: anyone on the network
 
 This route is mounted last, so every route above (/dev/ included) wins over it.
-
-## Phone camera server (https)
-
-Built by create_phone_app; the routes are in desktalk/web/routers/phone.py. No cross-origin header.
-Only the phone page (phone_camera/) calls these.
-
-### Phone
-
-- GET /api/phone/config: How many pictures a second to send, how big and how sharp, the highest real tilt, the size
-  to ask the phone's camera for. Called by: phone_camera/camera.js. Access: anyone on the network
-- POST /api/phone/frame: One picture from the phone. Called by: phone_camera/camera.js. Access: pairing key
-- POST /api/phone/stop: "I pressed Stop on the phone.". Called by: phone_camera/camera.js. Access: pairing key
-
-- POST /api/phone/frame: the body is the JPEG (Content-Type: image/jpeg). Optional headers:
-  X-Desk-Gravity: x,y,z (how the phone is tilted, m/s²) and X-Desk-Rotation: 90 (how far the phone
-  turned the picture). Replies {"ok": true, "fps": 3, "tip": "Too dark"}; tip is left out when there's
-  nothing to say. Errors: 400 not a JPEG, 403 wrong key, 409 camera.source is not phone, 413 too big.
-
-### Pages and files
-
-- GET /, /phone, /phone/: The camera page (phone_camera/index.html). Called by: The phone's browser (from the
-  QR code). Access: anyone on the network
-- GET /phone/{file}: The page's files (camera.js, style.css ...). Called by: The phone's browser. Access: anyone
-  on the network
-- GET /art/{file}, /fonts/{file}: The drawings and fonts it shares with the app (web_app/art/,
-  web_app/fonts/). Called by: The phone's browser. Access: anyone on the network
-
-That makes 6 page routes (/, /phone, /phone/ and the three file folders), so 9 routes in all with the 3 above.
 
 ## Detector service (on the Pi)
 

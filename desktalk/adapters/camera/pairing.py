@@ -1,7 +1,7 @@
 """
-The pairing key: a short random key in the Pi's command and the phone's QR link, so other devices on
-the Wi-Fi can't send pictures. It's saved (certs/pair-key.txt) and used again after a restart, so the
-phone's bookmarked page and the Pi's command keep working.
+The pairing key: a short random key the Pi sends with its pictures, so other devices on the Wi-Fi
+can't send pictures. It's saved (certs/pair-key.txt) and used again after a restart, so the Pi's
+command keeps working.
 """
 
 from __future__ import annotations
@@ -37,6 +37,6 @@ def make_pair_key(path: Path | None, key_bytes: int) -> str:
             # a crash never leaves a cut-off key that could pass as one you wrote yourself.
             write_atomically(Path(path), key)
         except OSError as exc:
-            log.warning('Could not save the pairing key in %s (%s): the phone link will change after a restart',
+            log.warning('Could not save the pairing key in %s (%s): the key will change after a restart',
                         path, exc)
     return key

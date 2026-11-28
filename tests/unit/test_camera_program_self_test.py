@@ -172,9 +172,9 @@ def test_computer_away_is_a_problem(computer):
 
 
 def test_computer_set_to_another_camera_is_a_problem(computer):
-    computer.camera_source = 'phone'
+    computer.camera_source = 'webcam'
     check = self_test.check_computer(computer.url, KEY, timeout=2, error_text_chars=200)
-    assert not check.ok and 'camera.source: phone' in check.message
+    assert not check.ok and 'camera.source: webcam' in check.message
 
 
 def test_no_server_given_is_a_problem():

@@ -3,7 +3,7 @@ What the desk looks like right now:
 
     GET  /api/live         what the app page's desk cam panel shows, in one request (the app asks every 1.5 s):
                            the camera, the characters, the other things on the desk, the
-                           "Heads up" sentences, camera problems, the AI's state and the Pi / phone links
+                           "Heads up" sentences, camera problems and the AI's state
     GET  /api/status       a short summary
 """
 
@@ -11,10 +11,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 
 from desktalk.bootstrap import DeskTalk
-from desktalk.web.deps import App, FromHere, ShownLinks, camera_index, uptime_sec
+from desktalk.web.deps import App, camera_index, uptime_sec
 
 router = APIRouter()
 
@@ -49,18 +49,12 @@ def ai(app: DeskTalk) -> dict[str, Any]:
 
 
 @router.get('/api/live')
-def live(request: Request, app: App, links: ShownLinks, from_here: FromHere) -> dict[str, Any]:
+def live(app: App) -> dict[str, Any]:
     """Only what the app page reads (the developer page has its own routes), because it asks every 1.5 s."""
-    phone = app.phone
-    out = {'camera_source': app.source_kind, 'camera': app.desk_status.camera_connected(),
-           'camera_index': camera_index(app), 'detections': detections(app), 'safety': safety(app),
-           'camera_issues': app.camera_health.issues(), 'agents': app.roster.snapshot(),
-           'ai': {'ready': app.model.ready, 'problem': app.model.problem()}}
-    if phone is not None:
-        wants_qr = bool(request.query_params.get('qr'))
-        out['phone'] = {'url': links.phone_url if from_here else '',
-                        'qr_svg': links.phone_qr_svg if from_here and wants_qr else None}
-    return out
+    return {'camera_source': app.source_kind, 'camera': app.desk_status.camera_connected(),
+            'camera_index': camera_index(app), 'detections': detections(app), 'safety': safety(app),
+            'camera_issues': app.camera_health.issues(), 'agents': app.roster.snapshot(),
+            'ai': {'ready': app.model.ready, 'problem': app.model.problem()}}
 
 
 @router.get('/api/status')
@@ -69,7 +63,7 @@ def status(app: App) -> dict[str, Any]:
     now = app.safety_board.now()
     state, result = now.state, now.result or {}
     return {'status': 'running', 'camera': connected, 'camera_source': app.source_kind,
-            'phone_mode': app.phone is not None, 'camera_indices': [camera_index(app)] if connected else [],
+            'camera_indices': [camera_index(app)] if connected else [],
             'llm': app.model.ready, 'llm_label': app.model.label, 'agents': app.roster.member_ids(),
             'safety_state': state, 'safety_rules': app.safety_rules.loaded,
             'risk_level': result.get('risk_level', 0), 'uptime_sec': uptime_sec(app)}

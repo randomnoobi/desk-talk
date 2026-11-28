@@ -228,7 +228,7 @@ class FakeComputer(FakeServer):
             self.bad_uploads.append(str(exc))
             return 400, {'error': str(exc)}
         self.uploads.append(Upload(jpeg, info, req.headers['x-desk-key']))
-        return 200, {'ok': True, 'fps': 3.0, 'tip': ''}
+        return 200, {'ok': True, 'fps': 3.0}
 
     def _heartbeat(self, req):
         if not self._key_ok(req):

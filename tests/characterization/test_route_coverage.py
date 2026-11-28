@@ -1,4 +1,4 @@
-"""Every route the two web servers have must have at least one case in cases.py.
+"""Every route the web server has must have at least one case in cases.py.
 
 So a route that's missed, or added later without a case, fails here instead of slipping through.
 """
@@ -28,11 +28,6 @@ def test_every_main_server_route_has_a_case(desks):
     missing = server.routes() - covered_routes(server, 'main')
     assert not missing, 'No case in cases.py for: ' + ', '.join(f'{m} {r}' for m, r in sorted(missing))
 
-
-def test_every_phone_server_route_has_a_case(desks):
-    server = desks('fresh').phone
-    missing = server.routes() - covered_routes(server, 'phone')
-    assert not missing, 'No case in cases.py for: ' + ', '.join(f'{m} {r}' for m, r in sorted(missing))
 
 
 def test_case_ids_are_unique():

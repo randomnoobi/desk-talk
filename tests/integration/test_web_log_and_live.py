@@ -173,7 +173,7 @@ def test_removed_routes_are_404(tmp_path, method, path):
 def test_live_reply_has_only_page_fields(tmp_path):
     rig = DeskRig(tmp_path)
     rig.watch(4, LAPTOP, CUP_FAR)
-    live = web_client(rig.app).get('/api/live?qr=1').json()
+    live = web_client(rig.app).get('/api/live').json()
     assert set(live) == {'camera', 'camera_source', 'camera_index', 'agents', 'detections', 'safety',
                          'camera_issues', 'ai'}
     assert set(live['detections']) == {'extras'}
@@ -191,15 +191,6 @@ def test_live_lists_what_is_on_the_desk_but_not_in_the_chat(tmp_path):
     live = web_client(rig.app).get('/api/live').json()
     assert live['detections']['extras'] == [{'yolo_class': 'scissors', 'ignored': False}]
     assert {a['id'] for a in live['agents'] if a['on_desk']} == {'computer', 'cup'}
-
-
-def test_live_on_a_phone_camera_has_the_phone_link_and_no_other_extras(tmp_path):
-    config = changed(desk_config(tmp_path), 'camera', source='phone')
-    rig = DeskRig(tmp_path, config=config)
-    live = web_client(rig.app).get('/api/live?qr=1').json()
-    assert set(live['phone']) == {'url', 'qr_svg'}
-    assert 'pi_command' not in live
-    assert web_client(rig.app).get('/api/live').json()['phone']['qr_svg'] is None
 
 
 # ── photos ───────────────────────────────────────────────────────────

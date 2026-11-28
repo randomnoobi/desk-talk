@@ -57,7 +57,6 @@ COPY shared/ shared/
 COPY desktalk/ desktalk/
 COPY config/ config/
 COPY web_app/ web_app/
-COPY phone_camera/ phone_camera/
 COPY server.py ./
 COPY scripts/link_cloud.py scripts/
 RUN uv sync --frozen --package desktalk --no-dev

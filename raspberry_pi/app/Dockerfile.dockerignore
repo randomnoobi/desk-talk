@@ -9,7 +9,6 @@
 !desktalk
 !config
 !web_app
-!phone_camera
 !server.py
 !scripts/link_cloud.py
 !raspberry_pi/app/start.sh

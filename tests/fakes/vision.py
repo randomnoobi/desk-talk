@@ -105,7 +105,7 @@ class FakePhotoTaker:
 def plain_desk_rules(**changes: Any) -> DeskRules:
     """A small set of danger rules for tests (not the ones in config/settings.yaml), with `changes` on top."""
     rules = DeskRules(
-        outline=(), reference_gravity=None, edge_danger_px=35, edge_warn_px=75,
+        outline=(), edge_danger_px=35, edge_warn_px=75,
         edge_objects=frozenset({'cup', 'bottle'}), zones={'laptop': Zone(80, 'Spill / pressure zone')},
         zone_intruders={'laptop': frozenset({'cup', 'bottle'})}, harmless_pairs=frozenset(),
         path_ratio=0.3, crowd_radius_px=140, crowd_min_objects=3, harmless_crowd=frozenset(),
@@ -136,16 +136,11 @@ class FakeDeskRules:
     def has_outline(self) -> bool:
         return bool(self._current.outline)
 
-    def reference_gravity(self) -> tuple[float, ...] | None:
-        return self._current.reference_gravity
-
     def save(self, changes: Mapping[str, Any]) -> None:
         self.saved = {**(self.saved or {}), **changes}
         corners = tuple((float(x), float(y)) for x, y in self.saved.get('desk_outline') or [])
         outline = corners if len(corners) >= 3 else ()
-        gravity = (self.saved.get('camera_reference') or {}).get('gravity')
-        self._current = replace(self._built_in, outline=outline,
-                                reference_gravity=tuple(gravity) if gravity and outline else None)
+        self._current = replace(self._built_in, outline=outline)
 
     def clean_outline(self, points: Any) -> list[list[float]]:
         try:

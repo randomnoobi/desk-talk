@@ -20,7 +20,7 @@ STATS = {
     'hourly_activity': [0] * 9 + [10, 20] + [0, 0] + [5, 5, 5] + [0] * 8,
     'hydration': {'water_ml': 1200, 'goal_ml': 2400, 'sips': 15},
     'breaks': {'count': 3, 'longest_sit_sec': 3000},
-    'phone_free': {'counted': True, 'phone_free_sec': 5400, 'best_sec': 1800.0},
+    'phone_free': {'phone_free_sec': 5400, 'best_sec': 1800.0},
     'light': {'sunlight_ts': 1_761_030_000.0},
     'desk_sec': 18000,
     'danger_count': 2,
@@ -57,12 +57,12 @@ def test_recap_facts_leaves_out_what_did_not_happen():
     quiet_day = {'day': '2026-10-21', 'hourly_activity': [0] * 24,
                  'hydration': {'water_ml': 0, 'goal_ml': 2400, 'sips': 0},
                  'breaks': {'count': 0, 'longest_sit_sec': 0},
-                 'phone_free': {'counted': False, 'phone_free_sec': 0, 'best_sec': 0},
+                 'phone_free': {'phone_free_sec': 0, 'best_sec': 0},
                  'light': {'sunlight_ts': None}, 'desk_sec': 0, 'danger_count': 0, 'lost_alerts': 0,
                  'objects_seen': []}
     assert recap_facts(quiet_day, objects_listed=8, words=WORDS.facts) == (
         'Water: about 0.0 of 2.4 L (0 sips). Breaks taken: 0. Longest stretch sitting: 0 minutes. '
-        'Morning sunlight: not logged.')
+        'Phone-free desk time: 0 minutes (best streak 0). Morning sunlight: not logged.')
 
 
 def test_recap_facts_names_only_the_first_few_objects():

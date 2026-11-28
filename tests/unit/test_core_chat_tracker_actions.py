@@ -36,7 +36,7 @@ def today(**changes):
         'hydration': {'sips': 3, 'water_ml': 240, 'goal_ml': 2400, 'pace_ml': 900, 'last_sip_ts': None},
         'breaks': {'count': 2, 'last_break_ts': None, 'sitting_sec': 1260, 'sit_limit_min': 30},
         'food': {'entries': []},
-        'phone_free': {'counted': True, 'phone_free_sec': 3000, 'streak_sec': 600, 'goal_min': 120,
+        'phone_free': {'phone_free_sec': 3000, 'streak_sec': 600, 'goal_min': 120,
                        'phone_on_desk': False},
         'light': {'sunlight_ts': None, 'lux': None, 'brightness': 128.0},
     }
@@ -182,8 +182,6 @@ def test_food_phone_and_light_trackers(chat):
     assert 'Healthy: apple' in food and 'Treats: chips' in food
     assert 'Empty today' in ta.tracker_prompt('food', today(), None, [], NOW, chat, words=WORDS)
     assert '50 min of desk time' in ta.tracker_prompt('phone_free', today(), None, [], NOW, chat, words=WORDS)
-    not_counted = today(phone_free={'counted': False})
-    assert 'not counted' in ta.tracker_prompt('phone_free', not_counted, None, [], NOW, chat, words=WORDS)
     assert 'brightness 128/255' in ta.tracker_prompt('light', today(), None, [], NOW, chat, words=WORDS)
 
 

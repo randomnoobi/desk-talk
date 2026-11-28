@@ -1,4 +1,4 @@
-"""Real parts run the contracts of the newer interfaces they implement here (the photo taker, desk rules, Pi, phone).
+"""Real parts run the contracts of the newer interfaces they implement here (the photo taker, desk rules, Pi).
 (The real PictureTools, OpenCvPictureTools, runs PictureToolsContract in test_opencv_picture_tools.py.)"""
 
 from __future__ import annotations
@@ -7,14 +7,13 @@ import cv2
 import numpy as np
 import pytest
 
-from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource
+from desktalk.adapters.camera import PiFrameSource
 from desktalk.core.desk import Album, DangerBoard, LiveView, Memories, Scene, WholeDesk
 from desktalk.core.vision.proof_photos import ProofPhotos
 from desktalk.core.vision.rules import SafetyRules
 from desktalk.domain import Size
-from desktalk.ports import DeskRulesView, PhoneCamera, PhoneControls, PhotoTaker, PiStatus, PiUploads
+from desktalk.ports import DeskRulesView, PhotoTaker, PiStatus, PiUploads
 from tests.contracts.desk_rules_contract import DeskRulesContract
-from tests.contracts.phone_camera_contract import PhoneCameraContract
 from tests.contracts.photo_taker_contract import PhotoTakerContract
 from tests.contracts.pi_status_contract import PiStatusContract
 from tests.fakes import FakeClock, FakePictureTools, InMemoryKeyValueStore
@@ -59,12 +58,6 @@ class TestPiFrameSourcePassesPiStatusContract(PiStatusContract):
         return lambda pi, info: pi.push(PICTURE, info)
 
 
-class TestPhoneFrameSourcePassesPhoneCameraContract(PhoneCameraContract):
-    @pytest.fixture
-    def phone(self):
-        return PhoneFrameSource(FakeClock(), camera_settings())
-
-
 def test_the_real_parts_have_all_of_their_interface():
     assert isinstance(ProofPhotos(desk(), FakeClock(), CONFIG.snapshots, pictures=FakePictureTools(),
                                   no_label=CONFIG.prompts.photos.no_label), PhotoTaker)
@@ -72,5 +65,3 @@ def test_the_real_parts_have_all_of_their_interface():
     assert isinstance(rules, DeskRulesView)
     pi = PiFrameSource(FakeClock(), camera_settings())
     assert isinstance(pi, PiStatus) and isinstance(pi, PiUploads)
-    phone = PhoneFrameSource(FakeClock(), camera_settings())
-    assert isinstance(phone, PhoneCamera) and isinstance(phone, PhoneControls)

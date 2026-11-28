@@ -10,7 +10,7 @@
     "camera": {
       "connected": "bool",
       "fps": "number",
-      "pictures_received": "number",
+      "pictures_received": "null",
       "source": "str"
     },
     "checks": {
@@ -32,7 +32,7 @@
       "detections": {
         "level": "str",
         "unit": "str",
-        "value": "number"
+        "value": "null"
       },
       "pi_heartbeat": {
         "level": "str",
@@ -80,5 +80,5 @@
     ],
     "uptime_sec": "number"
   },
-  "request": "GET /api/health (main server, phone desk)"
+  "request": "GET /api/health (main server, webcam desk)"
 }

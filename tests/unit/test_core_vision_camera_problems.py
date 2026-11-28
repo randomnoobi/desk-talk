@@ -17,8 +17,7 @@ def problems(thanked=('dark',)):
 def run(p, seen, start, seconds, **check):
     said = []
     for t in range(start, start + seconds):
-        said += p.check(t, seen, **{'connected': True, 'fps': 3.0, 'gravity': None, 'reference_gravity': None,
-                                    'has_outline': True, 'stopped': False, 'quiet': False, **check})
+        said += p.check(t, seen, **{'connected': True, 'fps': 3.0, 'has_outline': True, 'quiet': False, **check})
     return said
 
 

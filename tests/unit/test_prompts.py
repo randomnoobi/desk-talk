@@ -96,7 +96,8 @@ def test_a_blank_in_a_text_without_blanks_names_the_text(project):
 
 
 def test_a_brace_without_its_pair_names_the_text(project):
-    edit(project, 'prompts.yaml', 'No video from the phone', 'No video from the phone {')
+    lost = 'title: No pictures from the camera\n      fix:'   # camera.titles.lost (lost_title has the same words)
+    edit(project, 'prompts.yaml', lost, lost.replace('camera', 'camera {', 1))
     with pytest.raises(ConfigError, match=r'^config/prompts.yaml: camera.titles.lost.title has a \{ or \} without its '
                                           r'pair \(write \{\{ or \}\} for a real brace\)$'):
         load_config(root=project, environ={})

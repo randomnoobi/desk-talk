@@ -66,14 +66,6 @@
       "side_photos_shown": "number",
       "toast_chars": "number"
     },
-    "phone": {
-      "capture_height": "number",
-      "capture_width": "number",
-      "fps": "number",
-      "jpeg_quality": "number",
-      "max_side": "number",
-      "tilt_max": "number"
-    },
     "pi": {
       "address": "str",
       "delete_every_min": "number",

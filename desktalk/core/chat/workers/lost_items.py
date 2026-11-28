@@ -15,7 +15,7 @@ words for it and the words you might type (lost_item_words.py).
     lost = LostItems(clock, bus, desk, roster, profiles, habits, chat_model, ollama_or_none, config.lost_items,
                      config.llm.replies, photos=proof_photos,
                      default_temperature=config.agents_file.default.temperature,
-                     phone_is_camera=config.camera.source == 'phone', pictures=OpenCvPictureTools(),
+                     pictures=OpenCvPictureTools(),
                      prompts=config.prompts.lost_items, photos_kept=config.snapshots.max_kept)
     supervisor.add(lost, start_after=config.lost_items.start_delay_sec)
     lost.items, lost.is_lost_query(text), lost.answer(text)     # for the web routes
@@ -53,11 +53,10 @@ class LostItems:
     def __init__(self, clock: Clock, bus: EventBus, desk: LostItemsDesk, roster: RosterView, profiles: Profiles,
                  habits: HabitsView, chat: ChatModel, vision: ChatModel | None, settings: LostItemsSettings,
                  replies: AiReplies, *, photos: PhotoTaker, default_temperature: float, pictures: PictureTools,
-                 prompts: LostItemsPrompts, photos_kept: int, phone_is_camera: bool = False):
+                 prompts: LostItemsPrompts, photos_kept: int):
         """`replies`: settings → llm.replies (this uses lost_alert and lost_answer). `default_temperature`:
         agents.yaml's default, for Lens when those settings have none. `pictures` compares the pictures (has the
-        desk changed?). `prompts`: config/prompts.yaml → lost_items. `photos_kept`: settings → snapshots.max_kept.
-        `phone_is_camera`: the phone can't be lost."""
+        desk changed?). `prompts`: config/prompts.yaml → lost_items. `photos_kept`: settings → snapshots.max_kept."""
         self._bus = bus
         self._desk = desk
         self._roster = roster
@@ -71,7 +70,6 @@ class LostItems:
         self._settings = settings
         self._replies = replies
         self._default_temperature = default_temperature
-        self._phone_is_camera = phone_is_camera
         self._tracked = TrackedItems(settings, prompts)
         self.items = self._tracked.items
         self._answers = LostItemAnswers(clock, desk, roster, profiles, chat, vision, self._tracked, self.sightings,
@@ -212,8 +210,8 @@ class LostItems:
     def _alert_lost_items(self, now: float, scan_hits: set[str]) -> None:
         seen_now = self._tracked.in_labels(self._desk.seen()) | self._tracked.in_labels(scan_hits)
         for item_id, item in self.items.items():
-            if item_id in seen_now or (self._phone_is_camera and item_id == 'phone'):
-                continue        # (the phone is the camera, so it's never on the desk)
+            if item_id in seen_now:
+                continue
             with self._lock:
                 record = self._seen.get(item_id)
                 if not record or record['last_seen'] is None or record['alerted']:

@@ -89,10 +89,10 @@ def test_events_get_unique_ids():
     assert a.id != b.id
 
 
-def test_frame_from_phone_has_no_detector_and_numbered_id():
-    f = Frame(picture=np.zeros((4, 4, 3), np.uint8), received_at=10.0, source='phone', number=7)
+def test_frame_from_a_webcam_has_no_detector_and_numbered_id():
+    f = Frame(picture=np.zeros((4, 4, 3), np.uint8), received_at=10.0, source='webcam', number=7)
     assert f.detector_state is None
-    assert f.frame_id == 'phone-000007'
+    assert f.frame_id == 'webcam-000007'
     assert f.pi_detections == ()
 
 

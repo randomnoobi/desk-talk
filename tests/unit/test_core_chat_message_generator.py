@@ -61,7 +61,7 @@ def today():
     return {'hydration': {'sips': 3, 'water_ml': 240, 'goal_ml': 2400, 'pace_ml': 900, 'last_sip_ts': None},
             'breaks': {'count': 1, 'last_break_ts': None, 'sitting_sec': 2100, 'sit_limit_min': 30},
             'food': {'entries': []},
-            'phone_free': {'counted': True, 'phone_free_sec': 600, 'streak_sec': 60, 'goal_min': 120,
+            'phone_free': {'phone_free_sec': 600, 'streak_sec': 60, 'goal_min': 120,
                            'phone_on_desk': False},
             'light': {'sunlight_ts': None, 'lux': None, 'brightness': 120.0}}
 

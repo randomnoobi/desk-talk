@@ -204,10 +204,8 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'lens.pi_clock': ('seconds', 'way'),
     'lens.pi_very_hot': ('temp',),
     'lens.card_low.pi': ('free_mb',),
-    'lens.card_low.phone': ('free_mb',),
     'lens.card_low.webcam': ('free_mb',),
     'lens.card_full.pi': ('free_mb',),
-    'lens.card_full.phone': ('free_mb',),
     'lens.card_full.webcam': ('free_mb',),
     'lens.room_low': ('free_mb',),
     'lens.room_full': ('free_mb',),
@@ -216,7 +214,6 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'lens.no_detections': ('minutes',),
     'lens.no_detections_long': ('minutes',),
     'lens.pi_heartbeat': ('seconds',),
-    'camera.problems.bumped': ('degrees',),
     'camera.problems.cutoff': ('object', 'side', 'hint'),
     'camera.problems.slow': ('fps',),
     'camera.cutoff_title': ('object', 'side'),
@@ -403,7 +400,6 @@ class TrackerPrompts(_Section):
     food: str
     food_healthy: str
     food_treats: str
-    phone_not_counted: str
     phone: str
     phone_on_desk: str
     phone_off_desk: str
@@ -597,7 +593,6 @@ class ByCamera(_Section):
     """One text for each camera (settings → camera.source)."""
 
     pi: str
-    phone: str
     webcam: str
 
 
@@ -650,7 +645,6 @@ class CameraProblems(_Section):
     dark: str
     glare: str
     blurry: str
-    bumped: str
     empty: str
     cutoff: str
     slow: str
@@ -663,7 +657,6 @@ class CameraFixed(_Section):
     dark: str
     glare: str
     blurry: str
-    bumped: str
     empty: str
 
 
@@ -686,7 +679,6 @@ class CameraTitles(_Section):
     dark: Title
     glare: Title
     blurry: Title
-    bumped: Title
     empty: Title
     cutoff: Title
     slow: Title
@@ -737,12 +729,10 @@ class NotificationWords(_Section):
 
 
 class ServerWords(_Section):
-    """What the app's web servers answer (desktalk/web/): a crash, a wrong pairing key, the other camera."""
+    """What the app's web server answers (desktalk/web/): a crash, a wrong pairing key, the other camera."""
 
     something_went_wrong: str
     pi_key_problem: str
-    phone_key_problem: str
-    phone_stop_key_problem: str
     other_camera: str                 # blanks in BLANKS
 
 

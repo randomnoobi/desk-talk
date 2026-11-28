@@ -22,22 +22,11 @@
 # ── Camera ──────────────────────────────────────────────────────────
 camera:
   # pi     = Raspberry Pi camera (the camera container, raspberry_pi/camera/, sends its pictures to the app)
-  # phone  = a phone streams over Wi-Fi (scan the QR code; the page is phone_camera/)
   # webcam = a USB / built-in webcam on the computer running the app (for working on Desk Talk)
   source: pi
   fps: 3                      # pictures analysed per second (the Pi takes pictures at this rate too)
   disconnect_after_sec: 3     # no picture for this long = camera is off, analysis pauses
   webcam_indices: [0]         # which webcam(s) when source is webcam (0 = built-in on most Macs)
-  phone_port: 5443            # HTTPS port the phone page uses (phones only allow cameras on https)
-  phone_cert_folder: certs    # the phone page's own HTTPS certificate is made and kept here
-  phone_cert_days: 365        # a new certificate is good for this long (a new one is made when it runs out)
-  phone_cert_file: desk-talk.crt  # the certificate's file name in phone_cert_folder...
-  phone_key_file: desk-talk.key   # ...and its secret key's (made here, never leaves it)
-  phone_max_side: 960         # the phone shrinks each picture so its longest side is at most this many pixels
-  phone_jpeg_quality: 70      # JPEG quality of the pictures the phone sends (1-100)
-  phone_tilt_max: 50          # a phone tilt reading above this (m/s², on any axis) isn't a real one (gravity is 9.8)
-  phone_capture_width: 1280   # the picture size the phone page asks its camera for (the phone picks the nearest
-  phone_capture_height: 720   # size it has; each picture is then shrunk to phone_max_side)
   wait_for_picture_sec: 1.0   # analysis waits this long for a new picture, then checks again
   jpeg_quality: 78            # JPEG quality when the app makes the picture itself (webcam)
   boxes_jpeg_quality: 70      # JPEG quality of the live view with boxes ("Boxes" in the app)
@@ -45,14 +34,12 @@ camera:
   moved_within_sec: 1.5       # Lens saw movement this recently = "something moved" in this picture
   fps_gap_max_sec: 3          # a gap longer than this between pictures doesn't count toward the speed shown
   fps_smoothing: 0.2          # how much each new picture changes the speed shown (0-1, smaller = steadier)
-  phone_tilt_max_age_sec: 5   # the phone's tilt is only used if it was sent this recently
   webcam_width: 1280          # picture size asked from a webcam
   webcam_height: 720
   webcam_warmup_reads: 10     # pictures tried before deciding a webcam doesn't work
   webcam_max_index: 4         # if the chosen webcam doesn't work, webcams 0 up to (not including) this are tried
   pair_key_bytes: 6           # random bytes in a new pairing key (6 makes an 8-letter key)
-  pair_key_file: certs/pair-key.txt  # the pairing key is kept here, so the phone link stays the same
-                              # after a restart
+  pair_key_file: certs/pair-key.txt  # the pairing key is kept here, so it stays the same after a restart
   keep_newer_picture_sec: 3   # a Pi picture can arrive after one taken later (the Pi sends it once its detector
                               # is done): the live view keeps the later one, unless it hasn't changed for this long
   pi_clock_pictures: 30       # the Pi's clock is judged by the quickest of its last this many pictures (the others
@@ -505,8 +492,6 @@ lens:
   glare_above: 0.30           # share of pure-white pixels
   blur_below: 25
   motion_above: 6.0
-  bump_degrees: 12            # phone camera only
-  trusted_gravity: 1.0        # a phone tilt reading weaker than this (m/s²) is noise, not a direction (gravity is 9.8)
   slow_fps_below: 1.5
   speak_gap_sec: 20
   repeat_after_min: 20
@@ -528,7 +513,6 @@ lens:
     dark: 8
     glare: 8
     blurry: 12
-    bumped: 5                 # phone camera only
     empty: 180                # nothing recognized on the desk
     cutoff: 45                # an object cut off at the side of the picture
     slow: 30
@@ -667,13 +651,12 @@ web:
                               # .local and the name in public_address. Any other name gets a 403, so a web site can't
                               # point its own name at this app's address and read your to-dos
   app_folder: web_app         # the app's page and files (what you open at http://localhost:5000)
-  phone_folder: phone_camera  # the page a phone opens to be the camera
   cors_origins: []            # other web sites allowed to read from this app and change things, like
                               # http://example.com. Leave this empty: anyone's phone on your Wi-Fi could open a site
                               # that sends your desk's picture away. The app's own pages need nothing here, and
                               # neither does `npm run dev` for the developer page, which passes its requests on
   stop_wait_sec: 3            # when the server stops, requests still running get this long to finish
-  max_request_mb: 8           # biggest request the app and the phone page may send
+  max_request_mb: 8           # biggest request the app's page may send
   pi_upload_max_mb: 4         # biggest picture upload the Pi may send to /api/pi/frame
   live_retry_ms: 2000         # the app reconnects to live updates after this long if cut off
   live_keepalive_sec: 25      # a "still here" note on live updates when nothing else was sent

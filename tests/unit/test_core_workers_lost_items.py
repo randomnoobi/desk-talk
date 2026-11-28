@@ -86,7 +86,7 @@ class AlbumPhotos:
 
 
 class Rig:
-    def __init__(self, chat=NO_AI, vision=None, members=('computer',), phone_is_camera=False, settings=SETTINGS,
+    def __init__(self, chat=NO_AI, vision=None, members=('computer',), settings=SETTINGS,
                  words=WORDS, utc_offset_hours=0.0):
         self.clock = FakeClock(time.mktime((2026, 10, 21, 14, 0, 0, 0, 0, -1)), utc_offset_hours=utc_offset_hours)
         self.bus = SyncEventBus()
@@ -96,7 +96,7 @@ class Rig:
         self.proof_photos = AlbumPhotos(self.desk, self.clock)
         self.lost = LostItems(self.clock, self.bus, self.desk, StaticRoster(members), PROFILES, self.habits, chat,
                               vision, settings, REPLIES, photos=self.proof_photos, default_temperature=0.8,
-                              pictures=TOOLS, prompts=words, photos_kept=KEPT, phone_is_camera=phone_is_camera)
+                              pictures=TOOLS, prompts=words, photos_kept=KEPT)
         self.show(DARK)
 
     def show(self, jpeg):
@@ -243,14 +243,6 @@ def test_no_alert_for_an_item_still_in_the_picture():
     rig = Rig()
     rig.see('key')
     rig.tick(after=20 * 60)
-    assert rig.alerts() == []
-
-
-def test_no_phone_alert_when_the_phone_is_the_camera():
-    rig = Rig(phone_is_camera=True)
-    rig.see('cell phone')
-    rig.see()
-    rig.tick(after=30 * 60)
     assert rig.alerts() == []
 
 

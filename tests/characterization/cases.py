@@ -1,14 +1,14 @@
 """
 Every request the characterization tests send, and the status code each one gets today.
 
-Each Case is one request to one of the two web servers, on one of the ready-made desks in conftest.py:
+Each Case is one request to the web server, on one of the ready-made desks in conftest.py:
 
     fresh    nothing seen yet, no pictures; the AI works
     busy     the Pi has watched a laptop, a cup, keys, a book and a remote for 6 s with someone at the desk;
              one Pi upload arrived
     no_ai    like busy, but there is no AI key
     ai_down  like busy, but every AI call fails
-    phone    the phone is the camera (camera.source: phone) and has sent one picture
+    webcam   a webcam is the camera (camera.source: webcam); nothing has been seen
 
 What gets checked depends on `reply`:
 
@@ -39,7 +39,6 @@ SSE_MESSAGE_SNAPSHOT = 'events-chat-message'               # the shape of one ch
 
 PAIR_KEY = 'testkey'                  # the pairing key make_app() gives the app
 LAN_DEVICE = '192.168.1.50'           # another device on the Wi-Fi (not this computer)
-PHONE_URL = f'https://192.168.1.20:5443/phone?key={PAIR_KEY}'
 JPEG_START = b'\xff\xd8\xff'
 HTML_START = b'<!DOCTYPE html>'
 
@@ -59,9 +58,6 @@ PI_HEADERS = {'Content-Type': 'image/jpeg', 'X-Desk-Key': PAIR_KEY, 'X-Frame-Id'
 # A USB camera on the Pi: no light level, and the Pi sends blank counts when it doesn't know them.
 PI_USB_HEADERS = {**{k: v for k, v in PI_HEADERS.items() if k != 'X-Lux'},
                   'X-Pi-Camera': 'usb', 'X-Pi-Photos': '', 'X-Pi-Free-MB': ''}
-# What phone_camera/camera.js sends with each picture.
-PHONE_HEADERS = {'Content-Type': 'image/jpeg', 'X-Desk-Key': PAIR_KEY, 'X-Desk-Rotation': '90',
-                 'X-Desk-Gravity': '0.12,-9.71,0.85'}
 KEY = {'X-Desk-Key': PAIR_KEY}
 # What the Pi's camera program sends with each heartbeat (raspberry_pi/camera/heartbeat.py).
 HEARTBEAT = {'health': {'camera': 'picamera2', 'photos_stored': 42, 'disk_free_mb': 1234, 'last_cleanup_ts': 1792569000,
@@ -104,7 +100,7 @@ class Case:
                                           # with the id of a picture in the cup's story
     status: int
     desk: str = 'busy'
-    server: str = 'main'                  # main (web_app/ and the Pi) or phone (the phone camera page)
+    server: str = 'main'                  # the server (web_app/ and the Pi): the only one
     reply: str = JSON
     json: Any = None
     data: bytes | None = None
@@ -143,7 +139,8 @@ CASES = [
     Case('pi-frame-no-picture', 'POST', '/api/pi/frame', 400, desk='fresh', data=b'', headers=PI_HEADERS),
     Case('pi-frame-not-a-jpeg', 'POST', '/api/pi/frame', 400, desk='fresh', data=b'this is not a picture',
          headers=PI_HEADERS),
-    Case('pi-frame-camera-is-phone', 'POST', '/api/pi/frame', 409, desk='phone', data=PICTURE, headers=PI_HEADERS),
+    Case('pi-frame-camera-is-webcam', 'POST', '/api/pi/frame', 409, desk='webcam', data=PICTURE,
+         headers=PI_HEADERS),
     Case('live-after-pi-frame', 'GET', '/api/live', 200, desk='fresh',
          before=(Step('POST', '/api/pi/frame', data=PICTURE, headers=PI_HEADERS),),
          values={'camera': True, 'camera_source': 'pi'}),
@@ -153,7 +150,7 @@ CASES = [
          headers=WRONG_KEY),
     Case('pi-heartbeat-bad-health', 'POST', '/api/pi/heartbeat', 400, desk='fresh', json={'health': 'hot'},
          headers=KEY),
-    Case('pi-heartbeat-camera-is-phone', 'POST', '/api/pi/heartbeat', 409, desk='phone', json=HEARTBEAT,
+    Case('pi-heartbeat-camera-is-webcam', 'POST', '/api/pi/heartbeat', 409, desk='webcam', json=HEARTBEAT,
          headers=KEY),
     Case('health-after-pi-heartbeat', 'GET', '/api/health', 200, desk='fresh',
          before=(Step('POST', '/api/pi/heartbeat', HEARTBEAT, headers=KEY),),
@@ -192,19 +189,13 @@ CASES = [
     Case('live-nothing-seen', 'GET', '/api/live', 200, desk='fresh'),
     Case('live-no-ai', 'GET', '/api/live', 200, desk='no_ai', values={'ai.ready': False}),
     Case('live-ai-down', 'GET', '/api/live', 200, desk='ai_down', values={'ai.ready': True}),
-    Case('live-phone-camera', 'GET', '/api/live?qr=1', 200, desk='phone', values={'phone.url': PHONE_URL}),
-    Case('live-phone-camera-no-qr', 'GET', '/api/live', 200, desk='phone', values={'phone.qr_svg': None}),
-    Case('live-phone-camera-from-lan', 'GET', '/api/live?qr=1', 200, desk='phone', from_ip=LAN_DEVICE,
-         values={'phone.url': '', 'phone.qr_svg': None}),
-    Case('live-after-phone-stop', 'GET', '/api/live', 200, desk='phone',
-         before=(Step('POST', '/api/phone/stop', headers=KEY, server='phone'),), values={'camera': False}),
     Case('status', 'GET', '/api/status', 200),
     Case('status-nothing-seen', 'GET', '/api/status', 200, desk='fresh'),
     Case('health', 'GET', '/api/health', 200),
     # the system numbers (off on a computer: system_stats.enabled is only on in the Pi's settings)
     Case('system-stats', 'GET', '/api/system/stats?since=0', 200, desk='fresh',
          values={'collecting': False, 'samples': []}),
-    Case('health-phone-camera', 'GET', '/api/health', 200, desk='phone', values={'pi': None}),
+    Case('health-webcam-camera', 'GET', '/api/health', 200, desk='webcam', values={'pi': None}),
 
     # ── Agents and chat ──
     Case('agents', 'GET', '/api/agents', 200),
@@ -279,7 +270,6 @@ CASES = [
     # ── Settings ──
     Case('rules', 'GET', '/api/rules', 200),
     Case('rules-put-outline', 'PUT', '/api/rules', 200, json={'desk_outline': OUTLINE}),
-    Case('rules-put-outline-phone-camera', 'PUT', '/api/rules', 200, desk='phone', json={'desk_outline': OUTLINE}),
     Case('rules-after-put-outline', 'GET', '/api/rules', 200,
          before=(Step('PUT', '/api/rules', {'desk_outline': OUTLINE}),), values={'desk_outline': OUTLINE}),
     Case('rules-put-too-few-corners', 'PUT', '/api/rules', 400, json={'desk_outline': [[0, 0], [1, 0]]}),
@@ -395,32 +385,6 @@ CASES = [
     Case('dev-pi-log-other-computer', 'GET', '/api/dev/pi_log?source=all', 403, desk='fresh', from_ip=LAN_DEVICE),
     Case('dev-pi-log-other-web-page', 'GET', '/api/dev/pi_log?source=all', 403, desk='fresh', headers=OTHER_PAGE),
 
-    # ── The phone camera's own server (phone_camera/) ──
-    Case('phone-page', 'GET', '/', 200, desk='phone', server='phone', reply=FILE, starts_with=HTML_START),
-    Case('phone-page-phone', 'GET', '/phone', 200, desk='phone', server='phone', reply=FILE, starts_with=HTML_START),
-    Case('phone-page-phone-slash', 'GET', '/phone/', 200, desk='phone', server='phone', reply=FILE,
-         starts_with=HTML_START),
-    Case('phone-script', 'GET', '/phone/camera.js', 200, desk='phone', server='phone', reply=FILE),
-    Case('phone-style', 'GET', '/phone/style.css', 200, desk='phone', server='phone', reply=FILE),
-    Case('phone-missing-file', 'GET', '/phone/nope.js', 404, desk='phone', server='phone', reply=STATUS),
-    Case('phone-art', 'GET', '/art/desk.svg', 200, desk='phone', server='phone', reply=FILE, starts_with=b'<svg'),
-    Case('phone-font', 'GET', '/fonts/bricolage-grotesque.woff2', 200, desk='phone', server='phone', reply=FILE,
-         starts_with=b'wOF2'),
-    # The Flask server had an automatic /static/ route here, for a folder that doesn't exist; it's gone.
-    Case('phone-static-folder', 'GET', '/static/style.css', 404, desk='phone', server='phone', reply=STATUS),
-    Case('phone-config', 'GET', '/api/phone/config', 200, desk='phone', server='phone'),
-    Case('phone-frame', 'POST', '/api/phone/frame', 200, desk='phone', server='phone', data=PICTURE,
-         headers=PHONE_HEADERS),
-    Case('phone-frame-no-tilt', 'POST', '/api/phone/frame', 200, desk='phone', server='phone', data=PICTURE,
-         headers={'Content-Type': 'image/jpeg', **KEY}),
-    Case('phone-frame-wrong-key', 'POST', '/api/phone/frame', 403, desk='phone', server='phone', data=PICTURE,
-         headers={**PHONE_HEADERS, **WRONG_KEY}),
-    Case('phone-frame-no-picture', 'POST', '/api/phone/frame', 400, desk='phone', server='phone', data=b'',
-         headers=PHONE_HEADERS),     # a bad picture, like the Pi's (the Flask server crashed: 500)
-    Case('phone-frame-not-a-jpeg', 'POST', '/api/phone/frame', 400, desk='phone', server='phone',
-         data=b'this is not a picture', headers=PHONE_HEADERS),
-    Case('phone-stop', 'POST', '/api/phone/stop', 200, desk='phone', server='phone', headers=KEY),
-    Case('phone-stop-wrong-key', 'POST', '/api/phone/stop', 403, desk='phone', server='phone', headers=WRONG_KEY),
 ]
 
 

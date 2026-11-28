@@ -38,7 +38,7 @@ def box(label, conf=0.9):
 def today():
     return {'hydration': {'water_ml': 1200, 'goal_ml': 2400, 'sips': 9},
             'breaks': {'count': 2, 'sitting_sec': 1500},
-            'phone_free': {'counted': True, 'phone_free_sec': 3600},
+            'phone_free': {'phone_free_sec': 3600},
             'light': {'sunlight_ts': None}}
 
 

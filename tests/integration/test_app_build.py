@@ -15,7 +15,7 @@ import typing
 import pytest
 from pydantic import SecretStr
 
-from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource
+from desktalk.adapters.camera import PiFrameSource, WebcamSource
 from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser
 from desktalk.adapters.dev.pi_log import SshPiLog
 from desktalk.adapters.notify.mac import MAC_PLATFORM, MacNotifications, NoNotifications
@@ -140,22 +140,21 @@ def test_a_phone_passed_in_is_used(tmp_path):
     assert build_quietly(desk_config(tmp_path), tmp_path, phone_notifications=phone).phone_notifications is phone
 
 
-@pytest.mark.parametrize('kind, cls', [('pi', PiFrameSource), ('phone', PhoneFrameSource), ('webcam', WebcamSource)])
+@pytest.mark.parametrize('kind, cls', [('pi', PiFrameSource), ('webcam', WebcamSource)])
 def test_the_camera_is_the_one_the_settings_name(tmp_path, kind, cls):
     app = build_quietly(changed(desk_config(tmp_path), 'camera', source=kind), tmp_path)
     assert isinstance(app.source, cls) and app.source.kind == kind
     assert app.pi_inbox is app.pi is (app.source if kind == 'pi' else None)
-    assert app.phone_inbox is app.phone is (app.source if kind == 'phone' else None)
 
 
 def test_a_camera_source_passed_in_is_used(tmp_path):
     source = FakeFrameSource('webcam')
     app = build_quietly(desk_config(tmp_path), tmp_path, source=source)
     assert app.source is source
-    assert (app.pi_inbox, app.pi, app.phone_inbox, app.phone) == (None, None, None, None)
+    assert (app.pi_inbox, app.pi) == (None, None)
 
 
-@pytest.mark.parametrize('kind', ['pi', 'phone', 'webcam'])
+@pytest.mark.parametrize('kind', ['pi', 'webcam'])
 def test_every_part_has_the_interface_its_field_names(tmp_path, kind):
     app = build_quietly(changed(desk_config(tmp_path), 'camera', source=kind), tmp_path)
     hints = typing.get_type_hints(DeskTalk)
@@ -170,12 +169,6 @@ def test_every_part_has_the_interface_its_field_names(tmp_path, kind):
         checked.append(field.name)
     assert {'live_pictures', 'scene', 'safety_board', 'character_memory', 'photo_album', 'bus', 'event_log',
             'hub', 'generator', 'habits', 'producer', 'supervisor'} <= set(checked)
-
-
-def test_the_phone_as_camera_never_counts_as_a_phone_on_the_desk(tmp_path):
-    rig = DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'camera', source='phone'))
-    rig.watch(4, LAPTOP)
-    assert rig.app.habits.today(rig.clock.now())['phone_free']['counted'] is False
 
 
 def test_the_pair_key_is_kept_in_the_pair_key_file(tmp_path):

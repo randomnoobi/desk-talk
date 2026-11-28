@@ -100,7 +100,7 @@ light:
   afternoon_end_min_before_sunset: 20
   evening_dim_before_bed_min: 60   # Light Protocol 3: avoid bright light one hour before bedtime
   screens_off_before_bed_min: 60   # Sleep Protocol 14: no screens within an hour of bedtime
-  # How bright is "bright"? The Pi camera reports lux. Phones and webcams only
+  # How bright is "bright"? The Pi camera reports lux. Webcams only
   # give a 0-255 picture brightness (and adjust exposure), so it's rougher.
   night_bright_lux: 120       # brighter than this after sunset → "dim the lights"
   day_dim_lux: 80             # darker than this in the daytime → "open the blinds"

@@ -11,7 +11,7 @@ from .cases import EMPTY, FILE, JSON, STATUS, Case, cases_of
 from .client import Reply
 from .shapes import check_snapshot, shape_of
 
-# Headers the browser, the Pi or the phone can notice. Others (Date, Content-Length, ETag...) aren't checked.
+# Headers the browser or the Pi can notice. Others (Date, Content-Length, ETag...) aren't checked.
 CHECKED_HEADERS = ('access-control-allow-origin', 'cache-control', 'pragma', 'expires', 'x-accel-buffering')
 
 

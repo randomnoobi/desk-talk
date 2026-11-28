@@ -1,11 +1,11 @@
-"""Fakes for what the app asks the Pi and the phone (when they are the camera)."""
+"""Fakes for what the app asks the Pi (when it is the camera)."""
 
 from __future__ import annotations
 
 from dataclasses import asdict
 from typing import Any
 
-from desktalk.domain import Gravity, PiHealth, UploadInfo
+from desktalk.domain import PiHealth, UploadInfo
 from tests.fakes.clock import FakeClock
 
 
@@ -57,29 +57,4 @@ class FakePi:
                 'detector_reason': info.detector_reason if info else '',
                 'detect_ms': info.detect_ms if info else None, 'model': info.model if info else '',
                 'clock_off_sec': self.clock_off_sec()}
-
-
-class FakePhone:
-    """Implements PhoneCamera and PhoneControls. A tilt never gets too old here."""
-
-    def __init__(self):
-        self.gravity: Gravity | None = None
-        self.rotation = 0
-        self.stopped = False
-
-    def set_motion(self, gravity: Gravity | None = None, rotation: int | None = None) -> None:
-        if gravity is not None:
-            self.gravity = gravity
-        if rotation is not None:
-            self.rotation = rotation
-
-    def recent_gravity(self) -> Gravity | None:
-        return self.gravity
-
-    @property
-    def stopped_by_user(self) -> bool:
-        return self.stopped
-
-    def mark_stopped(self) -> None:
-        self.stopped = True
 

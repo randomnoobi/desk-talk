@@ -1,5 +1,5 @@
 """
-What the app, the Pi and the phone send in a request body, and the replies the web layer makes
+What the app and the Pi send in a request body, and the replies the web layer makes
 itself. Fields the routes don't read are ignored, as before. Values the parts check themselves (times,
 corners, to-do lists) are taken as they come, so their own plain-words errors reach the app.
 
@@ -153,24 +153,6 @@ class ScenarioRequest(BaseModel):
 class PiFrameReply(BaseModel):
     ok: bool = True
     fps: float
-    tip: str | None                      # always sent, null when there's nothing to say
-
-
-class PhoneFrameReply(BaseModel):
-    ok: bool = True
-    fps: float
-    tip: str | None = None               # left out when there's nothing to say (shown on the phone, e.g. "Too dark")
-
-
-class PhoneSettings(BaseModel):
-    """GET /api/phone/config, and the phone part of GET /api/ui_settings (settings → camera)."""
-
-    fps: float                           # pictures a second to send
-    max_side: int                        # longest side of each picture, in pixels
-    jpeg_quality: int                    # 1-100
-    tilt_max: float                      # a tilt reading above this (m/s², any axis) isn't a real one
-    capture_width: int                   # the picture size the phone page asks its camera for
-    capture_height: int
 
 
 # ── GET /api/ui_settings: what the app page (web_app/) used to keep its own copies of ──
@@ -277,7 +259,6 @@ class UiSettings(BaseModel):
     desk: UiDesk
     quiet_hours: QuietHours              # settings → reminders.quiet_hours (the app's own choice wins)
     pi: UiPi
-    phone: PhoneSettings
     lens_card: UiLensCard
     list_sizes: UiListSizes
     cloud: UiCloud

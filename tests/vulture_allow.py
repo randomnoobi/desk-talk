@@ -40,7 +40,8 @@ from desktalk.domain.system_stats import (
     StatsInfo,
     WifiNow,
 )
-from desktalk.web.schemas import PhoneSettings, PreferenceChanges, UiPage, UiSettings
+from desktalk.web.schemas import PreferenceChanges, UiPage, UiSettings
+from desktalk.web.serve import ServerThread
 from desktalk_cloud.store_memory import MemoryStore, _Token
 from desktalk_shared.wire import PiHealth
 
@@ -69,9 +70,7 @@ _ = (
     cast(Any, SunTimes).sunrise, cast(Any, SunTimes).estimated, cast(Any, DayTimes).sunrise_ts,
     # Lens's words for a lost webcam: read with model_dump().get(camera) in desktalk/core/vision/camera_health.py.
     ByCamera.webcam,
-    # Reply fields the phone page (phone_camera/camera.js) and the app page (web_app/app.js) read from the JSON
-    # of GET /api/phone/config and GET /api/ui_settings.
-    PhoneSettings.max_side, PhoneSettings.tilt_max, PhoneSettings.capture_width, PhoneSettings.capture_height,
+    # Reply fields the app page (web_app/app.js) reads from the JSON of GET /api/ui_settings.
     UiPage.log_shown, UiPage.photos_shown,
     UiSettings.lens_card, UiSettings.chat_reply_timeout_ms,
     # The system numbers' fields: StatsSample.to_dict() and StatsInfo.to_dict() write them with asdict() into GET
@@ -125,3 +124,5 @@ _ = (cast(Any, None).revision, cast(Any, None).down_revision, cast(Any, None).br
      cast(Any, None).depends_on)
 # The logging module reads these two when it writes a line; bootstrap.py clears them to hide what Postgres said.
 _ = (logging.LogRecord.exc_text, logging.LogRecord.stack_info)
+# The tests' real servers in a thread (tests/integration/web_kit.py: running(), tests/e2e_kit/server.py).
+_ = ServerThread

@@ -4,6 +4,16 @@ What changed in Desk Talk, newest first, one line or a few per change. Each pull
 full story: what was wrong, what changed, and the checks that were run. What a person tried on the real Pi is in
 [docs/RUNBOOK.md](docs/RUNBOOK.md#checking-on-the-real-pi).
 
+## 2026-11-27
+
+- **The phone camera is gone.** The app takes its pictures from the Pi, or from a webcam when you work on it on a
+  computer. The phone page (`phone_camera/`), its HTTPS server, certificate and QR code, the tilt check that told
+  you the phone got bumped, and the `camera.phone_*` settings are removed, along with the `cryptography` and
+  `qrcode` packages. An old `camera.phone_*` line in `settings.local.yaml` is left out with a log line, and
+  `camera.source: phone` stops the start with a plain message. The phone on your desk (the phone-free habit) and
+  notifications on your phone through ntfy work as before. The unused `docs/diagrams/` pictures and the finished
+  desk-test plan in `benchmarks/` are gone too.
+
 ## 2026-11-21
 
 - **A cover picture and a preview setting**, pushed straight to main. The Desk Talk cover (the page it was made from,

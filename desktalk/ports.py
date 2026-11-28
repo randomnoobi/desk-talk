@@ -33,7 +33,6 @@ from desktalk.domain import (
     Detection,
     Event,
     Frame,
-    Gravity,
     HealthMeasure,
     Light,
     Nudge,
@@ -115,7 +114,7 @@ class PeriodicWorker(Protocol):
 # ── Camera and detection ──────────────────────────────────────────────
 @runtime_checkable
 class Detector(Protocol):
-    """Picture → what's in it. UltralyticsDetector on this computer (phone, webcam, and backup for the Pi)."""
+    """Picture → what's in it. UltralyticsDetector on this computer (webcam, and backup for the Pi)."""
 
     @property
     def label(self) -> str:
@@ -130,12 +129,12 @@ class Detector(Protocol):
 
 @runtime_checkable
 class FrameSource(Protocol):
-    """Where pictures come from: the Pi, the phone or a webcam. Keeps only the newest picture,
+    """Where pictures come from: the Pi or a webcam. Keeps only the newest picture,
     so a slow computer skips pictures instead of falling behind."""
 
     @property
     def kind(self) -> str:
-        """pi, phone or webcam."""
+        """pi or webcam."""
         ...
 
     @property
@@ -155,7 +154,7 @@ class FrameSource(Protocol):
 
 @runtime_checkable
 class PictureInbox(Protocol):
-    """A camera that sends pictures to us (the Pi, the phone): the web layer hands each upload to it."""
+    """A camera that sends pictures to us (the Pi): the web layer hands each upload to it."""
 
     def push(self, jpeg: bytes, info: UploadInfo | None = None) -> bool:
         """False if the bytes aren't a picture."""
@@ -210,34 +209,6 @@ class PiHeartbeats(Protocol):
         None before either."""
         ...
 
-
-@runtime_checkable
-class PhoneCamera(Protocol):
-    """The phone as the camera: what Lens asks about it."""
-
-    def recent_gravity(self) -> Gravity | None:
-        """The phone's latest tilt reading, or None if it hasn't sent one lately."""
-        ...
-
-    @property
-    def stopped_by_user(self) -> bool:
-        """You pressed Stop on the phone (so the video stopping isn't a problem)."""
-        ...
-
-
-@runtime_checkable
-class PhoneControls(PhoneCamera, Protocol):
-    """The phone as the camera: what the phone page's routes tell it (/api/phone/frame, /api/phone/stop), and
-    its tilt when the desk corners are marked (/api/rules)."""
-
-    def set_motion(self, gravity: Gravity | None = None, rotation: int | None = None) -> None:
-        """How the phone was tilted and how far it turned the picture, sent with its newest picture.
-        None = it didn't say (the old value stays)."""
-        ...
-
-    def mark_stopped(self) -> None:
-        """You pressed Stop on the phone: not connected from now on (until the next picture)."""
-        ...
 
 # ── Events and storage ────────────────────────────────────────────────
 @runtime_checkable
@@ -573,8 +544,8 @@ class Preferences(Protocol):
 class CameraHealthView(Protocol):
     """Lens's camera checks (brightness, blur, glare, the camera moving)."""
 
-    def check(self, now: float, *, connected: bool, fps: float | None, gravity: Any, reference_gravity: Any,
-              has_outline: bool, stopped: bool, quiet: bool = False) -> list[dict[str, Any]]:
+    def check(self, now: float, *, connected: bool, fps: float | None, has_outline: bool,
+              quiet: bool = False) -> list[dict[str, Any]]:
         """Things Lens should say: dicts with key, kind (problem / fixed / tip) and text.
         `quiet` = quiet hours: problems are still followed, but nothing is said or counted as said."""
         ...
@@ -717,10 +688,6 @@ class DeskLayout(Protocol):
 
     def has_outline(self) -> bool:
         """The desk corners are marked (Settings)."""
-        ...
-
-    def reference_gravity(self) -> tuple[float, ...] | None:
-        """How the phone was tilted when the corners were marked (None if they aren't, or it wasn't the phone)."""
         ...
 
 
@@ -999,14 +966,10 @@ class RosterList(RosterView, Protocol):
 
 @runtime_checkable
 class CameraTips(Protocol):
-    """What Lens's camera checks tell the pages: the problems (/api/live) and a tip for the phone screen."""
+    """What Lens's camera checks tell the page: the problems (/api/live)."""
 
     def issues(self) -> list[dict[str, str]]:
         """Current problems, most important first: [{key, title, fix}]."""
-        ...
-
-    def phone_tip(self) -> str | None:
-        """A few words to show on the phone screen itself, or None."""
         ...
 
     def forget(self, key: str) -> None:

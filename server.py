@@ -5,9 +5,7 @@ Desk Talk: start the app (on the Pi it runs this inside Docker; on a computer yo
 
 Then open http://localhost:5000 (on the Pi: the address web.public_address says). Settings are in
 config/settings.yaml (yours in config/settings.local.yaml). With the Raspberry Pi as the camera and the app on a
-computer, the page shows the command to run on the Pi (python3 -m raspberry_pi.camera); with the phone, the link and
-a QR code to open on the phone. The pairing key is in those, so it is on the page only and never in a log. Ctrl+C
-stops it.
+computer, the start-up lines say where the Pi's own Desk Talk is. Ctrl+C stops it.
 """
 
 from __future__ import annotations
@@ -18,13 +16,12 @@ import os
 import sys
 from pathlib import Path
 
-from desktalk.adapters.storage.files import write_atomically
 from desktalk.bootstrap import build, in_data_folder
 from desktalk.config import AppConfig, ConfigError, load_config
 from desktalk.domain import Saving
 from desktalk.runtime.log_setup import STARTUP_LOGGER, setup_logging
 from desktalk.runtime.saving import folder_for, saving_from_environment
-from desktalk.web.pairing import Links, ensure_cert, lan_ip
+from desktalk.web.pairing import Links, lan_ip
 from desktalk.web.serve import run
 
 RULE = '═' * 60
@@ -63,10 +60,9 @@ def settings_lines(config: AppConfig, data_folder: Path | None = None) -> None:
 
 
 def address_lines(config: AppConfig, links: Links, source_kind: str) -> None:
-    """Where to open the app and how the camera gets started. The pairing key is in the phone link, so these lines
-    never show it (they reach the log file and `docker compose logs`): the page shows the QR code, on the computer
-    the app runs on. The Pi's camera sends its pictures to the Pi's own Desk Talk, so on a computer the lines say
-    where that is (dev.pi_address)."""
+    """Where to open the app and how the camera gets started. These lines reach the log file and `docker compose
+    logs`, so they never show the pairing key. The Pi's camera sends its pictures to the Pi's own Desk Talk, so on a
+    computer the lines say where that is (dev.pi_address)."""
     web = config.web
     if web.public_address:
         say(f'  → Open {links.web_url} on your phone or computer\n')
@@ -75,10 +71,6 @@ def address_lines(config: AppConfig, links: Links, source_kind: str) -> None:
         say('\n  📷 Raspberry Pi camera: Desk Talk runs on the Pi, and its camera sends its pictures to the Pi\'s')
         say(f'     own Desk Talk. Open it at http://{config.dev.pi_address} (if your Pi has another name,')
         say('     set dev.pi_address in config/settings.local.yaml).\n')
-    elif source_kind == 'phone':
-        say('  📱 Phone camera: open the page below on this computer, and scan the code it shows with your phone')
-        say('     (same Wi-Fi). The phone will warn the connection is "not private" (it\'s this computer\'s own')
-        say('     certificate). Tap Show Details → visit this website, then tap Start camera.\n')
     say(f'  → Open http://localhost:{web.port} on this computer\n')
 
 
@@ -103,18 +95,10 @@ def main() -> int:
     say(f'  Detector     : {desktalk.detector.label}')
     say(f'  AI           : {desktalk.model.label}')
     say(f'  Danger zones : {desktalk.rules_file if desktalk.safety_rules.loaded else "built-in"}')
-    address = lan_ip()
-    phone_cert = None
-    phone_port = None
-    if desktalk.source_kind == 'phone':
-        camera = config.camera
-        phone_cert = ensure_cert(config.resolve(camera.phone_cert_folder), address, camera, save=write_atomically)
-        phone_port = camera.phone_port
-    links = Links(address, config.web.port, desktalk.pair_key, phone_port=phone_port,
-                  public_address=config.web.public_address)
+    links = Links(lan_ip(), config.web.port, public_address=config.web.public_address)
     address_lines(config, links, desktalk.source_kind)
     with contextlib.suppress(KeyboardInterrupt):     # Ctrl+C: by then the server has stopped the app
-        run(desktalk, links, phone_cert)
+        run(desktalk)
     return 0
 
 

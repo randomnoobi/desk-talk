@@ -112,8 +112,6 @@ def tracker_prompt(tracker: str | None, habits_today: Mapping[str, Any], todo: M
         return t.food.format(count=len(entries), parts='; '.join(parts)) + extra
     if tracker == 'phone_free':
         p = h['phone_free']
-        if not p['counted']:
-            return t.phone_not_counted
         where = t.phone_on_desk if p['phone_on_desk'] else t.phone_off_desk
         return t.phone.format(free_min=p['phone_free_sec'] // 60, goal_min=p['goal_min'],
                               streak_min=p['streak_sec'] // 60, where=where) + extra

@@ -16,15 +16,15 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from desktalk.config import LensSettings
-from desktalk.core.vision.camera_measure import Reading, box_share, cut_off_side, tilt_degrees
+from desktalk.core.vision.camera_measure import Reading, box_share, cut_off_side
 from desktalk.domain import Box
 
 # Most important first. While one of these is happening, the problems it hides can't be trusted
 # (a covered lens also looks dark and blurry), so they are neither said nor counted as fixed.
-PRIORITY = ('lost', 'no_pictures', 'covered', 'dark', 'glare', 'blurry', 'bumped', 'empty', 'cutoff', 'slow')
+PRIORITY = ('lost', 'no_pictures', 'covered', 'dark', 'glare', 'blurry', 'empty', 'cutoff', 'slow')
 HIDES = {
-    'lost': {'covered', 'dark', 'glare', 'blurry', 'empty', 'cutoff', 'slow', 'bumped'},
-    'no_pictures': {'covered', 'dark', 'glare', 'blurry', 'empty', 'cutoff', 'slow', 'bumped'},
+    'lost': {'covered', 'dark', 'glare', 'blurry', 'empty', 'cutoff', 'slow'},
+    'no_pictures': {'covered', 'dark', 'glare', 'blurry', 'empty', 'cutoff', 'slow'},
     'covered': {'dark', 'glare', 'blurry', 'empty', 'cutoff'},
     'dark': {'blurry', 'empty', 'cutoff'},
     'glare': {'blurry', 'empty'},
@@ -34,7 +34,6 @@ WAITED_ALREADY = ('empty', 'cutoff')     # these wait their time while they are 
 PEOPLE = 'person'          # the detector's word for people: never "cut off", and not "something on the desk"
 
 Detail = dict[str, Any]
-Gravity = Sequence[float]
 
 
 @dataclass(frozen=True)
@@ -98,13 +97,13 @@ class CameraProblems:
         self._cut: dict[str, _Cut] = {}             # object → while it looks cut off
         self._cutoff_said: dict[str, float] = {}    # object → when Lens last mentioned it
 
-    def check(self, now: float, seen: Seen, *, connected: bool, fps: float | None, gravity: Gravity | None,
-              reference_gravity: Gravity | None, has_outline: bool, stopped: bool, quiet: bool) -> list[Said]:
-        return self._check(now, seen, connected, fps, gravity, reference_gravity, has_outline, stopped, quiet)
+    def check(self, now: float, seen: Seen, *, connected: bool, fps: float | None, has_outline: bool,
+              quiet: bool) -> list[Said]:
+        return self._check(now, seen, connected, fps, has_outline, quiet)
 
-    def _check(self, now: float, seen: Seen, connected: bool, fps: float | None, gravity: Gravity | None,
-               reference_gravity: Gravity | None, has_outline: bool, stopped: bool, quiet: bool) -> list[Said]:
-        raw = self._problems_now(now, seen, connected, fps, gravity, reference_gravity, stopped)
+    def _check(self, now: float, seen: Seen, connected: bool, fps: float | None, has_outline: bool,
+               quiet: bool) -> list[Said]:
+        raw = self._problems_now(now, seen, connected, fps)
         hidden: set[str] = set()
         for big, small in HIDES.items():
             if big in raw:
@@ -127,8 +126,7 @@ class CameraProblems:
             self._last_spoke = now    # a quick "thanks, fixed" never delays the next warning
         return out
 
-    def _problems_now(self, now: float, seen: Seen, connected: bool, fps: float | None, gravity: Gravity | None,
-                      reference_gravity: Gravity | None, stopped: bool) -> dict[str, Detail]:
+    def _problems_now(self, now: float, seen: Seen, connected: bool, fps: float | None) -> dict[str, Detail]:
         """What is wrong right now (not yet waited for): problem → details."""
         raw: dict[str, Detail] = {}
         if connected:
@@ -137,12 +135,7 @@ class CameraProblems:
             self._ever_connected = True
         else:
             self._stream_started = 0.0
-            if stopped:
-                self._ever_connected = False
-                self._active.clear()
-                self._raw_since.clear()
-                self._clear_since.clear()
-            elif self._ever_connected:
+            if self._ever_connected:
                 raw['lost'] = {}
             else:
                 raw['no_pictures'] = {}     # none at all since the start (said after wait_before_saying_sec)
@@ -150,10 +143,6 @@ class CameraProblems:
             self._picture_problems(now, seen.reading, seen, raw)
         if connected and fps is not None and 0 < fps < self._lens.slow_fps_below:
             raw['slow'] = {'fps': fps}
-        if connected and gravity and reference_gravity:
-            tilt = tilt_degrees(gravity, reference_gravity, trusted=self._lens.trusted_gravity)
-            if tilt > self._lens.bump_degrees:
-                raw['bumped'] = {'degrees': round(tilt)}
         return raw
 
     def _picture_problems(self, now: float, reading: Reading, seen: Seen, raw: dict[str, Detail]) -> None:

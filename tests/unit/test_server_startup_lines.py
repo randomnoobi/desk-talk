@@ -72,7 +72,7 @@ def test_the_log_file_is_named_by_the_settings(tmp_path):
 def shown_lines(config, source_kind, capsys):
     """What `address_lines` says for a camera source: the terminal's lines, as they are."""
     server.start_logging(config)
-    links = Links(DOCKER_ADDRESS, config.web.port, KEY, public_address=config.web.public_address)
+    links = Links(DOCKER_ADDRESS, config.web.port, public_address=config.web.public_address)
     server.address_lines(config, links, source_kind)
     return capsys.readouterr().err.splitlines()
 
@@ -102,7 +102,7 @@ def test_startup_on_a_computer_points_to_the_pis_own_page_and_no_command(tmp_pat
 
 
 @pytest.mark.parametrize('public', ['', PUBLIC])
-@pytest.mark.parametrize('source_kind', ['pi', 'phone', 'webcam'])
+@pytest.mark.parametrize('source_kind', ['pi', 'webcam'])
 def test_the_pairing_key_is_not_in_the_start_up_lines(tmp_path, capsys, source_kind, public):
     config = changed(desk_config(tmp_path), 'web', public_address=public)
     shown = shown_lines(config, source_kind, capsys)
@@ -111,7 +111,7 @@ def test_the_pairing_key_is_not_in_the_start_up_lines(tmp_path, capsys, source_k
     assert KEY not in log_file.read_text()
 
 
-@pytest.mark.parametrize('source_kind', ['pi', 'phone'])
+@pytest.mark.parametrize('source_kind', ['pi', 'webcam'])
 def test_a_whole_start_never_logs_the_pairing_key(tmp_path, monkeypatch, capsys, source_kind):
     config = changed(desk_config(tmp_path), 'camera', source=source_kind)
     desktalk = SimpleNamespace(detector=SimpleNamespace(label='fake'), model=SimpleNamespace(label='fake'),
@@ -119,7 +119,6 @@ def test_a_whole_start_never_logs_the_pairing_key(tmp_path, monkeypatch, capsys,
     monkeypatch.setattr(server, 'load_config', lambda: config)
     monkeypatch.setattr(server, 'build', lambda cfg, **kw: desktalk)
     monkeypatch.setattr(server, 'lan_ip', lambda: DOCKER_ADDRESS)
-    monkeypatch.setattr(server, 'ensure_cert', lambda *a, **k: None)
     monkeypatch.setattr(server, 'run', lambda *a: None)
     assert server.main() == 0
     log_file = config.resolve(config.logging.folder) / config.logging.file_name

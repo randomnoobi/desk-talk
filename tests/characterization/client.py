@@ -1,11 +1,10 @@
 """
-How the characterization tests talk to the two web servers.
+How the characterization tests talk to the web server.
 
-    main = WebClient.main_server(desktalk, links)   # what web_app/ and the Pi talk to (port 5000)
-    phone = WebClient.phone_server(desktalk)        # the phone camera page's own HTTPS server (port 5443)
+    main = WebClient.main_server(desktalk)          # what web_app/ and the Pi talk to (port 5000)
     reply = main.get('/api/live')                   # Reply: status, headers, body; reply.json()
 
-This is the only file that knows the servers are FastAPI apps (desktalk/web/app.py). Requests go through
+This is the only file that knows the server is a FastAPI app (desktalk/web/app.py). Requests go through
 FastAPI's TestClient, which can also read the start of a reply that never ends (SSE, video) and hang up.
 """
 
@@ -23,8 +22,7 @@ from fastapi.testclient import TestClient
 from starlette.routing import Match, Mount
 
 from desktalk.bootstrap import DeskTalk
-from desktalk.web.app import create_app, create_phone_app
-from desktalk.web.pairing import Links
+from desktalk.web.app import create_app
 
 THIS_COMPUTER = '127.0.0.1'         # where the browser on this computer connects from
 CLIENT_PORT = 50000                 # the port the requests seem to come from (nothing listens on it)
@@ -61,12 +59,8 @@ class WebClient:
         self._clients: dict[str, TestClient] = {}
 
     @classmethod
-    def main_server(cls, desktalk: DeskTalk, links: Links) -> WebClient:
-        return cls(create_app(desktalk, links), f'http://localhost:{desktalk.config.web.port}')
-
-    @classmethod
-    def phone_server(cls, desktalk: DeskTalk) -> WebClient:
-        return cls(create_phone_app(desktalk))
+    def main_server(cls, desktalk: DeskTalk) -> WebClient:
+        return cls(create_app(desktalk), f'http://localhost:{desktalk.config.web.port}')
 
     def _client(self, from_ip: str) -> TestClient:
         """A client whose requests come from `from_ip`. Without `with`, the app's lifespan never runs, so the

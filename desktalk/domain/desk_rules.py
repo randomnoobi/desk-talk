@@ -22,7 +22,6 @@ class Zone:
 @dataclass(frozen=True, kw_only=True)
 class DeskRules:
     outline: tuple[Point, ...]          # desk corners, 0-1 of the picture size; empty = not marked
-    reference_gravity: tuple[float, ...] | None   # how the phone was tilted when the desk was marked
     edge_danger_px: float
     edge_warn_px: float
     edge_objects: frozenset[str]

@@ -8,7 +8,7 @@ fastest kind on the Pi's processor (pi.detector in raspberry_pi/settings.pi.yaml
 with all 3 pictures a second, about 210 ms each. If the detector is off, no objects are found until it's back; the
 live view still works.
 
-On a computer, for development with a phone or webcam, the app finds the objects itself (detector in
+On a computer, for development with a webcam, the app finds the objects itself (detector in
 config/settings.yaml) with yolo26m-objv1-150.pt (the medium one) and the same shared code. On an Apple-chip Mac it
 runs on the GPU (device: auto); if it's too slow, use the small one.
 

@@ -1,13 +1,12 @@
 """
-The two web servers, built on the running app (desktalk/bootstrap.py → DeskTalk):
+The web server, built on the running app (desktalk/bootstrap.py → DeskTalk):
 
-    main = create_app(desktalk, links)      # the app in your browser (web_app/) and the Pi: web.port, plus
+    main = create_app(desktalk)             # the app in your browser (web_app/) and the Pi: web.port, plus
                                             # the developer page at /dev/ (dev_ui/) when dev.enabled is true
-    phone = create_phone_app(desktalk)      # the phone camera page's own HTTPS server: camera.phone_port
 
-The routes are in desktalk/web/routers/, one module per area. desktalk/web/serve.py runs the servers.
+The routes are in desktalk/web/routers/, one module per area. desktalk/web/serve.py runs the server.
 
-The main server's lifespan runs the background jobs: desktalk.start() when it starts, desktalk.stop() when it
+The server's lifespan runs the background jobs: desktalk.start() when it starts, desktalk.stop() when it
 stops. (FastAPI's TestClient without `with`, or uvicorn with lifespan off, leaves them off: tests drive the
 desk by hand.)
 
@@ -35,8 +34,7 @@ from starlette.exceptions import HTTPException
 from desktalk.bootstrap import DeskTalk
 from desktalk.web.files import BuiltPage, PageFiles, page
 from desktalk.web.middleware import MB, KnownNamesOnly, LogFailedRequests, OwnPagesOnly, SizeLimit
-from desktalk.web.pairing import Links
-from desktalk.web.routers import DEV_SERVER, MAIN_SERVER, PHONE_SERVER
+from desktalk.web.routers import DEV_SERVER, MAIN_SERVER
 from desktalk.web.streams import LiveStreams
 
 
@@ -50,10 +48,9 @@ async def run_background_jobs(app: FastAPI) -> AsyncIterator[None]:
         await anyio.to_thread.run_sync(desktalk.stop)       # waits for the jobs' threads
 
 
-def create_app(desktalk: DeskTalk, links: Links) -> FastAPI:
+def create_app(desktalk: DeskTalk) -> FastAPI:
     """The main server: the app's page and everything it asks for, and the Pi's uploads."""
     app = _new_app(desktalk, 'main', lifespan=run_background_jobs)
-    app.state.links = links
     app.add_middleware(CORSMiddleware, allow_origins=desktalk.config.web.cors_origins, allow_methods=['*'],
                        allow_headers=['*'])
     for router in MAIN_SERVER:
@@ -76,19 +73,6 @@ def create_app(desktalk: DeskTalk, links: Links) -> FastAPI:
         app.mount('/dev', BuiltPage(config.resolve(config.dev.ui_folder), not_built=config.prompts.dev.not_built),
                   name='dev_ui')
     app.mount('/', PageFiles(directory=pages), name='web_app')     # last: every other path is a file
-    return app
-
-
-def create_phone_app(desktalk: DeskTalk) -> FastAPI:
-    """The phone camera page's own server (phones only allow the camera on https:// pages)."""
-    app = _new_app(desktalk, 'phone')
-    for router in PHONE_SERVER:
-        app.include_router(router)
-    config = desktalk.config
-    app.mount('/phone', PageFiles(directory=config.resolve(config.web.phone_folder)), name='phone_camera')
-    shared = config.resolve(config.web.app_folder)
-    for folder in ('art', 'fonts'):                  # the drawings and fonts the phone page shares with the app
-        app.mount(f'/{folder}', PageFiles(directory=shared / folder), name=folder)
     return app
 
 

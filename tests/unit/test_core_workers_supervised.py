@@ -61,9 +61,6 @@ class Layout:
     def has_outline(self):
         return True
 
-    def reference_gravity(self):
-        return None
-
 
 def all_workers(clock):
     ai, bus, desk, roster, profiles = FakeChatModel(), SyncEventBus(), FakeDesk(), StaticRoster(), FakeProfiles()

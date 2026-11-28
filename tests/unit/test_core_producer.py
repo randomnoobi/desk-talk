@@ -175,12 +175,11 @@ def test_off_is_detected_on_this_computer():
     assert rig.detector.calls == 1
 
 
-@pytest.mark.parametrize('kind', ['phone', 'webcam'])
-def test_cameras_without_a_detector_are_detected_on_this_computer(kind):
-    rig = Rig(kind=kind)
+def test_a_camera_without_a_detector_is_detected_on_this_computer():
+    rig = Rig(kind='webcam')
     rig.picture()
     [event] = rig.events()
-    assert event.detections == (LAPTOP, CUP) and event.detected_on == 'computer' and event.source == kind
+    assert event.detections == (LAPTOP, CUP) and event.detected_on == 'computer' and event.source == 'webcam'
 
 
 # ── what the event says ──────────────────────────────────────────────
@@ -197,10 +196,10 @@ def test_the_event_says_what_was_seen_where_and_when():
 
 
 def test_pictures_without_an_id_are_numbered_by_camera():
-    rig = Rig(kind='phone')
+    rig = Rig(kind='webcam')
     rig.picture()
     rig.picture()
-    assert [e.frame_id for e in rig.events()] == ['phone-000001', 'phone-000002']
+    assert [e.frame_id for e in rig.events()] == ['webcam-000001', 'webcam-000002']
 
 
 def test_person_is_true_when_someone_is_in_the_picture():

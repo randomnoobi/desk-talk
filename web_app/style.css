@@ -473,7 +473,7 @@ button.link { padding: 0; font-size: inherit; }
 .cam-caption { margin-top: -10px; font-size: 13px; color: var(--ink-2); }
 .cam-stage > .cam-caption { margin: 0; padding: 18px; }
 
-/* phone pairing card (cam panel) */
+/* the Pi camera's card (cam panel) */
 .pair {
   display: flex;
   flex-direction: column;
@@ -482,11 +482,7 @@ button.link { padding: 0; font-size: inherit; }
   padding: 18px 16px;
   background: var(--mustard-tint);
 }
-.pair-qr { width: 148px; height: 148px; padding: 6px; border-radius: 14px; background: #fff; flex: 0 0 auto; }
-.pair-qr svg { width: 100%; height: 100%; display: block; }
 .pair h3 { font-size: 17px; font-weight: 800; text-align: center; }
-.pair ol { padding-left: 20px; font-size: 13px; color: var(--ink-2); align-self: stretch; }
-.pair ol b { color: var(--ink); font-weight: 600; }
 .pair-url { font-size: 11px; color: var(--ink-3); overflow-wrap: anywhere; text-align: center; }
 
 .cam-section h3 { font-size: 15px; font-weight: 800; margin-bottom: 8px; }

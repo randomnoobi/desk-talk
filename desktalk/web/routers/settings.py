@@ -2,7 +2,7 @@
 The Settings page:
 
     GET /api/rules       the danger rules and the desk corners (config/safety_rules.json, or the built-in ones)
-    PUT /api/rules       change some of them; marking the desk corners also notes how the phone was tilted
+    PUT /api/rules       change some of them
     GET /api/ui_settings the numbers and words the app page uses (refresh times, limits, Lens's card ...), so
                          it keeps no copies of its own
 """
@@ -16,7 +16,6 @@ from fastapi import APIRouter, HTTPException
 from desktalk.config import AppConfig, SensitivityStep
 from desktalk.domain import LENS
 from desktalk.web.deps import App
-from desktalk.web.routers.phone import phone_settings
 from desktalk.web.schemas import (
     Ok,
     RuleChanges,
@@ -40,7 +39,6 @@ ZONE_OBJECTS = [
     'scissors', 'clock', 'vase', 'tv', 'earphone', 'key', 'watch', 'pen/pencil',
 ]
 RULE_PARTS = ('danger_zones', 'edge_proximity', 'chain_reaction', 'temporal')
-TILT_DECIMALS = 2
 MS = 1000
 PERCENT = 100
 MINUTE = 60
@@ -64,10 +62,6 @@ def change_rules(app: App, sent: RuleChanges | None = None) -> Ok:
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
         changes['desk_outline'] = corners
-        # How the phone was tilted when the desk was marked, so Lens can tell if it gets bumped.
-        tilt = app.phone.recent_gravity() if app.phone is not None else None
-        changes['camera_reference'] = {'gravity': [round(v, TILT_DECIMALS) for v in tilt]} if corners and tilt else None
-        app.camera_health.forget('bumped')
     app.safety_rules.save(changes)
     return Ok()
 
@@ -105,7 +99,6 @@ def ui_settings_from(c: AppConfig) -> UiSettings:
         quiet_hours=c.reminders.quiet_hours,
         pi=UiPi(fps=c.pi.fps, delete_every_min=c.pi.delete_every_min, public_address=web.public_address,
                 address=c.dev.pi_address),
-        phone=phone_settings(c.camera),
         lens_card=UiLensCard(id=LENS, **c.prompts.lens.card.model_dump()),
         list_sizes=UiListSizes(on_desk_shown=sizes.on_desk_shown, camera_issues_shown=sizes.camera_issues_shown,
                                risk_lines_shown=sizes.risk_lines_shown, side_photos_shown=sizes.side_photos_shown,

@@ -1,5 +1,5 @@
 """
-Cameras that send us pictures (the Pi, the phone). The web layer hands each upload to push();
+A camera that sends us pictures (the Pi). The web layer hands each upload to push();
 the detection producer takes the newest one with read(). Only the newest picture is kept, so a
 slow computer skips pictures instead of falling behind. A Pi picture marked busy (live view only)
 waits in a place of its own, so it never pushes out a picture still waiting to be analysed (ok or
@@ -33,7 +33,6 @@ class PushFrameSource:
         self._number = 0                       # counts every picture that came in
         self._last_at: float | None = None     # clock.monotonic() of the newest picture
         self._speed = SpeedMeter(camera.fps_smoothing, camera.fps_gap_max_sec)
-        self._stopped = False
 
     def push(self, jpeg: bytes, info: UploadInfo | None = None) -> bool:
         """A picture arrived. False if the bytes aren't a picture."""
@@ -46,7 +45,6 @@ class PushFrameSource:
             self._number += 1
             self._last_at = self._clock.monotonic()
             self._speed.picture_at(self._last_at)
-            self._stopped = False
             frame = Frame(picture=picture, received_at=self._clock.now(), source=self.kind, number=self._number,
                           jpeg=jpeg, pi=info)
             self._took(frame)
@@ -71,17 +69,6 @@ class PushFrameSource:
             else:
                 frame, self._live_only = self._live_only, None
             return frame
-
-    def mark_stopped(self) -> None:
-        """The user pressed Stop (as opposed to the pictures dropping out): not connected from now on."""
-        with self._cond:
-            self._stopped = True
-            self._last_at = None
-
-    @property
-    def stopped_by_user(self) -> bool:
-        with self._cond:
-            return self._stopped
 
     @property
     def pictures_received(self) -> int:

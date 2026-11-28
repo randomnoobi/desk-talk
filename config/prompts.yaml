@@ -348,9 +348,6 @@ trackers:
     USER'S FOOD LOG TODAY ({count} items): {parts}. Comment on their choices — praise healthy picks, gently tease treats.
   food_healthy: 'Healthy: {labels}'
   food_treats: 'Treats: {labels}'
-  phone_not_counted: |2-
-
-    (The phone is the camera today, so phone-free time is not counted.)
   phone: |2-
 
     PHONE-FREE TIME: {free_min} min of desk time with no phone in sight today (goal {goal_min} min), current streak {streak_min} min. The phone is {where}.
@@ -663,14 +660,12 @@ lens:
   pi_detector: The Raspberry Pi isn't finding the objects right now. Until it does, I can't see what is on the desk, but the live view still works. On the Pi, check that the detector is running (docker compose ps).
   pi_very_hot: The Raspberry Pi is far too hot ({temp:.0f}°C) and is slowing itself down to cool off. Give it air or a fan now, or turn it off for a while.
   # the health checks (settings → health_checks): the disk the data is saved on. With the Pi as the camera the
-  # app runs on the Pi, so that's its SD card; with the phone or a webcam it's this computer's disk...
+  # app runs on the Pi, so that's its SD card; with a webcam it's this computer's disk...
   card_low:
     pi: The Raspberry Pi's SD card is getting full, only {free_mb:.0f} MB left. Please free some space soon, or I can't save what I see.
-    phone: This computer's disk is getting full, only {free_mb:.0f} MB left. Please free some space soon, or I can't save what I see.
     webcam: This computer's disk is getting full, only {free_mb:.0f} MB left. Please free some space soon, or I can't save what I see.
   card_full:
     pi: The Raspberry Pi's SD card is almost full, only {free_mb:.0f} MB left. Soon nothing new can be saved. Please free some space now.
-    phone: This computer's disk is almost full, only {free_mb:.0f} MB left. Soon nothing new can be saved. Please free some space now.
     webcam: This computer's disk is almost full, only {free_mb:.0f} MB left. Soon nothing new can be saved. Please free some space now.
   # ...on the Pi, Desk Talk has its own fixed space on the SD card (these replace card_low and card_full for it)...
   room_low:  Desk Talk's own space on the SD card is getting full, only {free_mb:.0f} MB left. Please free some space in it soon, or I can't save what I see.
@@ -694,7 +689,6 @@ lens:
     detections: Object detection is working again. I can see what's on the desk.
     card:
       pi: There's enough space on the Raspberry Pi's SD card again. Thanks!
-      phone: There's enough space on this computer's disk again. Thanks!
       webcam: There's enough space on this computer's disk again. Thanks!
     room: There's enough space in Desk Talk's own space again. Thanks!
     card_rest: There's enough room on the rest of the SD card again. Thanks!
@@ -709,19 +703,16 @@ camera:
     dark: It's too dark for me to see the desk well. Could you turn on a lamp?
     glare: Something really bright is shining into my camera. Can you angle me away from the window or lamp?
     blurry: Everything looks blurry to me. Could you wipe my lens, or move me back a little so I can focus?
-    bumped: Whoa, I think I got bumped. I'm tilted about {degrees}° from where I was, so the desk edges you marked are off now. Put me back, or mark the edges again in Settings.
     empty: I can't spot anything I recognize on the desk. Am I pointed at it? Tilt me so the whole desk top is in the picture.
     cutoff: Your {object} is cut off at the {side} side of the picture, so the others can't see all of it. Could you {hint}?
     slow: The pictures are only coming through at about {fps:.1f} a second. Keeping the camera near the Wi-Fi router (and plugged in) helps.
   # no pictures: what to check depends on the camera (settings → camera.source)
   lost:
     pi: I lost the pictures from the Raspberry Pi camera. Is the Pi still on? On the Pi, check that the camera container is running (docker compose ps), and start it with docker compose up -d if it is not.
-    phone: I lost the video from the phone. Is its screen still on? Phones stop the camera when they lock, so keep the Desk Talk page open on it.
     webcam: I lost the webcam picture. Is it still plugged in, or is another app using it?
   # no picture at all since the app started (settings → lens.wait_before_saying_sec.no_pictures)
   no_pictures:
     pi: I haven't had a single picture from the Raspberry Pi camera since I started. Is the camera's ribbon cable pushed in firmly at both ends? On the Pi, check the camera container (docker compose ps, and docker compose logs camera).
-    phone: I haven't had any video from the phone yet. Open the Desk Talk camera page on it and keep the screen on.
     webcam: I haven't had a single picture from the webcam since I started. Is it plugged in, or is another app using it?
   # when a problem is gone
   fixed:
@@ -731,7 +722,6 @@ camera:
     dark: Much better, thanks for the light!
     glare: Glare is gone. Thanks!
     blurry: Sharp again. I can see clearly now.
-    bumped: Thanks, I'm back where I was.
     empty: I can see the desk now. Thanks!
   # {hint} in problems.cutoff, by the side the object is cut off at
   side_hints:
@@ -744,8 +734,8 @@ camera:
   # the app's camera panel: a short title and how to fix it
   titles:
     lost:
-      title: No video from the phone
-      fix: Keep the phone unlocked with the Desk Talk page open.
+      title: No pictures from the camera
+      fix: Check that the camera is connected and turned on.
     no_pictures:
       title: No pictures yet
       fix: Check that the camera is connected and turned on.
@@ -761,9 +751,6 @@ camera:
     blurry:
       title: Blurry picture
       fix: Wipe the lens, or move the camera back a little so it can focus.
-    bumped:
-      title: Phone was moved
-      fix: Put the phone back, or mark the desk edges again in Settings.
     empty:
       title: Nothing recognized
       fix: Tilt the camera so the whole desk top is in the picture.
@@ -776,7 +763,6 @@ camera:
   lost_title: No pictures from the camera
   lost_fix:
     pi: Check the Pi is on and its camera container is running (docker compose ps, then docker compose up -d).
-    phone: Keep the phone unlocked with the Desk Talk page open.
     webcam: Plug the webcam back in or close other apps using it.
   cutoff_title: '{object} is cut off ({side})'
   # once, a while after the video starts, if the desk corners aren't marked
@@ -890,16 +876,12 @@ notifications:
   # what your phone gets instead of a to-do reminder's words, since a to-do's text never leaves the Pi
   phone_todo: A to-do is due. Open Desk Talk to see it.
 
-# ── What the app's web servers answer the camera, the phone and the page ───
+# ── What the app's web server answers the camera and the page ───
 server:
   # a route crashed: the details go to the log, never to the page
   something_went_wrong: Something went wrong in Desk Talk. The details are in the log.
   # the camera program sent a pairing key that isn't this app's (the app made a new one)
   pi_key_problem: 'Pairing key does not match. The app made a new key, so restart the camera to read it (on the Pi: docker compose restart camera).'
-  # the phone camera page sent a picture with a pairing key that isn't this app's
-  phone_key_problem: Pairing key does not match. Scan the QR code on your computer again.
-  # the phone camera page said it stopped, with a pairing key that isn't this app's
-  phone_stop_key_problem: Pairing key does not match.
   # a picture from a camera the settings don't use: {source} is settings → camera.source, {kind} the one that sent it
   other_camera: 'The app is set to camera.source: {source}, so pictures from {kind} go nowhere. Set camera.source to {kind} in its settings (settings.local.yaml; on the Pi, raspberry_pi/mine/settings.mine.yaml) and restart it.'
 
@@ -918,9 +900,9 @@ dev:
   other_computer: The developer page only answers this computer.
   # a request sent by some other web page open in your browser
   other_web_page: The developer page only answers its own page, not other web pages.
-  # any change sent by a page from some other web site, on the app's or the phone camera's server
+  # any change sent by a page from some other web site
   other_site: Desk Talk only takes changes from its own page, not from other web sites.
-  # a request to a name the app doesn't go by (a web site pointing its own name at it), on either server
+  # a request to a name the app doesn't go by (a web site pointing its own name at it)
   other_name: "Desk Talk only answers at its own addresses: a number address, localhost, a name ending in .local, or web.public_address. To open it under another name, such as a reverse proxy's, add that name to web.allowed_hosts in your settings."
   # the storage tab asked for a file: {path} is the path it asked for, inside the data folder
   outside_data_folder: '{path} is outside the data folder, so it is never read.'

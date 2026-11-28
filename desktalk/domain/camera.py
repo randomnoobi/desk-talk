@@ -13,7 +13,7 @@ from desktalk_shared.wire import DetectorState, UploadInfo
 class Frame:
     picture: Any                    # numpy array, BGR (OpenCV's layout)
     received_at: float              # this computer's clock
-    source: str                     # pi, phone or webcam
+    source: str                     # pi or webcam
     number: int                     # counts up from 1 for each new picture from this source
     jpeg: bytes | None = None       # the original JPEG, when the camera sent one
     pi: UploadInfo | None = None    # what the Pi sent with it (Pi pictures only)

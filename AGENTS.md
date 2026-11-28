@@ -11,7 +11,7 @@ What the app does and how it fits together: [README.md](README.md), [docs/ARCHIT
 
 ## Check your work before saying it's done
 - Packages come from uv (`uv sync --all-packages`; never pip). Run things with `uv run ...`.
-- Fast tests: `uv run pytest -m "not slow"`. The `slow` tests run the real YOLO model; run them only when you change detection. `docker` tests build the Pi's images; run them only when you change them. `uv run pytest -m e2e` drives the real page in a browser (`uv run playwright install chromium` once); run it when you change `web_app/`, `phone_camera/` or a route they use. `DESKTALK_PI=pi uv run pytest -m pi -v -rs` runs against the real Pi over `ssh pi`; run it when you change `raspberry_pi/`, or anything that runs in the Pi's containers. Without `DESKTALK_PI` every test skips. If the compose file isn't in `~/desk-talk/raspberry_pi`, also set `DESKTALK_PI_DIR='~/your-folder/raspberry_pi'` (quoted, so `~` is the Pi's home). What only a person can do is in [docs/RUNBOOK.md](docs/RUNBOOK.md#checking-on-the-real-pi).
+- Fast tests: `uv run pytest -m "not slow"`. The `slow` tests run the real YOLO model; run them only when you change detection. `docker` tests build the Pi's images; run them only when you change them. `uv run pytest -m e2e` drives the real page in a browser (`uv run playwright install chromium` once); run it when you change `web_app/` or a route it uses. `DESKTALK_PI=pi uv run pytest -m pi -v -rs` runs against the real Pi over `ssh pi`; run it when you change `raspberry_pi/`, or anything that runs in the Pi's containers. Without `DESKTALK_PI` every test skips. If the compose file isn't in `~/desk-talk/raspberry_pi`, also set `DESKTALK_PI_DIR='~/your-folder/raspberry_pi'` (quoted, so `~` is the Pi's home). What only a person can do is in [docs/RUNBOOK.md](docs/RUNBOOK.md#checking-on-the-real-pi).
 - Coverage: `uv run pytest -m "not slow and not docker and not e2e" --cov` fails below `fail_under` in `pyproject.toml`. It may only go up.
 - Lint: `uv run ruff check <files you changed>`. Old files may still have ruff errors, so don't fix files you didn't touch. Just don't add new errors. Don't run `ruff format`.
 - Types: `uv run pyright` must show 0 errors. `pyrightconfig.json`'s `ignore` list only shrinks: fix a file and take it off; never add one.
@@ -23,7 +23,7 @@ What the app does and how it fits together: [README.md](README.md), [docs/ARCHIT
 ## Config, not code
 - IMPORTANT: Never hardcode a number, timing, threshold, path or model name. Add it to `config/settings.yaml`, with a plain-language comment, and a typed field in `desktalk/config/app.py`; parts get their typed section passed in (`config.camera.fps`, etc.). The Pi's numbers go in the `pi:` section (the camera program reads it from the `app` container); the containers' own numbers (ports, memory limits, health checks) in `raspberry_pi/.env` (and `.env.example`).
 - User-facing wording goes in `config/prompts.yaml` (code only fills in the blanks). A new blank also goes in `BLANKS` in `desktalk/config/prompts.py`.
-- The web pages keep no copies of settings: `web_app/` reads `GET /api/ui_settings`, `phone_camera/` reads `GET /api/phone/config`.
+- The web pages keep no copies of settings: `web_app/` reads `GET /api/ui_settings`.
 - Habit rules go in `config/protocols.yaml`, characters in `config/agents.yaml`, and API keys in `.env` (also add new keys to `.env.example`). Never put keys in YAML.
 - `config/settings.local.yaml` is the user's own file and isn't in git. Don't edit it.
 

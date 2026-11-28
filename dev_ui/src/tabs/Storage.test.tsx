@@ -102,7 +102,6 @@ describe('Storage tab: this browser', () => {
     vi.stubEnv('DEV', false)
     render(<Storage settings={SETTINGS} />)
     expect(screen.getByText(/share this storage/)).toBeInTheDocument()
-    expect(screen.getByText(/phone/)).toBeInTheDocument()
   })
 
   it('says where to open it when npm run dev sent it, using settings → web.port', () => {

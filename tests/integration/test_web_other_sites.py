@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from desktalk.web.app import create_phone_app
-from tests.integration.app_kit import PAIR_KEY, DeskRig, changed, desk_config
+from tests.integration.app_kit import DeskRig, changed, desk_config
 from tests.integration.web_kit import web_client
 
 OTHER_SITE = {'Origin': 'http://evil.example'}
@@ -85,14 +84,6 @@ def test_a_site_in_the_settings_may_read_and_write(tmp_path):
     assert client.post(A_WRITE[0], json=A_WRITE[1], headers=OTHER_SITE).status_code == 403
 
 
-def test_the_phone_camera_page_can_send_and_another_site_cant(tmp_path):
-    rig = DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'camera', source='phone'))
-    phone = web_client(create_phone_app(rig.app))
-    key = {'X-Desk-Key': PAIR_KEY}
-    assert phone.post('/api/phone/stop', headers={**key, **own_page(phone)}).status_code == 200
-    assert phone.post('/api/phone/stop', headers={**key, **OTHER_SITE}).status_code == 403
-
-
 # ── a web site that points its own name at this server (DNS "rebinding") ──
 WEB_PORT = 5000
 OWN_NAMES = ['127.0.0.1:{port}', 'localhost:{port}', 'LocalHost:{port}', '[::1]:{port}', '192.168.1.20:{port}',
@@ -135,10 +126,3 @@ def test_the_public_address_and_the_names_in_the_settings_work(tmp_path):
 
 def test_no_other_name_is_allowed_by_default(tmp_path):
     assert desk_config(tmp_path).web.allowed_hosts == []
-
-
-def test_the_phone_camera_server_checks_the_name_too(tmp_path):
-    rig = DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'camera', source='phone'))
-    phone = web_client(create_phone_app(rig.app))
-    assert phone.get('/api/phone/config', headers={'Host': '192.168.1.20:8443'}).status_code != 403
-    assert phone.get('/api/phone/config', headers={'Host': 'evil.example:8443'}).status_code == 403

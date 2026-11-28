@@ -55,8 +55,7 @@ def test_imports_inside_a_function_count_too(tmp_path):
 # ── the web layer ────────────────────────────────────────────────────
 WEB_MAY_IMPORT = ('desktalk.ports', 'desktalk.domain', 'desktalk.config', 'desktalk.bootstrap', 'desktalk.web',
                   'desktalk_shared',       # the Pi's upload format (standard library only, like the domain)
-                  'fastapi', 'starlette', 'pydantic', 'uvicorn', 'anyio',     # the web servers
-                  'qrcode', 'cryptography')                                    # the phone link and its certificate
+                  'fastapi', 'starlette', 'pydantic', 'uvicorn', 'anyio')     # the web server
 
 
 def imports(path: Path) -> set[tuple[str, str]]:

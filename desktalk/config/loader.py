@@ -48,11 +48,16 @@ LOCAL_SETTINGS = ('settings.local.yaml', 'mine/settings.mine.yaml')
 # log) instead of stopping startup. agents.join_after_sec and agents.min_confidence became agents.sensitivity_steps;
 # vision_habits went with the posture checks; web.list_sizes.habit_log / log_detections went with the Event log's
 # detections list and the vision habit timeline; dev.trace_photo_quality was never used (the trace pictures are
-# the camera's own JPEG).
-RETIRED_SETTINGS: tuple[tuple[str, ...], ...] = (('agents', 'join_after_sec'), ('agents', 'min_confidence'),
-                                                 ('vision_habits',), ('web', 'list_sizes', 'habit_log'),
-                                                 ('web', 'list_sizes', 'log_detections'),
-                                                 ('dev', 'trace_photo_quality'))
+# the camera's own JPEG). The camera.phone_* ones, web.phone_folder and Lens's "bumped" check (lens.bump_degrees,
+# lens.trusted_gravity, lens.wait_before_saying_sec.bumped) went with the phone camera.
+RETIRED_SETTINGS: tuple[tuple[str, ...], ...] = (
+    ('agents', 'join_after_sec'), ('agents', 'min_confidence'), ('vision_habits',),
+    ('web', 'list_sizes', 'habit_log'), ('web', 'list_sizes', 'log_detections'), ('dev', 'trace_photo_quality'),
+    *(('camera', f'phone_{name}') for name in ('port', 'cert_folder', 'cert_days', 'cert_file', 'key_file',
+                                               'max_side', 'jpeg_quality', 'tilt_max', 'capture_width',
+                                               'capture_height', 'tilt_max_age_sec')),
+    ('web', 'phone_folder'), ('lens', 'bump_degrees'), ('lens', 'trusted_gravity'),
+    ('lens', 'wait_before_saying_sec', 'bumped'))
 # Settings that moved. Your own settings.local.yaml may still set them in the old place: the value goes to the new
 # place (with a note in the log), unless the file sets the new one too. The object trace became the object's story,
 # which the app page shows too, so its settings left the developer page's section.

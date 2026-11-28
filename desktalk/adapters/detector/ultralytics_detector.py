@@ -1,5 +1,5 @@
 """
-Object detection on this computer with Ultralytics YOLO: for the phone and the webcam, and as the
+Object detection on this computer with Ultralytics YOLO: for the webcam, and as the
 backup when the Pi's own detector is off.
 """
 

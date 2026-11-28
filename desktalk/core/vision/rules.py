@@ -126,11 +126,9 @@ def make_rules(safety: SafetySettings, saved: Mapping | None = None, liquids: It
     hydration and food), added to safety.liquids and safety.foods."""
     saved = saved or {}
     edge, chain, temporal = (_section(saved, n) for n in ('edge_proximity', 'chain_reaction', 'temporal'))
-    gravity = (saved.get('camera_reference') or {}).get('gravity')
     saved_objects = edge.get('objects')
     return DeskRules(
         outline=_outline(saved, safety.min_desk_corners),
-        reference_gravity=tuple(gravity) if gravity and len(gravity) == 3 and saved.get('desk_outline') else None,
         edge_danger_px=_number(edge, 'edge_proximity', 'danger_px', safety.edge_proximity.danger_px),
         edge_warn_px=_number(edge, 'edge_proximity', 'warn_px', safety.edge_proximity.warn_px),
         edge_objects=frozenset(safety.edge_proximity.objects)
@@ -185,10 +183,6 @@ class SafetyRules:
     def has_outline(self) -> bool:
         """The desk corners are marked (Lens's DeskLayout)."""
         return bool(self._current.outline)
-
-    def reference_gravity(self) -> tuple[float, ...] | None:
-        """How the phone was tilted when the desk corners were marked (Lens's DeskLayout)."""
-        return self._current.reference_gravity
 
     @property
     def loaded(self) -> bool:

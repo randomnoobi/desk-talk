@@ -33,20 +33,10 @@ from desktalk.config.prompts import Prompts
 
 
 class CameraSettings(_Section):
-    source: Literal['pi', 'phone', 'webcam']
+    source: Literal['pi', 'webcam']
     fps: PositiveNumber
     disconnect_after_sec: PositiveNumber
     webcam_indices: tuple[Count, ...]
-    phone_port: Port
-    phone_cert_folder: Path
-    phone_cert_days: PositiveInt
-    phone_cert_file: str              # file names in phone_cert_folder
-    phone_key_file: str
-    phone_max_side: PositiveInt
-    phone_jpeg_quality: JpegQuality
-    phone_tilt_max: PositiveNumber
-    phone_capture_width: PositiveInt
-    phone_capture_height: PositiveInt
     wait_for_picture_sec: PositiveNumber
     jpeg_quality: JpegQuality
     boxes_jpeg_quality: JpegQuality
@@ -54,7 +44,6 @@ class CameraSettings(_Section):
     moved_within_sec: ZeroOrMore
     fps_gap_max_sec: PositiveNumber
     fps_smoothing: Fraction
-    phone_tilt_max_age_sec: ZeroOrMore
     webcam_width: PositiveInt
     webcam_height: PositiveInt
     webcam_warmup_reads: PositiveInt
@@ -504,7 +493,6 @@ class LensWaits(_Section):
     dark: ZeroOrMore
     glare: ZeroOrMore
     blurry: ZeroOrMore
-    bumped: ZeroOrMore
     empty: ZeroOrMore
     cutoff: ZeroOrMore
     slow: ZeroOrMore
@@ -521,8 +509,6 @@ class LensSettings(_Section):
     glare_above: Fraction
     blur_below: ZeroOrMore
     motion_above: ZeroOrMore
-    bump_degrees: ZeroOrMore
-    trusted_gravity: PositiveNumber
     slow_fps_below: ZeroOrMore
     speak_gap_sec: ZeroOrMore
     repeat_after_min: ZeroOrMore
@@ -738,7 +724,6 @@ class WebSettings(_Section):
     outside_port: Annotated[int, Field(ge=0, le=65535)]   # the port others use, if Docker opens another; 0 = web.port
     allowed_hosts: list[Annotated[str, Field(pattern=_HOST_NAME.pattern)]]   # more names it answers at (a proxy)
     app_folder: Path
-    phone_folder: Path
     stop_wait_sec: PositiveNumber
     max_request_mb: PositiveNumber
     pi_upload_max_mb: PositiveNumber

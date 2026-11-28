@@ -21,7 +21,7 @@ STARTUP_LOGGER = 'desktalk.startup'    # server.py's start-up lines: shown as th
 
 
 class _TerminalLines(logging.Formatter):
-    """The usual line, except for the start-up lines, which show as they are (the banner, the QR code)."""
+    """The usual line, except for the start-up lines, which show as they are (the banner)."""
 
     def format(self, record: logging.LogRecord) -> str:
         return record.getMessage() if record.name == STARTUP_LOGGER else super().format(record)

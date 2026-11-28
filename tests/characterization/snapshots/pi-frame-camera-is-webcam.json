@@ -4,5 +4,5 @@
   "json": {
     "error": "str"
   },
-  "request": "POST /api/phone/frame (phone server, phone desk)"
+  "request": "POST /api/pi/frame (main server, webcam desk)"
 }

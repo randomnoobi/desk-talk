@@ -43,7 +43,7 @@ class HabitTracker:
 
     def __init__(self, clock: Clock, bus: EventBus, store: KeyValueStore, profiles: Profiles,
                  prefs: Preferences, desk: DeskScene, protocols: Protocols, settings: HabitTrackerSettings,
-                 presence: PresenceSettings, agents: AgentsSettings, *, phone_counts: bool, words: HabitNudges):
+                 presence: PresenceSettings, agents: AgentsSettings, *, words: HabitNudges):
         self._clock = clock
         self._bus = bus
         self._prefs = prefs
@@ -51,11 +51,9 @@ class HabitTracker:
         self._rules = protocols
         self._s = settings
         self._words = words
-        self._phone_counts = phone_counts                         # off when the phone itself is the camera
         self._lock = threading.RLock()     # the camera's events, the web routes and the background jobs all come here
         self._days = HabitDays(store, clock)
-        self._reader = HabitReader(clock, profiles, desk, protocols, settings, presence, agents, prefs, words,
-                                   phone_counts=phone_counts)
+        self._reader = HabitReader(clock, profiles, desk, protocols, settings, presence, agents, prefs, words)
         self._last_fire: dict[str, float] = {}          # nudge key / 'habit:<name>' → when it was sent
         self._task_turn = 0                     # to-do check-ins sent: the next one names the to-do after
         bus.subscribe('habits', self._on_event, types=[DetectionEvent])
@@ -190,8 +188,7 @@ class HabitTracker:
                 sit_since=r.sit_since,
                 meal_done_ts=r.meal_done_ts, meal_name=r.meal_name,
                 food_since=r.food_since, food_name=r.food_name,
-                phone_on_desk_since=r.phone_on_desk_since if self._phone_counts else None,
-                phone_counts=self._phone_counts,
+                phone_on_desk_since=r.phone_on_desk_since,
                 sunlight_ts=d.sunlight_ts, afternoon_light_ts=d.afternoon_light_ts,
                 lux=r.light.get('lux'), brightness=r.light.get('brightness'),
                 bright_since=r.bright_since, dim_since=r.dim_since,
@@ -221,7 +218,7 @@ class HabitTracker:
             d = self._days.today.to_dict()
             sit = round(now - r.sit_since) if (r.sit_since and r.at_desk(now)) else 0
             streak = round(r.phone_free_streak)
-            phone_now = r.phone_on_desk() if self._phone_counts else None
+            phone_now = r.phone_on_desk()
             light = dict(r.light)
         return {
             'day': d['day'], 'times': t,
@@ -233,7 +230,7 @@ class HabitTracker:
                        'longest_sit_sec': d['longest_sit_sec'],
                        'sit_limit_min': int(self._rules.breaks.sit_limit_min),
                        'log': d['break_log'][-self._s.breaks_shown:] if self._s.breaks_shown else []},
-            'phone_free': {'counted': self._phone_counts, 'phone_free_sec': round(d['phone_free_sec']),
+            'phone_free': {'phone_free_sec': round(d['phone_free_sec']),
                            'phone_on_desk_sec': round(d['phone_on_desk_sec']), 'streak_sec': streak,
                            'best_sec': d['best_phone_free_sec'], 'phone_on_desk': phone_now,
                            'goal_min': int(self._rules.phone_free.goal_min_per_day)},

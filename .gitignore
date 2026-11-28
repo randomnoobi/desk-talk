@@ -9,7 +9,7 @@ venv
 *.egg-info/
 .pytest_cache/
 
-# Local HTTPS certificate + pairing key for the camera (made automatically, private key inside)
+# The pairing key for the camera (made automatically)
 certs/
 .eggs/
 

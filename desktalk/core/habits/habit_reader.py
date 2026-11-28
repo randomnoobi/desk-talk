@@ -43,7 +43,7 @@ MIN = 60
 class HabitReader:
     def __init__(self, clock: Clock, profiles: Profiles, scene: DeskScene, protocols: Protocols,
                  settings: HabitTrackerSettings, presence: PresenceSettings, agents: AgentsSettings,
-                 prefs: Preferences, words: HabitNudges, *, phone_counts: bool):
+                 prefs: Preferences, words: HabitNudges):
         self._clock = clock
         self._profiles = profiles
         self._scene = scene
@@ -53,7 +53,6 @@ class HabitReader:
         self._slider = Slider(agents, prefs)       # how sure a box must be follows the Settings page's slider
         self._new_things = agents.new_things        # ...and new things need a surer box
         self._user_window = presence.user_active_window_sec      # not the reminders' switch (the person's object state)
-        self._phone_counts = phone_counts                          # off when the phone itself is the camera
         self._healthy = frozenset(protocols.food.healthy)
         self._cats = {
             'drink': profiles.labels_for_habit('hydration'),
@@ -147,8 +146,7 @@ class HabitReader:
         for _ in range(self._sip_watch.update(set(labels), drinks, event.size, now, person=event.person)):
             said.append(log_sip(day, now, self._rules.hydration.ml_per_sip, 'camera', self._s, self._words))
         said += self._food(day, labels, appeared, gone, now)
-        if self._phone_counts:
-            said += self._phone(day, appeared, gone, at_desk, dt, now)
+        said += self._phone(day, appeared, gone, at_desk, dt, now)
 
         # Light
         lux, brightness = event.light.lux, event.light.brightness

@@ -2,7 +2,7 @@
 Lens's eyes: checks on the camera itself (not the objects).
 
 Lens speaks up in the group chat when something about the camera needs fixing: blocked, too dark, glare,
-blurry, an object cut off at the side of the picture, the camera got bumped, the video is slow or stopped. When
+blurry, an object cut off at the side of the picture, the video is slow or stopped. When
 the problem goes away, Lens says thanks. All the numbers are in settings → lens, the words in
 config/prompts.yaml → camera.
 
@@ -16,8 +16,8 @@ config/prompts.yaml → camera.
 It is the front of three parts: camera_measure.py (the numbers from a picture), camera_problems.py (when a
 problem starts, is said and is fixed) and the wording, here.
 
-The camera job calls sample(), Lens's job calls check() and forget(), and the web server calls issues()
-and phone_tip(), all from different threads. One lock guards everything they share.
+The camera job calls sample(), Lens's job calls check() and forget(), and the web server calls issues(),
+all from different threads. One lock guards everything they share.
 """
 
 from __future__ import annotations
@@ -32,8 +32,6 @@ from desktalk.core.vision.camera_measure import CameraMeasure, Reading
 from desktalk.core.vision.camera_problems import PEOPLE, CameraProblems, Detail, Said, Seen
 from desktalk.domain import Box, Detection, Picture
 from desktalk.ports import PictureTools
-
-PHONE_TIP_KEYS = ('covered', 'dark', 'glare', 'blurry', 'bumped', 'cutoff')   # shown on the phone's own screen
 
 
 class CameraHealth:
@@ -86,19 +84,16 @@ class CameraHealth:
         return bool(moved) and 0 <= now - moved < self._moved_within
 
     # ── CameraHealthView: every couple of seconds; returns what Lens should say ──
-    def check(self, now: float, *, connected: bool, fps: float | None = None, gravity: Any = None,
-              reference_gravity: Any = None, has_outline: bool = True, stopped: bool = False,
+    def check(self, now: float, *, connected: bool, fps: float | None = None, has_outline: bool = True,
               quiet: bool = False) -> list[dict[str, Any]]:
-        """`stopped` = the video was stopped on purpose (the phone's Stop button): no complaint.
-        `quiet` = quiet hours: problems are still followed, but nothing is said or counted as said, so no
+        """`quiet` = quiet hours: problems are still followed, but nothing is said or counted as said, so no
         "fixed, thanks" can come later for a problem nobody heard."""
         with self._lock:
             fresh = now - self._latest_ts < self._lens.reading_fresh_sec
             seen = Seen(reading=self._latest if fresh else None, boxes=list(self._boxes), size=self._size,
                         last_seen_anything=self._last_seen_anything)
-            said = self._problems.check(now, seen, connected=connected, fps=fps, gravity=gravity,
-                                        reference_gravity=reference_gravity, has_outline=has_outline,
-                                        stopped=stopped, quiet=quiet)
+            said = self._problems.check(now, seen, connected=connected, fps=fps, has_outline=has_outline,
+                                        quiet=quiet)
             return [self._message(m) for m in said]
 
     def forget(self, key: str) -> None:
@@ -119,10 +114,8 @@ class CameraHealth:
         words = self._words
         if key in ('lost', 'no_pictures'):
             by_camera = getattr(words, key)
-            return by_camera.model_dump().get(self._source_kind, by_camera.phone)
+            return by_camera.model_dump().get(self._source_kind, by_camera.webcam)
         problems = words.problems
-        if key == 'bumped':
-            return problems.bumped.format(degrees=d.get('degrees', self._lens.bump_degrees))
         if key == 'cutoff':
             side = d.get('side', 'left')
             hint = words.side_hints.model_dump().get(side, words.other_side_hint)
@@ -148,9 +141,3 @@ class CameraHealth:
             out.append({'key': key, 'title': title, 'fix': fix})
         return out
 
-    def phone_tip(self) -> str | None:
-        """A few words to show on the phone screen itself, or None."""
-        with self._lock:
-            active = self._problems.active()
-        key = next((k for k in PHONE_TIP_KEYS if k in active), None)
-        return getattr(self._words.titles, key).title if key else None

@@ -103,7 +103,7 @@ def build_live_context(scene: DeskScene, safety: SafetyBoard, *, profiles: Profi
     lines.append(w.habits.format(
         water_l=h['water_ml'] / 1000, goal_l=h['goal_ml'] / 1000, sips=h['sips'], breaks=b['count'],
         sitting_min=b['sitting_sec'] // 60,
-        phone_free=w.habits_phone_free.format(minutes=pf['phone_free_sec'] // 60) if pf['counted'] else '',
+        phone_free=w.habits_phone_free.format(minutes=pf['phone_free_sec'] // 60),
         sunlight=w.habits_sunlight if habits_today['light']['sunlight_ts'] else ''))
     if session_start:
         lines.append(w.session.format(duration=format_duration(now - session_start)))

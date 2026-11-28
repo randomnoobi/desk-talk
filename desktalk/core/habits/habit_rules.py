@@ -50,7 +50,6 @@ class RuleState:
     food_since: float | None = None         # food on the desk right now, since when
     food_name: str = ''
     phone_on_desk_since: float | None = None
-    phone_counts: bool = True               # False when the phone is the camera
     sunlight_ts: float | None = None        # morning sunlight logged
     afternoon_light_ts: float | None = None
     lux: float | None = None                # from the Pi camera module, if it has one
@@ -259,7 +258,7 @@ def screen_nudges(s: RuleState, cfg: LightRule, now: float, words: HabitNudges) 
 #  4. Phone-free time (Learning Protocol 1, Sleep Protocol 14)
 # ════════════════════════════════════════════════════════════════════
 def phone_nudges(s: RuleState, cfg: PhoneFreeRule, now: float, words: HabitNudges) -> list[Nudge]:
-    if not cfg.enabled or not s.at_desk or not s.phone_counts:
+    if not cfg.enabled or not s.at_desk:
         return []
     since = s.phone_on_desk_since
     if not since:

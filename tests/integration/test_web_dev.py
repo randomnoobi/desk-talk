@@ -21,7 +21,7 @@ from desktalk.web.app import create_app
 from tests.characterization.client import WebClient
 from tests.fakes import FakePiLog, FakePiStatsLink, FakeTestRunner
 from tests.integration.app_kit import CUP_FAR, DeskRig, changed, desk_config, pi_camera
-from tests.integration.web_kit import ON_THE_WIFI, THIS_COMPUTER, links_for
+from tests.integration.web_kit import ON_THE_WIFI, THIS_COMPUTER
 from tests.integration.web_kit import web_client as main_client
 
 PEN = Detection('pen/pencil', 0.8, BBox(100, 380, 160, 400))
@@ -305,7 +305,7 @@ def test_on_the_pi_itself_it_answers_with_its_own(tmp_path):
 
 
 def test_with_a_camera_that_is_not_the_pi_it_answers_with_its_own(tmp_path):
-    config = changed(desk_config(tmp_path), 'camera', source='phone')
+    config = changed(desk_config(tmp_path), 'camera', source='webcam')
     rig = DeskRig(tmp_path, config=config, pi_stats_link=FakePiStatsLink(problem='it should not be asked'))
     assert rig.app.pi is None
     client = web_client(rig.app)
@@ -355,7 +355,7 @@ def test_other_computers_get_403(rig, method, path, body):
 
 def test_the_list_has_every_dev_route(rig):
     """So the 403 test above covers each route, including any added later."""
-    server = WebClient(create_app(rig.app, links_for(rig.app)))
+    server = WebClient(create_app(rig.app))
     dev_routes = {(method, rule) for method, rule in server.routes() if rule.startswith('/api/dev')}
     assert {server.route_for(method, path) for method, path, _ in EVERY_ROUTE} == dev_routes
 

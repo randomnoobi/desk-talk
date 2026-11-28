@@ -121,18 +121,18 @@ def test_desk_outline_needs_three_corners():
     assert make_rules(SAFETY, {'desk_outline': OUTLINE[:2]}).outline == ()
 
 
-def test_camera_tilt_is_remembered_only_with_a_desk_outline():
-    tilt = {'camera_reference': {'gravity': [0.1, -9.7, 0.4]}}
-    assert make_rules(SAFETY, {**tilt, 'desk_outline': OUTLINE}).reference_gravity == (0.1, -9.7, 0.4)
-    assert make_rules(SAFETY, tilt).reference_gravity is None
+def test_an_old_saved_camera_tilt_is_left_alone():
+    """Rules saved while the phone was the camera may still hold how it was tilted: nothing reads it now."""
+    rules = make_rules(SAFETY, {'camera_reference': {'gravity': [0.1, -9.7, 0.4]}, 'desk_outline': OUTLINE})
+    assert rules.outline == ((0.1, 0.1), (0.9, 0.1), (0.9, 0.9))
 
 
-def test_the_rules_say_whether_the_desk_is_marked_and_how_the_phone_was_tilted_for_lens():
+def test_the_rules_say_whether_the_desk_is_marked_for_lens():
     rules = SafetyRules(InMemoryKeyValueStore(), SAFETY, words=WORDS)
     assert isinstance(rules, DeskLayout)
-    assert not rules.has_outline() and rules.reference_gravity() is None
-    rules.save({'desk_outline': OUTLINE, 'camera_reference': {'gravity': [0.1, -9.7, 0.4]}})
-    assert rules.has_outline() and rules.reference_gravity() == (0.1, -9.7, 0.4)
+    assert not rules.has_outline()
+    rules.save({'desk_outline': OUTLINE})
+    assert rules.has_outline()
 
 
 def test_drink_and_food_words_from_the_agents_count_too():

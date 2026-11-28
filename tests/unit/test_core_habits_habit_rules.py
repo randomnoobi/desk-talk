@@ -425,9 +425,6 @@ def test_phone_on_desk(rules, words):
     late = at('22:00')
     n = P.phone_nudges(day_state(late, phone_on_desk_since=late - 3 * MIN), rules.phone_free, late, words)
     assert keys(n) == ['phone.bedtime'] and n[0].once_per_day and n[0].repeat_after_sec == 25 * MIN
-    # phone is the camera: never
-    s = day_state(now, phone_on_desk_since=now - 30 * MIN, phone_counts=False)
-    assert P.phone_nudges(s, rules.phone_free, now, words) == []
 
 
 def test_phone_before_bed_wait_comes_from_protocols_yaml(rules, words):

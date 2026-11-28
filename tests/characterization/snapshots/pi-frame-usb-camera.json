@@ -3,8 +3,7 @@
   "headers": {},
   "json": {
     "fps": "number",
-    "ok": "bool",
-    "tip": "null"
+    "ok": "bool"
   },
   "request": "POST /api/pi/frame (main server, fresh desk)"
 }

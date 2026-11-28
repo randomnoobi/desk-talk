@@ -26,7 +26,7 @@ def test_an_ok_upload_hands_the_pis_detections_to_the_app(tmp_path):
     rig = DeskRig(tmp_path)
     reply = pi_upload(web_client(rig.app), rig.jpeg, info(rig, DetectorState.OK, LAPTOP, PERSON))
     assert reply.status_code == 200
-    assert reply.json() == {'ok': True, 'fps': 0.0, 'tip': None}     # one picture: no speed yet
+    assert reply.json() == {'ok': True, 'fps': 0.0}     # one picture: no speed yet
     rig.app.producer.tick(rig.clock.now())
     assert rig.detector.calls == 0                                  # the Pi already found what's there
     assert set(rig.app.scene.seen()) == {'laptop', 'person'}
@@ -96,9 +96,9 @@ def test_the_pairing_key_is_checked_before_the_upload_is_read(tmp_path):
 
 
 def test_uploads_are_refused_when_the_camera_is_not_the_pi(tmp_path):
-    rig = DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'camera', source='phone'))
+    rig = DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'camera', source='webcam'))
     reply = pi_upload(web_client(rig.app), desk_jpeg(), info(rig, DetectorState.OFF))
     assert reply.status_code == 409
-    assert reply.json() == {'error': 'The app is set to camera.source: phone, so pictures from pi go nowhere. '
+    assert reply.json() == {'error': 'The app is set to camera.source: webcam, so pictures from pi go nowhere. '
                                      'Set camera.source to pi in its settings (settings.local.yaml; on the Pi, '
                                      'raspberry_pi/mine/settings.mine.yaml) and restart it.'}

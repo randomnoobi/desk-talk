@@ -50,7 +50,7 @@ async def pi_frame(request: Request, app: App) -> PiFrameReply:
         jpeg, info = body, info_from_v1_headers(request.headers)
     if not await run_in_threadpool(inbox.push, jpeg, info):      # decodes the JPEG: not on the event loop
         raise HTTPException(400, NOT_A_PICTURE)
-    return PiFrameReply(fps=app.source.fps, tip=app.camera_health.phone_tip())
+    return PiFrameReply(fps=app.source.fps)
 
 
 @router.post('/api/pi/heartbeat')

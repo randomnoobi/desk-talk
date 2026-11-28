@@ -2,10 +2,7 @@
 What the routes share:
 
     App            the running app (desktalk/bootstrap.py → DeskTalk): def live(app: App) ...
-    ShownLinks     the app's address and the phone link (desktalk/web/pairing.py)
     Streams        the open live streams (desktalk/web/streams.py)
-    FromHere       True when the request comes from this computer (the phone link is only shown there, not to
-                   every device on the Wi-Fi)
     DevOnly        403 unless the request comes from this computer, to the server's own address or the Vite dev
                    server's (Host), and, when it says which page sent it (Origin), from the server's own page or
                    the Vite dev server's (the developer page's routes)
@@ -24,7 +21,6 @@ from desktalk.bootstrap import DeskTalk
 from desktalk.config import ListSize
 from desktalk.config.prompts import ServerWords
 from desktalk.web.middleware import MB, too_big
-from desktalk.web.pairing import Links
 from desktalk.web.streams import LiveStreams
 
 LOCAL_ADDRESSES = ('127.0.0.1', '::1')
@@ -33,10 +29,6 @@ LOCAL_NAMES = ('localhost', '127.0.0.1', '[::1]')    # how a browser on this com
 
 def _desktalk(request: Request) -> DeskTalk:
     return request.app.state.desktalk
-
-
-def _links(request: Request) -> Links:
-    return request.app.state.links
 
 
 def _streams(request: Request) -> LiveStreams:
@@ -48,9 +40,7 @@ def _from_here(request: Request) -> bool:
 
 
 App = Annotated[DeskTalk, Depends(_desktalk)]
-ShownLinks = Annotated[Links, Depends(_links)]
 Streams = Annotated[LiveStreams, Depends(_streams)]
-FromHere = Annotated[bool, Depends(_from_here)]
 
 
 def _own_addresses(app: DeskTalk) -> set[str]:
@@ -138,5 +128,5 @@ def camera_index(app: DeskTalk) -> int:
     return cameras[0] if cameras else 0
 
 
-__all__ = ['App', 'DevOnly', 'FromHere', 'ShownLinks', 'Streams', 'camera_index', 'dev_only', 'other_camera',
+__all__ = ['App', 'DevOnly', 'Streams', 'camera_index', 'dev_only', 'other_camera',
            'key_check', 'list_size', 'read_upload', 'today', 'uptime_sec']

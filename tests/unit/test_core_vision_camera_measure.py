@@ -1,12 +1,12 @@
-"""Lens's numbers from a picture (brightness, glare, sharpness, change), from boxes (cut off) and from the phone's
-tilt. Pictures go through the picture tools, so the fake ones do here."""
+"""Lens's numbers from a picture (brightness, glare, sharpness, change) and from boxes (cut off). Pictures go
+through the picture tools, so the fake ones do here."""
 
 import math
 
 import numpy as np
 import pytest
 
-from desktalk.core.vision.camera_measure import CameraMeasure, Reading, box_share, cut_off_side, tilt_degrees
+from desktalk.core.vision.camera_measure import CameraMeasure, Reading, box_share, cut_off_side
 from desktalk.domain import Size
 from tests.fakes import FakePictureTools
 
@@ -76,17 +76,3 @@ def test_how_much_of_the_picture_a_box_covers(box, share):
 def test_a_picture_with_no_size_has_nothing_covered():
     assert box_share((0, 0, 10, 10), (0, 0)) == 0.0
 
-
-def test_tilt_between_two_gravity_readings():
-    assert round(tilt_degrees((0, 9.8, 0), (0, 9.8, 4), trusted=1.0)) == 22
-    assert tilt_degrees((0, 9.8, 0), (0, 9.8, 0), trusted=1.0) == 0.0
-
-
-def test_a_tiny_gravity_reading_is_not_trusted():
-    assert tilt_degrees((0, 0.5, 0), (9.8, 0, 0), trusted=1.0) == 0.0
-
-
-def test_how_strong_a_trusted_gravity_reading_must_be_comes_from_settings():
-    """settings → lens.trusted_gravity: a reading weaker than that is noise, not a direction."""
-    assert round(tilt_degrees((0, 0.5, 0), (0.5, 0, 0), trusted=0.4)) == 90
-    assert tilt_degrees((0, 9.8, 0), (9.8, 0, 0), trusted=10) == 0.0

@@ -231,7 +231,7 @@ class Desk:
                              joins_kept=config.object_story.events_kept)
         self.habits = HabitTracker(self.clock, self.bus, InMemoryKeyValueStore(), self.profiles, prefs, self.desk,
                                    config.protocols, config.habit_tracker, config.presence, config.agents,
-                                   phone_counts=True, words=config.prompts.habits)
+                                   words=config.prompts.habits)
         states = FakeObjectStates([ObjectSnapshot('person', 'PRESENT', start)])     # someone at the desk
         self.status = DeskStatusService(self.desk, self.camera, prefs, config.reminders, states,
                                         person_label='person', clock=self.clock, todos=FakeTodoList())

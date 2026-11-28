@@ -4,7 +4,6 @@ import json
 import threading
 import time
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pytest
@@ -41,7 +40,7 @@ BOOK_IN_FRONT = Detection('book', 0.9, BBox(10, 5, 470, 355))      # one thing f
 REAL_DESK = Path(__file__).parent.parent / 'fixtures' / 'real_drinks_2026_10_25.json'
 
 
-def health(source='phone', lens=LENS, words=WORDS, **kw):
+def health(source='webcam', lens=LENS, words=WORDS, **kw):
     return CameraHealth(lens, source_kind=source, moved_within_sec=1.5, pictures=TOOLS, words=words, **kw)
 
 
@@ -173,7 +172,6 @@ def test_object_cut_off_at_the_side_of_the_picture():
                                "of it. Could you point me a little more to the left?")
     assert msgs[0]['detail'] == {'object': 'cup', 'side': 'left'}
     assert h.issues()[0]['title'] == 'Cup is cut off (left)'
-    assert h.phone_tip() == 'Something is cut off'
 
 
 # Ported from test_cut_off_uses_the_ignore_list
@@ -200,22 +198,10 @@ def test_three_pictures_a_second_is_not_slow():
     assert 'slow:problem' not in run(health('pi'), 60, bright(), fps=2.9)
 
 
-def test_phone_bumped_away_from_where_the_desk_was_marked():
-    h = health()
-    msgs = []
-    for t in range(1000, 1010):
-        h.sample(bright(), [CUP], t)
-        msgs += h.check(t, connected=True, fps=3.0, gravity=(0, 9.8, 0), reference_gravity=(0, 9.8, 4))
-    assert [m['key'] for m in msgs] == ['bumped']
-    assert 'tilted about 22°' in msgs[0]['text']
-
-
 def test_forgetting_a_problem_means_no_thanks():
     h = health()
-    for t in range(1000, 1010):
-        h.sample(bright(), [CUP], t)
-        h.check(t, connected=True, fps=3.0, gravity=(0, 9.8, 0), reference_gravity=(0, 9.8, 4))
-    h.forget('bumped')
+    assert run(h, 10, DARK) == ['dark:problem']
+    h.forget('dark')
     assert run(h, 20, bright(), start=1010) == [] and h.issues() == []
 
 
@@ -243,7 +229,6 @@ def test_lost_pi_pictures_name_the_camera_container_that_runs_on_the_pi_now():
 
 
 @pytest.mark.parametrize('source, words, fix', [
-    ('phone', 'Is its screen still on?', 'Keep the phone unlocked'),
     ('webcam', 'Is it still plugged in', 'Plug the webcam back in'),
 ])
 def test_lost_video_words_fit_the_camera(source, words, fix):
@@ -256,15 +241,6 @@ def test_lost_video_words_fit_the_camera(source, words, fix):
     issue = h.issues()[0]
     assert (issue['key'], issue['title']) == ('lost', 'No pictures from the camera')
     assert issue['fix'].startswith(fix)
-
-
-def test_no_complaint_when_the_video_was_stopped_on_purpose():
-    h = health()
-    run(h, 2, bright())
-    said = []
-    for t in range(1002, 1030):
-        said += h.check(t, connected=False, stopped=True)
-    assert said == [] and h.issues() == []
 
 
 def test_no_complaint_before_the_video_ever_started():
@@ -290,9 +266,10 @@ def test_the_same_problem_is_mentioned_again_only_after_a_long_while():
 
 
 def test_one_thanks_when_several_problems_clear_at_once():
-    h = health()
-    tilted: dict[str, Any] = {'gravity': (0, 9.8, 0), 'reference_gravity': (0, 9.8, 4)}
-    assert run(h, 60, DARK, **tilted) == ['bumped:problem', 'dark:problem']
+    h = health(lens=LENS.model_copy(update={'dark_below': 100}))     # so a dark picture can have glare too
+    dark_with_glare = np.zeros((360, 480, 3), np.uint8)
+    dark_with_glare[:, 300:] = 255                                   # a bright lamp in a dark room
+    assert run(h, 60, dark_with_glare) == ['dark:problem', 'glare:problem']
     assert run(h, 10, bright(), start=1060) == ['dark:fixed']       # dark comes first in PRIORITY
 
 
@@ -308,13 +285,6 @@ def test_old_readings_are_not_trusted():
     h.sample(DARK, [CUP], 1000)
     said = [m['key'] for t in range(1000, 1030) for m in h.check(t, connected=True, fps=3.0)]
     assert 'dark' not in said           # the one dark picture is too old to count after 10 s
-
-
-def test_phone_tip_shows_the_most_important_problem():
-    h = health()
-    assert h.phone_tip() is None
-    run(h, 30, BLACK)
-    assert h.phone_tip() == 'Camera is blocked'
 
 
 # ── the camera moving (so "things moved" isn't the desk changing) ──
@@ -346,7 +316,7 @@ class SwitchingDict(dict):
 
 
 def test_the_web_thread_can_read_the_problems_while_lens_changes_them():
-    """issues() and phone_tip() run on the web server's threads while Lens's job checks and forgets problems."""
+    """issues() runs on the web server's threads while Lens's job checks and forgets problems."""
     h = health(lens=lens_with(dark=0))
     h._problems._active = SwitchingDict()
     h.sample(DARK, [CUP], 1000)
@@ -365,7 +335,6 @@ def test_the_web_thread_can_read_the_problems_while_lens_changes_them():
     try:
         for _ in range(300):
             h.issues()
-            h.phone_tip()
     except Exception as exc:
         errors.append(exc)
     finally:
@@ -389,7 +358,6 @@ def test_a_problem_still_there_after_quiet_hours_is_said_then():
 
 
 # ── what Lens says for each problem, word for word (as the old code said it) ──
-TILTED = {'gravity': (0, 9.8, 0), 'reference_gravity': (0, 9.8, 4)}
 PROBLEMS = {     # key: (picture, things in it, check arguments)
     'dark': (DARK, (CUP,), {}),
     'glare': (GLARE, (CUP,), {}),
@@ -397,7 +365,6 @@ PROBLEMS = {     # key: (picture, things in it, check arguments)
     'covered': (BLACK, (CUP,), {}),
     'empty': (bright(), (), {}),
     'slow': (bright(), (CUP,), {'fps': 1.0}),
-    'bumped': (bright(), (CUP,), TILTED),
 }
 
 
@@ -426,15 +393,11 @@ def first_words(h, key, start=1000, most=400):
     ('slow', 30, 'The pictures are only coming through at about 1.0 a second. Keeping the camera near the Wi-Fi '
      'router (and plugged in) helps.', {'fps': 1.0}, 'Video is slow',
      'Move the camera (or the Wi-Fi router) closer, and keep it plugged in.'),
-    ('bumped', 5, "Whoa, I think I got bumped. I'm tilted about 22° from where I was, so the desk edges you marked "
-     'are off now. Put me back, or mark the edges again in Settings.', {'degrees': 22}, 'Phone was moved',
-     'Put the phone back, or mark the desk edges again in Settings.'),
 ])
 def test_each_problem_is_said_in_the_same_words_after_the_same_wait(key, waited, text, detail, title, fix):
     h = health()
     assert first_words(h, key) == (waited, [{'key': key, 'kind': 'problem', 'text': text, 'detail': detail}])
     assert h.issues() == [{'key': key, 'title': title, 'fix': fix}]
-    assert h.phone_tip() == (title if key not in ('empty', 'slow') else None)
 
 
 @pytest.mark.parametrize('key, thanks', [
@@ -443,7 +406,6 @@ def test_each_problem_is_said_in_the_same_words_after_the_same_wait(key, waited,
     ('blurry', 'Sharp again. I can see clearly now.'),
     ('covered', 'There we go, I can see again.'),
     ('empty', 'I can see the desk now. Thanks!'),
-    ('bumped', "Thanks, I'm back where I was."),
 ])
 def test_each_problem_that_clears_up_gets_its_own_thanks(key, thanks):
     h = health()
@@ -453,7 +415,7 @@ def test_each_problem_that_clears_up_gets_its_own_thanks(key, thanks):
     said = []
     for t in range(start, start + 30):
         h.sample(bright(), [CUP], t)
-        said += h.check(t, connected=True, fps=3.0, gravity=(0, 9.8, 0), reference_gravity=(0, 9.8, 0))
+        said += h.check(t, connected=True, fps=3.0)
     assert said == [{'key': key, 'kind': 'fixed', 'text': thanks}]
 
 
@@ -486,10 +448,10 @@ def test_the_app_panel_titles_come_from_the_prompts_file():
     titles = WORDS.titles.model_copy(update={'covered': WORDS.titles.covered.model_copy(update={'title': 'Lens shut'})})
     h = health(words=words_with(titles=titles))
     run(h, 30, BLACK)
-    assert h.issues()[0]['title'] == 'Lens shut' and h.phone_tip() == 'Lens shut'
+    assert h.issues()[0]['title'] == 'Lens shut'
 
 
-@pytest.mark.parametrize('source', ['pi', 'phone', 'webcam'])
+@pytest.mark.parametrize('source', ['pi', 'webcam'])
 def test_lost_video_words_come_from_the_prompts_file_for_each_camera(source):
     h = health(source)
     run(h, 2, bright())
@@ -504,10 +466,6 @@ def test_a_cut_off_object_on_an_unknown_side_gets_the_other_hint():
         object='cup', side='middle', hint=WORDS.other_side_hint)
     assert h._problem_text('cutoff', {}) == WORDS.problems.cutoff.format(
         object=WORDS.unknown_object, side='left', hint=WORDS.side_hints.left)
-
-
-def test_bumped_without_degrees_says_the_setting():
-    assert health()._problem_text('bumped', {}) == WORDS.problems.bumped.format(degrees=LENS.bump_degrees)
 
 
 def test_slow_says_the_pictures_a_second():
@@ -530,7 +488,7 @@ def test_no_picture_at_all_since_the_start_is_said_once_it_has_lasted():
                            'fix': WORDS.lost_fix.pi}]
 
 
-@pytest.mark.parametrize('source', ['pi', 'phone', 'webcam'])
+@pytest.mark.parametrize('source', ['pi', 'webcam'])
 def test_no_picture_words_fit_the_camera(source):
     h = health(source, lens=lens_with(no_pictures=5))
     said = never_connected(h, 10)
@@ -556,7 +514,3 @@ def test_a_camera_that_was_connected_is_lost_not_never_there():
     said = [m['key'] for m in never_connected(h, 40, start=1002)]
     assert said == ['lost']
 
-
-def test_no_first_picture_complaint_when_the_video_was_stopped_on_purpose():
-    h = health('phone', lens=lens_with(no_pictures=5))
-    assert [m for t in range(1000, 1020) for m in h.check(t, connected=False, stopped=True)] == []

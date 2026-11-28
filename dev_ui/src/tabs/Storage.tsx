@@ -70,7 +70,6 @@ function InThisBrowser(props: { webPort: number }): JSX.Element {
         <button type="button" className="btn" onClick={reread}>Read again</button>
       </div>
       <p className={where.sharesWithApp ? 'muted small' : 'error'}>{where.words}</p>
-      <p className="muted small">The phone page keeps its own storage on the phone, so it isn't here.</p>
       <ErrorLine error={error} />
       <Table
         rows={rows}
