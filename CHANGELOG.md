@@ -4,9 +4,34 @@ What changed in Desk Talk, newest first, one line or a few per change. Each pull
 full story: what was wrong, what changed, and the checks that were run. What a person tried on the real Pi is in
 [docs/RUNBOOK.md](docs/RUNBOOK.md#checking-on-the-real-pi).
 
+## 2026-11-27
+
+- **Ready to publish: old versions, dead code and personal files gone**
+  ([#26](https://github.com/randomnoobi/desk-talk/pull/26)). The upgrade paths for old installs are removed: the
+  old `.env` names and moved or retired settings (a retired key in your settings file is now an unknown-setting
+  error), the old Pi install's cleanup, the camera's first upload format (`POST /api/pi/frame` takes only multipart
+  now), old database columns and the `dnd_*` preference names. Comments that told the history are gone, and tests
+  named after past work say what they check. `.claude/`, `desk-talk.code-workspace` and `benchmarks/results/` are
+  no longer in git; a checkout that had them loses them on the next pull, and
+  `git restore --source=1b7f602 -- .claude desk-talk.code-workspace` brings them back (they're ignored from then on).
+- **Find a Pi on the home network and link it from the cloud website**
+  ([#29](https://github.com/randomnoobi/desk-talk/pull/29)). The website's **Find Pis on my network** button has
+  the browser knock on the home network's addresses (`GET /api/pis/where_to_look` says which), lists the Pis that
+  answer the Pi's `GET /api/cloud/hello`, and **Link** links one with no command on the Pi
+  (`POST /api/pis/link` → the Pi's `POST /api/cloud/link`). The Pi only takes a link from a home network address
+  that is the machine asking, and its web servers no longer trust forwarded headers. The command way stays.
+- **The developer page's Live tab shows the Pi's objects**
+  ([#30](https://github.com/randomnoobi/desk-talk/pull/30)). On a computer whose camera is the Pi, the Live tab
+  (Now, Changes, Object trace and its pictures) asks the Pi's own Desk Talk, through three new read-only routes
+  on the Pi (`/api/objects/states`, `/api/objects/smoothing`, `/api/objects/smoothing/trace`), and says so.
+  Pictures still never go to the cloud server or ntfy.
+- **The real-Pi tests wait for the camera's first status line**
+  ([#28](https://github.com/randomnoobi/desk-talk/pull/28)) after a restart, up to two status lines'
+  time plus the camera's warm-up, instead of failing straight away.
+
 ## 2026-11-23
 
-- **The sensitivity slider can move by itself.** Every hour Desk Talk looks back at what the camera saw and what
+- **The sensitivity slider can move by itself** ([#27](https://github.com/randomnoobi/desk-talk/pull/27)). Every hour Desk Talk looks back at what the camera saw and what
   that turned into. When things keep flashing on and off (put down and taken away again within 15 seconds, 6 times an
   hour or more), it moves the Settings page's slider one step pickier. When something with a character of its own
   stays in view for a minute or more but isn't quite sure enough for this step, though the next easier step would
