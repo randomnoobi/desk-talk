@@ -192,6 +192,7 @@ class SshPiLog:
         self._recent.clear()
         self._newest = None
         self._problem = ''
+        self._problem_of = 0
         self._backoff.reset()
         self._connect(resume=False)
 
@@ -228,8 +229,8 @@ class SshPiLog:
                          daemon=True).start()
 
     def _lost(self, reason: str, connected_at: float | None, number: int) -> None:
-        """Connection `number` ended by itself: wait, then try again (tick()). Only one that had been connected for
-        settings → connected_ok_sec makes the wait start small again."""
+        """Connection `number` ended by itself, or ssh couldn't even start for it: wait, then try again (tick()).
+        Only one that had been connected for settings → connected_ok_sec makes the wait start small again."""
         self._connection = None
         self._state = 'waiting'
         self._problem, self._problem_of = reason, number
