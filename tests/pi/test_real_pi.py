@@ -21,7 +21,7 @@ from typing import Any
 import pytest
 import yaml
 
-from tests.pi.conftest import SERVICES, Pi, wait_for
+from tests.pi.conftest import LOOK_EVERY_SEC, SERVICES, Pi, status_line_wait_sec, wait_for
 from tests.pi.on_the_pi import (
     CLOCK_PROBE,
     RESULTS,
@@ -56,7 +56,6 @@ BROKEN_LINES_ALLOWED = 1            # a power cut may cut off a line, and the fi
 RESTORE_TIME_SLACK_SEC = 30         # how far from "start minus restore_max_age_sec" a saved state may be either way
 APP_START_WAIT_SEC = 120
 ALLOWED_POLLING_SEC = 10            # room for this test's own slowness: it looks every 2 s over SSH
-STATUS_LINES_WAIT_SEC = 65          # two of the camera's status lines (pi.status_every_sec = 30)
 DETECT_TRIES = 100                  # the detector is usually busy: how many times to offer it one picture
 DETECTOR_BACK_WAIT_SEC = 240        # a stopped detector has to start and load its model again
 WARNING_SLACK_SEC = 90              # on top of Lens's wait: the camera has to notice first, and Lens looks now and then
@@ -98,9 +97,18 @@ def assert_data_readable(pi: Pi, *, broken_allowed: int = 0) -> dict[str, Any]:
 
 def latest_camera_status(pi: Pi) -> tuple[int, ...]:
     """The numbers in the camera's newest status line: taken, sent, failed, skipped, ok, busy, off."""
-    found = CAMERA_STATUS.findall(pi.run(f'docker logs --tail 40 {pi.container("camera")} 2>&1'))
-    assert found, "the camera's log has no status line"
+    found = pi.camera_status_lines(CAMERA_STATUS.findall)
     return tuple(int(n) for n in found[-1])
+
+
+def next_camera_status(pi: Pi, before: tuple[int, ...], *, every: float = LOOK_EVERY_SEC) -> tuple[int, ...]:
+    """The numbers in the first status line newer than `before` (more pictures taken). Waits for it as long as a first
+    status line may take (status_line_wait_sec). A camera that started again counts from 0, so it never gives one."""
+    def newer() -> tuple[int, ...] | None:
+        latest = latest_camera_status(pi)
+        return latest if latest[0] > before[0] else None
+    return wait_for(f'a status line newer than the one with {before[0]} pictures taken', newer,
+                    timeout=status_line_wait_sec(pi.settings()['pi']), every=every)
 
 
 def restored_count(pi: Pi) -> int | None:
@@ -153,8 +161,7 @@ def test_pictures_reach_the_app_and_the_detector_answers_for_each(pi: Pi):
     status = pi.get('/api/status')
     assert status['camera_source'] == 'pi' and status['camera'] is True
     before = latest_camera_status(pi)
-    time.sleep(STATUS_LINES_WAIT_SEC)
-    after = latest_camera_status(pi)
+    after = next_camera_status(pi, before)
     taken, sent, _, _, ok, busy, off = (a - b for a, b in zip(after, before, strict=True))
     assert taken > 0 and sent > 0, f'no pictures: {before} then {after}'
     assert ok > 0, f'the detector looked at no picture: {before} then {after}'
