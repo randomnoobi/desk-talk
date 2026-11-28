@@ -42,6 +42,20 @@ messages:
   report_no_key: No key is set for the weekly report. Put REPORT_API_KEY in cloud/.env.
   report_pi_removed: This Pi was removed, so its report can't be run again. Link the Pi again first.
 
+  # Finding Pis on the home network and linking one (the website's "Find Pis on my network")
+  no_network_to_search: The website can't look on your home network, because PUBLIC_URL isn't a home network number. Set PUBLIC_URL in cloud/.env to this computer's address on your home network, like http://192.168.1.20:8080, and start the server again. The command below still works.
+  pi_not_in_network: That address isn't on the home network the website looks on.
+  pi_already_linked: That Pi is already linked to a cloud server. To link it to this one, use the command below.
+  pi_refused: 'The Pi would not link: {reason}'
+  pi_refused_no_reason: The Pi would not link. Try again, or use the command below.
+  pi_no_answer: The Pi didn't answer. Check that it is on and on the same Wi-Fi, then try again.
+  pi_busy: That Pi is linking right now. Try again in a moment.
+  pi_not_saved: "That Pi isn't saving anything right now, so a link wouldn't last after it restarts. Turn its saving back on, then try again."
+  # {server} is PUBLIC_URL. The Pi only links to the computer that asks it, by its home network number.
+  pi_not_caller: "The Pi only links to the computer that asks it. Check that PUBLIC_URL ({server}) is this computer's home network number, then try again."
+  # {server} is PUBLIC_URL. The Pi took the offer but couldn't call this server back to use the code.
+  pi_cant_reach_server: "The Pi couldn't reach this server at {server}. Check the port in PUBLIC_URL, and that this computer's firewall lets the Pi in on it."
+
 # The website's "Add a Pi" box (the code only fills in {server_url} and {code})
 site:
   # Run on the Pi. It gets git if the card has none, gets Desk Talk or its new code, then installs. On a Pi that has it

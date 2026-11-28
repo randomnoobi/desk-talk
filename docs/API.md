@@ -3,8 +3,8 @@
 Every web address (route) the Desk Talk servers answer, grouped by area: what it does, who calls it, and
 who may call it. Where this page and the code disagree, the code is right.
 
-There are 94 routes in all: 61 on the main server (24 of them for the developer page), 9 on the phone camera's server, 3 on
-the detector service and 21 on the cloud server.
+There are 98 routes in all: 63 on the main server (24 of them for the developer page), 9 on the phone camera's server, 3 on
+the detector service and 23 on the cloud server.
 
 ## Four servers
 
@@ -239,6 +239,18 @@ The camera container (raspberry_pi/camera/) is the only caller. All three need t
   "last_sent_ts", "waiting"}. stopped means the server no longer knows it, so it needs linking again. waiting is
   how many events were still to go at its last try, so it doesn't count ones written since. Called by:
   web_app/app.js (the line in Settings). Access: anyone on the network
+- GET /api/cloud/hello: "Who are you": {"desk_talk": "pi", "name", "linked"}. The cloud website's search for Pis
+  on the home network knocks here on each address, from the person's browser, so this route alone answers with
+  Access-Control-Allow-Origin: * (the page can read it from another address). Called by: the cloud website's
+  Find Pis on my network button (cloud/web/src/api.ts, findPis), only to find Pis. Access: anyone on the network
+- POST /api/cloud/link: "Link to this server with this code": body {"server", "code"}, where server is an http or
+  https address. Trades the code with the server, saves the link and replies {"linked": true}. An error is
+  {"error": "plain words", "kind": "a kind"}, the kind saying why for the cloud server: 400 bad_request for a bad
+  body or a bad address, 400 refused for a code the server refused (its reason in the words); 403 not_caller when
+  server is not a private home network address equal to the address the request came from; 409 already_linked,
+  busy (another offer is being worked on) or not_saved (saving is off, so the link would not last); 502
+  unavailable when the server could not be reached. Called by: the cloud website's Link button, through the cloud
+  server (POST /api/pis/link). Access: anyone on the network
 
 ### Developer page (this computer only)
 
@@ -486,6 +498,18 @@ All of these need the login, and each reaches only that person's own things.
 - PATCH /api/devices/{device_id}: Rename a Pi.
 - DELETE /api/devices/{device_id}: Remove a Pi: cancels its token and keeps its history.
 - DELETE /api/devices/{device_id}/data: Delete a Pi and everything kept for it.
+- GET /api/pis/where_to_look: Where and how the page looks for Pis on the home network; the browser does the
+  knocking, never this server: {"addresses", "port", "wait_ms", "at_once", "name_max_chars", "reply_max_kb"}.
+  addresses is every address of the network around PUBLIC_URL (its /24, find_pis.network_prefix) but its own,
+  lowest first. The page asks each one's GET /api/cloud/hello on port (find_pis.pi_port), at_once at a time,
+  waits wait_ms (find_pis.knock_timeout_sec) for each, cuts a name to name_max_chars (pairing.name_max_chars) and
+  reads no reply bigger than reply_max_kb. 409, in plain words, when PUBLIC_URL gives no private network to search.
+- POST /api/pis/link: Link a found Pi: body {"address", "time_zone"}. Makes a one-time code and offers it to that
+  Pi. Replies {"linked": true}, also when the Pi didn't answer in time but had already used the code. 400 for an
+  address that isn't one of where_to_look's or a bad time zone; 409 when that Pi is already linked, is linking
+  already, or isn't saving (each in its own words); 502 when the Pi refused (its reason, cut to
+  find_pis.reason_max_chars), only links to the computer asking and PUBLIC_URL isn't it, couldn't reach this
+  server at PUBLIC_URL, or didn't answer. The Pi's kind decides which; without one, its status does.
 - GET /api/reports: Their weekly reports, newest week first, with each Pi's name and no report text. ?device_id=
   for one Pi.
 - GET /api/reports/{report_id}: One report.

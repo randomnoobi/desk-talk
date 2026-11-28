@@ -1,10 +1,12 @@
 """Fakes and helpers for the cloud server's tests: a config built from the real cloud/settings.yaml, fake Google,
-fake report writer and fake chat forwarder, and a quick way to link a Pi without going through the routes."""
+fake report writer, fake chat forwarder and fake Pi finder, and a quick way to link a Pi without going through the
+routes."""
 
 from __future__ import annotations
 
+import inspect
 import threading
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -12,7 +14,17 @@ from typing import Any
 from desktalk_cloud.app import CloudParts
 from desktalk_cloud.config import CloudConfig, load_config
 from desktalk_cloud.domain import Device, GoogleUser, User
-from desktalk_cloud.ports import ChatFailed, ChatForwarder, Clock, GoogleFailed, GoogleLogin, ReportFailed, Store
+from desktalk_cloud.ports import (
+    ChatFailed,
+    ChatForwarder,
+    Clock,
+    GoogleFailed,
+    GoogleLogin,
+    PiOfferFailed,
+    PiOffers,
+    ReportFailed,
+    Store,
+)
 from desktalk_cloud.rate_limit import RateLimiter
 from desktalk_cloud.store_memory import MemoryStore
 from desktalk_cloud.tokens import hash_secret, new_code, new_token
@@ -80,13 +92,53 @@ class FakeChatForwarder:
                              'message': {'role': 'assistant', 'content': self.reply}}]}
 
 
+OfferHook = Callable[[str, str, str], Awaitable[None] | None]
+
+
+class FakePiOffers:
+    """A home network where the Pis at the addresses in `pis` take an offer, and those in `linked` say they are
+    linked already ('already_linked'). An offer to any other address gets no answer. `offer_fails` fails every other
+    offer; `refusals` fails the offers to one address (refusals['192.168.86.41'] = PiOfferFailed('refused', 'Wrong
+    code')).
+
+    `on_offer(address, server_url, code)` runs for an offer that goes through (it may be async): an end-to-end test
+    uses it to stand in for the Pi and claim the code (POST /v1/devices/claim), as a real Pi would. It remembers
+    `offers`: (address, server_url, code) of each offer."""
+
+    def __init__(self, pis: Iterable[str] = (), linked: Iterable[str] = (), offer_fails: PiOfferFailed | None = None,
+                 *, on_offer: OfferHook | None = None) -> None:
+        self.pis = set(pis)
+        self.linked = set(linked)
+        self.offer_fails = offer_fails
+        self.refusals: dict[str, PiOfferFailed] = {}
+        self.on_offer = on_offer
+        self.offers: list[tuple[str, str, str]] = []
+
+    async def offer(self, address: str, server_url: str, code: str) -> None:
+        self.offers.append((address, server_url, code))
+        if address in self.linked:
+            raise PiOfferFailed('already_linked')
+        if address not in self.pis:
+            raise PiOfferFailed('no_answer')
+        failure = self.refusals.get(address) or self.offer_fails
+        if failure is not None:
+            raise failure
+        if self.on_offer is not None:
+            done = self.on_offer(address, server_url, code)
+            if inspect.isawaitable(done):
+                await done
+
+
 def make_parts(config: CloudConfig | None = None, *, store: Store | None = None, clock: Clock | None = None,
-               google: GoogleLogin | None = None, chat_forwarder: ChatForwarder | None = None) -> CloudParts:
-    """Everything the server needs, built from fakes and the in-memory store."""
+               google: GoogleLogin | None = None, chat_forwarder: ChatForwarder | None = None,
+               pi_offers: PiOffers | None = None) -> CloudParts:
+    """Everything the server needs, built from fakes and the in-memory store. No Pi takes an offer unless Pi offers
+    are given."""
     config = config or cloud_config()
     clock = clock or FakeClock()
     return CloudParts(
         config=config, store=store or MemoryStore(), clock=clock, google=google, chat_forwarder=chat_forwarder,
+        pi_offers=pi_offers or FakePiOffers(),
         claim_limiter=RateLimiter(config.limits.claim_tries, config.limits.claim_window_sec, clock),
         chat_limiter=RateLimiter(config.chat.limit_requests, config.chat.limit_window_sec, clock),
         chat_slots=threading.BoundedSemaphore(config.chat.max_at_once))

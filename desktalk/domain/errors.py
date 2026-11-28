@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from desktalk_shared.detection import DetectorUnavailable
 
-__all__ = ['AIUnavailable', 'CloudNotLinked', 'CloudRefused', 'CloudUnavailable', 'DetectorUnavailable', 'UnknownChat',
-           'plain_error']
+__all__ = ['AIUnavailable', 'CloudLinkRefused', 'CloudNotLinked', 'CloudRefused', 'CloudUnavailable',
+           'DetectorUnavailable', 'UnknownChat', 'plain_error']
 
 
 class AIUnavailable(RuntimeError):
@@ -35,6 +35,20 @@ class CloudRefused(CloudUnavailable):
 class CloudNotLinked(RuntimeError):
     """The cloud server says it doesn't know this computer (401), or it didn't accept the pairing code. The sender
     stops until the computer is linked again."""
+
+
+
+class CloudLinkRefused(RuntimeError):
+    """The Pi said no to a link the cloud website offered. `kind` says why, for the route's status:
+    'bad_request' (not a web address and a code), 'not_caller' (the server isn't the home network computer asking),
+    'already_linked', 'busy' (another offer is being worked on), 'not_saved' (saving is off, so it wouldn't last),
+    'refused' (the server didn't accept the code) or 'unavailable' (the server couldn't be reached). `text` is the
+    plain words to show; never the code."""
+
+    def __init__(self, kind: str, text: str):
+        super().__init__(text)
+        self.kind = kind
+        self.text = text
 
 
 def plain_error(exc: BaseException) -> str:

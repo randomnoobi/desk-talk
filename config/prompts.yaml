@@ -865,6 +865,20 @@ cloud:
   link_refused_because: "The server did not accept that: {reason}"
   link_code_refused: That code was not accepted. Codes work once and run out after a few minutes, so make a new one on the website.
   link_no_answer: "Could not reach {server} ({error}). Is the cloud server running, and is the address right?"
+  # The cloud website offering this Pi a link (Find Pis on my network, then Link). Why the Pi says no:
+  # the offer isn't a web address and a code
+  offer_bad: "A link offer needs the cloud server's web address (http:// or https://) and a code."
+  # the offer names a server that isn't the computer asking, or isn't on the home network
+  offer_not_caller: "This Pi only links to the computer that asks, by its home network number (like 192.168.1.9)."
+  offer_already_linked: "This Pi is already linked to a cloud server. To link it to another one, run the install command on the Pi with a new code."
+  offer_busy: This Pi is linking already. Try again in a moment.
+  # saving is off (the data folder is in memory), so the link would be gone after a restart
+  offer_not_saved: "This Pi isn't saving anything right now, so a link wouldn't last. Turn saving back on first."
+  # what the Pi says out loud once it linked this way, so a link you didn't make gets noticed
+  offer_linked_title: Desk Talk
+  offer_linked_said: This Pi is now linked to a cloud server, from the cloud website.
+  # in the log, every time ({server} is the cloud server's address)
+  offer_linked_log: "Linked to the cloud server at {server}, from the cloud website."
 
 # ── An object's story (click something under "On the desk" on the app page; settings → object_story) ───
 # What happened to it, one line per step, e.g. "10:42  appeared  (81% sure)".

@@ -135,6 +135,11 @@ class MemoryStore:
             self._tokens[token_hash] = _Token(device.id)
             return device
 
+    def code_was_used(self, code_hash: str) -> bool:
+        with self._lock:
+            code = self._codes.get(code_hash)
+            return code is not None and code.used
+
     def _cancel_tokens(self, device_id: str, now: float) -> None:
         for token in self._tokens.values():
             if token.device_id == device_id and token.revoked_at is None:

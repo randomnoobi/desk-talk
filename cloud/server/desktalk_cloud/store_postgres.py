@@ -233,6 +233,11 @@ class PostgresStore:
                                                          token_hash=token_hash, created_at=now))
             return _device(device_row)
 
+    def code_was_used(self, code_hash: str) -> bool:
+        query = sa.select(_codes.c.used_at.is_not(None)).where(_codes.c.code_hash == code_hash)
+        with self._engine.connect() as connection:
+            return bool(connection.execute(query).scalar_one_or_none())
+
     @staticmethod
     def _cancel_tokens(connection: Connection, device_id: str, now: float) -> None:
         connection.execute(sa.update(_tokens)

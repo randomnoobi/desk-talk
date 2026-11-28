@@ -91,6 +91,20 @@ class CloudStoreContract:
         assert [store.device_for_token(t, NOW + 1) is not None for t in ('t0', 't1', 't1b', 't3')] == [False] * 4
         assert len(store.list_devices(user.id)) == 1
 
+    def test_code_was_used_says_whether_a_claim_took_the_code(self, store):
+        user = make_user(store)
+        store.add_code('waiting', user.id, None, 'UTC', 2000.0)
+        store.add_code('taken', user.id, None, 'UTC', 2000.0)
+        store.add_code('old', user.id, None, 'UTC', 500.0)
+        assert store.claim_code('taken', 'Pi', 't1', NOW) is not None
+        assert store.claim_code('old', 'Pi', 't2', NOW) is None
+        assert store.code_was_used('taken') is True
+        assert store.code_was_used('taken') is True                         # asking changes nothing
+        assert store.code_was_used('waiting') is False
+        assert store.code_was_used('old') is False                          # ran out before anyone used it
+        assert store.code_was_used('never-made') is False
+        assert store.claim_code('waiting', 'Pi', 't3', NOW) is not None     # asking didn't use it up
+
     def test_new_code_makes_a_device_with_the_codes_time_zone(self, store):
         user = make_user(store)
         device, token = link(store, user, time_zone='Asia/Tokyo')

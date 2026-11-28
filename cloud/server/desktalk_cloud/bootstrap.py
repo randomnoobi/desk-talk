@@ -26,18 +26,20 @@ from desktalk_cloud.config import CloudConfig, ConfigError
 from desktalk_cloud.google_login import HttpGoogleLogin
 from desktalk_cloud.llm_anthropic import AnthropicReportWriter
 from desktalk_cloud.llm_openai import OpenAIReportWriter
+from desktalk_cloud.pi_offers import HttpPiOffers
 from desktalk_cloud.ports import Clock, ReportWriter, Store
 from desktalk_cloud.rate_limit import RateLimiter
 from desktalk_cloud.report_data import load_report_words
 from desktalk_cloud.report_job import ReportJob
 from desktalk_cloud.retention import RetentionJob
-from desktalk_cloud.routers import admin, auth, chat_v1, devices_v1, events_v1, site
+from desktalk_cloud.routers import admin, auth, chat_v1, devices_v1, events_v1, find_pis, site
 from desktalk_cloud.store_postgres import PostgresStore, is_postgres_address
 
 __all__ = ['ROUTERS', 'Server', 'build', 'build_app', 'build_jobs', 'check_settings', 'database_url', 'log_handler',
            'set_up_logging']
 
-ROUTERS = (auth.router, site.router, admin.router, chat_v1.router, devices_v1.router, events_v1.router)
+ROUTERS = (auth.router, site.router, find_pis.router, admin.router, chat_v1.router, devices_v1.router,
+           events_v1.router)
 LOG_FORMAT = '%(asctime)s %(levelname)s %(name)s: %(message)s'
 WEB_SCHEMES = ('http', 'https')
 _DATABASE_ERRORS = (SQLAlchemyError, psycopg.Error)
@@ -90,6 +92,7 @@ def build_parts(config: CloudConfig, store: Store, clock: Clock) -> CloudParts:
         chat_forwarder = HttpChatForwarder(config.chat, secrets.chat_api_key.get_secret_value(), clock)
     return CloudParts(
         config=config, store=store, clock=clock, google=google, chat_forwarder=chat_forwarder,
+        pi_offers=HttpPiOffers(config.find_pis),
         claim_limiter=RateLimiter(config.limits.claim_tries, config.limits.claim_window_sec, clock),
         chat_limiter=RateLimiter(config.chat.limit_requests, config.chat.limit_window_sec, clock),
         chat_slots=threading.BoundedSemaphore(config.chat.max_at_once))
@@ -115,10 +118,14 @@ def build(config: CloudConfig) -> Server:
     async def close_things_at_the_end(_app: FastAPI) -> AsyncIterator[None]:
         yield
         try:
-            if isinstance(parts.chat_forwarder, HttpChatForwarder):
-                await parts.chat_forwarder.aclose()
+            if isinstance(parts.pi_offers, HttpPiOffers):
+                await parts.pi_offers.aclose()
         finally:
-            store.dispose()
+            try:
+                if isinstance(parts.chat_forwarder, HttpChatForwarder):
+                    await parts.chat_forwarder.aclose()
+            finally:
+                store.dispose()
 
     return Server(app=build_app(parts, lifespan=close_things_at_the_end), store=store)
 

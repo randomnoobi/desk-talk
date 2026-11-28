@@ -563,9 +563,10 @@ daily_summary:
   objects_listed: 8           # most objects named in the recap
 
 # ── The cloud server (optional) ─────────────────────────────────────
-# Nothing here does anything until you link this Pi (or computer) to a cloud server: on the Pi, by running the install
-# command with --server and --code (raspberry_pi/README.md); on a computer, with scripts/link_cloud.py. Then a background
-# job sends it your habit events (never pictures or to-do text).
+# Nothing here does anything until you link this Pi (or computer) to a cloud server: from the cloud website ("Find Pis
+# on my network", then Link: the Pi says out loud that it linked, and refuses while it is linked already); on the Pi, by
+# running the install command with --server and --code (raspberry_pi/README.md); on a computer, with
+# scripts/link_cloud.py. Then a background job sends it your habit events (never pictures or to-do text).
 cloud:
   link_key: cloud             # the link (the server's address and your token) is saved as data/cloud.json
   send_every_sec: 30          # how often it sends what is new
@@ -581,6 +582,8 @@ cloud:
   totals_every_min: 15        # a day's numbers (desk time, water ...) go when they changed, at most this often
   goals_every_hours: 24       # your goals and wake and bed times go again this often, and whenever they change
   error_text_chars: 200       # most letters kept of a reason the server gives when it says no
+  name_max_chars: 60          # most letters of this Pi's name as it tells the cloud website (the same as the cloud's
+                              # pairing.name_max_chars)
 
 # ── Proof photos ────────────────────────────────────────────────────
 snapshots:

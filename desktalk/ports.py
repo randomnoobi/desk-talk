@@ -26,6 +26,7 @@ from desktalk.domain import (
     AgentProfile,
     Box,
     ChatJoin,
+    CloudHello,
     Danger,
     DataFile,
     DeskRules,
@@ -1343,4 +1344,20 @@ class CloudSending(PeriodicWorker, Protocol):
         """{linked, stopped, last_sent_ts, waiting}: whether a server is linked, whether the server said it
         doesn't know us any more, when something was last sent (None: never), and how many events wait to go.
         Never the token."""
+        ...
+
+
+@runtime_checkable
+class CloudLinking(Protocol):
+    """The Pi as the cloud website finds it on the home network, and links it with one click
+    (desktalk/core/cloud/linker.py)."""
+
+    def hello(self) -> CloudHello:
+        """Its name and whether it is linked: nothing else (no events, no server address, no device id)."""
+        ...
+
+    def link(self, server: str, code: str, caller: str) -> None:
+        """Trade the one-time `code` at `server` for a link, save it and say so out loud. `caller` is the address
+        the offer came from: `server` must be that same home network address. Raises CloudLinkRefused (with its
+        `kind`), and then nothing is saved."""
         ...

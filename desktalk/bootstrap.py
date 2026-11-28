@@ -30,6 +30,7 @@ Tests build the same app with fakes through build()'s keyword arguments (see tes
 from __future__ import annotations
 
 import logging
+import socket
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -37,7 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource, WebcamSource, make_pair_key
-from desktalk.adapters.cloud import HttpCloudLink
+from desktalk.adapters.cloud import HttpCloudLink, claim
 from desktalk.adapters.detector import NoDetector, UltralyticsDetector
 from desktalk.adapters.dev import DataFolder, PytestRunner, SqliteBrowser, SshPiLog
 from desktalk.adapters.dev.pi_stats_link import HttpPiStatsLink
@@ -62,6 +63,7 @@ from desktalk.core.chat.workers import (
     LostItems,
 )
 from desktalk.core.cloud import CloudUploader, linked_server
+from desktalk.core.cloud.linker import ClaimCode, CloudLinker
 from desktalk.core.demo import DemoFirer, ScenarioRunner
 from desktalk.core.desk import Album, DangerBoard, LiveView, Memories, Scene, WholeDesk
 from desktalk.core.events import EventStream
@@ -92,6 +94,7 @@ from desktalk.ports import (
     ChatReplies,
     Clock,
     CloudLink,
+    CloudLinking,
     CloudSending,
     DatabaseBrowser,
     DataFiles,
@@ -197,6 +200,8 @@ class DeskTalk:
     daily_summary     the end-of-day recap (a background job)
     cloud             sends filtered habit events to a linked cloud server, and does nothing until linked (a
                       background job): status() (/api/cloud/status)
+    cloud_linker      the cloud website finding this Pi and linking it: hello() (/api/cloud/hello) and link()
+                      (/api/cloud/link)
     scheduler         timed jobs (compacting and pruning the event log, saving habits and object states, deleting
                       old object states): status() (/api/health)
     supervisor        runs the background jobs: status() (/api/health)
@@ -276,6 +281,7 @@ class DeskTalk:
     lost_items: LostItemsView
     daily_summary: PeriodicWorker
     cloud: CloudSending
+    cloud_linker: CloudLinking
     scheduler: ScheduledJobs
     supervisor: Jobs
     system_stats: SystemStats
@@ -444,6 +450,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
           desktop: DesktopNotifications | None = None,
           phone_notifications: DesktopNotifications | None = None,
           cloud_link_factory: Callable[[str, str], CloudLink] | None = None,
+          cloud_claim: ClaimCode | None = None,
           stats_reader: SystemStatsReader | None = None, pi_stats_link: PiStatsLink | None = None,
           saving: Saving = Saving.PLAIN) -> DeskTalk:
     """Every part of Desk Talk, connected. Nothing runs until start().
@@ -471,6 +478,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                             when NTFY_TOPIC is set and notifications are on
         cloud_link_factory  makes the line to the cloud server from its address and token (HttpCloudLink); only
                             called once the computer is linked
+        cloud_claim         trades a one-time code from the cloud website for a link (claim, over HTTP)
         stats_reader        reads the system numbers (ProcReader on settings → system_stats)
         pi_stats_link       the developer page's line to the Pi's numbers, health and event log status
                             (HttpPiStatsLink to dev.pi_address), when settings → dev.enabled is on
@@ -630,6 +638,10 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
                              error_text_chars=config.cloud.error_text_chars)
     cloud = CloudUploader(cloud_link_factory or http_line, event_log, store, preferences, cloud_goals(config.protocols),
                           config.cloud, clock, config.prompts.cloud)
+    # The cloud website finding this Pi and linking it: the link it saves is the one the sender reads each round.
+    cloud_linker = CloudLinker(store, cloud_claim or claim, config.cloud, config.prompts.cloud, desktop, clock,
+                               public_address=config.web.public_address, saved=saving is not Saving.OFF,
+                               host_name=socket.gethostname)
     scheduler = Scheduler(clock, longest_wait_sec=config.supervisor.scheduler_longest_wait_sec)
     scheduler.every(config.event_log.compact_every_min * MINUTE, lambda: event_log.compact(clock.now()),
                     'compact event log')
@@ -691,7 +703,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
         producer=producer, health_checks=health_checks, object_states=object_states, state_store=state_store,
         roster=roster, desk_status=desk_status, habits=habits, ai=ai, model=asked_model, hub=hub, generator=generator,
         rule_runner=rule_runner, reminders=reminders, lens=lens, idle_chat=idle_chat,
-        lost_items=lost_items, daily_summary=daily_summary, cloud=cloud, scheduler=scheduler,
+        lost_items=lost_items, daily_summary=daily_summary, cloud=cloud, cloud_linker=cloud_linker, scheduler=scheduler,
         supervisor=supervisor, system_stats=system_stats, started_at=clock.now(), keepalive=ai.keepalive_worker(),
         log_file=log_file, test_runner=test_runner, databases=databases, data_files=data_files, chat_joins=roster,
         trace_photos=trace_photos, demo=demo, pi_log=pi_log, todos=todos, desktop=desktop,

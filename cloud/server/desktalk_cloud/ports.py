@@ -33,6 +33,20 @@ class GoogleFailed(Exception):
     """Google would not log the person in. The message is plain words and never holds a secret."""
 
 
+class PiOfferFailed(Exception):
+    """A Pi on the home network did not take a link offer. `kind` is what the Pi said: 'already_linked', 'busy'
+    (linking already), 'not_saved' (its saving is off), 'not_caller' (it links only to the computer asking, and
+    PUBLIC_URL isn't that), 'unavailable' (it couldn't reach this server), 'refused' (it said no: a bad offer, or this
+    server didn't take the code); or 'no_answer' (it couldn't be reached, took too long, or answered like no Pi).
+    `reason` is the Pi's own words, for 'refused' only, when they are clean text (cut to find_pis.reason_max_chars);
+    it never holds the code."""
+
+    def __init__(self, kind: str, reason: str | None = None):
+        super().__init__(kind)
+        self.kind = kind
+        self.reason = reason
+
+
 @runtime_checkable
 class Clock(Protocol):
     def now(self) -> float:
@@ -81,6 +95,11 @@ class Store(Protocol):
         back if it was removed, takes the code's time zone (the website sends one every time) and cancels its old
         tokens. The new token is `token_hash`.
         None when the code is unknown, used or expired (all alike). It expires at `expires_at` exactly."""
+        ...
+
+    def code_was_used(self, code_hash: str) -> bool:
+        """True once claim_code has taken this code. False for a code that is unknown, not used yet or ran out
+        unused. Asking changes nothing."""
         ...
 
     # ── Pis ───────────────────────────────────────────────────────────────
@@ -213,4 +232,14 @@ class ChatForwarder(Protocol):
     async def complete(self, messages: Sequence[Mapping[str, Any]], max_tokens: int | None,
                        temperature: float | None) -> dict[str, Any]:
         """The AI company's reply in the OpenAI chat completion shape. Raises ChatFailed."""
+        ...
+
+
+@runtime_checkable
+class PiOffers(Protocol):
+    """Offers a Pi on the home network a link. The looking is done by the person's browser (the website's
+    "Find Pis on my network"), never by this server. Contract: tests/contracts/test_cloud_pi_offers_contract.py."""
+
+    async def offer(self, address: str, server_url: str, code: str) -> None:
+        """Ask the Pi at `address` to link itself to `server_url` with this one-time code. Raises PiOfferFailed."""
         ...

@@ -1,11 +1,12 @@
-// The person's Pis: a list, and a button to add one.
+// The person's Pis: a list, and two ways to add one: find it on the home network, or run a command on it.
 import { listDevices } from '../api'
 import { formatTime } from '../format'
+import { PiFinder } from '../PiFinder'
 import { CodeMaker, Loading, Problem } from '../ui'
 import { useLoad } from '../useLoad'
 
 export default function Pis() {
-  const { data, error, loading } = useLoad(listDevices, 0)
+  const { data, error, loading, reload } = useLoad(listDevices, 0)
   return (
     <section className="stack">
       <h2>Your Pis</h2>
@@ -23,6 +24,9 @@ export default function Pis() {
           ))}
         </ul>
       )}
+      <h3>Add a Pi</h3>
+      <PiFinder onLinked={reload} />
+      <h3>Or link it with a command</h3>
       <CodeMaker label="Add a Pi" />
     </section>
   )
