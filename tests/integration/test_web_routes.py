@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from desktalk.domain import BBox, Detection
+from desktalk.domain import BBox, Detection, SensitivityVerdict
 from desktalk.web.app import create_app
 from tests.integration.app_kit import CUP_FAR, LAPTOP, PAIR_KEY, DeskRig, changed, desk_config
 from tests.integration.web_kit import ON_THE_WIFI, links_for, web_client
@@ -213,6 +213,63 @@ def test_marking_the_desk_corners_saves_them_in_the_rules(tmp_path):
 
 
 
+
+def test_the_slider_moving_by_itself_is_saved_with_the_preferences(tmp_path):
+    rig = DeskRig(tmp_path)
+    client = web_client(rig.app)
+    assert client.get('/api/preferences').json()['auto_sensitivity'] is rig.config.sensitivity_review.enabled
+    reply = client.put('/api/preferences', json={'auto_sensitivity': False}).json()
+    assert reply['preferences']['auto_sensitivity'] is False
+    assert rig.app.store.load('preferences')['auto_sensitivity'] is False
+    assert client.get('/api/sensitivity_review').json()['enabled'] is False
+
+
+class SomeReviews:
+    """A sensitivity reviewer that has already looked: `last` and `moves` as given."""
+
+    name = 'sensitivity review'
+
+    def __init__(self, last: SensitivityVerdict | None, moves: list[SensitivityVerdict]):
+        self._last, self._moves = last, moves
+
+    def tick(self, now: float) -> float:
+        return 0.0
+
+    def last(self) -> SensitivityVerdict | None:
+        return self._last
+
+    def moves(self) -> list[SensitivityVerdict]:
+        return list(self._moves)
+
+
+def test_the_sensitivity_review_before_it_has_looked(tmp_path):
+    rig = DeskRig(tmp_path)
+    assert web_client(rig.app).get('/api/sensitivity_review').json() == {'enabled': True, 'last': None, 'moves': []}
+
+
+def test_the_sensitivity_review_says_why_it_moved_the_slider(tmp_path):
+    """GET /api/sensitivity_review: each look back with the name of the step it left the slider at, and for a move
+    what the Settings page says about it (prompts.yaml → ui.sensitivity_moved_pickier / _easier)."""
+    rig = DeskRig(tmp_path)
+    steady = SensitivityVerdict(ts=3000.0, from_step=1, to_step=1, why='steady', watched_hours=3.0, blinks=1,
+                                misses=0)
+    pickier = SensitivityVerdict(ts=2000.0, from_step=2, to_step=1, why='jumpy', watched_hours=4.0, blinks=28,
+                                 misses=0)
+    easier = SensitivityVerdict(ts=1000.0, from_step=1, to_step=2, why='missing', watched_hours=2.5, blinks=0,
+                                misses=4)
+    rig.app.sensitivity_review = SomeReviews(steady, [pickier, easier])
+    reply = web_client(rig.app).get('/api/sensitivity_review').json()
+    words = rig.config.prompts.ui
+    assert reply['enabled'] is True
+    assert reply['last'] == {**steady.to_dict(), 'step': 'Careful', 'says': None}
+    assert reply['moves'] == [
+        {**pickier.to_dict(), 'step': 'Careful', 'says': words.sensitivity_moved_pickier.format(step='Careful',
+                                                                                                per_hour=7)},
+        {**easier.to_dict(), 'step': 'Normal', 'says': words.sensitivity_moved_easier.format(step='Normal', count=4)},
+    ]
+    assert reply['moves'][0]['says'] == 'Moved to Careful: things flashed on and off about 7 times an hour.'
+
+
 def test_ui_settings_reply(tmp_path):
     """GET /api/ui_settings: the numbers and words the app page used to keep its own copies of."""
     rig = DeskRig(tmp_path)
@@ -241,6 +298,7 @@ def test_ui_settings_reply(tmp_path):
     assert ui['lens_card'] == {'id': 'lens', 'name': 'Lens', 'art': 'art/lens.svg', 'color': 'coral',
                                'about': 'The camera. Speaks up when the view needs fixing.'}
     assert ui['chat_reply_timeout_ms'] > ui['web']['request_timeout_ms']
+    assert ui['sensitivity_auto'] == c.prompts.ui.sensitivity_auto
 
 
 NO_CAP_MS = 10 ** 9   # a cap so high the tests above see the worked-out wait itself

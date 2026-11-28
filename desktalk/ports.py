@@ -49,6 +49,7 @@ from desktalk.domain import (
     SafetyNow,
     Scenario,
     SeenObject,
+    SensitivityVerdict,
     Size,
     SmoothingStep,
     StateChange,
@@ -332,6 +333,18 @@ class ObjectStateStore(Protocol):
         ...
 
     def close(self) -> None:
+        ...
+
+
+@runtime_checkable
+class PresenceHistory(Protocol):
+    """What the camera saw, as stretches of time: the event log's intervals (desktalk/adapters/storage/intervals.py),
+    "the cup was in view from 14:02:10 to 14:31:55". The sensitivity reviewer reads it."""
+
+    def presence(self, day: str, include_live: bool = True) -> list[dict[str, Any]]:
+        """The intervals of a day (YYYY-MM-DD, by the desk's local time), oldest first, each
+        {'label', 'interval': [start ts, end ts], 'frames', 'avg_conf', ...}; [] for a day with no log.
+        `include_live` adds the pictures not compacted yet."""
         ...
 
 
@@ -1057,6 +1070,20 @@ class HabitTracking(HabitsView, HabitLog, HabitsLifecycle, Protocol):
     times (wake, bed, sunset ...) for /api/preferences."""
 
     def day_times(self, now: float) -> Mapping[str, Any]:
+        ...
+
+
+@runtime_checkable
+class SensitivityReview(PeriodicWorker, Protocol):
+    """The sensitivity slider moving by itself (desktalk/core/agents/sensitivity_review.py), for
+    GET /api/sensitivity_review."""
+
+    def last(self) -> SensitivityVerdict | None:
+        """Its newest look back; None before the first."""
+        ...
+
+    def moves(self) -> list[SensitivityVerdict]:
+        """The moves it made, newest first (at most settings → sensitivity_review.changes_kept)."""
         ...
 
 

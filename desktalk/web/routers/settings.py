@@ -5,6 +5,9 @@ The Settings page:
     PUT /api/rules       change some of them; marking the desk corners also notes how the phone was tilted
     GET /api/ui_settings the numbers and words the app page uses (refresh times, limits, Lens's card ...), so
                          it keeps no copies of its own
+    GET /api/sensitivity_review
+                         whether the sensitivity slider may move by itself, the reviewer's newest look back and the
+                         moves it made, each with what the page says about it
 """
 
 from __future__ import annotations
@@ -14,12 +17,14 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from desktalk.config import AppConfig, SensitivityStep
-from desktalk.domain import LENS
+from desktalk.domain import LENS, SensitivityVerdict
 from desktalk.web.deps import App
 from desktalk.web.routers.phone import phone_settings
 from desktalk.web.schemas import (
     Ok,
     RuleChanges,
+    SensitivityLook,
+    SensitivityReviewReply,
     UiChat,
     UiCloud,
     UiDesk,
@@ -73,6 +78,29 @@ def change_rules(app: App, sent: RuleChanges | None = None) -> Ok:
 
 
 
+@router.get('/api/sensitivity_review')
+def sensitivity_review(app: App) -> SensitivityReviewReply:
+    last = app.sensitivity_review.last()
+    return SensitivityReviewReply(enabled=bool(app.preferences.get('auto_sensitivity')),
+                                  last=sensitivity_look(app.config, last) if last is not None else None,
+                                  moves=[sensitivity_look(app.config, v) for v in app.sensitivity_review.moves()])
+
+
+def sensitivity_look(c: AppConfig, verdict: SensitivityVerdict) -> SensitivityLook:
+    """A look back as the Settings page shows it: the name of the step it left the slider at and, for a move,
+    why in words (prompts.yaml → ui.sensitivity_moved_pickier, with how many blinks an hour, or
+    ui.sensitivity_moved_easier, with how many misses)."""
+    steps = c.agents.sensitivity_steps
+    step = steps[min(max(verdict.to_step, 0), len(steps) - 1)].name
+    says = None
+    if verdict.to_step < verdict.from_step:
+        per_hour = round(verdict.blinks / verdict.watched_hours) if verdict.watched_hours else verdict.blinks
+        says = c.prompts.ui.sensitivity_moved_pickier.format(step=step, per_hour=per_hour)
+    elif verdict.moved:
+        says = c.prompts.ui.sensitivity_moved_easier.format(step=step, count=verdict.misses)
+    return SensitivityLook(**verdict.to_dict(), step=step, says=says)
+
+
 @router.get('/api/ui_settings')
 def ui_settings(app: App) -> UiSettings:
     return ui_settings_from(app.config)
@@ -118,6 +146,7 @@ def ui_settings_from(c: AppConfig) -> UiSettings:
         sensitivity_steps=[sensitivity_step(c, step) for step in c.agents.sensitivity_steps],
         sensitivity_intro=c.prompts.ui.sensitivity_intro,
         sensitivity_default=c.agents.sensitivity_default,
+        sensitivity_auto=c.prompts.ui.sensitivity_auto,
         chat_reply_timeout_ms=min(most_ai_calls_per_message(c) * round(c.llm.longest_reply_sec() * MS)
                                   + web.request_timeout_ms, web.chat_reply_max_ms),
     )

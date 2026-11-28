@@ -3,7 +3,7 @@
 Every web address (route) the Desk Talk servers answer, grouped by area: what it does, who calls it, and
 who may call it. Where this page and the code disagree, the code is right.
 
-There are 101 routes in all: 66 on the main server (24 of them for the developer page), 9 on the phone camera's server, 3 on
+There are 102 routes in all: 67 on the main server (24 of them for the developer page), 9 on the phone camera's server, 3 on
 the detector service and 23 on the cloud server.
 
 ## Four servers
@@ -177,16 +177,18 @@ the detector service and 23 on the cloud server.
   tests/e2e/test_page.py. Access: anyone on the network
 - POST /api/habits/log: A habit button: a sip, a break, some sunlight, a snack. Called by: web_app/app.js. Access:
   anyone on the network
-- GET /api/preferences: Wake time, bedtime, quiet hours, and the sensitivity step. Called by: web_app/app.js.
-  Access: anyone on the network
+- GET /api/preferences: Wake time, bedtime, quiet hours, the sensitivity step, and whether that step may move by
+  itself (auto_sensitivity). Called by: web_app/app.js. Access: anyone on the network
 - PUT /api/preferences: Change them. Only the fields sent change. Called by: web_app/app.js. Access: anyone on the
   network
 
 - POST /api/habits/log: {"habit": "hydration", "action": "glass", ...}. Any other field (ml,
   minutes, label ...) goes to the tracker. 400 for an unknown habit.
 - PUT /api/preferences: {"wake_time": "06:30", "bed_time": ..., "quiet_enabled": ..., "quiet_start_hour":
-  ..., "quiet_end_hour": ..., "sensitivity": 2}. sensitivity is the step of agents.sensitivity_steps,
-  0 (Picky) to 4 (Eager); a number past either end is kept at that end, and anything else is a 400.
+  ..., "quiet_end_hour": ..., "sensitivity": 2, "auto_sensitivity": true}. sensitivity is the step of
+  agents.sensitivity_steps, 0 (Picky) to 4 (Eager); a number past either end is kept at that end, and anything
+  else is a 400. auto_sensitivity is the Settings page's "Adjust by itself" switch (it starts like
+  sensitivity_review.enabled).
   Replies {"ok": true, "preferences": {...}}; 400 for a value that isn't valid.
 
 ### Event log
@@ -215,10 +217,18 @@ number, kept between 1 and the most web.list_sizes allows; anything else is a 40
   on the Pi, empty on a computer), and when it is set the page says the Pi starts its own camera. Otherwise (on a
   computer) the page links to the Pi's own Desk Talk at address (dev.pi_address), since the Pi's camera sends its
   pictures there. Called by: web_app/app.js (on start), tests/e2e/test_page.py. Access: anyone on the network
+- GET /api/sensitivity_review: Whether the sensitivity slider may move by itself, the reviewer's newest look back,
+  and the moves it made (newest first, at most sensitivity_review.changes_kept). The Settings page shows the newest
+  move's words and when. Called by: web_app/app.js (when the Settings page opens). Access: anyone on the network
 
 - PUT /api/rules: {"danger_zones": ..., "edge_proximity": ..., "chain_reaction": ..., "temporal": ...,
   "desk_outline": [[x, y], ...]}. Only the parts sent change; each corner is 0 to 1 of the picture. An
   empty body is a 400. Replies {"ok": true}.
+- GET /api/sensitivity_review: {"enabled": true, "last": {...} or null, "moves": [{...}, ...]}. Each look back
+  is {"ts", "from_step", "to_step", "why", "watched_hours", "blinks", "misses", "step", "says"}: why is one of
+  SENSITIVITY_WHYS in desktalk/domain/agents.py, step the name of the step it left the slider at, and says
+  what the page shows for a move (ui.sensitivity_moved_pickier or ui.sensitivity_moved_easier in
+  config/prompts.yaml, filled in), or null when it left the slider alone.
 
 ### Pi
 

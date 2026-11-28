@@ -2,16 +2,27 @@
 Per-picture detections → intervals: "the cup was on the desk from 14:02:10 to 14:31:55".
 
 Works on the plain dicts of the event log's files. A detections.jsonl line:
-    {"type": "detection", "ts": 1792345678.1, "source": "pi",
+    {"type": "detection", "ts": 1792345678.1, "source": "pi", "size": [640, 480],
      "detected_obj": [{"label": "cup", "conf": 0.82, "bbox": [...], "center": [100, 101]}], ...}
 A presence.jsonl line:
     {"type": "presence", "label": "cup", "interval": [1792345678.1, 1792347461.9], "frames": 5310,
-     "avg_conf": 0.81, "center": [100.2, 101.0], "source": "pi"}
+     "avg_conf": 0.81, "center": [100.2, 101.0], "size": [640, 480], "source": "pi"}
+`size` is the picture's width and height (the first one seen), so `center` can be placed on it. Intervals saved
+before it was added, or from pictures that didn't say, have no `size`.
 """
 
 from __future__ import annotations
 
 from typing import Any
+
+
+def _size(value: Any) -> list[int] | None:
+    """A picture line's [width, height]; None when it has none, or it isn't one."""
+    if not isinstance(value, list | tuple) or len(value) != 2:
+        return None
+    if not all(isinstance(v, int | float) and not isinstance(v, bool) and v > 0 for v in value):
+        return None
+    return [int(value[0]), int(value[1])]
 
 
 def build_intervals(frames: list[dict[str, Any]], gap_sec: float) -> list[dict[str, Any]]:
@@ -35,6 +46,8 @@ def build_intervals(frames: list[dict[str, Any]], gap_sec: float) -> list[dict[s
                     done.append(iv)
                 iv = open_[lab] = {'type': 'presence', 'label': lab, 'interval': [ts, ts], 'frames': 0,
                                    '_conf': 0.0, '_cx': 0.0, '_cy': 0.0, 'source': fr.get('source', '')}
+            if 'size' not in iv and (size := _size(fr.get('size'))) is not None:
+                iv['size'] = size
             iv['frames'] += 1
             iv['_conf'] += float(o.get('conf', 0))
             c = o.get('center') or [0, 0]
@@ -68,6 +81,8 @@ def merge_intervals(existing: list[dict[str, Any]], new: list[dict[str, Any]],
             prev['interval'] = [min(prev['interval'][0], iv['interval'][0]),
                                 max(prev['interval'][1], iv['interval'][1])]
             prev['frames'] = n1 + n2
+            if 'size' not in prev and 'size' in iv:
+                prev['size'] = iv['size']
         else:
             iv = dict(iv)
             out.append(iv)

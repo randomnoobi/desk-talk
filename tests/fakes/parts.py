@@ -12,6 +12,7 @@ from typing import Any, TypeVar
 import cv2
 import numpy as np
 
+from desktalk.adapters.storage.intervals import build_intervals, merge_intervals
 from desktalk.domain import (
     CHANGE_TYPES,
     AIUnavailable,
@@ -139,6 +140,24 @@ class InMemoryEventStore:
         self.compactions = 0
         self.folder = Path('in memory')
         self.last_compaction: dict[str, Any] | None = None
+        self._presence: dict[str, list[dict]] = {}        # compacted intervals, by day
+        self.merge_gap_sec = 3.0
+
+    def add_presence(self, label: str, start: float, end: float, avg_conf: float, frames: int = 1,
+                     size: tuple[int, int] | None = None) -> None:
+        """Put one compacted interval in the log by hand (as presence.jsonl would hold it). `size`: the picture's
+        width and height; None for an interval saved before intervals had one."""
+        interval = {'type': 'presence', 'label': label, 'interval': [start, end], 'frames': frames,
+                    'avg_conf': avg_conf, 'center': [0.0, 0.0], 'source': 'fake'}
+        if size is not None:
+            interval['size'] = list(size)
+        self._presence.setdefault(_day(start), []).append(interval)
+
+    def presence(self, day: str, include_live: bool = True) -> list[dict]:
+        out = [dict(i) for i in self._presence.get(day, [])]
+        if include_live and self._detections.get(day):
+            out = merge_intervals(out, build_intervals(self._detections[day], self.merge_gap_sec), self.merge_gap_sec)
+        return sorted(out, key=lambda i: i['interval'][0])
 
     def write(self, event: Event) -> None:
         d = event.to_dict()
@@ -161,6 +180,9 @@ class InMemoryEventStore:
     def compact(self, now: float) -> dict:
         self.compactions += 1
         frames = sum(len(v) for v in self._detections.values())
+        for day, pictures in self._detections.items():
+            self._presence[day] = merge_intervals(self._presence.get(day, []),
+                                                  build_intervals(pictures, self.merge_gap_sec), self.merge_gap_sec)
         self._detections.clear()
         summary = {'frames': frames, 'intervals': 0, 'from': None, 'to': None}
         self.last_compaction = {'ts': now, **summary}

@@ -223,6 +223,8 @@ BLANKS: dict[str, tuple[str, ...]] = {
     'camera.cutoff_title': ('object', 'side'),
     'ui.sensitivity_step': ('name', 'sure', 'join_sec', 'appear_sec', 'gone_sec', 'move_percent', 'leave_min',
                             'new_sure', 'new_join_sec'),
+    'ui.sensitivity_moved_pickier': ('step', 'per_hour'),
+    'ui.sensitivity_moved_easier': ('step', 'count'),
     'server.other_camera': ('source', 'kind'),
     'dev.outside_data_folder': ('path',),
     'dev.is_a_folder': ('path',),
@@ -716,6 +718,9 @@ class UiWords(_Section):
     starter_counters: Words
     sensitivity_intro: str            # the Settings page: what the sensitivity slider covers...
     sensitivity_step: str             # ...and what one step does (blanks in BLANKS)
+    sensitivity_auto: str             # the switch that lets the slider move by itself...
+    sensitivity_moved_pickier: str    # ...and what it says after it moved (blanks in BLANKS)
+    sensitivity_moved_easier: str
 
 
 class ObjectStoryWords(_Section):

@@ -57,3 +57,49 @@ class ChatJoin:
     seen_for_sec: float        # how long it had been seen
     on_desk: bool | None       # inside the marked desk (None = no desk corners marked)
     step: str                  # the sensitivity step in use (settings → agents.sensitivity_steps), e.g. Normal
+
+
+# Why the sensitivity reviewer moved the slider, or didn't (SensitivityVerdict.why).
+SENSITIVITY_WHYS = (
+    'off',                  # the Settings page's "Adjust by itself" switch is off
+    'waiting',              # you moved the slider lately: it waits (settings → sensitivity_review)
+    'not_enough_watching',  # the camera hasn't seen enough since the last change to tell
+    'jumpy',                # things flashed on and off: one step pickier
+    'missing',              # things stayed in view without counting: one step easier
+    'mixed',                # both at once: no change
+    'at_the_end',           # it would move, but the slider is already at that end
+    'too_soon_to_undo',     # it would move back the way it came, but it moved the slider itself too recently
+                            # (settings → sensitivity_review.wait_before_undo_hours)
+    'steady',               # nothing to fix
+)
+
+
+@dataclass(frozen=True)
+class SensitivityVerdict:
+    """One look back by the sensitivity reviewer (desktalk/core/agents/sensitivity_review.py): what it found and
+    where it left the slider. Steps are indexes into settings → agents.sensitivity_steps (0 = the pickiest)."""
+
+    ts: float
+    from_step: int
+    to_step: int                # the same as from_step when it left the slider alone
+    why: str                    # one of SENSITIVITY_WHYS
+    watched_hours: float        # how long the camera saw something in the stretch it looked at
+    blinks: int                 # things put down and taken away again within settings → sensitivity_review.blink_sec
+    misses: int                 # things in view long enough that the next easier step would have counted
+
+    @property
+    def moved(self) -> bool:
+        return self.to_step != self.from_step
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SensitivityVerdict:
+        """Raises TypeError, KeyError or ValueError for a dict that isn't one (a broken saved file)."""
+        verdict = cls(ts=float(data['ts']), from_step=int(data['from_step']), to_step=int(data['to_step']),
+                      why=str(data['why']), watched_hours=float(data['watched_hours']), blinks=int(data['blinks']),
+                      misses=int(data['misses']))
+        if verdict.why not in SENSITIVITY_WHYS:
+            raise ValueError(f'not a sensitivity verdict: {verdict.why!r}')
+        return verdict

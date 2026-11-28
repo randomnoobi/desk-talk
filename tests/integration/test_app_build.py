@@ -24,7 +24,7 @@ from desktalk.adapters.storage import JsonFileStore
 from desktalk.adapters.storage.trace_photo_files import TracePhotoFiles
 from desktalk.bootstrap import DeskTalk, build
 from desktalk.domain import AgentJoined, CheckLevel, Saving
-from desktalk.ports import SmoothingTraceView
+from desktalk.ports import SensitivityReview, SmoothingTraceView
 from desktalk.runtime import SystemClock
 from tests.fakes import (
     FakeClock,
@@ -289,6 +289,16 @@ def test_preferences_and_habits_saved_before_are_read_back(tmp_path):
     assert again.app.habits.today(again.clock.now())['hydration']['water_ml'] == rig.config.habit_tracker.glass_ml
 
 
+
+@pytest.mark.parametrize('enabled', [True, False])
+def test_the_slider_moving_by_itself_starts_like_the_setting(tmp_path, enabled):
+    """The Settings page's "Adjust by itself" switch starts like settings → sensitivity_review.enabled, and the
+    reviewer that moves the slider is built and has looked at nothing yet."""
+    app = build_quietly(changed(desk_config(tmp_path), 'sensitivity_review', enabled=enabled), tmp_path)
+    assert app.preferences.get('auto_sensitivity') is enabled
+    assert isinstance(app.sensitivity_review, SensitivityReview)
+    assert app.sensitivity_review.last() is None and app.sensitivity_review.moves() == []
+
 def test_the_danger_rules_come_from_the_config_store(tmp_path):
     rig = DeskRig(tmp_path)
     assert rig.app.safety_rules.loaded and rig.app.safety_rules.current.zones['laptop'].expand == 134
@@ -364,6 +374,7 @@ def test_start_runs_every_background_job_after_its_first_wait(tmp_path):
         'lost items': config.lost_items.start_delay_sec,
         'lens': config.lens.check_every_sec,
         'daily recap': config.daily_summary.start_delay_sec,
+        'sensitivity review': config.sensitivity_review.check_every_min * 60,
         'cloud uploader': config.cloud.send_every_sec,
         'demo scenarios': 0,            # the developer page's Demo tab: a countdown can be 0 seconds
         'pi log': 0,                    # the Pi log tab: it does nothing until the tab asks

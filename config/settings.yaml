@@ -171,6 +171,28 @@ agents:
   invent_personality: true    # ask the AI for a personality when an unknown object joins
   personality_max_chars: 400  # longest personality the AI may write for an object
 
+# ── The sensitivity slider moving by itself ────────────────────────
+# Every so often Desk Talk looks back at what the camera saw and what that turned into, and moves the Settings
+# page's sensitivity slider (agents.sensitivity_steps) one step when it's clear. No AI: plain counting, on the Pi.
+# Too jumpy: things that counted as put down and then taken away again within blink_sec (a box flashing on and off,
+# not you lifting a cup for a sip) → one step pickier. Missing things: an object with a character of its own in view
+# for missed_min_sec, but on average not quite sure enough for this step though the next easier step would take it,
+# that didn't join the chat (and wasn't in it already) and wasn't off the marked desk → one step easier. Both at
+# once: no change. It starts fresh: the first look judges only what comes after it.
+sensitivity_review:
+  enabled: true               # the Settings page's "Adjust by itself" switch starts like this
+  check_every_min: 60         # how often it looks back (and how long after Desk Talk starts it first looks)
+  look_back_hours: 24         # it looks back at most this far
+  min_watch_hours: 2          # the camera must have seen something for this long since the last change first
+  wait_after_you_change_hours: 24   # after you move the slider yourself, it waits this long before moving it
+  wait_before_undo_hours: 24  # after it moves the slider one way, it waits this long before moving it back the other
+  blink_sec: 15               # put down and taken away again within this long = a blink (not counting the wait
+                              # before "gone" counts, object_states.gone_sec times the step's steady)
+  jumpy_per_hour: 6           # this many blinks per hour watched (or more) → one step pickier
+  missed_min_sec: 60          # in view this long (from the event log) but not sure enough = missed...
+  missed_at_least: 3          # ...and this many misses (or more) → one step easier
+  changes_kept: 10            # the Settings page shows the last this many moves it made
+
 # ── Short-term presence (used by the habit rules, not the chat) ────
 presence:
   appear_after_sec: 1.0       # seen this long = on the desk
