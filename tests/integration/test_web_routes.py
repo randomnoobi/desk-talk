@@ -199,6 +199,8 @@ def test_a_day_that_is_not_a_date_reads_today_instead(tmp_path):
 # ── settings ─────────────────────────────────────────────────────────
 def test_marking_the_desk_corners_saves_them_in_the_rules(tmp_path):
     rig = DeskRig(tmp_path)
+    old = rig.app.config_store.load('safety_rules') or {}
+    rig.app.config_store.save('safety_rules', {**old, 'camera_reference': {'gravity': [0.1, -9.7, 0.4]}})
     client = web_client(rig.app)
     few = client.put('/api/rules', json={'desk_outline': [[0, 0], [1, 0]]})
     assert (few.status_code, few.json()) == (400, {'error': 'Mark at least 3 corners of the desk'})
@@ -207,7 +209,7 @@ def test_marking_the_desk_corners_saves_them_in_the_rules(tmp_path):
     assert client.put('/api/rules', json={'desk_outline': outline}).json() == {'ok': True}
     saved = rig.app.config_store.load('safety_rules')
     assert saved['desk_outline'] == [[0, 0.5], [1, 0.5], [1, 1], [0, 1]] and 'danger_zones' in saved
-    assert 'camera_reference' not in saved                     # (the phone camera's tilt went with it)
+    assert 'camera_reference' not in saved                     # (the old phone camera's tilt went with it)
     assert client.get('/api/rules').json()['desk_outline'] == saved['desk_outline']
 
 

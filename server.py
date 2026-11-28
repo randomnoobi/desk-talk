@@ -21,7 +21,6 @@ from desktalk.config import AppConfig, ConfigError, load_config
 from desktalk.domain import Saving
 from desktalk.runtime.log_setup import STARTUP_LOGGER, setup_logging
 from desktalk.runtime.saving import folder_for, saving_from_environment
-from desktalk.web.pairing import Links, lan_ip
 from desktalk.web.serve import run
 
 RULE = '═' * 60
@@ -59,13 +58,13 @@ def settings_lines(config: AppConfig, data_folder: Path | None = None) -> None:
             f'they live in config/settings.yaml now.')
 
 
-def address_lines(config: AppConfig, links: Links, source_kind: str) -> None:
+def address_lines(config: AppConfig, source_kind: str) -> None:
     """Where to open the app and how the camera gets started. These lines reach the log file and `docker compose
     logs`, so they never show the pairing key. The Pi's camera sends its pictures to the Pi's own Desk Talk, so on a
     computer the lines say where that is (dev.pi_address)."""
     web = config.web
     if web.public_address:
-        say(f'  → Open {links.web_url} on your phone or computer\n')
+        say(f'  → Open http://{web.public_address} on your phone or computer\n')
         return
     if source_kind == 'pi':
         say('\n  📷 Raspberry Pi camera: Desk Talk runs on the Pi, and its camera sends its pictures to the Pi\'s')
@@ -95,8 +94,7 @@ def main() -> int:
     say(f'  Detector     : {desktalk.detector.label}')
     say(f'  AI           : {desktalk.model.label}')
     say(f'  Danger zones : {desktalk.rules_file if desktalk.safety_rules.loaded else "built-in"}')
-    links = Links(lan_ip(), config.web.port, public_address=config.web.public_address)
-    address_lines(config, links, desktalk.source_kind)
+    address_lines(config, desktalk.source_kind)
     with contextlib.suppress(KeyboardInterrupt):     # Ctrl+C: by then the server has stopped the app
         run(desktalk)
     return 0

@@ -12,12 +12,10 @@ import pytest
 import server
 from desktalk.config import ConfigError
 from desktalk.domain import Saving
-from desktalk.web.pairing import Links
 from tests.integration.app_kit import changed, desk_config
 
 KEY = 'Zq7Wk3mRtx'                    # a pairing key no other line would contain by chance
 PUBLIC = 'desktalk.local:5000'
-DOCKER_ADDRESS = '172.18.0.3'          # what lan_ip() finds inside a container
 
 
 @pytest.fixture(autouse=True)
@@ -72,16 +70,15 @@ def test_the_log_file_is_named_by_the_settings(tmp_path):
 def shown_lines(config, source_kind, capsys):
     """What `address_lines` says for a camera source: the terminal's lines, as they are."""
     server.start_logging(config)
-    links = Links(DOCKER_ADDRESS, config.web.port, public_address=config.web.public_address)
-    server.address_lines(config, links, source_kind)
+    server.address_lines(config, source_kind)
     return capsys.readouterr().err.splitlines()
 
 
 def test_startup_shows_the_public_address(tmp_path, capsys):
     config = changed(desk_config(tmp_path), 'web', public_address=PUBLIC)
     shown = shown_lines(config, 'pi', capsys)
-    assert any(PUBLIC in line and 'Open' in line for line in shown)
-    assert not any('localhost' in line or DOCKER_ADDRESS in line for line in shown)
+    assert '  → Open http://desktalk.local:5000 on your phone or computer' in shown
+    assert not any('localhost' in line for line in shown)
 
 
 def test_startup_in_docker_skips_the_pi_command(tmp_path, capsys):
@@ -118,7 +115,6 @@ def test_a_whole_start_never_logs_the_pairing_key(tmp_path, monkeypatch, capsys,
                                safety_rules=SimpleNamespace(loaded=False), source_kind=source_kind, pair_key=KEY)
     monkeypatch.setattr(server, 'load_config', lambda: config)
     monkeypatch.setattr(server, 'build', lambda cfg, **kw: desktalk)
-    monkeypatch.setattr(server, 'lan_ip', lambda: DOCKER_ADDRESS)
     monkeypatch.setattr(server, 'run', lambda *a: None)
     assert server.main() == 0
     log_file = config.resolve(config.logging.folder) / config.logging.file_name
@@ -143,7 +139,6 @@ def test_off_mode_says_nothing_is_saved_at_start(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv('DESKTALK_DATA_FOLDER', str(memory))
     monkeypatch.setattr(server, 'load_config', lambda: config)
     monkeypatch.setattr(server, 'build', fake_build)
-    monkeypatch.setattr(server, 'lan_ip', lambda: DOCKER_ADDRESS)
     monkeypatch.setattr(server, 'run', lambda *a: None)
     assert server.main() == 0
     assert built == {'saving': Saving.OFF, 'data_folder': memory}
@@ -170,7 +165,6 @@ def test_off_mode_with_no_folder_given_makes_one_in_the_memory_fallback_folder(t
     monkeypatch.delenv('DESKTALK_DATA_FOLDER', raising=False)
     monkeypatch.setattr(server, 'load_config', lambda: config)
     monkeypatch.setattr(server, 'build', fake_build)
-    monkeypatch.setattr(server, 'lan_ip', lambda: DOCKER_ADDRESS)
     monkeypatch.setattr(server, 'run', lambda *a: None)
     assert server.main() == 0
     folder = built['data_folder']
@@ -187,7 +181,6 @@ def test_plain_mode_says_nothing_about_saving(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv('DESKTALK_SAVING', raising=False)
     monkeypatch.setattr(server, 'load_config', lambda: config)
     monkeypatch.setattr(server, 'build', lambda cfg, **kw: desktalk)
-    monkeypatch.setattr(server, 'lan_ip', lambda: DOCKER_ADDRESS)
     monkeypatch.setattr(server, 'run', lambda *a: None)
     assert server.main() == 0
     assert not any('saved' in line.lower() for line in capsys.readouterr().err.splitlines())

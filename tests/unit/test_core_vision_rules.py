@@ -127,6 +127,18 @@ def test_an_old_saved_camera_tilt_is_left_alone():
     assert rules.outline == ((0.1, 0.1), (0.9, 0.1), (0.9, 0.9))
 
 
+def test_saving_the_desk_corners_drops_an_old_camera_tilt():
+    """The phone camera's tilt was saved with the corners it was marked for. New corners don't match it, so it goes;
+    saving anything else leaves it be."""
+    store = InMemoryKeyValueStore()
+    store.save('safety_rules', {'camera_reference': {'gravity': [0.1, -9.7, 0.4]}, 'desk_outline': OUTLINE})
+    rules = SafetyRules(store, SAFETY, words=WORDS)
+    rules.save({'temporal': {'approach_rate': 0.2}})
+    assert 'camera_reference' in store.load('safety_rules')
+    rules.save({'desk_outline': OUTLINE[::-1]})
+    assert store.load('safety_rules') == {'desk_outline': OUTLINE[::-1], 'temporal': {'approach_rate': 0.2}}
+
+
 def test_the_rules_say_whether_the_desk_is_marked_for_lens():
     rules = SafetyRules(InMemoryKeyValueStore(), SAFETY, words=WORDS)
     assert isinstance(rules, DeskLayout)

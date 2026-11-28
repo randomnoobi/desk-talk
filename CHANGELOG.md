@@ -10,9 +10,10 @@ full story: what was wrong, what changed, and the checks that were run. What a p
   computer. The phone page (`phone_camera/`), its HTTPS server, certificate and QR code, the tilt check that told
   you the phone got bumped, and the `camera.phone_*` settings are removed, along with the `cryptography` and
   `qrcode` packages. An old `camera.phone_*` line in `settings.local.yaml` is left out with a log line, and
-  `camera.source: phone` stops the start with a plain message. The phone on your desk (the phone-free habit) and
-  notifications on your phone through ntfy work as before. The unused `docs/diagrams/` pictures and the finished
-  desk-test plan in `benchmarks/` are gone too.
+  `camera.source: phone` stops the start with a plain message. If you used the phone camera, you can delete
+  `certs/desk-talk.crt` and `certs/desk-talk.key` (the phone page's certificate and its key): nothing uses them
+  now. The phone on your desk (the phone-free habit) and notifications on your phone through ntfy work as before.
+  The unused `docs/diagrams/` pictures and the finished desk-test plan in `benchmarks/` are gone too.
 
 ## 2026-11-21
 

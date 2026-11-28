@@ -29,6 +29,10 @@ from desktalk.ports import KeyValueStore
 
 log = logging.getLogger(__name__)
 
+# Rules saved while the phone was the camera may hold how it was tilted for the corners marked then. Nothing reads
+# it now; it goes when new corners are saved.
+OLD_PHONE_TILT = 'camera_reference'
+
 
 def standing_strip(box: Box, rules: DeskRules) -> Box:
     """About where a thing stands on the desk: the bottom rules.footprint_share of its box, at least
@@ -191,11 +195,13 @@ class SafetyRules:
 
     def save(self, changes: Mapping[str, Any]) -> None:
         """Replace these parts of the saved rules (danger_zones, edge_proximity, desk_outline ...); the rest
-        stays as it was. Takes effect at once."""
+        stays as it was, except an old phone camera tilt, which goes with new desk corners. Takes effect at once."""
         with self._lock:
             saved = self._store.load(self._key)
             saved = dict(saved) if isinstance(saved, dict) else {}
             saved.update(changes)
+            if 'desk_outline' in changes:
+                saved.pop(OLD_PHONE_TILT, None)
             self._store.save(self._key, saved)
             self._reload()
 

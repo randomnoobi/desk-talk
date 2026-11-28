@@ -21,8 +21,8 @@ The replies are as the Flask server gave them (tests/characterization/ checks ea
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import anyio
 from fastapi import FastAPI, Request
@@ -50,7 +50,7 @@ async def run_background_jobs(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app(desktalk: DeskTalk) -> FastAPI:
     """The main server: the app's page and everything it asks for, and the Pi's uploads."""
-    app = _new_app(desktalk, 'main', lifespan=run_background_jobs)
+    app = _new_app(desktalk)
     app.add_middleware(CORSMiddleware, allow_origins=desktalk.config.web.cors_origins, allow_methods=['*'],
                        allow_headers=['*'])
     for router in MAIN_SERVER:
@@ -76,10 +76,10 @@ def create_app(desktalk: DeskTalk) -> FastAPI:
     return app
 
 
-def _new_app(desktalk: DeskTalk, name: str,
-             lifespan: Callable[[FastAPI], AbstractAsyncContextManager[None]] | None = None) -> FastAPI:
-    app = FastAPI(title=f'Desk Talk ({name} server)', docs_url=None, redoc_url=None, openapi_url=None,
-                  redirect_slashes=False, lifespan=lifespan)
+def _new_app(desktalk: DeskTalk) -> FastAPI:
+    """The server with no routes yet: the checks every request goes through, and the error replies."""
+    app = FastAPI(title='Desk Talk (main server)', docs_url=None, redoc_url=None, openapi_url=None,
+                  redirect_slashes=False, lifespan=run_background_jobs)
     app.state.desktalk = desktalk
     app.state.streams = LiveStreams()
     config = desktalk.config
@@ -88,7 +88,7 @@ def _new_app(desktalk: DeskTalk, name: str,
     app.add_middleware(KnownNamesOnly, names=[public_name, *config.web.allowed_hosts],
                        refusal=config.prompts.dev.other_name)
     app.add_middleware(SizeLimit, limit_bytes=int(config.web.max_request_mb * MB))
-    app.add_middleware(LogFailedRequests, server=name)
+    app.add_middleware(LogFailedRequests, server='main')
     app.add_exception_handler(HTTPException, _error_reply)
     app.add_exception_handler(RequestValidationError, _bad_request)
     app.add_exception_handler(Exception, _crashed)
