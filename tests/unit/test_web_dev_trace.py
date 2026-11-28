@@ -61,7 +61,7 @@ def client_for(records=(), joins=(), photos: FakeTracePhotos | None = None, *, n
                            object_states=FakeObjectStates(watched_since=watched_since),
                            state_store=store, chat_joins=None if no_parts else FakeChatJoins(joins),
                            trace_photos=None if no_parts else (photos or FakeTracePhotos()),
-                           preferences=FakePreferences())
+                           preferences=FakePreferences(), pi_stats_link=None)
     web = FastAPI()
     web.include_router(dev.router)
     web.dependency_overrides[dev_only] = lambda: None
@@ -127,7 +127,7 @@ def test_a_word_with_a_slash_works():
 
 def test_never_seen_or_no_parts_is_an_empty_trace():
     assert client_for().get('/api/dev/objects/glasses').json() == {'label': 'glasses', 'timeline': [],
-                                                                    'photos': []}
+                                                                    'photos': [], 'from': 'here', 'address': ''}
     body = client_for(records=[record(100.0, 'appeared')], no_parts=True).get('/api/dev/objects/cup').json()
     assert [row['kind'] for row in body['timeline']] == ['appeared'] and body['photos'] == []
 

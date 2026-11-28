@@ -1,0 +1,24 @@
+{
+  "content_type": "application/json",
+  "headers": {},
+  "json": {
+    "address": "str",
+    "changes": [
+      {
+        "change": "str",
+        "label": "str",
+        "ts": "number"
+      }
+    ],
+    "from": "str",
+    "now": "number",
+    "objects": {
+      "cup": {
+        "since": "number",
+        "state": "str"
+      }
+    },
+    "watched_since": "number"
+  },
+  "request": "GET /api/dev/states (main server, fresh desk)"
+}

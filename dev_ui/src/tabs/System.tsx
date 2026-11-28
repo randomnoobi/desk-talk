@@ -1,6 +1,6 @@
 import { useRef } from 'react'
-import { getHealth, getLogStatus, getShownHealth, type DevSettings, type Whose } from '../api'
-import { formatClock, formatSeconds } from '../format'
+import { getHealth, getLogStatus, getShownHealth, type DevSettings } from '../api'
+import { formatClock, formatSeconds, whoseWords } from '../format'
 import { OWN_GROUPS, ownRows, remember, SHOWN_GROUPS, shownRows, type Row, type Seen } from '../health'
 import { ErrorLine, Table } from '../ui'
 import { usePoll } from '../usePoll'
@@ -9,12 +9,6 @@ const COLUMNS = [
   { label: 'What', cell: (r: Row) => r.name },
   { label: 'Now', cell: (r: Row) => r.value },
 ]
-
-/** Whose Desk Talk the top line is about: the Pi's own (when the Pi is the camera and this page runs on a computer)
- *  or this computer's. */
-function whoseWords(whose: Whose): string {
-  return whose.from === 'pi' ? `The Pi's own Desk Talk (${whose.address})` : 'Desk Talk'
-}
 
 /** One card per group, with that group's rows. `error` (the latest call's, when it failed) goes in the first card. */
 function GroupCards(props: { groups: readonly string[], rows: Row[], error: string | null, label: string }): JSX.Element {

@@ -3,11 +3,12 @@ same contracts as the real ones (tests/contracts/system_stats_contract.py), but 
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import replace
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict, replace
 from typing import Any
 
 from desktalk.domain import RawReading, StatsSample, StatsUnavailable
+from desktalk.domain.dev import SmoothingStep
 
 EMPTY_REPLY = {'collecting': True, 'every_sec': 2.0, 'keep_min': 30.0, 'info': {}, 'samples': []}
 
@@ -52,15 +53,36 @@ class FakeStats:
 
 class FakePiStatsLink:
     """Answers fetch() with `reply` (one empty sample at 10.0 when not given) and health() with `health_reply` (like
-    the Pi's own GET /api/health when not given), or raises StatsUnavailable(problem) for both when a problem is
-    given. `asked` records each `since`."""
+    the Pi's own GET /api/health when not given), or raises StatsUnavailable(problem) for every method when a
+    problem is given. `asked` records each `since`.
+
+    For the Live tab, each like the Pi's own reply when not given: states() answers `states_reply` (a cup PRESENT
+    since 5.0, one change, the Pi's time 12.0); traced_labels() `labels_reply` ({'labels': ['cup']}); trace(label)
+    the asked label with `trace_steps` (one smoothing step) when it's one of labels_reply's, and no steps for any
+    other, both with the Pi's `trace_rules` (its smoothing numbers, PI_RULES); story(label) `story_reply` (one
+    step and one picture, 'cup-1') with the asked label when it's one of labels_reply's, and the empty story for
+    any other; photo(id) the bytes in `photos` ({'cup-1': a few JPEG bytes}), None for an id not there.
+    `asked_states`, `asked_traces`, `asked_stories` and `asked_photos` record what each was asked."""
 
     def __init__(self, reply: dict[str, Any] | None = None, problem: str = '', *,
-                 health_reply: dict[str, Any] | None = None):
+                 health_reply: dict[str, Any] | None = None, states_reply: dict[str, Any] | None = None,
+                 labels_reply: dict[str, Any] | None = None, trace_steps: Sequence[dict[str, Any]] | None = None,
+                 trace_rules: dict[str, Any] | None = None, story_reply: dict[str, Any] | None = None,
+                 photos: Mapping[str, bytes] | None = None):
         self.reply = reply if reply is not None else {**EMPTY_REPLY, 'samples': [StatsSample(at=10.0).to_dict()]}
         self.health_reply = health_reply if health_reply is not None else _pi_health()
+        self.states_reply = states_reply if states_reply is not None else _pi_states()
+        self.labels_reply = labels_reply if labels_reply is not None else {'labels': ['cup']}
+        self.trace_steps = list(trace_steps) if trace_steps is not None else [_pi_smoothing_step()]
+        self.trace_rules = trace_rules if trace_rules is not None else dict(PI_RULES)
+        self.story_reply = story_reply if story_reply is not None else _pi_story()
+        self.photos = dict(photos) if photos is not None else {PHOTO_ID: PHOTO_BYTES}
         self.problem = problem
         self.asked: list[float | None] = []
+        self.asked_states: list[float] = []
+        self.asked_traces: list[str] = []
+        self.asked_stories: list[str] = []
+        self.asked_photos: list[str] = []
 
     def fetch(self, since: float | None) -> dict[str, Any]:
         self.asked.append(since)
@@ -69,10 +91,64 @@ class FakePiStatsLink:
     def health(self) -> dict[str, Any]:
         return self._answer(self.health_reply)
 
+    def states(self, since: float) -> dict[str, Any]:
+        self.asked_states.append(since)
+        return self._answer(self.states_reply)
+
+    def traced_labels(self) -> dict[str, Any]:
+        return self._answer(self.labels_reply)
+
+    def trace(self, label: str) -> dict[str, Any]:
+        self.asked_traces.append(label)
+        steps = self.trace_steps if label in self.labels_reply.get('labels', []) else []
+        return self._answer({'label': label, 'steps': steps, 'rules': self.trace_rules})
+
+    def story(self, label: str) -> dict[str, Any]:
+        self.asked_stories.append(label)
+        if label in self.labels_reply.get('labels', []):
+            return self._answer({**self.story_reply, 'label': label})
+        return self._answer({'label': label, 'timeline': [], 'photos': []})
+
+    def photo(self, photo_id: str) -> bytes | None:
+        self.asked_photos.append(photo_id)
+        self._answer({})
+        return self.photos.get(photo_id)
+
     def _answer(self, reply: dict[str, Any]) -> dict[str, Any]:
         if self.problem:
             raise StatsUnavailable(self.problem)
         return reply
+
+
+PHOTO_ID = 'cup-1'
+PHOTO_BYTES = b'\xff\xd8\xff\xe0 a small JPEG'
+# The Pi's smoothing numbers in a trace (GET /api/objects/smoothing/trace → rules), a little apart from this
+# computer's settings, as a Pi with its own settings.local.yaml or sensitivity would be.
+PI_RULES = {'on_confidence': 0.55, 'off_confidence': 0.45, 'appear_sec': 4.5, 'gone_sec': 4.5, 'window_pictures': 5,
+            'vote_share': 0.5}
+
+
+def _pi_states() -> dict[str, Any]:
+    """Like the Pi's GET /api/objects/states: a cup on the desk since 5.0, and the change that put it there."""
+    return {'objects': {'cup': {'state': 'PRESENT', 'since': 5.0}}, 'watched_since': 1.0,
+            'changes': [{'ts': 5.0, 'label': 'cup', 'change': 'appeared'}], 'now': 12.0}
+
+
+def _pi_smoothing_step() -> dict[str, Any]:
+    """One step of the Pi's GET /api/objects/smoothing/trace, as it comes over the Wi-Fi (center as a list)."""
+    step = SmoothingStep(ts=5.0, conf=0.82, box_seen=True, votes_yes=3, votes_total=3, seen=True,
+                         center=(320.0, 240.0), phase='PRESENT', heading=None, waiting_sec=None)
+    return {**asdict(step), 'center': [320.0, 240.0]}
+
+
+def _pi_story() -> dict[str, Any]:
+    """Like the Pi's GET /api/objects/<label>/story (desktalk/web/stories.py): the cup appeared, with its picture."""
+    photo = {'id': PHOTO_ID, 'ts': 5.0, 'why': 'appeared', 'confidence': 0.82, 'box': [280, 200, 360, 280],
+             'size': [640, 480]}
+    step = {'ts': 5.0, 'source': 'state', 'kind': 'appeared', 'confidence': 0.82, 'seen_for_sec': None,
+            'on_desk': None, 'step': None, 'before': 'UNKNOWN', 'after': 'PRESENT', 'photo': photo,
+            'what': 'appeared'}
+    return {'label': 'cup', 'timeline': [step], 'photos': [photo]}
 
 
 def _pi_health() -> dict[str, Any]:

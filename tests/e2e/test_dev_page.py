@@ -65,7 +65,9 @@ def dev_server(tmp_path: Path, dev_ui_folder: Path) -> Iterator[AppServer]:
     port = free_port()
 
     def change(config: AppConfig) -> AppConfig:
-        config = changed(config, 'web', port=port)
+        # web.public_address set: this server is the Pi itself (the pretend Pi sends its pictures here), so the Live
+        # tab shows its own objects instead of asking a Pi elsewhere
+        config = changed(config, 'web', port=port, public_address=f'localhost:{port}')
         return changed(config, 'dev', ui_folder=dev_ui_folder, checks=QUICK_CHECKS, test_command=LIST_TESTS)
 
     server = AppServer(tmp_path, pictures=desk_pictures(tmp_path), found=CUP_IN_PICTURE_2, change=change)

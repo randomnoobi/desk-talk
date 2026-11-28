@@ -16,6 +16,7 @@ import os
 import re
 import shlex
 import time
+import urllib.parse
 from typing import Any
 
 import pytest
@@ -580,3 +581,20 @@ def test_the_pi_reports_its_own_system_numbers(pi: Pi):
     assert newest['disks'] and newest['disk_io']
     commands = ' '.join(p['command'] for s in reply['samples'] for p in s['top_processes'])
     assert 'desktalk_detector' in commands and 'raspberry_pi.camera' in commands
+
+
+# ── the developer page's Live tab ──
+def test_the_pi_shares_what_its_camera_sees(pi: Pi):
+    """GET /api/objects/states and /api/objects/smoothing answer, so a computer whose camera is the Pi can show the
+    Pi's objects on its Live tab (it asks these through GET /api/dev/states and /api/dev/smoothing)."""
+    pi.wait_until_healthy()
+    states = pi.get('/api/objects/states?since=0')
+    assert states is not None and isinstance(states['objects'], dict) and isinstance(states['changes'], list)
+    assert isinstance(states['now'], (int, float))              # the Pi's own time: the page measures from it
+    smoothing = pi.get('/api/objects/smoothing')
+    assert smoothing is not None and isinstance(smoothing['labels'], list)
+    print(json.dumps({'objects': states['objects'], 'traced': smoothing['labels']}))
+    for label in smoothing['labels'][:1]:
+        trace = pi.get(f'/api/objects/smoothing/trace?label={urllib.parse.quote(label, safe="")}')
+        assert trace is not None and trace['label'] == label and isinstance(trace['steps'], list)
+        assert isinstance(trace['rules'], dict) and 'appear_sec' in trace['rules']   # the Pi's own smoothing numbers

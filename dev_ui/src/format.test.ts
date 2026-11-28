@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatAgo, formatBytes, formatSeconds, keepLast } from './format'
+import { formatAgo, formatBytes, formatSeconds, keepLast, whoseWords } from './format'
 
 describe('formatBytes', () => {
   it.each([
@@ -32,5 +32,16 @@ describe('keepLast', () => {
 
   it('lets the oldest text go when there is too much', () => {
     expect(keepLast('old lines, new lines', 9)).toBe('new lines')
+  })
+})
+
+describe('whoseWords', () => {
+  it("names the Pi's own Desk Talk and its address", () => {
+    expect(whoseWords({ from: 'pi', address: 'desktalk-pi.local:5000' })).toBe("The Pi's own Desk Talk (desktalk-pi.local:5000)")
+    expect(whoseWords({ from: 'pi', address: 'desktalk-pi.local:5000' }, true)).toBe("the Pi's own Desk Talk (desktalk-pi.local:5000)")
+  })
+
+  it("is just Desk Talk when it's this computer's own", () => {
+    expect(whoseWords({ from: 'here', address: '' })).toBe('Desk Talk')
   })
 })

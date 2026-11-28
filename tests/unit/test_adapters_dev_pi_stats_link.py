@@ -1,4 +1,5 @@
-"""HttpPiStatsLink: the computer's line to the Pi's numbers. A fake opener stands in for the Wi-Fi: no network."""
+"""HttpPiStatsLink: the computer's line to the Pi's numbers, health and objects. A fake opener stands in for the
+Wi-Fi: no network."""
 
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ import urllib.request
 
 import pytest
 
-from desktalk.adapters.dev.pi_stats_link import HttpPiStatsLink
+from desktalk.adapters.dev.pi_stats_link import NOT_A_PICTURE, NOT_ITS_OBJECTS, HttpPiStatsLink
 from desktalk.domain import StatsUnavailable
 
 GOOD = {'collecting': True, 'every_sec': 2, 'keep_min': 30, 'info': {'cores': 4}, 'samples': [{'at': 1.0}]}
@@ -220,3 +221,107 @@ def test_health_that_is_not_json_says_it_is_not_the_health_checks():
 @pytest.mark.parametrize('body', [b'[]', b'{}', b'{"checks": []}', b'{"samples": []}', b'null'])
 def test_health_without_a_checks_dict_says_it_is_not_the_health_checks(body):
     assert health_problem(Opener(body)) == "it didn't send its health checks"
+
+
+# ── what the Pi's camera sees (the developer page's Live tab) ──
+STATES = {'objects': {'cup': {'state': 'PRESENT', 'since': 5.0}}, 'watched_since': 1.0, 'changes': [], 'now': 9.0}
+RULES = {'on_confidence': 0.5, 'off_confidence': 0.4, 'appear_sec': 3.0, 'gone_sec': 3.0, 'window_pictures': 5,
+         'vote_share': 0.5}
+STORY = {'label': 'pen/pencil', 'timeline': [{'ts': 5.0, 'kind': 'appeared'}], 'photos': []}
+
+
+def not_found(url: str = 'http://x') -> urllib.error.HTTPError:
+    return urllib.error.HTTPError(url, 404, 'Not Found', http.client.HTTPMessage(), None)
+
+
+def test_states_asks_for_the_changes_since_the_time_given():
+    opener = Opener(json.dumps(STATES).encode())
+    assert link_with(opener, timeout_sec=1.5).states(0.0) == STATES
+    assert opener.asked == [('http://desktalk.local:5000/api/objects/states?since=0.0', 1.5)]
+
+
+def test_traced_labels_asks_for_the_smoothing_list():
+    opener = Opener(b'{"labels": ["cup"]}')
+    assert link_with(opener).traced_labels() == {'labels': ['cup']}
+    assert opener.asked[0][0] == 'http://desktalk.local:5000/api/objects/smoothing'
+
+
+def test_a_trace_sends_a_label_with_a_slash_in_the_query():
+    trace = {'label': 'pen/pencil', 'steps': [], 'rules': RULES}
+    opener = Opener(json.dumps(trace).encode())
+    assert link_with(opener).trace('pen/pencil') == trace
+    assert opener.asked[0][0] == 'http://desktalk.local:5000/api/objects/smoothing/trace?label=pen%2Fpencil'
+
+
+def test_a_story_sends_a_label_with_a_slash_quoted_in_the_path():
+    opener = Opener(json.dumps(STORY).encode())
+    assert link_with(opener).story('pen/pencil') == STORY
+    assert opener.asked[0][0] == 'http://desktalk.local:5000/api/objects/pen%2Fpencil/story'
+
+
+def test_a_story_the_pi_has_nothing_of_is_empty():
+    """The Pi's story route answers 404 when there's nothing to tell: the Live tab shows an empty story."""
+    assert link_with(Opener(error=not_found())).story('mug') == {'label': 'mug', 'timeline': [], 'photos': []}
+
+
+def test_a_picture_comes_back_as_it_is():
+    opener = Opener(b'\xff\xd8 not json at all')
+    assert link_with(opener).photo('cup 1/2') == b'\xff\xd8 not json at all'
+    assert opener.asked[0][0] == 'http://desktalk.local:5000/api/objects/photo/cup%201%2F2'
+
+
+@pytest.mark.parametrize('body', [b'<!doctype html><p>Sign in to the Wi-Fi</p>', b'', b'\xff', b'\xd8\xff'],
+                         ids=['a web page', 'nothing', 'half the start', 'the start the wrong way round'])
+def test_a_200_answer_that_is_not_a_jpeg_says_so(body):
+    """Something else answering 200 at the Pi's address (a Wi-Fi sign-in page, a different server) isn't passed on as
+    a picture: a JPEG starts with the bytes FF D8."""
+    with pytest.raises(StatsUnavailable) as caught:
+        link_with(Opener(body)).photo('cup-1')
+    assert str(caught.value) == NOT_A_PICTURE == "it didn't send a picture"
+
+
+def test_a_picture_that_is_gone_is_none():
+    assert link_with(Opener(error=not_found())).photo('old') is None
+
+
+def test_a_picture_the_pi_fails_to_send_says_so():
+    error = urllib.error.HTTPError('http://x', 500, 'Server Error', http.client.HTTPMessage(), None)
+    with pytest.raises(StatsUnavailable, match='^it answered 500$'):
+        link_with(Opener(error=error)).photo('cup-1')
+
+
+def test_a_404_for_the_states_is_still_a_problem():
+    """Only a story or a picture may be missing: a Pi without the states route is too old, or not a Pi."""
+    with pytest.raises(StatsUnavailable, match='^it answered 404$'):
+        link_with(Opener(error=not_found())).states(0.0)
+
+
+@pytest.mark.parametrize('ask, body', [
+    (lambda link: link.states(0.0), b'{"objects": []}'),
+    (lambda link: link.states(0.0), b'{}'),
+    (lambda link: link.traced_labels(), b'{"labels": {}}'),
+    (lambda link: link.trace('cup'), b'{"label": "cup"}'),
+    (lambda link: link.trace('cup'), b'{"label": "cup", "steps": []}'),                         # no rules
+    (lambda link: link.trace('cup'), b'{"label": "cup", "steps": [], "rules": []}'),
+    (lambda link: link.states(0.0), json.dumps({**STATES, 'now': None}).encode()),             # no time
+    (lambda link: link.states(0.0), json.dumps({k: v for k, v in STATES.items() if k != 'now'}).encode()),
+    (lambda link: link.story('cup'), b'{"label": "cup", "timeline": {}}'),
+    (lambda link: link.story('cup'), b'[]'),
+])
+def test_a_reply_of_the_wrong_shape_says_it_is_not_what_the_camera_sees(ask, body):
+    with pytest.raises(StatsUnavailable) as caught:
+        ask(link_with(Opener(body)))
+    assert str(caught.value) == NOT_ITS_OBJECTS
+
+
+def test_objects_that_are_not_json_say_so():
+    with pytest.raises(StatsUnavailable) as caught:
+        link_with(Opener(b'<html>')).states(0.0)
+    assert str(caught.value) == f"{NOT_ITS_OBJECTS} (the answer isn't JSON)"
+
+
+def test_the_objects_say_what_went_wrong_in_the_same_words_as_the_numbers():
+    with pytest.raises(StatsUnavailable, match='^no answer in 3 s$'):
+        link_with(Opener(error=urllib.error.URLError(TimeoutError('timed out')))).story('cup')
+    with pytest.raises(StatsUnavailable, match="^that address can't be used$"):
+        link_with(Opener(error=ValueError('unknown url type'))).photo('cup-1')

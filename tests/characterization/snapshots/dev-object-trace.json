@@ -2,6 +2,8 @@
   "content_type": "application/json",
   "headers": {},
   "json": {
+    "address": "str",
+    "from": "str",
     "label": "str",
     "photos": [
       {
@@ -19,8 +21,8 @@
     ],
     "timeline": [
       {
-        "after": "null|str",
-        "before": "null|str",
+        "after": "str",
+        "before": "str",
         "confidence": "number",
         "kind": "str",
         "on_desk": "null",
@@ -36,9 +38,9 @@
           "ts": "number",
           "why": "str"
         },
-        "seen_for_sec": "null|number",
+        "seen_for_sec": "null",
         "source": "str",
-        "step": "null|str",
+        "step": "null",
         "ts": "number",
         "what": "str"
       }

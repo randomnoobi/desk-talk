@@ -2,6 +2,8 @@
   "content_type": "application/json",
   "headers": {},
   "json": {
+    "address": "str",
+    "from": "str",
     "label": "str",
     "photos": [],
     "timeline": []

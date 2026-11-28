@@ -1,0 +1,17 @@
+{
+  "content_type": "application/json",
+  "headers": {},
+  "json": {
+    "label": "str",
+    "rules": {
+      "appear_sec": "number",
+      "gone_sec": "number",
+      "off_confidence": "number",
+      "on_confidence": "number",
+      "vote_share": "number",
+      "window_pictures": "number"
+    },
+    "steps": []
+  },
+  "request": "GET /api/objects/smoothing/trace?label=pen%2Fpencil (main server, busy desk)"
+}

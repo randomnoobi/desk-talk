@@ -20,6 +20,7 @@ from desktalk.domain import BBox, Detection, PiHealth, PiLogSource, TestItem
 from desktalk.web.app import create_app
 from tests.characterization.client import WebClient
 from tests.fakes import FakePiLog, FakePiStatsLink, FakeTestRunner
+from tests.fakes.system import PHOTO_BYTES, PHOTO_ID
 from tests.integration.app_kit import CUP_FAR, DeskRig, changed, desk_config, pi_camera
 from tests.integration.web_kit import ON_THE_WIFI, THIS_COMPUTER, links_for
 from tests.integration.web_kit import web_client as main_client
@@ -88,8 +89,10 @@ def settle_sec(rig: DeskRig) -> float:
 @pytest.fixture
 def rig(tmp_path) -> DeskRig:
     """A desk that watched a cup and a pen long enough for both to appear, with a fake test runner and a fake
-    Pi log reader."""
-    rig = DeskRig(tmp_path, test_runner=FakeTestRunner(TESTS), pi_log=FakePiLog(PI_LOGS, PI_PRINTS))
+    Pi log reader. Its camera is the phone, so the Live tab's routes answer from here (the Pi is never asked)."""
+    rig = DeskRig(tmp_path, config=changed(desk_config(tmp_path), 'camera', source='phone'),
+                  test_runner=FakeTestRunner(TESTS), pi_log=FakePiLog(PI_LOGS, PI_PRINTS),
+                  pi_stats_link=FakePiStatsLink(problem='it should not be asked'))
     rig.watch(settle_sec(rig), CUP_FAR, PEN)
     return rig
 
@@ -157,7 +160,9 @@ def test_smoothing_trace_for_a_label_with_a_slash(rig):
     assert set(trace['steps'][0]) == {'ts', 'conf', 'box_seen', 'votes_yes', 'votes_total', 'seen', 'center',
                                       'phase', 'heading', 'waiting_sec'}
     nothing = client.get('/api/dev/smoothing/trace?label=nothing')
-    assert (nothing.status_code, nothing.json()) == (200, {'label': 'nothing', 'steps': []})
+    rules = client.get('/api/dev/settings').json()['object_states']
+    assert (nothing.status_code, nothing.json()) == (200, {'label': 'nothing', 'steps': [], 'rules': rules,
+                                                           'from': 'here', 'address': ''})
     assert client.get('/api/dev/smoothing/trace').status_code == 400
 
 
@@ -337,6 +342,120 @@ def test_the_fake_pi_health_has_the_same_keys_as_the_real_route(tmp_path):
                                           last_cleanup_ts=9.0, cpu_temp_c=52.0, throttled='0x0'))
     real = web_client(rig.app).get('/api/health').json()
     assert keys_of(FakePiStatsLink().health()) == keys_of(real)
+
+
+# ── the Live tab: the Pi's objects when the Pi is elsewhere, else this server's ──
+# The Live tab's routes that answer JSON, and the photo route, as the page asks them.
+LIVE_JSON_ROUTES = ['/api/dev/states?since=0', '/api/dev/smoothing', '/api/dev/smoothing/trace?label=cup',
+                    '/api/dev/objects/cup']
+LIVE_ROUTES = [*LIVE_JSON_ROUTES, f'/api/dev/objects/photo/{PHOTO_ID}']
+
+
+def test_live_routes_ask_the_pi_when_it_is_the_camera(tmp_path):
+    """web.public_address empty (a computer) and camera.source pi: the Pi's own replies, from dev.pi_address."""
+    link = FakePiStatsLink()
+    rig = DeskRig(tmp_path, pi_stats_link=link)
+    client, pi = web_client(rig.app), {'from': 'pi', 'address': rig.config.dev.pi_address}
+    assert client.get('/api/dev/states?since=7').json() == {**link.states_reply, **pi}
+    assert link.asked_states == [7.0]
+    assert client.get('/api/dev/smoothing').json() == {**link.labels_reply, **pi}
+    trace = client.get('/api/dev/smoothing/trace?label=cup').json()
+    assert trace == {'label': 'cup', 'steps': link.trace_steps, 'rules': link.trace_rules, **pi}
+    never = client.get('/api/dev/smoothing/trace?label=pen%2Fpencil').json()      # a slash, and never seen there
+    assert never == {'label': 'pen/pencil', 'steps': [], 'rules': link.trace_rules, **pi}
+    assert client.get('/api/dev/objects/cup').json() == {**link.story_reply, 'label': 'cup', **pi}
+    photo = client.get(f'/api/dev/objects/photo/{PHOTO_ID}')
+    assert (photo.status_code, photo.headers['content-type'], photo.content) == (200, 'image/jpeg', PHOTO_BYTES)
+    assert (link.asked_traces, link.asked_stories, link.asked_photos) == (['cup', 'pen/pencil'], ['cup'], [PHOTO_ID])
+
+
+@pytest.mark.parametrize('section, setting, value', [('web', 'public_address', 'desktalk.local:5000'),
+                                                     ('camera', 'source', 'phone')],
+                         ids=['on the Pi itself', 'with a phone camera'])
+def test_live_routes_answer_from_here_on_the_pi_and_with_another_camera(tmp_path, section, setting, value):
+    link = FakePiStatsLink(problem='it should not be asked')
+    rig = DeskRig(tmp_path, config=changed(desk_config(tmp_path), section, **{setting: value}), pi_stats_link=link)
+    rig.watch(settle_sec(rig), CUP_FAR)
+    client = web_client(rig.app)
+    for path in LIVE_JSON_ROUTES:
+        reply = client.get(path)
+        assert reply.status_code == 200, path
+        assert (reply.json()['from'], reply.json()['address']) == ('here', ''), path
+    assert client.get('/api/dev/states?since=0').json()['objects']['cup']['state'] == 'PRESENT'
+    photos = client.get('/api/dev/objects/cup').json()['photos']
+    assert photos
+    photo = client.get(f"/api/dev/objects/photo/{photos[0]['id']}")
+    assert (photo.status_code, photo.headers['content-type']) == (200, 'image/jpeg')
+    assert client.get(f'/api/dev/objects/photo/{PHOTO_ID}').status_code == 404       # only the Pi has that one
+    assert link.asked_states == link.asked_traces == link.asked_stories == link.asked_photos == []
+
+
+def test_a_story_the_pi_never_saw_is_empty(tmp_path):
+    rig = DeskRig(tmp_path, pi_stats_link=FakePiStatsLink())
+    reply = web_client(rig.app).get('/api/dev/objects/pen%2Fpencil')
+    assert (reply.status_code, reply.json()) == (200, {'label': 'pen/pencil', 'timeline': [], 'photos': [],
+                                                       'from': 'pi', 'address': rig.config.dev.pi_address})
+
+
+def test_a_picture_gone_on_the_pi_is_404(tmp_path):
+    link = FakePiStatsLink()
+    rig = DeskRig(tmp_path, pi_stats_link=link)
+    assert web_client(rig.app).get('/api/dev/objects/photo/nope').status_code == 404
+    assert link.asked_photos == ['nope']
+
+
+@pytest.mark.parametrize('path', LIVE_ROUTES)
+def test_live_routes_are_502_when_the_pi_does_not_answer(tmp_path, path):
+    rig = DeskRig(tmp_path, pi_stats_link=FakePiStatsLink(problem='no answer in 3 s'))
+    reply = web_client(rig.app).get(path)
+    words = rig.config.prompts.dev.pi_objects_unreachable.format(address=rig.config.dev.pi_address,
+                                                                 problem='no answer in 3 s')
+    assert (reply.status_code, reply.json()) == (502, {'error': words})
+
+
+def object_keys(states: dict[str, Any], trace: dict[str, Any], story: dict[str, Any]) -> dict[str, Any]:
+    """The keys of the Live tab's replies: the top level's, and those of the objects, changes, steps and pictures in
+    them (the first of each)."""
+    return {'states': sorted(states), 'object': sorted(next(iter(states['objects'].values()))),
+            'change': sorted(states['changes'][0]), 'trace': sorted(trace), 'step': sorted(trace['steps'][0]),
+            'rules': sorted(trace['rules']),
+            'story': sorted(story), 'story_step': sorted(story['timeline'][0]), 'photo': sorted(story['photos'][0])}
+
+
+def test_the_fake_pi_objects_have_the_same_keys_as_the_real_routes(tmp_path):
+    """FakePiStatsLink's states(), trace() and story() stand in for the Pi's own GET /api/objects/states,
+    /api/objects/smoothing/trace and /api/objects/<label>/story: if a route gains or loses a key, the fake must too,
+    or the tests of the Live tab would pass on a shape the Pi never sends."""
+    rig = DeskRig(tmp_path)
+    rig.watch(settle_sec(rig), CUP_FAR)
+    client = main_client(rig.app)
+    real = object_keys(client.get('/api/objects/states?since=0').json(),
+                       client.get('/api/objects/smoothing/trace?label=cup').json(),
+                       client.get('/api/objects/cup/story').json())
+    fake = FakePiStatsLink()
+    assert object_keys(fake.states(0.0), fake.trace('cup'), fake.story('cup')) == real
+    assert set(client.get('/api/objects/smoothing').json()) == set(fake.traced_labels())
+
+
+def test_the_pi_trace_is_drawn_with_the_pis_rules_not_these(tmp_path):
+    """The Pi's settings (its own settings.local.yaml, its sensitivity slider) may differ from this computer's: the
+    trace passes on the Pi's rules as they are."""
+    pis = {'on_confidence': 0.7, 'off_confidence': 0.6, 'appear_sec': 6.0, 'gone_sec': 9.0, 'window_pictures': 8,
+           'vote_share': 0.75}
+    rig = DeskRig(tmp_path, pi_stats_link=FakePiStatsLink(trace_rules=pis))
+    client = web_client(rig.app)
+    assert client.get('/api/dev/smoothing/trace?label=cup').json()['rules'] == pis
+    assert client.get('/api/dev/settings').json()['object_states'] != pis
+
+
+def test_the_pi_states_say_the_pis_time(tmp_path):
+    link = FakePiStatsLink(states_reply={'objects': {}, 'watched_since': None, 'changes': [], 'now': 1234.5})
+    rig = DeskRig(tmp_path, pi_stats_link=link)
+    assert web_client(rig.app).get('/api/dev/states').json()['now'] == 1234.5
+
+
+def test_states_here_say_this_servers_time(rig):
+    assert web_client(rig.app).get('/api/dev/states').json()['now'] == rig.clock.now()
 
 
 @pytest.mark.parametrize('path', ['../.env', '/etc/passwd', '../../config/settings.yaml'])

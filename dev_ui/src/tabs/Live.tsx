@@ -3,8 +3,8 @@
 // flickering object right away), and the pictures kept of it.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getObjectTrace, getStates, getTrace, getTracedLabels, type DevSettings, type ObjectNow,
-         type ObjectTraceReply, type SmoothingStep, type StateChange, type States } from '../api'
-import { formatClock, formatSeconds } from '../format'
+         type ObjectTraceReply, type SmoothingTrace, type StateChange, type States } from '../api'
+import { formatClock, formatSeconds, whoseWords } from '../format'
 import ObjectTrace from '../ObjectTrace'
 import SmoothingChart from '../SmoothingChart'
 import { ErrorLine, Pill, Table } from '../ui'
@@ -12,6 +12,11 @@ import { countdown, isFlickering, keepRecent, mergeChanges, newestFirst, withPha
 import { usePoll } from '../usePoll'
 
 const nowSec = () => Date.now() / 1000
+
+/** The states, with `gap`: the answering server's clock minus this computer's, worked out when it answered. The
+ *  times in the reply are by the server's clock (the Pi's, which may be off from this computer's), so "for 5 s"
+ *  and the last minute's flips are measured from nowSec() + gap. */
+type ShownStates = States & { gap: number }
 
 /** PRESENT green, ABSENT grey, UNKNOWN an outline. */
 function StatePill(props: { state: ObjectNow['state'] }): JSX.Element {
@@ -27,21 +32,22 @@ const Flickering = (props: { limit: number }) =>
  * Asks for the states, and only for the changes it hasn't got yet. The first time it asks for the
  * changes since the camera's current run of pictures began (or since the page opened, if that isn't known).
  * It keeps the newest `keep` changes, plus all of the last minute's for the flickering badge, so a day of
- * changes doesn't pile up in the page.
+ * changes doesn't pile up in the page. Every time is the server's (see ShownStates).
  */
 function useStates(everyMs: number, keep: number) {
   const since = useRef<number | null>(null)
   const changes = useRef<StateChange[]>([])
-  return usePoll<States>(async () => {
+  return usePoll<ShownStates>(async () => {
     if (since.current === null) {
       const first = await getStates(nowSec())
-      since.current = first.watched_since ?? nowSec()
+      since.current = first.watched_since ?? first.now
     }
     const reply = await getStates(since.current)
-    changes.current = keepRecent(mergeChanges(changes.current, reply.changes), nowSec(), keep)
+    const gap = reply.now - nowSec()
+    changes.current = keepRecent(mergeChanges(changes.current, reply.changes), reply.now, keep)
     const newest = changes.current[changes.current.length - 1]
     if (newest && newest.ts > since.current) since.current = newest.ts
-    return { ...reply, changes: changes.current }
+    return { ...reply, changes: changes.current, gap }
   }, everyMs)
 }
 
@@ -127,9 +133,11 @@ function Changes(props: { states: States, now: number, flickerLimit: number }): 
   )
 }
 
-function Smoothing(props: { settings: DevSettings, steps: SmoothingStep[] }): JSX.Element {
-  const rules = props.settings.object_states
-  const steps = useMemo(() => props.steps.slice(-props.settings.trace_pictures), [props.steps, props.settings.trace_pictures])
+/** One object's smoothing, drawn with the rules of the server that smoothed it (the Pi's own, from the Pi). */
+function Smoothing(props: { settings: DevSettings, trace: SmoothingTrace }): JSX.Element {
+  const { rules } = props.trace
+  const steps = useMemo(() => props.trace.steps.slice(-props.settings.trace_pictures),
+                        [props.trace.steps, props.settings.trace_pictures])
   if (steps.length === 0) return <p className="muted">No pictures yet for this object</p>
   const last = steps[steps.length - 1]
   const wait = countdown(last, rules)
@@ -170,7 +178,7 @@ export default function Live(props: { settings: DevSettings }): JSX.Element {
   useEffect(() => {
     if (picked === null && labels.length > 0) setPicked(labels[0])
   }, [picked, labels])
-  const smoothing = usePicked<SmoothingStep[]>(picked, everyMs, getTrace)
+  const smoothing = usePicked<SmoothingTrace>(picked, everyMs, getTrace)
   const trace = usePicked<ObjectTraceReply>(picked, everyMs, getObjectTrace)
   const panel = useRef<HTMLDivElement>(null)
   // Every object the page knows of can be picked, also ones with no smoothing yet.
@@ -182,12 +190,13 @@ export default function Live(props: { settings: DevSettings }): JSX.Element {
     setPicked(label)
     panel.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
   }
-  const now = nowSec()
+  const now = nowSec() + (states.data?.gap ?? 0)          // by the server's clock
 
   return (
     <div className="stack">
       <div className="card">
         <h2>Now</h2>
+        {states.data?.from === 'pi' && <p className="muted small">From {whoseWords(states.data, true)}</p>}
         <ErrorLine error={states.error} />
         {states.data ? <NowCards states={states.data} now={now} flickerLimit={settings.flicker_flips_per_min}
                                  picked={picked} onPick={pick} />
@@ -214,16 +223,17 @@ export default function Live(props: { settings: DevSettings }): JSX.Element {
             </select>
           </div>
         </div>
-        <ErrorLine error={traced.error ?? trace.error ?? smoothing.error} />
+        {/* With nothing picked, "No objects seen yet." gives way to either list's error: say which. */}
+        <ErrorLine error={traced.error ?? trace.error ?? smoothing.error ?? (picked === null ? states.error : null)} />
         {picked === null
-          ? <p className="muted">No objects seen yet.</p>
+          ? !(traced.error ?? states.error) && <p className="muted">No objects seen yet.</p>
           : trace.data?.label !== picked || trace.data.data === null
             ? <p className="muted">Asking for {picked}'s trace…</p>
             : <ObjectTrace
                 label={picked} settings={settings} trace={trace.data.data}
                 smoothing={smoothing.data?.label !== picked || smoothing.data.data === null
                   ? <p className="muted">Asking for {picked}'s pictures…</p>
-                  : <Smoothing settings={settings} steps={smoothing.data.data} />} />}
+                  : <Smoothing settings={settings} trace={smoothing.data.data} />} />}
         <p className="muted small" style={{ marginTop: 10 }}>
           The smoothing shows the last {settings.trace_pictures} pictures. The page asks for new numbers every
           {' '}{settings.poll_sec} s.
