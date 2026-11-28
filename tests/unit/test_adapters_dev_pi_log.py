@@ -146,6 +146,19 @@ def test_the_errors_become_problem_lines(made):
     assert page.state == 'connected'
 
 
+def test_an_error_read_before_the_marker_stays_the_problem(made, tmp_path):
+    """The two pipes are read by two threads, so an error line can be taken before that same connection's marker.
+    The marker only clears a problem left from an earlier connection, never one this connection printed."""
+    go = tmp_path / 'go'
+    # "ssh" that prints an error, then waits for the test to say go before running the command (and its marker)
+    held_ssh = ['sh', '-c', f'echo oops >&2; while [ ! -e {shlex.quote(str(go))} ]; do sleep 0.01; done; sh -c "$0"']
+    pi_log = made(ssh=held_ssh)
+    wait_for(lambda: pi_log.read('first', 0), lambda p: 'oops' in texts(p, 'problem'))
+    go.touch()
+    page = wait_for(lambda: pi_log.read('first', 0), lambda p: p.state == 'connected')
+    assert page.problem == 'oops'
+
+
 def test_long_lines_are_cut(made):
     pi_log = made(line_max_chars=10, sources={'first': ("printf 'abcdefghijklmnop\\r\\n'; sleep 30", 'sleep 30'),
                                               'second': ('true', 'true')})

@@ -7,8 +7,9 @@ The developer page's Pi log tab (ports.PiLogReader): the Pi's log, read over ssh
   the line numbers keep counting up all the same.
 - Two plain threads read ssh's printout: each line it prints becomes a 'line' (cut to settings → line_max_chars),
   each error line ssh itself prints a 'problem' (through the terminal the Pi's own errors come with its lines).
-  The marker line itself isn't kept: it means ssh got through to the Pi. Line ends (\\r\\n through the terminal)
-  are taken off.
+  The marker line itself isn't kept: it means ssh got through to the Pi, so it clears the problem an earlier
+  connection left, but not one this connection printed (its error can be read before its marker, as the two
+  threads don't wait for each other). Line ends (\\r\\n through the terminal) are taken off.
 - When ssh ends by itself, the reader waits (settings → retry_start_sec, twice as long after each miss up to
   retry_max_sec) and tick() connects again with the source's resume command, from the Pi's own time on the newest
   line it got: {since} is that time as seconds since 1970 with its fraction (1762855200.123456789). The lines from
@@ -122,6 +123,7 @@ class SshPiLog:
         self._source: DevPiLogSource | None = None      # the one being read (or last read)
         self._state = 'stopped'
         self._problem = ''
+        self._problem_of = 0                            # the number of the connection that said the problem
         self._retry_at: float | None = None
         self._backoff = Backoff(settings.retry_start_sec, settings.retry_max_sec)   # the waits before trying again
         self._last_asked = 0.0                          # clock.monotonic() of the last read()
@@ -216,7 +218,7 @@ class SshPiLog:
         except OSError as error:
             self._add(self._words.cannot_start.format(reason=error), 'note')
             log.warning("Pi log: couldn't start ssh: %s", error)
-            self._lost(str(error), None)
+            self._lost(str(error), None, self._connections)
             return
         connection = _Connection(self._connections, process)
         self._connection = connection
@@ -225,12 +227,12 @@ class SshPiLog:
         threading.Thread(target=self._read_lines, args=(connection,), name=f'pi-log-{connection.number}',
                          daemon=True).start()
 
-    def _lost(self, reason: str, connected_at: float | None) -> None:
-        """The connection ended by itself: wait, then try again (tick()). Only one that had been connected for
+    def _lost(self, reason: str, connected_at: float | None, number: int) -> None:
+        """Connection `number` ended by itself: wait, then try again (tick()). Only one that had been connected for
         settings → connected_ok_sec makes the wait start small again."""
         self._connection = None
         self._state = 'waiting'
-        self._problem = reason
+        self._problem, self._problem_of = reason, number
         if connected_at is not None and \
                 self._clock.monotonic() - connected_at >= self._settings.connected_ok_sec:
             self._backoff.reset()
@@ -260,7 +262,7 @@ class SshPiLog:
         with self._lock:
             if self._connection is connection:
                 self._lost(connection.last_error or self._words.exit_code.format(code=exit_code),
-                           connection.connected_at)
+                           connection.connected_at, connection.number)
 
     def _read_errors(self, connection: _Connection) -> None:
         stderr = connection.process.stderr
@@ -272,7 +274,7 @@ class SshPiLog:
                         break
                     text = line[:self._settings.line_max_chars]
                     connection.last_error = text
-                    self._problem = text
+                    self._problem, self._problem_of = text, connection.number
                     self._add(text, 'problem')
             stderr.close()
         finally:
@@ -294,7 +296,8 @@ class SshPiLog:
         """One line the Pi printed. (Lock held.)"""
         if line == MARKER and self._state == 'connecting':
             self._state = 'connected'
-            self._problem = ''
+            if self._problem_of != connection.number:   # only what an earlier connection said: this one got through
+                self._problem = ''
             connection.connected_at = self._clock.monotonic()
             self._add(self._words.connected, 'note')
             log.info('Pi log: connected to the Pi')
