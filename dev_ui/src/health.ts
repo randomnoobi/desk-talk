@@ -215,21 +215,9 @@ export function ownRows(health: Health, logStatus: LogStatus, limits: RowLimits,
   ]
 }
 
-/**
- * Every row of the System tab, in order, when one Desk Talk gives them all. `now` is seconds since 1970. `before` is
- * what the poll before saw (from remember()); without it, the "per second" numbers wait for the next poll.
- */
-export function healthRows(health: Health, logStatus: LogStatus, limits: RowLimits, now: number,
-                           before: Seen | null = null): Row[] {
-  return [...shownRows(health, limits, now, before), ...ownRows(health, logStatus, limits, now, before)]
-}
-
 /** The groups that come from GET /api/dev/health (the Pi's own when the Pi is the camera), in the tab's order. */
 export const SHOWN_GROUPS = ['Health checks', 'Pi'] as const
 
 /** The groups that always come from this computer's own Desk Talk, in the tab's order. */
 export const OWN_GROUPS = ['Detection in the app', 'Event stream', 'Background jobs', 'Timed jobs', 'Event log',
                            'AI'] as const
-
-/** The group names in the order the tab shows them. */
-export const GROUPS = [...SHOWN_GROUPS, ...OWN_GROUPS] as const

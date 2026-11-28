@@ -26,12 +26,12 @@ class BlockedStorage extends FakeStorage {
 }
 
 describe('readBrowserStorage', () => {
-  it("names Paper's to-do list and reads its JSON", () => {
+  it('names the to-do list and reads its JSON', () => {
     const todo = { type: 'todo', items: [{ text: 'Write the storage tab', done: false }] }
     const rows = readBrowserStorage(new FakeStorage({ desktalk_todo_v1: JSON.stringify(todo) }))
     expect(rows).toHaveLength(1)
     expect(rows[0].key).toBe('desktalk_todo_v1')
-    expect(rows[0].usedBy).toBe("Paper's to-do list")
+    expect(rows[0].usedBy).toBe('To-do list')
     expect(rows[0].json).toEqual(todo)
     expect(rows[0].value).toBe(JSON.stringify(todo))
     expect(rows[0].bytes).toBe(new TextEncoder().encode(JSON.stringify(todo)).length)
@@ -58,7 +58,7 @@ describe('readBrowserStorage', () => {
 describe('usedBy', () => {
   it('names each key the app page uses, and says when it does not know one', () => {
     expect(usedBy('desktalk_chats_v2')).toBe('Chat history')
-    expect(usedBy('desktalk_todo_v1')).toBe("Paper's to-do list")
+    expect(usedBy('desktalk_todo_v1')).toBe('To-do list')
     expect(usedBy('desktalk_habits_v2')).toBe('Habit counters')
     expect(usedBy('desktalk_chats_v1')).toBe('Desk Talk (unknown key)')
     expect(usedBy('something_else')).toBe('Not Desk Talk')
@@ -89,7 +89,7 @@ describe('a choice the developer page remembers', () => {
 describe('deleting a key', () => {
   it('asks with what the app page loses', () => {
     const [row] = readBrowserStorage(new FakeStorage({ desktalk_todo_v1: '{}' }))
-    expect(deleteQuestion(row)).toBe("Delete desktalk_todo_v1? The app page loses Paper's to-do list.")
+    expect(deleteQuestion(row)).toBe('Delete desktalk_todo_v1? The app page loses To-do list.')
   })
 
   it('says the developer page only forgets a choice for its own keys', () => {

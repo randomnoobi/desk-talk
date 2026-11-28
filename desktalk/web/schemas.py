@@ -1,6 +1,6 @@
 """
 What the app, the Pi and the phone send in a request body, and the replies the web layer makes
-itself. Fields the routes don't read are ignored, as before. Values the parts check themselves (times,
+itself. Fields the routes don't read are ignored. Values the parts check themselves (times,
 corners, to-do lists) are taken as they come, so their own plain-words errors reach the app.
 
 A body that doesn't fit gets 400 {"error": "<field>: <what's wrong>"} (desktalk/web/app.py).
@@ -22,7 +22,6 @@ class ChatMessage(BaseModel):
     chat: str = 'group'                     # 'group' or an agent id
     message: str | None = None
     recent_messages: list[Any] | None = None    # the earlier turns, newest last
-    history: list[Any] | None = None            # the same, from an older app version
     widget: Any = None                          # the agent's to-do list, with a 1-on-1 message
 
 
@@ -56,7 +55,7 @@ class TodosReply(BaseModel):
 
 def todos_in(widget: Any) -> list[Todo] | None:
     """The to-dos in a list the app sent ({'type': 'todo', 'items': [{text, done, due}]}), None if it isn't one.
-    Taken as they come (a list from an older page has no due dates); the TodoList cleans them."""
+    Taken as they come; the TodoList cleans them."""
     if not isinstance(widget, dict) or widget.get('type') != 'todo' or not isinstance(widget.get('items'), list):
         return None
     out = []
@@ -86,10 +85,6 @@ class HabitEntry(BaseModel):
         return dict(self.model_extra or {})
 
 
-OLD_PREFERENCE_NAMES = {'dnd_enabled': 'quiet_enabled', 'dnd_start_hour': 'quiet_start_hour',
-                        'dnd_end_hour': 'quiet_end_hour'}
-
-
 class PreferenceChanges(BaseModel):
     """PUT /api/preferences. Left out or null = unchanged. PreferencesFile checks the values."""
 
@@ -100,17 +95,10 @@ class PreferenceChanges(BaseModel):
     quiet_end_hour: Any = None
     sensitivity: int | None = None       # a step of the sensitivity slider (settings → agents.sensitivity_steps)
     auto_sensitivity: bool | None = None  # the slider may move by itself (settings → sensitivity_review)
-    dnd_enabled: Any = None              # the old names, from the previous app version
-    dnd_start_hour: Any = None
-    dnd_end_hour: Any = None
 
     def changes(self) -> dict[str, Any]:
-        """The new names only (an old name wins over its new one, as before)."""
-        out = self.model_dump(exclude_unset=True)
-        for old, new in OLD_PREFERENCE_NAMES.items():
-            if old in out:
-                out[new] = out.pop(old)
-        return out
+        """The values sent."""
+        return self.model_dump(exclude_unset=True)
 
 
 class RuleChanges(BaseModel):
@@ -174,7 +162,7 @@ class PhoneSettings(BaseModel):
     capture_height: int
 
 
-# ── GET /api/ui_settings: what the app page (web_app/) used to keep its own copies of ──
+# ── GET /api/ui_settings: the numbers and words the app page (web_app/) needs, so it keeps no copies ──
 class UiPage(BaseModel):
     """settings → web: how often the page refreshes, how long it waits, how long lists are, its colors."""
 

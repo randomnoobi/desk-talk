@@ -3,8 +3,8 @@ TodoFile: the to-do list the server keeps (Book's panel), with optional due date
 
 The app sends its list (POST /api/chat_todos, /api/chat_todos_sync) and loads it back when it opens
 (GET /api/todos), so the reminders know the due dates with no page open. Saved in the store under
-settings → habit_tracker.todos_key (data/todos.json) as {"items": [{"text", "done", "due"}]}; a list from
-before due dates existed still loads.
+settings → habit_tracker.todos_key (data/todos.json) as {"items": [{"text", "done", "due"}]}; "due" may be
+left out.
 
 Ticking a to-do off publishes a HabitEvent for 'tasks', so it shows in the event log and the chat.
 """

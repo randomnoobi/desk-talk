@@ -116,7 +116,7 @@ def test_with_no_working_webcam_read_waits_and_gives_nothing(clock):
     assert source.read(timeout=0.7) is None
     assert source.read(timeout=0.7) is None
     assert clock.slept == [0.7, 0.7]
-    assert opener.tried == [0, 1]             # gave up after trying them all once, as before
+    assert opener.tried == [0, 1]             # gave up after trying them all once
     assert not source.connected
 
 

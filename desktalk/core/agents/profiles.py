@@ -7,7 +7,7 @@ Agent profiles: who each detected object becomes (config/agents.yaml).
     book.for_label('person')      # → None (in the ignore list)
 
 Personalities the AI invents for objects without a block are kept in the store under
-"learned_personalities" (data/learned_personalities.json, as before), so they stay the same next time.
+"learned_personalities" (data/learned_personalities.json), so they stay the same next time.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from desktalk.util import slug, title_label
 log = logging.getLogger(__name__)
 
 LEARNED_KEY = 'learned_personalities'
-# Colors for agents without their own; the order keeps each agent's color the same as before.
+# Colors for agents without their own. Each agent's name picks one, so changing the order changes their colors.
 PALETTE = ('cobalt', 'teal', 'tang', 'mustard', 'coral', 'plum', 'moss', 'slate')
 
 

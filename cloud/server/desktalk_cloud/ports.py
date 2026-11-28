@@ -1,6 +1,6 @@
 """
 The interfaces between the cloud server's parts. Every part is written against these, never against another part's
-class; bootstrap (Task 9) builds the real ones and tests use the fakes in tests/fakes/cloud.py. Each has a contract
+class; bootstrap.py builds the real ones and tests use the fakes in tests/fakes/cloud.py. Each has a contract
 suite in tests/contracts/. Change this file only on purpose: every part depends on it.
 
 Times are seconds since 1970 and are always passed in (`now`), never read from the clock inside a store.

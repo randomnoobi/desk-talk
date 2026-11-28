@@ -5,7 +5,7 @@ import App from './App'
 import { fakeServer } from './fakeServer'
 
 const ME = { id: 'u1', email: 'sam@example.com', name: 'Sam' }
-const DEVICES = { devices: [{ id: 'd1', name: 'Desk Pi', time_zone: 'UTC', created_at: 1, last_seen_at: 2, removed_at: null }] }
+const DEVICES = [{ id: 'd1', name: 'Desk Pi', time_zone: 'UTC', created_at: 1, last_seen_at: 2, caught_up_at: null, removed: false }]
 
 describe('App', () => {
   it('shows the login page when nobody is logged in', async () => {
@@ -40,7 +40,7 @@ describe('App', () => {
   it('asks for the reports once each time the page changes, whatever the number of Pis', async () => {
     const server = fakeServer({
       'GET /api/me': { body: ME },
-      'GET /api/devices': { body: { devices: [{ id: 'd1', name: 'Desk Pi' }, { id: 'd2', name: 'Bed Pi' }] } },
+      'GET /api/devices': { body: [{ id: 'd1', name: 'Desk Pi' }, { id: 'd2', name: 'Bed Pi' }] },
       'GET /api/reports': { body: [] },
     })
     render(<App />)

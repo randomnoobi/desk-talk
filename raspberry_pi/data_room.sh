@@ -190,8 +190,8 @@ trims_file() {
 }
 
 # Switches trims off for the room's loop device $1, if they're on (the service file does this at every mount; this
-# catches a mount that couldn't, or one by an older service file). It needs no sudo when they're off already. A failure
-# doesn't stop anything: it says so, in an IMPORTANT line.
+# catches a mount that couldn't). It needs no sudo when they're off already. A failure doesn't stop anything: it says
+# so, in an IMPORTANT line.
 no_trims() {
     local file
     file=$(trims_file "$1")

@@ -9,7 +9,6 @@ import pytest
 from desktalk_shared.detection import BBox, Detection
 from desktalk_shared.wire import (
     DETECTOR_TURNED_OFF,
-    OLD_CAMERA_PROGRAM,
     VERSION,
     DetectorState,
     PiHealth,
@@ -17,7 +16,6 @@ from desktalk_shared.wire import (
     WireError,
     decode_upload,
     encode_upload,
-    info_from_v1_headers,
 )
 
 JPEG = b'\xff\xd8\xff\xe0' + bytes(range(256)) * 4 + b'\r\n--not-a-boundary\r\n' + b'\xff\xd9'
@@ -80,6 +78,12 @@ def test_missing_parts_and_garbage_give_clear_errors():
         UploadInfo.from_json(b'{not json')
 
 
+def test_a_boundary_that_is_not_plain_ascii_is_refused_with_a_clear_error():
+    body, _ = encode_upload(JPEG, make_info())
+    with pytest.raises(WireError, match='boundary'):
+        decode_upload(body, 'multipart/form-data; boundary=caf\u00e9')
+
+
 def test_bad_detection_in_info_is_rejected_with_its_position():
     data = make_info().to_dict()
     data['detections'][0]['conf'] = 7
@@ -96,37 +100,8 @@ def test_info_json_is_plain_and_readable():
     assert data['health']['cpu_temp_c'] == 61.5
 
 
-def test_old_header_uploads_become_version_1_info_with_detector_off():
-    headers = {'X-Frame-Id': 'pi-000007', 'X-Taken-At': '1760000000.500', 'X-Lux': '120.5',
-               'X-Pi-Camera': 'usb', 'X-Pi-Photos': '3', 'X-Pi-Free-MB': '900', 'X-Pi-Last-Cleanup': '1759990000'}
-    info = info_from_v1_headers(headers)
-    assert info.version == 1
-    assert info.detector is DetectorState.OFF
-    assert info.detections == ()
-    assert (info.frame_id, info.taken_at, info.lux) == ('pi-000007', 1_760_000_000.5, 120.5)
-    assert info.health == PiHealth(camera='usb', photos_stored=3, disk_free_mb=900, last_cleanup_ts=1_759_990_000.0)
-
-
-def test_old_header_uploads_say_the_detector_is_off_because_of_the_old_camera_program():
-    info = info_from_v1_headers({'X-Frame-Id': 'pi-1'})
-    assert info.detector_reason == OLD_CAMERA_PROGRAM
-
-
 def test_the_reasons_for_detection_off_on_purpose_keep_their_words():
     """Pis already running send these exact words, so changing them would make Lens warn about them again."""
     assert DETECTOR_TURNED_OFF == 'detection on the Pi is turned off (--no-detector)'
-    assert OLD_CAMERA_PROGRAM == 'this Pi runs the old camera program (no detector)'
 
 
-def test_old_header_uploads_skip_values_that_are_not_numbers():
-    info = info_from_v1_headers({'X-Frame-Id': 'pi-1', 'X-Taken-At': 'soon', 'X-Lux': '', 'X-Pi-Photos': 'many'})
-    assert info.lux is None and info.health.photos_stored is None
-    assert info.taken_at is None
-
-
-@pytest.mark.parametrize('bad', ['nan', 'inf', '-inf', 'Infinity', 'NaN'])
-def test_old_header_uploads_skip_values_that_are_not_finite(bad):
-    """nan and inf can't go into a JSON reply, so they must not get into the info at all."""
-    info = info_from_v1_headers({'X-Frame-Id': 'pi-1', 'X-Taken-At': bad, 'X-Lux': bad, 'X-Pi-Last-Cleanup': bad})
-    assert (info.taken_at, info.lux, info.health.last_cleanup_ts) == (None, None, None)
-    json.dumps(info.to_dict(), allow_nan=False)

@@ -257,7 +257,7 @@ def test_a_day_that_is_not_a_date_reads_as_empty(tmp_path):
     assert log.counts('../secret') == {'pictures_waiting': 0, 'events': {}}
 
 
-def test_logs_written_by_the_old_app_still_read(tmp_path):
+def test_log_files_already_on_disk_are_read(tmp_path):
     day = tmp_path / '2026-10-18'
     day.mkdir()
     (day / 'events.jsonl').write_text(
@@ -280,24 +280,6 @@ def test_logs_written_by_the_old_app_still_read(tmp_path):
         {'type': 'presence', 'label': 'cup', 'interval': [1792345678.1, 1792347463.0], 'frames': 5311,
          'source': 'pi', 'avg_conf': 0.81, 'center': [100.2, 101.0]}]
     assert log.recent_detections('2026-10-18', 10)[0]['frame_id'] == 'pi-000123'
-
-
-def test_old_log_lines_with_removed_fields_still_read(tmp_path):
-    """Lines written before the 2026-10 cleanup still open in the Log tab, with every field they had."""
-    day = tmp_path / '2026-10-18'
-    day.mkdir()
-    nudge = ('{"id":"1-a1b2c3","ts":1792345600.0,"type":"nudge","habit":"hydration","rule":"no_sip_long",'
-             '"agent":"cup","evidence":"no sip for 2 h","text":"Time for some water?"}')
-    picture_line = ('{"id":"2-d4e5f6","ts":1792345700.0,"type":"detection","frame_id":"pi-000123","source":"pi",'
-                    '"size":[640,480],"person":false,"light":{"brightness":120.0,"lux":null},"detected_on":"pi",'
-                    '"detected_obj":[{"label":"cup","conf":0.82,"bbox":[90,90,110,110],"center":[100,100]}]}')
-    (day / 'events.jsonl').write_text(f'{nudge}\n{picture_line}\n', encoding='utf-8')
-    (day / 'detections.jsonl').write_text(f'{picture_line}\n', encoding='utf-8')
-    log = make_log(tmp_path)
-    events = log.events('2026-10-18', None, 10)
-    assert [e['id'] for e in events] == ['2-d4e5f6', '1-a1b2c3']
-    assert events[0]['detected_on'] == 'pi' and events[1]['rule'] == 'no_sip_long'
-    assert log.recent_detections('2026-10-18', 10)[0]['detected_on'] == 'pi'
 
 
 def test_the_same_broken_line_is_reported_once_however_often_the_page_reads_it(tmp_path, caplog):

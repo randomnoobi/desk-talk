@@ -1,7 +1,7 @@
 """One day's habit numbers and how they are kept (desktalk/core/habits/habit_days.py).
 
-The two files in tests/fixtures/ were written by the habit tracker before HabitDay existed: a busy day and a
-fresh one. HabitDay must read them and write them back exactly as they were, so old day files keep working.
+The two day files in tests/fixtures/ are a busy day and a fresh one. HabitDay must read them and write them back
+exactly as they are, since the Habits page reads that layout.
 """
 
 import json
@@ -14,8 +14,8 @@ from desktalk.core.habits.habit_days import HabitDay, HabitDays
 from tests.fakes import FakeClock, InMemoryKeyValueStore
 
 FIXTURES = Path(__file__).resolve().parents[1] / 'fixtures'
-BUSY_DAY = json.loads((FIXTURES / 'habit_day_before_cleanup.json').read_text())
-FRESH_DAY = json.loads((FIXTURES / 'habit_day_fresh_before_cleanup.json').read_text())
+BUSY_DAY = json.loads((FIXTURES / 'habit_day_busy.json').read_text())
+FRESH_DAY = json.loads((FIXTURES / 'habit_day_fresh.json').read_text())
 START = 1_781_514_000.0           # 15 June 2026, 09:00 UTC (FakeClock is UTC)
 DAY = '2026-06-15'
 
@@ -26,11 +26,11 @@ def test_habit_day_reads_and_writes_todays_file_format():
     assert json.dumps(day.to_dict()) == json.dumps(BUSY_DAY)          # same keys, order, values and types
 
 
-def test_a_fresh_day_is_laid_out_like_before():
+def test_a_fresh_day_is_laid_out_like_the_fixture():
     assert json.dumps(HabitDay(day=DAY).to_dict()) == json.dumps(FRESH_DAY)
 
 
-def test_old_and_unknown_fields_are_handled():
+def test_unknown_fields_and_other_days_are_handled():
     old = {'day': DAY, 'sips': 3, 'something_old': 5}
     day = HabitDay.from_saved(DAY, old)
     assert day is not None and day.sips == 3 and 'something_old' not in day.to_dict()

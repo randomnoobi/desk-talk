@@ -1,5 +1,5 @@
 """
-The desk fixes on the whole app built by bootstrap (with fakes): only the objects that matter join the chat, a
+The whole app built by bootstrap (with fakes): only the objects that matter join the chat, a
 sip is a drink lifted and put back, warnings and reminders also pop up on the Mac, and the to-do list the server
 keeps reminds about due dates and logs a ticked-off to-do.
 """

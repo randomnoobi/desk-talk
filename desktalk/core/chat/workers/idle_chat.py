@@ -91,7 +91,7 @@ class IdleChat:
         self._talk: _Talk | None = None
 
     def tick(self, now: float) -> float:
-        if self._first_round:            # as before: after the start delay, a full wait before the first chat
+        if self._first_round:            # after the start delay, a full wait before the first chat
             self._first_round = False
             return self._until_next_chat()
         if self._talk is not None:

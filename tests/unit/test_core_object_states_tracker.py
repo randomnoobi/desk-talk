@@ -278,7 +278,7 @@ def test_events_go_to_the_bus_and_the_store():
 
 
 def test_boxes_are_rounded_like_detections():
-    """A box keeps 0.1 px, like Detection.to_dict() and the rows saved before."""
+    """A box keeps 0.1 px, like Detection.to_dict() and the saved rows."""
     tracker, bus, store = make_tracker()
     feed(tracker, 1000, [[Detection('bottle', 0.6, BBox(300.04, 219.96, 340.04, 259.96))]] * SETTLE)
     [event] = bus.of_type(ObjectStateChanged)
@@ -528,7 +528,7 @@ def test_before_the_clock_has_synced_rows_from_this_boot_still_come_back():
 
 
 def test_before_the_clock_has_synced_rows_from_an_earlier_boot_start_over():
-    """A power cut: rows from before it (another boot, or saved before rows kept their boot) aren't trusted."""
+    """A power cut: rows from before it (another boot, or no boot at all) aren't trusted."""
     store = InMemoryStateStore()
     store.append([record(1000, 'bottle', 'snapshot', 'PRESENT', boot_id='boot-a'),
                   record(1010, 'cup', 'snapshot', 'PRESENT'),

@@ -25,8 +25,8 @@ const HOUR = 3600;             // seconds
 const DAY_MS = 24 * HOUR * MS;
 const PERCENT = 100;
 
-/** How many of something the page shows (settings → web.list_sizes). Missing (an older server): no limit. */
-const size = (name) => (ui?.list_sizes || ui?.web?.list_sizes || {})[name];
+/** How many of something the page shows (settings → web.list_sizes). Missing (the demo): no limit. */
+const size = (name) => (ui?.list_sizes || {})[name];
 const maxLength = (n) => (n ? ` maxlength="${n}"` : '');
 /** 'pen/pencil' → 'pen': the first of the detector's words for a thing. */
 const plainLabel = (label) => String(label || '').split('/')[0].trim();
@@ -209,10 +209,8 @@ let todo = null;
 // Where the list stands with the server:
 //   'server'  it keeps one, and its copy wins (ours is never sent over it)
 //   'none'    it has none yet: ours is sent once
-//   'old'     an older server with no GET /api/todos (it said 404): ours is sent, as before
 //   'unknown' the last ask failed (no answer, or a server error): nothing is sent, and the page asks again later
 let todoOnServer = 'unknown';
-const SEND_OURS = ['none', 'old'];
 const cleanTodo = (i) => ({ text: String(i?.text ?? ''), done: !!i?.done, due: typeof i?.due === 'string' && i.due ? i.due : null });
 function loadTodoCopy() {
   const saved = storage.load(TODO_KEY, null);
@@ -229,9 +227,9 @@ function todoChanged(id) {
       .then(() => { if (todoOnServer === 'none') todoOnServer = 'server'; }, () => {});
   }
 }
-/** Send this browser's list, only when the server has none (or is too old to keep one): its copy wins. */
+/** Send this browser's list, only when the server has none: its copy wins. */
 function syncTodos() {
-  if (!state.live || !SEND_OURS.includes(todoOnServer)) return;
+  if (!state.live || todoOnServer !== 'none') return;
   const byChat = Object.fromEntries(todoAgents().map((id) => [id, todo]));
   if (!Object.keys(byChat).length) return;
   api('/api/chat_todos_sync', { method: 'POST', body: { by_chat: byChat } })
@@ -244,9 +242,8 @@ async function loadTodos() {
   let r;
   try {
     r = await api('/api/todos');
-  } catch (err) {
-    todoOnServer = err?.status === 404 ? 'old' : 'unknown';
-    syncTodos();
+  } catch {
+    todoOnServer = 'unknown';
     return;
   }
   if (r?.has_list && Array.isArray(r.items)) {
@@ -273,26 +270,21 @@ function dueText(item) {
 
 // ————— Your own counters (Habits page) —————
 const HABIT_KEY = 'desktalk_habits_v2';
-// The starter counters an older version of the page added (posture and nail biting are gone). A browser that
-// saved them loses these two once (`tidied`), and keeps every counter you added; one you add again later stays.
-const OLD_STARTER_COUNTERS = ['Nail biting', 'Slouching'];
 let counters = null;
 function loadCounters() {
   const saved = storage.load(HABIT_KEY, null);
   const items = Array.isArray(saved?.items) ? saved.items : null;
-  const kept = items && !saved.tidied ? items.filter((i) => !OLD_STARTER_COUNTERS.includes(i.label)) : items;
-  if (kept && saved.day === todayKey()) counters = { day: saved.day, items: kept, tidied: true };
+  if (items && saved.day === todayKey()) counters = { day: saved.day, items };
   else {
-    const labels = kept ? kept.map((i) => i.label) : [...(ui.starter_counters || [])];
-    counters = { day: todayKey(), items: labels.map((label) => ({ label, count: 0 })), tidied: true };
+    const labels = items ? items.map((i) => i.label) : [...(ui.starter_counters || [])];
+    counters = { day: todayKey(), items: labels.map((label) => ({ label, count: 0 })) };
   }
-  if (items && !saved.tidied) saveCounters();
 }
 const saveCounters = () => storage.save(HABIT_KEY, counters);
 /** They start again from 0 each day (also when the page stays open past midnight). */
 function countersForToday() {
   if (counters.day === todayKey()) return;
-  counters = { day: todayKey(), items: counters.items.map((c) => ({ label: c.label, count: 0 })), tidied: true };
+  counters = { day: todayKey(), items: counters.items.map((c) => ({ label: c.label, count: 0 })) };
   saveCounters();
 }
 

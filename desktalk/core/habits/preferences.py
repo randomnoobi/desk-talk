@@ -4,8 +4,7 @@ slider may move by itself (auto_sensitivity), chosen in the app's Settings page.
 
 They win over config/protocols.yaml (schedule) and config/settings.yaml (reminders.quiet_hours,
 agents.sensitivity_default, sensitivity_review.enabled), which give the starting values. Saved in the store under
-"preferences" (data/preferences.json, the same file and layout as before; a file from before sensitivity or
-auto_sensitivity existed still loads).
+"preferences" (data/preferences.json). A saved file missing some of them uses the starting values for those.
 """
 
 from __future__ import annotations

@@ -7,8 +7,8 @@ import Admin from './Admin'
 const OVERVIEW = {
   users: [{ id: 'u1', email: 'sam@example.com', name: 'Sam', created_at: 1700000000 }],
   devices: [
-    { id: 'd1', user_id: 'u1', name: 'Desk Pi', last_seen_at: 1700000100, removed_at: null },
-    { id: 'd2', user_id: 'u1', name: 'Old Pi', last_seen_at: null, removed_at: 1700000200 },
+    { id: 'd1', user_id: 'u1', name: 'Desk Pi', last_seen_at: 1700000100, removed: false },
+    { id: 'd2', user_id: 'u1', name: 'Old Pi', last_seen_at: null, removed: true },
   ],
   failed_reports: [{ id: 'r1', device_id: 'd1', week_start: '2026-10-19', error: 'No AI key is set for reports.' }],
   recent_reports: [

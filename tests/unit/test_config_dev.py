@@ -114,11 +114,6 @@ def test_the_pi_log_settings_load(project):
     assert pi_log.keep_lines >= pi_log.first_lines
     assert pi_log.connected_ok_sec > 0
     assert 'LogLevel=ERROR' in pi_log.ssh              # no "Connection closed" chatter, real errors still come
-    journal = [source for source in pi_log.sources if 'journalctl' in source.start]
-    assert journal and all('--no-pager' in s.start and '--no-pager' in s.resume for s in journal)
-    assert all('--since @{since}' in s.resume for s in journal)     # journalctl takes seconds since 1970 after @
-    assert all(s.start.startswith('SYSTEMD_COLORS=0 ') for s in journal)     # no colour codes with a terminal
-    assert not hasattr(pi_log, 'time_pattern')          # the time is always read as ISO (pi_log.py)
 
 
 def test_two_pi_logs_cant_share_a_name(project):

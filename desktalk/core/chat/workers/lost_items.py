@@ -46,7 +46,7 @@ def _new_record() -> dict[str, Any]:
 
 class LostItems:
     """A PeriodicWorker that also listens to DetectionEvents. `vision` is the AI that looks at pictures,
-    or None when no local vision AI is set up (no scans, as before: a cloud AI's quota is kept for the chat)."""
+    or None when no local vision AI is set up (then no scans: a cloud AI's quota is kept for the chat)."""
 
     name = 'lost items'
 

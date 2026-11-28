@@ -23,11 +23,12 @@ What gets checked depends on `reply`:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import cv2
 
+from desktalk_shared.wire import PiHealth, UploadInfo, encode_upload
 from tests.conftest import blank_frame
 
 from .client import THIS_COMPUTER
@@ -52,13 +53,24 @@ def _jpeg() -> bytes:
 
 PICTURE = _jpeg()                     # a real 640x480 JPEG
 
-# What the old raspberry_pi/camera_node.py sent with each picture (upload format 1, still accepted).
-PI_HEADERS = {'Content-Type': 'image/jpeg', 'X-Desk-Key': PAIR_KEY, 'X-Frame-Id': 'pi-000042',
-              'X-Taken-At': '1792569600.250', 'X-Pi-Camera': 'picamera2', 'X-Pi-Photos': '42',
-              'X-Pi-Free-MB': '1234', 'X-Pi-Last-Cleanup': '1792569000', 'X-Lux': '312.5'}
-# A USB camera on the Pi: no light level, and the Pi sends blank counts when it doesn't know them.
-PI_USB_HEADERS = {**{k: v for k, v in PI_HEADERS.items() if k != 'X-Lux'},
-                  'X-Pi-Camera': 'usb', 'X-Pi-Photos': '', 'X-Pi-Free-MB': ''}
+# What the Pi's camera program sends with each picture (desktalk_shared.wire.encode_upload).
+PI_INFO = UploadInfo(frame_id='pi-000042', taken_at=1792569600.25, lux=312.5,
+                     health=PiHealth(camera='picamera2', photos_stored=42, disk_free_mb=1234,
+                                     last_cleanup_ts=1792569000))
+# A USB camera on the Pi: no light level, and no counts when it doesn't know them.
+PI_USB_INFO = replace(PI_INFO, lux=None, health=PiHealth(camera='usb', last_cleanup_ts=1792569000))
+
+
+def _pi_upload(picture: bytes, info: UploadInfo = PI_INFO) -> tuple[bytes, dict]:
+    """The body of one upload and the headers that go with it."""
+    body, content_type = encode_upload(picture, info)
+    return body, {'Content-Type': content_type, 'X-Desk-Key': PAIR_KEY}
+
+
+PI_UPLOAD, PI_HEADERS = _pi_upload(PICTURE)
+PI_USB_UPLOAD, PI_USB_HEADERS = _pi_upload(PICTURE, PI_USB_INFO)
+PI_NO_PICTURE, PI_NO_PICTURE_HEADERS = _pi_upload(b'')
+PI_NOT_A_JPEG, PI_NOT_A_JPEG_HEADERS = _pi_upload(b'this is not a picture')
 # What phone_camera/camera.js sends with each picture.
 PHONE_HEADERS = {'Content-Type': 'image/jpeg', 'X-Desk-Key': PAIR_KEY, 'X-Desk-Rotation': '90',
                  'X-Desk-Gravity': '0.12,-9.71,0.85'}
@@ -135,17 +147,23 @@ CASES = [
     Case('pi-config', 'GET', '/api/pi/config', 200, desk='fresh', headers=KEY),
     Case('pi-config-wrong-key', 'GET', '/api/pi/config', 403, desk='fresh', headers=WRONG_KEY),
     Case('pi-config-no-key', 'GET', '/api/pi/config', 403, desk='fresh'),
-    Case('pi-frame', 'POST', '/api/pi/frame', 200, desk='fresh', data=PICTURE, headers=PI_HEADERS),
-    Case('pi-frame-usb-camera', 'POST', '/api/pi/frame', 200, desk='fresh', data=PICTURE, headers=PI_USB_HEADERS),
-    Case('pi-frame-wrong-key', 'POST', '/api/pi/frame', 403, desk='fresh', data=PICTURE,
+    Case('pi-frame', 'POST', '/api/pi/frame', 200, desk='fresh', data=PI_UPLOAD, headers=PI_HEADERS),
+    Case('pi-frame-usb-camera', 'POST', '/api/pi/frame', 200, desk='fresh', data=PI_USB_UPLOAD,
+         headers=PI_USB_HEADERS),
+    Case('pi-frame-wrong-key', 'POST', '/api/pi/frame', 403, desk='fresh', data=PI_UPLOAD,
          headers={**PI_HEADERS, **WRONG_KEY}),
-    # An empty upload is a bad picture like any other (the Flask server crashed inside OpenCV: 500).
-    Case('pi-frame-no-picture', 'POST', '/api/pi/frame', 400, desk='fresh', data=b'', headers=PI_HEADERS),
-    Case('pi-frame-not-a-jpeg', 'POST', '/api/pi/frame', 400, desk='fresh', data=b'this is not a picture',
+    # An empty picture is a bad picture like any other.
+    Case('pi-frame-no-picture', 'POST', '/api/pi/frame', 400, desk='fresh', data=PI_NO_PICTURE,
+         headers=PI_NO_PICTURE_HEADERS),
+    Case('pi-frame-not-a-jpeg', 'POST', '/api/pi/frame', 400, desk='fresh', data=PI_NOT_A_JPEG,
+         headers=PI_NOT_A_JPEG_HEADERS),
+    # Only multipart uploads are taken: a bare JPEG as the body is refused.
+    Case('pi-frame-not-multipart', 'POST', '/api/pi/frame', 400, desk='fresh', data=PICTURE,
+         headers={'Content-Type': 'image/jpeg', **KEY}),
+    Case('pi-frame-camera-is-phone', 'POST', '/api/pi/frame', 409, desk='phone', data=PI_UPLOAD,
          headers=PI_HEADERS),
-    Case('pi-frame-camera-is-phone', 'POST', '/api/pi/frame', 409, desk='phone', data=PICTURE, headers=PI_HEADERS),
     Case('live-after-pi-frame', 'GET', '/api/live', 200, desk='fresh',
-         before=(Step('POST', '/api/pi/frame', data=PICTURE, headers=PI_HEADERS),),
+         before=(Step('POST', '/api/pi/frame', data=PI_UPLOAD, headers=PI_HEADERS),),
          values={'camera': True, 'camera_source': 'pi'}),
     # The Pi's heartbeat: how it is doing, on a timer of its own, so its temperature keeps coming without pictures.
     Case('pi-heartbeat', 'POST', '/api/pi/heartbeat', 200, desk='fresh', json=HEARTBEAT, headers=KEY),
@@ -161,7 +179,7 @@ CASES = [
                  'checks.pi_temperature.value': 61.5, 'pi.cpu_temp_c': 61.5}),
     # What the Pi last said about itself is on the Log status now (the developer page reads it).
     Case('log-status-after-pi-frame', 'GET', '/api/log/status', 200, desk='fresh',
-         before=(Step('POST', '/api/pi/frame', data=PICTURE, headers=PI_HEADERS),),
+         before=(Step('POST', '/api/pi/frame', data=PI_UPLOAD, headers=PI_HEADERS),),
          values={'camera.frames_received': 1, 'camera.pi.last_frame_id': 'pi-000042',
                  'camera.pi.photos_stored': 42, 'camera.pi.disk_free_mb': 1234}),
 
@@ -272,8 +290,6 @@ CASES = [
     Case('preferences-put-bad-sensitivity', 'PUT', '/api/preferences', 400, json={'sensitivity': 'abc'}),
     Case('preferences-put-auto-sensitivity', 'PUT', '/api/preferences', 200, json={'auto_sensitivity': False},
          values={'preferences.auto_sensitivity': False}),
-    Case('preferences-put-old-names', 'PUT', '/api/preferences', 200, json={'dnd_enabled': True, 'dnd_start_hour': 21},
-         values={'preferences.quiet_enabled': True, 'preferences.quiet_start_hour': 21}),
     Case('preferences-after-put', 'GET', '/api/preferences', 200,
          before=(Step('PUT', '/api/preferences', {'wake_time': '06:30'}),), values={'wake_time': '06:30'}),
 
@@ -284,7 +300,7 @@ CASES = [
     Case('log-events-alerts-only', 'GET', '/api/log/events?types=alert&limit=2', 200),
     Case('log-events-other-day', 'GET', '/api/log/events?day=2026-10-20', 200, values={'day': '2026-10-20'}),
     Case('log-events-bad-day', 'GET', '/api/log/events?day=yesterday', 200, values={'day': '2026-10-21'}),
-    Case('log-events-bad-limit', 'GET', '/api/log/events?limit=all', 400),     # the Flask server crashed: 500
+    Case('log-events-bad-limit', 'GET', '/api/log/events?limit=all', 400),
     Case('log-status', 'GET', '/api/log/status', 200),
     Case('log-status-nothing-seen', 'GET', '/api/log/status', 200, desk='fresh'),
 
@@ -443,8 +459,6 @@ CASES = [
     Case('phone-art', 'GET', '/art/desk.svg', 200, desk='phone', server='phone', reply=FILE, starts_with=b'<svg'),
     Case('phone-font', 'GET', '/fonts/bricolage-grotesque.woff2', 200, desk='phone', server='phone', reply=FILE,
          starts_with=b'wOF2'),
-    # The Flask server had an automatic /static/ route here, for a folder that doesn't exist; it's gone.
-    Case('phone-static-folder', 'GET', '/static/style.css', 404, desk='phone', server='phone', reply=STATUS),
     Case('phone-config', 'GET', '/api/phone/config', 200, desk='phone', server='phone'),
     Case('phone-frame', 'POST', '/api/phone/frame', 200, desk='phone', server='phone', data=PICTURE,
          headers=PHONE_HEADERS),
@@ -453,7 +467,7 @@ CASES = [
     Case('phone-frame-wrong-key', 'POST', '/api/phone/frame', 403, desk='phone', server='phone', data=PICTURE,
          headers={**PHONE_HEADERS, **WRONG_KEY}),
     Case('phone-frame-no-picture', 'POST', '/api/phone/frame', 400, desk='phone', server='phone', data=b'',
-         headers=PHONE_HEADERS),     # a bad picture, like the Pi's (the Flask server crashed: 500)
+         headers=PHONE_HEADERS),     # a bad picture, like the Pi's
     Case('phone-frame-not-a-jpeg', 'POST', '/api/phone/frame', 400, desk='phone', server='phone',
          data=b'this is not a picture', headers=PHONE_HEADERS),
     Case('phone-stop', 'POST', '/api/phone/stop', 200, desk='phone', server='phone', headers=KEY),

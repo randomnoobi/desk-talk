@@ -14,7 +14,6 @@ from desktalk.adapters.camera import PhoneFrameSource, PiFrameSource
 from desktalk.config import CameraSettings
 from desktalk.domain import BBox, Detection, DetectorState, PiHealth, UploadInfo
 from desktalk.ports import FrameSource, PictureInbox, PiUploads
-from desktalk_shared.wire import info_from_v1_headers
 from tests.contracts.frame_source_contract import FrameSourceContract
 from tests.contracts.push_source_contract import PushSourceContract
 from tests.fakes import FakeClock
@@ -155,10 +154,6 @@ def test_stop_pressed_means_not_connected_until_the_next_picture(make_source):
 
 
 # ── the Pi ───────────────────────────────────────────────────────────
-OLD_PI_HEADERS = {'X-Frame-Id': 'pi-000042', 'X-Taken-At': '1760000000.250', 'X-Pi-Camera': 'picamera2',
-                  'X-Pi-Photos': '42', 'X-Pi-Free-MB': '1234', 'X-Pi-Last-Cleanup': '1759999000', 'X-Lux': '312.5'}
-
-
 def pi_source(clock, **changes):
     return PiFrameSource(clock, camera_settings(**changes))
 
@@ -209,12 +204,13 @@ def test_pi_info_before_any_picture_has_only_the_frame_id():
 
 def test_pi_info_keeps_what_the_pi_said_about_itself(clock):
     source = pi_source(clock)
-    source.push(jpeg_of(picture(10)), info_from_v1_headers(OLD_PI_HEADERS))
+    health = PiHealth(camera='picamera2', photos_stored=42, disk_free_mb=1234, last_cleanup_ts=1_759_999_000.0)
+    source.push(jpeg_of(picture(10)), UploadInfo(frame_id='pi-000042', taken_at=None, health=health))
     assert source.pi_info() == {'last_frame_id': 'pi-000042', 'camera': 'picamera2', 'photos_stored': 42,
                                 'disk_free_mb': 1234, 'last_cleanup_ts': 1_759_999_000.0}
     # A USB camera on the Pi leaves the counts blank: the last known ones stay.
-    usb = {**OLD_PI_HEADERS, 'X-Frame-Id': 'pi-000043', 'X-Pi-Camera': 'usb', 'X-Pi-Photos': '', 'X-Pi-Free-MB': ''}
-    source.push(jpeg_of(picture(10)), info_from_v1_headers(usb))
+    usb = PiHealth(camera='usb')
+    source.push(jpeg_of(picture(10)), UploadInfo(frame_id='pi-000043', taken_at=None, health=usb))
     assert source.pi_info() == {'last_frame_id': 'pi-000043', 'camera': 'usb', 'photos_stored': 42,
                                 'disk_free_mb': 1234, 'last_cleanup_ts': 1_759_999_000.0}
 

@@ -942,11 +942,6 @@ dev:
         label: App
         start: cd ~/desk-talk/raspberry_pi && docker compose logs --follow --timestamps --no-color --tail {first_lines} app
         resume: cd ~/desk-talk/raspberry_pi && docker compose logs --follow --timestamps --no-color --since {since} app
-      - name: old_camera_service   # the camera program outside Docker, from before (install.sh turns it off);
-                                   # SYSTEMD_COLORS=0: no colour codes, even with a terminal
-        label: Old camera service (desk-talk-camera)
-        start: SYSTEMD_COLORS=0 journalctl -u desk-talk-camera --follow --no-pager --output short-iso-precise --lines {first_lines}
-        resume: SYSTEMD_COLORS=0 journalctl -u desk-talk-camera --follow --no-pager --output short-iso-precise --since @{since}
     first_lines: 200            # lines from before that the tab starts with
     keep_lines: 5000            # how many lines the tab can scroll back through (the oldest go first)
     line_max_chars: 4000        # a longer line is cut here

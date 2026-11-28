@@ -156,13 +156,13 @@ def test_a_heartbeat_that_stops_is_a_warning():
 
 
 def test_no_heartbeat_yet_is_unknown():
-    """A Pi with an older camera program never sends one, so there is nothing to miss."""
+    """Just after the start, or with no Pi, there is nothing to miss yet."""
     assert Rig().level('pi_heartbeat') is UNKNOWN
     assert Rig(pi=False).level('pi_heartbeat') is UNKNOWN
 
 
 # ── the saving modes ──
-def test_plain_mode_measures_the_card_as_before():
+def test_plain_mode_measures_the_whole_card():
     rig = Rig(free_mb=1500.0)
     assert rig.level('card') is WARNING
     assert rig.level('card_rest') is UNKNOWN

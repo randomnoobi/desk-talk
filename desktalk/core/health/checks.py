@@ -10,7 +10,7 @@ The health checks: each measure on its own, with a level (ok, warning, serious, 
     card            free space on the disk the data folder is on (on the Pi, its SD card):
                     health_checks.card_warning_below_mb / card_serious_below_mb
     pi_heartbeat    seconds since the Pi's last heartbeat: a warning after health_checks.pi_heartbeat_late_sec.
-                    Unknown before the first (an older camera program sends none)
+                    Unknown before the first (just after the start, or with no Pi)
     card_rest       free space on the rest of the SD card, outside Desk Talk's own space (in room or off mode):
                     health_checks.card_rest_warning_below_mb / card_rest_serious_below_mb
     saving          whether Desk Talk is saving at all: serious when it saves nothing (Saving.OFF), ok otherwise

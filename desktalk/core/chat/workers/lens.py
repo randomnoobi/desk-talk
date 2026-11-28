@@ -285,8 +285,8 @@ class Lens:
         return self._words.pi_clock.format(seconds=round(abs(off)), way=way)
 
     def _detector_text(self, info: UploadInfo) -> str:
-        """Only when the Pi's detector is off because something went wrong: not when it was turned off on
-        purpose (--no-detector) or the Pi runs the old camera program, which has none."""
+        """Only when the Pi's detector is off because something went wrong, not when it was turned off on
+        purpose (--no-detector)."""
         if info.detector is not DetectorState.OFF or info.detector_reason in OFF_ON_PURPOSE:
             return ''
         if info.detector_reason != self._detector_reason_logged:     # for whoever looks into it, never said out loud

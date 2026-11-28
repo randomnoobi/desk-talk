@@ -1,5 +1,5 @@
-"""The Store kept in memory: for tests and for trying the server with no database. It passes the same contract suite
-(tests/contracts/cloud_store_contract.py) as the Postgres store. Everything happens under one lock."""
+"""The Store kept in memory, for tests. It passes the same contract suite (tests/contracts/cloud_store_contract.py)
+as the Postgres store. Everything happens under one lock."""
 
 from __future__ import annotations
 

@@ -1,7 +1,7 @@
 """
 On the real Pi: Desk Talk starts by itself when the Pi boots, and the journal, the containers' logs too, stays on the
-SD card within its size and age. raspberry_pi/install.sh sets both up, so on a Pi set up before they came in, these fail
-until install.sh is run again there; each says so.
+SD card within its size and age. raspberry_pi/install.sh sets both up, so on a Pi where they aren't set up, these fail
+until install.sh is run there; each says so.
 
 The kernel may number the camera's kinds of device differently at any boot. desktalk.service writes this boot's
 numbers into .env (device_numbers.sh) before it starts the containers, and the camera checks here say if the camera
@@ -126,7 +126,7 @@ def test_the_camera_container_may_open_the_devices_this_boot_numbered(pi: Pi):
         f'numbered them {wanted}. The kernel numbered them differently at this boot and the container was made '
         'with the old numbers, so the camera gets "Operation not permitted". Fix it: run **on the Pi** '
         '`cd ~/desk-talk/raspberry_pi && bash device_numbers.sh && docker compose up -d`. desktalk.service does '
-        'that at each boot once install.sh has been run again there.')
+        'that at each boot once install.sh has set it up.')
 
 
 @pytest.mark.pi

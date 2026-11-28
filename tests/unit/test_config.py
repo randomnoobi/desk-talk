@@ -16,7 +16,6 @@ import yaml
 from pydantic import BaseModel, SecretStr, ValidationError
 
 from desktalk.config import ConfigError, load_config
-from desktalk.config.loader import RETIRED_SETTINGS
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_FILES = ('settings.yaml', 'agents.yaml', 'protocols.yaml', 'prompts.yaml')
@@ -157,18 +156,12 @@ def test_the_pi_camera_is_elsewhere_only_on_a_computer(project, source, public, 
     assert load_config(root=project, environ={}).pi_camera_elsewhere is elsewhere
 
 
-def test_dotenv_can_still_set_model_names(project):
+def test_dotenv_can_set_model_names(project):
     (project / '.env').write_text('OLLAMA_MODEL=llama3.2\nYOLO_MODEL=models/yolo26s-objv1-150.pt\n')
     cfg = load_config(root=project, environ={'OLLAMA_MODEL': 'gpt-oss:20b'})
     assert cfg.llm.ollama_model == 'gpt-oss:20b'           # the environment wins over .env
     assert cfg.detector.model == 'models/yolo26s-objv1-150.pt'
     assert cfg.env_applied == {'OLLAMA_MODEL': 'llm.ollama_model', 'YOLO_MODEL': 'detector.model'}
-
-
-def test_old_dotenv_settings_that_moved_to_yaml_are_listed_not_used(project):
-    cfg = load_config(root=project, environ={'CAMERA_SOURCE': 'phone'})
-    assert cfg.camera.source == 'pi'
-    assert cfg.env_moved == ('CAMERA_SOURCE',)
 
 
 @pytest.mark.parametrize('local, setting', [
@@ -225,7 +218,7 @@ def test_each_kind_of_bad_value_is_described_in_plain_words(project, local, prob
     assert str(err.value) == f'config/settings.local.yaml: {problem}'
 
 
-def test_a_danger_zone_written_before_base_share_existed_still_loads(project):
+def test_a_danger_zone_without_a_base_share_uses_the_whole_box(project):
     write_local(project, 'safety:\n  danger_zones:\n    mouse: {expand: 20, label: Mouse zone}\n')
     zone = load_config(root=project, environ={}).safety.danger_zones['mouse']
     assert (zone.expand, zone.label, zone.base_share) == (20, 'Mouse zone', 1.0)
@@ -260,7 +253,6 @@ def test_missing_config_file_is_named(project):
 
 
 
-# ── settings added for the refactor ──
 def test_settings_for_keeping_things_running_are_there(project):
     cfg = load_config(root=project, environ={})
     detector = cfg.pi.detector
@@ -329,14 +321,13 @@ def test_every_smaller_larger_pair_is_checked(project, local, section, smaller, 
         load_config(root=project, environ={})
 
 
-def test_the_pi_section_has_the_values_the_old_camera_program_used(project):
+def test_the_pi_section_loads(project):
     pi = load_config(root=project, environ={}).pi
     assert (pi.fps, pi.width, pi.height, pi.jpeg_quality, pi.photo_dir) == (3, 1280, 720, 80, '~/desk-talk-photos')
     assert (pi.delete_every_min, pi.keep_last_min, pi.min_free_mb, pi.upload_timeout_sec) == (10, 0, 300, 5)
 
 
-def test_numbers_moved_out_of_the_old_code_keep_their_values(project):
-    """Lens's checks and the desk rules kept these numbers in the code before they moved to settings.yaml."""
+def test_the_lens_and_desk_rule_numbers_load(project):
     cfg = load_config(root=project, environ={})
     lens, safety = cfg.lens, cfg.safety
     assert (lens.measure_width, lens.edge_touch_px, lens.fixed_after_sec, lens.edge_tip_after_sec) == (240, 3, 5, 120)
@@ -400,54 +391,19 @@ def test_every_value_in_the_config_files_reaches_the_config_unchanged(project):
     assert len(checked) > 500
 
 
-def test_environment_variables_win_and_moved_ones_are_listed(project):
+def test_environment_variables_win(project):
     environ = {'OLLAMA_MODEL': 'gpt-oss:20b', 'YOLO_MODEL': 'models/yolo26s.pt', 'GEMINI_API_KEY': 'abc',
-               'OLLAMA_URL': 'http://localhost:11434/v1', 'CAMERA_SOURCE': 'phone'}
+               'OLLAMA_URL': 'http://localhost:11434/v1'}
     cfg = load_config(root=project, environ=environ)
     assert cfg.llm.ollama_model == 'gpt-oss:20b'
     assert cfg.detector.model == 'models/yolo26s.pt'
     assert cfg.secrets.gemini_api_key.get_secret_value() == 'abc'
     assert cfg.secrets.ollama_url == 'http://localhost:11434/v1'
-    assert cfg.camera.source == 'pi'
     assert cfg.env_applied == {'OLLAMA_MODEL': 'llm.ollama_model', 'YOLO_MODEL': 'detector.model'}
-    assert cfg.env_moved == ('CAMERA_SOURCE',)
 
 
-# ── settings added by the 2026 cleanup ──
-BEFORE_CLEANUP = ROOT / 'tests' / 'fixtures' / 'settings_before_cleanup.yaml'   # config/settings.yaml before it
-NEW_SETTINGS = {
-    'settings.yaml': [
-        ('camera', 'phone_cert_file'), ('camera', 'phone_key_file'), ('camera', 'phone_max_side'),
-        ('camera', 'phone_jpeg_quality'), ('camera', 'phone_tilt_max'),
-        ('drawing', 'colors', 'risk'), ('drawing', 'line_px'), ('drawing', 'font_scale'),
-        ('drawing', 'fill_alpha', 'zone'), ('drawing', 'trail', 'start_after'), ('drawing', 'trail', 'keep'),
-        ('drawing', 'dash'), ('drawing', 'arrow_tip'), ('drawing', 'radius'),
-        ('web', 'refresh_ms', 'live'), ('web', 'refresh_ms', 'log'), ('web', 'refresh_ms', 'habits'),
-        ('web', 'request_timeout_ms'), ('web', 'activity_ping_ms'), ('web', 'toast_ms'),
-        ('web', 'list_sizes', 'log'), ('web', 'list_sizes', 'photos'),
-        ('web', 'list_sizes', 'chat_kept'), ('web', 'list_sizes', 'chat_saved'), ('web', 'left_chat_shown_min'),
-        ('camera', 'phone_capture_width'), ('camera', 'phone_capture_height'),
-        ('logging', 'file_name'), ('logging', 'preview_chars'), ('llm', 'error_text_chars'),
-        ('pi', 'camera'), ('pi', 'error_text_chars'), ('llm', 'error_log_chars'), ('safety', 'min_desk_corners'),
-        ('web', 'settings_sliders', 'zone'), ('web', 'settings_sliders', 'warn'), ('web', 'settings_sliders', 'alert'),
-        ('web', 'new_zone_px'), ('lens', 'trusted_gravity'),
-        ('lens', 'covered_detail_below'), ('lens', 'covered_by_box_share'),
-        # the developer page
-        ('object_states', 'trace_pictures'), ('dev', 'enabled'), ('dev', 'ui_folder'), ('dev', 'vite_port'),
-        ('dev', 'poll_sec'), ('dev', 'checks'), ('dev', 'test_command'), ('dev', 'collect_markers'),
-        ('dev', 'run_timeout_min'), ('dev', 'output_keep_kb'), ('dev', 'sql_max_rows'), ('dev', 'sql_timeout_sec'),
-        ('dev', 'file_preview_kb'), ('dev', 'health', 'pi_disk_warn_mb'), ('dev', 'health', 'detect_warn_ms'),
-        ('dev', 'flicker_flips_per_min'), ('dev', 'sql_check_every_steps'), ('dev', 'collect_timeout_sec'),
-        ('dev', 'flips_window_min'), ('dev', 'table_counts_every_sec'),
-        # the sensitivity slider's bar for new things
-        ('agents', 'new_things', 'extra_confidence'), ('agents', 'new_things', 'extra_wait_sec'),
-        ('agents', 'new_things', 'max_confidence'),
-        # an object's story (the app page and the developer page's trace)
-        ('object_story', 'photos_folder'), ('object_story', 'photo_every_sec'), ('object_story', 'timed_photos_kept'),
-        ('object_story', 'step_photos_kept'), ('object_story', 'events_kept'), ('object_story', 'photo_match_sec'),
-    ],
-    'protocols.yaml': [('food', 'healthy')],
-}
+# ── every setting says what it does ──
+WITHOUT_A_COMMENT = ROOT / 'tests' / 'fixtures' / 'settings_without_a_comment.txt'
 
 
 def _key_lines(text: str) -> dict[tuple, int]:
@@ -464,36 +420,21 @@ def _key_lines(text: str) -> dict[tuple, int]:
     return out
 
 
-def test_local_settings_with_every_old_key_still_loads(project):
-    """Your own settings.local.yaml may set any setting settings.yaml had before the cleanup, in the same place."""
-    shutil.copy(BEFORE_CLEANUP, project / 'config' / 'settings.local.yaml')
-    cfg = load_config(root=project, environ={})
-    checked = 0
-    for path, value in _leaves(yaml.safe_load(BEFORE_CLEANUP.read_text())):
-        if any(path[:len(gone)] == gone for gone in RETIRED_SETTINGS):     # left out, see the test below
-            continue
-        assert _plain(_lookup(cfg, path)) == value, '.'.join(map(str, path))
-        checked += 1
-    assert checked > 300
-
-
-@pytest.mark.parametrize('name', NEW_SETTINGS)
-def test_every_new_setting_has_a_comment(name):
-    """Each setting added since the cleanup started says what it does, on its line or the line above."""
+@pytest.mark.parametrize('name', ['settings.yaml', 'protocols.yaml'])
+def test_every_setting_has_a_comment(name):
+    """Each setting says what it does, on its line or the line above, except the few listed in the fixture."""
+    allowed = {line for line in WITHOUT_A_COMMENT.read_text().splitlines() if line and not line.startswith('#')}
     text = (ROOT / 'config' / name).read_text()
     lines = text.splitlines()
-    keys = _key_lines(text)
-    old = set(_key_lines(BEFORE_CLEANUP.read_text())) if name == 'settings.yaml' else set()
-    new = {path: line for path, line in keys.items() if path not in old} if old else \
-        {path: line for path, line in keys.items() if path[:2] in NEW_SETTINGS[name]}
-    for path in NEW_SETTINGS[name]:
-        assert path in keys, f'{name}: {".".join(path)} is missing'
-    no_comment = ['.'.join(map(str, path)) for path, line in new.items()
-                  if '#' not in lines[line] and not lines[line - 1].lstrip().startswith('#')]
-    assert no_comment == []
+    no_comment = {f'{name}: {".".join(map(str, path))}' for path, line in _key_lines(text).items()
+                  if '#' not in lines[line] and not lines[line - 1].lstrip().startswith('#')}
+    assert sorted(no_comment - allowed) == []
+    listed = {entry for entry in allowed if entry.startswith(f'{name}: ')}
+    assert sorted(listed - no_comment) == [], (
+        f'these have a comment now (or are gone), so take them off {WITHOUT_A_COMMENT.name}')
 
 
-def test_new_settings_keep_the_values_the_code_has_today(project):
+def test_the_phone_drawing_and_page_settings_load(project):
     cfg = load_config(root=project, environ={})
     camera, drawing, web = cfg.camera, cfg.drawing, cfg.web
     assert (camera.phone_cert_file, camera.phone_key_file) == ('desk-talk.crt', 'desk-talk.key')    # web/pairing.py
@@ -529,13 +470,7 @@ def test_the_longest_chat_reply_follows_how_the_server_tries_the_ai(project):
     assert llm.longest_reply_sec() == 6 + 90 + 3 * 90 + 2 * 2
 
 
-def test_the_page_no_longer_has_a_first_check_wait():
-    """The page stopped using web.first_check_timeout_ms, so the setting is gone (it only lived on the cleanup
-    branch, so no settings.local.yaml has it)."""
-    assert 'first_check_timeout_ms' not in type(load_config(environ={}, dotenv=Path('/nonexistent')).web).model_fields
-
-
-# ── the desk fixes ──
+# ── how picky joining the chat is, new things, sips and object stories ──
 def test_sensitivity_steps_load(project):
     agents = load_config(root=project, environ={}).agents
     assert [s.name for s in agents.sensitivity_steps] == ['Picky', 'Careful', 'Normal', 'Easy', 'Eager']
@@ -547,7 +482,7 @@ def test_sensitivity_steps_load(project):
     assert (agents.on_desk_after_sec, agents.on_desk_min_confidence) == (3, 0.45)
 
 
-def test_each_sensitivity_step_has_a_steadiness_and_normal_keeps_todays_waits(project):
+def test_each_sensitivity_step_has_a_steadiness_and_normal_is_1(project):
     agents = load_config(root=project, environ={}).agents
     assert [s.steady for s in agents.sensitivity_steps] == [2.0, 1.5, 1.0, 0.75, 0.5]
     assert agents.default_step().steady == 1.0
@@ -632,25 +567,21 @@ def test_hydration_same_drink_overlap_loads_and_must_be_more_than_0(project):
         load_config(root=project, environ={})
 
 
-def test_hydration_moved_setting_loads_and_the_hand_rule_is_gone(project):
+def test_hydration_moved_and_gone_settings_load(project):
     hydration = load_config(root=project, environ={}).protocols.hydration
     assert hydration.sip_moved_share == 0.007
     assert hydration.sip_needs_person is True
-    assert not hasattr(hydration, 'sip_hand_labels') and not hasattr(hydration, 'sip_hand_share')
     assert (hydration.sip_gone_min_sec, hydration.sip_gone_max_sec) == (2, 120)
 
 
-def test_the_other_new_settings_load(project):
+def test_the_task_story_and_page_settings_load(project):
     cfg = load_config(root=project, environ={})
-    tasks, dev, web = cfg.protocols.tasks, cfg.dev, cfg.web
+    tasks, web = cfg.protocols.tasks, cfg.web
     assert (tasks.remind_after_min, tasks.due_soon_days, tasks.late_repeat_hours) == (120, 1, 24)
     story = cfg.object_story
     assert (story.timed_photos_kept, story.photo_every_sec, story.events_kept) == (6, 120, 50)
     assert (story.step_photos_kept, story.photo_match_sec) == (24, 10)
-    assert 'trace_photo_quality' not in type(dev).model_fields        # the photos are the camera's JPEG as it is
     assert story.photos_folder == Path('data/trace_photos')
-    assert not {'trace_photos_folder', 'trace_photos_kept', 'trace_photo_every_sec',
-                'trace_events_kept'} & set(type(dev).model_fields)     # they moved to object_story
     assert (web.camera_note_after_sec, web.saved_note_sec, web.retry_start_sec) == (5, 4, 3)
     sizes = web.list_sizes
     assert (sizes.on_desk_shown, sizes.camera_issues_shown, sizes.risk_lines_shown, sizes.side_photos_shown) == (
@@ -658,31 +589,6 @@ def test_the_other_new_settings_load(project):
     assert (sizes.quote_chars, sizes.toast_chars, sizes.mention_max_chars, sizes.counter_label_chars) == (
         90, 140, 12, 60)
     assert cfg.habit_tracker.todos_key == 'todos'
-
-
-def test_the_posture_checks_and_the_old_join_settings_are_gone(project):
-    cfg = load_config(root=project, environ={})
-    assert 'vision_habits' not in type(cfg).model_fields
-    assert not {'join_after_sec', 'min_confidence'} & set(type(cfg.agents).model_fields)
-
-
-def test_settings_that_are_gone_are_dropped_from_your_own_file(project, caplog):
-    """An old settings.local.yaml may still set them; they're left out (with a note in the log), not an error."""
-    write_local(project, 'agents:\n  join_after_sec: 5\n  min_confidence: 0.5\n  max_agents: 7\n'
-                         'vision_habits:\n  every_sec: 30\n')
-    with caplog.at_level('WARNING'):
-        cfg = load_config(root=project, environ={})
-    assert cfg.agents.max_agents == 7
-    assert 'agents.join_after_sec' in caplog.text and 'vision_habits' in caplog.text
-
-
-def test_the_event_log_lists_and_the_photo_quality_that_went_are_dropped_from_your_own_file(project, caplog):
-    write_local(project, 'web:\n  list_sizes:\n    habit_log: 40\n    log_detections: 30\n    toast_chars: 99\n'
-                         'dev:\n  trace_photo_quality: 70\n')
-    with caplog.at_level('WARNING'):
-        cfg = load_config(root=project, environ={})
-    assert cfg.web.list_sizes.toast_chars == 99
-    assert all(word in caplog.text for word in ('habit_log', 'log_detections', 'trace_photo_quality'))
 
 
 def test_the_blocked_camera_settings_load(project):
@@ -697,22 +603,6 @@ def test_the_blocked_camera_settings_are_checked(project, text):
     write_local(project, f'lens:\n  {text}\n')
     with pytest.raises(ConfigError, match=text.split(':')[0]):
         load_config(root=project, environ={})
-
-
-def test_the_trace_settings_that_moved_to_object_story_keep_your_own_values(project, caplog):
-    """An old settings.local.yaml may still set them under dev:, where they were before."""
-    write_local(project, 'dev:\n  trace_photos_kept: 9\n  trace_photo_every_sec: 30\n  trace_events_kept: 20\n'
-                         '  trace_photos_folder: elsewhere/photos\n')
-    with caplog.at_level('WARNING'):
-        story = load_config(root=project, environ={}).object_story
-    assert (story.timed_photos_kept, story.photo_every_sec, story.events_kept) == (9, 30, 20)
-    assert story.photos_folder == Path('elsewhere/photos')
-    assert 'dev.trace_photos_kept' in caplog.text and 'object_story.timed_photos_kept' in caplog.text
-
-
-def test_a_moved_setting_set_in_both_places_keeps_the_new_one(project):
-    write_local(project, 'dev:\n  trace_photos_kept: 9\nobject_story:\n  timed_photos_kept: 4\n')
-    assert load_config(root=project, environ={}).object_story.timed_photos_kept == 4
 
 
 def test_a_room_serious_level_above_its_warning_level_is_refused(project):

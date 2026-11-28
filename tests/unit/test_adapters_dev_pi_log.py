@@ -424,7 +424,7 @@ def test_the_pi_time_is_read_as_a_real_time(text, expected):
 
 @pytest.mark.parametrize(('line', 'expected'), [
     ('camera-1  | 2026-11-11T10:00:00.5Z hello', ((1_794_391_200, 500_000_000), '2026-11-11T10:00:00.5Z')),
-    ('2026-11-11T10:00:00.123456+0000 pi desk-talk-camera[42]: hello',
+    ('2026-11-11T10:00:00.123456+0000 pi dockerd[42]: hello',
      ((1_794_391_200, 123_456_000), '2026-11-11T10:00:00.123456+0000')),
     ('no time here', None),
 ])

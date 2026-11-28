@@ -1,9 +1,8 @@
 """
 The data a weekly report is written from, and the words around it.
 
-build_week() turns one Pi's stored events into the markdown the AI reads: the old test script
-(data/weekly_report_test/build_weekly_input.py) working from what the server keeps. Nothing about to-dos or the
-wording of messages is in it, because neither is ever sent to the server. Every sentence in it comes from
+build_week() turns one Pi's stored events into the markdown the AI reads. Nothing about to-dos or the wording of
+messages is in it, because neither is ever sent to the server. Every sentence in it comes from
 cloud/prompts.yaml (report.data); this code only fills in the blanks. It never says anything the server doesn't
 know: a day with no numbers is called "no data" only when the Pi had sent everything, and when a Pi had not finished
 sending (or was linked part way through the week) the notes say so instead of saying the app was off.
@@ -177,8 +176,8 @@ class _Ctx:
 def next_sign(nudge: Mapping[str, Any], events: Sequence[Mapping[str, Any]], words: Mapping[str, Any],
               settings: ReportSettings, week_end: float | None = None) -> tuple[str, str]:
     """What the log shows after a nudge: (acted | no sign | cannot tell, in plain words). It only says what happened
-    next, not that the nudge caused it. Same answers as `next_sign` in data/weekly_report_test/build_weekly_input.py.
-    With `week_end`, a nudge sent less than the window before the week's data ends can't be judged."""
+    next, not that the nudge caused it. With `week_end`, a nudge sent less than the window before the week's data ends
+    can't be judged."""
     window, blip = settings.outcome_window_min, settings.blip_sec
     habit, after = nudge.get('habit'), nudge['ts']
     later = sorted((e for e in events if e['ts'] > after), key=lambda e: e['ts'])

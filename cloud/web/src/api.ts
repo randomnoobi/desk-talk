@@ -29,13 +29,10 @@ export const NO_ANSWER = "Can't reach the server."
 
 type Fields = Record<string, unknown>
 
-// The server says what went wrong as {"detail": "..."} (FastAPI) or {"error": "..."}.
+// The server says what went wrong as {"detail": "..."} (FastAPI).
 function errorWords(body: unknown): string | null {
-  if (typeof body !== 'object' || body === null) return null
-  const { error, detail } = body as { error?: unknown, detail?: unknown }
-  if (typeof detail === 'string' && detail) return detail
-  if (typeof error === 'string' && error) return error
-  return null
+  const { detail } = fields(body)
+  return typeof detail === 'string' && detail ? detail : null
 }
 
 async function readBody(response: Response): Promise<unknown> {
@@ -72,9 +69,7 @@ function fields(value: unknown): Fields {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Fields : {}
 }
 
-// A list may come bare or inside an object ({"devices": [...]}): take it either way.
-function listOf(body: unknown, key: string): Fields[] {
-  const list = Array.isArray(body) ? body : fields(body)[key]
+function listOf(list: unknown): Fields[] {
   return Array.isArray(list) ? list.map(fields) : []
 }
 
@@ -127,12 +122,12 @@ function toDevice(raw: Fields): Device {
     name: text(raw.name),
     time_zone: text(raw.time_zone),
     last_seen_at: num(raw.last_seen_at),
-    removed: raw.removed === true || num(raw.removed_at) !== null,
+    removed: raw.removed === true,
   }
 }
 
 export async function listDevices(): Promise<Device[]> {
-  return listOf(await get('/api/devices'), 'devices').map(toDevice)
+  return listOf(await get('/api/devices')).map(toDevice)
 }
 
 export interface CodeReply {
@@ -300,7 +295,7 @@ export async function getState(deviceId: string): Promise<DeviceState> {
     last_seen_at: num(body.last_seen_at),
     goals: body.goals ? fields(body.goals) : null,
     last_camera: body.last_camera ? fields(body.last_camera) : null,
-    objects: listOf(body, 'objects').map(o => ({ label: text(o.label), state: text(o.state), since: num(o.since) })),
+    objects: listOf(body.objects).map(o => ({ label: text(o.label), state: text(o.state), since: num(o.since) })),
   }
 }
 
@@ -312,7 +307,7 @@ async function getEventsPage(deviceId: string, since: number, afterId: string | 
   const query = new URLSearchParams({ since: String(since) })
   if (afterId !== null) query.set('after_id', afterId)
   const body = fields(await get(`/v1/devices/${encodeURIComponent(deviceId)}/events?${query}`))
-  const events = listOf(body, 'events').map(raw => {
+  const events = listOf(body.events).map(raw => {
     const { id, ts, type, ...details } = raw
     return { id: text(id), ts: num(ts) ?? 0, type: text(type), details }
   })
@@ -368,7 +363,7 @@ export interface ReportRow { report: Report, deviceName: string }
 /** The reports of every Pi the person has, newest week first (the server's order). */
 export async function listAllReports(): Promise<ReportRow[]> {
   const body = await get('/api/reports')
-  return listOf(body, 'reports').map(raw => ({ report: toReport(raw), deviceName: text(raw.device_name) }))
+  return listOf(body).map(raw => ({ report: toReport(raw), deviceName: text(raw.device_name) }))
 }
 
 // ---------------------------------------------------------------- admin
@@ -380,14 +375,14 @@ export interface AdminFinished { id: string, device_id: string, week_start: stri
 export interface AdminOverview { users: AdminUser[], devices: AdminDevice[], failed_reports: AdminFailure[], recent_reports: AdminFinished[] }
 
 export async function getAdminOverview(): Promise<AdminOverview> {
-  const body = await get('/api/admin/overview')
+  const body = fields(await get('/api/admin/overview'))
   return {
-    users: listOf(body, 'users').map(u => ({ id: text(u.id), email: text(u.email), name: text(u.name) })),
-    devices: listOf(body, 'devices').map(d => ({ ...toDevice(d), owner_id: text(d.user_id) })),
-    failed_reports: listOf(body, 'failed_reports').map(r => ({
+    users: listOf(body.users).map(u => ({ id: text(u.id), email: text(u.email), name: text(u.name) })),
+    devices: listOf(body.devices).map(d => ({ ...toDevice(d), owner_id: text(d.user_id) })),
+    failed_reports: listOf(body.failed_reports).map(r => ({
       id: text(r.id), device_id: text(r.device_id), week_start: text(r.week_start), error: typeof r.error === 'string' && r.error ? r.error : null,
     })),
-    recent_reports: listOf(body, 'recent_reports').map(r => ({
+    recent_reports: listOf(body.recent_reports).map(r => ({
       id: text(r.id), device_id: text(r.device_id), week_start: text(r.week_start), status: text(r.status),
     })),
   }

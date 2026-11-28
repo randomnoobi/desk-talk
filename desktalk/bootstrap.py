@@ -519,7 +519,7 @@ def build(config: AppConfig, *, clock: Clock | None = None, detector: Detector |
     config_store = config_store if config_store is not None else JsonFileStore(rules_path)
     live_pictures, scene, safety_board = LiveView(), Scene(), DangerBoard()
     character_memory, photo_album = Memories(), Album(keep=config.snapshots.max_kept)
-    # For the parts that still ask for several desk interfaces in one object; it passes each call on.
+    # For the parts that ask for several desk interfaces in one object; it passes each call on.
     desk = WholeDesk(live_pictures, scene, safety_board, character_memory, photo_album)
     bus = EventStream(config.event_stream, synchronous=synchronous_events)
     event_log = EventLog(data_path(config.event_log.folder), config.event_log, clock,

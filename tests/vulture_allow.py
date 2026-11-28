@@ -51,7 +51,6 @@ _ = (
     # Request fields read through model_dump().
     PreferenceChanges.quiet_enabled, PreferenceChanges.quiet_start_hour, PreferenceChanges.quiet_end_hour,
     PreferenceChanges.sensitivity, PreferenceChanges.auto_sensitivity,
-    PreferenceChanges.dnd_enabled, PreferenceChanges.dnd_start_hour, PreferenceChanges.dnd_end_hour,
     # Event and status fields the web page (web_app/app.js) reads from the JSON.
     AgentLeft.stayed_sec, Compaction.from_ts, PiHealth.last_cleanup_ts,
     # Written to the picture log to show where the detector ran (pi or computer); the tests check it to tell a Pi
@@ -60,10 +59,9 @@ _ = (
     # Wording in config/prompts.yaml, read by name when the config loads (desktalk/config/prompts.py: prompt_texts).
     HabitAreas.screens,
     # The habit day file's fields: HabitDay.to_dict() writes them to data/habits/<day>.json, and today() reads
-    # them back by name for the Habits page (summary_sent is kept for day files written before the cleanup).
+    # them back by name for the Habits page.
     HabitDay.last_break_ts, HabitDay.desk_sec, HabitDay.phone_free_sec, HabitDay.phone_on_desk_sec,
     HabitDay.sunlight_minutes, HabitDay.danger_count, HabitDay.lost_alerts, HabitDay.nudges_sent,
-    HabitDay.summary_sent,
     # Keys of the sunrise / sunset and day-times dicts, read by name (tracker.day_times, today()['times']).
     # (TypedDicts have no attributes, hence the casts.)
     cast(Any, SunTimes).sunrise, cast(Any, SunTimes).estimated, cast(Any, DayTimes).sunrise_ts,
@@ -89,7 +87,7 @@ _ = (
     PreferenceChanges.model_config, Server(config=None).should_exit,  # type: ignore[arg-type]
 )
 
-# The developer page: names that only pytest, Python itself or the page (dev_ui/, reading JSON) use.
+# The developer page (/dev/, dev_ui/): names it reads from JSON, and names Python or pytest call by name.
 _developer_page = (
     # pytest calls a plugin's hooks by name: desktalk/adapters/dev/pytest_report.py, loaded with -p.
     pytest_report.pytest_runtest_logreport,

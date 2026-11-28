@@ -28,7 +28,7 @@ CUP_UP = BBox(0, -80, 10, -70)          # the cup's box when it is lifted (80 px
 DAY_FILE_KEYS = {'day', 'sips', 'water_ml', 'last_sip_ts', 'drinks', 'breaks', 'last_break_ts', 'break_log',
                  'longest_sit_sec', 'desk_sec', 'phone_free_sec', 'phone_on_desk_sec', 'best_phone_free_sec', 'food',
                  'sunlight_ts', 'sunlight_minutes', 'afternoon_light_ts', 'hourly_activity', 'objects_seen',
-                 'danger_count', 'lost_alerts', 'nudges_sent', 'summary_sent'}
+                 'danger_count', 'lost_alerts', 'nudges_sent'}
 
 
 def at(hhmm, days_later=0):

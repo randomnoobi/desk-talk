@@ -71,7 +71,6 @@ def test_a_bad_value_is_named_in_plain_words(changes, message):
 
 
 def test_delete_every_min_0_means_never():
-    """The old camera program treated 0 as "never clean up"; a Pi set up that way keeps working."""
     assert from_layers(pi_settings(delete_every_min=0)).delete_every_min == 0
     with pytest.raises(SettingsError, match=r'pi\.delete_every_min must be a number, 0 or more'):
         from_layers(pi_settings(delete_every_min=-1))

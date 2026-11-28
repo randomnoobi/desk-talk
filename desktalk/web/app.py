@@ -11,8 +11,8 @@ The main server's lifespan runs the background jobs: desktalk.start() when it st
 stops. (FastAPI's TestClient without `with`, or uvicorn with lifespan off, leaves them off: tests drive the
 desk by hand.)
 
-The replies are as the Flask server gave them (tests/characterization/ checks each one):
-- errors are {"error": "..."} with the same status codes, never {"detail": ...}; a body that doesn't fit is a
+The replies follow a few rules (tests/characterization/ checks each one):
+- errors are {"error": "..."}, never {"detail": ...}; a body that doesn't fit is a
   400 (not 422), and a request bigger than web.max_request_mb a 413;
 - no other web site may read a reply or send a write, unless it is listed in web.cors_origins (none are);
 - a request sent to a name this server doesn't go by is a 403 (KnownNamesOnly), so a site that points its own name

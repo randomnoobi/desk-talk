@@ -2,9 +2,8 @@
 One day's habit numbers (HabitDay), and keeping them (HabitDays): loading today's file, saving it now and then,
 and starting a new day at midnight.
 
-The day is saved in the store under "habits/<day>" (data/habits/<day>.json). The file's layout is exactly what it
-has always been (tests/fixtures/habit_day_before_cleanup.json), so old day files still load and the Habits page
-reads the same numbers.
+The day is saved in the store under "habits/<day>" (data/habits/<day>.json), laid out like
+tests/fixtures/habit_day_busy.json, which is what the Habits page reads.
 """
 
 from __future__ import annotations
@@ -76,7 +75,6 @@ class HabitDay:
     danger_count: int = 0
     lost_alerts: int = 0
     nudges_sent: int = 0
-    summary_sent: bool = False
     demo_sips: int = 0                 # the Demo tab's pretend sips, which sips and water_ml count too:
     demo_water_ml: int = 0             # (tallied so the numbers sent to the cloud server can leave them out)
 
@@ -115,7 +113,7 @@ class HabitDay:
 
     def mark_demo_sip(self, ml: float) -> None:
         """The sip just added was the Demo tab's pretend one: tally it, so the numbers sent to the cloud server can
-        leave it out. (The person still sees it in today's water, as before.)"""
+        leave it out. (The person still sees it in today's water.)"""
         self.demo_sips += 1
         self.demo_water_ml = int(self.demo_water_ml + ml)
 

@@ -13,7 +13,7 @@ from desktalk.core.chat.workers.lens import Lens
 from desktalk.core.health import HealthChecks
 from desktalk.domain import CameraNotice, DetectorState, PiHealth, Saving, UploadInfo
 from desktalk.ports import CameraWarnings
-from desktalk_shared.wire import DETECTOR_TURNED_OFF, info_from_v1_headers
+from desktalk_shared.wire import DETECTOR_TURNED_OFF
 from tests.fakes import (
     FakeCameraHealth,
     FakeClock,
@@ -553,15 +553,6 @@ def test_lens_is_quiet_when_detection_on_the_pi_was_turned_off_on_purpose():
     """The camera program was started with --no-detector: nothing to fix, so nothing to say."""
     rig = Rig(pi=PiReports())
     rig.pi.picture(rig.clock.now(), detector=DetectorState.OFF, reason=DETECTOR_TURNED_OFF)
-    for _ in range(3):
-        rig.tick(after=SETTINGS.repeat_after_min * 60)
-    assert rig.said() == []
-
-
-def test_lens_is_quiet_when_the_pi_runs_the_old_camera_program():
-    """The old camera program (upload format 1) has no detector at all."""
-    rig = Rig(pi=PiReports())
-    rig.pi.latest = (info_from_v1_headers({'X-Frame-Id': 'pi-000001'}), rig.clock.now())
     for _ in range(3):
         rig.tick(after=SETTINGS.repeat_after_min * 60)
     assert rig.said() == []

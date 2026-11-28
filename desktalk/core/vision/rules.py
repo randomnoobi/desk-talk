@@ -65,7 +65,7 @@ def _number(section: Mapping, name: str, key: str, built_in, kind=float):
 
 def _base_share(name: str, z: Mapping, built_in: float) -> float:
     """A saved zone's base_share if it's a number above 0 and at most 1, otherwise `built_in` (a bad one
-    is logged; a missing one isn't, since zones saved before base_share existed don't have it)."""
+    is logged; a missing one isn't, since the Settings page leaves it out: see for_settings_page)."""
     if 'base_share' not in z:
         return built_in
     raw = z['base_share']

@@ -1,7 +1,6 @@
 """
-POST /api/pi/frame: the camera program's uploads in format 2 (the picture plus what the Pi's detector found)
-and the old camera_node.py's format 1 (the picture as the body, X-... headers), and the replies for
-uploads that can't be used.
+POST /api/pi/frame: the camera program's uploads (the picture plus what the Pi's detector found), and the
+replies for uploads that can't be used.
 """
 
 from __future__ import annotations
@@ -9,6 +8,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from desktalk.domain import DetectorState, PiHealth, UploadInfo
+from desktalk_shared.wire import encode_upload
 from tests.integration.app_kit import LAPTOP, PAIR_KEY, PERSON, DeskRig, changed, desk_config, desk_jpeg
 from tests.integration.web_kit import pi_upload, web_client
 
@@ -53,15 +53,21 @@ def test_an_off_upload_is_detected_on_this_computer(tmp_path):
     assert rig.app.pi.status()['detector_reason'] == 'the detector container is not answering'
 
 
-def test_an_old_pi_sends_format_1_headers(tmp_path):
+def test_an_upload_that_is_not_multipart_is_refused(tmp_path):
     rig = DeskRig(tmp_path)
-    headers = {'X-Desk-Key': PAIR_KEY, 'Content-Type': 'image/jpeg', 'X-Frame-Id': 'pi-000042', 'X-Lux': '312.5',
-               'X-Pi-Camera': 'usb', 'X-Pi-Photos': '', 'X-Pi-Free-MB': '1234', 'X-Taken-At': str(rig.clock.now())}
+    headers = {'X-Desk-Key': PAIR_KEY, 'Content-Type': 'image/jpeg'}
     reply = web_client(rig.app).post('/api/pi/frame', content=rig.jpeg, headers=headers)
-    assert reply.status_code == 200
-    upload, _ = rig.app.source.latest_upload()
-    assert (upload.version, upload.frame_id, upload.lux, upload.detector) == (1, 'pi-000042', 312.5, DetectorState.OFF)
-    assert rig.app.pi.pi_info() == {'last_frame_id': 'pi-000042', 'camera': 'usb', 'disk_free_mb': 1234}
+    assert reply.status_code == 400 and 'multipart/form-data' in reply.json()['error']
+    assert rig.app.source.pictures_received == 0
+
+
+def test_an_upload_whose_boundary_is_not_plain_ascii_is_refused(tmp_path):
+    rig = DeskRig(tmp_path)
+    body, _ = encode_upload(rig.jpeg, info(rig, DetectorState.OFF))
+    headers = {'X-Desk-Key': PAIR_KEY, 'Content-Type': 'multipart/form-data; boundary=caf\u00e9'.encode('latin-1')}
+    reply = web_client(rig.app).post('/api/pi/frame', content=body, headers=headers)
+    assert reply.status_code == 400 and 'boundary' in reply.json()['error']
+    assert rig.app.source.pictures_received == 0
 
 
 def test_an_upload_above_the_size_limit_is_refused_before_it_reaches_the_camera(tmp_path):

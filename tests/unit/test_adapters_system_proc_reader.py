@@ -333,13 +333,13 @@ def test_a_long_command_is_cut(pi):
     (b'python\x00-m\x00desktalk_detector\x00', 'python -m desktalk_detector'),
     (b'/usr/bin/python3\x00-m\x00uvicorn\x00app:api\x00--port=5000\x00', 'python3 -m uvicorn'),
     (b'/usr/bin/dockerd\x00-H\x00fd://\x00--containerd=/run/x.sock\x00', 'dockerd'),
-    (b'python3\x00/home/sam/x/server.py\x00--key=abc\x00', 'python3 server.py'),
+    (b'python3\x00/home/pi/x/server.py\x00--key=abc\x00', 'python3 server.py'),
     (b'/sbin/docker-init\x00--\x00python\x00-m\x00desktalk_detector\x00', 'docker-init'),
-    (b'curl\x00https://sam:secret@example.com\x00', 'curl'),                 # not a script: left out
+    (b'curl\x00https://pi:secret@example.com\x00', 'curl'),                 # not a script: left out
     (b'/usr/bin/tool\x00run\x00--token=abc\x00', 'tool run'),
     (b'/usr/bin/python3\x00-m\x00', 'python3 -m'),
     (b'worker --token=abc\x00', 'worker'),                                    # a program that rewrote its line
-    (b'sshd: sam@pts/0\x00\x00\x00', 'sshd:'),
+    (b'sshd: pi@pts/0\x00\x00\x00', 'sshd:'),
 ])
 def test_only_the_program_and_its_script_or_module_are_sent(pi, cmdline, command):
     """GET /api/system/stats needs no login and a command line can carry a password: only the program's name and
